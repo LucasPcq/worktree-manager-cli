@@ -12,6 +12,7 @@ import (
 func init() {
 	rootCmd.AddCommand(commands.NewInitCmd())
 	rootCmd.AddCommand(commands.NewNewCmd())
+	rootCmd.AddCommand(commands.NewLsCmd())
 }
 
 var version = domain.Version

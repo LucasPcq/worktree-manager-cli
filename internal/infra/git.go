@@ -4,6 +4,7 @@ package infra
 import (
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -96,4 +97,92 @@ func FindMainWorktreePath(params FindMainWorktreeParams) (string, error) {
 	}
 
 	return "", fmt.Errorf("no worktree found in output")
+}
+
+// GitWorktree represents a worktree entry from git worktree list.
+type GitWorktree struct {
+	Path   string
+	Branch string
+	IsMain bool
+}
+
+// ListWorktreesParams holds inputs for listing worktrees.
+type ListWorktreesParams struct {
+	ProjectDir string
+}
+
+// ListWorktrees returns all git worktrees with their path and branch.
+func ListWorktrees(params ListWorktreesParams) ([]GitWorktree, error) {
+	cmd := exec.Command("git", "worktree", "list", "--porcelain")
+	cmd.Dir = params.ProjectDir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git worktree list: %w", err)
+	}
+
+	var worktrees []GitWorktree
+	var current GitWorktree
+	isFirst := true
+
+	for _, line := range strings.Split(string(out), "\n") {
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			if current.Path != "" {
+				worktrees = append(worktrees, current)
+			}
+			current = GitWorktree{
+				Path:   strings.TrimPrefix(line, "worktree "),
+				IsMain: isFirst,
+			}
+			isFirst = false
+		case strings.HasPrefix(line, "branch "):
+			ref := strings.TrimPrefix(line, "branch ")
+			parts := strings.Split(ref, "/")
+			current.Branch = parts[len(parts)-1]
+		}
+	}
+
+	if current.Path != "" {
+		worktrees = append(worktrees, current)
+	}
+
+	return worktrees, nil
+}
+
+// IsDirtyParams holds inputs for checking worktree dirty state.
+type IsDirtyParams struct {
+	WorktreePath string
+}
+
+// IsDirty checks if a worktree has uncommitted changes.
+func IsDirty(params IsDirtyParams) (bool, error) {
+	cmd := exec.Command("git", "-C", params.WorktreePath, "status", "--porcelain")
+	out, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("git status: %w", err)
+	}
+	return strings.TrimSpace(string(out)) != "", nil
+}
+
+// CommitsAheadParams holds inputs for counting commits ahead.
+type CommitsAheadParams struct {
+	WorktreePath string
+	BaseBranch   string
+	Branch       string
+}
+
+// CommitsAhead returns how many commits a branch is ahead of the base branch.
+// Returns 0 if the base branch doesn't exist or on error.
+func CommitsAhead(params CommitsAheadParams) (int, error) {
+	cmd := exec.Command("git", "-C", params.WorktreePath, "rev-list", "--count",
+		params.BaseBranch+".."+params.Branch)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, nil
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, nil
+	}
+	return count, nil
 }

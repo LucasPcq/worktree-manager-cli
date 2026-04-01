@@ -122,3 +122,99 @@ func TestFindMainWorktreePath(t *testing.T) {
 		t.Errorf("expected main worktree path %s, got %s", resolvedDir, resolvedMain)
 	}
 }
+
+func TestListWorktrees(t *testing.T) {
+	dir := initTestRepo(t)
+	wtPath := filepath.Join(t.TempDir(), "wt1")
+
+	_ = CreateWorktree(CreateWorktreeParams{
+		ProjectDir: dir,
+		Path:       wtPath,
+		Branch:     "feature-test",
+		FromBranch: "HEAD",
+	})
+
+	worktrees, err := ListWorktrees(ListWorktreesParams{ProjectDir: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(worktrees) != 2 {
+		t.Fatalf("expected 2 worktrees, got %d", len(worktrees))
+	}
+
+	if !worktrees[0].IsMain {
+		t.Error("first worktree should be marked as main")
+	}
+	if worktrees[1].IsMain {
+		t.Error("second worktree should not be marked as main")
+	}
+	if worktrees[1].Branch != "feature-test" {
+		t.Errorf("expected branch feature-test, got %s", worktrees[1].Branch)
+	}
+}
+
+func TestIsDirty(t *testing.T) {
+	dir := initTestRepo(t)
+
+	dirty, err := IsDirty(IsDirtyParams{WorktreePath: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dirty {
+		t.Error("expected clean repo")
+	}
+
+	// Create an untracked file to make it dirty
+	os.WriteFile(filepath.Join(dir, "dirty.txt"), []byte("x"), 0o644)
+
+	dirty, err = IsDirty(IsDirtyParams{WorktreePath: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !dirty {
+		t.Error("expected dirty repo after adding untracked file")
+	}
+}
+
+func TestCommitsAhead(t *testing.T) {
+	dir := initTestRepo(t)
+	createBranch(t, dir, "feature")
+
+	// Switch to feature and add a commit
+	cmd := exec.Command("git", "checkout", "feature")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git checkout: %s: %v", out, err)
+	}
+
+	commitCmd := exec.Command("git", "commit", "--allow-empty", "-m", "ahead")
+	commitCmd.Dir = dir
+	if out, err := commitCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %s: %v", out, err)
+	}
+
+	// Get the default branch name (could be main or master)
+	branchCmd := exec.Command("git", "branch", "--format=%(refname:short)")
+	branchCmd.Dir = dir
+	branchOut, _ := branchCmd.Output()
+	var baseBranch string
+	for _, b := range strings.Split(strings.TrimSpace(string(branchOut)), "\n") {
+		if b != "feature" {
+			baseBranch = b
+			break
+		}
+	}
+
+	count, err := CommitsAhead(CommitsAheadParams{
+		WorktreePath: dir,
+		BaseBranch:   baseBranch,
+		Branch:       "feature",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 commit ahead, got %d", count)
+	}
+}
