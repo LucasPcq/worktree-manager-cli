@@ -116,3 +116,40 @@ type Config struct {
 	Project ProjectConfig
 	Global  GlobalConfig
 }
+
+// PackageManager represents a detected package manager.
+type PackageManager string
+
+const (
+	PkgManagerPnpm PackageManager = "pnpm"
+	PkgManagerNpm  PackageManager = "npm"
+	PkgManagerYarn PackageManager = "yarn"
+	PkgManagerGo   PackageManager = "go"
+	PkgManagerPip  PackageManager = "pip"
+	PkgManagerNone PackageManager = "none"
+)
+
+// InitDetectionResult holds all auto-detected values for repo init.
+type InitDetectionResult struct {
+	BaseBranch     string
+	EnvFiles       []string
+	PackageManager PackageManager
+	InstallCommand string
+}
+
+// InitGlobalAnswers holds the wizard answers for global config setup.
+type InitGlobalAnswers struct {
+	Agent AgentType
+	Shell ShellType
+}
+
+// InitProjectAnswers holds the wizard answers for project config setup.
+type InitProjectAnswers struct {
+	BasePath       string
+	BaseBranch     string
+	EnvCopyFiles   []string
+	EnvStrategy    EnvStrategy
+	InstallCommand string
+	Agent          AgentType
+	AgentOverride  bool
+}

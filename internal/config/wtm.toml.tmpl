@@ -1,0 +1,55 @@
+# wtm — Worktree Manager configuration
+# Docs: https://github.com/LucasPcq/wtm
+
+[worktrees]
+# Directory where worktrees are created (relative to repo root)
+base_path = "{{ .BasePath }}"
+
+# Branch used as the default base for new worktrees
+base_branch = "{{ .BaseBranch }}"
+
+[env]
+# Strategy for provisioning .env files in new worktrees:
+#   example — copy .env.example and rename to .env
+#   main    — copy .env from the main worktree
+#   parent  — copy .env from the source worktree
+strategy = "{{ .EnvStrategy }}"
+
+# Files to copy into each new worktree
+copy_files = [
+{{- range .EnvCopyFiles }}
+  "{{ . }}",
+{{- end }}
+]
+
+[hooks]
+# Commands run after creating a new worktree
+on_create = [
+{{- if .InstallCommand }}
+  "{{ .InstallCommand }}",
+{{- end }}
+]
+
+# Commands run when switching to this worktree
+on_focus = []
+
+# Commands run when leaving this worktree
+on_blur = []
+
+[github]
+auto_draft = false
+base_branch = "{{ .BaseBranch }}"
+
+[agents]
+# Default AI agent: claude-code | cursor | none
+{{ if .AgentOverride -}}
+default = "{{ .Agent }}"
+{{- else -}}
+# Inherits from global config (~/.config/wtm/config.toml)
+# default = "claude-code"
+{{- end }}
+
+[integrations]
+# Auto-register worktrees in VS Code / Cursor project manager
+vscode_project_manager = false
+cursor_project_manager = false

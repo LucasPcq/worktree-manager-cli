@@ -43,4 +43,24 @@ const (
 
 	// DefaultShell is the default shell for integration.
 	DefaultShell = ShellZsh
+
+	// MsgConfigExists is shown when .wtm.toml already exists during init.
+	MsgConfigExists = ".wtm.toml already exists. Re-edit mode coming in a future release."
+
+	// MsgShellInitHint tells the user how to set up shell integration.
+	MsgShellInitHint = "Add this to your shell config:\n\n  eval \"$(wtm shell-init)\""
+
+	// Lockfile names for package manager detection.
+	LockfilePnpm = "pnpm-lock.yaml"
+	LockfileNpm  = "package-lock.json"
+	LockfileYarn = "yarn.lock"
+	LockfileGo   = "go.mod"
+	LockfilePip  = "requirements.txt"
+
+	// Install commands per package manager.
+	InstallCmdPnpm = "pnpm install"
+	InstallCmdNpm  = "npm install"
+	InstallCmdYarn = "yarn install"
+	InstallCmdGo   = "go mod download"
+	InstallCmdPip  = "pip install -r requirements.txt"
 )

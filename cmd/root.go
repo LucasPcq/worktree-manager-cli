@@ -4,9 +4,14 @@ package cmd
 import (
 	"os"
 
+	"github.com/LucasPcq/wtm/internal/commands"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/spf13/cobra"
 )
+
+func init() {
+	rootCmd.AddCommand(commands.NewInitCmd())
+}
 
 var version = domain.Version
 

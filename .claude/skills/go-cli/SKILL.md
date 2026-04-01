@@ -136,6 +136,7 @@ internal/
     shell/                    ←   shell integration generation (zsh, bash, fish)
     state/                    ←   global state (~/.config/wtm/state.json)
     integration/              ←   third-party adapters (VS Code, Cursor)
+    detect/                   ←   auto-detection (base branch, env files, package manager)
   styles/                     ← all Lipgloss styles (see section below)
   output/                     ← plain-text / JSON / table renderers
   tui/                        ← Bubbletea models (see section below)
