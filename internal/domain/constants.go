@@ -29,8 +29,9 @@ const (
 	// StateFileName is the global state file name.
 	StateFileName = "state.json"
 
-	// DefaultBasePath is the default directory for worktrees relative to project root.
-	DefaultBasePath = ".trees"
+	// DefaultBasePath is the default directory for worktrees, relative to project root.
+	// One level up so worktrees are created outside the main repo directory.
+	DefaultBasePath = "../.trees"
 
 	// DefaultBaseBranch is the default base branch for new worktrees.
 	DefaultBaseBranch = "main"
@@ -63,4 +64,13 @@ const (
 	InstallCmdYarn = "yarn install"
 	InstallCmdGo   = "go mod download"
 	InstallCmdPip  = "pip install -r requirements.txt"
+
+	// Flag names for the new command.
+	FlagFrom    = "from"
+	FlagEnvFrom = "env-from"
+
+	// Metadata directory and files created inside each worktree.
+	MetaDirName     = ".wtm"
+	MetaFileName    = "meta.json"
+	ContextFileName = "context.md"
 )

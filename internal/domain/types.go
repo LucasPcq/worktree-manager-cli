@@ -153,3 +153,10 @@ type InitProjectAnswers struct {
 	Agent          AgentType
 	AgentOverride  bool
 }
+
+// WorktreeMetadata is written to .wtm/meta.json inside each created worktree.
+type WorktreeMetadata struct {
+	SourceBranch string      `json:"source_branch"`
+	CreatedAt    string      `json:"created_at"`
+	EnvStrategy  EnvStrategy `json:"env_strategy"`
+}

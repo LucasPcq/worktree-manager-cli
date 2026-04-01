@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -30,9 +31,11 @@ func BaseBranch(projectDir string) string {
 }
 
 // EnvFiles scans the project directory recursively for .env and .env.example files.
+// Returns deduplicated target names (e.g. ".env", not ".env.example") since copy_files
+// lists the target names and the env strategy determines the source.
 // Excludes node_modules, .trees, .git, and vendor directories.
 func EnvFiles(projectDir string) []string {
-	var files []string
+	seen := map[string]bool{}
 
 	skipDirs := map[string]bool{
 		"node_modules": true,
@@ -55,16 +58,27 @@ func EnvFiles(projectDir string) []string {
 		}
 
 		name := info.Name()
-		if name == ".env" || name == ".env.example" || name == ".env.local" {
-			rel, relErr := filepath.Rel(projectDir, path)
-			if relErr != nil {
-				return nil
-			}
-			files = append(files, rel)
+		if name != ".env" && name != ".env.example" && name != ".env.local" {
+			return nil
 		}
+
+		rel, relErr := filepath.Rel(projectDir, path)
+		if relErr != nil {
+			return nil
+		}
+
+		// Normalize to target name: strip .example suffix
+		target := strings.TrimSuffix(rel, ".example")
+		seen[target] = true
 
 		return nil
 	})
+
+	files := make([]string, 0, len(seen))
+	for f := range seen {
+		files = append(files, f)
+	}
+	sort.Strings(files)
 
 	return files
 }

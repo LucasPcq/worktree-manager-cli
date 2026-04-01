@@ -110,7 +110,7 @@ func TestInstallCommand(t *testing.T) {
 	}
 }
 
-func TestEnvFilesFindsRootAndNested(t *testing.T) {
+func TestEnvFilesDeduplicatesTargets(t *testing.T) {
 	dir := t.TempDir()
 	touchFile(t, filepath.Join(dir, ".env"))
 	touchFile(t, filepath.Join(dir, ".env.example"))
@@ -118,8 +118,21 @@ func TestEnvFilesFindsRootAndNested(t *testing.T) {
 	touchFile(t, filepath.Join(dir, "apps", "api", ".env.example"))
 
 	files := EnvFiles(dir)
-	if len(files) != 4 {
-		t.Fatalf("expected 4 env files, got %d: %v", len(files), files)
+	if len(files) != 2 {
+		t.Fatalf("expected 2 deduplicated targets (.env, apps/api/.env), got %d: %v", len(files), files)
+	}
+}
+
+func TestEnvFilesStripsExampleSuffix(t *testing.T) {
+	dir := t.TempDir()
+	touchFile(t, filepath.Join(dir, ".env.example"))
+
+	files := EnvFiles(dir)
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d: %v", len(files), files)
+	}
+	if files[0] != ".env" {
+		t.Errorf("expected .env (stripped .example), got %s", files[0])
 	}
 }
 
