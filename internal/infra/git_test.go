@@ -218,3 +218,98 @@ func TestCommitsAhead(t *testing.T) {
 		t.Errorf("expected 1 commit ahead, got %d", count)
 	}
 }
+
+func TestFindWorktreeByBranch(t *testing.T) {
+	dir := initTestRepo(t)
+	wtPath := filepath.Join(t.TempDir(), "wt-find")
+
+	_ = CreateWorktree(CreateWorktreeParams{
+		ProjectDir: dir,
+		Path:       wtPath,
+		Branch:     "feat-find",
+		FromBranch: "HEAD",
+	})
+
+	wt, err := FindWorktreeByBranch(FindWorktreeByBranchParams{
+		ProjectDir: dir,
+		Branch:     "feat-find",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if wt.Branch != "feat-find" {
+		t.Errorf("expected branch feat-find, got %s", wt.Branch)
+	}
+}
+
+func TestFindWorktreeByBranchNotFound(t *testing.T) {
+	dir := initTestRepo(t)
+
+	_, err := FindWorktreeByBranch(FindWorktreeByBranchParams{
+		ProjectDir: dir,
+		Branch:     "nonexistent",
+	})
+	if err == nil {
+		t.Fatal("expected error for nonexistent branch")
+	}
+}
+
+func TestRemoveWorktree(t *testing.T) {
+	dir := initTestRepo(t)
+	wtPath := filepath.Join(t.TempDir(), "wt-remove")
+
+	_ = CreateWorktree(CreateWorktreeParams{
+		ProjectDir: dir,
+		Path:       wtPath,
+		Branch:     "feat-remove",
+		FromBranch: "HEAD",
+	})
+
+	err := RemoveWorktree(RemoveWorktreeParams{
+		ProjectDir: dir,
+		Path:       wtPath,
+		Force:      false,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, statErr := os.Stat(wtPath); !os.IsNotExist(statErr) {
+		t.Error("worktree directory should be removed")
+	}
+}
+
+func TestDeleteLocalBranch(t *testing.T) {
+	dir := initTestRepo(t)
+	createBranch(t, dir, "to-delete")
+
+	err := DeleteLocalBranch(DeleteLocalBranchParams{
+		ProjectDir: dir,
+		Branch:     "to-delete",
+		Force:      false,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	branches, _ := ListLocalBranches(ListBranchesParams{ProjectDir: dir})
+	for _, b := range branches {
+		if b == "to-delete" {
+			t.Error("branch should have been deleted")
+		}
+	}
+}
+
+func TestHasOpenPRGracefulWithoutGh(t *testing.T) {
+	dir := initTestRepo(t)
+
+	haspr, url := HasOpenPR(HasOpenPRParams{
+		ProjectDir: dir,
+		Branch:     "main",
+	})
+
+	// Should not panic or error, just return false
+	if haspr {
+		t.Errorf("expected false, got true with url %s", url)
+	}
+}

@@ -65,9 +65,10 @@ const (
 	InstallCmdGo   = "go mod download"
 	InstallCmdPip  = "pip install -r requirements.txt"
 
-	// Flag names for the new command.
+	// Flag names.
 	FlagFrom    = "from"
 	FlagEnvFrom = "env-from"
+	FlagForce   = "force"
 
 	// Metadata directory and files created inside each worktree.
 	MetaDirName     = ".wtm"

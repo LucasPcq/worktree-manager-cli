@@ -1,0 +1,108 @@
+package commands
+
+import (
+	"errors"
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/LucasPcq/wtm/internal/config"
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/service/worktree"
+	cleanui "github.com/LucasPcq/wtm/internal/tui/clean"
+)
+
+// NewCleanCmd creates the wtm clean command.
+func NewCleanCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "clean [branch]",
+		Short: "Remove a worktree and its local branch",
+		Long:  "Remove a git worktree and delete the local branch. The remote branch is never touched.\nWithout arguments, shows an interactive picker.",
+		Args:  cobra.MaximumNArgs(1),
+		RunE:  runClean,
+	}
+
+	cmd.Flags().Bool(domain.FlagForce, false, "Bypass all safety checks")
+
+	return cmd
+}
+
+func runClean(cmd *cobra.Command, args []string) error {
+	force, _ := cmd.Flags().GetBool(domain.FlagForce)
+
+	dir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	cfg, err := config.Load(config.LoadParams{ProjectDir: dir})
+	if errors.Is(err, domain.ErrConfigNotFound) {
+		fmt.Fprintln(cmd.ErrOrStderr(), "No .wtm.toml found. Run `wtm init` first.")
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	branch, err := resolveBranchArg(args, dir)
+	if err != nil {
+		if errors.Is(err, domain.ErrUserAborted) {
+			return nil
+		}
+		return err
+	}
+
+	cleanParams := worktree.CleanParams{
+		ProjectDir: dir,
+		Branch:     branch,
+		Force:      force,
+		Config:     cfg,
+	}
+
+	if force {
+		return doClean(cmd, cleanParams)
+	}
+
+	check, err := worktree.Check(cleanParams)
+	if errors.Is(err, domain.ErrCannotCleanParent) {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	result, err := cleanui.RunConfirm(check)
+	if errors.Is(err, domain.ErrUserAborted) {
+		fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	cleanParams.Force = result.Force
+	return doClean(cmd, cleanParams)
+}
+
+func resolveBranchArg(args []string, dir string) (string, error) {
+	if len(args) > 0 {
+		return args[0], nil
+	}
+	return cleanui.RunWorktreePicker(dir)
+}
+
+func doClean(cmd *cobra.Command, params worktree.CleanParams) error {
+	err := worktree.Clean(params)
+	if errors.Is(err, domain.ErrCannotCleanParent) {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "✓ Cleaned worktree and branch %s\n", params.Branch)
+	return nil
+}

@@ -13,6 +13,7 @@ func init() {
 	rootCmd.AddCommand(commands.NewInitCmd())
 	rootCmd.AddCommand(commands.NewNewCmd())
 	rootCmd.AddCommand(commands.NewLsCmd())
+	rootCmd.AddCommand(commands.NewCleanCmd())
 }
 
 var version = domain.Version

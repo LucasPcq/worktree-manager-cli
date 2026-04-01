@@ -35,4 +35,7 @@ var (
 
 	// ErrWorktreePathExists is returned when the target worktree directory already exists.
 	ErrWorktreePathExists = errors.New("worktree path already exists")
+
+	// ErrCannotCleanParent is returned when trying to clean the parent worktree.
+	ErrCannotCleanParent = errors.New("cannot clean the parent worktree")
 )
