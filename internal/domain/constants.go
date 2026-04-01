@@ -28,4 +28,19 @@ const (
 
 	// StateFileName is the global state file name.
 	StateFileName = "state.json"
+
+	// DefaultBasePath is the default directory for worktrees relative to project root.
+	DefaultBasePath = ".trees"
+
+	// DefaultBaseBranch is the default base branch for new worktrees.
+	DefaultBaseBranch = "main"
+
+	// DefaultEnvStrategy is the default .env provisioning strategy.
+	DefaultEnvStrategy = EnvStrategyExample
+
+	// DefaultAgent is the default AI agent.
+	DefaultAgent = AgentClaudeCode
+
+	// DefaultShell is the default shell for integration.
+	DefaultShell = ShellZsh
 )

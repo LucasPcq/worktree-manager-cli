@@ -14,4 +14,13 @@ var (
 
 	// ErrInvalidConfig is returned when configuration fails validation.
 	ErrInvalidConfig = errors.New("invalid configuration")
+
+	// ErrInvalidEnvStrategy is returned when env.strategy has an unknown value.
+	ErrInvalidEnvStrategy = errors.New("invalid env strategy: must be example, main, or parent")
+
+	// ErrInvalidShellType is returned when shell has an unknown value.
+	ErrInvalidShellType = errors.New("invalid shell type: must be zsh, bash, or fish")
+
+	// ErrInvalidAgentType is returned when agent has an unknown value.
+	ErrInvalidAgentType = errors.New("invalid agent type: must be claude-code, cursor, or none")
 )
