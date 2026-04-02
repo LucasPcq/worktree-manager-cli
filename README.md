@@ -4,12 +4,41 @@ Orchestrate git worktrees, AI agents, and team dev workflows from the terminal.
 
 `wtm` manages the lifecycle of git worktrees: creation, environment provisioning, hook execution, navigation, and cleanup. It replaces manual `git worktree` commands with a streamlined workflow designed for teams working on multiple branches simultaneously.
 
+## Installation
+
+### Homebrew (macOS / Linux)
+
+```bash
+brew install LucasPcq/tap/wtm
+```
+
+### Download binary
+
+Download the latest release from [GitHub Releases](https://github.com/LucasPcq/worktree-manager-cli/releases), extract it, and move the binary to your PATH:
+
+```bash
+# macOS (Apple Silicon)
+tar -xzf wtm_*_darwin_arm64.tar.gz
+sudo mv wtm /usr/local/bin/
+
+# macOS (Intel)
+tar -xzf wtm_*_darwin_amd64.tar.gz
+sudo mv wtm /usr/local/bin/
+
+# Linux
+tar -xzf wtm_*_linux_amd64.tar.gz
+sudo mv wtm /usr/local/bin/
+```
+
+### Go install
+
+```bash
+go install github.com/LucasPcq/wtm@latest
+```
+
 ## Quick Start
 
 ```bash
-# Install
-go install github.com/LucasPcq/wtm@latest
-
 # Set up shell integration (required for wtm go)
 echo 'eval "$(wtm shell-init)"' >> ~/.zshrc
 source ~/.zshrc
