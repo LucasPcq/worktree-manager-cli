@@ -38,7 +38,8 @@ brews:
   - repository:
       owner: LucasPcq
       name: homebrew-tap
-    homepage: "https://github.com/LucasPcq/wtm"
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/LucasPcq/worktree-manager-cli"
     description: "Worktree Manager — orchestrate git worktrees, AI agents, and team workflows"
     install: |
       bin.install "wtm"
