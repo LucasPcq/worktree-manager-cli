@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/service/state"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 )
 
@@ -46,7 +47,12 @@ func runLs(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list worktrees: %w", err)
 	}
 
-	fmt.Fprint(cmd.OutOrStdout(), output.FormatWorktreeList(statuses))
+	currentState, _ := state.Load()
+
+	fmt.Fprint(cmd.OutOrStdout(), output.FormatWorktreeList(output.FormatWorktreeListParams{
+		Statuses:     statuses,
+		ActiveBranch: currentState.ActiveWorktree,
+	}))
 
 	return nil
 }

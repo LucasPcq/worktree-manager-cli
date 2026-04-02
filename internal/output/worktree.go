@@ -9,13 +9,19 @@ import (
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
+// FormatWorktreeListParams holds inputs for rendering the worktree list.
+type FormatWorktreeListParams struct {
+	Statuses     []domain.WorktreeStatus
+	ActiveBranch string
+}
+
 // FormatWorktreeList renders a list of worktree statuses as an aligned table string.
-func FormatWorktreeList(statuses []domain.WorktreeStatus) string {
-	if len(statuses) == 0 {
+func FormatWorktreeList(params FormatWorktreeListParams) string {
+	if len(params.Statuses) == 0 {
 		return "No worktrees found."
 	}
 
-	rows := buildRows(statuses)
+	rows := buildRows(params.Statuses, params.ActiveBranch)
 	widths := columnWidths(rows)
 
 	var sb strings.Builder
@@ -35,12 +41,12 @@ type row struct {
 	ahead  string
 }
 
-func buildRows(statuses []domain.WorktreeStatus) []row {
+func buildRows(statuses []domain.WorktreeStatus, activeBranch string) []row {
 	rows := make([]row, 0, len(statuses))
 	for _, s := range statuses {
 		r := row{
 			branch: styles.Bold.Render(s.Branch),
-			tag:    formatTag(s.IsParent),
+			tag:    formatTag(s.IsParent, s.Branch == activeBranch),
 			status: formatDirtyStatus(s.IsDirty),
 			ahead:  formatAhead(s.CommitsAhead),
 		}
@@ -49,11 +55,20 @@ func buildRows(statuses []domain.WorktreeStatus) []row {
 	return rows
 }
 
-func formatTag(isParent bool) string {
+func formatTag(isParent bool, isActive bool) string {
+	tags := ""
 	if isParent {
-		return styles.Muted.Render("(parent)")
+		tags = styles.Muted.Render("(parent)")
 	}
-	return ""
+	if isActive {
+		active := styles.Success.Render("● active")
+		if tags != "" {
+			tags += "  " + active
+		} else {
+			tags = active
+		}
+	}
+	return tags
 }
 
 func formatDirtyStatus(dirty bool) string {

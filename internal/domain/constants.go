@@ -69,6 +69,7 @@ const (
 	FlagFrom    = "from"
 	FlagEnvFrom = "env-from"
 	FlagForce   = "force"
+	FlagOff     = "off"
 
 	// Metadata directory and files created inside each worktree.
 	MetaDirName     = ".wtm"

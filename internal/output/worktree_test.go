@@ -10,23 +10,22 @@ import (
 )
 
 func init() {
-	// Disable colors for deterministic test output
 	os.Setenv("NO_COLOR", "1")
 }
 
 func TestFormatWorktreeListEmpty(t *testing.T) {
-	got := FormatWorktreeList(nil)
+	got := FormatWorktreeList(FormatWorktreeListParams{})
 	if got != "No worktrees found." {
 		t.Errorf("unexpected output: %q", got)
 	}
 }
 
 func TestFormatWorktreeListSingleParent(t *testing.T) {
-	statuses := []domain.WorktreeStatus{
-		{Branch: "main", IsParent: true, IsDirty: false, CommitsAhead: 0, CreatedAt: time.Now()},
-	}
-
-	got := FormatWorktreeList(statuses)
+	got := FormatWorktreeList(FormatWorktreeListParams{
+		Statuses: []domain.WorktreeStatus{
+			{Branch: "main", IsParent: true, IsDirty: false, CommitsAhead: 0, CreatedAt: time.Now()},
+		},
+	})
 
 	if !strings.Contains(got, "main") {
 		t.Error("expected output to contain 'main'")
@@ -40,12 +39,12 @@ func TestFormatWorktreeListSingleParent(t *testing.T) {
 }
 
 func TestFormatWorktreeListDirtyAndAhead(t *testing.T) {
-	statuses := []domain.WorktreeStatus{
-		{Branch: "main", IsParent: true, IsDirty: false, CreatedAt: time.Now()},
-		{Branch: "feature-auth", IsParent: false, IsDirty: true, CommitsAhead: 3, CreatedAt: time.Now()},
-	}
-
-	got := FormatWorktreeList(statuses)
+	got := FormatWorktreeList(FormatWorktreeListParams{
+		Statuses: []domain.WorktreeStatus{
+			{Branch: "main", IsParent: true, IsDirty: false, CreatedAt: time.Now()},
+			{Branch: "feature-auth", IsParent: false, IsDirty: true, CommitsAhead: 3, CreatedAt: time.Now()},
+		},
+	})
 
 	if !strings.Contains(got, "dirty") {
 		t.Error("expected output to contain 'dirty'")
@@ -56,14 +55,28 @@ func TestFormatWorktreeListDirtyAndAhead(t *testing.T) {
 }
 
 func TestFormatWorktreeListSingleCommitAhead(t *testing.T) {
-	statuses := []domain.WorktreeStatus{
-		{Branch: "fix", IsParent: false, IsDirty: false, CommitsAhead: 1, CreatedAt: time.Now()},
-	}
-
-	got := FormatWorktreeList(statuses)
+	got := FormatWorktreeList(FormatWorktreeListParams{
+		Statuses: []domain.WorktreeStatus{
+			{Branch: "fix", IsParent: false, IsDirty: false, CommitsAhead: 1, CreatedAt: time.Now()},
+		},
+	})
 
 	if !strings.Contains(got, "1 commit ahead") {
 		t.Error("expected '1 commit ahead' (singular)")
+	}
+}
+
+func TestFormatWorktreeListActiveIndicator(t *testing.T) {
+	got := FormatWorktreeList(FormatWorktreeListParams{
+		Statuses: []domain.WorktreeStatus{
+			{Branch: "main", IsParent: true, CreatedAt: time.Now()},
+			{Branch: "feature/auth", IsParent: false, CreatedAt: time.Now()},
+		},
+		ActiveBranch: "feature/auth",
+	})
+
+	if !strings.Contains(got, "active") {
+		t.Error("expected active indicator on focused worktree")
 	}
 }
 

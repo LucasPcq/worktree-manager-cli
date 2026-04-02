@@ -17,6 +17,7 @@ func init() {
 	rootCmd.AddCommand(commands.NewGoCmd())
 	rootCmd.AddCommand(commands.NewResolveCmd())
 	rootCmd.AddCommand(commands.NewShellInitCmd())
+	rootCmd.AddCommand(commands.NewFocusCmd())
 }
 
 var version = domain.Version
