@@ -26,9 +26,12 @@ func unmarshalHookCommand(raw interface{}) (domain.HookCommand, error) {
 
 	h := domain.HookCommand{Cmd: cmd}
 
-	cwd, ok := table["cwd"].(string)
-	if ok {
+	if cwd, ok := table["cwd"].(string); ok {
 		h.Cwd = cwd
+	}
+
+	if cont, ok := table["continue_on_error"].(bool); ok {
+		h.ContinueOnError = cont
 	}
 
 	return h, nil

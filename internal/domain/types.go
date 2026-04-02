@@ -55,10 +55,11 @@ const (
 	AgentNone       AgentType = "none"
 )
 
-// HookCommand represents a hook entry — either a simple command string or a {cmd, cwd} pair.
+// HookCommand represents a hook entry — either a simple command string or a {cmd, cwd} object.
 type HookCommand struct {
-	Cmd string `toml:"cmd"`
-	Cwd string `toml:"cwd"`
+	Cmd             string `toml:"cmd"`
+	Cwd             string `toml:"cwd"`
+	ContinueOnError bool   `toml:"continue_on_error"`
 }
 
 // ProjectConfig maps to .wtm.toml (project-level configuration).

@@ -83,6 +83,12 @@ func Create(params CreateParams) (CreateResult, error) {
 		if err := hooks.RunHooks(hooks.RunHooksParams{
 			Hooks:   params.Config.Project.Hooks.OnCreate,
 			WorkDir: wtPath,
+			Vars: hooks.TemplateVars{
+				Worktree:   wtPath,
+				Branch:     params.Branch,
+				Root:       mainPath,
+				FromBranch: params.FromBranch,
+			},
 		}); err != nil {
 			return CreateResult{}, fmt.Errorf("on_create hooks: %w", err)
 		}

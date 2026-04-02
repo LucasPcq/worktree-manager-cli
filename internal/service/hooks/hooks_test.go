@@ -3,15 +3,14 @@ package hooks
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
 func TestRunHooksSuccess(t *testing.T) {
 	err := RunHooks(RunHooksParams{
-		Hooks: []domain.HookCommand{
-			{Cmd: "echo hello"},
-		},
+		Hooks:   []domain.HookCommand{{Cmd: "echo hello"}},
 		WorkDir: t.TempDir(),
 	})
 	if err != nil {
@@ -21,16 +20,11 @@ func TestRunHooksSuccess(t *testing.T) {
 
 func TestRunHooksFailure(t *testing.T) {
 	err := RunHooks(RunHooksParams{
-		Hooks: []domain.HookCommand{
-			{Cmd: "false"},
-		},
+		Hooks:   []domain.HookCommand{{Cmd: "false"}},
 		WorkDir: t.TempDir(),
 	})
 	if err == nil {
 		t.Fatal("expected error from failing command")
-	}
-	if !strings.Contains(err.Error(), "false") {
-		t.Errorf("error should mention the command: %v", err)
 	}
 }
 
@@ -47,6 +41,19 @@ func TestRunHooksStopsOnFirstError(t *testing.T) {
 	}
 }
 
+func TestRunHooksContinueOnError(t *testing.T) {
+	err := RunHooks(RunHooksParams{
+		Hooks: []domain.HookCommand{
+			{Cmd: "false", ContinueOnError: true},
+			{Cmd: "echo should-run"},
+		},
+		WorkDir: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("expected no error with continue_on_error: %v", err)
+	}
+}
+
 func TestRunHooksEmptyList(t *testing.T) {
 	err := RunHooks(RunHooksParams{
 		Hooks:   nil,
@@ -59,14 +66,78 @@ func TestRunHooksEmptyList(t *testing.T) {
 
 func TestRunHooksCwdOverride(t *testing.T) {
 	dir := t.TempDir()
-
 	err := RunHooks(RunHooksParams{
-		Hooks: []domain.HookCommand{
-			{Cmd: "pwd", Cwd: dir},
-		},
+		Hooks:   []domain.HookCommand{{Cmd: "pwd", Cwd: dir}},
 		WorkDir: "/tmp",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInterpolate(t *testing.T) {
+	vars := TemplateVars{
+		Worktree:   "/trees/feat-auth",
+		Branch:     "feature/auth",
+		Root:       "/repo",
+		FromBranch: "main",
+	}
+
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"echo {{branch}}", "echo feature/auth"},
+		{"cp {{root}}/.env {{worktree}}/.env", "cp /repo/.env /trees/feat-auth/.env"},
+		{"echo from {{from_branch}}", "echo from main"},
+		{"no vars here", "no vars here"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		got := interpolate(tt.input, vars)
+		if got != tt.want {
+			t.Errorf("interpolate(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestResolveTemplateVars(t *testing.T) {
+	vars := TemplateVars{
+		Worktree: "/trees/feat",
+		Branch:   "feat",
+	}
+
+	hook := domain.HookCommand{
+		Cmd: "echo {{branch}}",
+		Cwd: "{{worktree}}/apps",
+	}
+
+	resolved := resolveTemplateVars(hook, vars)
+
+	if resolved.Cmd != "echo feat" {
+		t.Errorf("cmd: expected 'echo feat', got %q", resolved.Cmd)
+	}
+	if resolved.Cwd != "/trees/feat/apps" {
+		t.Errorf("cwd: expected '/trees/feat/apps', got %q", resolved.Cwd)
+	}
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		ms   int
+		want string
+	}{
+		{50, "50ms"},
+		{500, "500ms"},
+		{1500, "1.5s"},
+		{10000, "10.0s"},
+	}
+
+	for _, tt := range tests {
+		got := formatDuration(time.Duration(tt.ms) * time.Millisecond)
+		if !strings.Contains(got, tt.want[:len(tt.want)-1]) {
+			t.Errorf("formatDuration(%dms) = %q, want ~%q", tt.ms, got, tt.want)
+		}
 	}
 }

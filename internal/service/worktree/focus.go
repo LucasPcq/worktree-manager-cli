@@ -37,10 +37,19 @@ func Focus(params FocusParams) error {
 		return fmt.Errorf("on_blur: %w", err)
 	}
 
+	mainPath, _ := infra.FindMainWorktreePath(infra.FindMainWorktreeParams{
+		ProjectDir: params.ProjectDir,
+	})
+
 	if len(params.Config.Project.Hooks.OnFocus) > 0 {
 		if err := hooks.RunHooks(hooks.RunHooksParams{
 			Hooks:   params.Config.Project.Hooks.OnFocus,
 			WorkDir: wt.Path,
+			Vars: hooks.TemplateVars{
+				Worktree: wt.Path,
+				Branch:   params.Branch,
+				Root:     mainPath,
+			},
 		}); err != nil {
 			return fmt.Errorf("on_focus: %w", err)
 		}
@@ -84,5 +93,9 @@ func runBlurIfActive(current state.State, cfg domain.Config) error {
 	return hooks.RunHooks(hooks.RunHooksParams{
 		Hooks:   cfg.Project.Hooks.OnBlur,
 		WorkDir: current.ActiveWorktreePath,
+		Vars: hooks.TemplateVars{
+			Worktree: current.ActiveWorktreePath,
+			Branch:   current.ActiveWorktree,
+		},
 	})
 }
