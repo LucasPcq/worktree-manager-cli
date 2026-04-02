@@ -17,15 +17,13 @@ const bashZshTemplate = `wtm() {
       cd "$dir" || return 1
     fi
   elif [ "$1" = "clean" ]; then
+    local root
+    root="$(git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')"
     command wtm "$@"
     if [ ! -d "$PWD" ]; then
-      local root
-      root="$(git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')"
       if [ -n "$root" ] && [ -d "$root" ]; then
         echo "Worktree removed. Returning to $root"
         cd "$root"
-      else
-        cd ~
       fi
     fi
   else
@@ -41,14 +39,12 @@ const fishTemplate = `function wtm
       cd "$dir"
     end
   else if test "$argv[1]" = "clean"
+    set root (git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')
     command wtm $argv
     if not test -d "$PWD"
-      set root (git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')
       if test -n "$root" -a -d "$root"
         echo "Worktree removed. Returning to $root"
         cd "$root"
-      else
-        cd ~
       end
     end
   else
