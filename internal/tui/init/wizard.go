@@ -3,6 +3,7 @@ package init
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/charmbracelet/huh"
 
@@ -64,35 +65,49 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		agentChoice    string
 	)
 
-	// Build env file options with pre-selection
 	envOptions := buildEnvOptions(detection.EnvFiles)
 
-	// Build groups
-	worktreeGroup := huh.NewGroup(
-		huh.NewInput().
-			Title("Worktree directory").
-			Description("Where to store worktrees (relative to repo root)").
-			Placeholder(domain.DefaultBasePath).
-			Value(&basePath),
+	groups := []*huh.Group{
+		// Worktrees
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Worktree directory").
+				Description("Where to store worktrees (relative to repo root)").
+				Placeholder(domain.DefaultBasePath).
+				Value(&basePath),
+			huh.NewInput().
+				Title("Base branch").
+				Description("Default branch for new worktrees").
+				Placeholder(detection.BaseBranch).
+				Value(&baseBranch),
+		),
+		// Env
+		buildEnvGroup(envOptions, &envCopyFiles, &envStrategy),
+		// Hooks — install command
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Install command").
+				Description("Command to run after creating a worktree (leave empty to skip)").
+				Placeholder(detection.InstallCommand).
+				Value(&installCommand),
+		),
+	}
 
-		huh.NewInput().
-			Title("Base branch").
-			Description("Default branch for new worktrees").
-			Placeholder(detection.BaseBranch).
-			Value(&baseBranch),
-	)
+	// Docker detection
+	var dockerComposeFile string
+	var enableDockerHooks bool
+	if len(detection.DockerComposeFiles) > 0 {
+		groups = append(groups, buildDockerGroup(detection.DockerComposeFiles, &dockerComposeFile, &enableDockerHooks))
+	}
 
-	envGroup := buildEnvGroup(envOptions, &envCopyFiles, &envStrategy)
+	// Monorepo detection
+	var monorepoPackages []string
+	if len(detection.MonorepoPackages) > 0 {
+		groups = append(groups, buildMonorepoGroup(detection.MonorepoPackages, detection.InstallCommand, &monorepoPackages))
+	}
 
-	hooksGroup := huh.NewGroup(
-		huh.NewInput().
-			Title("Install command").
-			Description("Command to run after creating a worktree (leave empty to skip)").
-			Placeholder(detection.InstallCommand).
-			Value(&installCommand),
-	)
-
-	agentGroup := huh.NewGroup(
+	// Agent
+	groups = append(groups, huh.NewGroup(
 		huh.NewSelect[string]().
 			Title("Project AI agent").
 			Description("Override global default, or inherit").
@@ -103,9 +118,9 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 				huh.NewOption("None", string(domain.AgentNone)),
 			).
 			Value(&agentChoice),
-	)
+	))
 
-	form := huh.NewForm(worktreeGroup, envGroup, hooksGroup, agentGroup)
+	form := huh.NewForm(groups...)
 
 	if err := form.Run(); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
@@ -131,6 +146,23 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		EnvCopyFiles:   envCopyFiles,
 		EnvStrategy:    domain.EnvStrategy(envStrategy),
 		InstallCommand: installCommand,
+	}
+
+	// Docker hooks
+	if enableDockerHooks && dockerComposeFile != "" {
+		focusCmd, blurCmd := dockerHookCommands(dockerComposeFile)
+		answers.OnFocusCommands = []string{focusCmd}
+		answers.OnBlurCommands = []string{blurCmd}
+	}
+
+	// Monorepo hooks
+	if len(monorepoPackages) > 0 && installCommand != "" {
+		for _, pkg := range monorepoPackages {
+			answers.OnCreateExtra = append(answers.OnCreateExtra, domain.HookCommand{
+				Cmd: installCommand,
+				Cwd: pkg,
+			})
+		}
 	}
 
 	if agentChoice != "inherit" {
@@ -173,4 +205,56 @@ func buildEnvGroup(envOptions []huh.Option[string], envCopyFiles *[]string, envS
 	}
 
 	return huh.NewGroup(fields...)
+}
+
+func buildDockerGroup(files []string, selectedFile *string, enableHooks *bool) *huh.Group {
+	fields := []huh.Field{}
+
+	if len(files) > 1 {
+		options := make([]huh.Option[string], 0, len(files))
+		for _, f := range files {
+			options = append(options, huh.NewOption(f, f))
+		}
+		fields = append(fields,
+			huh.NewSelect[string]().
+				Title("Docker Compose file").
+				Description("Multiple docker-compose files detected — select one").
+				Options(options...).
+				Value(selectedFile),
+		)
+	} else {
+		*selectedFile = files[0]
+	}
+
+	fields = append(fields,
+		huh.NewConfirm().
+			Title("Docker hooks").
+			Description("Add docker-compose up/down as on_focus/on_blur hooks?").
+			Value(enableHooks),
+	)
+
+	return huh.NewGroup(fields...)
+}
+
+func buildMonorepoGroup(packages []string, installCmd string, selectedPackages *[]string) *huh.Group {
+	options := make([]huh.Option[string], 0, len(packages))
+	for _, pkg := range packages {
+		options = append(options, huh.NewOption(pkg, pkg).Selected(true))
+	}
+
+	return huh.NewGroup(
+		huh.NewMultiSelect[string]().
+			Title("Monorepo packages").
+			Description(fmt.Sprintf("Run '%s' in selected packages on worktree creation", installCmd)).
+			Options(options...).
+			Value(selectedPackages),
+	)
+}
+
+func dockerHookCommands(composeFile string) (string, string) {
+	if composeFile == "docker-compose.yml" || composeFile == "docker-compose.yaml" {
+		return "docker-compose up -d", "docker-compose down --remove-orphans"
+	}
+	return fmt.Sprintf("docker-compose -f %s up -d", composeFile),
+		fmt.Sprintf("docker-compose -f %s down --remove-orphans", composeFile)
 }

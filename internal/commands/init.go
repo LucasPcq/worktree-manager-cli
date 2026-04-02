@@ -33,7 +33,12 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	return ensureProjectConfig(cmd, dir)
+	if detect.ProjectConfigExists(dir) {
+		fmt.Fprintln(cmd.OutOrStdout(), ".wtm.toml already exists. Delete it or edit it manually to reconfigure.")
+		return nil
+	}
+
+	return createProjectConfig(cmd, dir)
 }
 
 func ensureGlobalConfig(cmd *cobra.Command) error {
@@ -64,26 +69,11 @@ func ensureGlobalConfig(cmd *cobra.Command) error {
 	return nil
 }
 
-func ensureProjectConfig(cmd *cobra.Command, dir string) error {
-	if detect.ProjectConfigExists(dir) {
-		fmt.Fprintln(cmd.OutOrStdout(), domain.MsgConfigExists)
-		return nil
-	}
-
+func createProjectConfig(cmd *cobra.Command, dir string) error {
 	fmt.Fprintln(cmd.OutOrStdout(), "No .wtm.toml found. Let's initialize this project.")
 	fmt.Fprintln(cmd.OutOrStdout())
 
-	baseBranch := detect.BaseBranch(dir)
-	envFiles := detect.EnvFiles(dir)
-	pm := detect.PackageManager(dir)
-	installCmd := detect.InstallCommand(pm)
-
-	detection := domain.InitDetectionResult{
-		BaseBranch:     baseBranch,
-		EnvFiles:       envFiles,
-		PackageManager: pm,
-		InstallCommand: installCmd,
-	}
+	detection := buildDetectionResult(dir)
 
 	answers, err := initwizard.RunProjectWizard(detection)
 	if errors.Is(err, domain.ErrUserAborted) {
@@ -101,6 +91,18 @@ func ensureProjectConfig(cmd *cobra.Command, dir string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "\n✓ Created %s\n", domain.ConfigFileName)
-
 	return nil
 }
+
+func buildDetectionResult(dir string) domain.InitDetectionResult {
+	pm := detect.PackageManager(dir)
+	return domain.InitDetectionResult{
+		BaseBranch:         detect.BaseBranch(dir),
+		EnvFiles:           detect.EnvFiles(dir),
+		PackageManager:     pm,
+		InstallCommand:     detect.InstallCommand(pm),
+		DockerComposeFiles: detect.DockerComposeFiles(dir),
+		MonorepoPackages:   detect.PnpmWorkspacePackages(dir),
+	}
+}
+

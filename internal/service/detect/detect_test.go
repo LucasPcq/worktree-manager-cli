@@ -176,3 +176,76 @@ func TestBaseBranchFallback(t *testing.T) {
 		t.Errorf("expected fallback %s, got %s", domain.DefaultBaseBranch, branch)
 	}
 }
+
+func TestDockerComposeFilesNone(t *testing.T) {
+	dir := t.TempDir()
+	files := DockerComposeFiles(dir)
+	if len(files) != 0 {
+		t.Errorf("expected 0, got %d: %v", len(files), files)
+	}
+}
+
+func TestDockerComposeFilesSingle(t *testing.T) {
+	dir := t.TempDir()
+	touchFile(t, filepath.Join(dir, "docker-compose.yml"))
+
+	files := DockerComposeFiles(dir)
+	if len(files) != 1 || files[0] != "docker-compose.yml" {
+		t.Errorf("expected [docker-compose.yml], got %v", files)
+	}
+}
+
+func TestDockerComposeFilesMultiple(t *testing.T) {
+	dir := t.TempDir()
+	touchFile(t, filepath.Join(dir, "docker-compose.yml"))
+	touchFile(t, filepath.Join(dir, "docker-compose.dev.yml"))
+	touchFile(t, filepath.Join(dir, "docker-compose.prod.yaml"))
+
+	files := DockerComposeFiles(dir)
+	if len(files) != 3 {
+		t.Errorf("expected 3, got %d: %v", len(files), files)
+	}
+}
+
+func TestPnpmWorkspacePackagesNone(t *testing.T) {
+	dir := t.TempDir()
+	pkgs := PnpmWorkspacePackages(dir)
+	if pkgs != nil {
+		t.Errorf("expected nil, got %v", pkgs)
+	}
+}
+
+func TestPnpmWorkspacePackages(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create pnpm-workspace.yaml
+	ws := "packages:\n  - \"apps/*\"\n  - \"packages/*\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "pnpm-workspace.yaml"), []byte(ws), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create matching directories
+	os.MkdirAll(filepath.Join(dir, "apps", "web"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "apps", "api"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "packages", "shared"), 0o755)
+
+	pkgs := PnpmWorkspacePackages(dir)
+	if len(pkgs) != 3 {
+		t.Fatalf("expected 3 packages, got %d: %v", len(pkgs), pkgs)
+	}
+}
+
+func TestParsePnpmWorkspace(t *testing.T) {
+	content := "packages:\n  - 'apps/*'\n  - \"packages/*\"\n  - '!tests'\n"
+	patterns := parsePnpmWorkspace(content)
+
+	if len(patterns) != 2 {
+		t.Fatalf("expected 2 patterns (excluding negation), got %d: %v", len(patterns), patterns)
+	}
+	if patterns[0] != "apps/*" {
+		t.Errorf("expected apps/*, got %s", patterns[0])
+	}
+	if patterns[1] != "packages/*" {
+		t.Errorf("expected packages/*, got %s", patterns[1])
+	}
+}

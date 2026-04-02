@@ -134,10 +134,12 @@ const (
 
 // InitDetectionResult holds all auto-detected values for repo init.
 type InitDetectionResult struct {
-	BaseBranch     string
-	EnvFiles       []string
-	PackageManager PackageManager
-	InstallCommand string
+	BaseBranch         string
+	EnvFiles           []string
+	PackageManager     PackageManager
+	InstallCommand     string
+	DockerComposeFiles []string
+	MonorepoPackages   []string
 }
 
 // InitGlobalAnswers holds the wizard answers for global config setup.
@@ -148,13 +150,16 @@ type InitGlobalAnswers struct {
 
 // InitProjectAnswers holds the wizard answers for project config setup.
 type InitProjectAnswers struct {
-	BasePath       string
-	BaseBranch     string
-	EnvCopyFiles   []string
-	EnvStrategy    EnvStrategy
-	InstallCommand string
-	Agent          AgentType
-	AgentOverride  bool
+	BasePath        string
+	BaseBranch      string
+	EnvCopyFiles    []string
+	EnvStrategy     EnvStrategy
+	InstallCommand  string
+	OnCreateExtra   []HookCommand
+	OnFocusCommands []string
+	OnBlurCommands  []string
+	Agent           AgentType
+	AgentOverride   bool
 }
 
 // WorktreeMetadata is written to .wtm/meta.json inside each created worktree.

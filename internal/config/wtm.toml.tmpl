@@ -28,13 +28,24 @@ on_create = [
 {{- if .InstallCommand }}
   "{{ .InstallCommand }}",
 {{- end }}
+{{- range .OnCreateExtra }}
+  { cmd = "{{ .Cmd }}", cwd = "{{ .Cwd }}" },
+{{- end }}
 ]
 
 # Commands run when switching to this worktree
-on_focus = []
+on_focus = [
+{{- range .OnFocusCommands }}
+  "{{ . }}",
+{{- end }}
+]
 
 # Commands run when leaving this worktree
-on_blur = []
+on_blur = [
+{{- range .OnBlurCommands }}
+  "{{ . }}",
+{{- end }}
+]
 
 [github]
 auto_draft = false
