@@ -16,9 +16,9 @@ type ListBranchesParams struct {
 func ListLocalBranches(params ListBranchesParams) ([]string, error) {
 	cmd := exec.Command("git", "branch", "--format=%(refname:short)")
 	cmd.Dir = params.ProjectDir
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("git branch: %w", err)
+		return nil, fmt.Errorf("git branch: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
 	var branches []string

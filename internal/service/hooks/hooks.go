@@ -31,8 +31,6 @@ type RunHooksParams struct {
 // Stops on first error unless the hook has ContinueOnError set.
 // Returns the first non-continued error, or nil if all hooks passed.
 func RunHooks(params RunHooksParams) error {
-	var firstErr error
-
 	for _, hook := range params.Hooks {
 		resolved := resolveTemplateVars(hook, params.Vars)
 		err := runSingleHook(resolved, params.WorkDir)
@@ -42,10 +40,7 @@ func RunHooks(params RunHooksParams) error {
 		if resolved.ContinueOnError {
 			continue
 		}
-		if firstErr == nil {
-			firstErr = err
-		}
-		return firstErr
+		return err
 	}
 
 	return nil

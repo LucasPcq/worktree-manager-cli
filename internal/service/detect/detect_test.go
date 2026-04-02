@@ -94,11 +94,11 @@ func TestInstallCommand(t *testing.T) {
 		pm   domain.PackageManager
 		want string
 	}{
-		{domain.PkgManagerPnpm, domain.InstallCmdPnpm},
-		{domain.PkgManagerNpm, domain.InstallCmdNpm},
-		{domain.PkgManagerYarn, domain.InstallCmdYarn},
-		{domain.PkgManagerGo, domain.InstallCmdGo},
-		{domain.PkgManagerPip, domain.InstallCmdPip},
+		{domain.PkgManagerPnpm, domain.InstallCommandPnpm},
+		{domain.PkgManagerNpm, domain.InstallCommandNpm},
+		{domain.PkgManagerYarn, domain.InstallCommandYarn},
+		{domain.PkgManagerGo, domain.InstallCommandGo},
+		{domain.PkgManagerPip, domain.InstallCommandPip},
 		{domain.PkgManagerNone, ""},
 	}
 

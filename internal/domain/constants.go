@@ -59,11 +59,11 @@ const (
 	LockfilePip  = "requirements.txt"
 
 	// Install commands per package manager.
-	InstallCmdPnpm = "pnpm install"
-	InstallCmdNpm  = "npm install"
-	InstallCmdYarn = "yarn install"
-	InstallCmdGo   = "go mod download"
-	InstallCmdPip  = "pip install -r requirements.txt"
+	InstallCommandPnpm = "pnpm install"
+	InstallCommandNpm  = "npm install"
+	InstallCommandYarn = "yarn install"
+	InstallCommandGo   = "go mod download"
+	InstallCommandPip  = "pip install -r requirements.txt"
 
 	// Flag names.
 	FlagFrom    = "from"

@@ -24,14 +24,14 @@ func FormatWorktreeList(params FormatWorktreeListParams) string {
 	rows := buildRows(params.Statuses, params.ActiveBranch)
 	widths := columnWidths(rows)
 
-	var sb strings.Builder
+	var builder strings.Builder
 	for _, row := range rows {
 		line := formatRow(row, widths)
-		sb.WriteString(line)
-		sb.WriteString("\n")
+		builder.WriteString(line)
+		builder.WriteString("\n")
 	}
 
-	return sb.String()
+	return builder.String()
 }
 
 type row struct {

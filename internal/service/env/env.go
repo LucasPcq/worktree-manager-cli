@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 )
 
 // CopyEnvFilesParams holds inputs for provisioning .env files.
@@ -90,6 +91,5 @@ func copyFile(src string, dst string) error {
 }
 
 func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+	return infra.FileExists(path)
 }

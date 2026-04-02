@@ -20,9 +20,9 @@ func PackageManager(projectDir string) domain.PackageManager {
 		{domain.LockfilePip, domain.PkgManagerPip},
 	}
 
-	for _, c := range checks {
-		if fileExists(filepath.Join(projectDir, c.lockfile)) {
-			return c.pm
+	for _, check := range checks {
+		if fileExists(filepath.Join(projectDir, check.lockfile)) {
+			return check.pm
 		}
 	}
 
@@ -33,15 +33,15 @@ func PackageManager(projectDir string) domain.PackageManager {
 func InstallCommand(pm domain.PackageManager) string {
 	switch pm {
 	case domain.PkgManagerPnpm:
-		return domain.InstallCmdPnpm
+		return domain.InstallCommandPnpm
 	case domain.PkgManagerNpm:
-		return domain.InstallCmdNpm
+		return domain.InstallCommandNpm
 	case domain.PkgManagerYarn:
-		return domain.InstallCmdYarn
+		return domain.InstallCommandYarn
 	case domain.PkgManagerGo:
-		return domain.InstallCmdGo
+		return domain.InstallCommandGo
 	case domain.PkgManagerPip:
-		return domain.InstallCmdPip
+		return domain.InstallCommandPip
 	default:
 		return ""
 	}

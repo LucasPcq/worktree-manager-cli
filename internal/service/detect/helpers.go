@@ -1,8 +1,7 @@
 package detect
 
-import "os"
+import "github.com/LucasPcq/wtm/internal/infra"
 
 func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+	return infra.FileExists(path)
 }

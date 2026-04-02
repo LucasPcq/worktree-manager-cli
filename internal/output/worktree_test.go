@@ -88,3 +88,73 @@ func TestPrintableLen(t *testing.T) {
 		t.Error("ANSI string length wrong")
 	}
 }
+
+func TestFormatTagParentOnly(t *testing.T) {
+	got := formatTag(true, false)
+	if !strings.Contains(got, "(parent)") {
+		t.Error("expected output to contain '(parent)'")
+	}
+	if strings.Contains(got, "active") {
+		t.Error("expected output to NOT contain 'active'")
+	}
+}
+
+func TestFormatTagActiveOnly(t *testing.T) {
+	got := formatTag(false, true)
+	if !strings.Contains(got, "active") {
+		t.Error("expected output to contain 'active'")
+	}
+	if strings.Contains(got, "(parent)") {
+		t.Error("expected output to NOT contain '(parent)'")
+	}
+}
+
+func TestFormatTagBoth(t *testing.T) {
+	got := formatTag(true, true)
+	if !strings.Contains(got, "(parent)") {
+		t.Error("expected output to contain '(parent)'")
+	}
+	if !strings.Contains(got, "active") {
+		t.Error("expected output to contain 'active'")
+	}
+}
+
+func TestFormatTagNeither(t *testing.T) {
+	got := formatTag(false, false)
+	if got != "" {
+		t.Errorf("expected empty string, got %q", got)
+	}
+}
+
+func TestFormatAheadZero(t *testing.T) {
+	got := formatAhead(0)
+	if got != "" {
+		t.Errorf("expected empty string, got %q", got)
+	}
+}
+
+func TestFormatAheadOne(t *testing.T) {
+	got := formatAhead(1)
+	if !strings.Contains(got, "1 commit ahead") {
+		t.Errorf("expected '1 commit ahead' (singular), got %q", got)
+	}
+}
+
+func TestFormatAheadMultiple(t *testing.T) {
+	got := formatAhead(5)
+	if !strings.Contains(got, "5 commits ahead") {
+		t.Errorf("expected '5 commits ahead' (plural), got %q", got)
+	}
+}
+
+func TestPrintableLenEmpty(t *testing.T) {
+	if printableLen("") != 0 {
+		t.Error("expected printableLen of empty string to be 0")
+	}
+}
+
+func TestAnsiOverheadPlainString(t *testing.T) {
+	if ansiOverhead("hello world") != 0 {
+		t.Error("expected ansiOverhead of plain string to be 0")
+	}
+}

@@ -30,8 +30,8 @@ func List(params ListParams) ([]domain.WorktreeStatus, error) {
 	baseBranch := params.Config.Project.Worktrees.BaseBranch
 	statuses := make([]domain.WorktreeStatus, 0, len(gitWorktrees))
 
-	for _, gw := range gitWorktrees {
-		status := buildStatus(gw, baseBranch)
+	for _, gitWorktree := range gitWorktrees {
+		status := buildStatus(gitWorktree, baseBranch)
 		statuses = append(statuses, status)
 	}
 
@@ -40,25 +40,25 @@ func List(params ListParams) ([]domain.WorktreeStatus, error) {
 	return statuses, nil
 }
 
-func buildStatus(gw infra.GitWorktree, baseBranch string) domain.WorktreeStatus {
-	dirty, _ := infra.IsDirty(infra.IsDirtyParams{WorktreePath: gw.Path})
+func buildStatus(gitWorktree infra.GitWorktree, baseBranch string) domain.WorktreeStatus {
+	dirty, _ := infra.IsDirty(infra.IsDirtyParams{WorktreePath: gitWorktree.Path})
 
 	ahead := 0
-	if !gw.IsMain {
+	if !gitWorktree.IsMain {
 		ahead, _ = infra.CommitsAhead(infra.CommitsAheadParams{
-			WorktreePath: gw.Path,
+			WorktreePath: gitWorktree.Path,
 			BaseBranch:   baseBranch,
-			Branch:       gw.Branch,
+			Branch:       gitWorktree.Branch,
 		})
 	}
 
 	return domain.WorktreeStatus{
-		Branch:       gw.Branch,
-		Path:         gw.Path,
-		IsParent:     gw.IsMain,
+		Branch:       gitWorktree.Branch,
+		Path:         gitWorktree.Path,
+		IsParent:     gitWorktree.IsMain,
 		IsDirty:      dirty,
 		CommitsAhead: ahead,
-		CreatedAt:    worktreeCreatedAt(gw.Path),
+		CreatedAt:    worktreeCreatedAt(gitWorktree.Path),
 	}
 }
 

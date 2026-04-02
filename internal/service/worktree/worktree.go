@@ -33,15 +33,15 @@ type CreateResult struct {
 // Create orchestrates worktree creation: git worktree add, env copy, metadata, hooks.
 func Create(params CreateParams) (CreateResult, error) {
 	sanitized := sanitizeBranchName(params.Branch)
-	wtPath := filepath.Join(params.ProjectDir, params.Config.Project.Worktrees.BasePath, sanitized)
+	worktreePath := filepath.Join(params.ProjectDir, params.Config.Project.Worktrees.BasePath, sanitized)
 
-	if _, err := os.Stat(wtPath); err == nil {
-		return CreateResult{}, fmt.Errorf("%w: %s", domain.ErrWorktreePathExists, wtPath)
+	if _, err := os.Stat(worktreePath); err == nil {
+		return CreateResult{}, fmt.Errorf("%w: %s", domain.ErrWorktreePathExists, worktreePath)
 	}
 
 	if err := infra.CreateWorktree(infra.CreateWorktreeParams{
 		ProjectDir: params.ProjectDir,
-		Path:       wtPath,
+		Path:       worktreePath,
 		Branch:     params.Branch,
 		FromBranch: params.FromBranch,
 	}); err != nil {
@@ -58,14 +58,15 @@ func Create(params CreateParams) (CreateResult, error) {
 	}
 
 	if len(params.Config.Project.Env.CopyFiles) > 0 {
-		if err := env.CopyEnvFiles(env.CopyEnvFilesParams{
+		copyErr := env.CopyEnvFiles(env.CopyEnvFilesParams{
 			Strategy:           strategy,
 			CopyFiles:          params.Config.Project.Env.CopyFiles,
-			TargetDir:          wtPath,
+			TargetDir:          worktreePath,
 			MainWorktreePath:   mainPath,
 			ParentWorktreePath: params.ProjectDir,
-		}); err != nil {
-			return CreateResult{}, fmt.Errorf("copy env files: %w", err)
+		})
+		if copyErr != nil {
+			return CreateResult{}, fmt.Errorf("copy env files: %w", copyErr)
 		}
 	}
 
@@ -75,27 +76,28 @@ func Create(params CreateParams) (CreateResult, error) {
 		EnvStrategy:  strategy,
 	}
 
-	if err := writeMetadata(wtPath, metadata); err != nil {
+	if err := writeMetadata(worktreePath, metadata); err != nil {
 		return CreateResult{}, err
 	}
 
 	if len(params.Config.Project.Hooks.OnCreate) > 0 {
-		if err := hooks.RunHooks(hooks.RunHooksParams{
+		hookErr := hooks.RunHooks(hooks.RunHooksParams{
 			Hooks:   params.Config.Project.Hooks.OnCreate,
-			WorkDir: wtPath,
+			WorkDir: worktreePath,
 			Vars: hooks.TemplateVars{
-				Worktree:   wtPath,
+				Worktree:   worktreePath,
 				Branch:     params.Branch,
 				Root:       mainPath,
 				FromBranch: params.FromBranch,
 			},
-		}); err != nil {
-			return CreateResult{}, fmt.Errorf("on_create hooks: %w", err)
+		})
+		if hookErr != nil {
+			return CreateResult{}, fmt.Errorf("on_create hooks: %w", hookErr)
 		}
 	}
 
 	return CreateResult{
-		Path:     wtPath,
+		Path:     worktreePath,
 		Metadata: metadata,
 	}, nil
 }
@@ -112,8 +114,8 @@ func resolveEnvStrategy(params CreateParams) domain.EnvStrategy {
 	return params.Config.Project.Env.Strategy
 }
 
-func writeMetadata(wtPath string, metadata domain.WorktreeMetadata) error {
-	metaDir := filepath.Join(wtPath, domain.MetaDirName)
+func writeMetadata(worktreePath string, metadata domain.WorktreeMetadata) error {
+	metaDir := filepath.Join(worktreePath, domain.MetaDirName)
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", metaDir, err)
 	}
