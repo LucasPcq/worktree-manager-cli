@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -15,6 +16,7 @@ type FocusParams struct {
 	ProjectDir string
 	Branch     string
 	Config     domain.Config
+	Output     io.Writer // if nil, hooks output goes to stderr. Set to capture (TUI mode).
 }
 
 // Focus switches the active environment to the target worktree.
@@ -37,7 +39,7 @@ func Focus(params FocusParams) error {
 		ProjectDir: params.ProjectDir,
 	})
 
-	if err := runBlurIfActive(current, params.Config, mainPath); err != nil {
+	if err := runBlurIfActive(current, params.Config, mainPath, params.Output); err != nil {
 		return fmt.Errorf("on_blur: %w", err)
 	}
 
@@ -45,6 +47,7 @@ func Focus(params FocusParams) error {
 		if err := hooks.RunHooks(hooks.RunHooksParams{
 			Hooks:   params.Config.Project.Hooks.OnFocus,
 			WorkDir: wt.Path,
+			Output:  params.Output,
 			Vars: hooks.TemplateVars{
 				Worktree: wt.Path,
 				Branch:   params.Branch,
@@ -75,14 +78,14 @@ func Unfocus(params UnfocusParams) error {
 		return fmt.Errorf("load state: %w", err)
 	}
 
-	if err := runBlurIfActive(current, params.Config, params.ProjectDir); err != nil {
+	if err := runBlurIfActive(current, params.Config, params.ProjectDir, nil); err != nil {
 		return fmt.Errorf("on_blur: %w", err)
 	}
 
 	return state.Clear()
 }
 
-func runBlurIfActive(current state.State, cfg domain.Config, projectDir string) error {
+func runBlurIfActive(current state.State, cfg domain.Config, projectDir string, output io.Writer) error {
 	if current.ActiveWorktreePath == "" {
 		return nil
 	}
@@ -99,6 +102,7 @@ func runBlurIfActive(current state.State, cfg domain.Config, projectDir string) 
 	return hooks.RunHooks(hooks.RunHooksParams{
 		Hooks:   cfg.Project.Hooks.OnBlur,
 		WorkDir: workDir,
+		Output:  output,
 		Vars: hooks.TemplateVars{
 			Worktree: current.ActiveWorktreePath,
 			Branch:   current.ActiveWorktree,
