@@ -17,13 +17,13 @@ import (
 func NewFocusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "focus [branch]",
-		Short: "Switch the active environment",
+		Short: "Switch active worktree and run focus/blur hooks",
 		Long:  "Run on_blur hooks on the current worktree and on_focus hooks on the target.\nWithout arguments, shows an interactive picker.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  runFocus,
 	}
 
-	cmd.Flags().Bool(domain.FlagOff, false, "Stop the active environment and clear state")
+	cmd.Flags().Bool(domain.FlagOff, false, "Run blur hooks on active worktree and clear state")
 
 	return cmd
 }
@@ -45,7 +45,7 @@ func runFocus(cmd *cobra.Command, args []string) error {
 		if err := worktree.Unfocus(worktree.UnfocusParams{Config: cfg}); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "✓ Environment stopped.")
+		fmt.Fprintln(cmd.OutOrStdout(), "✓ Active worktree cleared.")
 		return nil
 	}
 

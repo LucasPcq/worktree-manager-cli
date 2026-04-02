@@ -176,7 +176,7 @@ func buildDockerGroup(files []string, selectedFile *string, enableHooks *bool) *
 	fields = append(fields,
 		huh.NewConfirm().
 			Title("Docker hooks").
-			Description("Add docker-compose up/down as on_focus/on_blur hooks?").
+			Description("Automatically start/stop Docker when switching worktrees?").
 			Value(enableHooks),
 	)
 

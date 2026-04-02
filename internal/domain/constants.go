@@ -45,9 +45,6 @@ const (
 	// DefaultShell is the default shell for integration.
 	DefaultShell = ShellZsh
 
-	// MsgConfigExists is shown when .wtm.toml already exists during init.
-	MsgConfigExists = ".wtm.toml already exists. Re-edit mode coming in a future release."
-
 	// MsgShellInitHint tells the user how to set up shell integration.
 	MsgShellInitHint = "Add this to your shell config:\n\n  eval \"$(wtm shell-init)\""
 
