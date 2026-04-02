@@ -26,3 +26,4 @@ vendor/
 *.dylib
 *.test
 *.out
+.wtm.toml
