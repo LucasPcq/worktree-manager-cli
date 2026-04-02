@@ -1,4 +1,3 @@
-// Package init builds interactive huh forms for the wtm init wizard.
 package init
 
 import (
@@ -9,49 +8,6 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
-
-// RunGlobalWizard presents the global config setup form.
-// Returns ErrUserAborted if the user presses Ctrl+C.
-func RunGlobalWizard() (domain.InitGlobalAnswers, error) {
-	var agent string
-	var shell string
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Default AI agent").
-				Description("Which agent do you use for development?").
-				Options(
-					huh.NewOption("Claude Code", string(domain.AgentClaudeCode)),
-					huh.NewOption("Cursor", string(domain.AgentCursor)),
-					huh.NewOption("None", string(domain.AgentNone)),
-				).
-				Value(&agent),
-
-			huh.NewSelect[string]().
-				Title("Shell").
-				Description("Your primary shell (for shell-init integration)").
-				Options(
-					huh.NewOption("zsh", string(domain.ShellZsh)),
-					huh.NewOption("bash", string(domain.ShellBash)),
-					huh.NewOption("fish", string(domain.ShellFish)),
-				).
-				Value(&shell),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return domain.InitGlobalAnswers{}, domain.ErrUserAborted
-		}
-		return domain.InitGlobalAnswers{}, err
-	}
-
-	return domain.InitGlobalAnswers{
-		Agent: domain.AgentType(agent),
-		Shell: domain.ShellType(shell),
-	}, nil
-}
 
 // RunProjectWizard presents the project init form pre-populated with detection results.
 // Returns ErrUserAborted if the user presses Ctrl+C.
@@ -68,7 +24,6 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 	envOptions := buildEnvOptions(detection.EnvFiles)
 
 	groups := []*huh.Group{
-		// Worktrees
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Worktree directory").
@@ -81,9 +36,7 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 				Placeholder(detection.BaseBranch).
 				Value(&baseBranch),
 		),
-		// Env
 		buildEnvGroup(envOptions, &envCopyFiles, &envStrategy),
-		// Hooks — install command
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Install command").
@@ -93,20 +46,17 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		),
 	}
 
-	// Docker detection
 	var dockerComposeFile string
 	var enableDockerHooks bool
 	if len(detection.DockerComposeFiles) > 0 {
 		groups = append(groups, buildDockerGroup(detection.DockerComposeFiles, &dockerComposeFile, &enableDockerHooks))
 	}
 
-	// Monorepo detection
 	var monorepoPackages []string
 	if len(detection.MonorepoPackages) > 0 {
 		groups = append(groups, buildMonorepoGroup(detection.MonorepoPackages, detection.InstallCommand, &monorepoPackages))
 	}
 
-	// Agent
 	groups = append(groups, huh.NewGroup(
 		huh.NewSelect[string]().
 			Title("Project AI agent").
@@ -129,7 +79,6 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		return domain.InitProjectAnswers{}, err
 	}
 
-	// Apply defaults for empty inputs
 	if basePath == "" {
 		basePath = domain.DefaultBasePath
 	}
@@ -148,14 +97,12 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		InstallCommand: installCommand,
 	}
 
-	// Docker hooks
 	if enableDockerHooks && dockerComposeFile != "" {
 		focusCmd, blurCmd := dockerHookCommands(dockerComposeFile)
 		answers.OnFocusCommands = []string{focusCmd}
 		answers.OnBlurCommands = []string{blurCmd}
 	}
 
-	// Monorepo hooks
 	if len(monorepoPackages) > 0 && installCommand != "" {
 		for _, pkg := range monorepoPackages {
 			answers.OnCreateExtra = append(answers.OnCreateExtra, domain.HookCommand{

@@ -49,3 +49,32 @@ func unmarshalHookCommands(raw []interface{}) ([]domain.HookCommand, error) {
 	}
 	return hooks, nil
 }
+
+type rawHooksConfig struct {
+	OnCreate []interface{} `toml:"on_create"`
+	OnFocus  []interface{} `toml:"on_focus"`
+	OnBlur   []interface{} `toml:"on_blur"`
+}
+
+func decodeHooksConfig(raw rawHooksConfig) (domain.HooksConfig, error) {
+	onCreate, err := unmarshalHookCommands(raw.OnCreate)
+	if err != nil {
+		return domain.HooksConfig{}, fmt.Errorf("on_create: %w", err)
+	}
+
+	onFocus, err := unmarshalHookCommands(raw.OnFocus)
+	if err != nil {
+		return domain.HooksConfig{}, fmt.Errorf("on_focus: %w", err)
+	}
+
+	onBlur, err := unmarshalHookCommands(raw.OnBlur)
+	if err != nil {
+		return domain.HooksConfig{}, fmt.Errorf("on_blur: %w", err)
+	}
+
+	return domain.HooksConfig{
+		OnCreate: onCreate,
+		OnFocus:  onFocus,
+		OnBlur:   onBlur,
+	}, nil
+}
