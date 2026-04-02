@@ -36,20 +36,20 @@ func runFocus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	cfg, ok := loadConfig(cmd, dir)
+	result, ok := loadConfig(cmd, dir)
 	if !ok {
 		return nil
 	}
 
 	if off {
-		if err := worktree.Unfocus(worktree.UnfocusParams{Config: cfg}); err != nil {
+		if err := worktree.Unfocus(worktree.UnfocusParams{ProjectDir: result.ProjectDir, Config: result.Config}); err != nil {
 			return err
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), "✓ Active worktree cleared.")
 		return nil
 	}
 
-	branch, err := resolveFocusBranch(args, dir)
+	branch, err := resolveFocusBranch(args, result.ProjectDir)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserAborted) {
 			return nil
@@ -58,9 +58,9 @@ func runFocus(cmd *cobra.Command, args []string) error {
 	}
 
 	if err := worktree.Focus(worktree.FocusParams{
-		ProjectDir: dir,
+		ProjectDir: result.ProjectDir,
 		Branch:     branch,
-		Config:     cfg,
+		Config:     result.Config,
 	}); err != nil {
 		return err
 	}
@@ -69,12 +69,12 @@ func runFocus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func resolveFocusBranch(args []string, dir string) (string, error) {
+func resolveFocusBranch(args []string, projectDir string) (string, error) {
 	if len(args) > 0 {
 		return args[0], nil
 	}
 
-	worktrees, err := infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: dir})
+	worktrees, err := infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: projectDir})
 	if err != nil {
 		return "", fmt.Errorf("list worktrees: %w", err)
 	}

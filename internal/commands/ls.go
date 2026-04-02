@@ -27,14 +27,14 @@ func runLs(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	cfg, ok := loadConfig(cmd, dir)
+	result, ok := loadConfig(cmd, dir)
 	if !ok {
 		return nil
 	}
 
 	statuses, err := worktree.List(worktree.ListParams{
-		ProjectDir: dir,
-		Config:     cfg,
+		ProjectDir: result.ProjectDir,
+		Config:     result.Config,
 	})
 	if err != nil {
 		return fmt.Errorf("list worktrees: %w", err)

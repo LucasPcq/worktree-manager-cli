@@ -39,7 +39,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	cfg, ok := loadConfig(cmd, dir)
+	result, ok := loadConfig(cmd, dir)
 	if !ok {
 		return nil
 	}
@@ -48,7 +48,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 	envOverride := envFromFlag
 
 	if fromFlag == "" {
-		wizResult, wizErr := runNewWizard(dir, cfg)
+		wizResult, wizErr := runNewWizard(result.ProjectDir, result.Config)
 		if errors.Is(wizErr, domain.ErrUserAborted) {
 			return nil
 		}
@@ -60,7 +60,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 			envOverride = wizResult.EnvFromOverride
 		}
 	} else {
-		branches, listErr := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: dir})
+		branches, listErr := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: result.ProjectDir})
 		if listErr != nil {
 			return fmt.Errorf("list branches: %w", listErr)
 		}
@@ -69,24 +69,24 @@ func runNew(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	result, err := worktree.Create(worktree.CreateParams{
-		ProjectDir:      dir,
+	createResult, err := worktree.Create(worktree.CreateParams{
+		ProjectDir:      result.ProjectDir,
 		Branch:          branch,
 		FromBranch:      fromBranch,
-		Config:          cfg,
+		Config:          result.Config,
 		EnvFromOverride: envOverride,
 	})
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Created worktree %s at %s\n", branch, result.Path)
+	fmt.Fprintf(cmd.OutOrStdout(), "✓ Created worktree %s at %s\n", branch, createResult.Path)
 
 	return nil
 }
 
-func runNewWizard(dir string, cfg domain.Config) (newpicker.WizardResult, error) {
-	branches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: dir})
+func runNewWizard(projectDir string, cfg domain.Config) (newpicker.WizardResult, error) {
+	branches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: projectDir})
 	if err != nil {
 		return newpicker.WizardResult{}, fmt.Errorf("list branches: %w", err)
 	}

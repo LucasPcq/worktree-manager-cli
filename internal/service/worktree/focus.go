@@ -33,13 +33,13 @@ func Focus(params FocusParams) error {
 		return fmt.Errorf("load state: %w", err)
 	}
 
-	if err := runBlurIfActive(current, params.Config); err != nil {
-		return fmt.Errorf("on_blur: %w", err)
-	}
-
 	mainPath, _ := infra.FindMainWorktreePath(infra.FindMainWorktreeParams{
 		ProjectDir: params.ProjectDir,
 	})
+
+	if err := runBlurIfActive(current, params.Config, mainPath); err != nil {
+		return fmt.Errorf("on_blur: %w", err)
+	}
 
 	if len(params.Config.Project.Hooks.OnFocus) > 0 {
 		if err := hooks.RunHooks(hooks.RunHooksParams{
@@ -64,7 +64,8 @@ func Focus(params FocusParams) error {
 
 // UnfocusParams holds inputs for unfocusing (--off).
 type UnfocusParams struct {
-	Config domain.Config
+	ProjectDir string
+	Config     domain.Config
 }
 
 // Unfocus stops the active environment and clears the state.
@@ -74,14 +75,14 @@ func Unfocus(params UnfocusParams) error {
 		return fmt.Errorf("load state: %w", err)
 	}
 
-	if err := runBlurIfActive(current, params.Config); err != nil {
+	if err := runBlurIfActive(current, params.Config, params.ProjectDir); err != nil {
 		return fmt.Errorf("on_blur: %w", err)
 	}
 
 	return state.Clear()
 }
 
-func runBlurIfActive(current state.State, cfg domain.Config) error {
+func runBlurIfActive(current state.State, cfg domain.Config, projectDir string) error {
 	if current.ActiveWorktreePath == "" {
 		return nil
 	}
@@ -90,12 +91,18 @@ func runBlurIfActive(current state.State, cfg domain.Config) error {
 		return nil
 	}
 
+	workDir := current.ActiveWorktreePath
+	if !infra.FileExists(workDir) {
+		workDir = projectDir
+	}
+
 	return hooks.RunHooks(hooks.RunHooksParams{
 		Hooks:   cfg.Project.Hooks.OnBlur,
-		WorkDir: current.ActiveWorktreePath,
+		WorkDir: workDir,
 		Vars: hooks.TemplateVars{
 			Worktree: current.ActiveWorktreePath,
 			Branch:   current.ActiveWorktree,
+			Root:     projectDir,
 		},
 	})
 }

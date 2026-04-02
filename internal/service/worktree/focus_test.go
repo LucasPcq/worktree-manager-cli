@@ -19,7 +19,7 @@ func TestRunBlurIfActive_EmptyState(t *testing.T) {
 		},
 	}
 
-	err := runBlurIfActive(current, cfg)
+	err := runBlurIfActive(current, cfg, t.TempDir())
 	if err != nil {
 		t.Errorf("expected nil error for empty state, got: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestRunBlurIfActive_ActiveStateNoHooks(t *testing.T) {
 		},
 	}
 
-	err := runBlurIfActive(current, cfg)
+	err := runBlurIfActive(current, cfg, t.TempDir())
 	if err != nil {
 		t.Errorf("expected nil error when no blur hooks configured, got: %v", err)
 	}

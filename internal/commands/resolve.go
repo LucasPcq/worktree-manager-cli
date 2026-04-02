@@ -29,10 +29,15 @@ func runResolve(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
+	root, err := projectRoot(dir)
+	if err != nil {
+		return err
+	}
+
 	query := strings.Join(args, " ")
 
 	result, err := worktree.Resolve(worktree.ResolveParams{
-		ProjectDir: dir,
+		ProjectDir: root,
 		Query:      query,
 	})
 	if errors.Is(err, domain.ErrWorktreeNotFound) {

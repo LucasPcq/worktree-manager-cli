@@ -35,12 +35,12 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	cfg, ok := loadConfig(cmd, dir)
+	result, ok := loadConfig(cmd, dir)
 	if !ok {
 		return nil
 	}
 
-	branch, err := resolveBranchArg(args, dir)
+	branch, err := resolveBranchArg(args, result.ProjectDir)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserAborted) {
 			return nil
@@ -49,10 +49,10 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 
 	cleanParams := worktree.CleanParams{
-		ProjectDir: dir,
+		ProjectDir: result.ProjectDir,
 		Branch:     branch,
 		Force:      force,
-		Config:     cfg,
+		Config:     result.Config,
 	}
 
 	if force {
@@ -68,7 +68,7 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	result, err := cleanui.RunConfirm(check)
+	confirmResult, err := cleanui.RunConfirm(check)
 	if errors.Is(err, domain.ErrUserAborted) {
 		fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
 		return nil
@@ -77,15 +77,15 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cleanParams.Force = result.Force
+	cleanParams.Force = confirmResult.Force
 	return doClean(cmd, cleanParams)
 }
 
-func resolveBranchArg(args []string, dir string) (string, error) {
+func resolveBranchArg(args []string, projectDir string) (string, error) {
 	if len(args) > 0 {
 		return args[0], nil
 	}
-	return cleanui.RunWorktreePicker(dir)
+	return cleanui.RunWorktreePicker(projectDir)
 }
 
 func doClean(cmd *cobra.Command, params worktree.CleanParams) error {
