@@ -47,3 +47,9 @@ func focusWorktree(projectDir string, branch string, cfg domain.Config) tea.Cmd 
 	}
 }
 
+func loadDetail(params worktree.DetailParams) tea.Cmd {
+	return func() tea.Msg {
+		return detailLoadedMsg{Detail: worktree.Detail(params)}
+	}
+}
+

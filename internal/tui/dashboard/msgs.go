@@ -1,7 +1,10 @@
 // Package dashboard implements the main TUI dashboard for wtm.
 package dashboard
 
-import "github.com/LucasPcq/wtm/internal/domain"
+import (
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/service/worktree"
+)
 
 // worktreeListMsg is sent when worktree data has been loaded.
 type worktreeListMsg struct {
@@ -19,3 +22,9 @@ type focusDoneMsg struct {
 	Err    error
 	Output string
 }
+
+// detailLoadedMsg is sent when worktree detail data has been loaded.
+type detailLoadedMsg struct {
+	Detail worktree.DetailResult
+}
+

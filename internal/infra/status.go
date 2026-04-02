@@ -45,6 +45,38 @@ func CommitsAhead(params CommitsAheadParams) (int, error) {
 	return count, nil
 }
 
+// ModifiedFile represents a file from git status --porcelain.
+type ModifiedFile struct {
+	Status string
+	Path   string
+}
+
+// ListModifiedFilesParams holds inputs for listing modified files.
+type ListModifiedFilesParams struct {
+	WorktreePath string
+}
+
+// ListModifiedFiles returns all modified/untracked files in a worktree.
+func ListModifiedFiles(params ListModifiedFilesParams) ([]ModifiedFile, error) {
+	cmd := exec.Command("git", "-C", params.WorktreePath, "status", "--porcelain")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git status: %w", err)
+	}
+
+	var files []ModifiedFile
+	for _, line := range strings.Split(string(out), "\n") {
+		if len(line) < 4 {
+			continue
+		}
+		status := strings.TrimSpace(line[:2])
+		path := line[3:]
+		files = append(files, ModifiedFile{Status: status, Path: path})
+	}
+
+	return files, nil
+}
+
 // UnpushedCommitsParams holds inputs for counting unpushed commits.
 type UnpushedCommitsParams struct {
 	ProjectDir string

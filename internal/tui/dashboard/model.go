@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -69,12 +70,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case worktreeListMsg:
 		return m.handleWorktreeList(msg)
 
+	case detailLoadedMsg:
+		m.detail.setDetail(&msg.Detail)
+		return m, nil
+
 	case focusDoneMsg:
 		return m.handleFocusDone(msg)
 
 	case logMsg:
 		m.logbar.message = string(msg)
 		return m, nil
+	}
+
+	// Forward scroll messages to viewport when detail is active
+	if m.activePane == paneDetail {
+		var cmd tea.Cmd
+		m.detail.viewport, cmd = m.detail.viewport.Update(msg)
+		return m, cmd
 	}
 
 	return m, nil
@@ -92,7 +104,9 @@ func (m Model) View() string {
 
 	listContent := m.list.view(m.activePane == paneList)
 	listPanel := m.renderPanel("Worktrees", listContent, listWidth, contentHeight, m.activePane == paneList)
-	detailPanel := m.renderPanel("Details", m.detail.view(), detailWidth, contentHeight, m.activePane == paneDetail)
+
+	detailContent := m.detail.viewport.View()
+	detailPanel := m.renderPanel("Details", detailContent, detailWidth, contentHeight, m.activePane == paneDetail)
 
 	content := lipgloss.JoinHorizontal(lipgloss.Top, listPanel, detailPanel)
 	logbar := m.logbar.view(m.width)
@@ -102,9 +116,11 @@ func (m Model) View() string {
 
 func (m *Model) updateLayout() {
 	listWidth := m.width * 30 / 100
+	detailWidth := m.width - listWidth - 2
 	contentHeight := m.height - 3
 	innerHeight := max(1, contentHeight-4)
 	m.list.setSize(listWidth-4, innerHeight)
+	m.detail.setSize(detailWidth-4, innerHeight)
 }
 
 func (m Model) renderPanel(title string, content string, width int, height int, focused bool) string {
@@ -137,16 +153,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Up):
 		if m.activePane == paneList {
 			m.list.moveUp()
-			m.updateDetail()
+			return m, m.triggerDetailLoad()
 		}
-		return m, nil
+		// Forward to viewport
+		var cmd tea.Cmd
+		m.detail.viewport, cmd = m.detail.viewport.Update(msg)
+		return m, cmd
 
 	case key.Matches(msg, m.keys.Down):
 		if m.activePane == paneList {
 			m.list.moveDown()
-			m.updateDetail()
+			return m, m.triggerDetailLoad()
 		}
-		return m, nil
+		var cmd tea.Cmd
+		m.detail.viewport, cmd = m.detail.viewport.Update(msg)
+		return m, cmd
 
 	case key.Matches(msg, m.keys.Refresh):
 		m.logbar.message = "Refreshing..."
@@ -171,15 +192,15 @@ func (m *Model) handleWorktreeList(msg worktreeListMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.list.setItems(msg.Statuses, msg.ActiveBranch)
-	m.updateDetail()
 	m.logbar.message = fmt.Sprintf("Loaded %d worktrees", len(msg.Statuses))
-	return m, nil
+	return m, m.triggerDetailLoad()
 }
 
 func (m *Model) handleFocusDone(msg focusDoneMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		m.logbar.message = fmt.Sprintf("Focus failed: %v", msg.Err)
 		m.detail.lastError = strings.TrimSpace(msg.Output)
+		m.detail.refreshContent()
 		return m, nil
 	}
 
@@ -188,12 +209,20 @@ func (m *Model) handleFocusDone(msg focusDoneMsg) (tea.Model, tea.Cmd) {
 	return m, loadWorktrees(m.projectDir, m.config)
 }
 
-func (m *Model) updateDetail() {
+func (m *Model) triggerDetailLoad() tea.Cmd {
 	m.detail.lastError = ""
 	m.logbar.message = ""
-	if selected, ok := m.list.selectedStatus(); ok {
-		m.detail.selected = &selected
-	} else {
-		m.detail.selected = nil
+
+	selected, ok := m.list.selectedStatus()
+	if !ok {
+		m.detail.setDetail(nil)
+		return nil
 	}
+
+	return loadDetail(worktree.DetailParams{
+		WorktreePath: selected.Path,
+		ProjectDir:   m.projectDir,
+		Branch:       selected.Branch,
+		BaseBranch:   m.config.Project.Worktrees.BaseBranch,
+	})
 }
