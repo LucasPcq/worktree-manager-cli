@@ -33,3 +33,9 @@ type hookOutputMsg struct {
 	Line string
 }
 
+// actionDoneMsg signals that a suspend/resume action (new, clean) completed.
+type actionDoneMsg struct {
+	Err error
+}
+
+

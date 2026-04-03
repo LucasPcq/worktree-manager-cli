@@ -40,6 +40,15 @@ func RunDashboard(cmd *cobra.Command, _ []string) error {
 	program := tea.NewProgram(&model, tea.WithAltScreen())
 	model.SetProgram(program)
 
-	_, err = program.Run()
-	return err
+	finalModel, err := program.Run()
+	if err != nil {
+		return err
+	}
+
+	// If the user pressed Enter on a worktree, print the path for the shell wrapper
+	if m, ok := finalModel.(*dashboard.Model); ok && m.GoPath != "" {
+		fmt.Println(m.GoPath)
+	}
+
+	return nil
 }

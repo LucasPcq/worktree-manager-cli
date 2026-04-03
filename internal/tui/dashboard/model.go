@@ -39,6 +39,7 @@ type Model struct {
 	width      int
 	height     int
 	keys       keyMap
+	GoPath     string // set when user presses Enter — the caller prints this path for the shell wrapper
 }
 
 // New creates a new dashboard model.
@@ -87,6 +88,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case focusDoneMsg:
 		return m.handleFocusDone(msg)
+
+	case actionDoneMsg:
+		return m, loadWorktrees(m.projectDir, m.config)
 
 	case logMsg:
 		m.logbar.message = string(msg)
@@ -241,6 +245,33 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.logPanel.show()
 		m.updateLayout()
 		return m, focusWorktree(m.projectDir, selected.Branch, m.config, m.program)
+
+	case key.Matches(msg, m.keys.New):
+		if m.activePane != paneList {
+			return m, nil
+		}
+		return m, execNewWorktree()
+
+	case key.Matches(msg, m.keys.Delete):
+		if m.activePane != paneList {
+			return m, nil
+		}
+		selected, ok := m.list.selectedStatus()
+		if !ok || selected.IsParent {
+			return m, nil
+		}
+		return m, execCleanWorktree(selected.Branch)
+
+	case key.Matches(msg, m.keys.Enter):
+		if m.activePane != paneList {
+			return m, nil
+		}
+		selected, ok := m.list.selectedStatus()
+		if !ok {
+			return m, nil
+		}
+		m.GoPath = selected.Path
+		return m, tea.Quit
 	}
 
 	return m, nil

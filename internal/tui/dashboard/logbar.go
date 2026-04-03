@@ -11,7 +11,7 @@ type logbarModel struct {
 }
 
 func (m logbarModel) view(width int) string {
-	help := styles.Muted.Render("q quit · r refresh · f focus · tab switch · ↑↓ navigate")
+	help := styles.Muted.Render("q quit · n new · d clean · f focus · enter go · r refresh · tab switch")
 
 	if m.message == "" {
 		return help + strings.Repeat(" ", max(0, width-len(help)))

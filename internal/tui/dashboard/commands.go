@@ -2,6 +2,8 @@ package dashboard
 
 import (
 	"bytes"
+	"os"
+	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -75,4 +77,36 @@ func loadDetail(params worktree.DetailParams) tea.Cmd {
 	return func() tea.Msg {
 		return detailLoadedMsg{Detail: worktree.Detail(params)}
 	}
+}
+
+func execNewWorktree() tea.Cmd {
+	bin, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return actionDoneMsg{Err: err} }
+	}
+
+	cmd := exec.Command(bin, "new")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return actionDoneMsg{Err: err}
+	})
+}
+
+func execCleanWorktree(branch string) tea.Cmd {
+	bin, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return actionDoneMsg{Err: err} }
+	}
+
+	cmd := exec.Command(bin, "clean", branch)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return actionDoneMsg{Err: err}
+	})
 }

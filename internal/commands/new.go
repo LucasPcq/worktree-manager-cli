@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -16,10 +18,10 @@ import (
 // NewNewCmd creates the wtm new command.
 func NewNewCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "new <branch>",
+		Use:   "new [branch]",
 		Short: "Create a new worktree",
-		Long:  "Create a git worktree with env provisioning, metadata, and hooks.",
-		Args:  cobra.ExactArgs(1),
+		Long:  "Create a git worktree with env provisioning, metadata, and hooks.\nWithout arguments, prompts for the branch name interactively.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE:  runNew,
 	}
 
@@ -30,7 +32,10 @@ func NewNewCmd() *cobra.Command {
 }
 
 func runNew(cmd *cobra.Command, args []string) error {
-	branch := args[0]
+	var branch string
+	if len(args) > 0 {
+		branch = args[0]
+	}
 	fromFlag, _ := cmd.Flags().GetString(domain.FlagFrom)
 	envFromFlag, _ := cmd.Flags().GetString(domain.FlagEnvFrom)
 
@@ -42,6 +47,17 @@ func runNew(cmd *cobra.Command, args []string) error {
 	result, ok := loadConfig(cmd, dir)
 	if !ok {
 		return nil
+	}
+
+	if branch == "" {
+		prompted, promptErr := promptBranchName()
+		if errors.Is(promptErr, domain.ErrUserAborted) {
+			return nil
+		}
+		if promptErr != nil {
+			return promptErr
+		}
+		branch = prompted
 	}
 
 	fromBranch := fromFlag
@@ -96,6 +112,34 @@ func runNewWizard(projectDir string, cfg domain.Config) (newpicker.WizardResult,
 		DefaultBranch:  cfg.Project.Worktrees.BaseBranch,
 		ConfigStrategy: cfg.Project.Env.Strategy,
 	})
+}
+
+func promptBranchName() (string, error) {
+	var name string
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Branch name").
+				Description("Name for the new worktree branch").
+				Validate(func(s string) error {
+					if strings.TrimSpace(s) == "" {
+						return fmt.Errorf("branch name is required")
+					}
+					return nil
+				}).
+				Value(&name),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return "", domain.ErrUserAborted
+		}
+		return "", err
+	}
+
+	return strings.TrimSpace(name), nil
 }
 
 func branchInList(branches []string, target string) bool {
