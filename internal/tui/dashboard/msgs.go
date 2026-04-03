@@ -28,3 +28,8 @@ type detailLoadedMsg struct {
 	Detail worktree.DetailResult
 }
 
+// hookOutputMsg streams a line of hook output to the log panel.
+type hookOutputMsg struct {
+	Line string
+}
+
