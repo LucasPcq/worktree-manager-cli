@@ -45,9 +45,14 @@ func RunDashboard(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// If the user pressed Enter on a worktree, print the path for the shell wrapper
+	// If the user pressed Enter on a worktree, write the path for the shell wrapper
 	if m, ok := finalModel.(*dashboard.Model); ok && m.GoPath != "" {
-		fmt.Println(m.GoPath)
+		goFile := os.Getenv("WTM_GO_FILE")
+		if goFile != "" {
+			_ = os.WriteFile(goFile, []byte(m.GoPath), 0o644)
+		} else {
+			fmt.Println(m.GoPath)
+		}
 	}
 
 	return nil

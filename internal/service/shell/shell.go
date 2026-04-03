@@ -27,10 +27,16 @@ const bashZshTemplate = `wtm() {
       fi
     fi
   elif [ $# -eq 0 ]; then
-    local dir
-    dir="$(command wtm)"
-    if [ -n "$dir" ] && [ -d "$dir" ]; then
-      cd "$dir" || return 1
+    local tmpfile
+    tmpfile="$(mktemp /tmp/wtm-go.XXXXXX)"
+    WTM_GO_FILE="$tmpfile" command wtm
+    if [ -f "$tmpfile" ]; then
+      local dir
+      dir="$(cat "$tmpfile")"
+      rm -f "$tmpfile"
+      if [ -n "$dir" ] && [ -d "$dir" ]; then
+        cd "$dir" || return 1
+      fi
     fi
   else
     command wtm "$@"
@@ -54,9 +60,14 @@ const fishTemplate = `function wtm
       end
     end
   else if test (count $argv) -eq 0
-    set dir (command wtm)
-    if test -n "$dir" -a -d "$dir"
-      cd "$dir"
+    set tmpfile (mktemp /tmp/wtm-go.XXXXXX)
+    WTM_GO_FILE="$tmpfile" command wtm
+    if test -f "$tmpfile"
+      set dir (cat "$tmpfile")
+      rm -f "$tmpfile"
+      if test -n "$dir" -a -d "$dir"
+        cd "$dir"
+      end
     end
   else
     command wtm $argv
