@@ -39,7 +39,7 @@ go install github.com/LucasPcq/wtm@latest
 ## Quick Start
 
 ```bash
-# Set up shell integration (required for wtm go)
+# Set up shell integration (required for navigation)
 echo 'eval "$(wtm shell-init)"' >> ~/.zshrc
 source ~/.zshrc
 
@@ -56,9 +56,42 @@ wtm go feature/my-feature
 # List all worktrees
 wtm ls
 
+# Open the interactive dashboard
+wtm
+
 # Clean up when done
 wtm clean feature/my-feature
 ```
+
+## Dashboard
+
+Run `wtm` without arguments to open the interactive dashboard.
+
+```bash
+wtm
+```
+
+The dashboard displays all your worktrees in a two-panel layout:
+- **Left panel** — worktree list with status (clean/dirty, commits ahead, focus indicator)
+- **Right panel** — details of the selected worktree (path, source branch, modified files, context notes)
+
+### Keyboard shortcuts
+
+| Key | Action |
+|---|---|
+| `↑/↓` or `j/k` | Navigate the list or scroll the active panel |
+| `Tab` / `Shift+Tab` | Cycle between panels (list → detail → hooks output) |
+| `n` | Create a new worktree (opens the wizard) |
+| `d` | Clean the selected worktree (opens confirmation) |
+| `f` | Focus the selected worktree (runs hooks, shows output in split panel) |
+| `Enter` | Navigate to the selected worktree directory |
+| `r` | Refresh the worktree list |
+| `Esc` | Close the hooks output panel |
+| `q` | Quit the dashboard |
+
+When you press `f` to focus a worktree, the right panel splits to show the hook output in real-time. The log panel stays visible after hooks complete and can be closed with `Esc`.
+
+---
 
 ## Commands
 
@@ -85,19 +118,19 @@ If `.wtm.toml` already exists, the command exits — delete it or edit manually 
 
 ---
 
-### `wtm new <branch>`
+### `wtm new [branch]`
 
 Create a new git worktree with environment provisioning and hooks.
 
 ```bash
-# Interactive — pick source branch from a list
+# Fully interactive — prompts for branch name, source branch, and env strategy
+wtm new
+
+# Specify branch name, pick source branch interactively
 wtm new feature/auth
 
-# Direct — specify source branch
-wtm new feature/auth --from main
-
-# Override env strategy for this worktree
-wtm new feature/auth --env-from parent
+# Direct — specify everything, no interaction
+wtm new feature/auth --from main --env-from parent
 ```
 
 **What happens:**
@@ -290,7 +323,7 @@ base_branch = "main"
 default = "claude-code"
 
 [integrations]
-# VS Code / Cursor Project Manager integration (coming in v0.2)
+# VS Code / Cursor Project Manager integration (coming soon)
 vscode_project_manager = false
 cursor_project_manager = false
 ```
