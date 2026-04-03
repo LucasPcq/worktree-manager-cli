@@ -47,25 +47,22 @@ source ~/.zshrc
 cd your-repo
 wtm init
 
-# Create your first worktree
-wtm new feature/my-feature
-
-# Navigate to it
-wtm go feature/my-feature
-
-# List all worktrees
-wtm ls
-
-# Open the interactive dashboard
+# Open the interactive dashboard — manage everything from here
 wtm
 
-# Clean up when done
-wtm clean feature/my-feature
+# Or use individual commands:
+wtm new feature/my-feature      # create a worktree
+wtm go feature/my-feature       # navigate to it
+wtm focus feature/my-feature    # start the environment
+wtm ls                          # list all worktrees
+wtm clean feature/my-feature    # clean up when done
 ```
 
-## Dashboard
+## Commands
 
-Run `wtm` without arguments to open the interactive dashboard.
+### `wtm` — Interactive Dashboard
+
+Run `wtm` without arguments to open the interactive dashboard. This is the main entry point for your daily workflow.
 
 ```bash
 wtm
@@ -75,7 +72,7 @@ The dashboard displays all your worktrees in a two-panel layout:
 - **Left panel** — worktree list with status (clean/dirty, commits ahead, focus indicator)
 - **Right panel** — details of the selected worktree (path, source branch, modified files, context notes)
 
-### Keyboard shortcuts
+**Keyboard shortcuts:**
 
 | Key | Action |
 |---|---|
@@ -92,8 +89,6 @@ The dashboard displays all your worktrees in a two-panel layout:
 When you press `f` to focus a worktree, the right panel splits to show the hook output in real-time. The log panel stays visible after hooks complete and can be closed with `Esc`.
 
 ---
-
-## Commands
 
 ### `wtm init`
 
