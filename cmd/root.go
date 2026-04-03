@@ -18,6 +18,7 @@ func init() {
 	rootCmd.AddCommand(commands.NewResolveCmd())
 	rootCmd.AddCommand(commands.NewShellInitCmd())
 	rootCmd.AddCommand(commands.NewFocusCmd())
+	rootCmd.AddCommand(commands.NewDashboardCmd())
 }
 
 var version = domain.Version
@@ -26,6 +27,7 @@ var rootCmd = &cobra.Command{
 	Use:     domain.AppName,
 	Short:   "Worktree Manager — orchestrate git worktrees, AI agents, and team workflows",
 	Version: version,
+	RunE:    commands.RunDashboard,
 }
 
 // Execute runs the root command and exits with the appropriate code.

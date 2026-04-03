@@ -26,6 +26,12 @@ const bashZshTemplate = `wtm() {
         cd "$root"
       fi
     fi
+  elif [ $# -eq 0 ]; then
+    local dir
+    dir="$(command wtm)"
+    if [ -n "$dir" ] && [ -d "$dir" ]; then
+      cd "$dir" || return 1
+    fi
   else
     command wtm "$@"
   fi
@@ -46,6 +52,11 @@ const fishTemplate = `function wtm
         echo "Worktree removed. Returning to $root"
         cd "$root"
       end
+    end
+  else if test (count $argv) -eq 0
+    set dir (command wtm)
+    if test -n "$dir" -a -d "$dir"
+      cd "$dir"
     end
   else
     command wtm $argv

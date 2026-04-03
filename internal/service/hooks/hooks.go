@@ -4,6 +4,7 @@ package hooks
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -25,15 +26,20 @@ type RunHooksParams struct {
 	Hooks   []domain.HookCommand
 	WorkDir string
 	Vars    TemplateVars
+	Output  io.Writer // if nil, uses os.Stdout/Stderr (CLI mode). Set to capture output (TUI mode).
 }
 
 // RunHooks executes each hook command sequentially with template interpolation.
 // Stops on first error unless the hook has ContinueOnError set.
-// Returns the first non-continued error, or nil if all hooks passed.
 func RunHooks(params RunHooksParams) error {
+	output := params.Output
+	if output == nil {
+		output = os.Stderr
+	}
+
 	for _, hook := range params.Hooks {
 		resolved := resolveTemplateVars(hook, params.Vars)
-		err := runSingleHook(resolved, params.WorkDir)
+		err := runSingleHook(resolved, params.WorkDir, output)
 		if err == nil {
 			continue
 		}
@@ -65,7 +71,7 @@ func interpolate(s string, vars TemplateVars) string {
 	return r.Replace(s)
 }
 
-func runSingleHook(hook domain.HookCommand, defaultDir string) error {
+func runSingleHook(hook domain.HookCommand, defaultDir string, output io.Writer) error {
 	parts := strings.Fields(hook.Cmd)
 	if len(parts) == 0 {
 		return nil
@@ -80,29 +86,29 @@ func runSingleHook(hook domain.HookCommand, defaultDir string) error {
 	}
 
 	var stderr bytes.Buffer
-	cmd.Stdout = os.Stdout
+	cmd.Stdout = output
 	cmd.Stderr = &stderr
 
-	fmt.Fprintf(os.Stderr, "  → %s", hook.Cmd)
+	fmt.Fprintf(output, "  → %s", hook.Cmd)
 	if hook.Cwd != "" {
-		fmt.Fprintf(os.Stderr, " (cwd: %s)", hook.Cwd)
+		fmt.Fprintf(output, " (cwd: %s)", hook.Cwd)
 	}
-	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(output)
 
 	start := time.Now()
 	err := cmd.Run()
 	elapsed := time.Since(start)
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  ✗ %s (%s)\n", hook.Cmd, formatDuration(elapsed))
+		fmt.Fprintf(output, "  ✗ %s (%s)\n", hook.Cmd, formatDuration(elapsed))
 		stderrStr := strings.TrimSpace(stderr.String())
 		if stderrStr != "" {
-			fmt.Fprintf(os.Stderr, "    %s\n", stderrStr)
+			fmt.Fprintf(output, "    %s\n", stderrStr)
 		}
 		return fmt.Errorf("hook %q failed: %w", hook.Cmd, err)
 	}
 
-	fmt.Fprintf(os.Stderr, "  ✓ %s (%s)\n", hook.Cmd, formatDuration(elapsed))
+	fmt.Fprintf(output, "  ✓ %s (%s)\n", hook.Cmd, formatDuration(elapsed))
 	return nil
 }
 
