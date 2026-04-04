@@ -49,7 +49,7 @@ func Detail(params DetailParams) DetailResult {
 }
 
 func loadSourceBranch(worktreePath string) string {
-	metaPath := filepath.Join(worktreePath, domain.MetaDirName, domain.MetaFileName)
+	metaPath := filepath.Join(worktreePath, domain.ProjectDirName, domain.MetaFileName)
 	data, err := os.ReadFile(metaPath)
 	if err != nil {
 		return ""
@@ -62,7 +62,7 @@ func loadSourceBranch(worktreePath string) string {
 }
 
 func loadContextNotes(worktreePath string) string {
-	contextPath := filepath.Join(worktreePath, domain.MetaDirName, domain.ContextFileName)
+	contextPath := filepath.Join(worktreePath, domain.ProjectDirName, domain.ContextFileName)
 	data, err := os.ReadFile(contextPath)
 	if err != nil {
 		return ""

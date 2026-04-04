@@ -22,7 +22,12 @@ func WriteProject(params WriteProjectParams) error {
 		return fmt.Errorf("render template: %w", err)
 	}
 
-	path := filepath.Join(params.ProjectDir, domain.ConfigFileName)
+	dir := filepath.Join(params.ProjectDir, domain.ProjectDirName)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", dir, err)
+	}
+
+	path := filepath.Join(dir, domain.ConfigFileName)
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}

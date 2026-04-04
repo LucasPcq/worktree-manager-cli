@@ -30,11 +30,18 @@ name = "back"
 services = ["api"]
 `
 
-func TestLoadServicesFullConfig(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, domain.ServicesFileName), []byte(servicesTestToml), 0o644); err != nil {
+func writeServicesFile(t *testing.T, dir string, content string) {
+	t.Helper()
+	wtmDir := filepath.Join(dir, domain.ProjectDirName)
+	os.MkdirAll(wtmDir, 0o755)
+	if err := os.WriteFile(filepath.Join(wtmDir, domain.ServicesFileName), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestLoadServicesFullConfig(t *testing.T) {
+	dir := t.TempDir()
+	writeServicesFile(t, dir, servicesTestToml)
 
 	cfg, err := LoadServices(dir)
 	if err != nil {
@@ -76,7 +83,7 @@ func TestLoadServicesMissingFile(t *testing.T) {
 
 func TestFindService(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, domain.ServicesFileName), []byte(servicesTestToml), 0o644)
+	writeServicesFile(t, dir, servicesTestToml)
 
 	cfg, _ := LoadServices(dir)
 
@@ -96,7 +103,7 @@ func TestFindService(t *testing.T) {
 
 func TestProfileServices(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, domain.ServicesFileName), []byte(servicesTestToml), 0o644)
+	writeServicesFile(t, dir, servicesTestToml)
 
 	cfg, _ := LoadServices(dir)
 

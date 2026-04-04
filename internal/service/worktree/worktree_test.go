@@ -60,7 +60,7 @@ func TestWriteMetadata(t *testing.T) {
 	}
 
 	// Verify meta.json
-	metaPath := filepath.Join(dir, domain.MetaDirName, domain.MetaFileName)
+	metaPath := filepath.Join(dir, domain.ProjectDirName, domain.MetaFileName)
 	data, err := os.ReadFile(metaPath)
 	if err != nil {
 		t.Fatalf("meta.json not found: %v", err)
@@ -79,7 +79,7 @@ func TestWriteMetadata(t *testing.T) {
 	}
 
 	// Verify context.md exists
-	contextPath := filepath.Join(dir, domain.MetaDirName, domain.ContextFileName)
+	contextPath := filepath.Join(dir, domain.ProjectDirName, domain.ContextFileName)
 	if _, err := os.Stat(contextPath); os.IsNotExist(err) {
 		t.Error("context.md not found")
 	}

@@ -17,7 +17,7 @@ type configResult struct {
 	ProjectDir string
 }
 
-// projectRoot returns the main worktree path (where .wtm.toml lives).
+// projectRoot returns the main worktree path (where .wtm/config.toml lives).
 // Works from any worktree — resolves back to the parent repo.
 func projectRoot(dir string) (string, error) {
 	mainPath, err := infra.FindMainWorktreePath(infra.FindMainWorktreeParams{
@@ -29,7 +29,7 @@ func projectRoot(dir string) (string, error) {
 	return mainPath, nil
 }
 
-// loadConfig resolves the project root and loads .wtm.toml from there.
+// loadConfig resolves the project root and loads .wtm/config.toml from there.
 // Returns the config and root path, or prints an error and returns false.
 func loadConfig(cmd *cobra.Command, dir string) (configResult, bool) {
 	root, err := projectRoot(dir)
@@ -40,7 +40,7 @@ func loadConfig(cmd *cobra.Command, dir string) (configResult, bool) {
 
 	cfg, err := config.Load(config.LoadParams{ProjectDir: root})
 	if errors.Is(err, domain.ErrConfigNotFound) {
-		fmt.Fprintln(cmd.ErrOrStderr(), "No .wtm.toml found. Run `wtm init` first.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "No .wtm/config.toml found. Run `wtm init` first.")
 		return configResult{}, false
 	}
 	if err != nil {

@@ -17,8 +17,11 @@ const (
 	// ExitCodeUsage indicates invalid usage or bad input.
 	ExitCodeUsage = 2
 
-	// ConfigFileName is the project-level config file name.
-	ConfigFileName = ".wtm.toml"
+	// ProjectDirName is the project-level wtm directory.
+	ProjectDirName = ".wtm"
+
+	// ConfigFileName is the project-level config file name (inside .wtm/).
+	ConfigFileName = "config.toml"
 
 	// GlobalConfigDir is the subdirectory under ~/.config for wtm.
 	GlobalConfigDir = "wtm"
@@ -69,8 +72,7 @@ const (
 	FlagOff     = "off"
 	FlagProfile = "profile"
 
-	// Metadata directory and files created inside each worktree.
-	MetaDirName     = ".wtm"
+	// Metadata files created inside each worktree's .wtm/ directory.
 	MetaFileName    = "meta.json"
 	ContextFileName = "context.md"
 

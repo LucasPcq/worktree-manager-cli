@@ -13,7 +13,7 @@ import (
 // LoadServices reads and parses .wtm.services.toml from the project directory.
 // Returns an empty config (no error) if the file does not exist.
 func LoadServices(projectDir string) (domain.ServicesConfig, error) {
-	path := filepath.Join(projectDir, domain.ServicesFileName)
+	path := filepath.Join(projectDir, domain.ProjectDirName, domain.ServicesFileName)
 
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return domain.ServicesConfig{}, nil

@@ -30,8 +30,8 @@ const (
 	ServiceStatusCrashed ServiceStatus = "crashed"
 )
 
-// ServicesFileName is the services config file name.
-const ServicesFileName = ".wtm.services.toml"
+// ServicesFileName is the services config file name (inside .wtm/).
+const ServicesFileName = "services.toml"
 
 // DefaultProfile returns the profile marked as default, or the first one.
 func (c ServicesConfig) DefaultProfile() (ProfileConfig, bool) {

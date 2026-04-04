@@ -31,7 +31,7 @@ func TestWriteProjectRendersValidTOML(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	path := filepath.Join(dir, domain.ConfigFileName)
+	path := filepath.Join(dir, domain.ProjectDirName, domain.ConfigFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read file: %v", err)
@@ -76,7 +76,7 @@ func TestWriteProjectWithAgentOverride(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ProjectDirName, domain.ConfigFileName))
 	content := string(data)
 
 	if !strings.Contains(content, `default = "cursor"`) {
@@ -101,7 +101,7 @@ func TestWriteProjectEmptyEnvAndHooks(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ProjectDirName, domain.ConfigFileName))
 	content := string(data)
 
 	// Should still be valid TOML
@@ -168,7 +168,7 @@ func TestWriteProjectRoundTrip(t *testing.T) {
 	}
 
 	// Load it back using the existing config loader
-	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
+	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ProjectDirName, domain.ConfigFileName))
 	if err != nil {
 		t.Fatalf("loadProjectConfig: %v", err)
 	}

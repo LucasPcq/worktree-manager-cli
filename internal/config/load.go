@@ -19,7 +19,7 @@ type LoadParams struct {
 // Load reads project and global config files, merges them, applies defaults,
 // and validates the result. Returns ErrConfigNotFound if .wtm.toml is absent.
 func Load(params LoadParams) (domain.Config, error) {
-	projectPath := filepath.Join(params.ProjectDir, domain.ConfigFileName)
+	projectPath := filepath.Join(params.ProjectDir, domain.ProjectDirName, domain.ConfigFileName)
 
 	project, err := loadProjectConfig(projectPath)
 	if err != nil {
