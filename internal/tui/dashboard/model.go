@@ -261,60 +261,52 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.logbar.message = "Refreshing..."
 		return m, loadWorktrees(m.projectDir, m.config)
 
-	case key.Matches(msg, m.keys.Focus):
+	case key.Matches(msg, m.keys.New):
+		return m, execNewWorktree()
+
+	case key.Matches(msg, m.keys.Focus),
+		key.Matches(msg, m.keys.Delete),
+		key.Matches(msg, m.keys.Enter),
+		key.Matches(msg, m.keys.ServicesUp),
+		key.Matches(msg, m.keys.ServicesDown),
+		key.Matches(msg, m.keys.AttachService):
 		selected, ok := m.list.selectedStatus()
 		if !ok {
 			return m, nil
 		}
+		return m.handleWorktreeAction(msg, selected)
+	}
+
+	return m, nil
+}
+
+func (m *Model) handleWorktreeAction(msg tea.KeyMsg, selected domain.WorktreeStatus) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Focus):
 		m.logbar.message = fmt.Sprintf("Focusing on %s...", selected.Branch)
 		m.logPanel.show()
 		m.updateLayout()
 		return m, focusWorktree(m.projectDir, selected.Branch, m.config, m.program)
 
-	case key.Matches(msg, m.keys.New):
-		if m.activePane != paneList {
-			return m, nil
-		}
-		return m, execNewWorktree()
-
 	case key.Matches(msg, m.keys.Delete):
-		if m.activePane != paneList {
-			return m, nil
-		}
-		selected, ok := m.list.selectedStatus()
-		if !ok || selected.IsParent {
+		if selected.IsParent {
 			return m, nil
 		}
 		return m, execCleanWorktree(selected.Branch)
 
 	case key.Matches(msg, m.keys.Enter):
-		if m.activePane != paneList {
-			return m, nil
-		}
-		selected, ok := m.list.selectedStatus()
-		if !ok {
-			return m, nil
-		}
 		m.GoPath = selected.Path
 		return m, tea.Quit
 
 	case key.Matches(msg, m.keys.ServicesUp):
-		selected, ok := m.list.selectedStatus()
-		if !ok {
-			return m, nil
-		}
 		if !hasServicesConfig(selected.Path) {
-			m.logbar.message = "No .wtm.services.toml found in this worktree"
+			m.logbar.message = "No .wtm/services.toml found in this worktree"
 			return m, nil
 		}
 		m.logbar.message = fmt.Sprintf("Starting services in %s...", selected.Branch)
 		return m, startServicesCmd(selected.Path)
 
 	case key.Matches(msg, m.keys.ServicesDown):
-		selected, ok := m.list.selectedStatus()
-		if !ok {
-			return m, nil
-		}
 		worktreeServices := filterServicesByWorkDir(m.serviceStatuses, selected.Path)
 		if len(worktreeServices) == 0 {
 			m.logbar.message = "No services running in this worktree"
@@ -324,10 +316,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, stopServicesCmd(selected.Path, m.serviceStatuses)
 
 	case key.Matches(msg, m.keys.AttachService):
-		selected, ok := m.list.selectedStatus()
-		if !ok {
-			return m, nil
-		}
 		worktreeServices := filterServicesByWorkDir(m.serviceStatuses, selected.Path)
 		if len(worktreeServices) == 0 {
 			m.logbar.message = "No services running in this worktree"
