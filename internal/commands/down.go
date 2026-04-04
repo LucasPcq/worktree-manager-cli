@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -30,9 +31,11 @@ func runDown(cmd *cobra.Command, args []string) error {
 	client := process.NewClient(socketPath)
 
 	if len(args) > 0 {
+		dir, _ := os.Getwd()
 		resp, err := client.Send(process.Request{
-			Action: process.ActionStop,
-			Name:   args[0],
+			Action:  process.ActionStop,
+			Name:    args[0],
+			WorkDir: dir,
 		})
 		if err != nil {
 			return fmt.Errorf("stop service: %w", err)

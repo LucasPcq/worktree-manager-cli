@@ -1,7 +1,6 @@
 package dashboard
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -123,19 +122,22 @@ func attachServiceCmd(serviceName string) tea.Cmd {
 	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "logs", serviceName)
 }
 
-func stopServicesCmd() tea.Cmd {
+func stopServicesCmd(worktreePath string, services []process.ServiceInfo) tea.Cmd {
 	return func() tea.Msg {
 		socketPath := process.SocketPath()
 		if !process.IsDaemonRunning(socketPath) {
 			return servicesStartedMsg{}
 		}
 		client := process.NewClient(socketPath)
-		resp, err := client.Send(process.Request{Action: process.ActionStopAll})
-		if err != nil {
-			return servicesStartedMsg{Err: err}
-		}
-		if resp.Status != process.StatusOK {
-			return servicesStartedMsg{Err: fmt.Errorf("%s", resp.Message)}
+		for _, svc := range services {
+			if svc.WorkDir != worktreePath {
+				continue
+			}
+			client.Send(process.Request{
+				Action:  process.ActionStop,
+				Name:    svc.Name,
+				WorkDir: worktreePath,
+			})
 		}
 		return servicesStartedMsg{}
 	}

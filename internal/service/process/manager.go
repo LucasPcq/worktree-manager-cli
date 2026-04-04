@@ -38,12 +38,18 @@ func NewManager() *Manager {
 	}
 }
 
+// serviceKey returns a unique identifier for a service scoped to its worktree.
+func serviceKey(name string, workDir string) string {
+	return workDir + ":" + name
+}
+
 // Start launches a service in a PTY.
 func (m *Manager) Start(svc domain.ServiceConfig, workDir string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if existing, ok := m.services[svc.Name]; ok && existing.Status == domain.ServiceStatusRunning {
+	key := serviceKey(svc.Name, workDir)
+	if existing, ok := m.services[key]; ok && existing.Status == domain.ServiceStatusRunning {
 		return fmt.Errorf("service %s is already running", svc.Name)
 	}
 
@@ -75,7 +81,7 @@ func (m *Manager) Start(svc domain.ServiceConfig, workDir string) error {
 		WorkDir: workDir,
 	}
 
-	m.services[svc.Name] = managed
+	m.services[key] = managed
 
 	// Monitor process exit in background
 	go m.waitForExit(managed)
@@ -83,14 +89,38 @@ func (m *Manager) Start(svc domain.ServiceConfig, workDir string) error {
 	return nil
 }
 
-// Stop stops a service. Uses the stop command if defined, otherwise sends SIGTERM.
-func (m *Manager) Stop(name string) error {
+// Stop stops a service by name and workDir.
+func (m *Manager) Stop(name string, workDir string) error {
+	return m.stopByKey(serviceKey(name, workDir))
+}
+
+// StopAll stops all running services.
+func (m *Manager) StopAll() error {
 	m.mu.Lock()
-	svc, ok := m.services[name]
+	keys := make([]string, 0, len(m.services))
+	for key, svc := range m.services {
+		if svc.Status == domain.ServiceStatusRunning {
+			keys = append(keys, key)
+		}
+	}
+	m.mu.Unlock()
+
+	var firstErr error
+	for _, key := range keys {
+		if err := m.stopByKey(key); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func (m *Manager) stopByKey(key string) error {
+	m.mu.Lock()
+	svc, ok := m.services[key]
 	m.mu.Unlock()
 
 	if !ok {
-		return fmt.Errorf("service %s not found", name)
+		return fmt.Errorf("service not found")
 	}
 
 	if svc.Status != domain.ServiceStatusRunning {
@@ -104,32 +134,13 @@ func (m *Manager) Stop(name string) error {
 	return m.stopWithSignal(svc)
 }
 
-// StopAll stops all running services.
-func (m *Manager) StopAll() error {
-	m.mu.Lock()
-	names := make([]string, 0, len(m.services))
-	for name, svc := range m.services {
-		if svc.Status == domain.ServiceStatusRunning {
-			names = append(names, name)
-		}
-	}
-	m.mu.Unlock()
-
-	var firstErr error
-	for _, name := range names {
-		if err := m.Stop(name); err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
-}
-
 // GetPTY returns the PTY file descriptor for a service (for attach).
-func (m *Manager) GetPTY(name string) (*os.File, error) {
+func (m *Manager) GetPTY(name string, workDir string) (*os.File, error) {
+	key := serviceKey(name, workDir)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	svc, ok := m.services[name]
+	svc, ok := m.services[key]
 	if !ok {
 		return nil, fmt.Errorf("service %s not found", name)
 	}

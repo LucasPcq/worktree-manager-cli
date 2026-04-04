@@ -49,9 +49,10 @@ func (c *Client) Send(req Request) (Response, error) {
 
 // AttachParams holds inputs for attaching to a service.
 type AttachParams struct {
-	Name string
-	Cols int
-	Rows int
+	Name    string
+	WorkDir string
+	Cols    int
+	Rows    int
 }
 
 // Attach sends an attach request and returns the raw connection on success.
@@ -66,10 +67,11 @@ func (c *Client) Attach(params AttachParams) (net.Conn, error) {
 	decoder := json.NewDecoder(conn)
 
 	if err := encoder.Encode(Request{
-		Action: ActionAttach,
-		Name:   params.Name,
-		Cols:   params.Cols,
-		Rows:   params.Rows,
+		Action:  ActionAttach,
+		Name:    params.Name,
+		WorkDir: params.WorkDir,
+		Cols:    params.Cols,
+		Rows:    params.Rows,
 	}); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("send attach request: %w", err)

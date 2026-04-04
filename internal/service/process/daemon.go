@@ -149,7 +149,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 }
 
 func (d *daemonServer) handleStop(encoder *json.Encoder, req Request) {
-	if err := d.manager.Stop(req.Name); err != nil {
+	if err := d.manager.Stop(req.Name, req.WorkDir); err != nil {
 		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 		return
 	}
@@ -182,7 +182,7 @@ func (d *daemonServer) handleList(encoder *json.Encoder, req Request) {
 }
 
 func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Request) {
-	ptmx, err := d.manager.GetPTY(req.Name)
+	ptmx, err := d.manager.GetPTY(req.Name, req.WorkDir)
 	if err != nil {
 		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 		return

@@ -37,11 +37,14 @@ func runLogs(_ *cobra.Command, args []string) error {
 		rows = 24
 	}
 
+	dir, _ := os.Getwd()
+
 	client := process.NewClient(socketPath)
 	conn, err := client.Attach(process.AttachParams{
-		Name: args[0],
-		Cols: cols,
-		Rows: rows,
+		Name:    args[0],
+		WorkDir: dir,
+		Cols:    cols,
+		Rows:    rows,
 	})
 	if err != nil {
 		return fmt.Errorf("attach to %s: %w", args[0], err)

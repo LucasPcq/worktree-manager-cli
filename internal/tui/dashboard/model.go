@@ -104,6 +104,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err == nil {
 			m.serviceStatuses = msg.Services
 			m.detail.serviceStatuses = msg.Services
+			m.list.serviceStatuses = msg.Services
 			m.detail.refreshContent()
 		}
 		return m, nil
@@ -310,12 +311,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, startServicesCmd(selected.Path)
 
 	case key.Matches(msg, m.keys.ServicesDown):
-		if len(m.serviceStatuses) == 0 {
-			m.logbar.message = "No services running"
+		selected, ok := m.list.selectedStatus()
+		if !ok {
 			return m, nil
 		}
-		m.logbar.message = "Stopping services..."
-		return m, stopServicesCmd()
+		worktreeServices := filterServicesByWorkDir(m.serviceStatuses, selected.Path)
+		if len(worktreeServices) == 0 {
+			m.logbar.message = "No services running in this worktree"
+			return m, nil
+		}
+		m.logbar.message = fmt.Sprintf("Stopping services in %s...", selected.Branch)
+		return m, stopServicesCmd(selected.Path, m.serviceStatuses)
 
 	case key.Matches(msg, m.keys.AttachService):
 		selected, ok := m.list.selectedStatus()

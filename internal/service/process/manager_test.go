@@ -12,8 +12,9 @@ func TestStartService(t *testing.T) {
 	mgr := NewManager()
 	defer mgr.StopAll()
 
+	workDir := t.TempDir()
 	cfg := domain.ServiceConfig{Name: "test", Cmd: "sleep 60"}
-	if err := mgr.Start(cfg, t.TempDir()); err != nil {
+	if err := mgr.Start(cfg, workDir); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -33,16 +34,16 @@ func TestStopService(t *testing.T) {
 	mgr := NewManager()
 	defer mgr.StopAll()
 
+	workDir := t.TempDir()
 	cfg := domain.ServiceConfig{Name: "stopper", Cmd: "sleep 60"}
-	if err := mgr.Start(cfg, t.TempDir()); err != nil {
+	if err := mgr.Start(cfg, workDir); err != nil {
 		t.Fatalf("unexpected start error: %v", err)
 	}
 
-	if err := mgr.Stop("stopper"); err != nil {
+	if err := mgr.Stop("stopper", workDir); err != nil {
 		t.Fatalf("unexpected stop error: %v", err)
 	}
 
-	// Allow the waitForExit goroutine to complete
 	time.Sleep(50 * time.Millisecond)
 
 	services := mgr.List()
@@ -58,13 +59,14 @@ func TestStopAll(t *testing.T) {
 	mgr := NewManager()
 	defer mgr.StopAll()
 
+	workDir := t.TempDir()
 	cfgA := domain.ServiceConfig{Name: "svc-a", Cmd: "sleep 60"}
 	cfgB := domain.ServiceConfig{Name: "svc-b", Cmd: "sleep 60"}
 
-	if err := mgr.Start(cfgA, t.TempDir()); err != nil {
+	if err := mgr.Start(cfgA, workDir); err != nil {
 		t.Fatalf("unexpected start error for svc-a: %v", err)
 	}
-	if err := mgr.Start(cfgB, t.TempDir()); err != nil {
+	if err := mgr.Start(cfgB, workDir); err != nil {
 		t.Fatalf("unexpected start error for svc-b: %v", err)
 	}
 
@@ -85,12 +87,13 @@ func TestStartDuplicate(t *testing.T) {
 	mgr := NewManager()
 	defer mgr.StopAll()
 
+	workDir := t.TempDir()
 	cfg := domain.ServiceConfig{Name: "dup", Cmd: "sleep 60"}
-	if err := mgr.Start(cfg, t.TempDir()); err != nil {
+	if err := mgr.Start(cfg, workDir); err != nil {
 		t.Fatalf("unexpected first start error: %v", err)
 	}
 
-	err := mgr.Start(cfg, t.TempDir())
+	err := mgr.Start(cfg, workDir)
 	if err == nil {
 		t.Fatal("expected error on duplicate start, got nil")
 	}
@@ -99,16 +102,38 @@ func TestStartDuplicate(t *testing.T) {
 	}
 }
 
+func TestStartSameNameDifferentWorkDir(t *testing.T) {
+	mgr := NewManager()
+	defer mgr.StopAll()
+
+	cfg := domain.ServiceConfig{Name: "api", Cmd: "sleep 60"}
+	workDirA := t.TempDir()
+	workDirB := t.TempDir()
+
+	if err := mgr.Start(cfg, workDirA); err != nil {
+		t.Fatalf("unexpected error starting in A: %v", err)
+	}
+	if err := mgr.Start(cfg, workDirB); err != nil {
+		t.Fatalf("unexpected error starting in B: %v", err)
+	}
+
+	services := mgr.List()
+	if len(services) != 2 {
+		t.Fatalf("expected 2 services, got %d", len(services))
+	}
+}
+
 func TestGetPTY(t *testing.T) {
 	mgr := NewManager()
 	defer mgr.StopAll()
 
+	workDir := t.TempDir()
 	cfg := domain.ServiceConfig{Name: "pty-svc", Cmd: "sleep 60"}
-	if err := mgr.Start(cfg, t.TempDir()); err != nil {
+	if err := mgr.Start(cfg, workDir); err != nil {
 		t.Fatalf("unexpected start error: %v", err)
 	}
 
-	ptmx, err := mgr.GetPTY("pty-svc")
+	ptmx, err := mgr.GetPTY("pty-svc", workDir)
 	if err != nil {
 		t.Fatalf("unexpected GetPTY error: %v", err)
 	}
@@ -116,7 +141,7 @@ func TestGetPTY(t *testing.T) {
 		t.Error("expected non-nil PTY file")
 	}
 
-	_, err = mgr.GetPTY("nonexistent")
+	_, err = mgr.GetPTY("nonexistent", workDir)
 	if err == nil {
 		t.Error("expected error for nonexistent service, got nil")
 	}
