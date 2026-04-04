@@ -163,3 +163,59 @@ func TestDefaultProfileEmpty(t *testing.T) {
 		t.Error("expected no default profile for empty config")
 	}
 }
+
+func TestValidateServicesDuplicateServiceNames(t *testing.T) {
+	cfg := domain.ServicesConfig{
+		Services: []domain.ServiceConfig{
+			{Name: "api", Cmd: "echo 1"},
+			{Name: "api", Cmd: "echo 2"},
+		},
+	}
+	warnings := ValidateServices(cfg)
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestValidateServicesDuplicateProfileNames(t *testing.T) {
+	cfg := domain.ServicesConfig{
+		Profiles: []domain.ProfileConfig{
+			{Name: "full"},
+			{Name: "full"},
+		},
+	}
+	warnings := ValidateServices(cfg)
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestValidateServicesMultipleDefaults(t *testing.T) {
+	cfg := domain.ServicesConfig{
+		Profiles: []domain.ProfileConfig{
+			{Name: "a", Default: true},
+			{Name: "b", Default: true},
+		},
+	}
+	warnings := ValidateServices(cfg)
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestValidateServicesCleanConfig(t *testing.T) {
+	cfg := domain.ServicesConfig{
+		Services: []domain.ServiceConfig{
+			{Name: "api", Cmd: "echo"},
+			{Name: "web", Cmd: "echo"},
+		},
+		Profiles: []domain.ProfileConfig{
+			{Name: "full", Default: true},
+			{Name: "back"},
+		},
+	}
+	warnings := ValidateServices(cfg)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got %d: %v", len(warnings), warnings)
+	}
+}

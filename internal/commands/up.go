@@ -43,6 +43,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load services config: %w", err)
 	}
 
+	for _, warning := range config.ValidateServices(svcCfg) {
+		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ %s\n", warning)
+	}
+
 	services, err := resolveServices(cmd, args, svcCfg)
 	if err != nil {
 		return err
