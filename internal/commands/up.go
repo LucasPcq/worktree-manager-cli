@@ -1,9 +1,11 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/config"
@@ -32,12 +34,11 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	result, ok := loadConfig(cmd, dir)
-	if !ok {
+	if _, ok := loadConfig(cmd, dir); !ok {
 		return nil
 	}
 
-	svcCfg, err := config.LoadServices(result.ProjectDir)
+	svcCfg, err := config.LoadServices(dir)
 	if err != nil {
 		return fmt.Errorf("load services config: %w", err)
 	}
@@ -94,10 +95,70 @@ func resolveServices(cmd *cobra.Command, args []string, svcCfg domain.ServicesCo
 		return svcCfg.ProfileServices(profile), nil
 	}
 
-	profile, ok := svcCfg.DefaultProfile()
-	if !ok {
-		return svcCfg.Services, nil
+	// 1 profile or less → use default
+	if len(svcCfg.Profiles) <= 1 {
+		profile, ok := svcCfg.DefaultProfile()
+		if !ok {
+			return svcCfg.Services, nil
+		}
+		return svcCfg.ProfileServices(profile), nil
+	}
+
+	// 2+ profiles → interactive picker
+	profile, err := pickProfile(svcCfg)
+	if err != nil {
+		return nil, err
 	}
 
 	return svcCfg.ProfileServices(profile), nil
+}
+
+func pickProfile(svcCfg domain.ServicesConfig) (domain.ProfileConfig, error) {
+	defaultProfile, _ := svcCfg.DefaultProfile()
+
+	options := make([]huh.Option[string], 0, len(svcCfg.Profiles))
+	for _, p := range svcCfg.Profiles {
+		label := p.Name
+		if len(p.Services) > 0 {
+			label += fmt.Sprintf(" (%s)", joinServiceNames(p.Services))
+		}
+		options = append(options, huh.NewOption(label, p.Name))
+	}
+
+	selected := defaultProfile.Name
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Select profile").
+				Description("Which services to start?").
+				Options(options...).
+				Value(&selected),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return domain.ProfileConfig{}, domain.ErrUserAborted
+		}
+		return domain.ProfileConfig{}, err
+	}
+
+	profile, ok := svcCfg.FindProfile(selected)
+	if !ok {
+		return domain.ProfileConfig{}, fmt.Errorf("profile %q not found", selected)
+	}
+
+	return profile, nil
+}
+
+func joinServiceNames(names []string) string {
+	result := ""
+	for i, n := range names {
+		if i > 0 {
+			result += ", "
+		}
+		result += n
+	}
+	return result
 }

@@ -299,12 +299,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case key.Matches(msg, m.keys.ServicesUp):
-		if !hasServicesConfig(m.projectDir) {
-			m.logbar.message = "No .wtm.services.toml found"
-			return m, nil
-		}
 		selected, ok := m.list.selectedStatus()
 		if !ok {
+			return m, nil
+		}
+		if !hasServicesConfig(selected.Path) {
+			m.logbar.message = "No .wtm.services.toml found in this worktree"
 			return m, nil
 		}
 		m.logbar.message = fmt.Sprintf("Starting services in %s...", selected.Branch)

@@ -27,3 +27,5 @@ vendor/
 *.test
 *.out
 .wtm.toml
+.wtm.services.toml
+docker-compose*.yml
