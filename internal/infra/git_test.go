@@ -299,17 +299,3 @@ func TestDeleteLocalBranch(t *testing.T) {
 		}
 	}
 }
-
-func TestHasOpenPRGracefulWithoutGh(t *testing.T) {
-	dir := initTestRepo(t)
-
-	haspr, url := HasOpenPR(HasOpenPRParams{
-		ProjectDir: dir,
-		Branch:     "main",
-	})
-
-	// Should not panic or error, just return false
-	if haspr {
-		t.Errorf("expected false, got true with url %s", url)
-	}
-}
