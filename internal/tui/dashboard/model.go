@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
@@ -24,22 +25,25 @@ const (
 type NewParams struct {
 	Config     domain.Config
 	ProjectDir string
+	WorkDir    string // actual cwd (may differ from ProjectDir in a worktree)
 }
 
 // Model is the main Bubbletea model for the wtm dashboard.
 type Model struct {
-	list       listModel
-	detail     detailModel
-	logPanel   logPanelModel
-	logbar     logbarModel
-	activePane pane
-	config     domain.Config
-	projectDir string
-	program    *tea.Program
-	width      int
-	height     int
-	keys       keyMap
-	GoPath     string // set when user presses Enter — the caller prints this path for the shell wrapper
+	list             listModel
+	detail           detailModel
+	logPanel         logPanelModel
+	logbar           logbarModel
+	activePane       pane
+	config           domain.Config
+	projectDir       string
+	workDir          string
+	program          *tea.Program
+	serviceStatuses  []process.ServiceInfo
+	width            int
+	height           int
+	keys             keyMap
+	GoPath           string // set when user presses Enter — the caller prints this path for the shell wrapper
 }
 
 // New creates a new dashboard model.
@@ -47,6 +51,7 @@ func New(params NewParams) Model {
 	return Model{
 		config:     params.Config,
 		projectDir: params.ProjectDir,
+		workDir:    params.WorkDir,
 		activePane: paneList,
 		keys:       defaultKeys,
 		logbar:     logbarModel{message: "Loading..."},
@@ -60,7 +65,10 @@ func (m *Model) SetProgram(p *tea.Program) {
 
 // Init starts the initial data load.
 func (m *Model) Init() tea.Cmd {
-	return loadWorktrees(m.projectDir, m.config)
+	return tea.Batch(
+		loadWorktrees(m.projectDir, m.config),
+		loadServiceStatuses(),
+	)
 }
 
 // Update handles messages.
@@ -90,7 +98,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFocusDone(msg)
 
 	case actionDoneMsg:
-		return m, loadWorktrees(m.projectDir, m.config)
+		return m, tea.Batch(loadWorktrees(m.projectDir, m.config), loadServiceStatuses())
+
+	case serviceListMsg:
+		if msg.Err == nil {
+			m.serviceStatuses = msg.Services
+			m.detail.serviceStatuses = msg.Services
+			m.detail.refreshContent()
+		}
+		return m, nil
+
+	case servicesStartedMsg:
+		if msg.Err != nil {
+			m.logbar.message = fmt.Sprintf("Services failed: %v", msg.Err)
+		} else {
+			m.logbar.message = "✓ Services started"
+		}
+		return m, loadServiceStatuses()
 
 	case logMsg:
 		m.logbar.message = string(msg)
@@ -119,9 +143,9 @@ func (m *Model) View() string {
 	if m.logPanel.visible {
 		// Two panels: (detailH+2) + (logH+2) must equal contentHeight+2 (the single panel case)
 		// So detailH + logH = contentHeight - 2
-		availInner := contentHeight - 2
-		detailHeight := availInner * 75 / 100
-		logHeight := availInner - detailHeight
+		availableInnerHeight := contentHeight - 2
+		detailHeight := availableInnerHeight * 75 / 100
+		logHeight := availableInnerHeight - detailHeight
 
 		detailPanel := m.renderPanel("Details", m.detail.viewport.View(), detailWidth, detailHeight, m.activePane == paneDetail)
 		logsPanel := m.renderPanel("Hooks output", m.logPanel.view(), detailWidth, logHeight, m.activePane == paneLogPanel)
@@ -145,9 +169,9 @@ func (m *Model) updateLayout() {
 	m.list.setSize(listWidth-4, innerHeight)
 
 	if m.logPanel.visible {
-		availInner := contentHeight - 2
-		detailHeight := availInner * 75 / 100
-		logHeight := availInner - detailHeight
+		availableInnerHeight := contentHeight - 2
+		detailHeight := availableInnerHeight * 75 / 100
+		logHeight := availableInnerHeight - detailHeight
 		m.detail.setSize(detailWidth-4, max(1, detailHeight-4))
 		m.logPanel.setSize(detailWidth-4, max(1, logHeight-4))
 	} else {
@@ -272,6 +296,44 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.GoPath = selected.Path
 		return m, tea.Quit
+
+	case key.Matches(msg, m.keys.ServicesUp):
+		if !hasServicesConfig(m.projectDir) {
+			m.logbar.message = "No .wtm.services.toml found"
+			return m, nil
+		}
+		selected, ok := m.list.selectedStatus()
+		if !ok {
+			return m, nil
+		}
+		m.logbar.message = fmt.Sprintf("Starting services in %s...", selected.Branch)
+		return m, startServicesCmd(selected.Path)
+
+	case key.Matches(msg, m.keys.ServicesDown):
+		if len(m.serviceStatuses) == 0 {
+			m.logbar.message = "No services running"
+			return m, nil
+		}
+		m.logbar.message = "Stopping services..."
+		return m, stopServicesCmd()
+
+	case key.Matches(msg, m.keys.AttachService):
+		selected, ok := m.list.selectedStatus()
+		if !ok {
+			return m, nil
+		}
+		worktreeServices := filterServicesByWorkDir(m.serviceStatuses, selected.Path)
+		if len(worktreeServices) == 0 {
+			m.logbar.message = "No services running in this worktree"
+			return m, nil
+		}
+		for _, svc := range worktreeServices {
+			if svc.Status == domain.ServiceStatusRunning {
+				return m, attachServiceCmd(svc.Name)
+			}
+		}
+		m.logbar.message = "No running services to attach to"
+		return m, nil
 	}
 
 	return m, nil

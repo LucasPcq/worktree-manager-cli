@@ -67,9 +67,22 @@ const (
 	FlagEnvFrom = "env-from"
 	FlagForce   = "force"
 	FlagOff     = "off"
+	FlagProfile = "profile"
 
 	// Metadata directory and files created inside each worktree.
 	MetaDirName     = ".wtm"
 	MetaFileName    = "meta.json"
 	ContextFileName = "context.md"
+
+	// DaemonSocketName is the Unix socket filename for the service daemon.
+	DaemonSocketName = "wtm.sock"
+
+	// DaemonIdleTimeoutSeconds is how long the daemon waits with no services before auto-exit.
+	DaemonIdleTimeoutSeconds = 30
+
+	// DaemonStartTimeoutSeconds is how long to wait for the daemon to start.
+	DaemonStartTimeoutSeconds = 5
+
+	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
+	CtrlCByte byte = 0x03
 )

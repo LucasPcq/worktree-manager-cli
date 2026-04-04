@@ -3,6 +3,7 @@ package dashboard
 
 import (
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 )
 
@@ -20,7 +21,6 @@ type logMsg string
 type focusDoneMsg struct {
 	Branch string
 	Err    error
-	Output string
 }
 
 // detailLoadedMsg is sent when worktree detail data has been loaded.
@@ -38,4 +38,13 @@ type actionDoneMsg struct {
 	Err error
 }
 
+// serviceListMsg is sent when service statuses have been loaded from the daemon.
+type serviceListMsg struct {
+	Services []process.ServiceInfo
+	Err      error
+}
 
+// servicesStartedMsg is sent after starting services via the daemon.
+type servicesStartedMsg struct {
+	Err error
+}

@@ -1,0 +1,9 @@
+[[services]]
+name = "test"
+cmd = "ping 1.1.1.1"
+cwd = "."
+
+[[profiles]]
+name = "default"
+services = ["test"]
+default = true
