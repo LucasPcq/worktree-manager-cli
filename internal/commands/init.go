@@ -18,7 +18,7 @@ func NewInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Initialize wtm configuration",
-		Long:  "Interactive wizard to set up global config and project .wtm.toml.",
+		Long:  "Interactive wizard to set up global config and project .wtm/config.toml.",
 		RunE:  runInit,
 	}
 }
@@ -34,7 +34,7 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	}
 
 	if detect.ProjectConfigExists(dir) {
-		fmt.Fprintln(cmd.OutOrStdout(), ".wtm.toml already exists. Delete it or edit it manually to reconfigure.")
+		fmt.Fprintln(cmd.OutOrStdout(), ".wtm/config.toml already exists. Delete it or edit it manually to reconfigure.")
 		return nil
 	}
 
@@ -70,7 +70,7 @@ func ensureGlobalConfig(cmd *cobra.Command) error {
 }
 
 func createProjectConfig(cmd *cobra.Command, dir string) error {
-	fmt.Fprintln(cmd.OutOrStdout(), "No .wtm.toml found. Let's initialize this project.")
+	fmt.Fprintln(cmd.OutOrStdout(), "No .wtm/config.toml found. Let's initialize this project.")
 	fmt.Fprintln(cmd.OutOrStdout())
 
 	detection := buildDetectionResult(dir)
@@ -90,7 +90,7 @@ func createProjectConfig(cmd *cobra.Command, dir string) error {
 		return fmt.Errorf("write project config: %w", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "\n✓ Created %s\n", domain.ConfigFileName)
+	fmt.Fprintf(cmd.OutOrStdout(), "\n✓ Created %s/%s\n", domain.ProjectDirName, domain.ConfigFileName)
 	return nil
 }
 

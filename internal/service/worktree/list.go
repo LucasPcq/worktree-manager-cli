@@ -63,7 +63,7 @@ func buildStatus(gitWorktree infra.GitWorktree, baseBranch string) domain.Worktr
 }
 
 func worktreeCreatedAt(wtPath string) time.Time {
-	metaPath := filepath.Join(wtPath, domain.MetaDirName, domain.MetaFileName)
+	metaPath := filepath.Join(wtPath, domain.ProjectDirName, domain.MetaFileName)
 	data, err := os.ReadFile(metaPath)
 	if err == nil {
 		var meta domain.WorktreeMetadata

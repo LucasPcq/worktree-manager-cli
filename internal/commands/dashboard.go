@@ -35,6 +35,7 @@ func RunDashboard(cmd *cobra.Command, _ []string) error {
 	model := dashboard.New(dashboard.NewParams{
 		Config:     result.Config,
 		ProjectDir: result.ProjectDir,
+		WorkDir:    dir,
 	})
 
 	program := tea.NewProgram(&model, tea.WithAltScreen())

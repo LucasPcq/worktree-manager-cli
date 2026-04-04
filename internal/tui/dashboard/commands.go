@@ -1,13 +1,15 @@
 package dashboard
 
 import (
-	"bytes"
+	"io"
 	"os"
 	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/state"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 )
@@ -43,33 +45,16 @@ func loadWorktrees(projectDir string, cfg domain.Config) tea.Cmd {
 
 func focusWorktree(projectDir string, branch string, cfg domain.Config, program *tea.Program) tea.Cmd {
 	return func() tea.Msg {
-		var output *tuiWriter
+		var output io.Writer = io.Discard
 		if program != nil {
 			output = &tuiWriter{program: program}
 		}
 
-		var buf bytes.Buffer
-		writer := output
-		if writer == nil {
-			// Fallback: capture in buffer for error reporting
-			return focusDoneMsg{
-				Branch: branch,
-				Err:    worktree.Focus(worktree.FocusParams{ProjectDir: projectDir, Branch: branch, Config: cfg, Output: &buf}),
-				Output: buf.String(),
-			}
-		}
-
 		err := worktree.Focus(worktree.FocusParams{
-			ProjectDir: projectDir,
-			Branch:     branch,
-			Config:     cfg,
-			Output:     writer,
+			ProjectDir: projectDir, Branch: branch, Config: cfg, Output: output,
 		})
 
-		return focusDoneMsg{
-			Branch: branch,
-			Err:    err,
-		}
+		return focusDoneMsg{Branch: branch, Err: err}
 	}
 }
 
@@ -79,34 +64,89 @@ func loadDetail(params worktree.DetailParams) tea.Cmd {
 	}
 }
 
-func execNewWorktree() tea.Cmd {
+func execWtmCommand(resultMsg func(error) tea.Msg, args ...string) tea.Cmd {
 	bin, err := os.Executable()
 	if err != nil {
-		return func() tea.Msg { return actionDoneMsg{Err: err} }
+		return func() tea.Msg { return resultMsg(err) }
 	}
 
-	cmd := exec.Command(bin, "new")
+	cmd := exec.Command(bin, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return actionDoneMsg{Err: err}
-	})
+	return tea.ExecProcess(cmd, resultMsg)
+}
+
+func execNewWorktree() tea.Cmd {
+	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "new")
 }
 
 func execCleanWorktree(branch string) tea.Cmd {
+	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "clean", branch)
+}
+
+func loadServiceStatuses() tea.Cmd {
+	return func() tea.Msg {
+		socketPath := process.SocketPath()
+		if !process.IsDaemonRunning(socketPath) {
+			return serviceListMsg{}
+		}
+		client := process.NewClient(socketPath)
+		resp, err := client.Send(process.Request{Action: process.ActionList})
+		if err != nil {
+			return serviceListMsg{Err: err}
+		}
+		return serviceListMsg{Services: resp.Services}
+	}
+}
+
+func startServicesCmd(projectDir string) tea.Cmd {
 	bin, err := os.Executable()
 	if err != nil {
-		return func() tea.Msg { return actionDoneMsg{Err: err} }
+		return func() tea.Msg { return servicesStartedMsg{Err: err} }
 	}
 
-	cmd := exec.Command(bin, "clean", branch)
+	cmd := exec.Command(bin, "up")
+	cmd.Dir = projectDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return actionDoneMsg{Err: err}
+		return servicesStartedMsg{Err: err}
 	})
+}
+
+func attachServiceCmd(serviceName string) tea.Cmd {
+	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "logs", serviceName)
+}
+
+func stopServicesCmd(worktreePath string, services []process.ServiceInfo) tea.Cmd {
+	return func() tea.Msg {
+		socketPath := process.SocketPath()
+		if !process.IsDaemonRunning(socketPath) {
+			return servicesStartedMsg{}
+		}
+		client := process.NewClient(socketPath)
+		for _, svc := range services {
+			if svc.WorkDir != worktreePath {
+				continue
+			}
+			client.Send(process.Request{
+				Action:  process.ActionStop,
+				Name:    svc.Name,
+				WorkDir: worktreePath,
+			})
+		}
+		return servicesStartedMsg{}
+	}
+}
+
+func hasServicesConfig(projectDir string) bool {
+	cfg, err := config.LoadServices(projectDir)
+	if err != nil {
+		return false
+	}
+	return len(cfg.Services) > 0
 }

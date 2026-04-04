@@ -17,8 +17,11 @@ const (
 	// ExitCodeUsage indicates invalid usage or bad input.
 	ExitCodeUsage = 2
 
-	// ConfigFileName is the project-level config file name.
-	ConfigFileName = ".wtm.toml"
+	// ProjectDirName is the project-level wtm directory.
+	ProjectDirName = ".wtm"
+
+	// ConfigFileName is the project-level config file name (inside .wtm/).
+	ConfigFileName = "config.toml"
 
 	// GlobalConfigDir is the subdirectory under ~/.config for wtm.
 	GlobalConfigDir = "wtm"
@@ -67,9 +70,21 @@ const (
 	FlagEnvFrom = "env-from"
 	FlagForce   = "force"
 	FlagOff     = "off"
+	FlagProfile = "profile"
 
-	// Metadata directory and files created inside each worktree.
-	MetaDirName     = ".wtm"
+	// Metadata files created inside each worktree's .wtm/ directory.
 	MetaFileName    = "meta.json"
 	ContextFileName = "context.md"
+
+	// DaemonSocketName is the Unix socket filename for the service daemon.
+	DaemonSocketName = "wtm.sock"
+
+	// DaemonIdleTimeoutSeconds is how long the daemon waits with no services before auto-exit.
+	DaemonIdleTimeoutSeconds = 30
+
+	// DaemonStartTimeoutSeconds is how long to wait for the daemon to start.
+	DaemonStartTimeoutSeconds = 5
+
+	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
+	CtrlCByte byte = 0x03
 )

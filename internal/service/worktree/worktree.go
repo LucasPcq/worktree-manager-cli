@@ -115,7 +115,7 @@ func resolveEnvStrategy(params CreateParams) domain.EnvStrategy {
 }
 
 func writeMetadata(worktreePath string, metadata domain.WorktreeMetadata) error {
-	metaDir := filepath.Join(worktreePath, domain.MetaDirName)
+	metaDir := filepath.Join(worktreePath, domain.ProjectDirName)
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", metaDir, err)
 	}

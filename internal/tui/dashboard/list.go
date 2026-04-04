@@ -5,15 +5,17 @@ import (
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
 type listModel struct {
-	items        []domain.WorktreeStatus
-	activeBranch string
-	cursor       int
-	width        int
-	height       int
+	items           []domain.WorktreeStatus
+	activeBranch    string
+	serviceStatuses []process.ServiceInfo
+	cursor          int
+	width           int
+	height          int
 }
 
 func (m *listModel) setItems(statuses []domain.WorktreeStatus, activeBranch string) {
@@ -63,6 +65,15 @@ func (m listModel) view(focused bool) string {
 	return builder.String()
 }
 
+func (m listModel) hasRunningServices(worktreePath string) bool {
+	for _, svc := range m.serviceStatuses {
+		if svc.WorkDir == worktreePath && svc.Status == domain.ServiceStatusRunning {
+			return true
+		}
+	}
+	return false
+}
+
 func (m listModel) renderLine(item domain.WorktreeStatus, selected bool) string {
 	// Cursor
 	cursor := "  "
@@ -88,6 +99,13 @@ func (m listModel) renderLine(item domain.WorktreeStatus, selected bool) string 
 		tags = append(tags, styles.DirtyIndicator.Render("dirty"))
 	} else {
 		tags = append(tags, styles.CleanIndicator.Render("clean"))
+	}
+
+	// Services tag
+	if m.hasRunningServices(item.Path) {
+		tags = append(tags, styles.ActiveIndicator.Render("services"))
+	} else {
+		tags = append(tags, styles.Muted.Render("services"))
 	}
 
 	// Focus tag

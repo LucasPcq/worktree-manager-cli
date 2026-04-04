@@ -44,6 +44,9 @@ const minimalToml = `
 
 func writeFile(t *testing.T, dir string, name string, content string) {
 	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -52,7 +55,7 @@ func writeFile(t *testing.T, dir string, name string, content string) {
 
 func TestLoadFullConfig(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, domain.ConfigFileName, fullToml)
+	writeFile(t, filepath.Join(dir, domain.ProjectDirName), domain.ConfigFileName, fullToml)
 
 	cfg, err := Load(LoadParams{ProjectDir: dir})
 	if err != nil {
@@ -81,7 +84,7 @@ func TestLoadFullConfig(t *testing.T) {
 
 func TestLoadMinimalConfigAppliesDefaults(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, domain.ConfigFileName, minimalToml)
+	writeFile(t, filepath.Join(dir, domain.ProjectDirName), domain.ConfigFileName, minimalToml)
 
 	cfg, err := Load(LoadParams{ProjectDir: dir})
 	if err != nil {
@@ -116,7 +119,7 @@ func TestLoadMissingProjectConfigReturnsError(t *testing.T) {
 
 func TestHookCommandStringParsing(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, domain.ConfigFileName, `
+	writeFile(t, filepath.Join(dir, domain.ProjectDirName), domain.ConfigFileName, `
 [hooks]
 on_create = ["pnpm install"]
 `)
@@ -141,7 +144,7 @@ on_create = ["pnpm install"]
 
 func TestHookCommandObjectParsing(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, domain.ConfigFileName, `
+	writeFile(t, filepath.Join(dir, domain.ProjectDirName), domain.ConfigFileName, `
 [hooks]
 on_create = [
   { cmd = "pnpm install", cwd = "apps/api" },
@@ -168,7 +171,7 @@ on_create = [
 
 func TestHookCommandMixedParsing(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, dir, domain.ConfigFileName, fullToml)
+	writeFile(t, filepath.Join(dir, domain.ProjectDirName), domain.ConfigFileName, fullToml)
 
 	cfg, err := Load(LoadParams{ProjectDir: dir})
 	if err != nil {
