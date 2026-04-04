@@ -38,4 +38,13 @@ var (
 
 	// ErrCannotCleanParent is returned when trying to clean the parent worktree.
 	ErrCannotCleanParent = errors.New("cannot clean the parent worktree")
+
+	// ErrAuthNotConfigured is returned when no GitHub token is stored.
+	ErrAuthNotConfigured = errors.New("not authenticated — run `wtm auth login`")
+
+	// ErrAuthAlreadyLoggedIn is returned when attempting to login while already authenticated.
+	ErrAuthAlreadyLoggedIn = errors.New("already logged in")
+
+	// ErrAuthDeviceFlowTimeout is returned when the device flow polling expires.
+	ErrAuthDeviceFlowTimeout = errors.New("authentication timed out")
 )
