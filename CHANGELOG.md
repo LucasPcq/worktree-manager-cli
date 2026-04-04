@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.3.0 — Services & PTY
+
+### New features
+
+- **Service management** — Define long-running services (dev servers, docker, workers) in `.wtm/services.toml` with named profiles.
+- **`wtm up`** — Start services with interactive profile picker when multiple profiles exist. `--profile` flag for direct selection.
+- **`wtm down`** — Stop running services gracefully.
+- **`wtm logs <service>`** — Attach to a service's real terminal via PTY. Full ANSI support (colors, progress bars). Ctrl+C detaches without killing the service.
+- **Daemon architecture** — Background daemon owns PTY file descriptors. Services survive CLI exits. Auto-starts on first `wtm up`, auto-exits when idle.
+- **Services scoped per worktree** — Each worktree runs its own independent services. Dashboard shows service indicators per worktree.
+- **Dashboard service controls** — `u` to start services, `x` to stop, `s` to attach to a running service's terminal.
+- **Validation warnings** — Warns on duplicate service/profile names or multiple default profiles in `.wtm/services.toml`.
+
+### Breaking changes
+
+- **Config directory restructured** — `.wtm.toml` is now `.wtm/config.toml`, `.wtm.services.toml` is now `.wtm/services.toml`. All config lives in the `.wtm/` directory. Move your files: `mkdir -p .wtm && mv .wtm.toml .wtm/config.toml`.
+
+### Improvements
+
+- Profile picker with service list labels (e.g. "back (api, worker)").
+- `handleKey` refactored — worktree actions extracted to `handleWorktreeAction`, eliminating duplicated selection checks.
+- Code cleanup: extracted subprocess pattern, centralized constants (daemon timeouts, CtrlC byte), simplified focus writer logic.
+
+---
+
 ## v0.2.0 — Interactive Dashboard
 
 ### New features
