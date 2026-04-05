@@ -4,13 +4,22 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
+)
+
+const (
+	prActionBrowser   = "browser"
+	prActionDetails   = "details"
+	prActionDashboard = "dashboard"
 )
 
 // NewPRCmd creates the wtm pr command group.
@@ -75,8 +84,99 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list PRs: %w", err)
 	}
 
-	output.PrintPRList(prs, cmd.OutOrStdout())
+	if len(prs) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No open pull requests.")
+		return nil
+	}
+
+	// Non-interactive mode (pipe)
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		output.PrintPRList(prs, cmd.OutOrStdout())
+		return nil
+	}
+
+	// Interactive mode
+	pr, action, err := pickPRAndAction(prs)
+	if err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return nil
+		}
+		return err
+	}
+
+	return executePRAction(cmd, action, pr, dir)
+}
+
+func pickPRAndAction(prs []domain.PRInfo) (domain.PRInfo, string, error) {
+	prOptions := make([]huh.Option[int], 0, len(prs))
+	for _, pr := range prs {
+		label := fmt.Sprintf("#%-4d  %-40s  %s", pr.Number, truncate(pr.Title, 40), pr.Author)
+		prOptions = append(prOptions, huh.NewOption(label, pr.Number))
+	}
+
+	var selected int
+	var action string
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[int]().
+				Title("Select a pull request").
+				Options(prOptions...).
+				Value(&selected),
+			huh.NewSelect[string]().
+				Title("Action").
+				Options(
+					huh.NewOption("Open in browser", prActionBrowser),
+					huh.NewOption("View details", prActionDetails),
+					huh.NewOption("Open in dashboard", prActionDashboard),
+				).
+				Value(&action),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return domain.PRInfo{}, "", err
+	}
+
+	for _, pr := range prs {
+		if pr.Number == selected {
+			return pr, action, nil
+		}
+	}
+
+	return domain.PRInfo{}, "", fmt.Errorf("PR #%d not found", selected)
+}
+
+func executePRAction(cmd *cobra.Command, action string, pr domain.PRInfo, projectDir string) error {
+	switch action {
+	case prActionBrowser:
+		return exec.Command("open", pr.URL).Run()
+
+	case prActionDetails:
+		fmt.Fprintln(cmd.OutOrStdout(), output.FormatPRDetailSection(pr))
+		return nil
+
+	case prActionDashboard:
+		return runDashboardWithPR(cmd, projectDir, pr.Number)
+	}
+
 	return nil
+}
+
+func runDashboardWithPR(cmd *cobra.Command, projectDir string, prNumber int) error {
+	result, ok := loadConfig(cmd, projectDir)
+	if !ok {
+		return nil
+	}
+
+	return launchDashboard(cmd, result, &prNumber)
+}
+
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-1] + "…"
 }
 
 // projectRootFromCwd resolves the project root from the current directory.

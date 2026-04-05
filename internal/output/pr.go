@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
@@ -117,37 +119,54 @@ func FormatPRFilterLabel(filter domain.PRFilter) string {
 	}
 }
 
-// FormatPRDetailSection renders a detailed view of a PR for the detail panel.
+// FormatPRDetailSection renders a detailed view of a PR in a styled box.
 func FormatPRDetailSection(pr domain.PRInfo) string {
 	var b strings.Builder
 
 	// Header
 	b.WriteString(styles.Bold.Render(fmt.Sprintf("#%d %s", pr.Number, pr.Title)))
+	b.WriteString("\n\n")
+	b.WriteString(fmt.Sprintf("%s %s", styles.Muted.Render("Author:"), pr.Author))
 	b.WriteString("\n")
-	b.WriteString(styles.Muted.Render(fmt.Sprintf("  Author: %s  ·  %s  ·  %s", pr.Author, formatAge(pr.CreatedAt), pr.State)))
+	b.WriteString(fmt.Sprintf("%s %s", styles.Muted.Render("Opened:"), formatAge(pr.CreatedAt)))
 	b.WriteString("\n")
-	b.WriteString(styles.Muted.Render(fmt.Sprintf("  Branch: %s", pr.Branch)))
+	b.WriteString(fmt.Sprintf("%s %s", styles.Muted.Render("Status:"), pr.State))
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("%s %s", styles.Muted.Render("Branch:"), pr.Branch))
+
+	// Description
+	if pr.Body != "" {
+		b.WriteString("\n\n")
+		b.WriteString(styles.Bold.Render("Description"))
+		b.WriteString("\n")
+		b.WriteString(styles.Muted.Render(pr.Body))
+	}
 
 	// CI status
 	b.WriteString("\n\n")
 	b.WriteString(styles.Bold.Render("CI Status"))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  %s", formatCIStatus(pr.CIStatus)))
+	b.WriteString(formatCIStatus(pr.CIStatus))
 
 	// Reviews
 	b.WriteString("\n\n")
 	b.WriteString(styles.Bold.Render("Reviews"))
 	b.WriteString("\n")
 	if len(pr.Reviews) == 0 {
-		b.WriteString(styles.Muted.Render("  No reviews yet"))
+		b.WriteString(styles.Muted.Render("No reviews yet"))
 	} else {
 		for _, r := range pr.Reviews {
 			icon := reviewIcon(r.State)
-			b.WriteString(fmt.Sprintf("  %s %s — %s\n", icon, r.User, strings.ToLower(strings.ReplaceAll(r.State, "_", " "))))
+			b.WriteString(fmt.Sprintf("%s %s — %s\n", icon, r.User, strings.ToLower(strings.ReplaceAll(r.State, "_", " "))))
 		}
 	}
 
-	return b.String()
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(styles.ColorPrimary).
+		Padding(1, 2)
+
+	return "\n" + box.Render(b.String()) + "\n"
 }
 
 // hyperlink wraps text in an OSC 8 terminal hyperlink sequence.

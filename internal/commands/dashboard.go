@@ -32,10 +32,18 @@ func RunDashboard(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	return launchDashboard(cmd, result, nil)
+}
+
+// launchDashboard starts the TUI dashboard. If initialPR is non-nil, it opens focused on that PR.
+func launchDashboard(_ *cobra.Command, result configResult, initialPR *int) error {
+	dir, _ := os.Getwd()
+
 	model := dashboard.New(dashboard.NewParams{
 		Config:     result.Config,
 		ProjectDir: result.ProjectDir,
 		WorkDir:    dir,
+		InitialPR:  initialPR,
 	})
 
 	program := tea.NewProgram(&model, tea.WithAltScreen())

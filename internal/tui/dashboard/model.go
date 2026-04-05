@@ -34,6 +34,7 @@ type NewParams struct {
 	Config     domain.Config
 	ProjectDir string
 	WorkDir    string // actual cwd (may differ from ProjectDir in a worktree)
+	InitialPR  *int   // if set, open dashboard focused on this PR number
 }
 
 // Model is the main Bubbletea model for the wtm dashboard.
@@ -47,6 +48,7 @@ type Model struct {
 	activeList       activeListType
 	prDetail         *domain.PRInfo
 	allPRs           []domain.PRInfo // all open PRs, independent of filter
+	initialPR        *int           // if set, select this PR on first load
 	config           domain.Config
 	projectDir       string
 	workDir          string
@@ -60,12 +62,21 @@ type Model struct {
 
 // New creates a new dashboard model.
 func New(params NewParams) Model {
+	activePane := paneList
+	activeList := activeListWorktrees
+
+	if params.InitialPR != nil {
+		activePane = panePRList
+		activeList = activeListPRs
+	}
+
 	return Model{
 		config:     params.Config,
 		projectDir: params.ProjectDir,
 		workDir:    params.WorkDir,
-		activePane: paneList,
-		activeList: activeListWorktrees,
+		activePane: activePane,
+		activeList: activeList,
+		initialPR:  params.InitialPR,
 		prList:     newPRListModel(),
 		keys:       defaultKeys,
 		logbar:     logbarModel{message: "Loading..."},
@@ -145,6 +156,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.prList.filter == domain.PRFilterAll {
 			m.allPRs = msg.PRs
 			m.list.prInfos = msg.PRs
+		}
+		// Select initial PR if set
+		if m.initialPR != nil {
+			for i, pr := range msg.PRs {
+				if pr.Number == *m.initialPR {
+					m.prList.cursor = i
+					break
+				}
+			}
+			m.initialPR = nil
 		}
 		// Update detail panel if PR list is active
 		if m.activeList == activeListPRs {
