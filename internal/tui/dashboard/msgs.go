@@ -48,3 +48,15 @@ type serviceListMsg struct {
 type servicesStartedMsg struct {
 	Err error
 }
+
+// prListMsg is sent when PR data has been loaded from GitHub.
+type prListMsg struct {
+	PRs []domain.PRInfo
+	Err error
+}
+
+// prDetailMsg is sent when a single PR's detail has been loaded.
+type prDetailMsg struct {
+	PR  domain.PRInfo
+	Err error
+}

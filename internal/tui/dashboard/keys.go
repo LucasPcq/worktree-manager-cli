@@ -15,6 +15,10 @@ type keyMap struct {
 	ServicesUp    key.Binding
 	ServicesDown  key.Binding
 	AttachService key.Binding
+	WorktreeList  key.Binding
+	PRList        key.Binding
+	FilterPR      key.Binding
+	OpenBrowser   key.Binding
 	Quit          key.Binding
 }
 
@@ -31,5 +35,9 @@ var defaultKeys = keyMap{
 	ServicesUp:    key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "start services")),
 	ServicesDown:  key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "stop services")),
 	AttachService: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "attach to service")),
+	WorktreeList:  key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "worktrees")),
+	PRList:        key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "prs")),
+	FilterPR:      key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
+	OpenBrowser:   key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open in browser")),
 	Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }

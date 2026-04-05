@@ -9,6 +9,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/state"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
@@ -149,4 +150,45 @@ func hasServicesConfig(projectDir string) bool {
 		return false
 	}
 	return len(cfg.Services) > 0
+}
+
+func loadPRs(projectDir string, filter domain.PRFilter) tea.Cmd {
+	return func() tea.Msg {
+		auth, err := config.LoadAuth()
+		if err != nil {
+			return prListMsg{Err: err}
+		}
+
+		prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
+			ProjectDir: projectDir,
+			Filter:     filter,
+			Username:   auth.User,
+		})
+		if err != nil {
+			return prListMsg{Err: err}
+		}
+
+		return prListMsg{PRs: prs}
+	}
+}
+
+func loadPRDetail(projectDir string, number int) tea.Cmd {
+	return func() tea.Msg {
+		pr, err := ghservice.GetPRDetail(ghservice.GetPRDetailParams{
+			ProjectDir: projectDir,
+			Number:     number,
+		})
+		if err != nil {
+			return prDetailMsg{Err: err}
+		}
+		return prDetailMsg{PR: pr}
+	}
+}
+
+func openInBrowser(url string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("open", url)
+		cmd.Run()
+		return logMsg("Opened in browser")
+	}
 }
