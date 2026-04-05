@@ -144,6 +144,23 @@ func stopServicesCmd(worktreePath string, services []process.ServiceInfo) tea.Cm
 	}
 }
 
+func execCreatePR(worktreePath string) tea.Cmd {
+	bin, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return actionDoneMsg{Err: err} }
+	}
+
+	cmd := exec.Command(bin, "pr", "create")
+	cmd.Dir = worktreePath
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return actionDoneMsg{Err: err}
+	})
+}
+
 func hasServicesConfig(projectDir string) bool {
 	cfg, err := config.LoadServices(projectDir)
 	if err != nil {

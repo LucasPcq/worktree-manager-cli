@@ -30,6 +30,7 @@ func NewPRCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newPRListCmd())
+	cmd.AddCommand(newPRCreateCmd())
 
 	return cmd
 }

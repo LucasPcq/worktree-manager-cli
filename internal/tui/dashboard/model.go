@@ -124,7 +124,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFocusDone(msg)
 
 	case actionDoneMsg:
-		return m, tea.Batch(loadWorktrees(m.projectDir, m.config), loadServiceStatuses())
+		m.prList.loading = true
+		return m, tea.Batch(loadWorktrees(m.projectDir, m.config), loadServiceStatuses(), loadPRs(m.projectDir, m.prList.filter))
 
 	case serviceListMsg:
 		if msg.Err == nil {
@@ -382,6 +383,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.New):
 		return m, execNewWorktree()
+
+	case key.Matches(msg, m.keys.CreatePR):
+		selected, ok := m.list.selectedStatus()
+		if !ok {
+			return m, nil
+		}
+		return m, execCreatePR(selected.Path)
 
 	case key.Matches(msg, m.keys.Focus),
 		key.Matches(msg, m.keys.Delete),
