@@ -119,8 +119,21 @@ func startServicesCmd(projectDir string) tea.Cmd {
 	})
 }
 
-func attachServiceCmd(serviceName string) tea.Cmd {
-	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "logs", serviceName)
+func viewLogsCmd(worktreePath string) tea.Cmd {
+	bin, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return actionDoneMsg{Err: err} }
+	}
+
+	cmd := exec.Command(bin, "logs")
+	cmd.Dir = worktreePath
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return actionDoneMsg{Err: err}
+	})
 }
 
 func stopServicesCmd(worktreePath string, services []process.ServiceInfo) tea.Cmd {

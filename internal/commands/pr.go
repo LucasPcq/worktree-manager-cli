@@ -170,7 +170,7 @@ func runDashboardWithPR(cmd *cobra.Command, projectDir string, prNumber int) err
 		return nil
 	}
 
-	return launchDashboard(cmd, result, &prNumber)
+	return launchDashboard(cmd, result, launchDashboardParams{InitialPR: &prNumber})
 }
 
 func truncate(s string, maxLen int) string {

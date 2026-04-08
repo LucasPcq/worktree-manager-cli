@@ -22,6 +22,8 @@ func init() {
 	rootCmd.AddCommand(commands.NewDaemonCmd())
 	rootCmd.AddCommand(commands.NewUpCmd())
 	rootCmd.AddCommand(commands.NewDownCmd())
+	rootCmd.AddCommand(commands.NewStartCmd())
+	rootCmd.AddCommand(commands.NewStopCmd())
 	rootCmd.AddCommand(commands.NewLogsCmd())
 	rootCmd.AddCommand(commands.NewAuthCmd())
 	rootCmd.AddCommand(commands.NewPRCmd())

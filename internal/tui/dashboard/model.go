@@ -31,10 +31,11 @@ const (
 
 // NewParams holds inputs for creating a new dashboard model.
 type NewParams struct {
-	Config     domain.Config
-	ProjectDir string
-	WorkDir    string // actual cwd (may differ from ProjectDir in a worktree)
-	InitialPR  *int   // if set, open dashboard focused on this PR number
+	Config        domain.Config
+	ProjectDir    string
+	WorkDir       string  // actual cwd (may differ from ProjectDir in a worktree)
+	InitialPR     *int    // if set, open dashboard focused on this PR number
+	InitialBranch *string // if set, open dashboard focused on this worktree branch
 }
 
 // Model is the main Bubbletea model for the wtm dashboard.
@@ -49,6 +50,7 @@ type Model struct {
 	prDetail         *domain.PRInfo
 	allPRs           []domain.PRInfo // all open PRs, independent of filter
 	initialPR        *int           // if set, select this PR on first load
+	initialBranch    *string        // if set, select this worktree on first load
 	config           domain.Config
 	projectDir       string
 	workDir          string
@@ -71,15 +73,16 @@ func New(params NewParams) Model {
 	}
 
 	return Model{
-		config:     params.Config,
-		projectDir: params.ProjectDir,
-		workDir:    params.WorkDir,
-		activePane: activePane,
-		activeList: activeList,
-		initialPR:  params.InitialPR,
-		prList:     newPRListModel(),
-		keys:       defaultKeys,
-		logbar:     logbarModel{message: "Loading..."},
+		config:        params.Config,
+		projectDir:    params.ProjectDir,
+		workDir:       params.WorkDir,
+		activePane:    activePane,
+		activeList:    activeList,
+		initialPR:     params.InitialPR,
+		initialBranch: params.InitialBranch,
+		prList:        newPRListModel(),
+		keys:          defaultKeys,
+		logbar:        logbarModel{message: "Loading..."},
 	}
 }
 
@@ -138,9 +141,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case servicesStartedMsg:
 		if msg.Err != nil {
-			m.logbar.message = fmt.Sprintf("Services failed: %v", msg.Err)
+			m.logbar.message = fmt.Sprintf("Profile failed: %v", msg.Err)
 		} else {
-			m.logbar.message = "✓ Services started"
+			m.logbar.message = "✓ Profile started"
 		}
 		return m, loadServiceStatuses()
 
@@ -394,9 +397,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Focus),
 		key.Matches(msg, m.keys.Delete),
 		key.Matches(msg, m.keys.Enter),
-		key.Matches(msg, m.keys.ServicesUp),
-		key.Matches(msg, m.keys.ServicesDown),
-		key.Matches(msg, m.keys.AttachService):
+		key.Matches(msg, m.keys.ProfileUp),
+		key.Matches(msg, m.keys.ProfileDown),
+		key.Matches(msg, m.keys.ViewLogs):
 		selected, ok := m.list.selectedStatus()
 		if !ok {
 			return m, nil
@@ -443,36 +446,30 @@ func (m *Model) handleWorktreeAction(msg tea.KeyMsg, selected domain.WorktreeSta
 		m.GoPath = selected.Path
 		return m, tea.Quit
 
-	case key.Matches(msg, m.keys.ServicesUp):
+	case key.Matches(msg, m.keys.ProfileUp):
 		if !hasServicesConfig(selected.Path) {
 			m.logbar.message = "No .wtm/services.toml found in this worktree"
 			return m, nil
 		}
-		m.logbar.message = fmt.Sprintf("Starting services in %s...", selected.Branch)
+		m.logbar.message = fmt.Sprintf("Starting profile in %s...", selected.Branch)
 		return m, startServicesCmd(selected.Path)
 
-	case key.Matches(msg, m.keys.ServicesDown):
+	case key.Matches(msg, m.keys.ProfileDown):
 		worktreeServices := filterServicesByWorkDir(m.serviceStatuses, selected.Path)
 		if len(worktreeServices) == 0 {
 			m.logbar.message = "No services running in this worktree"
 			return m, nil
 		}
-		m.logbar.message = fmt.Sprintf("Stopping services in %s...", selected.Branch)
+		m.logbar.message = fmt.Sprintf("Stopping profile in %s...", selected.Branch)
 		return m, stopServicesCmd(selected.Path, m.serviceStatuses)
 
-	case key.Matches(msg, m.keys.AttachService):
+	case key.Matches(msg, m.keys.ViewLogs):
 		worktreeServices := filterServicesByWorkDir(m.serviceStatuses, selected.Path)
 		if len(worktreeServices) == 0 {
 			m.logbar.message = "No services running in this worktree"
 			return m, nil
 		}
-		for _, svc := range worktreeServices {
-			if svc.Status == domain.ServiceStatusRunning {
-				return m, attachServiceCmd(svc.Name)
-			}
-		}
-		m.logbar.message = "No running services to attach to"
-		return m, nil
+		return m, viewLogsCmd(selected.Path)
 	}
 
 	return m, nil
@@ -487,6 +484,16 @@ func (m *Model) handleWorktreeList(msg worktreeListMsg) (tea.Model, tea.Cmd) {
 	m.list.setItems(msg.Statuses, msg.ActiveBranch)
 	m.prList.setWorktreeBranches(msg.Statuses)
 	m.logbar.message = fmt.Sprintf("Loaded %d worktrees", len(msg.Statuses))
+
+	if m.initialBranch != nil {
+		for i, s := range msg.Statuses {
+			if s.Branch == *m.initialBranch {
+				m.list.cursor = i
+				break
+			}
+		}
+		m.initialBranch = nil
+	}
 
 	if m.activeList == activeListWorktrees {
 		return m, m.triggerDetailLoad()

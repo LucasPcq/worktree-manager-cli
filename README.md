@@ -81,9 +81,9 @@ The dashboard displays all your worktrees in a two-panel layout:
 | `n` | Create a new worktree (opens the wizard) |
 | `d` | Clean the selected worktree (opens confirmation) |
 | `f` | Focus the selected worktree (runs hooks, shows output in split panel) |
-| `u` | Start services for the selected worktree (with profile picker if multiple) |
-| `x` | Stop services for the selected worktree |
-| `s` | Attach to a running service (real terminal via PTY) |
+| `u` | Start a service profile for the selected worktree |
+| `x` | Stop a service profile for the selected worktree |
+| `s` | View multiplexed logs of all running services |
 | `Enter` | Navigate to the selected worktree directory |
 | `r` | Refresh the worktree list |
 | `Esc` | Close the hooks output panel |
@@ -268,53 +268,69 @@ echo 'wtm shell-init | source'  >> ~/.config/fish/config.fish  # fish
 
 ---
 
-### `wtm up [service]`
+### `wtm up [profile]`
 
-Start services defined in `.wtm/services.toml`.
+Start a service profile defined in `.wtm/services.toml`.
 
 ```bash
 # Start the default profile (or pick from a list if multiple profiles)
 wtm up
 
-# Start a specific service
-wtm up api
-
-# Start a specific profile
-wtm up --profile backend
+# Start a specific profile by name
+wtm up backend
 ```
 
-When multiple profiles are defined and no `--profile` flag is given, an interactive picker appears with all profiles. The default profile is pre-selected.
-
-**Flags:**
-| Flag | Description |
-|---|---|
-| `--profile <name>` | Profile to start (skips interactive picker) |
+When multiple profiles are defined and no argument is given, an interactive picker appears with all profiles. The default profile is pre-selected.
 
 ---
 
-### `wtm down [service]`
+### `wtm down [profile]`
 
-Stop running services.
+Stop a service profile.
 
 ```bash
 # Stop all running services
 wtm down
 
-# Stop a specific service
-wtm down api
+# Stop all services in a specific profile
+wtm down backend
 ```
 
 ---
 
-### `wtm logs <service>`
+### `wtm start <service>`
 
-Attach to a running service's terminal output. This gives you a real terminal with full ANSI support (colors, progress bars).
+Start a single service by name.
 
 ```bash
+wtm start api
+```
+
+---
+
+### `wtm stop <service>`
+
+Stop a single running service by name.
+
+```bash
+wtm stop api
+```
+
+---
+
+### `wtm logs [service]`
+
+Stream service output. Without arguments, multiplexes all running services with colored prefixes. With a service name, attaches to that single service's PTY.
+
+```bash
+# Stream all running services (multiplexed)
+wtm logs
+
+# Attach to a single service
 wtm logs api
 ```
 
-Press `Ctrl+C` to detach — the service keeps running in the background.
+Press `Ctrl+C` to detach — services keep running in the background.
 
 ---
 
@@ -456,9 +472,13 @@ name = "front"
 services = ["web", "api"]
 ```
 
-**Services** define the executable commands. **Profiles** group services by name. One profile can be marked `default = true`.
+**Services** define individual components (a dev server, a database, a worker). **Profiles** group services into named sets you start together. One profile can be marked `default = true`.
 
-Services run in a background daemon with PTY support. Use `wtm logs <service>` to attach to a real terminal, `Ctrl+C` to detach without killing the service.
+- `wtm up [profile]` / `wtm down [profile]` — start or stop a whole profile
+- `wtm start <service>` / `wtm stop <service>` — start or stop a single service
+- `wtm logs` — stream all running services (multiplexed), or `wtm logs <service>` for one
+
+Services run in a background daemon with PTY support. Press `Ctrl+C` to detach without killing the service.
 
 Each worktree has its own copy of this file (it's versioned in git), so services started in worktree A are independent from worktree B.
 

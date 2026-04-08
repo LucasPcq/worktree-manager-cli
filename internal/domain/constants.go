@@ -70,8 +70,7 @@ const (
 	FlagEnvFrom = "env-from"
 	FlagForce   = "force"
 	FlagOff     = "off"
-	FlagProfile = "profile"
-	FlagTitle   = "title"
+	FlagTitle = "title"
 	FlagBase    = "base"
 	FlagDraft   = "draft"
 
