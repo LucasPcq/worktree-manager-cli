@@ -13,8 +13,8 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
-// NewUpCmd creates the wtm up command.
-func NewUpCmd() *cobra.Command {
+// newSvcUpCmd creates the wtm svc up subcommand.
+func newSvcUpCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "up [profile]",
 		Short: "Start a service profile",

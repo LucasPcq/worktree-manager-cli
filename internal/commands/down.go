@@ -10,8 +10,8 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
-// NewDownCmd creates the wtm down command.
-func NewDownCmd() *cobra.Command {
+// newSvcDownCmd creates the wtm svc down subcommand.
+func newSvcDownCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "down [profile]",
 		Short: "Stop a service profile",

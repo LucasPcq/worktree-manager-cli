@@ -78,6 +78,12 @@ const (
 	MetaFileName    = "meta.json"
 	ContextFileName = "context.md"
 
+	// CmdGroupCore is the Cobra group ID for core commands.
+	CmdGroupCore = "core"
+
+	// CmdGroupSetup is the Cobra group ID for setup commands.
+	CmdGroupSetup = "setup"
+
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"
 

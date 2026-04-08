@@ -25,8 +25,9 @@ const (
 // NewPRCmd creates the wtm pr command group.
 func NewPRCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "pr",
-		Short: "Manage pull requests",
+		Use:     "pr",
+		Short:   "Manage pull requests",
+		GroupID: domain.CmdGroupCore,
 	}
 
 	cmd.AddCommand(newPRListCmd())

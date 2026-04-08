@@ -10,13 +10,13 @@ import (
 )
 
 const bashZshTemplate = `wtm() {
-  if [ "$1" = "go" ]; then
+  if [ "$1" = "wt" ] && [ "$2" = "go" ]; then
     local dir
-    dir="$(command wtm resolve "${@:2}")"
+    dir="$(command wtm resolve "${@:3}")"
     if [ -n "$dir" ]; then
       cd "$dir" || return 1
     fi
-  elif [ "$1" = "clean" ]; then
+  elif [ "$1" = "wt" ] && [ "$2" = "clean" ]; then
     local root
     root="$(git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')"
     command wtm "$@"
@@ -45,12 +45,12 @@ const bashZshTemplate = `wtm() {
 `
 
 const fishTemplate = `function wtm
-  if test "$argv[1]" = "go"
-    set dir (command wtm resolve $argv[2..])
+  if test "$argv[1]" = "wt" -a "$argv[2]" = "go"
+    set dir (command wtm resolve $argv[3..])
     if test -n "$dir"
       cd "$dir"
     end
-  else if test "$argv[1]" = "clean"
+  else if test "$argv[1]" = "wt" -a "$argv[2]" = "clean"
     set root (git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')
     command wtm $argv
     if not test -d "$PWD"

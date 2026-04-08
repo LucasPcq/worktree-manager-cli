@@ -19,10 +19,10 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 )
 
-// NewLsCmd creates the wtm ls command.
-func NewLsCmd() *cobra.Command {
+// newWtListCmd creates the wtm wt list subcommand.
+func newWtListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "ls",
+		Use:   "list",
 		Short: "List all worktrees",
 		Long:  "List all git worktrees with their status, PR info, and running services.",
 		RunE:  runLs,
@@ -227,21 +227,21 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 
 	switch action {
 	case lsActionGo:
-		cmd := exec.Command(bin, "go", selected.Branch)
+		cmd := exec.Command(bin, "wt", "go", selected.Branch)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 
 	case lsActionFocus:
-		cmd := exec.Command(bin, "focus", selected.Branch)
+		cmd := exec.Command(bin, "wt", "focus", selected.Branch)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 
 	case lsActionServicesUp:
-		cmd := exec.Command(bin, "up")
+		cmd := exec.Command(bin, "svc", "up")
 		cmd.Dir = selected.Path
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -249,7 +249,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return cmd.Run()
 
 	case lsActionServicesDown:
-		cmd := exec.Command(bin, "down")
+		cmd := exec.Command(bin, "svc", "down")
 		cmd.Dir = selected.Path
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -257,7 +257,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return cmd.Run()
 
 	case lsActionLogs:
-		cmd := exec.Command(bin, "logs")
+		cmd := exec.Command(bin, "svc", "logs")
 		cmd.Dir = selected.Path
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -265,7 +265,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return cmd.Run()
 
 	case lsActionClean:
-		cmd := exec.Command(bin, "clean", selected.Branch)
+		cmd := exec.Command(bin, "wt", "clean", selected.Branch)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

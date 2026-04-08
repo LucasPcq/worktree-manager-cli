@@ -9,8 +9,8 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
-// NewStopCmd creates the wtm stop command.
-func NewStopCmd() *cobra.Command {
+// newSvcStopCmd creates the wtm svc stop subcommand.
+func newSvcStopCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop <service>",
 		Short: "Stop a single service",

@@ -15,8 +15,8 @@ import (
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
-// NewLogsCmd creates the wtm logs command.
-func NewLogsCmd() *cobra.Command {
+// newSvcLogsCmd creates the wtm svc logs subcommand.
+func newSvcLogsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "logs [service]",
 		Short: "Stream service output",

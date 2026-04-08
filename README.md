@@ -51,11 +51,11 @@ wtm init
 wtm
 
 # Or use individual commands:
-wtm ls                          # list all worktrees
-wtm new feature/my-feature      # create a worktree
-wtm go feature/my-feature       # navigate to it
-wtm focus feature/my-feature    # start the environment
-wtm clean feature/my-feature    # clean up when done
+wtm wt list                        # list all worktrees
+wtm wt create feature/my-feature   # create a worktree
+wtm wt go feature/my-feature       # navigate to it
+wtm wt focus feature/my-feature    # start the environment
+wtm wt clean feature/my-feature    # clean up when done
 ```
 
 ## Commands
@@ -116,142 +116,6 @@ If `.wtm/config.toml` already exists, the command exits — delete it or edit ma
 
 ---
 
-### `wtm new [branch]`
-
-Create a new git worktree with environment provisioning and hooks.
-
-```bash
-# Fully interactive — prompts for branch name, source branch, and env strategy
-wtm new
-
-# Specify branch name, pick source branch interactively
-wtm new feature/auth
-
-# Direct — specify everything, no interaction
-wtm new feature/auth --from main --env-from parent
-```
-
-**What happens:**
-1. Creates a git worktree at `<base_path>/<branch-name>` (slashes become dashes)
-2. Copies `.env` files according to the configured strategy
-3. Creates `.wtm/meta.json` (source branch, timestamp, strategy used)
-4. Creates `.wtm/context.md` (empty, for your notes)
-5. Runs `on_create` hooks
-
-**Flags:**
-| Flag | Description |
-|---|---|
-| `--from <branch>` | Source branch (skips interactive picker) |
-| `--env-from <strategy>` | Override env strategy: `example`, `main`, or `parent` |
-
----
-
-### `wtm ls`
-
-List all worktrees with their git status.
-
-```bash
-wtm ls
-```
-
-Output:
-```
-  main              (parent)  ● active  clean
-  feature-auth                           dirty   3 commits ahead
-  feature-payment                        clean   1 commit ahead
-```
-
-Columns:
-- **Branch name**
-- **Tags** — `(parent)` for the main worktree, `● active` for the focused worktree
-- **Git status** — `clean` or `dirty` (uncommitted changes)
-- **Commits ahead** — number of commits ahead of the base branch
-
----
-
-### `wtm go [branch]`
-
-Navigate to a worktree directory. Requires shell integration.
-
-```bash
-# Navigate to a specific worktree
-wtm go feature/auth
-
-# Interactive picker if no argument
-wtm go
-
-# Substring match — if only one worktree matches, navigates directly
-wtm go auth
-```
-
-**Setup required:** Add this to your shell config (`.zshrc`, `.bashrc`, or `config.fish`):
-
-```bash
-eval "$(wtm shell-init)"
-```
-
-Without shell integration, `wtm go` cannot change your working directory (a child process cannot `cd` its parent). The shell wrapper intercepts `wtm go` and performs the `cd` in your current shell.
-
----
-
-### `wtm focus [branch]`
-
-Switch the active worktree and run lifecycle hooks.
-
-```bash
-# Focus on a worktree — runs on_blur on previous, on_focus on target
-wtm focus feature/auth
-
-# Interactive picker if no argument
-wtm focus
-
-# Stop everything — runs on_blur and clears state
-wtm focus --off
-```
-
-`focus` and `go` are independent and composable:
-- `wtm go` changes your directory
-- `wtm focus` manages your environment (starts/stops services via hooks)
-- Use both: `wtm focus feature/auth && wtm go feature/auth`
-
-**Flags:**
-| Flag | Description |
-|---|---|
-| `--off` | Run blur hooks on active worktree and clear state |
-
----
-
-### `wtm clean [branch]`
-
-Remove a worktree and its local branch. The remote branch is never touched.
-
-```bash
-# Interactive — pick from list, confirm with safety checks
-wtm clean
-
-# Direct — specify branch
-wtm clean feature/auth
-
-# Skip all safety checks
-wtm clean feature/auth --force
-```
-
-**Safety checks (before deletion):**
-- Uncommitted changes in the worktree
-- Unpushed commits to remote
-- Open pull request (detected via `gh` CLI, skipped if not installed)
-
-If any check triggers, the wizard offers three options: delete, force delete (bypass checks), or cancel.
-
-The parent worktree cannot be cleaned.
-
-**Flags:**
-| Flag | Description |
-|---|---|
-| `--force` | Bypass all safety checks and delete immediately |
-
----
-
 ### `wtm shell-init`
 
 Output a shell wrapper function. Eval it in your rc file.
@@ -268,66 +132,147 @@ echo 'wtm shell-init | source'  >> ~/.config/fish/config.fish  # fish
 
 ---
 
-### `wtm up [profile]`
+### `wtm wt` — Worktree management
+
+#### `wtm wt create [branch]`
+
+Create a new git worktree with environment provisioning and hooks.
+
+```bash
+# Fully interactive — prompts for branch name, source branch, and env strategy
+wtm wt create
+
+# Specify branch name, pick source branch interactively
+wtm wt create feature/auth
+
+# Direct — specify everything, no interaction
+wtm wt create feature/auth --from main --env-from parent
+```
+
+**What happens:**
+1. Creates a git worktree at `<base_path>/<branch-name>` (slashes become dashes)
+2. Copies `.env` files according to the configured strategy
+3. Creates `.wtm/meta.json` (source branch, timestamp, strategy used)
+4. Creates `.wtm/context.md` (empty, for your notes)
+5. Runs `on_create` hooks
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--from <branch>` | Source branch (skips interactive picker) |
+| `--env-from <strategy>` | Override env strategy: `example`, `main`, or `parent` |
+
+#### `wtm wt list`
+
+List all worktrees with their git status.
+
+```bash
+wtm wt list
+```
+
+Output:
+```
+  main              (parent)  ● active  clean
+  feature-auth                           dirty   3 commits ahead
+  feature-payment                        clean   1 commit ahead
+```
+
+In an interactive terminal, shows a picker with actions: go, focus, start profile, stop profile, view logs, clean, open in dashboard.
+
+#### `wtm wt go [branch]`
+
+Navigate to a worktree directory. Requires shell integration.
+
+```bash
+wtm wt go feature/auth     # navigate to a specific worktree
+wtm wt go                  # interactive picker
+wtm wt go auth             # substring match
+```
+
+Without shell integration, `wtm wt go` cannot change your working directory. The shell wrapper intercepts `wtm wt go` and performs the `cd` in your current shell.
+
+#### `wtm wt focus [branch]`
+
+Switch the active worktree and run lifecycle hooks.
+
+```bash
+wtm wt focus feature/auth   # runs on_blur on previous, on_focus on target
+wtm wt focus                # interactive picker
+wtm wt focus --off          # stop everything — runs on_blur and clears state
+```
+
+`focus` and `go` are independent and composable:
+- `wtm wt go` changes your directory
+- `wtm wt focus` manages your environment (starts/stops services via hooks)
+- Use both: `wtm wt focus feature/auth && wtm wt go feature/auth`
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--off` | Run blur hooks on active worktree and clear state |
+
+#### `wtm wt clean [branch]`
+
+Remove a worktree and its local branch. The remote branch is never touched.
+
+```bash
+wtm wt clean                        # interactive picker with safety checks
+wtm wt clean feature/auth           # direct
+wtm wt clean feature/auth --force   # skip all safety checks
+```
+
+**Safety checks:** uncommitted changes, unpushed commits, open pull request.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--force` | Bypass all safety checks and delete immediately |
+
+---
+
+### `wtm svc` — Service management
+
+#### `wtm svc up [profile]`
 
 Start a service profile defined in `.wtm/services.toml`.
 
 ```bash
-# Start the default profile (or pick from a list if multiple profiles)
-wtm up
-
-# Start a specific profile by name
-wtm up backend
+wtm svc up              # start default profile (or picker if multiple)
+wtm svc up backend      # start a specific profile
 ```
 
-When multiple profiles are defined and no argument is given, an interactive picker appears with all profiles. The default profile is pre-selected.
-
----
-
-### `wtm down [profile]`
+#### `wtm svc down [profile]`
 
 Stop a service profile.
 
 ```bash
-# Stop all running services
-wtm down
-
-# Stop all services in a specific profile
-wtm down backend
+wtm svc down            # stop all running services
+wtm svc down backend    # stop a specific profile
 ```
 
----
-
-### `wtm start <service>`
+#### `wtm svc start <service>`
 
 Start a single service by name.
 
 ```bash
-wtm start api
+wtm svc start api
 ```
 
----
-
-### `wtm stop <service>`
+#### `wtm svc stop <service>`
 
 Stop a single running service by name.
 
 ```bash
-wtm stop api
+wtm svc stop api
 ```
 
----
-
-### `wtm logs [service]`
+#### `wtm svc logs [service]`
 
 Stream service output. Without arguments, multiplexes all running services with colored prefixes. With a service name, attaches to that single service's PTY.
 
 ```bash
-# Stream all running services (multiplexed)
-wtm logs
-
-# Attach to a single service
-wtm logs api
+wtm svc logs            # stream all running services (multiplexed)
+wtm svc logs api        # attach to a single service
 ```
 
 Press `Ctrl+C` to detach — services keep running in the background.
@@ -474,9 +419,9 @@ services = ["web", "api"]
 
 **Services** define individual components (a dev server, a database, a worker). **Profiles** group services into named sets you start together. One profile can be marked `default = true`.
 
-- `wtm up [profile]` / `wtm down [profile]` — start or stop a whole profile
-- `wtm start <service>` / `wtm stop <service>` — start or stop a single service
-- `wtm logs` — stream all running services (multiplexed), or `wtm logs <service>` for one
+- `wtm svc up [profile]` / `wtm svc down [profile]` — start or stop a whole profile
+- `wtm svc start <service>` / `wtm svc stop <service>` — start or stop a single service
+- `wtm svc logs` — stream all running services (multiplexed), or `wtm svc logs <service>` for one
 
 Services run in a background daemon with PTY support. Press `Ctrl+C` to detach without killing the service.
 
@@ -499,13 +444,13 @@ The project `.wtm/config.toml` can override the agent setting. Shell is always g
 
 ## State
 
-`wtm` tracks the active worktree in `~/.config/wtm/state.json`. This file is managed automatically by `wtm focus` — don't edit it manually.
+`wtm` tracks the active worktree in `~/.config/wtm/state.json`. This file is managed automatically by `wtm wt focus` — don't edit it manually.
 
 ---
 
 ## Worktree metadata
 
-Each worktree created by `wtm new` contains a `.wtm/` directory with:
+Each worktree created by `wtm wt create` contains a `.wtm/` directory with:
 
 - **`meta.json`** — source branch, creation timestamp, env strategy used
 - **`context.md`** — empty file for your notes (branch context, PR links, etc.)

@@ -10,8 +10,8 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
-// NewStartCmd creates the wtm start command.
-func NewStartCmd() *cobra.Command {
+// newSvcStartCmd creates the wtm svc start subcommand.
+func newSvcStartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "start <service>",
 		Short: "Start a single service",

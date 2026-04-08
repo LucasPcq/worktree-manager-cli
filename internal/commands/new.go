@@ -15,10 +15,10 @@ import (
 	newpicker "github.com/LucasPcq/wtm/internal/tui/new"
 )
 
-// NewNewCmd creates the wtm new command.
-func NewNewCmd() *cobra.Command {
+// newWtCreateCmd creates the wtm wt create subcommand.
+func newWtCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "new [branch]",
+		Use:   "create [branch]",
 		Short: "Create a new worktree",
 		Long:  "Create a git worktree with env provisioning, metadata, and hooks.\nWithout arguments, prompts for the branch name interactively.",
 		Args:  cobra.MaximumNArgs(1),

@@ -15,8 +15,9 @@ import (
 // NewAuthCmd creates the wtm auth command group.
 func NewAuthCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "auth",
-		Short: "Manage GitHub authentication",
+		Use:     "auth",
+		Short:   "Manage GitHub authentication",
+		GroupID: domain.CmdGroupCore,
 	}
 
 	cmd.AddCommand(newAuthLoginCmd())

@@ -12,8 +12,8 @@ import (
 	cleanui "github.com/LucasPcq/wtm/internal/tui/clean"
 )
 
-// NewCleanCmd creates the wtm clean command.
-func NewCleanCmd() *cobra.Command {
+// newWtCleanCmd creates the wtm wt clean subcommand.
+func newWtCleanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "clean [branch]",
 		Short: "Remove a worktree and its local branch",

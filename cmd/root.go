@@ -10,23 +10,27 @@ import (
 )
 
 func init() {
-	rootCmd.AddCommand(commands.NewInitCmd())
-	rootCmd.AddCommand(commands.NewNewCmd())
-	rootCmd.AddCommand(commands.NewLsCmd())
-	rootCmd.AddCommand(commands.NewCleanCmd())
-	rootCmd.AddCommand(commands.NewGoCmd())
+	rootCmd.AddGroup(
+		&cobra.Group{ID: domain.CmdGroupCore, Title: "Core Commands:"},
+		&cobra.Group{ID: domain.CmdGroupSetup, Title: "Setup:"},
+	)
+
+	rootCmd.AddCommand(commands.NewWtCmd())
+	rootCmd.AddCommand(commands.NewSvcCmd())
+	rootCmd.AddCommand(commands.NewPRCmd())
+	rootCmd.AddCommand(commands.NewAuthCmd())
+
+	initCmd := commands.NewInitCmd()
+	initCmd.GroupID = domain.CmdGroupSetup
+	rootCmd.AddCommand(initCmd)
+
+	shellInitCmd := commands.NewShellInitCmd()
+	shellInitCmd.GroupID = domain.CmdGroupSetup
+	rootCmd.AddCommand(shellInitCmd)
+
 	rootCmd.AddCommand(commands.NewResolveCmd())
-	rootCmd.AddCommand(commands.NewShellInitCmd())
-	rootCmd.AddCommand(commands.NewFocusCmd())
 	rootCmd.AddCommand(commands.NewDashboardCmd())
 	rootCmd.AddCommand(commands.NewDaemonCmd())
-	rootCmd.AddCommand(commands.NewUpCmd())
-	rootCmd.AddCommand(commands.NewDownCmd())
-	rootCmd.AddCommand(commands.NewStartCmd())
-	rootCmd.AddCommand(commands.NewStopCmd())
-	rootCmd.AddCommand(commands.NewLogsCmd())
-	rootCmd.AddCommand(commands.NewAuthCmd())
-	rootCmd.AddCommand(commands.NewPRCmd())
 }
 
 var version = domain.Version

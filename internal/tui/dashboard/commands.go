@@ -80,11 +80,11 @@ func execWtmCommand(resultMsg func(error) tea.Msg, args ...string) tea.Cmd {
 }
 
 func execNewWorktree() tea.Cmd {
-	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "new")
+	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "wt", "create")
 }
 
 func execCleanWorktree(branch string) tea.Cmd {
-	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "clean", branch)
+	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "wt", "clean", branch)
 }
 
 func loadServiceStatuses() tea.Cmd {
@@ -108,7 +108,7 @@ func startServicesCmd(projectDir string) tea.Cmd {
 		return func() tea.Msg { return servicesStartedMsg{Err: err} }
 	}
 
-	cmd := exec.Command(bin, "up")
+	cmd := exec.Command(bin, "svc", "up")
 	cmd.Dir = projectDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -125,7 +125,7 @@ func viewLogsCmd(worktreePath string) tea.Cmd {
 		return func() tea.Msg { return actionDoneMsg{Err: err} }
 	}
 
-	cmd := exec.Command(bin, "logs")
+	cmd := exec.Command(bin, "svc", "logs")
 	cmd.Dir = worktreePath
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
