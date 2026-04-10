@@ -311,6 +311,50 @@ wtm auth status
 
 ---
 
+### `wtm pr` — Pull requests
+
+Interact with GitHub pull requests from the CLI. Requires auth via `wtm auth login` or `WTM_GITHUB_TOKEN`.
+
+#### `wtm pr list`
+
+List open pull requests. Interactive picker with actions (checkout, open in browser, view details, open in dashboard).
+
+```bash
+wtm pr list           # all open PRs
+wtm pr list --mine    # PRs you authored
+wtm pr list --review  # PRs where you are a requested reviewer
+```
+
+#### `wtm pr create`
+
+Create a PR for the current branch via an interactive wizard. Pushes the branch first if needed.
+
+```bash
+wtm pr create                              # full interactive
+wtm pr create --title "..." --base main    # skip wizard fields
+wtm pr create --draft                      # draft PR
+```
+
+#### `wtm pr checkout [number]`
+
+Create a worktree from an existing pull request and run `on_create` hooks. Perfect for reviewing a teammate's PR with the full environment set up.
+
+```bash
+wtm pr checkout 42                 # checkout PR #42
+wtm pr checkout                    # interactive picker of open PRs
+wtm pr checkout 42 --env-from main # override env strategy
+```
+
+Behavior:
+- Runs `git fetch origin <pr-branch>`, then creates a worktree on that branch
+- Applies the configured env strategy (interactive wizard if `--env-from` not provided)
+- Runs `on_create` hooks exactly like `wtm wt create`
+- Refuses if a local branch with the same name already exists — run `wtm wt clean <branch>` first
+
+**Limitation** — PRs from forks are not supported yet. Use `gh pr checkout` as a fallback for fork PRs.
+
+---
+
 ## Configuration
 
 ### Project config — `.wtm/config.toml`

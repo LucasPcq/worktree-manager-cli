@@ -19,6 +19,7 @@ const (
 	prActionBrowser   = "browser"
 	prActionDetails   = "details"
 	prActionDashboard = "dashboard"
+	prActionCheckout  = "checkout"
 )
 
 // NewPRCmd creates the wtm pr command group.
@@ -31,6 +32,7 @@ func NewPRCmd() *cobra.Command {
 
 	cmd.AddCommand(newPRListCmd())
 	cmd.AddCommand(newPRCreateCmd())
+	cmd.AddCommand(newPRCheckoutCmd())
 
 	return cmd
 }
@@ -127,6 +129,7 @@ func pickPRAndAction(prs []domain.PRInfo) (domain.PRInfo, string, error) {
 			huh.NewSelect[string]().
 				Title("Action").
 				Options(
+					huh.NewOption("Checkout into worktree", prActionCheckout),
 					huh.NewOption("Open in browser", prActionBrowser),
 					huh.NewOption("View details", prActionDetails),
 					huh.NewOption("Open in dashboard", prActionDashboard),
@@ -159,6 +162,13 @@ func executePRAction(cmd *cobra.Command, action string, pr domain.PRInfo, projec
 
 	case prActionDashboard:
 		return runDashboardWithPR(cmd, projectDir, pr.Number)
+
+	case prActionCheckout:
+		result, ok := loadConfig(cmd, projectDir)
+		if !ok {
+			return nil
+		}
+		return checkoutPR(cmd, result, checkoutPRParams{Number: pr.Number})
 	}
 
 	return nil
@@ -187,4 +197,58 @@ func projectRootFromCwd() (string, error) {
 		return "", fmt.Errorf("get working directory: %w", err)
 	}
 	return projectRoot(dir)
+}
+
+// pickPRNumber fetches the list of open PRs and shows a picker.
+// Returns the selected PR number, or 0 if the user aborts.
+func pickPRNumber(cmd *cobra.Command, projectDir string) (int, error) {
+	auth, err := ghservice.ResolveAuth()
+	if errors.Is(err, domain.ErrAuthNotConfigured) || errors.Is(err, domain.ErrAuthNeedsReauth) {
+		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("load auth: %w", err)
+	}
+
+	stop := startSpinner(cmd.ErrOrStderr(), "Fetching pull requests...")
+	prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
+		ProjectDir: projectDir,
+		Filter:     domain.PRFilterAll,
+		Username:   auth.User,
+	})
+	stop()
+	if err != nil {
+		return 0, fmt.Errorf("list PRs: %w", err)
+	}
+
+	if len(prs) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No open pull requests.")
+		return 0, nil
+	}
+
+	prOptions := make([]huh.Option[int], 0, len(prs))
+	for _, pr := range prs {
+		label := fmt.Sprintf("#%-4d  %-40s  %s", pr.Number, truncate(pr.Title, 40), pr.Author)
+		prOptions = append(prOptions, huh.NewOption(label, pr.Number))
+	}
+
+	var selected int
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[int]().
+				Title("Select a pull request to checkout").
+				Options(prOptions...).
+				Value(&selected),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	return selected, nil
 }

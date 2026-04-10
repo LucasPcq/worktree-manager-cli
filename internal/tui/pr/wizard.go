@@ -94,3 +94,38 @@ func buildBranchOptions(branches []string, defaultBranch string) []huh.Option[st
 
 	return options
 }
+
+// EnvPickerParams holds inputs for the PR checkout env strategy picker.
+type EnvPickerParams struct {
+	ConfigStrategy domain.EnvStrategy
+}
+
+// RunEnvPicker displays a single-question form asking for the env strategy.
+// Returns the chosen strategy (empty string means "use config default").
+func RunEnvPicker(params EnvPickerParams) (string, error) {
+	var envStrategy string
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Env strategy").
+				Description("How to provision .env files in the new worktree").
+				Options(
+					huh.NewOption("Use config default ("+string(params.ConfigStrategy)+")", ""),
+					huh.NewOption("example — copy .env.example → .env", string(domain.EnvStrategyExample)),
+					huh.NewOption("main — copy .env from main worktree", string(domain.EnvStrategyMain)),
+					huh.NewOption("parent — copy .env from source worktree", string(domain.EnvStrategyParent)),
+				).
+				Value(&envStrategy),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return "", domain.ErrUserAborted
+		}
+		return "", err
+	}
+
+	return envStrategy, nil
+}

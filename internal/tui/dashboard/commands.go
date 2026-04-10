@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -165,6 +166,22 @@ func execCreatePR(worktreePath string) tea.Cmd {
 
 	cmd := exec.Command(bin, "pr", "create")
 	cmd.Dir = worktreePath
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return actionDoneMsg{Err: err}
+	})
+}
+
+func execCheckoutPR(prNumber int) tea.Cmd {
+	bin, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return actionDoneMsg{Err: err} }
+	}
+
+	cmd := exec.Command(bin, "pr", "checkout", strconv.Itoa(prNumber))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

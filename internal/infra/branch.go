@@ -89,6 +89,23 @@ func BranchExistsOnRemote(params BranchExistsOnRemoteParams) bool {
 	return cmd.Run() == nil
 }
 
+// FetchBranchParams holds inputs for fetching a specific branch from origin.
+type FetchBranchParams struct {
+	ProjectDir string
+	Branch     string
+}
+
+// FetchBranch runs `git fetch origin <branch>` to update the remote-tracking ref.
+func FetchBranch(params FetchBranchParams) error {
+	cmd := exec.Command("git", "fetch", "origin", params.Branch)
+	cmd.Dir = params.ProjectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git fetch origin %s: %s", params.Branch, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // PushBranchParams holds inputs for pushing a branch.
 type PushBranchParams struct {
 	ProjectDir string

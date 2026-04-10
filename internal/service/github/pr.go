@@ -151,6 +151,13 @@ func convertPR(gh *github.PullRequest) domain.PRInfo {
 		state = "draft"
 	}
 
+	isFork := false
+	headRepo := gh.GetHead().GetRepo()
+	baseRepo := gh.GetBase().GetRepo()
+	if headRepo != nil && baseRepo != nil {
+		isFork = headRepo.GetOwner().GetLogin() != baseRepo.GetOwner().GetLogin()
+	}
+
 	return domain.PRInfo{
 		Number:    gh.GetNumber(),
 		Title:     gh.GetTitle(),
@@ -161,6 +168,7 @@ func convertPR(gh *github.PullRequest) domain.PRInfo {
 		Draft:     gh.GetDraft(),
 		CreatedAt: gh.GetCreatedAt().Time,
 		URL:       gh.GetHTMLURL(),
+		IsFork:    isFork,
 	}
 }
 

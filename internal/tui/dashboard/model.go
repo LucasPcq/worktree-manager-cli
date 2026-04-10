@@ -423,6 +423,14 @@ func (m *Model) handlePRAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, openInBrowser(pr.URL)
+
+	case key.Matches(msg, m.keys.CheckoutPR):
+		pr, ok := m.prList.selectedPR()
+		if !ok {
+			return m, nil
+		}
+		m.logbar.message = fmt.Sprintf("Checking out PR #%d...", pr.Number)
+		return m, execCheckoutPR(pr.Number)
 	}
 
 	return m, nil

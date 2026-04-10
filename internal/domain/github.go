@@ -41,6 +41,7 @@ type PRInfo struct {
 	URL       string
 	CIStatus  CIStatus
 	Reviews   []ReviewInfo
+	IsFork    bool // true when head.repo != base.repo
 }
 
 // CIStatus represents the aggregate CI check status.

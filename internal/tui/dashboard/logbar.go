@@ -12,7 +12,7 @@ type logbarModel struct {
 
 const (
 	helpWorktrees = "q quit · w worktrees · p prs · n new · d clean · f focus · c create pr · u up · x down · s logs · enter go · r refresh"
-	helpPRs       = "q quit · w worktrees · p prs · f filter · o open · r refresh"
+	helpPRs       = "q quit · w worktrees · p prs · f filter · c checkout · o open · r refresh"
 )
 
 func (m logbarModel) view(width int, activeList activeListType) string {

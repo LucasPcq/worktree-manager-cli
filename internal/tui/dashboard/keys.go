@@ -20,6 +20,7 @@ type keyMap struct {
 	FilterPR      key.Binding
 	OpenBrowser   key.Binding
 	CreatePR      key.Binding
+	CheckoutPR    key.Binding
 	Quit          key.Binding
 }
 
@@ -41,5 +42,6 @@ var defaultKeys = keyMap{
 	FilterPR:      key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
 	OpenBrowser:   key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open in browser")),
 	CreatePR:      key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "create PR")),
+	CheckoutPR:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout PR")),
 	Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
