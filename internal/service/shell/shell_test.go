@@ -20,6 +20,15 @@ func TestGenerateShellInitZsh(t *testing.T) {
 	if !strings.Contains(out, `cd "$dir"`) {
 		t.Error("expected cd command")
 	}
+	if !strings.Contains(out, `"$1" = "wt"`) {
+		t.Error("expected wt subcommand interception")
+	}
+	if !strings.Contains(out, `"$2" = "go"`) {
+		t.Error("expected go subcommand interception")
+	}
+	if !strings.Contains(out, `"$2" = "clean"`) {
+		t.Error("expected clean subcommand interception")
+	}
 }
 
 func TestGenerateShellInitBash(t *testing.T) {
@@ -38,6 +47,9 @@ func TestGenerateShellInitFish(t *testing.T) {
 	}
 	if !strings.Contains(out, "command wtm resolve") {
 		t.Error("expected resolve call")
+	}
+	if !strings.Contains(out, `"$argv[1]" = "wt"`) {
+		t.Error("expected wt subcommand interception")
 	}
 }
 

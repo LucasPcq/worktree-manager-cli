@@ -13,8 +13,8 @@ import (
 	gopicker "github.com/LucasPcq/wtm/internal/tui/go"
 )
 
-// NewFocusCmd creates the wtm focus command.
-func NewFocusCmd() *cobra.Command {
+// newWtFocusCmd creates the wtm wt focus subcommand.
+func newWtFocusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "focus [branch]",
 		Short: "Switch active worktree and run focus/blur hooks",

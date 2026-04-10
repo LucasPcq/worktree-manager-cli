@@ -20,7 +20,6 @@ type detailModel struct {
 	viewport  viewport.Model
 	width     int
 	height    int
-	ready     bool
 }
 
 func (m *detailModel) setSize(width int, height int) {
@@ -35,6 +34,14 @@ func (m *detailModel) setDetail(detail *worktree.DetailResult) {
 	m.detail = detail
 	m.lastError = ""
 	m.refreshContent()
+}
+
+// setContent sets arbitrary rendered content (e.g. PR detail) in the viewport.
+func (m *detailModel) setContent(content string) {
+	m.detail = nil
+	m.lastError = ""
+	m.viewport.SetContent(content)
+	m.viewport.GotoTop()
 }
 
 func (m *detailModel) refreshContent() {

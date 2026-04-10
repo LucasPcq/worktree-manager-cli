@@ -13,19 +13,15 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
-// NewUpCmd creates the wtm up command.
-func NewUpCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "up [service]",
-		Short: "Start services defined in .wtm.services.toml",
-		Long:  "Start a single service by name, or all services in a profile.\nWithout arguments, starts the default profile.",
+// newSvcUpCmd creates the wtm svc up subcommand.
+func newSvcUpCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "up [profile]",
+		Short: "Start a service profile",
+		Long:  "Start all services in a profile.\nWithout arguments, starts the default profile (or shows a picker if multiple exist).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  runUp,
 	}
-
-	cmd.Flags().String(domain.FlagProfile, "", "Profile to start (defaults to the default profile)")
-
-	return cmd
 }
 
 func runUp(cmd *cobra.Command, args []string) error {
@@ -47,7 +43,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ %s\n", warning)
 	}
 
-	services, err := resolveServices(cmd, args, svcCfg)
+	services, err := resolveProfileServices(args, svcCfg)
 	if err != nil {
 		return err
 	}
@@ -80,21 +76,11 @@ func runUp(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func resolveServices(cmd *cobra.Command, args []string, svcCfg domain.ServicesConfig) ([]domain.ServiceConfig, error) {
+func resolveProfileServices(args []string, svcCfg domain.ServicesConfig) ([]domain.ServiceConfig, error) {
 	if len(args) > 0 {
-		svc, ok := svcCfg.FindService(args[0])
+		profile, ok := svcCfg.FindProfile(args[0])
 		if !ok {
-			return nil, fmt.Errorf("service %q not found in config", args[0])
-		}
-		return []domain.ServiceConfig{svc}, nil
-	}
-
-	profileName, _ := cmd.Flags().GetString(domain.FlagProfile)
-
-	if profileName != "" {
-		profile, ok := svcCfg.FindProfile(profileName)
-		if !ok {
-			return nil, fmt.Errorf("profile %q not found in config", profileName)
+			return nil, fmt.Errorf("profile %q not found in config", args[0])
 		}
 		return svcCfg.ProfileServices(profile), nil
 	}

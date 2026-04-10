@@ -3,6 +3,8 @@ package commands
 import (
 	"errors"
 	"fmt"
+	"io"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -49,4 +51,32 @@ func loadConfig(cmd *cobra.Command, dir string) (configResult, bool) {
 	}
 
 	return configResult{Config: cfg, ProjectDir: root}, true
+}
+
+// startSpinner displays a spinner with a message and returns a stop function.
+// The stop function blocks until the spinner line is fully cleared.
+func startSpinner(w io.Writer, message string) func() {
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		i := 0
+		for {
+			select {
+			case <-done:
+				clearLen := len(message) + 4
+				fmt.Fprintf(w, "\r%-*s\r", clearLen, "")
+				close(stopped)
+				return
+			default:
+				fmt.Fprintf(w, "\r%s %s", frames[i%len(frames)], message)
+				i++
+				time.Sleep(80 * time.Millisecond)
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		<-stopped
+	}
 }

@@ -69,8 +69,7 @@ func loadProjectConfig(path string) (domain.ProjectConfig, error) {
 		},
 		Hooks: hooks,
 		Github: domain.GithubConfig{
-			AutoDraft:  raw.Github.AutoDraft,
-			BaseBranch: raw.Github.BaseBranch,
+			AutoDraft: raw.Github.AutoDraft,
 		},
 		Agents: domain.AgentsConfig{
 			Default: domain.AgentType(raw.Agents.Default),
@@ -97,8 +96,7 @@ type rawProjectConfig struct {
 	} `toml:"env"`
 	Hooks rawHooksConfig `toml:"hooks"`
 	Github struct {
-		AutoDraft  bool   `toml:"auto_draft"`
-		BaseBranch string `toml:"base_branch"`
+		AutoDraft bool `toml:"auto_draft"`
 	} `toml:"github"`
 	Agents struct {
 		Default string `toml:"default"`

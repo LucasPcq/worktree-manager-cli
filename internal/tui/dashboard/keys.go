@@ -12,9 +12,15 @@ type keyMap struct {
 	New           key.Binding
 	Delete        key.Binding
 	Enter         key.Binding
-	ServicesUp    key.Binding
-	ServicesDown  key.Binding
-	AttachService key.Binding
+	ProfileUp    key.Binding
+	ProfileDown  key.Binding
+	ViewLogs     key.Binding
+	WorktreeList  key.Binding
+	PRList        key.Binding
+	FilterPR      key.Binding
+	OpenBrowser   key.Binding
+	CreatePR      key.Binding
+	CheckoutPR    key.Binding
 	Quit          key.Binding
 }
 
@@ -28,8 +34,14 @@ var defaultKeys = keyMap{
 	New:           key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new worktree")),
 	Delete:        key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "clean worktree")),
 	Enter:         key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "go to worktree")),
-	ServicesUp:    key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "start services")),
-	ServicesDown:  key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "stop services")),
-	AttachService: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "attach to service")),
+	ProfileUp:   key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "start profile")),
+	ProfileDown: key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "stop profile")),
+	ViewLogs:    key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "view logs")),
+	WorktreeList:  key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "worktrees")),
+	PRList:        key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "prs")),
+	FilterPR:      key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "filter")),
+	OpenBrowser:   key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open in browser")),
+	CreatePR:      key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "create PR")),
+	CheckoutPR:    key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "checkout PR")),
 	Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }

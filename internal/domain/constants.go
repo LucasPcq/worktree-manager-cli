@@ -70,11 +70,19 @@ const (
 	FlagEnvFrom = "env-from"
 	FlagForce   = "force"
 	FlagOff     = "off"
-	FlagProfile = "profile"
+	FlagTitle = "title"
+	FlagBase    = "base"
+	FlagDraft   = "draft"
 
 	// Metadata files created inside each worktree's .wtm/ directory.
 	MetaFileName    = "meta.json"
 	ContextFileName = "context.md"
+
+	// CmdGroupCore is the Cobra group ID for core commands.
+	CmdGroupCore = "core"
+
+	// CmdGroupSetup is the Cobra group ID for setup commands.
+	CmdGroupSetup = "setup"
 
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"
@@ -87,4 +95,23 @@ const (
 
 	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
 	CtrlCByte byte = 0x03
+
+	// AuthFileName is the file storing the GitHub OAuth token.
+	AuthFileName = "auth.json"
+
+	// GitHubClientID is the public OAuth App client ID for the Device Flow.
+	GitHubClientID = "Ov23li8FB9sa8PZXdAJy"
+
+	// GitHubDeviceCodeURL is the endpoint to request a device code.
+	GitHubDeviceCodeURL = "https://github.com/login/device/code"
+
+	// GitHubTokenURL is the endpoint to poll for an access token.
+	GitHubTokenURL = "https://github.com/login/oauth/access_token"
+
+	// GitHubScopes is the OAuth scopes requested during login.
+	GitHubScopes = "repo read:org"
+
+	// EnvGithubToken is the environment variable used to provide a Personal Access Token.
+	// When set, it takes priority over the stored OAuth token.
+	EnvGithubToken = "WTM_GITHUB_TOKEN"
 )

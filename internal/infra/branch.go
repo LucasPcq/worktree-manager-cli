@@ -60,3 +60,65 @@ func branchExists(projectDir string, branch string) bool {
 	cmd.Dir = projectDir
 	return cmd.Run() == nil
 }
+
+// CurrentBranch returns the name of the currently checked-out branch.
+func CurrentBranch(projectDir string) (string, error) {
+	cmd := exec.Command("git", "branch", "--show-current")
+	cmd.Dir = projectDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git branch --show-current: %w", err)
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch == "" {
+		return "", fmt.Errorf("detached HEAD, no branch checked out")
+	}
+	return branch, nil
+}
+
+// BranchExistsOnRemoteParams holds inputs for checking remote branch existence.
+type BranchExistsOnRemoteParams struct {
+	ProjectDir string
+	Branch     string
+}
+
+// BranchExistsOnRemote returns true if the branch exists on origin.
+func BranchExistsOnRemote(params BranchExistsOnRemoteParams) bool {
+	cmd := exec.Command("git", "rev-parse", "--verify", "origin/"+params.Branch)
+	cmd.Dir = params.ProjectDir
+	return cmd.Run() == nil
+}
+
+// FetchBranchParams holds inputs for fetching a specific branch from origin.
+type FetchBranchParams struct {
+	ProjectDir string
+	Branch     string
+}
+
+// FetchBranch runs `git fetch origin <branch>` to update the remote-tracking ref.
+func FetchBranch(params FetchBranchParams) error {
+	cmd := exec.Command("git", "fetch", "origin", params.Branch)
+	cmd.Dir = params.ProjectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git fetch origin %s: %s", params.Branch, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// PushBranchParams holds inputs for pushing a branch.
+type PushBranchParams struct {
+	ProjectDir string
+	Branch     string
+}
+
+// PushBranch pushes the branch to origin with upstream tracking.
+func PushBranch(params PushBranchParams) error {
+	cmd := exec.Command("git", "push", "-u", "origin", params.Branch)
+	cmd.Dir = params.ProjectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git push: %s", strings.TrimSpace(string(out)))
+	}
+	return nil
+}

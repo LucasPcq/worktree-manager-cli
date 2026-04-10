@@ -31,8 +31,7 @@ type HooksConfig struct {
 
 // GithubConfig controls GitHub integration behavior.
 type GithubConfig struct {
-	AutoDraft  bool   `toml:"auto_draft"`
-	BaseBranch string `toml:"base_branch"`
+	AutoDraft bool `toml:"auto_draft"`
 }
 
 // AgentsConfig controls the default AI agent.

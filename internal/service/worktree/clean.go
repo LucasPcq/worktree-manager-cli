@@ -5,6 +5,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 )
 
 // CleanParams holds inputs for cleaning a worktree.
@@ -50,7 +51,7 @@ func Check(params CleanParams) (CleanCheckResult, error) {
 		Branch:     params.Branch,
 	})
 
-	haspr, prurl := infra.HasOpenPR(infra.HasOpenPRParams{
+	haspr, prurl := ghservice.HasOpenPR(ghservice.HasOpenPRParams{
 		ProjectDir: params.ProjectDir,
 		Branch:     params.Branch,
 	})

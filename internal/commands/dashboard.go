@@ -32,10 +32,25 @@ func RunDashboard(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	return launchDashboard(cmd, result, launchDashboardParams{})
+}
+
+// launchDashboardParams holds optional focus targets for the dashboard.
+type launchDashboardParams struct {
+	InitialPR     *int
+	InitialBranch *string
+}
+
+// launchDashboard starts the TUI dashboard with optional initial focus.
+func launchDashboard(_ *cobra.Command, result configResult, params launchDashboardParams) error {
+	dir, _ := os.Getwd()
+
 	model := dashboard.New(dashboard.NewParams{
-		Config:     result.Config,
-		ProjectDir: result.ProjectDir,
-		WorkDir:    dir,
+		Config:        result.Config,
+		ProjectDir:    result.ProjectDir,
+		WorkDir:       dir,
+		InitialPR:     params.InitialPR,
+		InitialBranch: params.InitialBranch,
 	})
 
 	program := tea.NewProgram(&model, tea.WithAltScreen())

@@ -4,11 +4,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/state"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
@@ -79,11 +81,11 @@ func execWtmCommand(resultMsg func(error) tea.Msg, args ...string) tea.Cmd {
 }
 
 func execNewWorktree() tea.Cmd {
-	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "new")
+	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "wt", "create")
 }
 
 func execCleanWorktree(branch string) tea.Cmd {
-	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "clean", branch)
+	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "wt", "clean", branch)
 }
 
 func loadServiceStatuses() tea.Cmd {
@@ -107,7 +109,7 @@ func startServicesCmd(projectDir string) tea.Cmd {
 		return func() tea.Msg { return servicesStartedMsg{Err: err} }
 	}
 
-	cmd := exec.Command(bin, "up")
+	cmd := exec.Command(bin, "svc", "up")
 	cmd.Dir = projectDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -118,8 +120,21 @@ func startServicesCmd(projectDir string) tea.Cmd {
 	})
 }
 
-func attachServiceCmd(serviceName string) tea.Cmd {
-	return execWtmCommand(func(err error) tea.Msg { return actionDoneMsg{Err: err} }, "logs", serviceName)
+func viewLogsCmd(worktreePath string) tea.Cmd {
+	bin, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return actionDoneMsg{Err: err} }
+	}
+
+	cmd := exec.Command(bin, "svc", "logs")
+	cmd.Dir = worktreePath
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return actionDoneMsg{Err: err}
+	})
 }
 
 func stopServicesCmd(worktreePath string, services []process.ServiceInfo) tea.Cmd {
@@ -143,10 +158,84 @@ func stopServicesCmd(worktreePath string, services []process.ServiceInfo) tea.Cm
 	}
 }
 
+func execCreatePR(worktreePath string) tea.Cmd {
+	bin, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return actionDoneMsg{Err: err} }
+	}
+
+	cmd := exec.Command(bin, "pr", "create")
+	cmd.Dir = worktreePath
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return actionDoneMsg{Err: err}
+	})
+}
+
+func execCheckoutPR(prNumber int) tea.Cmd {
+	bin, err := os.Executable()
+	if err != nil {
+		return func() tea.Msg { return actionDoneMsg{Err: err} }
+	}
+
+	cmd := exec.Command(bin, "pr", "checkout", strconv.Itoa(prNumber))
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return actionDoneMsg{Err: err}
+	})
+}
+
 func hasServicesConfig(projectDir string) bool {
 	cfg, err := config.LoadServices(projectDir)
 	if err != nil {
 		return false
 	}
 	return len(cfg.Services) > 0
+}
+
+func loadPRs(projectDir string, filter domain.PRFilter) tea.Cmd {
+	return func() tea.Msg {
+		auth, err := ghservice.ResolveAuth()
+		if err != nil {
+			return prListMsg{Err: err}
+		}
+
+		prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
+			ProjectDir: projectDir,
+			Filter:     filter,
+			Username:   auth.User,
+		})
+		if err != nil {
+			return prListMsg{Err: err}
+		}
+
+		return prListMsg{PRs: prs}
+	}
+}
+
+func loadPRDetail(projectDir string, number int) tea.Cmd {
+	return func() tea.Msg {
+		pr, err := ghservice.GetPRDetail(ghservice.GetPRDetailParams{
+			ProjectDir: projectDir,
+			Number:     number,
+		})
+		if err != nil {
+			return prDetailMsg{Err: err}
+		}
+		return prDetailMsg{PR: pr}
+	}
+}
+
+func openInBrowser(url string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("open", url)
+		cmd.Run()
+		return logMsg("Opened in browser")
+	}
 }

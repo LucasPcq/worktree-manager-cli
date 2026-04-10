@@ -13,6 +13,7 @@ type listModel struct {
 	items           []domain.WorktreeStatus
 	activeBranch    string
 	serviceStatuses []process.ServiceInfo
+	prInfos         []domain.PRInfo
 	cursor          int
 	width           int
 	height          int
@@ -74,6 +75,15 @@ func (m listModel) hasRunningServices(worktreePath string) bool {
 	return false
 }
 
+func (m listModel) prForBranch(branch string) (domain.PRInfo, bool) {
+	for _, pr := range m.prInfos {
+		if pr.Branch == branch {
+			return pr, true
+		}
+	}
+	return domain.PRInfo{}, false
+}
+
 func (m listModel) renderLine(item domain.WorktreeStatus, selected bool) string {
 	// Cursor
 	cursor := "  "
@@ -86,6 +96,11 @@ func (m listModel) renderLine(item domain.WorktreeStatus, selected bool) string 
 
 	// Right-side tags
 	var tags []string
+
+	// PR tag first
+	if pr, ok := m.prForBranch(item.Branch); ok {
+		tags = append(tags, styles.ActiveIndicator.Render(fmt.Sprintf("PR #%d", pr.Number)))
+	}
 
 	if item.CommitsAhead > 0 {
 		tags = append(tags, styles.Muted.Render(fmt.Sprintf("%d ahead", item.CommitsAhead)))

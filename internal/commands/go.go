@@ -8,8 +8,8 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// NewGoCmd creates the wtm go command (fallback when shell wrapper is not configured).
-func NewGoCmd() *cobra.Command {
+// newWtGoCmd creates the wtm wt go subcommand (fallback when shell wrapper is not configured).
+func newWtGoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "go [branch]",
 		Short: "Switch to a worktree",

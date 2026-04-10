@@ -10,14 +10,22 @@ type logbarModel struct {
 	message string
 }
 
-func (m logbarModel) view(width int) string {
-	help := styles.Muted.Render("q quit · n new · d clean · f focus · u up · x down · s logs · enter go · r refresh")
+const (
+	helpWorktrees = "q quit · w worktrees · p prs · n new · d clean · f focus · c create pr · u up · x down · s logs · enter go · r refresh"
+	helpPRs       = "q quit · w worktrees · p prs · f filter · c checkout · o open · r refresh"
+)
+
+func (m logbarModel) view(width int, activeList activeListType) string {
+	helpText := helpWorktrees
+	if activeList == activeListPRs {
+		helpText = helpPRs
+	}
+	help := styles.Muted.Render(helpText)
 
 	if m.message == "" {
-		return help + strings.Repeat(" ", max(0, width-len(help)))
+		return help + strings.Repeat(" ", max(0, width-printableWidth(help)))
 	}
 
-	// Right-align the log message
 	gap := max(1, width-printableWidth(help)-printableWidth(m.message)-2)
 	return help + strings.Repeat(" ", gap) + m.message
 }
