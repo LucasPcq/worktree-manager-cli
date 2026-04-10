@@ -2,12 +2,24 @@ package domain
 
 import "time"
 
-// AuthToken represents the stored GitHub OAuth token.
+// AuthSource identifies where an AuthToken was resolved from.
+type AuthSource string
+
+const (
+	// AuthSourceEnv means the token was read from the WTM_GITHUB_TOKEN env var.
+	AuthSourceEnv AuthSource = "env"
+	// AuthSourceFile means the token was read from ~/.config/wtm/auth.json.
+	AuthSourceFile AuthSource = "file"
+)
+
+// AuthToken represents the resolved GitHub auth token.
+// Source is populated at load time and not persisted to disk.
 type AuthToken struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	Scope       string `json:"scope"`
-	User        string `json:"user"`
+	AccessToken string     `json:"access_token"`
+	TokenType   string     `json:"token_type"`
+	Scope       string     `json:"scope"`
+	User        string     `json:"user"`
+	Source      AuthSource `json:"-"`
 }
 
 // PRInfo holds information about a GitHub pull request.

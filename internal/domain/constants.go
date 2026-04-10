@@ -110,4 +110,8 @@ const (
 
 	// GitHubScopes is the OAuth scopes requested during login.
 	GitHubScopes = "repo read:org"
+
+	// EnvGithubToken is the environment variable used to provide a Personal Access Token.
+	// When set, it takes priority over the stored OAuth token.
+	EnvGithubToken = "WTM_GITHUB_TOKEN"
 )

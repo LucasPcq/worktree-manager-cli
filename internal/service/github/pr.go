@@ -50,6 +50,8 @@ type ListPRsParams struct {
 }
 
 // ListPRs fetches open PRs from the GitHub API and filters them.
+// If the filter requires a username and params.Username is empty (typical for
+// PAT-based auth), the username is resolved via the API.
 func ListPRs(params ListPRsParams) ([]domain.PRInfo, error) {
 	client, err := NewClientFromAuth()
 	if err != nil {
@@ -61,6 +63,15 @@ func ListPRs(params ListPRsParams) ([]domain.PRInfo, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("resolve repo: %w", err)
+	}
+
+	username := params.Username
+	if username == "" && (params.Filter == domain.PRFilterMine || params.Filter == domain.PRFilterReviewRequested) {
+		user, _, userErr := client.Users.Get(context.Background(), "")
+		if userErr != nil {
+			return nil, fmt.Errorf("resolve username for filter: %w", userErr)
+		}
+		username = user.GetLogin()
 	}
 
 	ghPRs, _, err := client.PullRequests.List(context.Background(), owner, repo, &github.PullRequestListOptions{
@@ -81,11 +92,11 @@ func ListPRs(params ListPRsParams) ([]domain.PRInfo, error) {
 
 		switch params.Filter {
 		case domain.PRFilterMine:
-			if pr.Author != params.Username {
+			if pr.Author != username {
 				continue
 			}
 		case domain.PRFilterReviewRequested:
-			if !isReviewRequested(gh, params.Username) {
+			if !isReviewRequested(gh, username) {
 				continue
 			}
 		}

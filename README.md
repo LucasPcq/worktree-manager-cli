@@ -279,6 +279,36 @@ Press `Ctrl+C` to detach — services keep running in the background.
 
 ---
 
+### `wtm auth` — GitHub authentication
+
+Manage the GitHub credentials used by `wtm pr` and PR-related dashboard features.
+
+```bash
+wtm auth login     # start the OAuth Device Flow and store the token
+wtm auth status    # show the current auth source and user
+wtm auth logout    # remove the stored token
+```
+
+**Two authentication sources, in priority order:**
+
+1. **`WTM_GITHUB_TOKEN` env var** — a Personal Access Token (PAT). Ideal for CI/CD, AI agents, and scripted usage. When set, it takes priority over any stored OAuth token.
+2. **Stored OAuth token** — populated by `wtm auth login` via the GitHub Device Flow, saved to `~/.config/wtm/auth.json` (mode `0600`).
+
+```bash
+# PAT usage (no login required)
+export WTM_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+wtm pr list
+
+# Check which source is active
+wtm auth status
+# → ✓ Authenticated via WTM_GITHUB_TOKEN (env var)
+#   Note: a stored token exists but is shadowed by the env var.
+```
+
+`wtm auth logout` only deletes the stored file — if `WTM_GITHUB_TOKEN` is also set, `wtm` keeps using it until you `unset` it.
+
+---
+
 ## Configuration
 
 ### Project config — `.wtm/config.toml`

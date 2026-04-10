@@ -10,8 +10,8 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// authPath returns the full path to ~/.config/wtm/auth.json.
-func authPath() (string, error) {
+// AuthPath returns the full path to ~/.config/wtm/auth.json.
+func AuthPath() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("user config dir: %w", err)
@@ -19,10 +19,18 @@ func authPath() (string, error) {
 	return filepath.Join(configDir, domain.GlobalConfigDir, domain.AuthFileName), nil
 }
 
-// LoadAuth reads the stored GitHub auth token.
-// Returns ErrAuthNotConfigured if no token file exists.
+// LoadAuth resolves the GitHub auth token.
+// Priority: WTM_GITHUB_TOKEN env var → ~/.config/wtm/auth.json.
+// Returns ErrAuthNotConfigured if neither source is available.
 func LoadAuth() (domain.AuthToken, error) {
-	path, err := authPath()
+	if envToken := os.Getenv(domain.EnvGithubToken); envToken != "" {
+		return domain.AuthToken{
+			AccessToken: envToken,
+			Source:      domain.AuthSourceEnv,
+		}, nil
+	}
+
+	path, err := AuthPath()
 	if err != nil {
 		return domain.AuthToken{}, err
 	}
@@ -40,12 +48,13 @@ func LoadAuth() (domain.AuthToken, error) {
 		return domain.AuthToken{}, fmt.Errorf("parse %s: %w", path, err)
 	}
 
+	token.Source = domain.AuthSourceFile
 	return token, nil
 }
 
 // SaveAuth writes the GitHub auth token to ~/.config/wtm/auth.json with 0600 permissions.
 func SaveAuth(token domain.AuthToken) error {
-	path, err := authPath()
+	path, err := AuthPath()
 	if err != nil {
 		return err
 	}
@@ -69,7 +78,7 @@ func SaveAuth(token domain.AuthToken) error {
 
 // DeleteAuth removes the stored GitHub auth token.
 func DeleteAuth() error {
-	path, err := authPath()
+	path, err := AuthPath()
 	if err != nil {
 		return err
 	}
