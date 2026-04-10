@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.4.0 — GitHub Integration & PR Management
+
+### New features
+
+- **GitHub authentication** — `wtm auth login` lance un flux OAuth Device Flow.
+  `wtm auth status` affiche l'état du token, `wtm auth logout` le révoque.
+  Support de `WTM_GITHUB_TOKEN` comme PAT alternatif. Token auto-refreshé en arrière-plan.
+- **`wtm pr list`** — Liste les pull requests du dépôt avec filtres `--mine` et `--review`.
+  Intégré dans le dashboard (panneau droit, touche `p`).
+- **`wtm pr create`** — Assistant interactif pour créer une PR depuis la branche courante :
+  titre, body, draft, reviewers.
+- **`wtm pr checkout`** — Crée un worktree directement depuis une branche de PR existante.
+
+### Breaking changes
+
+- **Commandes regroupées sous `wtm wt` et `wtm svc`** — Les commandes worktree passent
+  sous `wtm wt` (ex. `wtm wt new`, `wtm wt ls`, `wtm wt go`). Les commandes service
+  passent sous `wtm svc` (ex. `wtm svc up`, `wtm svc down`, `wtm svc start`, `wtm svc stop`).
+- **`wtm svc start/stop`** — `start`/`stop` ciblent des services individuels,
+  `up`/`down` gèrent les profils complets. Les deux sont sous `wtm svc`.
+
+### Improvements
+
+- Migration de `gh` CLI vers `go-github` pour la détection de PR ouverte lors du `clean`.
+- Dashboard : logs multiplexés, focus corrigé, split panel worktrees/PRs 50/50.
+
+---
+
 ## v0.3.0 — Services & PTY
 
 ### New features
