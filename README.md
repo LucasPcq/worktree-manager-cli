@@ -307,6 +307,8 @@ wtm auth status
 
 `wtm auth logout` only deletes the stored file — if `WTM_GITHUB_TOKEN` is also set, `wtm` keeps using it until you `unset` it.
 
+**Token refresh** — if your GitHub OAuth App has token expiration enabled, `wtm` stores the refresh token alongside the access token and automatically refreshes it before each API call. If the refresh itself fails (refresh token expired or revoked), `wtm` prompts you to run `wtm auth login` again. PAT-based auth (`WTM_GITHUB_TOKEN`) is never refreshed.
+
 ---
 
 ## Configuration

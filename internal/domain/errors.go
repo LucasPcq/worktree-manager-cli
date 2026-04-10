@@ -47,4 +47,8 @@ var (
 
 	// ErrAuthDeviceFlowTimeout is returned when the device flow polling expires.
 	ErrAuthDeviceFlowTimeout = errors.New("authentication timed out")
+
+	// ErrAuthNeedsReauth is returned when the stored access token is expired
+	// and cannot be refreshed (refresh token missing or itself expired).
+	ErrAuthNeedsReauth = errors.New("authentication expired — run `wtm auth login` again")
 )

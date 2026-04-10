@@ -184,7 +184,7 @@ func hasServicesConfig(projectDir string) bool {
 
 func loadPRs(projectDir string, filter domain.PRFilter) tea.Cmd {
 	return func() tea.Msg {
-		auth, err := config.LoadAuth()
+		auth, err := ghservice.ResolveAuth()
 		if err != nil {
 			return prListMsg{Err: err}
 		}

@@ -14,12 +14,18 @@ const (
 
 // AuthToken represents the resolved GitHub auth token.
 // Source is populated at load time and not persisted to disk.
+// ExpiresAt and RefreshToken are only set when the OAuth App has token
+// expiration enabled; otherwise they remain zero and the token is treated
+// as non-expiring.
 type AuthToken struct {
-	AccessToken string     `json:"access_token"`
-	TokenType   string     `json:"token_type"`
-	Scope       string     `json:"scope"`
-	User        string     `json:"user"`
-	Source      AuthSource `json:"-"`
+	AccessToken           string     `json:"access_token"`
+	TokenType             string     `json:"token_type"`
+	Scope                 string     `json:"scope"`
+	User                  string     `json:"user"`
+	RefreshToken          string     `json:"refresh_token,omitempty"`
+	ExpiresAt             time.Time  `json:"expires_at,omitempty"`
+	RefreshTokenExpiresAt time.Time  `json:"refresh_token_expires_at,omitempty"`
+	Source                AuthSource `json:"-"`
 }
 
 // PRInfo holds information about a GitHub pull request.

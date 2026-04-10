@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
@@ -55,9 +54,9 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	auth, err := config.LoadAuth()
-	if errors.Is(err, domain.ErrAuthNotConfigured) {
-		fmt.Fprintln(cmd.ErrOrStderr(), "Not authenticated — run `wtm auth login` first.")
+	auth, err := ghservice.ResolveAuth()
+	if errors.Is(err, domain.ErrAuthNotConfigured) || errors.Is(err, domain.ErrAuthNeedsReauth) {
+		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
 		return nil
 	}
 	if err != nil {

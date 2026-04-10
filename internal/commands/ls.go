@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
@@ -85,7 +84,7 @@ func runLs(cmd *cobra.Command, _ []string) error {
 }
 
 func loadPRsGraceful(projectDir string) []domain.PRInfo {
-	auth, err := config.LoadAuth()
+	auth, err := ghservice.ResolveAuth()
 	if err != nil {
 		return nil
 	}

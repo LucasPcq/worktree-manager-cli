@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
-	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
@@ -46,10 +45,13 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// Auth check
-	if _, err := config.LoadAuth(); errors.Is(err, domain.ErrAuthNotConfigured) {
-		fmt.Fprintln(cmd.ErrOrStderr(), "Not authenticated — run `wtm auth login` first.")
-		return nil
+	// Auth check (triggers refresh if needed)
+	if _, err := ghservice.ResolveAuth(); err != nil {
+		if errors.Is(err, domain.ErrAuthNotConfigured) || errors.Is(err, domain.ErrAuthNeedsReauth) {
+			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
+			return nil
+		}
+		return fmt.Errorf("load auth: %w", err)
 	}
 
 	// Resolve current branch from actual cwd (not project root)

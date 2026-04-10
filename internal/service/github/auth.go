@@ -24,11 +24,16 @@ type deviceCodeResponse struct {
 }
 
 // tokenResponse is the response from the token endpoint.
+// ExpiresIn, RefreshToken and RefreshTokenExpiresIn are only populated when
+// the GitHub OAuth App has token expiration enabled.
 type tokenResponse struct {
-	AccessToken string `json:"access_token"`
-	TokenType   string `json:"token_type"`
-	Scope       string `json:"scope"`
-	Error       string `json:"error"`
+	AccessToken           string `json:"access_token"`
+	TokenType             string `json:"token_type"`
+	Scope                 string `json:"scope"`
+	ExpiresIn             int    `json:"expires_in"`
+	RefreshToken          string `json:"refresh_token"`
+	RefreshTokenExpiresIn int    `json:"refresh_token_expires_in"`
+	Error                 string `json:"error"`
 }
 
 // DeviceFlowLoginParams holds inputs for the device flow login.
@@ -62,12 +67,28 @@ func DeviceFlowLogin(params DeviceFlowLoginParams) (domain.AuthToken, error) {
 		return domain.AuthToken{}, fmt.Errorf("fetch user: %w", err)
 	}
 
-	return domain.AuthToken{
-		AccessToken: tokenResp.AccessToken,
-		TokenType:   tokenResp.TokenType,
-		Scope:       tokenResp.Scope,
-		User:        username,
-	}, nil
+	return buildAuthToken(tokenResp, username, time.Now()), nil
+}
+
+// buildAuthToken converts a tokenResponse to an AuthToken, populating
+// ExpiresAt / RefreshTokenExpiresAt relative to the given time.
+// When the OAuth App has no expiration, ExpiresIn is zero and the
+// corresponding timestamp remains zero.
+func buildAuthToken(resp tokenResponse, username string, now time.Time) domain.AuthToken {
+	auth := domain.AuthToken{
+		AccessToken:  resp.AccessToken,
+		TokenType:    resp.TokenType,
+		Scope:        resp.Scope,
+		User:         username,
+		RefreshToken: resp.RefreshToken,
+	}
+	if resp.ExpiresIn > 0 {
+		auth.ExpiresAt = now.Add(time.Duration(resp.ExpiresIn) * time.Second)
+	}
+	if resp.RefreshTokenExpiresIn > 0 {
+		auth.RefreshTokenExpiresAt = now.Add(time.Duration(resp.RefreshTokenExpiresIn) * time.Second)
+	}
+	return auth
 }
 
 func requestDeviceCode() (deviceCodeResponse, error) {
@@ -182,4 +203,39 @@ func fetchUsername(token string) (string, error) {
 		return "", err
 	}
 	return user.GetLogin(), nil
+}
+
+// refreshAccessToken exchanges a refresh token for a new access token via
+// the GitHub OAuth token endpoint. The returned AuthToken does not carry
+// the username or source — the caller must repopulate those fields.
+func refreshAccessToken(refreshToken string) (domain.AuthToken, error) {
+	form := url.Values{
+		"client_id":     {domain.GitHubClientID},
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+	}
+
+	req, err := http.NewRequest(http.MethodPost, domain.GitHubTokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return domain.AuthToken{}, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return domain.AuthToken{}, err
+	}
+	defer resp.Body.Close()
+
+	var result tokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return domain.AuthToken{}, fmt.Errorf("decode response: %w", err)
+	}
+
+	if result.Error != "" {
+		return domain.AuthToken{}, fmt.Errorf("refresh failed: %s", result.Error)
+	}
+
+	return buildAuthToken(result, "", time.Now()), nil
 }

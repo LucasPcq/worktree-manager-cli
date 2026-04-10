@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -104,8 +105,31 @@ func runAuthStatus(cmd *cobra.Command, _ []string) error {
 			scopes := strings.ReplaceAll(token.Scope, " ", ", ")
 			fmt.Fprintf(cmd.ErrOrStderr(), "  Scopes: %s\n", scopes)
 		}
+		printExpirationStatus(cmd, token)
 	}
 	return nil
+}
+
+// printExpirationStatus writes access/refresh token expiration info to stderr.
+// When ExpiresAt is zero (OAuth App without expiration) nothing is printed.
+func printExpirationStatus(cmd *cobra.Command, token domain.AuthToken) {
+	if token.ExpiresAt.IsZero() {
+		return
+	}
+
+	remaining := time.Until(token.ExpiresAt)
+	switch {
+	case remaining <= 0:
+		fmt.Fprintln(cmd.ErrOrStderr(), "  Access token: expired (will refresh on next API call)")
+	case remaining < time.Hour:
+		fmt.Fprintf(cmd.ErrOrStderr(), "  Access token expires in %d min\n", int(remaining.Minutes()))
+	default:
+		fmt.Fprintf(cmd.ErrOrStderr(), "  Access token expires in %s\n", remaining.Truncate(time.Minute))
+	}
+
+	if !token.RefreshTokenExpiresAt.IsZero() && time.Now().After(token.RefreshTokenExpiresAt) {
+		fmt.Fprintln(cmd.ErrOrStderr(), "  Refresh token: expired — run `wtm auth login` again")
+	}
 }
 
 // authFileExists reports whether a stored auth.json is present on disk.
