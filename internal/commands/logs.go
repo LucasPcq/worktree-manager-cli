@@ -122,7 +122,9 @@ func multiplexAllServices(socketPath string, dir string) error {
 	}
 
 	if len(running) == 0 {
-		fmt.Println("No running services in this worktree.")
+		output.Blank(os.Stdout)
+		output.Message(os.Stdout, "No running services in this worktree.")
+		output.Blank(os.Stdout)
 		return nil
 	}
 
