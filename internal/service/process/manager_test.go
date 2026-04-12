@@ -146,3 +146,94 @@ func TestGetPTY(t *testing.T) {
 		t.Error("expected error for nonexistent service, got nil")
 	}
 }
+
+func TestStartLauncher_SuccessExit0(t *testing.T) {
+	mgr := NewManager()
+	defer mgr.StopAll()
+
+	workDir := t.TempDir()
+	// Launcher-style: has a Stop command. Simulates `docker compose up -d`
+	// that exits 0 after detaching.
+	cfg := domain.ServiceConfig{
+		Name: "launcher-ok",
+		Cmd:  "true",
+		Stop: "true",
+	}
+	if err := mgr.Start(cfg, workDir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	services := mgr.List()
+	if len(services) != 1 {
+		t.Fatalf("expected 1 service, got %d", len(services))
+	}
+	if services[0].Status != domain.ServiceStatusRunning {
+		t.Errorf("launcher exit 0 should keep status Running, got %s", services[0].Status)
+	}
+}
+
+func TestStopAllInWorkDir_LeavesOtherWorktreesAlone(t *testing.T) {
+	mgr := NewManager()
+	defer mgr.StopAll()
+
+	cfgA := domain.ServiceConfig{Name: "api", Cmd: "sleep 60"}
+	cfgB := domain.ServiceConfig{Name: "api", Cmd: "sleep 60"}
+	workDirA := t.TempDir()
+	workDirB := t.TempDir()
+
+	if err := mgr.Start(cfgA, workDirA); err != nil {
+		t.Fatalf("start A: %v", err)
+	}
+	if err := mgr.Start(cfgB, workDirB); err != nil {
+		t.Fatalf("start B: %v", err)
+	}
+
+	if err := mgr.StopAllInWorkDir(workDirA); err != nil {
+		t.Fatalf("StopAllInWorkDir: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	var stoppedA, runningB bool
+	for _, svc := range mgr.List() {
+		if svc.WorkDir == workDirA && svc.Status == domain.ServiceStatusStopped {
+			stoppedA = true
+		}
+		if svc.WorkDir == workDirB && svc.Status == domain.ServiceStatusRunning {
+			runningB = true
+		}
+	}
+	if !stoppedA {
+		t.Error("expected service in workDirA to be stopped")
+	}
+	if !runningB {
+		t.Error("expected service in workDirB to remain running")
+	}
+}
+
+func TestStartLauncher_FailureSurfacesError(t *testing.T) {
+	mgr := NewManager()
+	defer mgr.StopAll()
+
+	workDir := t.TempDir()
+	// `false` exits 1 with no output — simulates a launcher that fails
+	// (bad compose file, port conflict, etc). Real Docker output would be
+	// longer; the ring buffer drains whatever shows up.
+	cfg := domain.ServiceConfig{
+		Name: "launcher-fail",
+		Cmd:  "false",
+		Stop: "true",
+	}
+	err := mgr.Start(cfg, workDir)
+	if err == nil {
+		t.Fatal("expected error when launcher exits non-zero, got nil")
+	}
+	if !strings.Contains(err.Error(), "launcher-fail") {
+		t.Errorf("error should mention service name, got: %v", err)
+	}
+
+	// Failed launcher must not be registered — it never ran successfully.
+	if len(mgr.List()) != 0 {
+		t.Errorf("failed launcher should not be registered, got %d entries", len(mgr.List()))
+	}
+}

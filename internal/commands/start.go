@@ -52,16 +52,18 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	client := process.NewClient(socketPath)
+	stopSpinner := startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s...", svc.Name))
 	resp, err := client.Send(process.Request{
 		Action:  process.ActionStart,
 		Service: &svc,
 		WorkDir: dir,
 	})
+	stopSpinner()
 	if err != nil {
 		return fmt.Errorf("start %s: %w", svc.Name, err)
 	}
 	if resp.Status == process.StatusError {
-		return fmt.Errorf("start %s: %s", svc.Name, resp.Message)
+		return fmt.Errorf("%s", resp.Message)
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)

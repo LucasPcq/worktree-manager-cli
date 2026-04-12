@@ -74,11 +74,13 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	for i := range services {
 		svc := services[i]
+		stopSpinner := startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s...", svc.Name))
 		resp, sendErr := client.Send(process.Request{
 			Action:  process.ActionStart,
 			Service: &svc,
 			WorkDir: dir,
 		})
+		stopSpinner()
 		if sendErr != nil {
 			results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionError, Message: sendErr.Error()})
 			if format != domain.OutputJSON {
@@ -89,7 +91,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		if resp.Status == process.StatusError {
 			results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionError, Message: resp.Message})
 			if format != domain.OutputJSON {
-				output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %s", svc.Name, resp.Message))
+				output.Error(cmd.ErrOrStderr(), resp.Message)
 			}
 			continue
 		}

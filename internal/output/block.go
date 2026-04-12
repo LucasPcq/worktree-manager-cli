@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/styles"
 )
@@ -32,8 +33,16 @@ func Success(w io.Writer, msg string) {
 }
 
 // Error prints a styled error line: "  ✗ message".
+// If msg contains newlines (e.g. captured subprocess output), only the first
+// line rides next to the cross; the rest is indented underneath so terminal
+// rendering stays readable.
 func Error(w io.Writer, msg string) {
-	fmt.Fprintf(w, "%s%s %s\n", Indent, styles.DangerText.Render("✗"), msg)
+	cross := styles.DangerText.Render("✗")
+	lines := strings.Split(strings.TrimRight(msg, "\n"), "\n")
+	fmt.Fprintf(w, "%s%s %s\n", Indent, cross, lines[0])
+	for _, line := range lines[1:] {
+		fmt.Fprintf(w, "%s  %s\n", Indent, styles.Muted.Render(line))
+	}
 }
 
 // Loading prints a styled loading/status line: "  › message".

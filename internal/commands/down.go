@@ -16,8 +16,8 @@ import (
 func newSvcDownCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "down [profile]",
-		Short: "Stop a service profile",
-		Long:  "Stop all services in a profile.\nWithout arguments, stops all running services.",
+		Short: "Stop services running in the current worktree",
+		Long:  "Stop services running in the current worktree.\nWith a profile argument, stops only that profile's services.\nServices running in other worktrees are never touched.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  runDown,
 	}
@@ -99,7 +99,15 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	resp, err := client.Send(process.Request{Action: process.ActionStopAll})
+	dir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	resp, err := client.Send(process.Request{
+		Action:  process.ActionStopAll,
+		WorkDir: dir,
+	})
 	if err != nil {
 		return fmt.Errorf("stop all services: %w", err)
 	}
@@ -116,7 +124,13 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), "All services stopped.")
+	if len(resp.Services) == 0 {
+		output.Message(cmd.OutOrStdout(), "No services running in this worktree.")
+	} else {
+		for _, svc := range resp.Services {
+			output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", svc.Name))
+		}
+	}
 	output.Blank(cmd.OutOrStdout())
 	return nil
 }
