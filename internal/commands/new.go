@@ -9,6 +9,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	newpicker "github.com/LucasPcq/wtm/internal/tui/new"
 )
@@ -90,7 +91,9 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Created worktree %s at %s\n", branch, createResult.Path)
+	output.Blank(cmd.OutOrStdout())
+	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created worktree %s at %s", branch, createResult.Path))
+	output.Blank(cmd.OutOrStdout())
 
 	return nil
 }

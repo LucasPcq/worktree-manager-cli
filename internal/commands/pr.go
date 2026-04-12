@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 
-	"github.com/charmbracelet/huh"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 const (
@@ -78,7 +80,7 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(prs) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No open pull requests.")
+		output.Message(cmd.OutOrStdout(), "No open pull requests.")
 		return nil
 	}
 
@@ -91,7 +93,7 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 	// Interactive mode
 	pr, action, err := pickPRAndAction(prs)
 	if err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
+		if errors.Is(err, domain.ErrUserAborted) {
 			return nil
 		}
 		return err
@@ -101,44 +103,79 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 }
 
 func pickPRAndAction(prs []domain.PRInfo) (domain.PRInfo, string, error) {
-	prOptions := make([]huh.Option[int], 0, len(prs))
+	prItems := make([]components.SelectItem, 0, len(prs))
 	for _, pr := range prs {
 		label := fmt.Sprintf("#%-4d  %-40s  %s", pr.Number, truncate(pr.Title, 40), pr.Author)
-		prOptions = append(prOptions, huh.NewOption(label, pr.Number))
+		prItems = append(prItems, components.SelectItem{
+			Label: label,
+			Value: strconv.Itoa(pr.Number),
+		})
 	}
 
-	var selected int
-	var action string
+	actionItems := []components.SelectItem{
+		{Label: "Checkout into worktree", Value: prActionCheckout},
+		{Label: "Open in browser", Value: prActionBrowser},
+		{Label: "View details", Value: prActionDetails},
+		{Label: "Open in dashboard", Value: prActionDashboard},
+	}
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[int]().
-				Title("Select a pull request").
-				Options(prOptions...).
-				Value(&selected),
-			huh.NewSelect[string]().
-				Title("Action").
-				Options(
-					huh.NewOption("Checkout into worktree", prActionCheckout),
-					huh.NewOption("Open in browser", prActionBrowser),
-					huh.NewOption("View details", prActionDetails),
-					huh.NewOption("Open in dashboard", prActionDashboard),
-				).
-				Value(&action),
-		),
-	)
+	wiz := components.NewWizard([]components.Step{
+		{
+			Name:  "Pull request",
+			Model: components.NewSelectList(components.NewSelectListParams{Title: "Select a pull request", Items: prItems}),
+			Summary: func(m any) string {
+				sl, ok := m.(components.SelectListModel)
+				if !ok {
+					return ""
+				}
+				return sl.Value()
+			},
+		},
+		{
+			Name:  "Action",
+			Model: components.NewSelectList(components.NewSelectListParams{Title: "Action", Items: actionItems}),
+			Summary: func(m any) string {
+				sl, ok := m.(components.SelectListModel)
+				if !ok {
+					return ""
+				}
+				return sl.Value()
+			},
+		},
+	})
 
-	if err := form.Run(); err != nil {
-		return domain.PRInfo{}, "", err
+	finalModel, err := tea.NewProgram(wiz).Run()
+	if err != nil {
+		return domain.PRInfo{}, "", fmt.Errorf("wizard: %w", err)
+	}
+
+	final, ok := finalModel.(components.WizardModel)
+	if !ok || final.Aborted() {
+		return domain.PRInfo{}, "", domain.ErrUserAborted
+	}
+
+	prSL, ok := final.Steps()[0].Model.(components.SelectListModel)
+	if !ok {
+		return domain.PRInfo{}, "", fmt.Errorf("unexpected model type for PR step")
+	}
+
+	prNum, err := strconv.Atoi(prSL.Value())
+	if err != nil {
+		return domain.PRInfo{}, "", fmt.Errorf("parse PR number: %w", err)
+	}
+
+	actionSL, ok := final.Steps()[1].Model.(components.SelectListModel)
+	if !ok {
+		return domain.PRInfo{}, "", fmt.Errorf("unexpected model type for action step")
 	}
 
 	for _, pr := range prs {
-		if pr.Number == selected {
-			return pr, action, nil
+		if pr.Number == prNum {
+			return pr, actionSL.Value(), nil
 		}
 	}
 
-	return domain.PRInfo{}, "", fmt.Errorf("PR #%d not found", selected)
+	return domain.PRInfo{}, "", fmt.Errorf("PR #%d not found", prNum)
 }
 
 func executePRAction(cmd *cobra.Command, action string, pr domain.PRInfo, projectDir string) error {
@@ -203,32 +240,36 @@ func pickPRNumber(cmd *cobra.Command, projectDir string) (int, error) {
 	}
 
 	if len(prs) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No open pull requests.")
+		output.Message(cmd.OutOrStdout(), "No open pull requests.")
 		return 0, nil
 	}
 
-	prOptions := make([]huh.Option[int], 0, len(prs))
+	prItems := make([]components.SelectItem, 0, len(prs))
 	for _, pr := range prs {
 		label := fmt.Sprintf("#%-4d  %-40s  %s", pr.Number, truncate(pr.Title, 40), pr.Author)
-		prOptions = append(prOptions, huh.NewOption(label, pr.Number))
+		prItems = append(prItems, components.SelectItem{
+			Label: label,
+			Value: strconv.Itoa(pr.Number),
+		})
 	}
 
-	var selected int
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[int]().
-				Title("Select a pull request to checkout").
-				Options(prOptions...).
-				Value(&selected),
-		),
-	)
+	sl := components.NewSelectList(components.NewSelectListParams{
+		Title: "Select a pull request to checkout",
+		Items: prItems,
+	})
 
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
+	selected, err := components.RunStandaloneSelect(sl)
+	if err != nil {
+		if errors.Is(err, components.ErrAborted) {
 			return 0, nil
 		}
 		return 0, err
 	}
 
-	return selected, nil
+	num, err := strconv.Atoi(selected)
+	if err != nil {
+		return 0, fmt.Errorf("parse PR number: %w", err)
+	}
+
+	return num, nil
 }

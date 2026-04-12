@@ -1,13 +1,14 @@
-// Package pr builds interactive huh forms for the wtm pr commands.
+// Package pr builds interactive wizards for the wtm pr commands.
 package pr
 
 import (
-	"errors"
+	"fmt"
 	"sort"
 
-	"github.com/charmbracelet/huh"
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // CreateWizardParams holds inputs for the PR creation wizard.
@@ -27,49 +28,102 @@ type CreateWizardResult struct {
 
 // RunCreateWizard displays the interactive wizard for PR creation.
 func RunCreateWizard(params CreateWizardParams) (CreateWizardResult, error) {
-	title := params.DefaultTitle
-	draft := params.AutoDraft
+	titleInput := components.NewTextInput(components.NewTextInputParams{
+		Title:       "PR title",
+		Description: "Title for the pull request",
+		Placeholder: params.DefaultTitle,
+	})
 
-	branchOptions := buildBranchOptions(params.Branches, params.DefaultBase)
+	branchItems := buildBranchItems(params.Branches, params.DefaultBase)
+	branchList := components.NewSelectList(components.NewSelectListParams{
+		Title:       "Base branch",
+		Description: "Target branch for the PR",
+		Items:       branchItems,
+	})
 
-	var selectedBase string
+	draftItems := buildDraftItems(params.AutoDraft)
+	draftList := components.NewSelectList(components.NewSelectListParams{
+		Title:       "Draft",
+		Description: "",
+		Items:       draftItems,
+	})
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("PR title").
-				Value(&title),
-			huh.NewSelect[string]().
-				Title("Base branch").
-				Description("Target branch for the PR").
-				Options(branchOptions...).
-				Filtering(true).
-				Value(&selectedBase),
-			huh.NewSelect[bool]().
-				Title("Draft").
-				Options(
-					huh.NewOption("No — ready for review", false),
-					huh.NewOption("Yes — work in progress", true),
-				).
-				Value(&draft),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return CreateWizardResult{}, domain.ErrUserAborted
-		}
-		return CreateWizardResult{}, err
+	steps := []components.Step{
+		{
+			Name:  "PR title",
+			Model: titleInput,
+			Summary: func(model any) string {
+				child, ok := model.(components.TextInputModel)
+				if !ok {
+					return ""
+				}
+				if v := child.Value(); v != "" {
+					return v
+				}
+				if p := child.Placeholder(); p != "" {
+					return p + " (default)"
+				}
+				return ""
+			},
+		},
+		{
+			Name:  "Base branch",
+			Model: branchList,
+			Summary: func(model any) string {
+				if child, ok := model.(components.SelectListModel); ok {
+					return child.Value()
+				}
+				return ""
+			},
+		},
+		{
+			Name:  "Draft",
+			Model: draftList,
+			Summary: func(model any) string {
+				if child, ok := model.(components.SelectListModel); ok {
+					return child.Value()
+				}
+				return ""
+			},
+		},
 	}
 
-	return CreateWizardResult{
-		Title: title,
-		Base:  selectedBase,
-		Draft: draft,
-	}, nil
+	wiz := components.NewWizard(steps)
+	p := tea.NewProgram(wiz)
+
+	finalModel, err := p.Run()
+	if err != nil {
+		return CreateWizardResult{}, fmt.Errorf("wizard: %w", err)
+	}
+
+	final, ok := finalModel.(components.WizardModel)
+	if !ok || final.Aborted() {
+		return CreateWizardResult{}, domain.ErrUserAborted
+	}
+
+	return extractResult(final.Steps()), nil
 }
 
-func buildBranchOptions(branches []string, defaultBranch string) []huh.Option[string] {
+func extractResult(steps []components.Step) CreateWizardResult {
+	var result CreateWizardResult
+
+	if child, ok := steps[0].Model.(components.TextInputModel); ok {
+		result.Title = child.Value()
+		if result.Title == "" {
+			result.Title = child.Placeholder()
+		}
+	}
+	if child, ok := steps[1].Model.(components.SelectListModel); ok {
+		result.Base = child.Value()
+	}
+	if child, ok := steps[2].Model.(components.SelectListModel); ok {
+		result.Draft = child.Value() == "true"
+	}
+
+	return result
+}
+
+func buildBranchItems(branches []string, defaultBranch string) []components.SelectItem {
 	var rest []string
 	hasDefault := false
 	for _, b := range branches {
@@ -82,17 +136,36 @@ func buildBranchOptions(branches []string, defaultBranch string) []huh.Option[st
 
 	sort.Strings(rest)
 
-	options := make([]huh.Option[string], 0, len(branches))
+	items := make([]components.SelectItem, 0, len(branches))
 
 	if hasDefault {
-		options = append(options, huh.NewOption(defaultBranch+" (default)", defaultBranch))
+		items = append(items, components.SelectItem{
+			Label: defaultBranch + " (default)",
+			Value: defaultBranch,
+		})
 	}
 
 	for _, b := range rest {
-		options = append(options, huh.NewOption(b, b))
+		items = append(items, components.SelectItem{
+			Label: b,
+			Value: b,
+		})
 	}
 
-	return options
+	return items
+}
+
+func buildDraftItems(autoDraft bool) []components.SelectItem {
+	items := []components.SelectItem{
+		{Label: "No — ready for review", Value: "false"},
+		{Label: "Yes — work in progress", Value: "true"},
+	}
+
+	if autoDraft {
+		items[0], items[1] = items[1], items[0]
+	}
+
+	return items
 }
 
 // EnvPickerParams holds inputs for the PR checkout env strategy picker.
@@ -103,29 +176,22 @@ type EnvPickerParams struct {
 // RunEnvPicker displays a single-question form asking for the env strategy.
 // Returns the chosen strategy (empty string means "use config default").
 func RunEnvPicker(params EnvPickerParams) (string, error) {
-	var envStrategy string
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Env strategy").
-				Description("How to provision .env files in the new worktree").
-				Options(
-					huh.NewOption("Use config default ("+string(params.ConfigStrategy)+")", ""),
-					huh.NewOption("example — copy .env.example → .env", string(domain.EnvStrategyExample)),
-					huh.NewOption("main — copy .env from main worktree", string(domain.EnvStrategyMain)),
-					huh.NewOption("parent — copy .env from source worktree", string(domain.EnvStrategyParent)),
-				).
-				Value(&envStrategy),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return "", domain.ErrUserAborted
-		}
-		return "", err
+	items := []components.SelectItem{
+		{Label: "Use config default (" + string(params.ConfigStrategy) + ")", Value: ""},
+		{Label: "example — copy .env.example → .env", Value: string(domain.EnvStrategyExample)},
+		{Label: "main — copy .env from main worktree", Value: string(domain.EnvStrategyMain)},
+		{Label: "parent — copy .env from source worktree", Value: string(domain.EnvStrategyParent)},
 	}
 
-	return envStrategy, nil
+	sl := components.NewSelectList(components.NewSelectListParams{
+		Title:       "Env strategy",
+		Description: "How to provision .env files in the new worktree",
+		Items:       items,
+	})
+
+	result, err := components.RunStandaloneSelect(sl)
+	if err != nil {
+		return "", domain.ErrUserAborted
+	}
+	return result, nil
 }

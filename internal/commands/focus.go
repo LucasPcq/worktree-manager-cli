@@ -9,6 +9,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	gopicker "github.com/LucasPcq/wtm/internal/tui/go"
 )
@@ -45,7 +46,9 @@ func runFocus(cmd *cobra.Command, args []string) error {
 		if err := worktree.Unfocus(worktree.UnfocusParams{ProjectDir: result.ProjectDir, Config: result.Config}); err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "✓ Active worktree cleared.")
+		output.Blank(cmd.OutOrStdout())
+		output.Success(cmd.OutOrStdout(), "Active worktree cleared.")
+		output.Blank(cmd.OutOrStdout())
 		return nil
 	}
 
@@ -65,7 +68,9 @@ func runFocus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Focused on %s\n", branch)
+	output.Blank(cmd.OutOrStdout())
+	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Focused on %s", branch))
+	output.Blank(cmd.OutOrStdout())
 	return nil
 }
 

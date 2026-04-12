@@ -27,6 +27,7 @@ func NewTextInput(params NewTextInputParams) TextInputModel {
 	ti.Focus()
 	ti.Prompt = styles.InputPrompt.Render("❯ ")
 	ti.CharLimit = 256
+	ti.Width = 76
 
 	if params.Placeholder != "" {
 		ti.Placeholder = params.Placeholder
@@ -59,6 +60,9 @@ func (m TextInputModel) Aborted() bool { return m.aborted }
 
 // Value returns the current input text.
 func (m TextInputModel) Value() string { return strings.TrimSpace(m.input.Value()) }
+
+// Placeholder returns the placeholder text.
+func (m TextInputModel) Placeholder() string { return m.input.Placeholder }
 
 // SetWidth updates the available width.
 func (m *TextInputModel) SetWidth(w int) {

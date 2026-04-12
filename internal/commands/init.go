@@ -9,6 +9,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/detect"
 	initwizard "github.com/LucasPcq/wtm/internal/tui/init"
 )
@@ -34,7 +35,9 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	}
 
 	if detect.ProjectConfigExists(dir) {
-		fmt.Fprintln(cmd.OutOrStdout(), ".wtm/config.toml already exists. Delete it or edit it manually to reconfigure.")
+		output.Blank(cmd.OutOrStdout())
+		output.Message(cmd.OutOrStdout(), ".wtm/config.toml already exists. Delete it or edit it manually to reconfigure.")
+		output.Blank(cmd.OutOrStdout())
 		return nil
 	}
 
@@ -46,8 +49,8 @@ func ensureGlobalConfig(cmd *cobra.Command) error {
 		return nil
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), "No global config found. Let's set one up.")
-	fmt.Fprintln(cmd.OutOrStdout())
+	output.Message(cmd.OutOrStdout(), "No global config found. Let's set one up.")
+	output.Blank(cmd.OutOrStdout())
 
 	answers, err := initwizard.RunGlobalWizard()
 	if errors.Is(err, domain.ErrUserAborted) {
@@ -61,17 +64,18 @@ func ensureGlobalConfig(cmd *cobra.Command) error {
 		return fmt.Errorf("write global config: %w", err)
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), "\n✓ Global config saved.")
-	fmt.Fprintln(cmd.OutOrStdout())
-	fmt.Fprintln(cmd.OutOrStdout(), domain.MsgShellInitHint)
-	fmt.Fprintln(cmd.OutOrStdout())
+	output.Blank(cmd.OutOrStdout())
+	output.Success(cmd.OutOrStdout(), "Global config saved.")
+	output.Blank(cmd.OutOrStdout())
+	output.Message(cmd.OutOrStdout(), domain.MsgShellInitHint)
+	output.Blank(cmd.OutOrStdout())
 
 	return nil
 }
 
 func createProjectConfig(cmd *cobra.Command, dir string) error {
-	fmt.Fprintln(cmd.OutOrStdout(), "No .wtm/config.toml found. Let's initialize this project.")
-	fmt.Fprintln(cmd.OutOrStdout())
+	output.Message(cmd.OutOrStdout(), "No .wtm/config.toml found. Let's initialize this project.")
+	output.Blank(cmd.OutOrStdout())
 
 	detection := buildDetectionResult(dir)
 
@@ -90,7 +94,8 @@ func createProjectConfig(cmd *cobra.Command, dir string) error {
 		return fmt.Errorf("write project config: %w", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "\n✓ Created %s/%s\n", domain.ProjectDirName, domain.ConfigFileName)
+	output.Blank(cmd.OutOrStdout())
+	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s/%s", domain.ProjectDirName, domain.ConfigFileName))
 	return nil
 }
 

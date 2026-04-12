@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/config"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
@@ -59,6 +60,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("start %s: %s", svc.Name, resp.Message)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "  ✓ %s started\n", svc.Name)
+	output.Blank(cmd.OutOrStdout())
+	output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", svc.Name))
+	output.Blank(cmd.OutOrStdout())
 	return nil
 }

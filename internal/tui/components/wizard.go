@@ -10,7 +10,7 @@ import (
 )
 
 // Step defines one step in a wizard.
-// Model must be a SelectListModel or TextInputModel.
+// Model must be a SelectListModel, TextInputModel, ConfirmModel, or MultiSelectModel.
 type Step struct {
 	Name    string
 	Model   any
@@ -67,32 +67,38 @@ func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	step := &m.steps[m.current]
-	var cmd tea.Cmd
 
+	advanced, back, cmd := m.updateStep(step, msg)
+	if advanced {
+		return m.advance()
+	}
+	if back {
+		return m.goBack()
+	}
+
+	return m, cmd
+}
+
+func (m WizardModel) updateStep(step *Step, msg tea.Msg) (advanced bool, back bool, cmd tea.Cmd) {
 	switch child := step.Model.(type) {
 	case SelectListModel:
 		updated, c := child.Update(msg)
 		step.Model = updated
-		cmd = c
-		if updated.Chosen() {
-			return m.advance()
-		}
-		if updated.Aborted() {
-			return m.goBack()
-		}
+		return updated.Chosen(), updated.Aborted(), c
 	case TextInputModel:
 		updated, c := child.Update(msg)
 		step.Model = updated
-		cmd = c
-		if updated.Done() {
-			return m.advance()
-		}
-		if updated.Aborted() {
-			return m.goBack()
-		}
+		return updated.Done(), updated.Aborted(), c
+	case ConfirmModel:
+		updated, c := child.Update(msg)
+		step.Model = updated
+		return updated.Done(), updated.Aborted(), c
+	case MultiSelectModel:
+		updated, c := child.Update(msg)
+		step.Model = updated
+		return updated.Done(), updated.Aborted(), c
 	}
-
-	return m, cmd
+	return false, false, nil
 }
 
 // View renders the breadcrumb, completed step summaries, and the current step.
@@ -103,6 +109,7 @@ func (m WizardModel) View() string {
 
 	var b strings.Builder
 
+	b.WriteString("\n")
 	b.WriteString(m.renderBreadcrumb())
 	b.WriteString("\n\n")
 
@@ -129,6 +136,7 @@ func (m WizardModel) View() string {
 
 	b.WriteString("\n\n")
 	b.WriteString(m.renderHelpBar())
+	b.WriteString("\n")
 
 	return b.String()
 }
@@ -142,8 +150,11 @@ func (m WizardModel) renderBreadcrumb() string {
 
 func (m WizardModel) renderHelpBar() string {
 	help := "  enter confirm"
-	if _, ok := m.steps[m.current].Model.(SelectListModel); ok {
+	switch m.steps[m.current].Model.(type) {
+	case SelectListModel:
 		help += " • / filter"
+	case MultiSelectModel:
+		help += " • space toggle"
 	}
 	if m.current > 0 {
 		help += " • esc back"
@@ -165,6 +176,14 @@ func (m *WizardModel) propagateSize(stepIdx int) {
 		m.steps[stepIdx].Model = child
 	case TextInputModel:
 		child.width = m.width
+		child.input.Width = max(10, m.width-4)
+		m.steps[stepIdx].Model = child
+	case ConfirmModel:
+		child.width = m.width
+		m.steps[stepIdx].Model = child
+	case MultiSelectModel:
+		child.width = m.width
+		child.height = h
 		m.steps[stepIdx].Model = child
 	}
 }
@@ -197,6 +216,10 @@ func (m WizardModel) initStep(stepIdx int) tea.Cmd {
 		return child.Init()
 	case TextInputModel:
 		return child.Init()
+	case ConfirmModel:
+		return child.Init()
+	case MultiSelectModel:
+		return child.Init()
 	}
 	return nil
 }
@@ -206,6 +229,10 @@ func (m WizardModel) viewStep(stepIdx int) string {
 	case SelectListModel:
 		return child.View()
 	case TextInputModel:
+		return child.View()
+	case ConfirmModel:
+		return child.View()
+	case MultiSelectModel:
 		return child.View()
 	}
 	return ""
@@ -224,6 +251,14 @@ func (m *WizardModel) resetStep(stepIdx int) {
 		child.done = false
 		child.aborted = false
 		m.steps[stepIdx].Model = child
+	case ConfirmModel:
+		child.done = false
+		child.aborted = false
+		m.steps[stepIdx].Model = child
+	case MultiSelectModel:
+		child.done = false
+		child.aborted = false
+		m.steps[stepIdx].Model = child
 	}
 }
 
@@ -232,6 +267,10 @@ func (m WizardModel) stepDescription(step Step) string {
 	case SelectListModel:
 		return child.desc
 	case TextInputModel:
+		return child.desc
+	case ConfirmModel:
+		return child.desc
+	case MultiSelectModel:
 		return child.desc
 	}
 	return ""

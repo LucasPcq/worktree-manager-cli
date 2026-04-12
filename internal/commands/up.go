@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // newSvcUpCmd creates the wtm svc up subcommand.
@@ -39,8 +40,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load services config: %w", err)
 	}
 
+	output.Blank(cmd.ErrOrStderr())
 	for _, warning := range config.ValidateServices(svcCfg) {
-		fmt.Fprintf(cmd.ErrOrStderr(), "⚠ %s\n", warning)
+		output.Warning(cmd.ErrOrStderr(), warning)
 	}
 
 	services, err := resolveProfileServices(args, svcCfg)
@@ -63,15 +65,16 @@ func runUp(cmd *cobra.Command, args []string) error {
 			WorkDir: dir,
 		})
 		if sendErr != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "  ✗ %s: %v\n", svc.Name, sendErr)
+			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", svc.Name, sendErr))
 			continue
 		}
 		if resp.Status == process.StatusError {
-			fmt.Fprintf(cmd.ErrOrStderr(), "  ✗ %s: %s\n", svc.Name, resp.Message)
+			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %s", svc.Name, resp.Message))
 			continue
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "  ✓ %s started\n", svc.Name)
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", svc.Name))
 	}
+	output.Blank(cmd.OutOrStdout())
 
 	return nil
 }
@@ -104,31 +107,24 @@ func resolveProfileServices(args []string, svcCfg domain.ServicesConfig) ([]doma
 }
 
 func pickProfile(svcCfg domain.ServicesConfig) (domain.ProfileConfig, error) {
-	defaultProfile, _ := svcCfg.DefaultProfile()
-
-	options := make([]huh.Option[string], 0, len(svcCfg.Profiles))
+	items := make([]components.SelectItem, 0, len(svcCfg.Profiles))
 	for _, p := range svcCfg.Profiles {
 		label := p.Name
 		if len(p.Services) > 0 {
 			label += fmt.Sprintf(" (%s)", joinServiceNames(p.Services))
 		}
-		options = append(options, huh.NewOption(label, p.Name))
+		items = append(items, components.SelectItem{Label: label, Value: p.Name})
 	}
 
-	selected := defaultProfile.Name
+	sl := components.NewSelectList(components.NewSelectListParams{
+		Title:       "Select profile",
+		Description: "Which services to start?",
+		Items:       items,
+	})
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Select profile").
-				Description("Which services to start?").
-				Options(options...).
-				Value(&selected),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
+	selected, err := components.RunStandaloneSelect(sl)
+	if err != nil {
+		if errors.Is(err, components.ErrAborted) {
 			return domain.ProfileConfig{}, domain.ErrUserAborted
 		}
 		return domain.ProfileConfig{}, err

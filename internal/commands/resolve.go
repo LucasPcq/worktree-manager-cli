@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	gopicker "github.com/LucasPcq/wtm/internal/tui/go"
 )
@@ -41,7 +42,9 @@ func runResolve(cmd *cobra.Command, args []string) error {
 		Query:      query,
 	})
 	if errors.Is(err, domain.ErrWorktreeNotFound) {
-		fmt.Fprintf(cmd.ErrOrStderr(), "No worktree found matching %q\n", query)
+		output.Blank(cmd.ErrOrStderr())
+		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("No worktree found matching %q", query))
+		output.Blank(cmd.ErrOrStderr())
 		return nil
 	}
 	if err != nil {

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 
-	"github.com/charmbracelet/huh"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/state"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // newWtListCmd creates the wtm wt list subcommand.
@@ -68,7 +70,7 @@ func runLs(cmd *cobra.Command, _ []string) error {
 
 	// Interactive mode
 	if len(statuses) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No worktrees found.")
+		output.Message(cmd.OutOrStdout(), "No worktrees found.")
 		return nil
 	}
 
@@ -125,48 +127,85 @@ func pickWorktreeAndAction(
 	prs []domain.PRInfo,
 	services []process.ServiceInfo,
 ) (domain.WorktreeStatus, string, error) {
-	wtOptions := make([]huh.Option[int], 0, len(statuses))
+	wtItems := make([]components.SelectItem, 0, len(statuses))
 	for i, s := range statuses {
 		label := buildWorktreeLabel(s, activeBranch, prs, services)
-		wtOptions = append(wtOptions, huh.NewOption(label, i))
+		wtItems = append(wtItems, components.SelectItem{
+			Label: label,
+			Value: strconv.Itoa(i),
+		})
 	}
 
-	var selectedIdx int
-	var action string
-
-	// Build action options dynamically after worktree selection
-	// For now, use a static set — context-specific options will be shown
-	actionOptions := []huh.Option[string]{
-		huh.NewOption("Go (cd to worktree)", lsActionGo),
-		huh.NewOption("Focus (swap env)", lsActionFocus),
-		huh.NewOption("Start profile", lsActionServicesUp),
-		huh.NewOption("Stop profile", lsActionServicesDown),
-		huh.NewOption("View logs", lsActionLogs),
-		huh.NewOption("Clean (delete worktree)", lsActionClean),
-		huh.NewOption("Open in dashboard", lsActionDashboard),
+	// Map index → branch name for the summary display
+	branchByIdx := make(map[string]string, len(statuses))
+	for i, s := range statuses {
+		branchByIdx[strconv.Itoa(i)] = s.Branch
 	}
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[int]().
-				Title("Select a worktree").
-				Options(wtOptions...).
-				Value(&selectedIdx),
-			huh.NewSelect[string]().
-				Title("Action").
-				Options(actionOptions...).
-				Value(&action),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return domain.WorktreeStatus{}, "", domain.ErrUserAborted
-		}
-		return domain.WorktreeStatus{}, "", err
+	actionItems := []components.SelectItem{
+		{Label: "Go (cd to worktree)", Value: lsActionGo},
+		{Label: "Focus (swap env)", Value: lsActionFocus},
+		{Label: "Start profile", Value: lsActionServicesUp},
+		{Label: "Stop profile", Value: lsActionServicesDown},
+		{Label: "View logs", Value: lsActionLogs},
+		{Label: "Clean (delete worktree)", Value: lsActionClean},
+		{Label: "Open in dashboard", Value: lsActionDashboard},
 	}
 
-	return statuses[selectedIdx], action, nil
+	wiz := components.NewWizard([]components.Step{
+		{
+			Name:  "Worktree",
+			Model: components.NewSelectList(components.NewSelectListParams{Title: "Select a worktree", Items: wtItems}),
+			Summary: func(m any) string {
+				sl, ok := m.(components.SelectListModel)
+				if !ok {
+					return ""
+				}
+				if name, found := branchByIdx[sl.Value()]; found {
+					return name
+				}
+				return sl.Value()
+			},
+		},
+		{
+			Name:  "Action",
+			Model: components.NewSelectList(components.NewSelectListParams{Title: "Action", Items: actionItems}),
+			Summary: func(m any) string {
+				sl, ok := m.(components.SelectListModel)
+				if !ok {
+					return ""
+				}
+				return sl.Value()
+			},
+		},
+	})
+
+	finalModel, err := tea.NewProgram(wiz).Run()
+	if err != nil {
+		return domain.WorktreeStatus{}, "", fmt.Errorf("wizard: %w", err)
+	}
+
+	final, ok := finalModel.(components.WizardModel)
+	if !ok || final.Aborted() {
+		return domain.WorktreeStatus{}, "", domain.ErrUserAborted
+	}
+
+	wtSL, ok := final.Steps()[0].Model.(components.SelectListModel)
+	if !ok {
+		return domain.WorktreeStatus{}, "", fmt.Errorf("unexpected model type for worktree step")
+	}
+
+	idx, err := strconv.Atoi(wtSL.Value())
+	if err != nil {
+		return domain.WorktreeStatus{}, "", fmt.Errorf("parse worktree index: %w", err)
+	}
+
+	actionSL, ok := final.Steps()[1].Model.(components.SelectListModel)
+	if !ok {
+		return domain.WorktreeStatus{}, "", fmt.Errorf("unexpected model type for action step")
+	}
+
+	return statuses[idx], actionSL.Value(), nil
 }
 
 func buildWorktreeLabel(s domain.WorktreeStatus, activeBranch string, prs []domain.PRInfo, services []process.ServiceInfo) string {
