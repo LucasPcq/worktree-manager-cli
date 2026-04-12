@@ -50,6 +50,7 @@ func newPRListCmd() *cobra.Command {
 
 	cmd.Flags().Bool("review", false, "Show only PRs where you are requested as reviewer")
 	cmd.Flags().Bool("mine", false, "Show only your PRs")
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
 
 	return cmd
 }
@@ -79,6 +80,11 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 	stop()
 	if err != nil {
 		return fmt.Errorf("list PRs: %w", err)
+	}
+
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	if format == domain.OutputJSON {
+		return output.WritePRListJSON(cmd.OutOrStdout(), prs)
 	}
 
 	if len(prs) == 0 {

@@ -7,19 +7,22 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/config"
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
 // newSvcStartCmd creates the wtm svc start subcommand.
 func newSvcStartCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "start <service>",
 		Short: "Start a single service",
 		Long:  "Start an individual service by name (defined in .wtm/services.toml).",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runStart,
 	}
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	return cmd
 }
 
 func runStart(cmd *cobra.Command, args []string) error {
@@ -49,16 +52,26 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	client := process.NewClient(socketPath)
+	stopSpinner := startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s...", svc.Name))
 	resp, err := client.Send(process.Request{
 		Action:  process.ActionStart,
 		Service: &svc,
 		WorkDir: dir,
 	})
+	stopSpinner()
 	if err != nil {
 		return fmt.Errorf("start %s: %w", svc.Name, err)
 	}
 	if resp.Status == process.StatusError {
-		return fmt.Errorf("start %s: %s", svc.Name, resp.Message)
+		return fmt.Errorf("%s", resp.Message)
+	}
+
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	if format == domain.OutputJSON {
+		return output.WriteServiceResultJSON(cmd.OutOrStdout(), output.ServiceActionResult{
+			Name:   svc.Name,
+			Status: domain.ServiceActionStarted,
+		})
 	}
 
 	output.Blank(cmd.OutOrStdout())

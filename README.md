@@ -65,6 +65,16 @@ wtm wt switch feature/my-feature   # navigate + start services
 wtm wt clean feature/my-feature    # clean up when done
 ```
 
+## Teach your LLM to use wtm
+
+If you work with Claude Code or Cursor, run:
+
+```bash
+wtm agents install
+```
+
+Detects `.claude/` and `.cursor/` (project and home) and installs a `using-wtm` skill so your agent knows every command, flag, and JSON payload — without having to explain them each session. See [Machine-readable output](#machine-readable-output---output-json) below for the underlying `--output json` contract.
+
 ## Commands
 
 ### `wtm init`
@@ -207,6 +217,26 @@ wtm wt clean feature/auth --force   # skip all safety checks
 
 ### `wtm svc` — Service management
 
+#### `wtm svc list`
+
+List the services and profiles declared in `.wtm/services.toml`. In a terminal, shows an interactive picker with inline actions (start/stop/logs).
+
+```bash
+wtm svc list                # picker if TTY, table if piped
+wtm svc list --output json  # machine-readable
+```
+
+The picker lets you pick either a profile (actions: `up`, `down`) or a service (actions: `start`, `stop`, `logs`) without having to remember which command to run.
+
+#### `wtm svc ps`
+
+List services currently managed by the background daemon (running or crashed). In a terminal, shows an interactive picker with stop/logs/restart actions.
+
+```bash
+wtm svc ps                  # picker if TTY, table if piped
+wtm svc ps --output json    # machine-readable
+```
+
 #### `wtm svc up [profile]`
 
 Start a service profile defined in `.wtm/services.toml`.
@@ -228,12 +258,15 @@ If services are already running on another worktree, `svc up` prompts you to sto
 
 #### `wtm svc down [profile]`
 
-Stop a service profile.
+Stop services running in the **current worktree**. Services in other worktrees are never touched unless you pass `--all`.
 
 ```bash
-wtm svc down            # stop all running services
-wtm svc down backend    # stop a specific profile
+wtm svc down            # stop services in this worktree
+wtm svc down backend    # stop a specific profile (this worktree)
+wtm svc down --all      # stop every running service across all worktrees
 ```
+
+`svc ps` also offers a "Stop all running services" entry at the bottom of its picker, which shells out to `svc down --all`.
 
 #### `wtm svc start <service>`
 
@@ -305,6 +338,36 @@ Behavior:
 - Refuses if a local branch with the same name already exists — run `wtm wt clean <branch>` first
 
 **Limitation** — PRs from forks are not supported yet. Use `gh pr checkout` as a fallback for fork PRs.
+
+---
+
+## Machine-readable output (`--output json`)
+
+Every data-returning command supports `--output json` for scripting and LLM agents (Claude Code, Cursor, …). JSON is pretty-printed on stdout with `snake_case` fields; human messages stay on stderr; exit codes are unchanged.
+
+**The payload *is* the schema** — the shape mirrors the command's Go domain type and stays stable. To discover the exact fields of any command, just run it with the flag:
+
+```bash
+wtm wt list --output json
+wtm pr list --output json
+wtm svc list --output json
+```
+
+Supported commands:
+
+- `wt list`, `wt create`, `wt clean` (requires `--force`)
+- `pr list`, `pr create`, `pr checkout`
+- `svc list`, `svc ps`, `svc up`, `svc down`, `svc start`, `svc stop`
+
+Example — pipe into `jq`:
+
+```bash
+wtm wt list --output json | jq '.[] | select(.is_dirty).branch'
+wtm pr list --output json | jq '.[].number'
+wtm svc ps --output json | jq '.[] | select(.status=="running").name'
+```
+
+See also [Teach your LLM to use wtm](#teach-your-llm-to-use-wtm) above — `wtm agents install` drops a `using-wtm` skill into `.claude/` or `.cursor/` so agents can drive every command without being told.
 
 ---
 

@@ -25,3 +25,23 @@ type WorktreeStatus struct {
 	CommitsAhead int
 	CreatedAt    time.Time
 }
+
+// WorktreeListEntry is the JSON-serializable projection of a worktree for the
+// `wt list --output json` payload.
+type WorktreeListEntry struct {
+	Branch       string            `json:"branch"`
+	Path         string            `json:"path"`
+	IsParent     bool              `json:"is_parent"`
+	IsDirty      bool              `json:"is_dirty"`
+	CommitsAhead int               `json:"commits_ahead"`
+	CreatedAt    time.Time         `json:"created_at"`
+	PR           *WorktreeListPR   `json:"pr"`
+	Services     []string          `json:"services"`
+}
+
+// WorktreeListPR is the nested PR summary embedded in WorktreeListEntry.
+type WorktreeListPR struct {
+	Number int    `json:"number"`
+	URL    string `json:"url"`
+	State  string `json:"state"`
+}

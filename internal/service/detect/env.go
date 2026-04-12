@@ -2,6 +2,7 @@ package detect
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -80,4 +81,19 @@ func DockerComposeFiles(projectDir string) []string {
 
 	sort.Strings(files)
 	return files
+}
+
+// DockerComposeCommand returns the invocation form of docker-compose available
+// on the host: "docker compose" (v2 plugin), "docker-compose" (v1 standalone),
+// or "docker compose" as a sensible default when neither is detectable.
+func DockerComposeCommand() string {
+	if _, err := exec.LookPath("docker"); err == nil {
+		if err := exec.Command("docker", "compose", "version").Run(); err == nil {
+			return "docker compose"
+		}
+	}
+	if _, err := exec.LookPath("docker-compose"); err == nil {
+		return "docker-compose"
+	}
+	return "docker compose"
 }

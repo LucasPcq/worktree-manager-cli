@@ -7,6 +7,7 @@ type InitDetectionResult struct {
 	PackageManager     PackageManager
 	InstallCommand     string
 	DockerComposeFiles []string
+	DockerComposeCmd   string
 	MonorepoPackages   []string
 }
 
@@ -18,12 +19,14 @@ type InitGlobalAnswers struct {
 
 // InitProjectAnswers holds the wizard answers for project config setup.
 type InitProjectAnswers struct {
-	BasePath        string
-	BaseBranch      string
-	EnvCopyFiles    []string
-	EnvStrategy     EnvStrategy
-	InstallCommand string
-	OnCreateExtra  []HookCommand
-	Agent          AgentType
-	AgentOverride   bool
+	BasePath           string
+	BaseBranch         string
+	EnvCopyFiles       []string
+	EnvStrategy        EnvStrategy
+	InstallCommand     string
+	OnCreateExtra      []HookCommand
+	Agent              AgentType
+	AgentOverride      bool
+	DockerComposeFiles []string
+	DockerComposeCmd   string
 }

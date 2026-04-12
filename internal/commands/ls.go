@@ -17,16 +17,19 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
+	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
 
 // newWtListCmd creates the wtm wt list subcommand.
 func newWtListCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all worktrees",
 		Long:  "List all git worktrees with their status, PR info, and running services.",
 		RunE:  runLs,
 	}
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	return cmd
 }
 
 func runLs(cmd *cobra.Command, _ []string) error {
@@ -53,6 +56,15 @@ func runLs(cmd *cobra.Command, _ []string) error {
 
 	// Load services (graceful degradation)
 	services := loadServicesGraceful()
+
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	if format == domain.OutputJSON {
+		return output.WriteWorktreeListJSON(cmd.OutOrStdout(), output.WriteWorktreeListJSONParams{
+			Statuses: statuses,
+			PRInfos:  prs,
+			Services: services,
+		})
+	}
 
 	// Non-interactive mode
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
@@ -129,7 +141,7 @@ func pickWorktreeAndAction(
 		wtItems = append(wtItems, components.SelectItem{
 			Label:  s.Branch,
 			Value:  strconv.Itoa(i),
-			Badges: buildWorktreeBadges(s, prs, services),
+			Badges: worktreepicker.BuildBadges(s, prs, services),
 		})
 	}
 
@@ -207,31 +219,6 @@ func pickWorktreeAndAction(
 	}
 
 	return statuses[idx], actionSL.Value(), nil
-}
-
-func buildWorktreeBadges(s domain.WorktreeStatus, prs []domain.PRInfo, services []process.ServiceInfo) []components.Badge {
-	var badges []components.Badge
-	if s.IsParent {
-		badges = append(badges, components.Badge{Text: "parent", Variant: components.BadgeNeutral})
-	}
-	for _, pr := range prs {
-		if pr.Branch == s.Branch {
-			badges = append(badges, components.Badge{Text: fmt.Sprintf("PR #%d", pr.Number), Variant: components.BadgeSuccess})
-			break
-		}
-	}
-	for _, svc := range services {
-		if svc.WorkDir == s.Path && svc.Status == domain.ServiceStatusRunning {
-			badges = append(badges, components.Badge{Text: "services", Variant: components.BadgeSuccess})
-			break
-		}
-	}
-	if s.IsDirty {
-		badges = append(badges, components.Badge{Text: "dirty", Variant: components.BadgeWarning})
-	} else {
-		badges = append(badges, components.Badge{Text: "clean", Variant: components.BadgeNeutral})
-	}
-	return badges
 }
 
 func buildWorktreeLabel(s domain.WorktreeStatus, activeBranch string, prs []domain.PRInfo, services []process.ServiceInfo) string {

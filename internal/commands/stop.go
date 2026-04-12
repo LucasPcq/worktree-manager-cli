@@ -6,19 +6,22 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
 // newSvcStopCmd creates the wtm svc stop subcommand.
 func newSvcStopCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "stop <service>",
 		Short: "Stop a single service",
 		Long:  "Stop an individual running service by name.",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runStop,
 	}
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	return cmd
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
@@ -27,8 +30,13 @@ func runStop(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
 	socketPath := process.SocketPath()
 	if !process.IsDaemonRunning(socketPath) {
+		if format == domain.OutputJSON {
+			return output.WriteServiceResultsJSON(cmd.OutOrStdout(), nil)
+		}
 		output.Blank(cmd.OutOrStdout())
 		output.Message(cmd.OutOrStdout(), "No services running.")
 		output.Blank(cmd.OutOrStdout())
@@ -46,6 +54,13 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 	if resp.Status == process.StatusError {
 		return fmt.Errorf("stop %s: %s", args[0], resp.Message)
+	}
+
+	if format == domain.OutputJSON {
+		return output.WriteServiceResultJSON(cmd.OutOrStdout(), output.ServiceActionResult{
+			Name:   args[0],
+			Status: domain.ServiceActionStopped,
+		})
 	}
 
 	output.Blank(cmd.OutOrStdout())

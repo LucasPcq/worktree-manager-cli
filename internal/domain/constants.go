@@ -78,6 +78,18 @@ const (
 	FlagExclusive = "exclusive"
 	FlagParallel  = "parallel"
 	FlagProfile   = "profile"
+	FlagOutput    = "output"
+	FlagYes       = "yes"
+	FlagAll       = "all"
+
+	// Output format values for FlagOutput.
+	OutputText = "text"
+	OutputJSON = "json"
+
+	// Service action result statuses emitted by `svc *` JSON output.
+	ServiceActionStarted = "started"
+	ServiceActionStopped = "stopped"
+	ServiceActionError   = "error"
 
 	// Metadata files created inside each worktree's .wtm/ directory.
 	MetaFileName    = "meta.json"

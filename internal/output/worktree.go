@@ -2,7 +2,9 @@
 package output
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -159,4 +161,72 @@ func printableLen(s string) int {
 
 func ansiOverhead(s string) int {
 	return len(s) - printableLen(s)
+}
+
+// WriteWorktreeListJSONParams holds inputs for the JSON list serializer.
+type WriteWorktreeListJSONParams struct {
+	Statuses []domain.WorktreeStatus
+	PRInfos  []domain.PRInfo
+	Services []process.ServiceInfo
+}
+
+// WriteWorktreeListJSON writes a JSON array describing each worktree.
+func WriteWorktreeListJSON(w io.Writer, params WriteWorktreeListJSONParams) error {
+	entries := make([]domain.WorktreeListEntry, 0, len(params.Statuses))
+	for _, s := range params.Statuses {
+		entries = append(entries, domain.WorktreeListEntry{
+			Branch:       s.Branch,
+			Path:         s.Path,
+			IsParent:     s.IsParent,
+			IsDirty:      s.IsDirty,
+			CommitsAhead: s.CommitsAhead,
+			CreatedAt:    s.CreatedAt,
+			PR:           matchPR(s.Branch, params.PRInfos),
+			Services:     matchRunningServices(s.Path, params.Services),
+		})
+	}
+	return encodeJSON(w, entries)
+}
+
+func matchPR(branch string, prs []domain.PRInfo) *domain.WorktreeListPR {
+	for _, pr := range prs {
+		if pr.Branch == branch {
+			return &domain.WorktreeListPR{Number: pr.Number, URL: pr.URL, State: pr.State}
+		}
+	}
+	return nil
+}
+
+func matchRunningServices(worktreePath string, services []process.ServiceInfo) []string {
+	names := make([]string, 0)
+	for _, svc := range services {
+		if svc.WorkDir == worktreePath && svc.Status == domain.ServiceStatusRunning {
+			names = append(names, svc.Name)
+		}
+	}
+	return names
+}
+
+// WriteWorktreeCreateJSON writes the JSON payload for `wt create`.
+func WriteWorktreeCreateJSON(w io.Writer, v any) error {
+	return encodeJSON(w, v)
+}
+
+// WriteWorktreeCleanJSONParams holds inputs for the clean payload.
+type WriteWorktreeCleanJSONParams struct {
+	Branch string `json:"branch"`
+	Path   string `json:"path"`
+}
+
+// WriteWorktreeCleanJSON writes the JSON payload for `wt clean`.
+func WriteWorktreeCleanJSON(w io.Writer, params WriteWorktreeCleanJSONParams) error {
+	return encodeJSON(w, params)
+}
+
+// encodeJSON writes v as indented JSON to w.
+func encodeJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	return enc.Encode(v)
 }

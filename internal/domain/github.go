@@ -4,18 +4,18 @@ import "time"
 
 // PRInfo holds information about a GitHub pull request.
 type PRInfo struct {
-	Number    int
-	Title     string
-	Body      string
-	Author    string
-	Branch    string
-	State     string
-	Draft     bool
-	CreatedAt time.Time
-	URL       string
-	CIStatus  CIStatus
-	Reviews   []ReviewInfo
-	IsFork    bool // true when head.repo != base.repo
+	Number    int          `json:"number"`
+	Title     string       `json:"title"`
+	Body      string       `json:"body"`
+	Author    string       `json:"author"`
+	Branch    string       `json:"branch"`
+	State     string       `json:"state"`
+	Draft     bool         `json:"draft"`
+	CreatedAt time.Time    `json:"created_at"`
+	URL       string       `json:"url"`
+	CIStatus  CIStatus     `json:"ci_status"`
+	Reviews   []ReviewInfo `json:"reviews"`
+	IsFork    bool         `json:"is_fork"` // true when head.repo != base.repo
 }
 
 // CIStatus represents the aggregate CI check status.
@@ -30,8 +30,8 @@ const (
 
 // ReviewInfo holds a single reviewer's status.
 type ReviewInfo struct {
-	User  string
-	State string // APPROVED, CHANGES_REQUESTED, PENDING, COMMENTED
+	User  string `json:"user"`
+	State string `json:"state"` // APPROVED, CHANGES_REQUESTED, PENDING, COMMENTED
 }
 
 // PRFilter determines which PRs to list.

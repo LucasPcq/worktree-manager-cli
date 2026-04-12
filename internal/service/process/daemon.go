@@ -124,7 +124,7 @@ func (d *daemonServer) handleConnection(conn net.Conn) {
 	case ActionStop:
 		d.handleStop(encoder, req)
 	case ActionStopAll:
-		d.handleStopAll(encoder)
+		d.handleStopAll(encoder, req)
 	case ActionList:
 		d.handleList(encoder, req)
 	case ActionAttach:
@@ -157,13 +157,37 @@ func (d *daemonServer) handleStop(encoder *json.Encoder, req Request) {
 	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("service %s stopped", req.Name)})
 }
 
-func (d *daemonServer) handleStopAll(encoder *json.Encoder) {
-	if err := d.manager.StopAll(); err != nil {
+func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
+	// Snapshot the services that are about to be stopped so the client can
+	// report which ones (or say "none running" when the list is empty).
+	var stopped []ServiceInfo
+	for _, svc := range d.manager.List() {
+		if svc.Status != domain.ServiceStatusRunning {
+			continue
+		}
+		if req.WorkDir != "" && svc.WorkDir != req.WorkDir {
+			continue
+		}
+		stopped = append(stopped, ServiceInfo{
+			Name:    svc.Name,
+			WorkDir: svc.WorkDir,
+			Status:  svc.Status,
+			PID:     svc.PID,
+		})
+	}
+
+	var err error
+	if req.WorkDir != "" {
+		err = d.manager.StopAllInWorkDir(req.WorkDir)
+	} else {
+		err = d.manager.StopAll()
+	}
+	if err != nil {
 		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 		return
 	}
 
-	encoder.Encode(Response{Status: StatusOK, Message: "all services stopped"})
+	encoder.Encode(Response{Status: StatusOK, Services: stopped})
 }
 
 func (d *daemonServer) handleList(encoder *json.Encoder, req Request) {

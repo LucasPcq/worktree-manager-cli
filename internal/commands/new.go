@@ -26,6 +26,7 @@ func newWtCreateCmd() *cobra.Command {
 
 	cmd.Flags().String(domain.FlagFrom, "", "Source branch (skips interactive picker)")
 	cmd.Flags().String(domain.FlagEnvFrom, "", "Override env strategy (example, main, parent)")
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
 
 	return cmd
 }
@@ -89,6 +90,11 @@ func runNew(cmd *cobra.Command, args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	if format == domain.OutputJSON {
+		return output.WriteWorktreeCreateJSON(cmd.OutOrStdout(), createResult)
 	}
 
 	output.Blank(cmd.OutOrStdout())

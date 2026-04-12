@@ -14,6 +14,8 @@ func NewSvcCmd() *cobra.Command {
 		GroupID: domain.CmdGroupCore,
 	}
 
+	cmd.AddCommand(newSvcListCmd())
+	cmd.AddCommand(newSvcPsCmd())
 	cmd.AddCommand(newSvcUpCmd())
 	cmd.AddCommand(newSvcDownCmd())
 	cmd.AddCommand(newSvcStartCmd())

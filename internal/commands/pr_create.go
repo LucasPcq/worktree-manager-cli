@@ -26,6 +26,7 @@ func newPRCreateCmd() *cobra.Command {
 	cmd.Flags().String(domain.FlagTitle, "", "PR title (skips wizard for this field)")
 	cmd.Flags().String(domain.FlagBase, "", "Base branch (skips wizard for this field)")
 	cmd.Flags().Bool(domain.FlagDraft, false, "Create as draft PR")
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
 
 	return cmd
 }
@@ -154,6 +155,11 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 	stop()
 	if err != nil {
 		return err
+	}
+
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	if format == domain.OutputJSON {
+		return output.WritePRCreateJSON(cmd.OutOrStdout(), pr)
 	}
 
 	state := ""
