@@ -27,6 +27,7 @@ func newPRCheckoutCmd() *cobra.Command {
 	}
 
 	cmd.Flags().String(domain.FlagEnvFrom, "", "Override env strategy (example, main, parent)")
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
 
 	return cmd
 }
@@ -135,6 +136,15 @@ func checkoutPR(cmd *cobra.Command, result configResult, params checkoutPRParams
 	})
 	if err != nil {
 		return err
+	}
+
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	if format == domain.OutputJSON {
+		return output.WritePRCheckoutJSON(cmd.OutOrStdout(), output.PRCheckoutJSON{
+			Number: pr.Number,
+			Branch: pr.Branch,
+			Path:   createResult.Path,
+		})
 	}
 
 	output.Blank(cmd.OutOrStdout())

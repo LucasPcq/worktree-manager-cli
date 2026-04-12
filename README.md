@@ -308,6 +308,35 @@ Behavior:
 
 ---
 
+## Machine-readable output (`--output json`)
+
+Data-returning commands support `--output json` for scripting and LLM agents (Claude Code, Cursor, etc.). JSON is pretty-printed, written to stdout, with `snake_case` field names. Human messages stay on stderr.
+
+| Command | Payload |
+|---|---|
+| `wt list --output json` | Array of `{branch, path, is_parent, is_dirty, commits_ahead, created_at, pr, services}` |
+| `wt create --output json` | `{branch, path, metadata}` |
+| `wt clean <branch> --force --output json` | `{branch, path}` |
+| `pr list --output json` | Array of `{number, title, author, branch, state, draft, created_at, url, ci_status, reviews, ...}` |
+| `pr create --output json` | Same `PRInfo` object as `pr list` entries |
+| `pr checkout <n> --output json` | `{number, branch, path}` |
+| `svc up [profile] --output json` | Array of `{name, status, message?}` (`status`: `started` or `error`) |
+| `svc down [profile] --output json` | Array of `{name, status, message?}` (`status`: `stopped` or `error`) |
+| `svc start <svc> --output json` | `{name, status: "started"}` |
+| `svc stop <svc> --output json` | `{name, status: "stopped"}` |
+
+Notes:
+- `wt clean --output json` requires `--force` (no confirmation can run in JSON mode).
+- Exit codes are unaffected: `0` on success, non-zero on error. Error details still go to stderr as text.
+
+Example:
+```bash
+wtm wt list --output json | jq '.[] | select(.is_dirty).branch'
+wtm pr list --output json | jq '.[].number'
+```
+
+---
+
 ## Configuration
 
 ### Project config — `.wtm/config.toml`

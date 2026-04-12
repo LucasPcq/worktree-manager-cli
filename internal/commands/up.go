@@ -27,6 +27,7 @@ func newSvcUpCmd() *cobra.Command {
 
 	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop services on other worktrees before starting")
 	cmd.Flags().Bool(domain.FlagParallel, false, "Start without stopping other worktrees")
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
 
 	return cmd
 }
@@ -68,6 +69,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	results := make([]output.ServiceActionResult, 0, len(services))
+
 	for i := range services {
 		svc := services[i]
 		resp, sendErr := client.Send(process.Request{
@@ -76,17 +80,30 @@ func runUp(cmd *cobra.Command, args []string) error {
 			WorkDir: dir,
 		})
 		if sendErr != nil {
-			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", svc.Name, sendErr))
+			results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionError, Message: sendErr.Error()})
+			if format != domain.OutputJSON {
+				output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", svc.Name, sendErr))
+			}
 			continue
 		}
 		if resp.Status == process.StatusError {
-			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %s", svc.Name, resp.Message))
+			results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionError, Message: resp.Message})
+			if format != domain.OutputJSON {
+				output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %s", svc.Name, resp.Message))
+			}
 			continue
 		}
-		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", svc.Name))
+		results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionStarted})
+		if format != domain.OutputJSON {
+			output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", svc.Name))
+		}
 	}
-	output.Blank(cmd.OutOrStdout())
 
+	if format == domain.OutputJSON {
+		return output.WriteServiceResultsJSON(cmd.OutOrStdout(), results)
+	}
+
+	output.Blank(cmd.OutOrStdout())
 	return nil
 }
 

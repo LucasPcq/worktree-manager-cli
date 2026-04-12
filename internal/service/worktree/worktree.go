@@ -26,8 +26,9 @@ type CreateParams struct {
 
 // CreateResult holds the output of a successful worktree creation.
 type CreateResult struct {
-	Path     string
-	Metadata domain.WorktreeMetadata
+	Branch   string                  `json:"branch"`
+	Path     string                  `json:"path"`
+	Metadata domain.WorktreeMetadata `json:"metadata"`
 }
 
 // Create orchestrates worktree creation: git worktree add, env copy, metadata, hooks.
@@ -97,6 +98,7 @@ func Create(params CreateParams) (CreateResult, error) {
 	}
 
 	return CreateResult{
+		Branch:   params.Branch,
 		Path:     worktreePath,
 		Metadata: metadata,
 	}, nil

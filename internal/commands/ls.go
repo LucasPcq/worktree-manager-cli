@@ -22,12 +22,14 @@ import (
 
 // newWtListCmd creates the wtm wt list subcommand.
 func newWtListCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all worktrees",
 		Long:  "List all git worktrees with their status, PR info, and running services.",
 		RunE:  runLs,
 	}
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	return cmd
 }
 
 func runLs(cmd *cobra.Command, _ []string) error {
@@ -54,6 +56,15 @@ func runLs(cmd *cobra.Command, _ []string) error {
 
 	// Load services (graceful degradation)
 	services := loadServicesGraceful()
+
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	if format == domain.OutputJSON {
+		return output.WriteWorktreeListJSON(cmd.OutOrStdout(), output.WriteWorktreeListJSONParams{
+			Statuses: statuses,
+			PRInfos:  prs,
+			Services: services,
+		})
+	}
 
 	// Non-interactive mode
 	if !term.IsTerminal(int(os.Stdin.Fd())) {

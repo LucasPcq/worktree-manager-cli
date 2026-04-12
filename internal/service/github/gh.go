@@ -73,18 +73,13 @@ type ghReview struct {
 }
 
 func convertGHPR(g ghPR) domain.PRInfo {
-	state := "open"
-	if g.IsDraft {
-		state = "draft"
-	}
-
 	return domain.PRInfo{
 		Number:    g.Number,
 		Title:     g.Title,
 		Body:      g.Body,
 		Author:    g.Author.Login,
 		Branch:    g.HeadRefName,
-		State:     state,
+		State:     "open",
 		Draft:     g.IsDraft,
 		CreatedAt: g.CreatedAt,
 		URL:       g.URL,

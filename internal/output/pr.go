@@ -171,6 +171,19 @@ func hyperlink(url, text string) string {
 	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", url, text)
 }
 
+// WritePRListJSON writes a JSON array describing each PR.
+func WritePRListJSON(w io.Writer, prs []domain.PRInfo) error {
+	if prs == nil {
+		prs = []domain.PRInfo{}
+	}
+	return encodeJSON(w, prs)
+}
+
+// WritePRCreateJSON writes the JSON payload for `pr create`.
+func WritePRCreateJSON(w io.Writer, pr domain.PRInfo) error {
+	return encodeJSON(w, pr)
+}
+
 func reviewIcon(state string) string {
 	switch state {
 	case "APPROVED":

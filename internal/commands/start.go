@@ -7,19 +7,22 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/config"
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
 // newSvcStartCmd creates the wtm svc start subcommand.
 func newSvcStartCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "start <service>",
 		Short: "Start a single service",
 		Long:  "Start an individual service by name (defined in .wtm/services.toml).",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runStart,
 	}
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	return cmd
 }
 
 func runStart(cmd *cobra.Command, args []string) error {
@@ -59,6 +62,14 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 	if resp.Status == process.StatusError {
 		return fmt.Errorf("start %s: %s", svc.Name, resp.Message)
+	}
+
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	if format == domain.OutputJSON {
+		return output.WriteServiceResultJSON(cmd.OutOrStdout(), output.ServiceActionResult{
+			Name:   svc.Name,
+			Status: domain.ServiceActionStarted,
+		})
 	}
 
 	output.Blank(cmd.OutOrStdout())

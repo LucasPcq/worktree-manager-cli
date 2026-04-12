@@ -26,12 +26,18 @@ func newWtCleanCmd() *cobra.Command {
 	}
 
 	cmd.Flags().Bool(domain.FlagForce, false, "Bypass all safety checks")
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
 
 	return cmd
 }
 
 func runClean(cmd *cobra.Command, args []string) error {
 	force, _ := cmd.Flags().GetBool(domain.FlagForce)
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
+	if format == domain.OutputJSON && !force {
+		return fmt.Errorf("--output json requires --force (confirmations cannot run in JSON mode)")
+	}
 
 	dir, err := os.Getwd()
 	if err != nil {
@@ -59,7 +65,7 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 
 	if force {
-		return doClean(cmd, cleanParams)
+		return doClean(cmd, cleanParams, format)
 	}
 
 	check, err := worktree.Check(cleanParams)
@@ -85,7 +91,7 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 
 	cleanParams.Force = confirmResult.Force
-	return doClean(cmd, cleanParams)
+	return doClean(cmd, cleanParams, format)
 }
 
 func resolveBranchArg(args []string, projectDir string) (string, error) {
@@ -95,7 +101,15 @@ func resolveBranchArg(args []string, projectDir string) (string, error) {
 	return cleanui.RunWorktreePicker(projectDir)
 }
 
-func doClean(cmd *cobra.Command, params worktree.CleanParams) error {
+func doClean(cmd *cobra.Command, params worktree.CleanParams, format string) error {
+	wtPath := ""
+	if wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
+		ProjectDir: params.ProjectDir,
+		Branch:     params.Branch,
+	}); err == nil {
+		wtPath = wt.Path
+	}
+
 	stopServicesForWorktree(cmd, params.ProjectDir, params.Branch)
 
 	err := worktree.Clean(params)
@@ -107,6 +121,13 @@ func doClean(cmd *cobra.Command, params worktree.CleanParams) error {
 	}
 	if err != nil {
 		return err
+	}
+
+	if format == domain.OutputJSON {
+		return output.WriteWorktreeCleanJSON(cmd.OutOrStdout(), output.WriteWorktreeCleanJSONParams{
+			Branch: params.Branch,
+			Path:   wtPath,
+		})
 	}
 
 	output.Blank(cmd.OutOrStdout())
