@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -29,7 +30,7 @@ func RunStandaloneSelect(sl SelectListModel) (string, error) {
 		width: 80,
 	}
 
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	finalModel, err := p.Run()
 	if err != nil {
 		return "", fmt.Errorf("select: %w", err)
@@ -58,7 +59,7 @@ func RunStandaloneConfirm(cm ConfirmModel) (bool, error) {
 		width: 80,
 	}
 
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	finalModel, err := p.Run()
 	if err != nil {
 		return false, fmt.Errorf("confirm: %w", err)

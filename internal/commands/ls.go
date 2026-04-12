@@ -286,18 +286,26 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 
 	switch action {
 	case lsActionGo:
-		cmd := exec.Command(bin, "wt", "go", selected.Branch)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
+		goFile := os.Getenv(domain.EnvGoFile)
+		if goFile != "" {
+			return os.WriteFile(goFile, []byte(selected.Path), 0o644)
+		}
+		fmt.Println(selected.Path)
+		return nil
 
 	case lsActionSwitch:
-		cmd := exec.Command(bin, "wt", "switch", selected.Branch)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
+		goFile := os.Getenv(domain.EnvGoFile)
+		if goFile != "" {
+			if err := os.WriteFile(goFile, []byte(selected.Path), 0o644); err != nil {
+				return err
+			}
+		}
+		c := exec.Command(bin, "svc", "up")
+		c.Dir = selected.Path
+		c.Stdin = os.Stdin
+		c.Stdout = os.Stdout
+		c.Stderr = os.Stderr
+		return c.Run()
 
 	case lsActionServicesUp:
 		cmd := exec.Command(bin, "svc", "up")

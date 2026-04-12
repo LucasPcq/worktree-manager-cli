@@ -65,6 +65,9 @@ const (
 	InstallCommandGo   = "go mod download"
 	InstallCommandPip  = "pip install -r requirements.txt"
 
+	// EnvGoFile is the environment variable used by the shell wrapper to pass the go-file path.
+	EnvGoFile = "WTM_GO_FILE"
+
 	// Flag names.
 	FlagFrom      = "from"
 	FlagEnvFrom   = "env-from"

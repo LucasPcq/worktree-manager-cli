@@ -14,6 +14,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
+	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
@@ -197,15 +198,19 @@ func executePRAction(cmd *cobra.Command, action string, pr domain.PRInfo, projec
 		return checkoutPR(cmd, result, checkoutPRParams{Number: pr.Number})
 
 	case prActionGo:
-		bin, err := os.Executable()
+		result, err := worktree.Resolve(worktree.ResolveParams{
+			ProjectDir: projectDir,
+			Query:      pr.Branch,
+		})
 		if err != nil {
-			return err
+			return fmt.Errorf("resolve worktree: %w", err)
 		}
-		c := exec.Command(bin, "wt", "go", pr.Branch)
-		c.Stdin = os.Stdin
-		c.Stdout = os.Stdout
-		c.Stderr = os.Stderr
-		return c.Run()
+		goFile := os.Getenv(domain.EnvGoFile)
+		if goFile != "" {
+			return os.WriteFile(goFile, []byte(result.Path), 0o644)
+		}
+		fmt.Println(result.Path)
+		return nil
 	}
 
 	return nil

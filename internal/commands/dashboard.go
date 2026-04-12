@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/tui/dashboard"
 )
 
@@ -63,7 +64,7 @@ func launchDashboard(_ *cobra.Command, result configResult, params launchDashboa
 
 	// If the user pressed Enter on a worktree, write the path for the shell wrapper
 	if m, ok := finalModel.(*dashboard.Model); ok && m.GoPath != "" {
-		goFile := os.Getenv("WTM_GO_FILE")
+		goFile := os.Getenv(domain.EnvGoFile)
 		if goFile != "" {
 			_ = os.WriteFile(goFile, []byte(m.GoPath), 0o644)
 		} else {
