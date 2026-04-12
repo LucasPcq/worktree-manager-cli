@@ -207,6 +207,26 @@ wtm wt clean feature/auth --force   # skip all safety checks
 
 ### `wtm svc` — Service management
 
+#### `wtm svc list`
+
+List the services and profiles declared in `.wtm/services.toml`. In a terminal, shows an interactive picker with inline actions (start/stop/logs).
+
+```bash
+wtm svc list                # picker if TTY, table if piped
+wtm svc list --output json  # machine-readable
+```
+
+The picker lets you pick either a profile (actions: `up`, `down`) or a service (actions: `start`, `stop`, `logs`) without having to remember which command to run.
+
+#### `wtm svc ps`
+
+List services currently managed by the background daemon (running or crashed). In a terminal, shows an interactive picker with stop/logs/restart actions.
+
+```bash
+wtm svc ps                  # picker if TTY, table if piped
+wtm svc ps --output json    # machine-readable
+```
+
 #### `wtm svc up [profile]`
 
 Start a service profile defined in `.wtm/services.toml`.
@@ -320,6 +340,8 @@ Data-returning commands support `--output json` for scripting and LLM agents (Cl
 | `pr list --output json` | Array of `{number, title, author, branch, state, draft, created_at, url, ci_status, reviews, ...}` |
 | `pr create --output json` | Same `PRInfo` object as `pr list` entries |
 | `pr checkout <n> --output json` | `{number, branch, path}` |
+| `svc list --output json` | `{services: [...], profiles: [...]}` from `services.toml` |
+| `svc ps --output json` | Array of `{name, status, pid, work_dir}` (runtime state from daemon) |
 | `svc up [profile] --output json` | Array of `{name, status, message?}` (`status`: `started` or `error`) |
 | `svc down [profile] --output json` | Array of `{name, status, message?}` (`status`: `stopped` or `error`) |
 | `svc start <svc> --output json` | `{name, status: "started"}` |
