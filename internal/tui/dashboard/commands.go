@@ -201,20 +201,13 @@ func hasServicesConfig(projectDir string) bool {
 
 func loadPRs(projectDir string, filter domain.PRFilter) tea.Cmd {
 	return func() tea.Msg {
-		auth, err := ghservice.ResolveAuth()
-		if err != nil {
-			return prListMsg{Err: err}
-		}
-
 		prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
 			ProjectDir: projectDir,
 			Filter:     filter,
-			Username:   auth.User,
 		})
 		if err != nil {
 			return prListMsg{Err: err}
 		}
-
 		return prListMsg{PRs: prs}
 	}
 }

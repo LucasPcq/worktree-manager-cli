@@ -1,18 +1,15 @@
 package github
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
-	"github.com/google/go-github/v72/github"
-
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/infra"
 )
 
 // CreatePRParams holds inputs for creating a pull request.
@@ -25,37 +22,56 @@ type CreatePRParams struct {
 	Draft      bool
 }
 
-// CreatePR creates a pull request on GitHub and returns the created PR info.
+// CreatePR creates a pull request via gh CLI and returns the created PR info.
 func CreatePR(params CreatePRParams) (domain.PRInfo, error) {
-	client, err := NewClientFromAuth()
-	if err != nil {
+	if err := ensureAuth(); err != nil {
 		return domain.PRInfo{}, err
 	}
 
-	owner, repo, err := infra.RepoOwnerAndName(infra.RepoOwnerAndNameParams{
-		ProjectDir: params.ProjectDir,
-	})
-	if err != nil {
-		return domain.PRInfo{}, fmt.Errorf("resolve repo: %w", err)
+	args := []string{
+		"pr", "create",
+		"--title", params.Title,
+		"--body", params.Body,
+		"--base", params.Base,
+		"--head", params.Head,
+	}
+	if params.Draft {
+		args = append(args, "--draft")
 	}
 
-	ghPR, _, err := client.PullRequests.Create(context.Background(), owner, repo, &github.NewPullRequest{
-		Title: github.Ptr(params.Title),
-		Body:  github.Ptr(params.Body),
-		Head:  github.Ptr(params.Head),
-		Base:  github.Ptr(params.Base),
-		Draft: github.Ptr(params.Draft),
-	})
+	data, err := runGH(params.ProjectDir, args...)
 	if err != nil {
 		return domain.PRInfo{}, fmt.Errorf("create PR: %w", err)
 	}
 
-	return convertPR(ghPR), nil
+	url := strings.TrimSpace(string(data))
+	number, err := extractPRNumber(url)
+	if err != nil {
+		return domain.PRInfo{}, fmt.Errorf("parse PR URL %q: %w", url, err)
+	}
+
+	return domain.PRInfo{
+		Number: number,
+		Title:  params.Title,
+		Body:   params.Body,
+		Branch: params.Head,
+		Draft:  params.Draft,
+		URL:    url,
+	}, nil
+}
+
+var prNumberPattern = regexp.MustCompile(`/pull/(\d+)$`)
+
+func extractPRNumber(url string) (int, error) {
+	m := prNumberPattern.FindStringSubmatch(url)
+	if len(m) < 2 {
+		return 0, fmt.Errorf("no PR number found")
+	}
+	return strconv.Atoi(m[1])
 }
 
 // BranchTitleFromName generates a human-readable PR title from a branch name.
 func BranchTitleFromName(branch string) string {
-	// Strip standard prefixes
 	prefixes := []string{"feature/", "fix/", "chore/", "hotfix/", "bugfix/", "refactor/", "docs/"}
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(branch, prefix) {
@@ -64,15 +80,12 @@ func BranchTitleFromName(branch string) string {
 		}
 	}
 
-	// Strip issue IDs like "LUC-13-" or "ENG-42-"
 	issueIDPattern := regexp.MustCompile(`^[A-Z]+-\d+-`)
 	branch = issueIDPattern.ReplaceAllString(branch, "")
 
-	// Replace separators with spaces
 	branch = strings.ReplaceAll(branch, "-", " ")
 	branch = strings.ReplaceAll(branch, "_", " ")
 
-	// Capitalize first letter
 	branch = strings.TrimSpace(branch)
 	if len(branch) == 0 {
 		return branch
@@ -98,7 +111,6 @@ func DetectPRTemplate(projectDir string) string {
 		}
 	}
 
-	// Check PULL_REQUEST_TEMPLATE directory
 	templateDir := filepath.Join(projectDir, ".github", "PULL_REQUEST_TEMPLATE")
 	entries, err := os.ReadDir(templateDir)
 	if err == nil {
