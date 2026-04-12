@@ -1,13 +1,10 @@
 package github
 
 import (
-	"context"
 	"fmt"
-
-	"github.com/google/go-github/v72/github"
+	"strconv"
 
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/infra"
 )
 
 // HasOpenPRParams holds inputs for checking open PRs.
@@ -16,94 +13,76 @@ type HasOpenPRParams struct {
 	Branch     string
 }
 
-// HasOpenPR checks if a branch has an open PR via the GitHub API.
-// Returns false gracefully if auth is not configured or the API call fails.
+// HasOpenPR checks if a branch has an open PR via the gh CLI.
+// Returns false gracefully if gh is not installed, not authenticated, or the call fails.
 func HasOpenPR(params HasOpenPRParams) (bool, string) {
-	client, err := NewClientFromAuth()
+	if err := ensureAuth(); err != nil {
+		return false, ""
+	}
+
+	type prItem struct {
+		Number int    `json:"number"`
+		URL    string `json:"url"`
+	}
+
+	data, err := runGH(params.ProjectDir, "pr", "list",
+		"--head", params.Branch,
+		"--state", "open",
+		"--json", "number,url",
+		"--limit", "1",
+	)
 	if err != nil {
 		return false, ""
 	}
 
-	owner, repo, err := infra.RepoOwnerAndName(infra.RepoOwnerAndNameParams{
-		ProjectDir: params.ProjectDir,
-	})
-	if err != nil {
+	items, err := parseJSON[[]prItem](data)
+	if err != nil || len(items) == 0 {
 		return false, ""
 	}
 
-	prs, _, err := client.PullRequests.List(context.Background(), owner, repo, &github.PullRequestListOptions{
-		Head:  owner + ":" + params.Branch,
-		State: "open",
-	})
-	if err != nil || len(prs) == 0 {
-		return false, ""
-	}
-
-	return true, prs[0].GetHTMLURL()
+	return true, items[0].URL
 }
 
 // ListPRsParams holds inputs for listing pull requests.
 type ListPRsParams struct {
 	ProjectDir string
 	Filter     domain.PRFilter
-	Username   string
 }
 
-// ListPRs fetches open PRs from the GitHub API and filters them.
-// If the filter requires a username and params.Username is empty (typical for
-// PAT-based auth), the username is resolved via the API.
+// ListPRs fetches open PRs via gh CLI and filters them.
 func ListPRs(params ListPRsParams) ([]domain.PRInfo, error) {
-	client, err := NewClientFromAuth()
-	if err != nil {
+	if err := ensureAuth(); err != nil {
 		return nil, err
 	}
 
-	owner, repo, err := infra.RepoOwnerAndName(infra.RepoOwnerAndNameParams{
-		ProjectDir: params.ProjectDir,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("resolve repo: %w", err)
+	args := []string{
+		"pr", "list",
+		"--state", "open",
+		"--json", "number,title,author,headRefName,isDraft,createdAt,url,body,isCrossRepository",
+		"--limit", "50",
 	}
 
-	username := params.Username
-	if username == "" && (params.Filter == domain.PRFilterMine || params.Filter == domain.PRFilterReviewRequested) {
-		user, _, userErr := client.Users.Get(context.Background(), "")
-		if userErr != nil {
-			return nil, fmt.Errorf("resolve username for filter: %w", userErr)
-		}
-		username = user.GetLogin()
+	switch params.Filter {
+	case domain.PRFilterMine:
+		args = append(args, "--author", "@me")
+	case domain.PRFilterReviewRequested:
+		args = append(args, "--search", "review-requested:@me")
 	}
 
-	ghPRs, _, err := client.PullRequests.List(context.Background(), owner, repo, &github.PullRequestListOptions{
-		State:     "open",
-		Sort:      "created",
-		Direction: "desc",
-		ListOptions: github.ListOptions{
-			PerPage: 50,
-		},
-	})
+	data, err := runGH(params.ProjectDir, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list PRs: %w", err)
 	}
 
-	var prs []domain.PRInfo
-	for _, gh := range ghPRs {
-		pr := convertPR(gh)
-
-		switch params.Filter {
-		case domain.PRFilterMine:
-			if pr.Author != username {
-				continue
-			}
-		case domain.PRFilterReviewRequested:
-			if !isReviewRequested(gh, username) {
-				continue
-			}
-		}
-
-		prs = append(prs, pr)
+	ghPRs, err := parseJSON[[]ghPR](data)
+	if err != nil {
+		return nil, err
 	}
 
+	prs := make([]domain.PRInfo, 0, len(ghPRs))
+	for _, g := range ghPRs {
+		prs = append(prs, convertGHPR(g))
+	}
 	return prs, nil
 }
 
@@ -113,125 +92,23 @@ type GetPRDetailParams struct {
 	Number     int
 }
 
-// GetPRDetail fetches a PR with its CI checks and reviews.
+// GetPRDetail fetches a PR with its CI checks and reviews via gh CLI.
 func GetPRDetail(params GetPRDetailParams) (domain.PRInfo, error) {
-	client, err := NewClientFromAuth()
-	if err != nil {
+	if err := ensureAuth(); err != nil {
 		return domain.PRInfo{}, err
 	}
 
-	owner, repo, err := infra.RepoOwnerAndName(infra.RepoOwnerAndNameParams{
-		ProjectDir: params.ProjectDir,
-	})
-	if err != nil {
-		return domain.PRInfo{}, fmt.Errorf("resolve repo: %w", err)
-	}
-
-	ctx := context.Background()
-
-	ghPR, _, err := client.PullRequests.Get(ctx, owner, repo, params.Number)
+	data, err := runGH(params.ProjectDir, "pr", "view", strconv.Itoa(params.Number),
+		"--json", "number,title,author,headRefName,baseRefName,isDraft,createdAt,url,body,isCrossRepository,statusCheckRollup,reviews",
+	)
 	if err != nil {
 		return domain.PRInfo{}, fmt.Errorf("get PR: %w", err)
 	}
 
-	pr := convertPR(ghPR)
-
-	// Fetch CI status
-	pr.CIStatus = fetchCIStatus(ctx, client, owner, repo, ghPR.GetHead().GetSHA())
-
-	// Fetch reviews
-	pr.Reviews = fetchReviews(ctx, client, owner, repo, params.Number)
-
-	return pr, nil
-}
-
-func convertPR(gh *github.PullRequest) domain.PRInfo {
-	state := "open"
-	if gh.GetDraft() {
-		state = "draft"
-	}
-
-	isFork := false
-	headRepo := gh.GetHead().GetRepo()
-	baseRepo := gh.GetBase().GetRepo()
-	if headRepo != nil && baseRepo != nil {
-		isFork = headRepo.GetOwner().GetLogin() != baseRepo.GetOwner().GetLogin()
-	}
-
-	return domain.PRInfo{
-		Number:    gh.GetNumber(),
-		Title:     gh.GetTitle(),
-		Body:      gh.GetBody(),
-		Author:    gh.GetUser().GetLogin(),
-		Branch:    gh.GetHead().GetRef(),
-		State:     state,
-		Draft:     gh.GetDraft(),
-		CreatedAt: gh.GetCreatedAt().Time,
-		URL:       gh.GetHTMLURL(),
-		IsFork:    isFork,
-	}
-}
-
-func isReviewRequested(gh *github.PullRequest, username string) bool {
-	for _, reviewer := range gh.RequestedReviewers {
-		if reviewer.GetLogin() == username {
-			return true
-		}
-	}
-	return false
-}
-
-func fetchCIStatus(ctx context.Context, client *github.Client, owner, repo, sha string) domain.CIStatus {
-	if sha == "" {
-		return domain.CIStatusNone
-	}
-
-	result, _, err := client.Checks.ListCheckRunsForRef(ctx, owner, repo, sha, &github.ListCheckRunsOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
-	})
-	if err != nil || result.GetTotal() == 0 {
-		return domain.CIStatusNone
-	}
-
-	hasPending := false
-	for _, check := range result.CheckRuns {
-		switch check.GetConclusion() {
-		case "failure", "timed_out", "cancelled":
-			return domain.CIStatusFailing
-		case "":
-			hasPending = true
-		}
-	}
-
-	if hasPending {
-		return domain.CIStatusPending
-	}
-
-	return domain.CIStatusPassing
-}
-
-func fetchReviews(ctx context.Context, client *github.Client, owner, repo string, number int) []domain.ReviewInfo {
-	ghReviews, _, err := client.PullRequests.ListReviews(ctx, owner, repo, number, &github.ListOptions{
-		PerPage: 50,
-	})
+	g, err := parseJSON[ghPR](data)
 	if err != nil {
-		return nil
+		return domain.PRInfo{}, err
 	}
 
-	// Keep only the latest review per user
-	latest := make(map[string]domain.ReviewInfo)
-	for _, r := range ghReviews {
-		user := r.GetUser().GetLogin()
-		latest[user] = domain.ReviewInfo{
-			User:  user,
-			State: r.GetState(),
-		}
-	}
-
-	var reviews []domain.ReviewInfo
-	for _, r := range latest {
-		reviews = append(reviews, r)
-	}
-
-	return reviews
+	return convertGHPR(g), nil
 }

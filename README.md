@@ -4,6 +4,17 @@ Orchestrate git worktrees, AI agents, and team dev workflows from the terminal.
 
 `wtm` manages the lifecycle of git worktrees: creation, environment provisioning, hook execution, navigation, and cleanup. It replaces manual `git worktree` commands with a streamlined workflow designed for teams working on multiple branches simultaneously.
 
+## Dependencies
+
+| Tool | Required | Purpose |
+|---|---|---|
+| `git` | ✅ Required | Worktree management |
+| `gh` | ⭐ Recommended | PR listing, creation, checkout, and dashboard PR panel |
+
+`gh` is not required to use `wtm` — worktree creation, navigation, hooks, and services work without it. Install and authenticate it to unlock all GitHub features: [cli.github.com](https://cli.github.com).
+
+---
+
 ## Installation
 
 ### Homebrew (macOS / Linux)
@@ -279,41 +290,9 @@ Press `Ctrl+C` to detach — services keep running in the background.
 
 ---
 
-### `wtm auth` — GitHub authentication
-
-Manage the GitHub credentials used by `wtm pr` and PR-related dashboard features.
-
-```bash
-wtm auth login     # start the OAuth Device Flow and store the token
-wtm auth status    # show the current auth source and user
-wtm auth logout    # remove the stored token
-```
-
-**Two authentication sources, in priority order:**
-
-1. **`WTM_GITHUB_TOKEN` env var** — a Personal Access Token (PAT). Ideal for CI/CD, AI agents, and scripted usage. When set, it takes priority over any stored OAuth token.
-2. **Stored OAuth token** — populated by `wtm auth login` via the GitHub Device Flow, saved to `~/.config/wtm/auth.json` (mode `0600`).
-
-```bash
-# PAT usage (no login required)
-export WTM_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
-wtm pr list
-
-# Check which source is active
-wtm auth status
-# → ✓ Authenticated via WTM_GITHUB_TOKEN (env var)
-#   Note: a stored token exists but is shadowed by the env var.
-```
-
-`wtm auth logout` only deletes the stored file — if `WTM_GITHUB_TOKEN` is also set, `wtm` keeps using it until you `unset` it.
-
-**Token refresh** — if your GitHub OAuth App has token expiration enabled, `wtm` stores the refresh token alongside the access token and automatically refreshes it before each API call. If the refresh itself fails (refresh token expired or revoked), `wtm` prompts you to run `wtm auth login` again. PAT-based auth (`WTM_GITHUB_TOKEN`) is never refreshed.
-
----
-
 ### `wtm pr` — Pull requests
 
-Interact with GitHub pull requests from the CLI. Requires auth via `wtm auth login` or `WTM_GITHUB_TOKEN`.
+Interact with GitHub pull requests from the CLI. Requires the [`gh` CLI](https://cli.github.com) installed and authenticated (`gh auth login`).
 
 #### `wtm pr list`
 

@@ -39,16 +39,9 @@ var (
 	// ErrCannotCleanParent is returned when trying to clean the parent worktree.
 	ErrCannotCleanParent = errors.New("cannot clean the parent worktree")
 
-	// ErrAuthNotConfigured is returned when no GitHub token is stored.
-	ErrAuthNotConfigured = errors.New("not authenticated — run `wtm auth login`")
+	// ErrGHNotInstalled is returned when the gh CLI is not found on PATH.
+	ErrGHNotInstalled = errors.New("gh CLI not found — install it from https://cli.github.com")
 
-	// ErrAuthAlreadyLoggedIn is returned when attempting to login while already authenticated.
-	ErrAuthAlreadyLoggedIn = errors.New("already logged in")
-
-	// ErrAuthDeviceFlowTimeout is returned when the device flow polling expires.
-	ErrAuthDeviceFlowTimeout = errors.New("authentication timed out")
-
-	// ErrAuthNeedsReauth is returned when the stored access token is expired
-	// and cannot be refreshed (refresh token missing or itself expired).
-	ErrAuthNeedsReauth = errors.New("authentication expired — run `wtm auth login` again")
+	// ErrGHNotAuthenticated is returned when gh is not logged in to GitHub.
+	ErrGHNotAuthenticated = errors.New("not logged in to GitHub — run 'gh auth login'")
 )

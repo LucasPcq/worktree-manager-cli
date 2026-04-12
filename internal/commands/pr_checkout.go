@@ -81,14 +81,6 @@ type checkoutPRParams struct {
 // checkoutPR is the shared implementation used by `wtm pr checkout`,
 // the `wtm pr list` picker action, and the dashboard keybinding.
 func checkoutPR(cmd *cobra.Command, result configResult, params checkoutPRParams) error {
-	if _, err := ghservice.ResolveAuth(); err != nil {
-		if errors.Is(err, domain.ErrAuthNotConfigured) || errors.Is(err, domain.ErrAuthNeedsReauth) {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			return nil
-		}
-		return fmt.Errorf("load auth: %w", err)
-	}
-
 	fmt.Fprintf(cmd.ErrOrStderr(), "Fetching PR #%d...\n", params.Number)
 
 	pr, err := ghservice.GetPRDetail(ghservice.GetPRDetailParams{

@@ -56,15 +56,6 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	auth, err := ghservice.ResolveAuth()
-	if errors.Is(err, domain.ErrAuthNotConfigured) || errors.Is(err, domain.ErrAuthNeedsReauth) {
-		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("load auth: %w", err)
-	}
-
 	filter := domain.PRFilterAll
 
 	review, _ := cmd.Flags().GetBool("review")
@@ -80,7 +71,6 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 	prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
 		ProjectDir: dir,
 		Filter:     filter,
-		Username:   auth.User,
 	})
 	stop()
 	if err != nil {
@@ -202,20 +192,10 @@ func projectRootFromCwd() (string, error) {
 // pickPRNumber fetches the list of open PRs and shows a picker.
 // Returns the selected PR number, or 0 if the user aborts.
 func pickPRNumber(cmd *cobra.Command, projectDir string) (int, error) {
-	auth, err := ghservice.ResolveAuth()
-	if errors.Is(err, domain.ErrAuthNotConfigured) || errors.Is(err, domain.ErrAuthNeedsReauth) {
-		fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-		return 0, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("load auth: %w", err)
-	}
-
 	stop := startSpinner(cmd.ErrOrStderr(), "Fetching pull requests...")
 	prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
 		ProjectDir: projectDir,
 		Filter:     domain.PRFilterAll,
-		Username:   auth.User,
 	})
 	stop()
 	if err != nil {

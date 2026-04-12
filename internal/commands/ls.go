@@ -84,14 +84,9 @@ func runLs(cmd *cobra.Command, _ []string) error {
 }
 
 func loadPRsGraceful(projectDir string) []domain.PRInfo {
-	auth, err := ghservice.ResolveAuth()
-	if err != nil {
-		return nil
-	}
 	prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
 		ProjectDir: projectDir,
 		Filter:     domain.PRFilterAll,
-		Username:   auth.User,
 	})
 	if err != nil {
 		return nil

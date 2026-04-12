@@ -96,22 +96,4 @@ const (
 	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
 	CtrlCByte byte = 0x03
 
-	// AuthFileName is the file storing the GitHub OAuth token.
-	AuthFileName = "auth.json"
-
-	// GitHubClientID is the public OAuth App client ID for the Device Flow.
-	GitHubClientID = "Ov23li8FB9sa8PZXdAJy"
-
-	// GitHubDeviceCodeURL is the endpoint to request a device code.
-	GitHubDeviceCodeURL = "https://github.com/login/device/code"
-
-	// GitHubTokenURL is the endpoint to poll for an access token.
-	GitHubTokenURL = "https://github.com/login/oauth/access_token"
-
-	// GitHubScopes is the OAuth scopes requested during login.
-	GitHubScopes = "repo read:org"
-
-	// EnvGithubToken is the environment variable used to provide a Personal Access Token.
-	// When set, it takes priority over the stored OAuth token.
-	EnvGithubToken = "WTM_GITHUB_TOKEN"
 )

@@ -18,7 +18,6 @@ func init() {
 	rootCmd.AddCommand(commands.NewWtCmd())
 	rootCmd.AddCommand(commands.NewSvcCmd())
 	rootCmd.AddCommand(commands.NewPRCmd())
-	rootCmd.AddCommand(commands.NewAuthCmd())
 
 	initCmd := commands.NewInitCmd()
 	initCmd.GroupID = domain.CmdGroupSetup
