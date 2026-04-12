@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.6.2 — Style polish (suite)
+
+### Bug fixes
+
+- **Couleurs du picker `wt go` / `wt switch` (vrai fix)** — La release v0.6.1 utilisait `SetDefaultRenderer`, qui remplace le pointeur global mais laisse les styles existants (déclarés au package init) référencer l'ancien renderer. Remplacé par `SetColorProfile` qui mute le renderer partagé en place. Le picker retrouve maintenant effectivement sa barre bleue et ses badges colorés quand invoqué via le shell wrapper.
+- **Padding entre le prompt de confirmation et le résultat du stop** — `svc up` ajoute une ligne vide entre "Stop other services before starting?" et le premier "✓ Stopped services in X", pour qu'on distingue clairement la réponse au prompt du résultat.
+
 ## v0.6.1 — Style polish
 
 ### Improvements
