@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5.1 — Fix TUI et navigation shell
+
+### Corrections
+
+- **TUI invisible dans `wt go` / `wt switch`** — Le picker de worktree ne s'affichait pas quand appelé via le shell wrapper. Le TUI Bubbletea rendait sur stdout, qui était capturé par la substitution `$()`. Le rendu passe maintenant sur stderr.
+- **"Go to worktree" depuis `pr list` et `wt list`** — L'action affichait "requires shell integration" au lieu de naviguer. Les commandes résolvaient le path via un sous-processus `wtm wt go` qui tombait sur le fallback. Remplacé par une résolution directe et écriture dans `WTM_GO_FILE`.
+- **Shell wrapper étendu** — La clause `else` du wrapper (bash/zsh/fish) passe maintenant `WTM_GO_FILE` à toutes les commandes, permettant à n'importe quelle sous-commande de déclencher un `cd`.
+
 ## v0.5.0 — New TUI Components, Focus Removal & Unified Output
 
 ### Breaking changes
