@@ -29,6 +29,8 @@ func init() {
 	shellInitCmd.GroupID = domain.CmdGroupSetup
 	rootCmd.AddCommand(shellInitCmd)
 
+	rootCmd.AddCommand(commands.NewAgentsCmd())
+
 	rootCmd.AddCommand(commands.NewResolveCmd())
 	if domain.FeatureDashboard {
 		rootCmd.AddCommand(commands.NewDashboardCmd())

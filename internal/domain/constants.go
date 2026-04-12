@@ -79,6 +79,8 @@ const (
 	FlagParallel  = "parallel"
 	FlagProfile   = "profile"
 	FlagOutput    = "output"
+	FlagYes       = "yes"
+	FlagAll       = "all"
 
 	// Output format values for FlagOutput.
 	OutputText = "text"

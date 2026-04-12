@@ -65,6 +65,16 @@ wtm wt switch feature/my-feature   # navigate + start services
 wtm wt clean feature/my-feature    # clean up when done
 ```
 
+## Teach your LLM to use wtm
+
+If you work with Claude Code or Cursor, run:
+
+```bash
+wtm agents install
+```
+
+Detects `.claude/` and `.cursor/` (project and home) and installs a `using-wtm` skill so your agent knows every command, flag, and JSON payload — without having to explain them each session. See [Machine-readable output](#machine-readable-output---output-json) below for the underlying `--output json` contract.
+
 ## Commands
 
 ### `wtm init`
@@ -353,6 +363,8 @@ wtm wt list --output json | jq '.[] | select(.is_dirty).branch'
 wtm pr list --output json | jq '.[].number'
 wtm svc ps --output json | jq '.[] | select(.status=="running").name'
 ```
+
+See also [Teach your LLM to use wtm](#teach-your-llm-to-use-wtm) above — `wtm agents install` drops a `using-wtm` skill into `.claude/` or `.cursor/` so agents can drive every command without being told.
 
 ---
 
