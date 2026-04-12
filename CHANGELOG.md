@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.5.0 — New TUI Components, Focus Removal & Unified Output
+
+### Breaking changes
+
+- **`wtm wt focus` removed** — The focus command, `on_focus`/`on_blur` hooks, and active worktree state tracking have been removed. Services are now managed exclusively through `svc up`/`svc down`.
+- **`on_focus` / `on_blur` hooks removed from config** — Only `on_create` hooks remain. Docker lifecycle is handled by the service manager.
+- **Dashboard hidden** — The interactive dashboard is disabled behind a feature flag while being reworked. `wtm` without arguments shows help instead.
+
+### New features
+
+- **`wtm wt switch [branch]`** — New command that combines `wt go` + `svc up` in one step. Supports `--exclusive`, `--parallel`, and `--profile` flags.
+- **Smart `svc up`** — Detects services running on other worktrees and prompts to stop them before starting. Use `--exclusive` to auto-stop or `--parallel` to skip the prompt.
+- **Auto-stop on clean** — `wt clean` automatically stops running services before deleting a worktree.
+- **Reusable TUI components** — New Bubbletea component library (`internal/tui/components/`) with SelectList, TextInput, MultiSelect, Confirm, and Wizard. Full-row highlight, inline filtering (`/`), step breadcrumb, and Esc back navigation.
+- **Contextual PR actions** — `pr list` picker shows "Go to worktree" if a worktree exists for the PR branch, "Checkout into worktree" otherwise.
+- **Worktree badges** — `wt list` picker shows colored badge chips (parent, PR, services, dirty/clean) aligned to the right.
+
+### Improvements
+
+- **Unified output styling** — All CLI messages use standardized helpers (`output.Success`, `output.Error`, `output.Warning`, `output.Loading`, `output.Message`) with consistent `"  "` indent.
+- **Uniform spacing** — Every command has blank line padding top and bottom. Help text is indented to match.
+- **Centralized error display** — All errors go through a styled `✗` handler with proper padding.
+- **PR detail view** — Rewritten with output helpers, no more lipgloss box.
+- **Separator support** — Action lists use visual separators to group navigation, services, and danger actions.
+- **Detached service fix** — Services using `docker compose up -d` (detached mode) are now correctly tracked as running and properly stopped.
+- **Config resolution fix** — `svc up`, `svc start`, `svc down` now correctly read `services.toml` from the main worktree when run from a secondary worktree.
+
+### Removed
+
+- `charmbracelet/huh` dependency — Fully replaced by custom Bubbletea components.
+- `state.json` active worktree tracking — No longer written to.
+- Docker hooks from `wtm init` wizard — The docker-compose file selection and hook confirmation steps are removed.
+
+### Tests
+
+- Added 35+ new tests across commands, output, config, and infra layers.
+- Commands: `branchInList`, `buildWorktreeLabel`, `joinTags`, `truncate`, `joinServiceNames`.
+- Output: all block helpers (Success, Error, Warning, Loading, Message, etc.).
+- Config: corrupted TOML, merge precedence, default application.
+- Infra: IsDirty, CurrentBranch, CommitsAhead.
+
+---
+
 ## v0.4.1 — Migrate GitHub integration to gh CLI
 
 ### Breaking changes
@@ -48,78 +91,3 @@
 ## v0.3.0 — Services & PTY
 
 ### New features
-
-- **Service management** — Define long-running services (dev servers, docker, workers) in `.wtm/services.toml` with named profiles.
-- **`wtm up`** — Start services with interactive profile picker when multiple profiles exist. `--profile` flag for direct selection.
-- **`wtm down`** — Stop running services gracefully.
-- **`wtm logs <service>`** — Attach to a service's real terminal via PTY. Full ANSI support (colors, progress bars). Ctrl+C detaches without killing the service.
-- **Daemon architecture** — Background daemon owns PTY file descriptors. Services survive CLI exits. Auto-starts on first `wtm up`, auto-exits when idle.
-- **Services scoped per worktree** — Each worktree runs its own independent services. Dashboard shows service indicators per worktree.
-- **Dashboard service controls** — `u` to start services, `x` to stop, `s` to attach to a running service's terminal.
-- **Validation warnings** — Warns on duplicate service/profile names or multiple default profiles in `.wtm/services.toml`.
-
-### Breaking changes
-
-- **Config directory restructured** — `.wtm.toml` is now `.wtm/config.toml`, `.wtm.services.toml` is now `.wtm/services.toml`. All config lives in the `.wtm/` directory. Move your files: `mkdir -p .wtm && mv .wtm.toml .wtm/config.toml`.
-
-### Improvements
-
-- Profile picker with service list labels (e.g. "back (api, worker)").
-- `handleKey` refactored — worktree actions extracted to `handleWorktreeAction`, eliminating duplicated selection checks.
-- Code cleanup: extracted subprocess pattern, centralized constants (daemon timeouts, CtrlC byte), simplified focus writer logic.
-
----
-
-## v0.2.0 — Interactive Dashboard
-
-### New features
-
-- **Interactive Dashboard** — Run `wtm` without arguments to open a full-screen terminal dashboard. See all your worktrees at a glance with their git status, and manage everything without leaving the interface.
-- **Dashboard worktree list** — Left panel shows all worktrees with branch name, status (clean/dirty), commits ahead, and focus indicator.
-- **Dashboard detail panel** — Right panel shows worktree details: path, source branch, unpushed commits count, context notes, and full list of modified files with scrollable viewport.
-- **Dashboard actions** — Create worktrees (`n`), clean them (`d`), focus environment (`f`), and navigate (`Enter`) directly from the dashboard.
-- **Hook output streaming** — When focusing a worktree, a split panel streams hook execution output in real-time. Stays visible for review, closes with `Esc`.
-- **Panel navigation** — `Tab`/`Shift+Tab` cycles between list, detail, and hooks output panels. `j/k` or arrows to scroll the active panel.
-- **Interactive branch prompt** — `wtm new` now works without arguments, prompting for the branch name interactively.
-
-### Improvements
-
-- Commands now work from any worktree, not just the project root.
-- Hook blur fallback: if a worktree directory was deleted, blur hooks run from the project root instead of failing.
-- Shell wrapper auto-returns to the main worktree after cleaning the current one.
-- Hook errors in TUI mode are captured and displayed in the detail panel instead of corrupting the screen.
-
----
-
-## v0.1.2 — Bugfixes
-
-- Fix project root resolution from child worktrees (config not found error).
-- Fix blur hooks failing when previous worktree directory no longer exists.
-- Fix shell wrapper redirect after cleaning current worktree.
-
----
-
-## v0.1.1 — First release
-
-### Commands
-
-- `wtm init` — Interactive wizard to set up global and project configuration.
-- `wtm new [branch]` — Create a git worktree with env provisioning, metadata, and hooks.
-- `wtm ls` — List all worktrees with git status (clean/dirty, commits ahead).
-- `wtm go [branch]` — Navigate to a worktree directory via shell integration.
-- `wtm focus [branch]` — Switch active worktree and run on_blur/on_focus hooks.
-- `wtm clean [branch]` — Remove a worktree with safety checks (dirty, unpushed, open PR).
-- `wtm shell-init` — Generate shell wrapper function for zsh, bash, and fish.
-
-### Configuration
-
-- TOML-based config: `.wtm.toml` (project) + `~/.config/wtm/config.toml` (global).
-- Three env strategies: example, main, parent.
-- Hook engine with template variables, continue_on_error, and timing display.
-- Auto-detection: base branch, env files, package manager, Docker Compose, pnpm workspaces.
-
-### Distribution
-
-- Homebrew: `brew install LucasPcq/tap/wtm`
-- GitHub Releases: binaries for macOS/Linux (amd64/arm64)
-- `go install github.com/LucasPcq/wtm@latest`
