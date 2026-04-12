@@ -1,0 +1,52 @@
+package output
+
+import (
+	"fmt"
+	"io"
+
+	"github.com/LucasPcq/wtm/internal/styles"
+)
+
+// Indent is the standard left padding used by all TUI components.
+// Use this to align non-TUI output with TUI prompts.
+const Indent = "  "
+
+// Warning prints a styled warning line: "  ! message".
+func Warning(w io.Writer, msg string) {
+	fmt.Fprintf(w, "%s%s %s\n", Indent, styles.BadgeWarning.Render("!"), styles.Warning.Render(msg))
+}
+
+// InfoLine prints a styled key-value pair: "  label  value".
+func InfoLine(w io.Writer, label string, value string) {
+	fmt.Fprintf(w, "%s%s  %s\n", Indent, styles.Muted.Render(label), value)
+}
+
+// SectionTitle prints a bold section title with standard indent.
+func SectionTitle(w io.Writer, title string) {
+	fmt.Fprintf(w, "%s%s\n", Indent, styles.Bold.Render(title))
+}
+
+// Success prints a styled success line: "  ✓ message".
+func Success(w io.Writer, msg string) {
+	fmt.Fprintf(w, "%s%s %s\n", Indent, styles.Success.Render("✓"), msg)
+}
+
+// Error prints a styled error line: "  ✗ message".
+func Error(w io.Writer, msg string) {
+	fmt.Fprintf(w, "%s%s %s\n", Indent, styles.DangerText.Render("✗"), msg)
+}
+
+// Loading prints a styled loading/status line: "  › message".
+func Loading(w io.Writer, msg string) {
+	fmt.Fprintf(w, "%s%s %s\n", Indent, styles.Muted.Render("›"), styles.Muted.Render(msg))
+}
+
+// Message prints a plain indented message.
+func Message(w io.Writer, msg string) {
+	fmt.Fprintf(w, "%s%s\n", Indent, msg)
+}
+
+// Blank prints an empty line for vertical spacing.
+func Blank(w io.Writer) {
+	fmt.Fprintln(w)
+}

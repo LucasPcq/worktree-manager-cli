@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -60,7 +61,9 @@ func (m *Manager) Start(svc domain.ServiceConfig, workDir string) error {
 
 	cmd := exec.Command(parts[0], parts[1:]...)
 
-	if svc.Cwd != "" {
+	if svc.Cwd != "" && !filepath.IsAbs(svc.Cwd) {
+		cmd.Dir = filepath.Join(workDir, svc.Cwd)
+	} else if svc.Cwd != "" {
 		cmd.Dir = svc.Cwd
 	} else {
 		cmd.Dir = workDir
@@ -123,12 +126,14 @@ func (m *Manager) stopByKey(key string) error {
 		return fmt.Errorf("service not found")
 	}
 
-	if svc.Status != domain.ServiceStatusRunning {
-		return nil
-	}
-
+	// Always run the stop command if configured — handles detached processes
+	// like "docker compose up -d" where the launcher exits but services keep running.
 	if svc.Config.Stop != "" {
 		return m.stopWithCommand(svc)
+	}
+
+	if svc.Status != domain.ServiceStatusRunning {
+		return nil
 	}
 
 	return m.stopWithSignal(svc)
@@ -190,7 +195,7 @@ func (m *Manager) stopWithCommand(svc *ManagedService) error {
 	}
 
 	cmd := exec.Command(parts[0], parts[1:]...)
-	cmd.Dir = svc.Cmd.Dir
+	cmd.Dir = svc.WorkDir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("stop %s: %s: %w", svc.Name, strings.TrimSpace(string(out)), err)
 	}
@@ -218,7 +223,16 @@ func (m *Manager) waitForExit(svc *ManagedService) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if svc.Status == domain.ServiceStatusRunning {
-		svc.Status = domain.ServiceStatusCrashed
+	if svc.Status != domain.ServiceStatusRunning {
+		return
 	}
+
+	// Services with a stop command (e.g. "docker compose up -d") are detached:
+	// the launcher process exits but the service keeps running.
+	// Keep them marked as Running so they can be found and stopped later.
+	if svc.Config.Stop != "" {
+		return
+	}
+
+	svc.Status = domain.ServiceStatusCrashed
 }

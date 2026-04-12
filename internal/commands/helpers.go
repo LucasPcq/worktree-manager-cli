@@ -11,6 +11,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/output"
 )
 
 // configResult holds the loaded config and the resolved project root.
@@ -36,17 +37,17 @@ func projectRoot(dir string) (string, error) {
 func loadConfig(cmd *cobra.Command, dir string) (configResult, bool) {
 	root, err := projectRoot(dir)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v\n", err)
+		output.Error(cmd.ErrOrStderr(), err.Error())
 		return configResult{}, false
 	}
 
 	cfg, err := config.Load(config.LoadParams{ProjectDir: root})
 	if errors.Is(err, domain.ErrConfigNotFound) {
-		fmt.Fprintln(cmd.ErrOrStderr(), "No .wtm/config.toml found. Run `wtm init` first.")
+		output.Warning(cmd.ErrOrStderr(), "No .wtm/config.toml found. Run `wtm init` first.")
 		return configResult{}, false
 	}
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Error loading config: %v\n", err)
+		output.Error(cmd.ErrOrStderr(), fmt.Sprintf("Loading config: %v", err))
 		return configResult{}, false
 	}
 
@@ -56,6 +57,7 @@ func loadConfig(cmd *cobra.Command, dir string) (configResult, bool) {
 // startSpinner displays a spinner with a message and returns a stop function.
 // The stop function blocks until the spinner line is fully cleared.
 func startSpinner(w io.Writer, message string) func() {
+	fmt.Fprintln(w)
 	done := make(chan struct{})
 	stopped := make(chan struct{})
 	go func() {
@@ -64,12 +66,12 @@ func startSpinner(w io.Writer, message string) func() {
 		for {
 			select {
 			case <-done:
-				clearLen := len(message) + 4
+				clearLen := len(message) + len(output.Indent) + 4
 				fmt.Fprintf(w, "\r%-*s\r", clearLen, "")
 				close(stopped)
 				return
 			default:
-				fmt.Fprintf(w, "\r%s %s", frames[i%len(frames)], message)
+				fmt.Fprintf(w, "\r%s%s %s", output.Indent, frames[i%len(frames)], message)
 				i++
 				time.Sleep(80 * time.Millisecond)
 			}

@@ -25,8 +25,6 @@ type EnvConfig struct {
 // HooksConfig defines lifecycle hooks as lists of commands.
 type HooksConfig struct {
 	OnCreate []HookCommand `toml:"on_create"`
-	OnFocus  []HookCommand `toml:"on_focus"`
-	OnBlur   []HookCommand `toml:"on_blur"`
 }
 
 // GithubConfig controls GitHub integration behavior.

@@ -8,6 +8,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	cleanui "github.com/LucasPcq/wtm/internal/tui/clean"
 )
@@ -61,7 +64,9 @@ func runClean(cmd *cobra.Command, args []string) error {
 
 	check, err := worktree.Check(cleanParams)
 	if errors.Is(err, domain.ErrCannotCleanParent) {
-		fmt.Fprintln(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+		output.Blank(cmd.ErrOrStderr())
+		output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+		output.Blank(cmd.ErrOrStderr())
 		return nil
 	}
 	if err != nil {
@@ -70,7 +75,9 @@ func runClean(cmd *cobra.Command, args []string) error {
 
 	confirmResult, err := cleanui.RunConfirm(check)
 	if errors.Is(err, domain.ErrUserAborted) {
-		fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
+		output.Blank(cmd.OutOrStdout())
+		output.Message(cmd.OutOrStdout(), "Aborted.")
+		output.Blank(cmd.OutOrStdout())
 		return nil
 	}
 	if err != nil {
@@ -89,15 +96,60 @@ func resolveBranchArg(args []string, projectDir string) (string, error) {
 }
 
 func doClean(cmd *cobra.Command, params worktree.CleanParams) error {
+	stopServicesForWorktree(cmd, params.ProjectDir, params.Branch)
+
 	err := worktree.Clean(params)
 	if errors.Is(err, domain.ErrCannotCleanParent) {
-		fmt.Fprintln(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+		output.Blank(cmd.ErrOrStderr())
+		output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+		output.Blank(cmd.ErrOrStderr())
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Cleaned worktree and branch %s\n", params.Branch)
+	output.Blank(cmd.OutOrStdout())
+	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Cleaned worktree and branch %s", params.Branch))
+	output.Blank(cmd.OutOrStdout())
 	return nil
+}
+
+func stopServicesForWorktree(cmd *cobra.Command, projectDir string, branch string) {
+	socketPath := process.SocketPath()
+	if !process.IsDaemonRunning(socketPath) {
+		return
+	}
+
+	wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
+		ProjectDir: projectDir,
+		Branch:     branch,
+	})
+	if err != nil {
+		return
+	}
+
+	client := process.NewClient(socketPath)
+	resp, err := client.Send(process.Request{Action: process.ActionList})
+	if err != nil {
+		return
+	}
+
+	hasRunning := false
+	for _, svc := range resp.Services {
+		if svc.WorkDir == wt.Path && svc.Status == domain.ServiceStatusRunning {
+			hasRunning = true
+			break
+		}
+	}
+
+	if !hasRunning {
+		return
+	}
+
+	client.Send(process.Request{
+		Action:  process.ActionStopAll,
+		WorkDir: wt.Path,
+	})
+	output.Success(cmd.ErrOrStderr(), fmt.Sprintf("Stopped services on %s", branch))
 }

@@ -33,19 +33,6 @@ on_create = [
 {{- end }}
 ]
 
-# Commands run when switching to this worktree
-on_focus = [
-{{- range .OnFocusCommands }}
-  "{{ . }}",
-{{- end }}
-]
-
-# Commands run when leaving this worktree
-on_blur = [
-{{- range .OnBlurCommands }}
-  "{{ . }}",
-{{- end }}
-]
 
 [github]
 auto_draft = false

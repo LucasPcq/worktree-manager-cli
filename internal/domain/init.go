@@ -22,10 +22,8 @@ type InitProjectAnswers struct {
 	BaseBranch      string
 	EnvCopyFiles    []string
 	EnvStrategy     EnvStrategy
-	InstallCommand  string
-	OnCreateExtra   []HookCommand
-	OnFocusCommands []string
-	OnBlurCommands  []string
-	Agent           AgentType
+	InstallCommand string
+	OnCreateExtra  []HookCommand
+	Agent          AgentType
 	AgentOverride   bool
 }

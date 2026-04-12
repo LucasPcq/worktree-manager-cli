@@ -1,45 +1,33 @@
-// Package gopicker builds interactive huh forms for the wtm go/resolve commands.
+// Package gopicker builds interactive pickers for the wtm go/resolve commands.
 package gopicker
 
 import (
-	"errors"
-
-	"github.com/charmbracelet/huh"
-
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // RunWorktreePicker displays a filterable picker of worktrees.
 // Returns the absolute path of the selected worktree, or ErrUserAborted on Ctrl+C.
 func RunWorktreePicker(worktrees []infra.GitWorktree) (string, error) {
-	options := make([]huh.Option[string], 0, len(worktrees))
+	items := make([]components.SelectItem, 0, len(worktrees))
 	for _, wt := range worktrees {
 		label := wt.Branch
 		if wt.IsMain {
 			label += " (parent)"
 		}
-		options = append(options, huh.NewOption(label, wt.Path))
+		items = append(items, components.SelectItem{Label: label, Value: wt.Path})
 	}
 
-	var selected string
+	sl := components.NewSelectList(components.NewSelectListParams{
+		Title:       "Select worktree",
+		Description: "",
+		Items:       items,
+	})
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Select worktree").
-				Options(options...).
-				Filtering(true).
-				Value(&selected),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return "", domain.ErrUserAborted
-		}
-		return "", err
+	result, err := components.RunStandaloneSelect(sl)
+	if err != nil {
+		return "", domain.ErrUserAborted
 	}
-
-	return selected, nil
+	return result, nil
 }

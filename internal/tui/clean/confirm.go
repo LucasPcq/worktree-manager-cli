@@ -1,15 +1,14 @@
-// Package clean builds interactive huh forms for the wtm clean command.
+// Package clean builds interactive pickers for the wtm clean command.
 package clean
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
-	"github.com/charmbracelet/huh"
-
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // ConfirmResult holds the user's choices from the confirm dialog.
@@ -21,36 +20,41 @@ type ConfirmResult struct {
 // RunConfirm displays warnings from pre-deletion checks and asks for confirmation.
 // Returns ErrUserAborted if the user declines.
 func RunConfirm(check worktree.CleanCheckResult) (ConfirmResult, error) {
-	printWarnings(check)
+	w := os.Stderr
 
-	fmt.Fprintf(os.Stderr, "\nWill delete:\n  worktree  %s\n  branch    %s\n\n", check.WorktreePath, check.Branch)
+	output.Blank(w)
+	printWarnings(w, check)
 
-	var choice string
+	output.Blank(w)
+	output.SectionTitle(w, "Will delete:")
+	output.InfoLine(w, "worktree", check.WorktreePath)
+	output.InfoLine(w, "branch  ", check.Branch)
+	output.Blank(w)
 
-	options := []huh.Option[string]{
-		huh.NewOption("Yes, delete", "yes"),
+	items := []components.SelectItem{
+		{Label: "Yes, delete", Value: "yes"},
 	}
 
 	if check.HasWarnings() {
-		options = append(options, huh.NewOption("Yes, force delete (bypass all checks)", "force"))
+		items = append(items,
+			components.SelectItem{Separator: true},
+			components.SelectItem{Label: "Yes, force delete (bypass all checks)", Value: "force", Danger: true},
+		)
 	}
 
-	options = append(options, huh.NewOption("No, cancel", "no"))
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Proceed with deletion?").
-				Options(options...).
-				Value(&choice),
-		),
+	items = append(items,
+		components.SelectItem{Separator: true},
+		components.SelectItem{Label: "No, cancel", Value: "no"},
 	)
 
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return ConfirmResult{}, domain.ErrUserAborted
-		}
-		return ConfirmResult{}, err
+	sl := components.NewSelectList(components.NewSelectListParams{
+		Title: "Proceed with deletion?",
+		Items: items,
+	})
+
+	choice, err := components.RunStandaloneSelect(sl)
+	if err != nil {
+		return ConfirmResult{}, domain.ErrUserAborted
 	}
 
 	if choice == "no" {
@@ -63,14 +67,14 @@ func RunConfirm(check worktree.CleanCheckResult) (ConfirmResult, error) {
 	}, nil
 }
 
-func printWarnings(check worktree.CleanCheckResult) {
+func printWarnings(w *os.File, check worktree.CleanCheckResult) {
 	if check.IsDirty {
-		fmt.Fprintf(os.Stderr, "⚠ Worktree has uncommitted changes\n")
+		output.Warning(w, "Worktree has uncommitted changes")
 	}
 	if check.UnpushedCommits > 0 {
-		fmt.Fprintf(os.Stderr, "⚠ %d commit(s) not pushed to remote\n", check.UnpushedCommits)
+		output.Warning(w, fmt.Sprintf("%d commit(s) not pushed to remote", check.UnpushedCommits))
 	}
 	if check.HasOpenPR {
-		fmt.Fprintf(os.Stderr, "⚠ Open PR: %s\n", check.PRUrl)
+		output.Warning(w, "Open PR: "+check.PRUrl)
 	}
 }

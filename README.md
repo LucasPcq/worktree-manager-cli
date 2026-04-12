@@ -9,7 +9,7 @@ Orchestrate git worktrees, AI agents, and team dev workflows from the terminal.
 | Tool | Required | Purpose |
 |---|---|---|
 | `git` | ✅ Required | Worktree management |
-| `gh` | ⭐ Recommended | PR listing, creation, checkout, and dashboard PR panel |
+| `gh` | ⭐ Recommended | PR listing, creation, and checkout |
 
 `gh` is not required to use `wtm` — worktree creation, navigation, hooks, and services work without it. Install and authenticate it to unlock all GitHub features: [cli.github.com](https://cli.github.com).
 
@@ -58,51 +58,14 @@ source ~/.zshrc
 cd your-repo
 wtm init
 
-# Open the interactive dashboard — manage everything from here
-wtm
-
-# Or use individual commands:
+# Use individual commands:
 wtm wt list                        # list all worktrees
 wtm wt create feature/my-feature   # create a worktree
-wtm wt go feature/my-feature       # navigate to it
-wtm wt focus feature/my-feature    # start the environment
+wtm wt switch feature/my-feature   # navigate + start services
 wtm wt clean feature/my-feature    # clean up when done
 ```
 
 ## Commands
-
-### `wtm` — Interactive Dashboard
-
-Run `wtm` without arguments to open the interactive dashboard. This is the main entry point for your daily workflow.
-
-```bash
-wtm
-```
-
-The dashboard displays all your worktrees in a two-panel layout:
-- **Left panel** — worktree list with status (clean/dirty, commits ahead, focus indicator)
-- **Right panel** — details of the selected worktree (path, source branch, modified files, context notes)
-
-**Keyboard shortcuts:**
-
-| Key | Action |
-|---|---|
-| `↑/↓` or `j/k` | Navigate the list or scroll the active panel |
-| `Tab` / `Shift+Tab` | Cycle between panels (list → detail → hooks output) |
-| `n` | Create a new worktree (opens the wizard) |
-| `d` | Clean the selected worktree (opens confirmation) |
-| `f` | Focus the selected worktree (runs hooks, shows output in split panel) |
-| `u` | Start a service profile for the selected worktree |
-| `x` | Stop a service profile for the selected worktree |
-| `s` | View multiplexed logs of all running services |
-| `Enter` | Navigate to the selected worktree directory |
-| `r` | Refresh the worktree list |
-| `Esc` | Close the hooks output panel |
-| `q` | Quit the dashboard |
-
-When you press `f` to focus a worktree, the right panel splits to show the hook output in real-time. The log panel stays visible after hooks complete and can be closed with `Esc`.
-
----
 
 ### `wtm init`
 
@@ -188,7 +151,7 @@ Output:
   feature-payment                        clean   1 commit ahead
 ```
 
-In an interactive terminal, shows a picker with actions: go, focus, start profile, stop profile, view logs, clean, open in dashboard.
+In an interactive terminal, shows a picker with actions: go, start profile, stop profile, view logs, clean.
 
 #### `wtm wt go [branch]`
 
@@ -202,25 +165,26 @@ wtm wt go auth             # substring match
 
 Without shell integration, `wtm wt go` cannot change your working directory. The shell wrapper intercepts `wtm wt go` and performs the `cd` in your current shell.
 
-#### `wtm wt focus [branch]`
+#### `wtm wt switch [branch]`
 
-Switch the active worktree and run lifecycle hooks.
+Navigate to a worktree **and** start its services in one command. Combines `wt go` + `svc up`.
 
 ```bash
-wtm wt focus feature/auth   # runs on_blur on previous, on_focus on target
-wtm wt focus                # interactive picker
-wtm wt focus --off          # stop everything — runs on_blur and clears state
+wtm wt switch feature/auth               # go + start default profile
+wtm wt switch feature/auth --exclusive    # go + stop others + start
+wtm wt switch feature/auth --parallel     # go + start without stopping others
+wtm wt switch feature/auth --profile api  # go + start specific profile
+wtm wt switch                             # interactive picker + start
 ```
 
-`focus` and `go` are independent and composable:
-- `wtm wt go` changes your directory
-- `wtm wt focus` manages your environment (starts/stops services via hooks)
-- Use both: `wtm wt focus feature/auth && wtm wt go feature/auth`
+Requires shell integration (same as `wt go`).
 
 **Flags:**
 | Flag | Description |
 |---|---|
-| `--off` | Run blur hooks on active worktree and clear state |
+| `--exclusive` | Stop services on other worktrees before starting |
+| `--parallel` | Start without stopping other worktrees |
+| `--profile <name>` | Service profile to start (default: default profile) |
 
 #### `wtm wt clean [branch]`
 
@@ -248,9 +212,19 @@ wtm wt clean feature/auth --force   # skip all safety checks
 Start a service profile defined in `.wtm/services.toml`.
 
 ```bash
-wtm svc up              # start default profile (or picker if multiple)
-wtm svc up backend      # start a specific profile
+wtm svc up                  # start default profile (or picker if multiple)
+wtm svc up backend          # start a specific profile
+wtm svc up --exclusive      # stop services on other worktrees first
+wtm svc up --parallel       # start without stopping others
 ```
+
+If services are already running on another worktree, `svc up` prompts you to stop them or run in parallel.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--exclusive` | Stop services on other worktrees before starting |
+| `--parallel` | Start without stopping other worktrees |
 
 #### `wtm svc down [profile]`
 
@@ -296,7 +270,7 @@ Interact with GitHub pull requests from the CLI. Requires the [`gh` CLI](https:/
 
 #### `wtm pr list`
 
-List open pull requests. Interactive picker with actions (checkout, open in browser, view details, open in dashboard).
+List open pull requests. Interactive picker with actions (checkout, open in browser, view details).
 
 ```bash
 wtm pr list           # all open PRs
@@ -366,16 +340,6 @@ copy_files = [
 on_create = [
   "pnpm install",
   { cmd = "pnpm install", cwd = "apps/api" },
-]
-
-# Commands run when switching to this worktree (wtm focus)
-on_focus = [
-  "docker-compose up -d",
-]
-
-# Commands run when leaving this worktree (wtm focus --off or switching)
-on_blur = [
-  "docker-compose down --remove-orphans",
 ]
 
 [github]
@@ -494,12 +458,6 @@ agent = "claude-code"  # claude-code | cursor | none
 ```
 
 The project `.wtm/config.toml` can override the agent setting. Shell is always global.
-
----
-
-## State
-
-`wtm` tracks the active worktree in `~/.config/wtm/state.json`. This file is managed automatically by `wtm wt focus` — don't edit it manually.
 
 ---
 

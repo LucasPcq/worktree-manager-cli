@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/config"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
@@ -25,7 +26,9 @@ func runDown(cmd *cobra.Command, args []string) error {
 	socketPath := process.SocketPath()
 
 	if !process.IsDaemonRunning(socketPath) {
-		fmt.Fprintln(cmd.OutOrStdout(), "No services running.")
+		output.Blank(cmd.OutOrStdout())
+		output.Message(cmd.OutOrStdout(), "No services running.")
+		output.Blank(cmd.OutOrStdout())
 		return nil
 	}
 
@@ -37,7 +40,12 @@ func runDown(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("get working directory: %w", err)
 		}
 
-		svcCfg, err := config.LoadServices(dir)
+		root, err := projectRoot(dir)
+		if err != nil {
+			return err
+		}
+
+		svcCfg, err := config.LoadServices(root)
 		if err != nil {
 			return fmt.Errorf("load services config: %w", err)
 		}
@@ -48,6 +56,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 		}
 
 		services := svcCfg.ProfileServices(profile)
+		output.Blank(cmd.OutOrStdout())
 		for _, svc := range services {
 			resp, sendErr := client.Send(process.Request{
 				Action:  process.ActionStop,
@@ -55,15 +64,16 @@ func runDown(cmd *cobra.Command, args []string) error {
 				WorkDir: dir,
 			})
 			if sendErr != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "  ✗ %s: %v\n", svc.Name, sendErr)
+				output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", svc.Name, sendErr))
 				continue
 			}
 			if resp.Status == process.StatusError {
-				fmt.Fprintf(cmd.ErrOrStderr(), "  ✗ %s: %s\n", svc.Name, resp.Message)
+				output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %s", svc.Name, resp.Message))
 				continue
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "  ✓ %s stopped\n", svc.Name)
+			output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", svc.Name))
 		}
+		output.Blank(cmd.OutOrStdout())
 		return nil
 	}
 
@@ -75,6 +85,8 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("stop all: %s", resp.Message)
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), "  ✓ All services stopped.")
+	output.Blank(cmd.OutOrStdout())
+	output.Success(cmd.OutOrStdout(), "All services stopped.")
+	output.Blank(cmd.OutOrStdout())
 	return nil
 }

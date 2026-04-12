@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
@@ -119,54 +117,52 @@ func FormatPRFilterLabel(filter domain.PRFilter) string {
 	}
 }
 
-// FormatPRDetailSection renders a detailed view of a PR in a styled box.
-func FormatPRDetailSection(pr domain.PRInfo) string {
-	var b strings.Builder
+// PrintPRDetail writes a detailed view of a PR using the standard output helpers.
+func PrintPRDetail(w io.Writer, pr domain.PRInfo) {
+	SectionTitle(w, fmt.Sprintf("#%d %s", pr.Number, pr.Title))
+	Blank(w)
+	InfoLine(w, "Author", pr.Author)
+	InfoLine(w, "Branch", pr.Branch)
+	InfoLine(w, "Status", pr.State)
+	InfoLine(w, "Opened", formatAge(pr.CreatedAt))
+	Blank(w)
 
-	// Header
-	b.WriteString(styles.Bold.Render(fmt.Sprintf("#%d %s", pr.Number, pr.Title)))
-	b.WriteString("\n\n")
-	b.WriteString(fmt.Sprintf("%s %s", styles.Muted.Render("Author:"), pr.Author))
-	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("%s %s", styles.Muted.Render("Opened:"), formatAge(pr.CreatedAt)))
-	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("%s %s", styles.Muted.Render("Status:"), pr.State))
-	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("%s %s", styles.Muted.Render("Branch:"), pr.Branch))
-
-	// Description
 	if pr.Body != "" {
-		b.WriteString("\n\n")
-		b.WriteString(styles.Bold.Render("Description"))
-		b.WriteString("\n")
-		b.WriteString(styles.Muted.Render(pr.Body))
+		SectionTitle(w, "Description")
+		Message(w, pr.Body)
+		Blank(w)
 	}
 
-	// CI status
-	b.WriteString("\n\n")
-	b.WriteString(styles.Bold.Render("CI Status"))
-	b.WriteString("\n")
-	b.WriteString(formatCIStatus(pr.CIStatus))
+	SectionTitle(w, "CI Status")
+	switch pr.CIStatus {
+	case domain.CIStatusPassing:
+		Success(w, "CI passing")
+	case domain.CIStatusFailing:
+		Error(w, "CI failing")
+	case domain.CIStatusPending:
+		Message(w, styles.Warning.Render("CI pending"))
+	default:
+		Message(w, styles.Muted.Render("CI unknown"))
+	}
+	Blank(w)
 
-	// Reviews
-	b.WriteString("\n\n")
-	b.WriteString(styles.Bold.Render("Reviews"))
-	b.WriteString("\n")
+	SectionTitle(w, "Reviews")
 	if len(pr.Reviews) == 0 {
-		b.WriteString(styles.Muted.Render("No reviews yet"))
+		Message(w, styles.Muted.Render("No reviews yet"))
 	} else {
 		for _, r := range pr.Reviews {
-			icon := reviewIcon(r.State)
-			b.WriteString(fmt.Sprintf("%s %s — %s\n", icon, r.User, strings.ToLower(strings.ReplaceAll(r.State, "_", " "))))
+			label := fmt.Sprintf("%s — %s", r.User, strings.ToLower(strings.ReplaceAll(r.State, "_", " ")))
+			switch r.State {
+			case "APPROVED":
+				Success(w, label)
+			case "CHANGES_REQUESTED":
+				Error(w, label)
+			default:
+				Message(w, label)
+			}
 		}
 	}
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(styles.ColorPrimary).
-		Padding(1, 2)
-
-	return "\n" + box.Render(b.String()) + "\n"
+	Blank(w)
 }
 
 // hyperlink wraps text in an OSC 8 terminal hyperlink sequence.

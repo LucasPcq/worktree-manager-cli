@@ -1,14 +1,12 @@
 package clean
 
 import (
-	"errors"
 	"fmt"
 	"sort"
 
-	"github.com/charmbracelet/huh"
-
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // RunWorktreePicker displays a filterable picker of worktrees (excluding parent).
@@ -19,41 +17,31 @@ func RunWorktreePicker(projectDir string) (string, error) {
 		return "", fmt.Errorf("list worktrees: %w", err)
 	}
 
-	var options []huh.Option[string]
+	var items []components.SelectItem
 	for _, wt := range worktrees {
 		if wt.IsMain {
 			continue
 		}
-		options = append(options, huh.NewOption(wt.Branch, wt.Branch))
+		items = append(items, components.SelectItem{Label: wt.Branch, Value: wt.Branch})
 	}
 
-	sort.Slice(options, func(i, j int) bool {
-		return options[i].Value < options[j].Value
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Value < items[j].Value
 	})
 
-	if len(options) == 0 {
+	if len(items) == 0 {
 		return "", fmt.Errorf("no worktrees to clean (only the parent worktree exists)")
 	}
 
-	var selected string
+	sl := components.NewSelectList(components.NewSelectListParams{
+		Title:       "Select worktree to clean",
+		Description: "The parent worktree cannot be cleaned",
+		Items:       items,
+	})
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Select worktree to clean").
-				Description("The parent worktree cannot be cleaned").
-				Options(options...).
-				Filtering(true).
-				Value(&selected),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return "", domain.ErrUserAborted
-		}
-		return "", err
+	result, err := components.RunStandaloneSelect(sl)
+	if err != nil {
+		return "", domain.ErrUserAborted
 	}
-
-	return selected, nil
+	return result, nil
 }

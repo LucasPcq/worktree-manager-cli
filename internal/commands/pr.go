@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 const (
@@ -20,6 +22,7 @@ const (
 	prActionDetails   = "details"
 	prActionDashboard = "dashboard"
 	prActionCheckout  = "checkout"
+	prActionGo        = "go"
 )
 
 // NewPRCmd creates the wtm pr command group.
@@ -78,7 +81,7 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(prs) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No open pull requests.")
+		output.Message(cmd.OutOrStdout(), "No open pull requests.")
 		return nil
 	}
 
@@ -88,10 +91,13 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	// Collect existing worktree branches for contextual actions
+	existingBranches := worktreeBranches(dir)
+
 	// Interactive mode
-	pr, action, err := pickPRAndAction(prs)
+	pr, action, err := pickPRAndAction(prs, existingBranches)
 	if err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
+		if errors.Is(err, domain.ErrUserAborted) {
 			return nil
 		}
 		return err
@@ -100,45 +106,75 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 	return executePRAction(cmd, action, pr, dir)
 }
 
-func pickPRAndAction(prs []domain.PRInfo) (domain.PRInfo, string, error) {
-	prOptions := make([]huh.Option[int], 0, len(prs))
+func pickPRAndAction(prs []domain.PRInfo, existingBranches []string) (domain.PRInfo, string, error) {
+	// Step 1: pick a PR
+	prItems := make([]components.SelectItem, 0, len(prs))
 	for _, pr := range prs {
 		label := fmt.Sprintf("#%-4d  %-40s  %s", pr.Number, truncate(pr.Title, 40), pr.Author)
-		prOptions = append(prOptions, huh.NewOption(label, pr.Number))
+		prItems = append(prItems, components.SelectItem{
+			Label: label,
+			Value: strconv.Itoa(pr.Number),
+		})
 	}
 
-	var selected int
-	var action string
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[int]().
-				Title("Select a pull request").
-				Options(prOptions...).
-				Value(&selected),
-			huh.NewSelect[string]().
-				Title("Action").
-				Options(
-					huh.NewOption("Checkout into worktree", prActionCheckout),
-					huh.NewOption("Open in browser", prActionBrowser),
-					huh.NewOption("View details", prActionDetails),
-					huh.NewOption("Open in dashboard", prActionDashboard),
-				).
-				Value(&action),
-		),
+	selected, err := components.RunStandaloneSelect(
+		components.NewSelectList(components.NewSelectListParams{Title: "Select a pull request", Items: prItems}),
 	)
-
-	if err := form.Run(); err != nil {
+	if err != nil {
+		if errors.Is(err, components.ErrAborted) {
+			return domain.PRInfo{}, "", domain.ErrUserAborted
+		}
 		return domain.PRInfo{}, "", err
 	}
 
-	for _, pr := range prs {
-		if pr.Number == selected {
-			return pr, action, nil
-		}
+	prNum, err := strconv.Atoi(selected)
+	if err != nil {
+		return domain.PRInfo{}, "", fmt.Errorf("parse PR number: %w", err)
 	}
 
-	return domain.PRInfo{}, "", fmt.Errorf("PR #%d not found", selected)
+	var selectedPR domain.PRInfo
+	for _, pr := range prs {
+		if pr.Number == prNum {
+			selectedPR = pr
+			break
+		}
+	}
+	if selectedPR.Number == 0 {
+		return domain.PRInfo{}, "", fmt.Errorf("PR #%d not found", prNum)
+	}
+
+	// Step 2: build contextual action items based on worktree existence
+	branchHasWorktree := containsString(existingBranches, selectedPR.Branch)
+
+	var actionItems []components.SelectItem
+	if branchHasWorktree {
+		actionItems = append(actionItems, components.SelectItem{Label: "Go to worktree", Value: prActionGo})
+	} else {
+		actionItems = append(actionItems, components.SelectItem{Label: "Checkout into worktree", Value: prActionCheckout})
+	}
+
+	actionItems = append(actionItems, components.SelectItem{Separator: true})
+	actionItems = append(actionItems, components.SelectItem{Label: "Open in browser", Value: prActionBrowser})
+	actionItems = append(actionItems, components.SelectItem{Label: "View details", Value: prActionDetails})
+
+	if domain.FeatureDashboard {
+		actionItems = append(actionItems, components.SelectItem{Label: "Open in dashboard", Value: prActionDashboard})
+	}
+
+	action, err := components.RunStandaloneSelect(
+		components.NewSelectList(components.NewSelectListParams{
+			Title: fmt.Sprintf("#%d — %s", selectedPR.Number, truncate(selectedPR.Title, 30)),
+			Items: actionItems,
+		}),
+	)
+	if err != nil {
+		if errors.Is(err, components.ErrAborted) {
+			return domain.PRInfo{}, "", domain.ErrUserAborted
+		}
+		return domain.PRInfo{}, "", err
+	}
+
+	return selectedPR, action, nil
 }
 
 func executePRAction(cmd *cobra.Command, action string, pr domain.PRInfo, projectDir string) error {
@@ -147,7 +183,7 @@ func executePRAction(cmd *cobra.Command, action string, pr domain.PRInfo, projec
 		return exec.Command("open", pr.URL).Run()
 
 	case prActionDetails:
-		fmt.Fprintln(cmd.OutOrStdout(), output.FormatPRDetailSection(pr))
+		output.PrintPRDetail(cmd.OutOrStdout(), pr)
 		return nil
 
 	case prActionDashboard:
@@ -159,6 +195,17 @@ func executePRAction(cmd *cobra.Command, action string, pr domain.PRInfo, projec
 			return nil
 		}
 		return checkoutPR(cmd, result, checkoutPRParams{Number: pr.Number})
+
+	case prActionGo:
+		bin, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		c := exec.Command(bin, "wt", "go", pr.Branch)
+		c.Stdin = os.Stdin
+		c.Stdout = os.Stdout
+		c.Stderr = os.Stderr
+		return c.Run()
 	}
 
 	return nil
@@ -171,6 +218,28 @@ func runDashboardWithPR(cmd *cobra.Command, projectDir string, prNumber int) err
 	}
 
 	return launchDashboard(cmd, result, launchDashboardParams{InitialPR: &prNumber})
+}
+
+// worktreeBranches returns the branch names of all existing worktrees (graceful degradation).
+func worktreeBranches(projectDir string) []string {
+	wts, err := infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: projectDir})
+	if err != nil {
+		return nil
+	}
+	branches := make([]string, 0, len(wts))
+	for _, wt := range wts {
+		branches = append(branches, wt.Branch)
+	}
+	return branches
+}
+
+func containsString(ss []string, target string) bool {
+	for _, s := range ss {
+		if s == target {
+			return true
+		}
+	}
+	return false
 }
 
 func truncate(s string, maxLen int) string {
@@ -203,32 +272,36 @@ func pickPRNumber(cmd *cobra.Command, projectDir string) (int, error) {
 	}
 
 	if len(prs) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No open pull requests.")
+		output.Message(cmd.OutOrStdout(), "No open pull requests.")
 		return 0, nil
 	}
 
-	prOptions := make([]huh.Option[int], 0, len(prs))
+	prItems := make([]components.SelectItem, 0, len(prs))
 	for _, pr := range prs {
 		label := fmt.Sprintf("#%-4d  %-40s  %s", pr.Number, truncate(pr.Title, 40), pr.Author)
-		prOptions = append(prOptions, huh.NewOption(label, pr.Number))
+		prItems = append(prItems, components.SelectItem{
+			Label: label,
+			Value: strconv.Itoa(pr.Number),
+		})
 	}
 
-	var selected int
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[int]().
-				Title("Select a pull request to checkout").
-				Options(prOptions...).
-				Value(&selected),
-		),
-	)
+	sl := components.NewSelectList(components.NewSelectListParams{
+		Title: "Select a pull request to checkout",
+		Items: prItems,
+	})
 
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
+	selected, err := components.RunStandaloneSelect(sl)
+	if err != nil {
+		if errors.Is(err, components.ErrAborted) {
 			return 0, nil
 		}
 		return 0, err
 	}
 
-	return selected, nil
+	num, err := strconv.Atoi(selected)
+	if err != nil {
+		return 0, fmt.Errorf("parse PR number: %w", err)
+	}
+
+	return num, nil
 }

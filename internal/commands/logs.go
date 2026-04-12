@@ -11,6 +11,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
@@ -121,7 +122,9 @@ func multiplexAllServices(socketPath string, dir string) error {
 	}
 
 	if len(running) == 0 {
-		fmt.Println("No running services in this worktree.")
+		output.Blank(os.Stdout)
+		output.Message(os.Stdout, "No running services in this worktree.")
+		output.Blank(os.Stdout)
 		return nil
 	}
 
@@ -147,7 +150,7 @@ func multiplexAllServices(socketPath string, dir string) error {
 			Rows:    rows,
 		})
 		if attachErr != nil {
-			fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", svc.Name, attachErr)
+			output.Error(os.Stderr, fmt.Sprintf("%s: %v", svc.Name, attachErr))
 			continue
 		}
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/output"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	prwizard "github.com/LucasPcq/wtm/internal/tui/pr"
@@ -81,7 +82,7 @@ type checkoutPRParams struct {
 // checkoutPR is the shared implementation used by `wtm pr checkout`,
 // the `wtm pr list` picker action, and the dashboard keybinding.
 func checkoutPR(cmd *cobra.Command, result configResult, params checkoutPRParams) error {
-	fmt.Fprintf(cmd.ErrOrStderr(), "Fetching PR #%d...\n", params.Number)
+	output.Loading(cmd.ErrOrStderr(), fmt.Sprintf("Fetching PR #%d...", params.Number))
 
 	pr, err := ghservice.GetPRDetail(ghservice.GetPRDetailParams{
 		ProjectDir: result.ProjectDir,
@@ -116,7 +117,7 @@ func checkoutPR(cmd *cobra.Command, result configResult, params checkoutPRParams
 		envFromOverride = picked
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "Fetching branch %s from origin...\n", pr.Branch)
+	output.Loading(cmd.ErrOrStderr(), fmt.Sprintf("Fetching branch %s from origin...", pr.Branch))
 	if err := infra.FetchBranch(infra.FetchBranchParams{
 		ProjectDir: result.ProjectDir,
 		Branch:     pr.Branch,
@@ -124,7 +125,7 @@ func checkoutPR(cmd *cobra.Command, result configResult, params checkoutPRParams
 		return err
 	}
 
-	fmt.Fprintf(cmd.ErrOrStderr(), "Creating worktree %s...\n", pr.Branch)
+	output.Loading(cmd.ErrOrStderr(), fmt.Sprintf("Creating worktree %s...", pr.Branch))
 	createResult, err := worktree.Create(worktree.CreateParams{
 		ProjectDir:      result.ProjectDir,
 		Branch:          pr.Branch,
@@ -136,8 +137,10 @@ func checkoutPR(cmd *cobra.Command, result configResult, params checkoutPRParams
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "\n✓ Checked out PR #%d (%s) at %s\n", pr.Number, pr.Branch, createResult.Path)
-	fmt.Fprintf(cmd.OutOrStdout(), "  wtm wt go %s\n", pr.Branch)
+	output.Blank(cmd.OutOrStdout())
+	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Checked out PR #%d (%s) at %s", pr.Number, pr.Branch, createResult.Path))
+	output.InfoLine(cmd.OutOrStdout(), "cd", fmt.Sprintf("wtm wt go %s", pr.Branch))
+	output.Blank(cmd.OutOrStdout())
 	return nil
 }
 

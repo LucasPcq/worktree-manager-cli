@@ -6,12 +6,6 @@ type HookEvent string
 const (
 	// HookOnCreate fires after a new worktree is created.
 	HookOnCreate HookEvent = "on_create"
-
-	// HookOnFocus fires when switching to a worktree.
-	HookOnFocus HookEvent = "on_focus"
-
-	// HookOnBlur fires when leaving a worktree.
-	HookOnBlur HookEvent = "on_blur"
 )
 
 // HookCommand represents a hook entry — either a simple command string or a {cmd, cwd} object.

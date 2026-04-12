@@ -3,9 +3,11 @@ package cmd
 
 import (
 	"os"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/commands"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -28,22 +30,60 @@ func init() {
 	rootCmd.AddCommand(shellInitCmd)
 
 	rootCmd.AddCommand(commands.NewResolveCmd())
-	rootCmd.AddCommand(commands.NewDashboardCmd())
+	if domain.FeatureDashboard {
+		rootCmd.AddCommand(commands.NewDashboardCmd())
+	}
 	rootCmd.AddCommand(commands.NewDaemonCmd())
 }
 
 var version = domain.Version
 
 var rootCmd = &cobra.Command{
-	Use:     domain.AppName,
-	Short:   "Worktree Manager — orchestrate git worktrees, AI agents, and team workflows",
-	Version: version,
-	RunE:    commands.RunDashboard,
+	Use:           domain.AppName,
+	Short:         "Worktree Manager — orchestrate git worktrees, AI agents, and team workflows",
+	Version:       version,
+	RunE:          rootRunE,
+	SilenceErrors: true,
+	SilenceUsage:  true,
+}
+
+func rootRunE(cmd *cobra.Command, args []string) error {
+	if domain.FeatureDashboard {
+		return commands.RunDashboard(cmd, args)
+	}
+	return cmd.Help()
+}
+
+func init() {
+	// Override the global help function to add consistent padding around help text.
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		w := cmd.OutOrStdout()
+		output.Blank(w)
+
+		// Temporarily swap the output writer to capture and indent the help text.
+		orig := cmd.OutOrStdout()
+		var buf strings.Builder
+		cmd.SetOut(&buf)
+		defaultHelp(cmd, args)
+		cmd.SetOut(orig)
+
+		for _, line := range strings.Split(buf.String(), "\n") {
+			if line == "" {
+				output.Blank(w)
+			} else {
+				output.Message(w, line)
+			}
+		}
+	})
 }
 
 // Execute runs the root command and exits with the appropriate code.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		output.Blank(os.Stderr)
+		output.Error(os.Stderr, err.Error())
+		output.Blank(os.Stderr)
 		os.Exit(domain.ExitCodeError)
 	}
 }

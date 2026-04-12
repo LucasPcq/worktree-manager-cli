@@ -1,117 +1,254 @@
 package init
 
 import (
-	"errors"
 	"fmt"
 
-	"github.com/charmbracelet/huh"
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// RunProjectWizard presents the project init form pre-populated with detection results.
-// Returns ErrUserAborted if the user presses Ctrl+C.
+// RunProjectWizard presents the project init wizard pre-populated with detection results.
+// Returns ErrUserAborted if the user presses Esc at the first step.
 func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
 	var (
-		basePath       string
-		baseBranch     string
-		envCopyFiles   []string
-		envStrategy    string
-		installCommand string
-		agentChoice    string
+		steps              []components.Step
+		idxBasePath        int
+		idxBaseBranch      int
+		idxEnvStrategy     int
+		idxInstallCommand  int
+		idxEnvFiles        = -1
+		idxMonorepoPackages = -1
+		idxAgent           int
 	)
 
-	envOptions := buildEnvOptions(detection.EnvFiles)
+	stepIdx := 0
 
-	groups := []*huh.Group{
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Worktree directory").
-				Description("Where to store worktrees (relative to repo root)").
-				Placeholder(domain.DefaultBasePath).
-				Value(&basePath),
-			huh.NewInput().
-				Title("Base branch").
-				Description("Default branch for new worktrees").
-				Placeholder(detection.BaseBranch).
-				Value(&baseBranch),
-		),
-		buildEnvGroup(envOptions, &envCopyFiles, &envStrategy),
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Install command").
-				Description("Command to run after creating a worktree (leave empty to skip)").
-				Placeholder(detection.InstallCommand).
-				Value(&installCommand),
-		),
-	}
+	idxBasePath = stepIdx
+	steps = append(steps, components.Step{
+		Name: "Worktree directory",
+		Model: components.NewTextInput(components.NewTextInputParams{
+			Title:       "Worktree directory",
+			Description: "Where to store worktrees (relative to repo root)",
+			Placeholder: domain.DefaultBasePath,
+		}),
+		Summary: textInputSummary,
+	})
+	stepIdx++
 
-	var dockerComposeFile string
-	var enableDockerHooks bool
-	if len(detection.DockerComposeFiles) > 0 {
-		groups = append(groups, buildDockerGroup(detection.DockerComposeFiles, &dockerComposeFile, &enableDockerHooks))
-	}
+	idxBaseBranch = stepIdx
+	steps = append(steps, components.Step{
+		Name: "Base branch",
+		Model: components.NewTextInput(components.NewTextInputParams{
+			Title:       "Base branch",
+			Description: "Default branch for new worktrees",
+			Placeholder: detection.BaseBranch,
+		}),
+		Summary: textInputSummary,
+	})
+	stepIdx++
 
-	var monorepoPackages []string
-	if len(detection.MonorepoPackages) > 0 {
-		groups = append(groups, buildMonorepoGroup(detection.MonorepoPackages, detection.InstallCommand, &monorepoPackages))
-	}
+	idxEnvStrategy = stepIdx
+	steps = append(steps, components.Step{
+		Name: "Env strategy",
+		Model: components.NewSelectList(components.NewSelectListParams{
+			Title:       "Env strategy",
+			Description: "How to provision .env files in new worktrees",
+			Items: []components.SelectItem{
+				{Label: "example — copy .env.example → .env", Value: string(domain.EnvStrategyExample)},
+				{Label: "main — copy .env from main worktree", Value: string(domain.EnvStrategyMain)},
+				{Label: "parent — copy .env from source worktree", Value: string(domain.EnvStrategyParent)},
+			},
+		}),
+		Summary: selectListSummary,
+	})
+	stepIdx++
 
-	groups = append(groups, huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("Project AI agent").
-			Description("Override global default, or inherit").
-			Options(
-				huh.NewOption("Inherit from global config", "inherit"),
-				huh.NewOption("Claude Code", string(domain.AgentClaudeCode)),
-				huh.NewOption("Cursor", string(domain.AgentCursor)),
-				huh.NewOption("None", string(domain.AgentNone)),
-			).
-			Value(&agentChoice),
-	))
+	idxInstallCommand = stepIdx
+	steps = append(steps, components.Step{
+		Name: "Install command",
+		Model: components.NewTextInput(components.NewTextInputParams{
+			Title:       "Install command",
+			Description: "Command to run after creating a worktree (leave empty to skip)",
+			Placeholder: detection.InstallCommand,
+		}),
+		Summary: textInputSummary,
+	})
+	stepIdx++
 
-	form := huh.NewForm(groups...)
-
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return domain.InitProjectAnswers{}, domain.ErrUserAborted
+	if len(detection.EnvFiles) > 0 {
+		idxEnvFiles = stepIdx
+		items := make([]components.MultiSelectItem, 0, len(detection.EnvFiles))
+		for _, f := range detection.EnvFiles {
+			items = append(items, components.MultiSelectItem{
+				Label:    f,
+				Value:    f,
+				Selected: true,
+			})
 		}
-		return domain.InitProjectAnswers{}, err
+		steps = append(steps, components.Step{
+			Name: "Env files",
+			Model: components.NewMultiSelect(components.NewMultiSelectParams{
+				Title:       "Env files to copy",
+				Description: "Detected .env files — select which to copy into new worktrees",
+				Items:       items,
+			}),
+			Summary: multiSelectSummary,
+		})
+		stepIdx++
 	}
 
+	if len(detection.MonorepoPackages) > 0 {
+		idxMonorepoPackages = stepIdx
+		items := make([]components.MultiSelectItem, 0, len(detection.MonorepoPackages))
+		for _, pkg := range detection.MonorepoPackages {
+			items = append(items, components.MultiSelectItem{
+				Label:    pkg,
+				Value:    pkg,
+				Selected: true,
+			})
+		}
+		steps = append(steps, components.Step{
+			Name: "Monorepo packages",
+			Model: components.NewMultiSelect(components.NewMultiSelectParams{
+				Title:       "Monorepo packages",
+				Description: fmt.Sprintf("Run '%s' in selected packages on worktree creation", detection.InstallCommand),
+				Items:       items,
+			}),
+			Summary: multiSelectSummary,
+		})
+		stepIdx++
+	}
+
+	idxAgent = stepIdx
+	steps = append(steps, components.Step{
+		Name: "Project AI agent",
+		Model: components.NewSelectList(components.NewSelectListParams{
+			Title:       "Project AI agent",
+			Description: "Override global default, or inherit",
+			Items: []components.SelectItem{
+				{Label: "Inherit from global config", Value: "inherit"},
+				{Label: "Claude Code", Value: string(domain.AgentClaudeCode)},
+				{Label: "Cursor", Value: string(domain.AgentCursor)},
+				{Label: "None", Value: string(domain.AgentNone)},
+			},
+		}),
+		Summary: selectListSummary,
+	})
+
+	wiz := components.NewWizard(steps)
+	finalModel, err := tea.NewProgram(wiz).Run()
+	if err != nil {
+		return domain.InitProjectAnswers{}, fmt.Errorf("project wizard: %w", err)
+	}
+
+	final, ok := finalModel.(components.WizardModel)
+	if !ok {
+		return domain.InitProjectAnswers{}, domain.ErrUserAborted
+	}
+	if final.Aborted() {
+		return domain.InitProjectAnswers{}, domain.ErrUserAborted
+	}
+
+	return extractProjectAnswers(extractProjectParams{
+		Final:               final,
+		Detection:           detection,
+		IdxBasePath:         idxBasePath,
+		IdxBaseBranch:       idxBaseBranch,
+		IdxEnvStrategy:      idxEnvStrategy,
+		IdxInstallCommand:   idxInstallCommand,
+		IdxEnvFiles:         idxEnvFiles,
+		IdxMonorepoPackages: idxMonorepoPackages,
+		IdxAgent:            idxAgent,
+	})
+}
+
+type extractProjectParams struct {
+	Final               components.WizardModel
+	Detection           domain.InitDetectionResult
+	IdxBasePath         int
+	IdxBaseBranch       int
+	IdxEnvStrategy      int
+	IdxInstallCommand   int
+	IdxEnvFiles         int
+	IdxMonorepoPackages int
+	IdxAgent            int
+}
+
+func extractProjectAnswers(p extractProjectParams) (domain.InitProjectAnswers, error) {
+	finalSteps := p.Final.Steps()
+
+	basePathModel, ok := finalSteps[p.IdxBasePath].Model.(components.TextInputModel)
+	if !ok {
+		return domain.InitProjectAnswers{}, domain.ErrUserAborted
+	}
+	basePath := basePathModel.Value()
 	if basePath == "" {
 		basePath = domain.DefaultBasePath
 	}
-	if baseBranch == "" {
-		baseBranch = detection.BaseBranch
+
+	baseBranchModel, ok := finalSteps[p.IdxBaseBranch].Model.(components.TextInputModel)
+	if !ok {
+		return domain.InitProjectAnswers{}, domain.ErrUserAborted
 	}
+	baseBranch := baseBranchModel.Value()
+	if baseBranch == "" {
+		baseBranch = p.Detection.BaseBranch
+	}
+
+	envStrategyModel, ok := finalSteps[p.IdxEnvStrategy].Model.(components.SelectListModel)
+	if !ok {
+		return domain.InitProjectAnswers{}, domain.ErrUserAborted
+	}
+
+	installCmdModel, ok := finalSteps[p.IdxInstallCommand].Model.(components.TextInputModel)
+	if !ok {
+		return domain.InitProjectAnswers{}, domain.ErrUserAborted
+	}
+	installCommand := installCmdModel.Value()
 	if installCommand == "" {
-		installCommand = detection.InstallCommand
+		installCommand = p.Detection.InstallCommand
+	}
+
+	var envCopyFiles []string
+	if p.IdxEnvFiles >= 0 {
+		msModel, ok := finalSteps[p.IdxEnvFiles].Model.(components.MultiSelectModel)
+		if !ok {
+			return domain.InitProjectAnswers{}, domain.ErrUserAborted
+		}
+		envCopyFiles = msModel.Values()
 	}
 
 	answers := domain.InitProjectAnswers{
 		BasePath:       basePath,
 		BaseBranch:     baseBranch,
 		EnvCopyFiles:   envCopyFiles,
-		EnvStrategy:    domain.EnvStrategy(envStrategy),
+		EnvStrategy:    domain.EnvStrategy(envStrategyModel.Value()),
 		InstallCommand: installCommand,
 	}
 
-	if enableDockerHooks && dockerComposeFile != "" {
-		focusCmd, blurCmd := dockerHookCommands(dockerComposeFile)
-		answers.OnFocusCommands = []string{focusCmd}
-		answers.OnBlurCommands = []string{blurCmd}
-	}
-
-	if len(monorepoPackages) > 0 && installCommand != "" {
-		for _, pkg := range monorepoPackages {
-			answers.OnCreateExtra = append(answers.OnCreateExtra, domain.HookCommand{
-				Cmd: installCommand,
-				Cwd: pkg,
-			})
+	if p.IdxMonorepoPackages >= 0 {
+		msModel, ok := finalSteps[p.IdxMonorepoPackages].Model.(components.MultiSelectModel)
+		if !ok {
+			return domain.InitProjectAnswers{}, domain.ErrUserAborted
+		}
+		monorepoPackages := msModel.Values()
+		if len(monorepoPackages) > 0 && installCommand != "" {
+			for _, pkg := range monorepoPackages {
+				answers.OnCreateExtra = append(answers.OnCreateExtra, domain.HookCommand{
+					Cmd: installCommand,
+					Cwd: pkg,
+				})
+			}
 		}
 	}
 
+	agentModel, ok := finalSteps[p.IdxAgent].Model.(components.SelectListModel)
+	if !ok {
+		return domain.InitProjectAnswers{}, domain.ErrUserAborted
+	}
+	agentChoice := agentModel.Value()
 	if agentChoice != "inherit" {
 		answers.AgentOverride = true
 		answers.Agent = domain.AgentType(agentChoice)
@@ -120,88 +257,46 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 	return answers, nil
 }
 
-func buildEnvOptions(files []string) []huh.Option[string] {
-	options := make([]huh.Option[string], 0, len(files))
-	for _, f := range files {
-		options = append(options, huh.NewOption(f, f).Selected(true))
+func textInputSummary(model any) string {
+	ti, ok := model.(components.TextInputModel)
+	if !ok {
+		return ""
 	}
-	return options
+	v := ti.Value()
+	if v != "" {
+		return v
+	}
+	if p := ti.Placeholder(); p != "" {
+		return p + " (default)"
+	}
+	return "(empty)"
 }
 
-func buildEnvGroup(envOptions []huh.Option[string], envCopyFiles *[]string, envStrategy *string) *huh.Group {
-	fields := []huh.Field{
-		huh.NewSelect[string]().
-			Title("Env strategy").
-			Description("How to provision .env files in new worktrees").
-			Options(
-				huh.NewOption("example — copy .env.example → .env", string(domain.EnvStrategyExample)),
-				huh.NewOption("main — copy .env from main worktree", string(domain.EnvStrategyMain)),
-				huh.NewOption("parent — copy .env from source worktree", string(domain.EnvStrategyParent)),
-			).
-			Value(envStrategy),
+func selectListSummary(model any) string {
+	sl, ok := model.(components.SelectListModel)
+	if !ok {
+		return ""
 	}
-
-	if len(envOptions) > 0 {
-		fields = append(fields,
-			huh.NewMultiSelect[string]().
-				Title("Env files to copy").
-				Description("Detected .env files — select which to copy into new worktrees").
-				Options(envOptions...).
-				Value(envCopyFiles),
-		)
-	}
-
-	return huh.NewGroup(fields...)
+	return sl.Value()
 }
 
-func buildDockerGroup(files []string, selectedFile *string, enableHooks *bool) *huh.Group {
-	fields := []huh.Field{}
-
-	if len(files) > 1 {
-		options := make([]huh.Option[string], 0, len(files))
-		for _, f := range files {
-			options = append(options, huh.NewOption(f, f))
-		}
-		fields = append(fields,
-			huh.NewSelect[string]().
-				Title("Docker Compose file").
-				Description("Multiple docker-compose files detected — select one").
-				Options(options...).
-				Value(selectedFile),
-		)
-	} else {
-		*selectedFile = files[0]
+func multiSelectSummary(model any) string {
+	ms, ok := model.(components.MultiSelectModel)
+	if !ok {
+		return ""
 	}
-
-	fields = append(fields,
-		huh.NewConfirm().
-			Title("Docker hooks").
-			Description("Automatically start/stop Docker when switching worktrees?").
-			Value(enableHooks),
-	)
-
-	return huh.NewGroup(fields...)
+	vals := ms.Values()
+	return fmt.Sprintf("%d files selected", len(vals))
 }
 
-func buildMonorepoGroup(packages []string, installCmd string, selectedPackages *[]string) *huh.Group {
-	options := make([]huh.Option[string], 0, len(packages))
-	for _, pkg := range packages {
-		options = append(options, huh.NewOption(pkg, pkg).Selected(true))
+func confirmSummary(model any) string {
+	cm, ok := model.(components.ConfirmModel)
+	if !ok {
+		return ""
 	}
-
-	return huh.NewGroup(
-		huh.NewMultiSelect[string]().
-			Title("Monorepo packages").
-			Description(fmt.Sprintf("Run '%s' in selected packages on worktree creation", installCmd)).
-			Options(options...).
-			Value(selectedPackages),
-	)
+	if cm.Confirmed() {
+		return "Yes"
+	}
+	return "No"
 }
 
-func dockerHookCommands(composeFile string) (string, string) {
-	if composeFile == "docker-compose.yml" || composeFile == "docker-compose.yaml" {
-		return "docker-compose up -d", "docker-compose down --remove-orphans"
-	}
-	return fmt.Sprintf("docker-compose -f %s up -d", composeFile),
-		fmt.Sprintf("docker-compose -f %s down --remove-orphans", composeFile)
-}

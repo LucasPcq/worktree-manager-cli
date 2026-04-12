@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
@@ -28,7 +29,9 @@ func runStop(cmd *cobra.Command, args []string) error {
 
 	socketPath := process.SocketPath()
 	if !process.IsDaemonRunning(socketPath) {
-		fmt.Fprintln(cmd.OutOrStdout(), "No services running.")
+		output.Blank(cmd.OutOrStdout())
+		output.Message(cmd.OutOrStdout(), "No services running.")
+		output.Blank(cmd.OutOrStdout())
 		return nil
 	}
 
@@ -45,6 +48,8 @@ func runStop(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("stop %s: %s", args[0], resp.Message)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "  ✓ %s stopped\n", args[0])
+	output.Blank(cmd.OutOrStdout())
+	output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", args[0]))
+	output.Blank(cmd.OutOrStdout())
 	return nil
 }

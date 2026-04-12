@@ -1,4 +1,4 @@
-// Package hooks implements the execution engine for on_create, on_focus, and on_blur hooks.
+// Package hooks implements the execution engine for on_create hooks.
 package hooks
 
 import (

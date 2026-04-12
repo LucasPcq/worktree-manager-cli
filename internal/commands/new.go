@@ -4,13 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	newpicker "github.com/LucasPcq/wtm/internal/tui/new"
 )
@@ -49,27 +48,23 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if branch == "" {
-		prompted, promptErr := promptBranchName()
-		if errors.Is(promptErr, domain.ErrUserAborted) {
-			return nil
-		}
-		if promptErr != nil {
-			return promptErr
-		}
-		branch = prompted
-	}
-
 	fromBranch := fromFlag
 	envOverride := envFromFlag
 
 	if fromFlag == "" {
-		wizResult, wizErr := runNewWizard(result.ProjectDir, result.Config)
+		wizResult, wizErr := runNewWizard(runNewWizardParams{
+			ProjectDir:    result.ProjectDir,
+			Config:        result.Config,
+			IncludeBranch: branch == "",
+		})
 		if errors.Is(wizErr, domain.ErrUserAborted) {
 			return nil
 		}
 		if wizErr != nil {
 			return wizErr
+		}
+		if branch == "" {
+			branch = wizResult.BranchName
 		}
 		fromBranch = wizResult.FromBranch
 		if envFromFlag == "" {
@@ -96,50 +91,31 @@ func runNew(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "✓ Created worktree %s at %s\n", branch, createResult.Path)
+	output.Blank(cmd.OutOrStdout())
+	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created worktree %s at %s", branch, createResult.Path))
+	output.Blank(cmd.OutOrStdout())
 
 	return nil
 }
 
-func runNewWizard(projectDir string, cfg domain.Config) (newpicker.WizardResult, error) {
-	branches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: projectDir})
+type runNewWizardParams struct {
+	ProjectDir    string
+	Config        domain.Config
+	IncludeBranch bool
+}
+
+func runNewWizard(params runNewWizardParams) (newpicker.WizardResult, error) {
+	branches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: params.ProjectDir})
 	if err != nil {
 		return newpicker.WizardResult{}, fmt.Errorf("list branches: %w", err)
 	}
 
 	return newpicker.RunWizard(newpicker.WizardParams{
 		Branches:       branches,
-		DefaultBranch:  cfg.Project.Worktrees.BaseBranch,
-		ConfigStrategy: cfg.Project.Env.Strategy,
+		DefaultBranch:  params.Config.Project.Worktrees.BaseBranch,
+		ConfigStrategy: params.Config.Project.Env.Strategy,
+		IncludeBranch:  params.IncludeBranch,
 	})
-}
-
-func promptBranchName() (string, error) {
-	var name string
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Branch name").
-				Description("Name for the new worktree branch").
-				Validate(func(s string) error {
-					if strings.TrimSpace(s) == "" {
-						return fmt.Errorf("branch name is required")
-					}
-					return nil
-				}).
-				Value(&name),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return "", domain.ErrUserAborted
-		}
-		return "", err
-	}
-
-	return strings.TrimSpace(name), nil
 }
 
 func branchInList(branches []string, target string) bool {

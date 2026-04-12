@@ -279,6 +279,72 @@ func TestRemoveWorktree(t *testing.T) {
 	}
 }
 
+func TestIsDirty_CleanRepo(t *testing.T) {
+	dir := initTestRepo(t)
+
+	dirty, err := IsDirty(IsDirtyParams{WorktreePath: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dirty {
+		t.Error("expected clean repo to not be dirty")
+	}
+}
+
+func TestIsDirty_DirtyRepo(t *testing.T) {
+	dir := initTestRepo(t)
+
+	os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("hello"), 0o644)
+
+	dirty, err := IsDirty(IsDirtyParams{WorktreePath: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !dirty {
+		t.Error("expected repo with untracked file to be dirty")
+	}
+}
+
+func TestCurrentBranch(t *testing.T) {
+	dir := initTestRepo(t)
+
+	branch, err := CurrentBranch(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if branch == "" {
+		t.Fatal("expected non-empty branch name")
+	}
+
+	// The default branch created by git init is typically "main" or "master"
+	if branch != "main" && branch != "master" {
+		t.Errorf("expected default branch (main or master), got %s", branch)
+	}
+}
+
+func TestCommitsAhead_NoneAhead(t *testing.T) {
+	dir := initTestRepo(t)
+
+	branch, err := CurrentBranch(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	createBranch(t, dir, "no-ahead")
+
+	count, err := CommitsAhead(CommitsAheadParams{
+		WorktreePath: dir,
+		BaseBranch:   branch,
+		Branch:       "no-ahead",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 commits ahead, got %d", count)
+	}
+}
+
 func TestDeleteLocalBranch(t *testing.T) {
 	dir := initTestRepo(t)
 	createBranch(t, dir, "to-delete")

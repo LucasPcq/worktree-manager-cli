@@ -6,12 +6,13 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/output"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 	prwizard "github.com/LucasPcq/wtm/internal/tui/pr"
 )
 
@@ -57,7 +58,9 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 		Branch:     branch,
 	})
 	if hasPR {
-		fmt.Fprintf(cmd.ErrOrStderr(), "PR already exists for branch %s\n  %s\n\n", branch, prURL)
+		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("PR already exists for branch %s", branch))
+		output.InfoLine(cmd.ErrOrStderr(), "URL", prURL)
+		output.Blank(cmd.ErrOrStderr())
 		return promptOpenExistingPR(prURL)
 	}
 
@@ -66,7 +69,7 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 		ProjectDir: dir,
 		Branch:     branch,
 	}) {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Branch %s has not been pushed to origin.\n", branch)
+		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("Branch %s has not been pushed to origin.", branch))
 		if err := confirmPush(); err != nil {
 			return nil
 		}
@@ -79,7 +82,8 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 		if pushErr != nil {
 			return pushErr
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "✓ Pushed %s to origin\n\n", branch)
+		output.Success(cmd.ErrOrStderr(), fmt.Sprintf("Pushed %s to origin", branch))
+		output.Blank(cmd.ErrOrStderr())
 	}
 
 	// Resolve parameters
@@ -156,26 +160,24 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 	if pr.Draft {
 		state = " (draft)"
 	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "✓ PR #%d created%s\n  %s\n", pr.Number, state, pr.URL)
+	output.Success(cmd.ErrOrStderr(), fmt.Sprintf("PR #%d created%s", pr.Number, state))
+	output.InfoLine(cmd.ErrOrStderr(), "URL", pr.URL)
+	output.Blank(cmd.ErrOrStderr())
 
 	return nil
 }
 
 func promptOpenExistingPR(url string) error {
-	var open bool
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Open in browser?").
-				Value(&open),
-		),
-	)
+	cm := components.NewConfirm(components.NewConfirmParams{
+		Title: "Open in browser?",
+	})
 
-	if err := form.Run(); err != nil {
+	confirmed, err := components.RunStandaloneConfirm(cm)
+	if err != nil {
 		return nil
 	}
 
-	if open {
+	if confirmed {
 		exec.Command("open", url).Run()
 	}
 
@@ -183,20 +185,16 @@ func promptOpenExistingPR(url string) error {
 }
 
 func confirmPush() error {
-	var confirm bool
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Push to origin?").
-				Value(&confirm),
-		),
-	)
+	cm := components.NewConfirm(components.NewConfirmParams{
+		Title: "Push to origin?",
+	})
 
-	if err := form.Run(); err != nil {
+	confirmed, err := components.RunStandaloneConfirm(cm)
+	if err != nil {
 		return domain.ErrUserAborted
 	}
 
-	if !confirm {
+	if !confirmed {
 		return domain.ErrUserAborted
 	}
 
