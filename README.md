@@ -330,31 +330,28 @@ Behavior:
 
 ## Machine-readable output (`--output json`)
 
-Data-returning commands support `--output json` for scripting and LLM agents (Claude Code, Cursor, etc.). JSON is pretty-printed, written to stdout, with `snake_case` field names. Human messages stay on stderr.
+Every data-returning command supports `--output json` for scripting and LLM agents (Claude Code, Cursor, …). JSON is pretty-printed on stdout with `snake_case` fields; human messages stay on stderr; exit codes are unchanged.
 
-| Command | Payload |
-|---|---|
-| `wt list --output json` | Array of `{branch, path, is_parent, is_dirty, commits_ahead, created_at, pr, services}` |
-| `wt create --output json` | `{branch, path, metadata}` |
-| `wt clean <branch> --force --output json` | `{branch, path}` |
-| `pr list --output json` | Array of `{number, title, author, branch, state, draft, created_at, url, ci_status, reviews, ...}` |
-| `pr create --output json` | Same `PRInfo` object as `pr list` entries |
-| `pr checkout <n> --output json` | `{number, branch, path}` |
-| `svc list --output json` | `{services: [...], profiles: [...]}` from `services.toml` |
-| `svc ps --output json` | Array of `{name, status, pid, work_dir}` (runtime state from daemon) |
-| `svc up [profile] --output json` | Array of `{name, status, message?}` (`status`: `started` or `error`) |
-| `svc down [profile] --output json` | Array of `{name, status, message?}` (`status`: `stopped` or `error`) |
-| `svc start <svc> --output json` | `{name, status: "started"}` |
-| `svc stop <svc> --output json` | `{name, status: "stopped"}` |
+**The payload *is* the schema** — the shape mirrors the command's Go domain type and stays stable. To discover the exact fields of any command, just run it with the flag:
 
-Notes:
-- `wt clean --output json` requires `--force` (no confirmation can run in JSON mode).
-- Exit codes are unaffected: `0` on success, non-zero on error. Error details still go to stderr as text.
+```bash
+wtm wt list --output json
+wtm pr list --output json
+wtm svc list --output json
+```
 
-Example:
+Supported commands:
+
+- `wt list`, `wt create`, `wt clean` (requires `--force`)
+- `pr list`, `pr create`, `pr checkout`
+- `svc list`, `svc ps`, `svc up`, `svc down`, `svc start`, `svc stop`
+
+Example — pipe into `jq`:
+
 ```bash
 wtm wt list --output json | jq '.[] | select(.is_dirty).branch'
 wtm pr list --output json | jq '.[].number'
+wtm svc ps --output json | jq '.[] | select(.status=="running").name'
 ```
 
 ---
