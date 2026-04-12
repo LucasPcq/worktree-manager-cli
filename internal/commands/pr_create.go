@@ -45,15 +45,6 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// Auth check (triggers refresh if needed)
-	if _, err := ghservice.ResolveAuth(); err != nil {
-		if errors.Is(err, domain.ErrAuthNotConfigured) || errors.Is(err, domain.ErrAuthNeedsReauth) {
-			fmt.Fprintln(cmd.ErrOrStderr(), err.Error())
-			return nil
-		}
-		return fmt.Errorf("load auth: %w", err)
-	}
-
 	// Resolve current branch from actual cwd (not project root)
 	branch, err := infra.CurrentBranch(cwd)
 	if err != nil {
