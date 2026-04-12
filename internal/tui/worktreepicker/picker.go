@@ -11,6 +11,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/service/process"
+	"github.com/LucasPcq/wtm/internal/styles"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
@@ -29,6 +30,11 @@ func Run(params RunParams) (domain.WorktreeStatus, error) {
 	if params.Title == "" {
 		params.Title = "Select a worktree"
 	}
+
+	// This picker is commonly invoked from `wtm resolve` through a shell
+	// wrapper that captures stdout. Force lipgloss to detect color support
+	// against stderr (the TTY) so selected rows keep their accent styling.
+	styles.UseRendererOn(os.Stderr)
 
 	items := make([]components.SelectItem, 0, len(params.Statuses))
 	for i, s := range params.Statuses {

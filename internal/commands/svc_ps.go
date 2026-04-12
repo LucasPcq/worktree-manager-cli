@@ -40,7 +40,9 @@ func runSvcPs(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(services) == 0 {
+		output.Blank(cmd.OutOrStdout())
 		output.Message(cmd.OutOrStdout(), "No services running.")
+		output.Blank(cmd.OutOrStdout())
 		return nil
 	}
 

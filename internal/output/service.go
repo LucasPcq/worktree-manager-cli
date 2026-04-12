@@ -116,7 +116,7 @@ func FormatServicesConfig(cfg domain.ServicesConfig) string {
 // FormatRunningServices renders a table of running (or recently running) services.
 func FormatRunningServices(services []process.ServiceInfo) string {
 	if len(services) == 0 {
-		return Indent + "No services running.\n"
+		return "\n" + Indent + "No services running.\n\n"
 	}
 
 	nameW, statusW, pidW := len("NAME"), len("STATUS"), len("PID")

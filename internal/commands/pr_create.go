@@ -59,10 +59,14 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 		Branch:     branch,
 	})
 	if hasPR {
+		output.Blank(cmd.ErrOrStderr())
 		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("PR already exists for branch %s", branch))
 		output.InfoLine(cmd.ErrOrStderr(), "URL", prURL)
+		if err := promptOpenExistingPR(prURL); err != nil {
+			return err
+		}
 		output.Blank(cmd.ErrOrStderr())
-		return promptOpenExistingPR(prURL)
+		return nil
 	}
 
 	// Check if branch is pushed

@@ -74,7 +74,8 @@ func ensureGlobalConfig(cmd *cobra.Command) error {
 }
 
 func createProjectConfig(cmd *cobra.Command, dir string) error {
-	output.Message(cmd.OutOrStdout(), "No .wtm/config.toml found. Let's initialize this project.")
+	output.Blank(cmd.OutOrStdout())
+	output.Intro(cmd.OutOrStdout(), "No .wtm/config.toml found. Let's initialize this project.")
 	output.Blank(cmd.OutOrStdout())
 
 	detection := buildDetectionResult(dir)
@@ -94,7 +95,6 @@ func createProjectConfig(cmd *cobra.Command, dir string) error {
 		return fmt.Errorf("write project config: %w", err)
 	}
 
-	output.Blank(cmd.OutOrStdout())
 	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s/%s", domain.ProjectDirName, domain.ConfigFileName))
 
 	if len(answers.DockerComposeFiles) > 0 {
@@ -112,6 +112,7 @@ func createProjectConfig(cmd *cobra.Command, dir string) error {
 		}
 	}
 
+	output.Blank(cmd.OutOrStdout())
 	return nil
 }
 

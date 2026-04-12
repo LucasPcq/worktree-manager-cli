@@ -225,11 +225,11 @@ func findOtherRunningServices(client *process.Client, currentDir string) (map[st
 }
 
 func promptConcurrentServices(cmd *cobra.Command, client *process.Client, otherWorktrees map[string]bool, otherNames map[string][]string) error {
+	output.Blank(cmd.ErrOrStderr())
 	for dir, names := range otherNames {
 		short := filepath.Base(dir)
 		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("Services running on %s (%s)", short, strings.Join(names, ", ")))
 	}
-	output.Blank(cmd.ErrOrStderr())
 
 	items := []components.SelectItem{
 		{Label: "Yes, stop and start here", Value: "yes"},
