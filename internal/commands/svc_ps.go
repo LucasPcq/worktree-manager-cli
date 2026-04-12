@@ -69,6 +69,8 @@ func execSvcPsAction(cmd *cobra.Command, pick svcpicker.PsPickerResult) error {
 		args = []string{"svc", "logs", pick.Name}
 	case svcpicker.ActionPsRestart:
 		args = []string{"svc", "start", pick.Name}
+	case svcpicker.ActionPsStopAll:
+		args = []string{"svc", "down", "--all"}
 	default:
 		return nil
 	}

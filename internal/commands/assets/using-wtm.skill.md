@@ -41,7 +41,7 @@ Services are defined in `.wtm/services.toml` and executed by a background daemon
 - **`wtm svc list --output json`** — config introspection (what's declared).
 - **`wtm svc ps --output json`** — runtime state (what's running).
 - **`wtm svc up [profile] --output json`** — start all services in a profile. No arg → default profile. Flags: `--exclusive` (stop services on other worktrees first), `--parallel` (don't stop anything).
-- **`wtm svc down [profile] --output json`** — stop a profile. No arg → stop everything.
+- **`wtm svc down [profile] --output json`** — stop services in the **current worktree** (or a specific profile). Other worktrees are never touched. Add `--all` to stop services across every worktree.
 - **`wtm svc start <service> --output json`** — start one service.
 - **`wtm svc stop <service> --output json`** — stop one service.
 - **`wtm svc logs [service]`** — stream logs. No `--output json` here: logs are a raw text stream (already machine-readable).

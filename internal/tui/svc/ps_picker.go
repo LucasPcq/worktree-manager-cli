@@ -15,7 +15,12 @@ const (
 	ActionPsStop    = "stop"
 	ActionPsLogs    = "logs"
 	ActionPsRestart = "restart"
+	ActionPsStopAll = "stop-all"
 )
+
+// sentinelStopAll is the item value used to signal the global stop-all entry.
+// Distinct from any real service name.
+const sentinelStopAll = "__wtm_stop_all__"
 
 // PsPickerResult describes the selected running service and chosen action.
 type PsPickerResult struct {
@@ -30,7 +35,7 @@ func RunPsPicker(services []process.ServiceInfo) (PsPickerResult, error) {
 		return PsPickerResult{}, domain.ErrUserAborted
 	}
 
-	items := make([]components.SelectItem, 0, len(services))
+	items := make([]components.SelectItem, 0, len(services)+2)
 	for _, s := range services {
 		badges := []components.Badge{statusBadge(s.Status)}
 		if s.WorkDir != "" {
@@ -45,6 +50,14 @@ func RunPsPicker(services []process.ServiceInfo) (PsPickerResult, error) {
 			Badges: badges,
 		})
 	}
+	items = append(items,
+		components.SelectItem{Separator: true},
+		components.SelectItem{
+			Label:  "Stop all running services",
+			Value:  sentinelStopAll,
+			Danger: true,
+		},
+	)
 
 	sl := components.NewSelectList(components.NewSelectListParams{
 		Title: "Running services",
@@ -56,6 +69,10 @@ func RunPsPicker(services []process.ServiceInfo) (PsPickerResult, error) {
 			return PsPickerResult{}, domain.ErrUserAborted
 		}
 		return PsPickerResult{}, err
+	}
+
+	if selectedName == sentinelStopAll {
+		return PsPickerResult{Action: ActionPsStopAll}, nil
 	}
 
 	selected := findService(services, selectedName)

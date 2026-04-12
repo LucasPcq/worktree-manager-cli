@@ -258,12 +258,15 @@ If services are already running on another worktree, `svc up` prompts you to sto
 
 #### `wtm svc down [profile]`
 
-Stop a service profile.
+Stop services running in the **current worktree**. Services in other worktrees are never touched unless you pass `--all`.
 
 ```bash
-wtm svc down            # stop all running services
-wtm svc down backend    # stop a specific profile
+wtm svc down            # stop services in this worktree
+wtm svc down backend    # stop a specific profile (this worktree)
+wtm svc down --all      # stop every running service across all worktrees
 ```
+
+`svc ps` also offers a "Stop all running services" entry at the bottom of its picker, which shells out to `svc down --all`.
 
 #### `wtm svc start <service>`
 

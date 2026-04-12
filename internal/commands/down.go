@@ -22,11 +22,18 @@ func newSvcDownCmd() *cobra.Command {
 		RunE:  runDown,
 	}
 	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	cmd.Flags().Bool(domain.FlagAll, false, "Stop services across every worktree (bypasses per-worktree scoping)")
 	return cmd
 }
 
 func runDown(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	all, _ := cmd.Flags().GetBool(domain.FlagAll)
+
+	if all && len(args) > 0 {
+		return fmt.Errorf("--all cannot be combined with a profile argument")
+	}
+
 	socketPath := process.SocketPath()
 
 	if !process.IsDaemonRunning(socketPath) {
@@ -64,15 +71,14 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 		services := svcCfg.ProfileServices(profile)
 		results := make([]output.ServiceActionResult, 0, len(services))
-		if format != domain.OutputJSON {
-			output.Blank(cmd.OutOrStdout())
-		}
 		for _, svc := range services {
+			stopSpinner := startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s...", svc.Name))
 			resp, sendErr := client.Send(process.Request{
 				Action:  process.ActionStop,
 				Name:    svc.Name,
 				WorkDir: dir,
 			})
+			stopSpinner()
 			if sendErr != nil {
 				results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionError, Message: sendErr.Error()})
 				if format != domain.OutputJSON {
@@ -99,15 +105,18 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	dir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("get working directory: %w", err)
+	req := process.Request{Action: process.ActionStopAll}
+	if !all {
+		dir, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("get working directory: %w", err)
+		}
+		req.WorkDir = dir
 	}
 
-	resp, err := client.Send(process.Request{
-		Action:  process.ActionStopAll,
-		WorkDir: dir,
-	})
+	stopSpinner := startSpinner(cmd.ErrOrStderr(), "Stopping services...")
+	resp, err := client.Send(req)
+	stopSpinner()
 	if err != nil {
 		return fmt.Errorf("stop all services: %w", err)
 	}
@@ -123,13 +132,20 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return output.WriteServiceResultsJSON(cmd.OutOrStdout(), stopped)
 	}
 
-	output.Blank(cmd.OutOrStdout())
 	if len(resp.Services) == 0 {
-		output.Message(cmd.OutOrStdout(), "No services running in this worktree.")
-	} else {
-		for _, svc := range resp.Services {
-			output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", svc.Name))
+		if all {
+			output.Message(cmd.OutOrStdout(), "No services running.")
+		} else {
+			output.Message(cmd.OutOrStdout(), "No services running in this worktree.")
 		}
+		output.Blank(cmd.OutOrStdout())
+		return nil
+	}
+	for i, svc := range resp.Services {
+		if i > 0 {
+			output.Blank(cmd.OutOrStdout())
+		}
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", svc.Name))
 	}
 	output.Blank(cmd.OutOrStdout())
 	return nil

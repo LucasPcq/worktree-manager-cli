@@ -48,7 +48,6 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load services config: %w", err)
 	}
 
-	output.Blank(cmd.ErrOrStderr())
 	for _, warning := range config.ValidateServices(svcCfg) {
 		output.Warning(cmd.ErrOrStderr(), warning)
 	}
