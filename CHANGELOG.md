@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.1 — Migrate GitHub integration to gh CLI
+
+### Breaking changes
+
+- **`wtm auth` supprimé** — Les commandes `wtm auth login/status/logout` n'existent plus.
+  L'authentification GitHub est désormais gérée par le `gh` CLI.
+  Installez-le et connectez-vous avec `gh auth login` : [cli.github.com](https://cli.github.com).
+- **`WTM_GITHUB_TOKEN` non supporté** — Utilisez `GH_TOKEN` à la place (nativement supporté par `gh`).
+
+### Improvements
+
+- Suppression de toute la couche auth custom (OAuth Device Flow, token storage, auto-refresh) au profit du `gh` CLI.
+- `wtm pr list`, `wtm pr create`, `wtm pr checkout` et le dashboard PR passent par `gh` en subprocess.
+- Le README documente désormais les dépendances (`git` requis, `gh` recommandé).
+
+---
+
 ## v0.4.0 — GitHub Integration & PR Management
 
 ### New features
