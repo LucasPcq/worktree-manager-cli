@@ -23,8 +23,6 @@ on_create = [
   "pnpm install",
   { cmd = "pnpm install", cwd = "apps/api" },
 ]
-on_focus = ["docker-compose up -d"]
-on_blur  = ["docker-compose down --remove-orphans"]
 
 [github]
 auto_draft  = true

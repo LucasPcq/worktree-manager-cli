@@ -19,8 +19,6 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		idxEnvStrategy     int
 		idxInstallCommand  int
 		idxEnvFiles        = -1
-		idxDockerCompose   = -1
-		idxDockerHooks     = -1
 		idxMonorepoPackages = -1
 		idxAgent           int
 	)
@@ -101,38 +99,6 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		stepIdx++
 	}
 
-	if len(detection.DockerComposeFiles) > 1 {
-		idxDockerCompose = stepIdx
-		items := make([]components.SelectItem, 0, len(detection.DockerComposeFiles))
-		for _, f := range detection.DockerComposeFiles {
-			items = append(items, components.SelectItem{Label: f, Value: f})
-		}
-		steps = append(steps, components.Step{
-			Name: "Docker Compose file",
-			Model: components.NewSelectList(components.NewSelectListParams{
-				Title:       "Docker Compose file",
-				Description: "Multiple docker-compose files detected — select one",
-				Items:       items,
-			}),
-			Summary: selectListSummary,
-		})
-		stepIdx++
-	}
-
-	if len(detection.DockerComposeFiles) > 0 {
-		idxDockerHooks = stepIdx
-		steps = append(steps, components.Step{
-			Name: "Docker hooks",
-			Model: components.NewConfirm(components.NewConfirmParams{
-				Title:       "Docker hooks",
-				Description: "Automatically start/stop Docker when switching worktrees?",
-				DefaultYes:  true,
-			}),
-			Summary: confirmSummary,
-		})
-		stepIdx++
-	}
-
 	if len(detection.MonorepoPackages) > 0 {
 		idxMonorepoPackages = stepIdx
 		items := make([]components.MultiSelectItem, 0, len(detection.MonorepoPackages))
@@ -193,8 +159,6 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		IdxEnvStrategy:      idxEnvStrategy,
 		IdxInstallCommand:   idxInstallCommand,
 		IdxEnvFiles:         idxEnvFiles,
-		IdxDockerCompose:    idxDockerCompose,
-		IdxDockerHooks:      idxDockerHooks,
 		IdxMonorepoPackages: idxMonorepoPackages,
 		IdxAgent:            idxAgent,
 	})
@@ -208,8 +172,6 @@ type extractProjectParams struct {
 	IdxEnvStrategy      int
 	IdxInstallCommand   int
 	IdxEnvFiles         int
-	IdxDockerCompose    int
-	IdxDockerHooks      int
 	IdxMonorepoPackages int
 	IdxAgent            int
 }
@@ -264,29 +226,6 @@ func extractProjectAnswers(p extractProjectParams) (domain.InitProjectAnswers, e
 		EnvCopyFiles:   envCopyFiles,
 		EnvStrategy:    domain.EnvStrategy(envStrategyModel.Value()),
 		InstallCommand: installCommand,
-	}
-
-	var dockerComposeFile string
-	if p.IdxDockerCompose >= 0 {
-		dcModel, ok := finalSteps[p.IdxDockerCompose].Model.(components.SelectListModel)
-		if !ok {
-			return domain.InitProjectAnswers{}, domain.ErrUserAborted
-		}
-		dockerComposeFile = dcModel.Value()
-	} else if len(p.Detection.DockerComposeFiles) == 1 {
-		dockerComposeFile = p.Detection.DockerComposeFiles[0]
-	}
-
-	if p.IdxDockerHooks >= 0 {
-		confirmModel, ok := finalSteps[p.IdxDockerHooks].Model.(components.ConfirmModel)
-		if !ok {
-			return domain.InitProjectAnswers{}, domain.ErrUserAborted
-		}
-		if confirmModel.Confirmed() && dockerComposeFile != "" {
-			focusCmd, blurCmd := dockerHookCommands(dockerComposeFile)
-			answers.OnFocusCommands = []string{focusCmd}
-			answers.OnBlurCommands = []string{blurCmd}
-		}
 	}
 
 	if p.IdxMonorepoPackages >= 0 {
@@ -361,10 +300,3 @@ func confirmSummary(model any) string {
 	return "No"
 }
 
-func dockerHookCommands(composeFile string) (string, string) {
-	if composeFile == "docker-compose.yml" || composeFile == "docker-compose.yaml" {
-		return "docker-compose up -d", "docker-compose down --remove-orphans"
-	}
-	return fmt.Sprintf("docker-compose -f %s up -d", composeFile),
-		fmt.Sprintf("docker-compose -f %s down --remove-orphans", composeFile)
-}

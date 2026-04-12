@@ -66,13 +66,14 @@ const (
 	InstallCommandPip  = "pip install -r requirements.txt"
 
 	// Flag names.
-	FlagFrom    = "from"
-	FlagEnvFrom = "env-from"
-	FlagForce   = "force"
-	FlagOff     = "off"
-	FlagTitle = "title"
-	FlagBase    = "base"
-	FlagDraft   = "draft"
+	FlagFrom      = "from"
+	FlagEnvFrom   = "env-from"
+	FlagForce     = "force"
+	FlagTitle     = "title"
+	FlagBase      = "base"
+	FlagDraft     = "draft"
+	FlagExclusive = "exclusive"
+	FlagParallel  = "parallel"
 
 	// Metadata files created inside each worktree's .wtm/ directory.
 	MetaFileName    = "meta.json"

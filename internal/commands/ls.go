@@ -15,7 +15,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/process"
-	"github.com/LucasPcq/wtm/internal/service/state"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
@@ -49,8 +48,6 @@ func runLs(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list worktrees: %w", err)
 	}
 
-	currentState, _ := state.Load()
-
 	// Load PRs (graceful degradation)
 	prs := loadPRsGraceful(result.ProjectDir)
 
@@ -61,7 +58,7 @@ func runLs(cmd *cobra.Command, _ []string) error {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		fmt.Fprint(cmd.OutOrStdout(), output.FormatWorktreeList(output.FormatWorktreeListParams{
 			Statuses:     statuses,
-			ActiveBranch: currentState.ActiveWorktree,
+			ActiveBranch: "",
 			PRInfos:      prs,
 			Services:     services,
 		}))
@@ -74,7 +71,7 @@ func runLs(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	selected, action, err := pickWorktreeAndAction(statuses, currentState.ActiveWorktree, prs, services)
+	selected, action, err := pickWorktreeAndAction(statuses, "", prs, services)
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
 	}
@@ -110,9 +107,8 @@ func loadServicesGraceful() []process.ServiceInfo {
 }
 
 const (
-	lsActionGo           = "go"
-	lsActionFocus        = "focus"
-	lsActionServicesUp   = "services-up"
+	lsActionGo         = "go"
+	lsActionServicesUp = "services-up"
 	lsActionServicesDown = "services-down"
 	lsActionLogs         = "logs"
 	lsActionClean        = "clean"
@@ -144,7 +140,6 @@ func pickWorktreeAndAction(
 
 	actionItems := []components.SelectItem{
 		{Label: "Go (cd to worktree)", Value: lsActionGo},
-		{Label: "Focus (swap env)", Value: lsActionFocus},
 		{Label: "Start profile", Value: lsActionServicesUp},
 		{Label: "Stop profile", Value: lsActionServicesDown},
 		{Label: "View logs", Value: lsActionLogs},
@@ -263,13 +258,6 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 	switch action {
 	case lsActionGo:
 		cmd := exec.Command(bin, "wt", "go", selected.Branch)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-
-	case lsActionFocus:
-		cmd := exec.Command(bin, "wt", "focus", selected.Branch)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

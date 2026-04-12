@@ -40,7 +40,12 @@ func runDown(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("get working directory: %w", err)
 		}
 
-		svcCfg, err := config.LoadServices(dir)
+		root, err := projectRoot(dir)
+		if err != nil {
+			return err
+		}
+
+		svcCfg, err := config.LoadServices(root)
 		if err != nil {
 			return fmt.Errorf("load services config: %w", err)
 		}

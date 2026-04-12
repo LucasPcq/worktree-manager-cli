@@ -62,7 +62,7 @@ wtm init
 wtm wt list                        # list all worktrees
 wtm wt create feature/my-feature   # create a worktree
 wtm wt go feature/my-feature       # navigate to it
-wtm wt focus feature/my-feature    # start the environment
+wtm svc up                         # start services
 wtm wt clean feature/my-feature    # clean up when done
 ```
 
@@ -152,7 +152,7 @@ Output:
   feature-payment                        clean   1 commit ahead
 ```
 
-In an interactive terminal, shows a picker with actions: go, focus, start profile, stop profile, view logs, clean.
+In an interactive terminal, shows a picker with actions: go, start profile, stop profile, view logs, clean.
 
 #### `wtm wt go [branch]`
 
@@ -165,26 +165,6 @@ wtm wt go auth             # substring match
 ```
 
 Without shell integration, `wtm wt go` cannot change your working directory. The shell wrapper intercepts `wtm wt go` and performs the `cd` in your current shell.
-
-#### `wtm wt focus [branch]`
-
-Switch the active worktree and run lifecycle hooks.
-
-```bash
-wtm wt focus feature/auth   # runs on_blur on previous, on_focus on target
-wtm wt focus                # interactive picker
-wtm wt focus --off          # stop everything — runs on_blur and clears state
-```
-
-`focus` and `go` are independent and composable:
-- `wtm wt go` changes your directory
-- `wtm wt focus` manages your environment (starts/stops services via hooks)
-- Use both: `wtm wt focus feature/auth && wtm wt go feature/auth`
-
-**Flags:**
-| Flag | Description |
-|---|---|
-| `--off` | Run blur hooks on active worktree and clear state |
 
 #### `wtm wt clean [branch]`
 
@@ -332,16 +312,6 @@ on_create = [
   { cmd = "pnpm install", cwd = "apps/api" },
 ]
 
-# Commands run when switching to this worktree (wtm focus)
-on_focus = [
-  "docker-compose up -d",
-]
-
-# Commands run when leaving this worktree (wtm focus --off or switching)
-on_blur = [
-  "docker-compose down --remove-orphans",
-]
-
 [github]
 auto_draft = false
 base_branch = "main"
@@ -458,12 +428,6 @@ agent = "claude-code"  # claude-code | cursor | none
 ```
 
 The project `.wtm/config.toml` can override the agent setting. Shell is always global.
-
----
-
-## State
-
-`wtm` tracks the active worktree in `~/.config/wtm/state.json`. This file is managed automatically by `wtm wt focus` — don't edit it manually.
 
 ---
 

@@ -1,9 +1,10 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,13 +17,18 @@ import (
 
 // newSvcUpCmd creates the wtm svc up subcommand.
 func newSvcUpCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "up [profile]",
 		Short: "Start a service profile",
 		Long:  "Start all services in a profile.\nWithout arguments, starts the default profile (or shows a picker if multiple exist).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  runUp,
 	}
+
+	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop services on other worktrees before starting")
+	cmd.Flags().Bool(domain.FlagParallel, false, "Start without stopping other worktrees")
+
+	return cmd
 }
 
 func runUp(cmd *cobra.Command, args []string) error {
@@ -31,11 +37,12 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	if _, ok := loadConfig(cmd, dir); !ok {
+	result, ok := loadConfig(cmd, dir)
+	if !ok {
 		return nil
 	}
 
-	svcCfg, err := config.LoadServices(dir)
+	svcCfg, err := config.LoadServices(result.ProjectDir)
 	if err != nil {
 		return fmt.Errorf("load services config: %w", err)
 	}
@@ -56,6 +63,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	client := process.NewClient(socketPath)
+
+	if err := handleConcurrentServices(cmd, client, dir); err != nil {
+		return err
+	}
 
 	for i := range services {
 		svc := services[i]
@@ -107,6 +118,8 @@ func resolveProfileServices(args []string, svcCfg domain.ServicesConfig) ([]doma
 }
 
 func pickProfile(svcCfg domain.ServicesConfig) (domain.ProfileConfig, error) {
+	defaultProfile, _ := svcCfg.DefaultProfile()
+
 	items := make([]components.SelectItem, 0, len(svcCfg.Profiles))
 	for _, p := range svcCfg.Profiles {
 		label := p.Name
@@ -122,13 +135,12 @@ func pickProfile(svcCfg domain.ServicesConfig) (domain.ProfileConfig, error) {
 		Items:       items,
 	})
 
-	selected, err := components.RunStandaloneSelect(sl)
+	selected := defaultProfile.Name
+	result, err := components.RunStandaloneSelect(sl)
 	if err != nil {
-		if errors.Is(err, components.ErrAborted) {
-			return domain.ProfileConfig{}, domain.ErrUserAborted
-		}
-		return domain.ProfileConfig{}, err
+		return domain.ProfileConfig{}, domain.ErrUserAborted
 	}
+	selected = result
 
 	profile, ok := svcCfg.FindProfile(selected)
 	if !ok {
@@ -148,3 +160,96 @@ func joinServiceNames(names []string) string {
 	}
 	return result
 }
+
+// handleConcurrentServices checks if services are running on other worktrees
+// and handles the exclusive/parallel decision.
+func handleConcurrentServices(cmd *cobra.Command, client *process.Client, currentDir string) error {
+	exclusiveFlag, _ := cmd.Flags().GetBool(domain.FlagExclusive)
+	parallelFlag, _ := cmd.Flags().GetBool(domain.FlagParallel)
+
+	if parallelFlag {
+		return nil
+	}
+
+	otherWorktrees, otherNames := findOtherRunningServices(client, currentDir)
+	if len(otherWorktrees) == 0 {
+		return nil
+	}
+
+	if exclusiveFlag {
+		return stopOtherServices(client, otherWorktrees, cmd)
+	}
+
+	return promptConcurrentServices(cmd, client, otherWorktrees, otherNames)
+}
+
+func findOtherRunningServices(client *process.Client, currentDir string) (map[string]bool, map[string][]string) {
+	resp, err := client.Send(process.Request{Action: process.ActionList})
+	if err != nil {
+		return nil, nil
+	}
+
+	otherWorktrees := make(map[string]bool)
+	otherNames := make(map[string][]string)
+
+	for _, svc := range resp.Services {
+		if svc.Status != domain.ServiceStatusRunning {
+			continue
+		}
+		if svc.WorkDir == currentDir {
+			continue
+		}
+		otherWorktrees[svc.WorkDir] = true
+		otherNames[svc.WorkDir] = append(otherNames[svc.WorkDir], svc.Name)
+	}
+
+	return otherWorktrees, otherNames
+}
+
+func promptConcurrentServices(cmd *cobra.Command, client *process.Client, otherWorktrees map[string]bool, otherNames map[string][]string) error {
+	for dir, names := range otherNames {
+		short := filepath.Base(dir)
+		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("Services running on %s (%s)", short, strings.Join(names, ", ")))
+	}
+	output.Blank(cmd.ErrOrStderr())
+
+	items := []components.SelectItem{
+		{Label: "Yes, stop and start here", Value: "yes"},
+		{Label: "No, run in parallel", Value: "no"},
+	}
+
+	sl := components.NewSelectList(components.NewSelectListParams{
+		Title: "Stop other services before starting?",
+		Items: items,
+	})
+
+	choice, err := components.RunStandaloneSelect(sl)
+	if err != nil {
+		return domain.ErrUserAborted
+	}
+
+	if choice == "yes" {
+		return stopOtherServices(client, otherWorktrees, cmd)
+	}
+	return nil
+}
+
+func stopOtherServices(client *process.Client, worktrees map[string]bool, cmd *cobra.Command) error {
+	for dir := range worktrees {
+		resp, err := client.Send(process.Request{
+			Action:  process.ActionStopAll,
+			WorkDir: dir,
+		})
+		if err != nil {
+			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("stop services in %s: %v", filepath.Base(dir), err))
+			continue
+		}
+		if resp.Status == process.StatusError {
+			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("stop services in %s: %s", filepath.Base(dir), resp.Message))
+			continue
+		}
+		output.Success(cmd.ErrOrStderr(), fmt.Sprintf("Stopped services in %s", filepath.Base(dir)))
+	}
+	return nil
+}
+

@@ -111,17 +111,11 @@ func TestUnmarshalHookCommands_EmptyArray(t *testing.T) {
 	}
 }
 
-func TestDecodeHooksConfig_AllThreeHookTypes(t *testing.T) {
+func TestDecodeHooksConfig_OnCreateOnly(t *testing.T) {
 	raw := rawHooksConfig{
 		OnCreate: []interface{}{
 			"npm install",
 			map[string]interface{}{"cmd": "cp .env.example .env", "cwd": "."},
-		},
-		OnFocus: []interface{}{
-			"echo focused",
-		},
-		OnBlur: []interface{}{
-			map[string]interface{}{"cmd": "cleanup", "continue_on_error": true},
 		},
 	}
 
@@ -133,23 +127,11 @@ func TestDecodeHooksConfig_AllThreeHookTypes(t *testing.T) {
 	if len(got.OnCreate) != 2 {
 		t.Errorf("OnCreate: expected 2 hooks, got %d", len(got.OnCreate))
 	}
-	if len(got.OnFocus) != 1 {
-		t.Errorf("OnFocus: expected 1 hook, got %d", len(got.OnFocus))
-	}
-	if len(got.OnBlur) != 1 {
-		t.Errorf("OnBlur: expected 1 hook, got %d", len(got.OnBlur))
-	}
 
 	if got.OnCreate[0].Cmd != "npm install" {
 		t.Errorf("OnCreate[0].Cmd = %q, want %q", got.OnCreate[0].Cmd, "npm install")
 	}
 	if got.OnCreate[1].Cwd != "." {
 		t.Errorf("OnCreate[1].Cwd = %q, want %q", got.OnCreate[1].Cwd, ".")
-	}
-	if got.OnFocus[0].Cmd != "echo focused" {
-		t.Errorf("OnFocus[0].Cmd = %q, want %q", got.OnFocus[0].Cmd, "echo focused")
-	}
-	if !got.OnBlur[0].ContinueOnError {
-		t.Error("OnBlur[0].ContinueOnError = false, want true")
 	}
 }

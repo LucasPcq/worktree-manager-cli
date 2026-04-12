@@ -28,11 +28,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	if _, ok := loadConfig(cmd, dir); !ok {
+	result, ok := loadConfig(cmd, dir)
+	if !ok {
 		return nil
 	}
 
-	svcCfg, err := config.LoadServices(dir)
+	svcCfg, err := config.LoadServices(result.ProjectDir)
 	if err != nil {
 		return fmt.Errorf("load services config: %w", err)
 	}
