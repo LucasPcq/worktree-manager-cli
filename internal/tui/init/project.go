@@ -13,14 +13,15 @@ import (
 // Returns ErrUserAborted if the user presses Esc at the first step.
 func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
 	var (
-		steps              []components.Step
-		idxBasePath        int
-		idxBaseBranch      int
-		idxEnvStrategy     int
-		idxInstallCommand  int
-		idxEnvFiles        = -1
+		steps               []components.Step
+		idxBasePath         int
+		idxBaseBranch       int
+		idxEnvStrategy      int
+		idxInstallCommand   int
+		idxEnvFiles         = -1
 		idxMonorepoPackages = -1
-		idxAgent           int
+		idxDockerCompose    = -1
+		idxAgent            int
 	)
 
 	stepIdx := 0
@@ -121,6 +122,28 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		stepIdx++
 	}
 
+	if len(detection.DockerComposeFiles) > 0 {
+		idxDockerCompose = stepIdx
+		items := make([]components.MultiSelectItem, 0, len(detection.DockerComposeFiles))
+		for _, f := range detection.DockerComposeFiles {
+			items = append(items, components.MultiSelectItem{
+				Label:    f,
+				Value:    f,
+				Selected: true,
+			})
+		}
+		steps = append(steps, components.Step{
+			Name: "Docker services",
+			Model: components.NewMultiSelect(components.NewMultiSelectParams{
+				Title:       "Docker Compose services",
+				Description: "Detected docker-compose files — selected files become services in .wtm/services.toml",
+				Items:       items,
+			}),
+			Summary: multiSelectSummary,
+		})
+		stepIdx++
+	}
+
 	idxAgent = stepIdx
 	steps = append(steps, components.Step{
 		Name: "Project AI agent",
@@ -160,6 +183,7 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		IdxInstallCommand:   idxInstallCommand,
 		IdxEnvFiles:         idxEnvFiles,
 		IdxMonorepoPackages: idxMonorepoPackages,
+		IdxDockerCompose:    idxDockerCompose,
 		IdxAgent:            idxAgent,
 	})
 }
@@ -173,6 +197,7 @@ type extractProjectParams struct {
 	IdxInstallCommand   int
 	IdxEnvFiles         int
 	IdxMonorepoPackages int
+	IdxDockerCompose    int
 	IdxAgent            int
 }
 
@@ -226,6 +251,17 @@ func extractProjectAnswers(p extractProjectParams) (domain.InitProjectAnswers, e
 		EnvCopyFiles:   envCopyFiles,
 		EnvStrategy:    domain.EnvStrategy(envStrategyModel.Value()),
 		InstallCommand: installCommand,
+	}
+
+	if p.IdxDockerCompose >= 0 {
+		msModel, ok := finalSteps[p.IdxDockerCompose].Model.(components.MultiSelectModel)
+		if !ok {
+			return domain.InitProjectAnswers{}, domain.ErrUserAborted
+		}
+		answers.DockerComposeFiles = msModel.Values()
+		if len(answers.DockerComposeFiles) > 0 {
+			answers.DockerComposeCmd = p.Detection.DockerComposeCmd
+		}
 	}
 
 	if p.IdxMonorepoPackages >= 0 {

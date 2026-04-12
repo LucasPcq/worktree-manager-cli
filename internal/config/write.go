@@ -2,12 +2,19 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/LucasPcq/wtm/internal/domain"
 )
+
+// ErrServicesFileExists is returned by WriteServices when the target file
+// already exists — callers decide whether to skip or surface the condition.
+var ErrServicesFileExists = errors.New("services file already exists")
 
 // WriteProjectParams holds the inputs for writing a project config file.
 type WriteProjectParams struct {
@@ -28,6 +35,39 @@ func WriteProject(params WriteProjectParams) error {
 	}
 
 	path := filepath.Join(dir, domain.ConfigFileName)
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+
+	return nil
+}
+
+// WriteServicesParams holds the inputs for writing a services config file.
+type WriteServicesParams struct {
+	ProjectDir string
+	Config     domain.ServicesConfig
+}
+
+// WriteServices encodes cfg as TOML and writes it to .wtm/services.toml.
+// Returns ErrServicesFileExists if the file already exists; the file is never
+// overwritten.
+func WriteServices(params WriteServicesParams) error {
+	dir := filepath.Join(params.ProjectDir, domain.ProjectDirName)
+	path := filepath.Join(dir, domain.ServicesFileName)
+
+	if _, err := os.Stat(path); err == nil {
+		return ErrServicesFileExists
+	}
+
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", dir, err)
+	}
+
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(params.Config); err != nil {
+		return fmt.Errorf("encode services: %w", err)
+	}
+
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
