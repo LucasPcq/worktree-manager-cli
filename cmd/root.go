@@ -39,10 +39,12 @@ func init() {
 var version = domain.Version
 
 var rootCmd = &cobra.Command{
-	Use:     domain.AppName,
-	Short:   "Worktree Manager — orchestrate git worktrees, AI agents, and team workflows",
-	Version: version,
-	RunE:    rootRunE,
+	Use:           domain.AppName,
+	Short:         "Worktree Manager — orchestrate git worktrees, AI agents, and team workflows",
+	Version:       version,
+	RunE:          rootRunE,
+	SilenceErrors: true,
+	SilenceUsage:  true,
 }
 
 func rootRunE(cmd *cobra.Command, args []string) error {
@@ -79,6 +81,9 @@ func init() {
 // Execute runs the root command and exits with the appropriate code.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		output.Blank(os.Stderr)
+		output.Error(os.Stderr, err.Error())
+		output.Blank(os.Stderr)
 		os.Exit(domain.ExitCodeError)
 	}
 }
