@@ -5,11 +5,14 @@ import (
 	"io"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
-// UseRendererOn switches the default lipgloss renderer to the given writer.
+// UseRendererOn re-detects lipgloss's color profile against the given writer.
+// Package-level style vars hold a pointer to the default renderer, so swapping
+// the renderer wouldn't re-style them — we mutate the shared renderer instead.
 // Call this before rendering styled output when stdout is captured (e.g. by a
-// shell command substitution), so color detection happens against a TTY stream.
+// shell command substitution), so color detection uses a TTY stream.
 func UseRendererOn(w io.Writer) {
-	lipgloss.SetDefaultRenderer(lipgloss.NewRenderer(w))
+	lipgloss.SetColorProfile(termenv.NewOutput(w).EnvColorProfile())
 }

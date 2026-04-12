@@ -247,6 +247,7 @@ func promptConcurrentServices(cmd *cobra.Command, client *process.Client, otherW
 	}
 
 	if choice == "yes" {
+		output.Blank(cmd.ErrOrStderr())
 		return stopOtherServices(client, otherWorktrees, cmd)
 	}
 	return nil
