@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.6.1 — Style polish
+
+### Improvements
+
+- **Padding cohérent autour des warnings** — `svc up` (services sur un autre worktree), `pr create` (PR déjà ouverte) et `svc ps` (aucun service running) respectent maintenant un padding top/bottom uniforme.
+- **Padding `wtm init`** — Ajout d'un style dédié `Intro` avec accent primary pour le message "No .wtm/config.toml found", nettoyage du padding autour des messages de succès.
+- **Picker `wt go` / `wt switch` stylisé** — Quand le picker est invoqué depuis le shell wrapper (qui capture stdout via `$()`), lipgloss détectait stdout non-TTY et désactivait les couleurs. La détection bascule maintenant sur stderr, le picker conserve son highlight bleu et ses badges.
+- **Padding bottom après refus d'ouvrir un PR existant** — `pr create` ajoute une ligne vide après le prompt "Open in browser?" quel que soit le choix de l'utilisateur.
+
 ## v0.6.0 — Ready for LLM agents
 
 ### New features
