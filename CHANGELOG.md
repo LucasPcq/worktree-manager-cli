@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.6.0 — Ready for LLM agents
+
+### New features
+
+- **`--output json` sur les commandes data** — `wt list`, `wt create`, `wt clean` (avec `--force`), `pr list`, `pr create`, `pr checkout`, `svc list`, `svc ps`, `svc up`, `svc down`, `svc start`, `svc stop` retournent maintenant du JSON machine-readable sur stdout. Le texte humain reste sur stderr. Permet aux agents (Claude Code, Cursor, scripts) de piloter wtm sans TUI.
+- **`wtm svc list`** — Liste les services et profils déclarés dans `.wtm/services.toml`. En TTY, picker interactif avec actions `up`/`down` sur un profil ou `start`/`stop`/`logs` sur un service, pour découvrir le cycle de vie svc sans mémoriser chaque commande.
+- **`wtm svc ps`** — Liste les services gérés en ce moment par le daemon (name, status, pid, worktree). Picker avec actions `stop`/`logs`/`restart` + une entrée "Stop all running services" qui dispatche `svc down --all`.
+- **`wtm agents install`** — Détecte les destinations skill existantes (`.claude/` / `.cursor/` projet ou global) et installe un skill compact `using-wtm` que Claude Code / Cursor consultent automatiquement quand l'utilisateur parle worktrees, services ou PRs.
+- **Détection `docker-compose` dans `wtm init`** — Si des fichiers `docker-compose*.yml/yaml` sont trouvés, étape wizard MultiSelect pour scaffolder des services correspondants dans `.wtm/services.toml` avec `up -d` / `down --remove-orphans` et détection automatique de la commande (`docker compose` v2 ou `docker-compose` v1).
+- **`wtm svc down --all`** — Stoppe tous les services de tous les worktrees (le comportement par défaut de `svc down` reste scoped au worktree courant).
+
+### Bug fixes
+
+- **Échecs silencieux de `docker compose up -d`** (LUC-56) — Les services launcher-style (ceux avec un `Stop`) affichaient `✓ started` même quand docker échouait (port conflit, image manquante, compose invalide). Le manager attend maintenant la sortie du launcher et remonte l'erreur avec la sortie capturée, nettoyée des ANSI et des redraw `\r` de compose.
+- **`svc down` traversant les worktrees** — `svc down` (et indirectement `wt clean`, `svc up --exclusive`) pouvait stopper des services d'autres worktrees parce que `handleStopAll` ignorait `Request.WorkDir`. Ajout de `StopAllInWorkDir` et respect du workdir côté daemon.
+
+### Improvements
+
+- **Picker `wt switch` aligné sur `wt list`** — Même styling (breadcrumb, badges parent / PR / services / dirty) quand l'utilisateur appelle `wt switch` sans argument.
+- **Spinners sur les opérations svc** — `svc up`, `svc down`, `svc start` affichent maintenant un spinner pendant l'aller-retour daemon (utile quand `docker pull` prend plusieurs secondes).
+- **`output.Error` multi-ligne** — Les erreurs avec sortie capturée (typiquement docker compose) sont formatées en bloc indenté au lieu d'une ligne illisible.
+- **`wtm svc down` scoping par défaut** — Sans `--all`, ne touche que le worktree courant. Help text mis à jour.
+
 ## v0.5.1 — Fix TUI et navigation shell
 
 ### Corrections
