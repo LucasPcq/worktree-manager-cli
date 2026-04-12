@@ -116,7 +116,9 @@ func pickPRAndAction(prs []domain.PRInfo) (domain.PRInfo, string, error) {
 		{Label: "Checkout into worktree", Value: prActionCheckout},
 		{Label: "Open in browser", Value: prActionBrowser},
 		{Label: "View details", Value: prActionDetails},
-		{Label: "Open in dashboard", Value: prActionDashboard},
+	}
+	if domain.FeatureDashboard {
+		actionItems = append(actionItems, components.SelectItem{Label: "Open in dashboard", Value: prActionDashboard})
 	}
 
 	wiz := components.NewWizard([]components.Step{

@@ -9,7 +9,7 @@ Orchestrate git worktrees, AI agents, and team dev workflows from the terminal.
 | Tool | Required | Purpose |
 |---|---|---|
 | `git` | ✅ Required | Worktree management |
-| `gh` | ⭐ Recommended | PR listing, creation, checkout, and dashboard PR panel |
+| `gh` | ⭐ Recommended | PR listing, creation, and checkout |
 
 `gh` is not required to use `wtm` — worktree creation, navigation, hooks, and services work without it. Install and authenticate it to unlock all GitHub features: [cli.github.com](https://cli.github.com).
 
@@ -58,10 +58,7 @@ source ~/.zshrc
 cd your-repo
 wtm init
 
-# Open the interactive dashboard — manage everything from here
-wtm
-
-# Or use individual commands:
+# Use individual commands:
 wtm wt list                        # list all worktrees
 wtm wt create feature/my-feature   # create a worktree
 wtm wt go feature/my-feature       # navigate to it
@@ -70,39 +67,6 @@ wtm wt clean feature/my-feature    # clean up when done
 ```
 
 ## Commands
-
-### `wtm` — Interactive Dashboard
-
-Run `wtm` without arguments to open the interactive dashboard. This is the main entry point for your daily workflow.
-
-```bash
-wtm
-```
-
-The dashboard displays all your worktrees in a two-panel layout:
-- **Left panel** — worktree list with status (clean/dirty, commits ahead, focus indicator)
-- **Right panel** — details of the selected worktree (path, source branch, modified files, context notes)
-
-**Keyboard shortcuts:**
-
-| Key | Action |
-|---|---|
-| `↑/↓` or `j/k` | Navigate the list or scroll the active panel |
-| `Tab` / `Shift+Tab` | Cycle between panels (list → detail → hooks output) |
-| `n` | Create a new worktree (opens the wizard) |
-| `d` | Clean the selected worktree (opens confirmation) |
-| `f` | Focus the selected worktree (runs hooks, shows output in split panel) |
-| `u` | Start a service profile for the selected worktree |
-| `x` | Stop a service profile for the selected worktree |
-| `s` | View multiplexed logs of all running services |
-| `Enter` | Navigate to the selected worktree directory |
-| `r` | Refresh the worktree list |
-| `Esc` | Close the hooks output panel |
-| `q` | Quit the dashboard |
-
-When you press `f` to focus a worktree, the right panel splits to show the hook output in real-time. The log panel stays visible after hooks complete and can be closed with `Esc`.
-
----
 
 ### `wtm init`
 
@@ -188,7 +152,7 @@ Output:
   feature-payment                        clean   1 commit ahead
 ```
 
-In an interactive terminal, shows a picker with actions: go, focus, start profile, stop profile, view logs, clean, open in dashboard.
+In an interactive terminal, shows a picker with actions: go, focus, start profile, stop profile, view logs, clean.
 
 #### `wtm wt go [branch]`
 
@@ -296,7 +260,7 @@ Interact with GitHub pull requests from the CLI. Requires the [`gh` CLI](https:/
 
 #### `wtm pr list`
 
-List open pull requests. Interactive picker with actions (checkout, open in browser, view details, open in dashboard).
+List open pull requests. Interactive picker with actions (checkout, open in browser, view details).
 
 ```bash
 wtm pr list           # all open PRs

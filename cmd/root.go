@@ -28,7 +28,9 @@ func init() {
 	rootCmd.AddCommand(shellInitCmd)
 
 	rootCmd.AddCommand(commands.NewResolveCmd())
-	rootCmd.AddCommand(commands.NewDashboardCmd())
+	if domain.FeatureDashboard {
+		rootCmd.AddCommand(commands.NewDashboardCmd())
+	}
 	rootCmd.AddCommand(commands.NewDaemonCmd())
 }
 
@@ -38,7 +40,14 @@ var rootCmd = &cobra.Command{
 	Use:     domain.AppName,
 	Short:   "Worktree Manager — orchestrate git worktrees, AI agents, and team workflows",
 	Version: version,
-	RunE:    commands.RunDashboard,
+	RunE:    rootRunE,
+}
+
+func rootRunE(cmd *cobra.Command, args []string) error {
+	if domain.FeatureDashboard {
+		return commands.RunDashboard(cmd, args)
+	}
+	return cmd.Help()
 }
 
 // Execute runs the root command and exits with the appropriate code.

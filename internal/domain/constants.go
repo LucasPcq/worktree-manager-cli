@@ -96,4 +96,6 @@ const (
 	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
 	CtrlCByte byte = 0x03
 
+	// FeatureDashboard controls whether the interactive dashboard is available.
+	FeatureDashboard = false
 )

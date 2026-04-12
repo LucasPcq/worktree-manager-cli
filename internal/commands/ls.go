@@ -149,7 +149,9 @@ func pickWorktreeAndAction(
 		{Label: "Stop profile", Value: lsActionServicesDown},
 		{Label: "View logs", Value: lsActionLogs},
 		{Label: "Clean (delete worktree)", Value: lsActionClean},
-		{Label: "Open in dashboard", Value: lsActionDashboard},
+	}
+	if domain.FeatureDashboard {
+		actionItems = append(actionItems, components.SelectItem{Label: "Open in dashboard", Value: lsActionDashboard})
 	}
 
 	wiz := components.NewWizard([]components.Step{
