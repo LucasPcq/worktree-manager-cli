@@ -18,6 +18,7 @@ func NewWtCmd() *cobra.Command {
 	cmd.AddCommand(newWtCreateCmd())
 	cmd.AddCommand(newWtCleanCmd())
 	cmd.AddCommand(newWtGoCmd())
+	cmd.AddCommand(newWtSwitchCmd())
 
 	return cmd
 }

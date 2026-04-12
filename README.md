@@ -61,8 +61,7 @@ wtm init
 # Use individual commands:
 wtm wt list                        # list all worktrees
 wtm wt create feature/my-feature   # create a worktree
-wtm wt go feature/my-feature       # navigate to it
-wtm svc up                         # start services
+wtm wt switch feature/my-feature   # navigate + start services
 wtm wt clean feature/my-feature    # clean up when done
 ```
 
@@ -166,6 +165,27 @@ wtm wt go auth             # substring match
 
 Without shell integration, `wtm wt go` cannot change your working directory. The shell wrapper intercepts `wtm wt go` and performs the `cd` in your current shell.
 
+#### `wtm wt switch [branch]`
+
+Navigate to a worktree **and** start its services in one command. Combines `wt go` + `svc up`.
+
+```bash
+wtm wt switch feature/auth               # go + start default profile
+wtm wt switch feature/auth --exclusive    # go + stop others + start
+wtm wt switch feature/auth --parallel     # go + start without stopping others
+wtm wt switch feature/auth --profile api  # go + start specific profile
+wtm wt switch                             # interactive picker + start
+```
+
+Requires shell integration (same as `wt go`).
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--exclusive` | Stop services on other worktrees before starting |
+| `--parallel` | Start without stopping other worktrees |
+| `--profile <name>` | Service profile to start (default: default profile) |
+
 #### `wtm wt clean [branch]`
 
 Remove a worktree and its local branch. The remote branch is never touched.
@@ -192,9 +212,19 @@ wtm wt clean feature/auth --force   # skip all safety checks
 Start a service profile defined in `.wtm/services.toml`.
 
 ```bash
-wtm svc up              # start default profile (or picker if multiple)
-wtm svc up backend      # start a specific profile
+wtm svc up                  # start default profile (or picker if multiple)
+wtm svc up backend          # start a specific profile
+wtm svc up --exclusive      # stop services on other worktrees first
+wtm svc up --parallel       # start without stopping others
 ```
+
+If services are already running on another worktree, `svc up` prompts you to stop them or run in parallel.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--exclusive` | Stop services on other worktrees before starting |
+| `--parallel` | Start without stopping other worktrees |
 
 #### `wtm svc down [profile]`
 

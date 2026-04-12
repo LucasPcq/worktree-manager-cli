@@ -74,6 +74,7 @@ const (
 	FlagDraft     = "draft"
 	FlagExclusive = "exclusive"
 	FlagParallel  = "parallel"
+	FlagProfile   = "profile"
 
 	// Metadata files created inside each worktree's .wtm/ directory.
 	MetaFileName    = "meta.json"
