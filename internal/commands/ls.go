@@ -107,8 +107,9 @@ func loadServicesGraceful() []process.ServiceInfo {
 }
 
 const (
-	lsActionGo         = "go"
-	lsActionServicesUp = "services-up"
+	lsActionGo           = "go"
+	lsActionSwitch       = "switch"
+	lsActionServicesUp   = "services-up"
 	lsActionServicesDown = "services-down"
 	lsActionLogs         = "logs"
 	lsActionClean        = "clean"
@@ -125,10 +126,10 @@ func pickWorktreeAndAction(
 ) (domain.WorktreeStatus, string, error) {
 	wtItems := make([]components.SelectItem, 0, len(statuses))
 	for i, s := range statuses {
-		label := buildWorktreeLabel(s, activeBranch, prs, services)
 		wtItems = append(wtItems, components.SelectItem{
-			Label: label,
-			Value: strconv.Itoa(i),
+			Label:  s.Branch,
+			Value:  strconv.Itoa(i),
+			Badges: buildWorktreeBadges(s, prs, services),
 		})
 	}
 
@@ -140,10 +141,13 @@ func pickWorktreeAndAction(
 
 	actionItems := []components.SelectItem{
 		{Label: "Go (cd to worktree)", Value: lsActionGo},
+		{Label: "Switch (go + start services)", Value: lsActionSwitch},
+		{Separator: true},
 		{Label: "Start profile", Value: lsActionServicesUp},
 		{Label: "Stop profile", Value: lsActionServicesDown},
 		{Label: "View logs", Value: lsActionLogs},
-		{Label: "Clean (delete worktree)", Value: lsActionClean},
+		{Separator: true},
+		{Label: "Clean (delete worktree)", Value: lsActionClean, Danger: true},
 	}
 	if domain.FeatureDashboard {
 		actionItems = append(actionItems, components.SelectItem{Label: "Open in dashboard", Value: lsActionDashboard})
@@ -205,6 +209,31 @@ func pickWorktreeAndAction(
 	return statuses[idx], actionSL.Value(), nil
 }
 
+func buildWorktreeBadges(s domain.WorktreeStatus, prs []domain.PRInfo, services []process.ServiceInfo) []components.Badge {
+	var badges []components.Badge
+	if s.IsParent {
+		badges = append(badges, components.Badge{Text: "parent", Variant: components.BadgeNeutral})
+	}
+	for _, pr := range prs {
+		if pr.Branch == s.Branch {
+			badges = append(badges, components.Badge{Text: fmt.Sprintf("PR #%d", pr.Number), Variant: components.BadgeSuccess})
+			break
+		}
+	}
+	for _, svc := range services {
+		if svc.WorkDir == s.Path && svc.Status == domain.ServiceStatusRunning {
+			badges = append(badges, components.Badge{Text: "services", Variant: components.BadgeSuccess})
+			break
+		}
+	}
+	if s.IsDirty {
+		badges = append(badges, components.Badge{Text: "dirty", Variant: components.BadgeWarning})
+	} else {
+		badges = append(badges, components.Badge{Text: "clean", Variant: components.BadgeNeutral})
+	}
+	return badges
+}
+
 func buildWorktreeLabel(s domain.WorktreeStatus, activeBranch string, prs []domain.PRInfo, services []process.ServiceInfo) string {
 	label := s.Branch
 
@@ -258,6 +287,13 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 	switch action {
 	case lsActionGo:
 		cmd := exec.Command(bin, "wt", "go", selected.Branch)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+
+	case lsActionSwitch:
+		cmd := exec.Command(bin, "wt", "switch", selected.Branch)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

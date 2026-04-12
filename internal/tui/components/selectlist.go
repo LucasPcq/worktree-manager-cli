@@ -161,6 +161,11 @@ func (m SelectListModel) View() string {
 		end = len(m.filtered)
 	}
 
+	spacer := "\n"
+	if m.hasBadges() {
+		spacer = "\n\n"
+	}
+
 	for vi := m.offset; vi < end; vi++ {
 		idx := m.filtered[vi]
 		item := m.items[idx]
@@ -172,7 +177,7 @@ func (m SelectListModel) View() string {
 			b.WriteString(m.renderItem(item, selected))
 		}
 		if vi < end-1 {
-			b.WriteString("\n")
+			b.WriteString(spacer)
 		}
 	}
 
@@ -191,15 +196,18 @@ func (m SelectListModel) renderItem(item SelectItem, selected bool) string {
 }
 
 func (m SelectListModel) renderSelectedItem(item SelectItem) string {
-	// Build plain text content — no nested ANSI styles so the background fills cleanly.
-	line := "▸ " + item.Label + m.renderBadgesPlain(item.Badges)
+	left := "▸ " + item.Label
+	badgesStr := m.renderBadgesStyled(item.Badges)
+	badgesPlainLen := m.badgesPlainLen(item.Badges)
 
-	pad := m.width - len(line)
-	if pad > 0 {
-		line += strings.Repeat(" ", pad)
+	gap := m.width - PrintableWidth(left) - badgesPlainLen
+	if gap < 1 {
+		gap = 1
 	}
 
-	return styles.ListItemSelected.Render(line)
+	// Background on label + gap, then styled badges on top
+	padded := left + strings.Repeat(" ", gap)
+	return styles.ListItemSelected.Render(padded) + badgesStr
 }
 
 func (m SelectListModel) renderNormalItem(item SelectItem) string {
@@ -208,27 +216,51 @@ func (m SelectListModel) renderNormalItem(item SelectItem) string {
 		label = styles.DangerText.Render(label)
 	}
 
-	var badges string
-	if len(item.Badges) > 0 {
-		parts := make([]string, len(item.Badges))
-		for i, badge := range item.Badges {
-			parts[i] = badge.Render()
-		}
-		badges = " " + strings.Join(parts, " ")
+	left := "  " + label
+	badgesStr := m.renderBadgesStyled(item.Badges)
+	badgesPlainLen := m.badgesPlainLen(item.Badges)
+
+	gap := m.width - PrintableWidth(left) - badgesPlainLen
+	if gap < 1 {
+		gap = 1
 	}
 
-	return styles.ListItemNormal.Render("  " + label + badges)
+	return left + strings.Repeat(" ", gap) + badgesStr
 }
 
-func (m SelectListModel) renderBadgesPlain(badges []Badge) string {
+func (m SelectListModel) renderBadgesStyled(badges []Badge) string {
 	if len(badges) == 0 {
 		return ""
 	}
 	parts := make([]string, len(badges))
 	for i, badge := range badges {
-		parts[i] = badge.Text
+		parts[i] = badge.Render()
 	}
-	return " " + strings.Join(parts, " ")
+	return strings.Join(parts, "  ")
+}
+
+func (m SelectListModel) badgesPlainLen(badges []Badge) int {
+	if len(badges) == 0 {
+		return 0
+	}
+	total := 0
+	for i, badge := range badges {
+		// Each badge adds padding (1 left + 1 right) from the style
+		total += len(badge.Text) + 2
+		if i > 0 {
+			total += 2 // double space separator
+		}
+	}
+	return total
+}
+
+func (m SelectListModel) hasBadges() bool {
+	for _, item := range m.items {
+		if len(item.Badges) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (m SelectListModel) renderSeparator() string {
