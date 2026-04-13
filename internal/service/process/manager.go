@@ -26,6 +26,18 @@ var ansiCSI = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
 // Enough for the typical Docker/compose error line without unbounded memory.
 const launcherOutputBufferSize = 8 * 1024
 
+// outputHistoryBytes is the size of the per-service rolling output buffer that
+// the daemon drains from each long-running PTY. Replayed to clients on attach.
+const outputHistoryBytes = 64 * 1024
+
+// defaultPTYRows and defaultPTYCols are the fallback PTY dimensions used when a
+// service is spawned before any client has attached. TUI apps read the PTY
+// size at startup — a 0x0 window makes them bail to plain log mode.
+const (
+	defaultPTYRows = 40
+	defaultPTYCols = 120
+)
+
 // ManagedService holds the state of a running service.
 type ManagedService struct {
 	Name    string
@@ -35,6 +47,7 @@ type ManagedService struct {
 	Status  domain.ServiceStatus
 	PID     int
 	WorkDir string
+	output  *outputHub // nil for launcher-style services
 }
 
 // Manager tracks and controls running services.
@@ -85,12 +98,19 @@ func (m *Manager) Start(svc domain.ServiceConfig, workDir string) error {
 	} else {
 		cmd.Dir = workDir
 	}
+	cmd.Env = serviceEnv()
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		m.mu.Unlock()
 		return fmt.Errorf("start service %s: %w", svc.Name, err)
 	}
+
+	// Initialize the PTY to a reasonable size before the child reads it.
+	// TUI frameworks like Ink (turbo, pnpm dev) decide at startup whether to
+	// render based on window size — a 0x0 PTY makes them fall back to plain
+	// log mode permanently. The real size is re-synced when a client attaches.
+	_ = pty.Setsize(ptmx, &pty.Winsize{Rows: defaultPTYRows, Cols: defaultPTYCols})
 
 	managed := &ManagedService{
 		Name:    svc.Name,
@@ -114,8 +134,39 @@ func (m *Manager) Start(svc domain.ServiceConfig, workDir string) error {
 		return nil
 	}
 
+	managed.output = newOutputHub(outputHistoryBytes)
+	go m.drainToHub(managed)
 	go m.waitForExit(managed)
 	return nil
+}
+
+// serviceEnv returns the environment to use for spawned services. The daemon
+// runs with Setsid so its own TTY-related env may be missing or degraded; we
+// force reasonable defaults so interactive TUIs render. Values already present
+// in os.Environ() take precedence because Go's exec.Cmd honors the last
+// occurrence of a given name.
+func serviceEnv() []string {
+	env := os.Environ()
+	if _, ok := lookupEnv(env, "TERM"); !ok {
+		env = append(env, "TERM=xterm-256color")
+	}
+	if _, ok := lookupEnv(env, "COLORTERM"); !ok {
+		env = append(env, "COLORTERM=truecolor")
+	}
+	if _, ok := lookupEnv(env, "FORCE_COLOR"); !ok {
+		env = append(env, "FORCE_COLOR=1")
+	}
+	return env
+}
+
+func lookupEnv(env []string, key string) (string, bool) {
+	prefix := key + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return strings.TrimPrefix(e, prefix), true
+		}
+	}
+	return "", false
 }
 
 // waitLauncher drains PTY output into a bounded buffer and blocks until the
@@ -183,6 +234,95 @@ func (r *ringBuffer) Write(p []byte) (int, error) {
 }
 
 func (r *ringBuffer) String() string { return string(r.buf) }
+
+// Snapshot returns a copy of the buffer's current contents.
+func (r *ringBuffer) Snapshot() []byte {
+	out := make([]byte, len(r.buf))
+	copy(out, r.buf)
+	return out
+}
+
+// outputHub fans PTY output out to a rolling history buffer and any attached
+// subscribers. One service → one hub → at most one subscriber at a time
+// (matches wtm's single-attach model).
+type outputHub struct {
+	mu      sync.Mutex
+	history *ringBuffer
+	sub     chan []byte
+	closed  bool
+}
+
+func newOutputHub(capacity int) *outputHub {
+	return &outputHub{history: newRingBuffer(capacity)}
+}
+
+// Write records data into the history buffer and forwards a copy to the
+// current subscriber if any. It never blocks on the subscriber: the subscribe
+// channel is large enough to absorb normal bursts, and a full channel means
+// the client has disappeared — we drop silently rather than stall the PTY
+// reader.
+func (h *outputHub) Write(p []byte) (int, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.history.Write(p)
+	if h.sub != nil {
+		data := make([]byte, len(p))
+		copy(data, p)
+		select {
+		case h.sub <- data:
+		default:
+		}
+	}
+	return len(p), nil
+}
+
+// Subscribe registers a subscriber. Returns the current history snapshot and a
+// channel streaming subsequent writes. At most one subscriber is allowed at a
+// time — returns an error if one is already attached. The returned unsubscribe
+// func must be called to release the slot.
+func (h *outputHub) Subscribe() (history []byte, ch <-chan []byte, unsub func(), err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return nil, nil, nil, fmt.Errorf("service output closed")
+	}
+	if h.sub != nil {
+		return nil, nil, nil, fmt.Errorf("service already has a subscriber")
+	}
+	history = h.history.Snapshot()
+	subCh := make(chan []byte, 256)
+	h.sub = subCh
+	unsub = func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if h.sub == subCh {
+			h.sub = nil
+			close(subCh)
+		}
+	}
+	return history, subCh, unsub, nil
+}
+
+// close releases the current subscriber (if any) and marks the hub as closed
+// so new subscribers are rejected.
+func (h *outputHub) close() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.closed = true
+	if h.sub != nil {
+		close(h.sub)
+		h.sub = nil
+	}
+}
+
+// drainToHub copies PTY output into the service's output hub until the PTY
+// closes. Long-running services need a continuous reader so the OS PTY buffer
+// never fills up (which would block the service's writes before any client
+// attaches).
+func (m *Manager) drainToHub(svc *ManagedService) {
+	_, _ = io.Copy(svc.output, svc.PTY)
+	svc.output.close()
+}
 
 // Stop stops a service by name and workDir.
 func (m *Manager) Stop(name string, workDir string) error {
@@ -263,6 +403,48 @@ func (m *Manager) GetPTY(name string, workDir string) (*os.File, error) {
 		return nil, fmt.Errorf("service %s is not running", name)
 	}
 	return svc.PTY, nil
+}
+
+// AttachSession holds everything a client needs to stream a service's output:
+// the PTY (for stdin forwarding and window-size ioctls), the history to
+// replay, and a channel delivering subsequent output. The caller must invoke
+// Release when done.
+type AttachSession struct {
+	PTY     *os.File
+	History []byte
+	Stream  <-chan []byte
+	Release func()
+}
+
+// Attach subscribes to a service's output hub and returns a session the daemon
+// can use to stream history + live output to a client while still forwarding
+// the client's stdin back into the PTY.
+func (m *Manager) Attach(name string, workDir string) (*AttachSession, error) {
+	key := serviceKey(name, workDir)
+	m.mu.Lock()
+	svc, ok := m.services[key]
+	m.mu.Unlock()
+
+	if !ok {
+		return nil, fmt.Errorf("service %s not found", name)
+	}
+	if svc.Status != domain.ServiceStatusRunning {
+		return nil, fmt.Errorf("service %s is not running", name)
+	}
+	if svc.output == nil {
+		return nil, fmt.Errorf("service %s has no attachable output (launcher-style)", name)
+	}
+
+	history, stream, unsub, err := svc.output.Subscribe()
+	if err != nil {
+		return nil, err
+	}
+	return &AttachSession{
+		PTY:     svc.PTY,
+		History: history,
+		Stream:  stream,
+		Release: unsub,
+	}, nil
 }
 
 // List returns all managed services.

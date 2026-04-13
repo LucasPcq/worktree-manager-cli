@@ -206,17 +206,18 @@ func (d *daemonServer) handleList(encoder *json.Encoder, req Request) {
 }
 
 func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Request) {
-	ptmx, err := d.manager.GetPTY(req.Name, req.WorkDir)
+	session, err := d.manager.Attach(req.Name, req.WorkDir)
 	if err != nil {
 		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 		return
 	}
+	defer session.Release()
 
 	// Set initial window size if provided
 	if req.Cols > 0 && req.Rows > 0 {
 		syscall.Syscall(
 			syscall.SYS_IOCTL,
-			ptmx.Fd(),
+			session.PTY.Fd(),
 			syscall.TIOCSWINSZ,
 			uintptr(unsafeWinsize(req.Cols, req.Rows)),
 		)
@@ -225,20 +226,33 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 	// Send OK before switching to raw mode
 	encoder.Encode(Response{Status: StatusOK, Message: "attached"})
 
-	// Bidirectional copy: socket ↔ PTY
-	done := make(chan struct{}, 1)
+	// Replay buffered history so the client sees the current TUI state
+	// (progress lines, running frame, etc.) before live output resumes.
+	if len(session.History) > 0 {
+		conn.Write(session.History)
+	}
 
+	done := make(chan struct{}, 2)
+
+	// Live PTY output → client. The PTY itself is drained by the hub goroutine
+	// elsewhere; we just relay what the hub delivers to this subscriber.
 	go func() {
-		io.Copy(conn, ptmx)
+		for data := range session.Stream {
+			if _, err := conn.Write(data); err != nil {
+				done <- struct{}{}
+				return
+			}
+		}
 		done <- struct{}{}
 	}()
 
+	// Client stdin → PTY. Direct write path; only one subscriber at a time
+	// means there's no write contention.
 	go func() {
-		io.Copy(ptmx, conn)
+		io.Copy(session.PTY, conn)
 		done <- struct{}{}
 	}()
 
-	// Wait for either side to close
 	<-done
 }
 
