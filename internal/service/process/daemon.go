@@ -135,17 +135,33 @@ func (d *daemonServer) handleConnection(conn net.Conn) {
 }
 
 func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
-	if req.Service == nil {
-		encoder.Encode(Response{Status: StatusError, Message: "service config required"})
+	if req.Job == nil {
+		encoder.Encode(Response{Status: StatusError, Message: "job config required"})
 		return
 	}
 
-	if err := d.manager.Start(*req.Service, req.WorkDir); err != nil {
+	if req.Job.Kind == domain.JobKindTask {
+		// Tasks block until the command exits but their output is not streamed
+		// over the socket — the CLI just shows a spinner. Users who want to
+		// follow the output can attach with `wtm run logs <task>` in another
+		// terminal (the hub is live while the task runs).
+		err := d.manager.Start(*req.Job, req.WorkDir, nil)
+		if err != nil {
+			code := 1
+			encoder.Encode(Response{Status: StatusError, Message: err.Error(), ExitCode: &code})
+			return
+		}
+		zero := 0
+		encoder.Encode(Response{Status: StatusDone, Message: fmt.Sprintf("task %s done", req.Job.Name), ExitCode: &zero})
+		return
+	}
+
+	if err := d.manager.Start(*req.Job, req.WorkDir, nil); err != nil {
 		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 		return
 	}
 
-	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("service %s started", req.Service.Name)})
+	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name)})
 }
 
 func (d *daemonServer) handleStop(encoder *json.Encoder, req Request) {
@@ -154,25 +170,26 @@ func (d *daemonServer) handleStop(encoder *json.Encoder, req Request) {
 		return
 	}
 
-	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("service %s stopped", req.Name)})
+	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s stopped", req.Name)})
 }
 
 func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
-	// Snapshot the services that are about to be stopped so the client can
-	// report which ones (or say "none running" when the list is empty).
-	var stopped []ServiceInfo
-	for _, svc := range d.manager.List() {
-		if svc.Status != domain.ServiceStatusRunning {
+	// Snapshot the jobs that are about to be stopped so the client can report
+	// which ones (or say "none running" when the list is empty).
+	var stopped []JobInfo
+	for _, job := range d.manager.List() {
+		if job.Status != domain.JobStatusRunning {
 			continue
 		}
-		if req.WorkDir != "" && svc.WorkDir != req.WorkDir {
+		if req.WorkDir != "" && job.WorkDir != req.WorkDir {
 			continue
 		}
-		stopped = append(stopped, ServiceInfo{
-			Name:    svc.Name,
-			WorkDir: svc.WorkDir,
-			Status:  svc.Status,
-			PID:     svc.PID,
+		stopped = append(stopped, JobInfo{
+			Name:    job.Name,
+			Kind:    job.Config.Kind,
+			WorkDir: job.WorkDir,
+			Status:  job.Status,
+			PID:     job.PID,
 		})
 	}
 
@@ -187,22 +204,23 @@ func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
 		return
 	}
 
-	encoder.Encode(Response{Status: StatusOK, Services: stopped})
+	encoder.Encode(Response{Status: StatusOK, Jobs: stopped})
 }
 
 func (d *daemonServer) handleList(encoder *json.Encoder, req Request) {
-	services := d.manager.List()
-	infos := make([]ServiceInfo, 0, len(services))
-	for _, svc := range services {
-		infos = append(infos, ServiceInfo{
-			Name:    svc.Name,
-			WorkDir: svc.WorkDir,
-			Status: svc.Status,
-			PID:    svc.PID,
+	jobs := d.manager.List()
+	infos := make([]JobInfo, 0, len(jobs))
+	for _, job := range jobs {
+		infos = append(infos, JobInfo{
+			Name:    job.Name,
+			Kind:    job.Config.Kind,
+			WorkDir: job.WorkDir,
+			Status:  job.Status,
+			PID:     job.PID,
 		})
 	}
 
-	encoder.Encode(Response{Status: StatusOK, Services: infos})
+	encoder.Encode(Response{Status: StatusOK, Jobs: infos})
 }
 
 func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Request) {

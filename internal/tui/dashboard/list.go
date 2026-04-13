@@ -12,7 +12,7 @@ import (
 type listModel struct {
 	items           []domain.WorktreeStatus
 	activeBranch    string
-	serviceStatuses []process.ServiceInfo
+	serviceStatuses []process.JobInfo
 	prInfos         []domain.PRInfo
 	cursor          int
 	width           int
@@ -68,7 +68,7 @@ func (m listModel) view(focused bool) string {
 
 func (m listModel) hasRunningServices(worktreePath string) bool {
 	for _, svc := range m.serviceStatuses {
-		if svc.WorkDir == worktreePath && svc.Status == domain.ServiceStatusRunning {
+		if svc.WorkDir == worktreePath && svc.Status == domain.JobStatusRunning {
 			return true
 		}
 	}

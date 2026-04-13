@@ -11,12 +11,12 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
-// newSvcStopCmd creates the wtm svc stop subcommand.
-func newSvcStopCmd() *cobra.Command {
+// newRunStopCmd creates the wtm run stop subcommand.
+func newRunStopCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "stop <service>",
-		Short: "Stop a single service",
-		Long:  "Stop an individual running service by name.",
+		Use:   "stop <job>",
+		Short: "Stop a single job",
+		Long:  "Stop an individual running job by name.",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runStop,
 	}
@@ -35,10 +35,10 @@ func runStop(cmd *cobra.Command, args []string) error {
 	socketPath := process.SocketPath()
 	if !process.IsDaemonRunning(socketPath) {
 		if format == domain.OutputJSON {
-			return output.WriteServiceResultsJSON(cmd.OutOrStdout(), nil)
+			return output.WriteJobResultsJSON(cmd.OutOrStdout(), nil)
 		}
 		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), "No services running.")
+		output.Message(cmd.OutOrStdout(), "No jobs running.")
 		output.Blank(cmd.OutOrStdout())
 		return nil
 	}
@@ -57,9 +57,9 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 
 	if format == domain.OutputJSON {
-		return output.WriteServiceResultJSON(cmd.OutOrStdout(), output.ServiceActionResult{
+		return output.WriteJobResultJSON(cmd.OutOrStdout(), output.JobActionResult{
 			Name:   args[0],
-			Status: domain.ServiceActionStopped,
+			Status: domain.JobActionStopped,
 		})
 	}
 

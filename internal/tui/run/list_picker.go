@@ -1,5 +1,6 @@
-// Package svcpicker renders the interactive pickers for `svc list` and `svc ps`.
-package svcpicker
+// Package runpicker renders the interactive pickers for `run list` and
+// `run ps`.
+package runpicker
 
 import (
 	"errors"
@@ -13,7 +14,7 @@ import (
 // Selection kinds returned by RunListPicker.
 const (
 	KindProfile = "profile"
-	KindService = "service"
+	KindJob     = "job"
 )
 
 // List actions emitted by RunListPicker.
@@ -27,21 +28,21 @@ const (
 
 // ListPickerResult describes what the user chose and which action to run.
 type ListPickerResult struct {
-	Kind   string // KindProfile | KindService
+	Kind   string // KindProfile | KindJob
 	Name   string
 	Action string // one of the ActionX constants
 }
 
-// RunListPicker shows a two-step picker: first a mixed profile/service list,
-// then a context-dependent action. Returns domain.ErrUserAborted on cancel.
-func RunListPicker(cfg domain.ServicesConfig) (ListPickerResult, error) {
-	if len(cfg.Profiles) == 0 && len(cfg.Services) == 0 {
+// RunListPicker shows a two-step picker: first a mixed profile/job list, then
+// a context-dependent action. Returns domain.ErrUserAborted on cancel.
+func RunListPicker(cfg domain.RunConfig) (ListPickerResult, error) {
+	if len(cfg.Profiles) == 0 && len(cfg.Jobs) == 0 {
 		return ListPickerResult{}, domain.ErrUserAborted
 	}
 
 	items := buildListItems(cfg)
 	sl := components.NewSelectList(components.NewSelectListParams{
-		Title: "Services & profiles",
+		Title: "Jobs & profiles",
 		Items: items,
 	})
 	selected, err := components.RunStandaloneSelect(sl)
@@ -65,7 +66,7 @@ func RunListPicker(cfg domain.ServicesConfig) (ListPickerResult, error) {
 	return ListPickerResult{Kind: kind, Name: name, Action: action}, nil
 }
 
-func buildListItems(cfg domain.ServicesConfig) []components.SelectItem {
+func buildListItems(cfg domain.RunConfig) []components.SelectItem {
 	var items []components.SelectItem
 
 	if len(cfg.Profiles) > 0 {
@@ -79,7 +80,7 @@ func buildListItems(cfg domain.ServicesConfig) []components.SelectItem {
 				badges = append(badges, components.Badge{Text: "default", Variant: components.BadgeSuccess})
 			}
 			badges = append(badges, components.Badge{
-				Text:    fmt.Sprintf("%d svc", len(p.Services)),
+				Text:    fmt.Sprintf("%d jobs", len(p.Jobs)),
 				Variant: components.BadgeNeutral,
 			})
 			items = append(items, components.SelectItem{
@@ -90,18 +91,22 @@ func buildListItems(cfg domain.ServicesConfig) []components.SelectItem {
 		}
 	}
 
-	if len(cfg.Services) > 0 {
+	if len(cfg.Jobs) > 0 {
 		if len(items) > 0 {
 			items = append(items, components.SelectItem{Separator: true})
 		}
 		items = append(items, components.SelectItem{
-			Label:    "— Services —",
+			Label:    "— Jobs —",
 			Disabled: true,
 		})
-		for _, s := range cfg.Services {
+		for _, j := range cfg.Jobs {
+			badges := []components.Badge{
+				{Text: string(j.Kind), Variant: components.BadgeNeutral},
+			}
 			items = append(items, components.SelectItem{
-				Label: s.Name,
-				Value: KindService + ":" + s.Name,
+				Label:  j.Name,
+				Value:  KindJob + ":" + j.Name,
+				Badges: badges,
 			})
 		}
 	}
@@ -125,7 +130,7 @@ func pickListAction(kind, name string) (string, error) {
 			{Label: "Up — start the profile", Value: ActionUp},
 			{Label: "Down — stop the profile", Value: ActionDown},
 		}
-	case KindService:
+	case KindJob:
 		items = []components.SelectItem{
 			{Label: "Start", Value: ActionStart},
 			{Label: "Stop", Value: ActionStop},

@@ -136,7 +136,7 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 			Name: "Docker services",
 			Model: components.NewMultiSelect(components.NewMultiSelectParams{
 				Title:       "Docker Compose services",
-				Description: "Detected docker-compose files — selected files become services in .wtm/services.toml",
+				Description: "Detected docker-compose files — selected files become service jobs in .wtm/run.toml",
 				Items:       items,
 			}),
 			Summary: multiSelectSummary,

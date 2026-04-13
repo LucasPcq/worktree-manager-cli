@@ -15,7 +15,7 @@ import (
 
 type detailModel struct {
 	detail          *worktree.DetailResult
-	serviceStatuses []process.ServiceInfo
+	serviceStatuses []process.JobInfo
 	lastError string
 	viewport  viewport.Model
 	width     int
@@ -139,8 +139,8 @@ func renderModifiedFiles(files []infra.ModifiedFile) string {
 	return builder.String()
 }
 
-func filterServicesByWorkDir(services []process.ServiceInfo, workDir string) []process.ServiceInfo {
-	var filtered []process.ServiceInfo
+func filterServicesByWorkDir(services []process.JobInfo, workDir string) []process.JobInfo {
+	var filtered []process.JobInfo
 	for _, svc := range services {
 		if svc.WorkDir == workDir {
 			filtered = append(filtered, svc)
@@ -149,7 +149,7 @@ func filterServicesByWorkDir(services []process.ServiceInfo, workDir string) []p
 	return filtered
 }
 
-func renderServiceStatuses(services []process.ServiceInfo) string {
+func renderServiceStatuses(services []process.JobInfo) string {
 	title := "  " + styles.Muted.Render("Services")
 	var builder strings.Builder
 	builder.WriteString(title)
@@ -158,9 +158,9 @@ func renderServiceStatuses(services []process.ServiceInfo) string {
 	for _, svc := range services {
 		var indicator string
 		switch svc.Status {
-		case domain.ServiceStatusRunning:
+		case domain.JobStatusRunning:
 			indicator = styles.ActiveIndicator.Render("●")
-		case domain.ServiceStatusCrashed:
+		case domain.JobStatusCrashed:
 			indicator = styles.DirtyIndicator.Render("✗")
 		default:
 			indicator = styles.Muted.Render("○")

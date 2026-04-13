@@ -8,10 +8,10 @@ import (
 )
 
 func TestFilterServicesByWorkDir(t *testing.T) {
-	services := []process.ServiceInfo{
-		{Name: "api", Status: domain.ServiceStatusRunning, PID: 100, WorkDir: "/projects/alpha"},
-		{Name: "web", Status: domain.ServiceStatusRunning, PID: 200, WorkDir: "/projects/beta"},
-		{Name: "worker", Status: domain.ServiceStatusStopped, PID: 300, WorkDir: "/projects/alpha"},
+	services := []process.JobInfo{
+		{Name: "api", Status: domain.JobStatusRunning, PID: 100, WorkDir: "/projects/alpha"},
+		{Name: "web", Status: domain.JobStatusRunning, PID: 200, WorkDir: "/projects/beta"},
+		{Name: "worker", Status: domain.JobStatusStopped, PID: 300, WorkDir: "/projects/alpha"},
 	}
 
 	result := filterServicesByWorkDir(services, "/projects/alpha")
@@ -21,16 +21,16 @@ func TestFilterServicesByWorkDir(t *testing.T) {
 }
 
 func TestFilterServicesByWorkDirEmpty(t *testing.T) {
-	result := filterServicesByWorkDir([]process.ServiceInfo{}, "/projects/alpha")
+	result := filterServicesByWorkDir([]process.JobInfo{}, "/projects/alpha")
 	if len(result) != 0 {
 		t.Fatalf("expected 0 matches for empty input, got %d", len(result))
 	}
 }
 
 func TestFilterServicesByWorkDirNoMatch(t *testing.T) {
-	services := []process.ServiceInfo{
-		{Name: "api", Status: domain.ServiceStatusRunning, PID: 100, WorkDir: "/projects/alpha"},
-		{Name: "web", Status: domain.ServiceStatusRunning, PID: 200, WorkDir: "/projects/beta"},
+	services := []process.JobInfo{
+		{Name: "api", Status: domain.JobStatusRunning, PID: 100, WorkDir: "/projects/alpha"},
+		{Name: "web", Status: domain.JobStatusRunning, PID: 200, WorkDir: "/projects/beta"},
 	}
 
 	result := filterServicesByWorkDir(services, "/projects/gamma")

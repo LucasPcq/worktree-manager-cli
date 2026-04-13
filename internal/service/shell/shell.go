@@ -29,7 +29,7 @@ const bashZshTemplate = `wtm() {
     dir="$(command wtm resolve "${branch_args[@]}")"
     if [ -n "$dir" ]; then
       cd "$dir" || return 1
-      command wtm svc up "${flags[@]}"
+      command wtm run up "${flags[@]}"
     fi
   elif [ "$1" = "wt" ] && [ "$2" = "clean" ]; then
     local root
@@ -89,7 +89,7 @@ const fishTemplate = `function wtm
     set dir (command wtm resolve $branch_args)
     if test -n "$dir"
       cd "$dir"
-      command wtm svc up $flags
+      command wtm run up $flags
     end
   else if test "$argv[1]" = "wt" -a "$argv[2]" = "clean"
     set root (git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')

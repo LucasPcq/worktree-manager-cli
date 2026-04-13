@@ -98,17 +98,17 @@ func createProjectConfig(cmd *cobra.Command, dir string) error {
 	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s/%s", domain.ProjectDirName, domain.ConfigFileName))
 
 	if len(answers.DockerComposeFiles) > 0 {
-		servicesCfg := config.BuildDockerServices(answers.DockerComposeCmd, answers.DockerComposeFiles)
-		err := config.WriteServices(config.WriteServicesParams{
+		runCfg := config.BuildDockerJobs(answers.DockerComposeCmd, answers.DockerComposeFiles)
+		err := config.WriteRun(config.WriteRunParams{
 			ProjectDir: dir,
-			Config:     servicesCfg,
+			Config:     runCfg,
 		})
-		if errors.Is(err, config.ErrServicesFileExists) {
-			output.Message(cmd.OutOrStdout(), fmt.Sprintf("%s/%s already exists — left untouched", domain.ProjectDirName, domain.ServicesFileName))
+		if errors.Is(err, config.ErrRunFileExists) {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf("%s/%s already exists — left untouched", domain.ProjectDirName, domain.RunFileName))
 		} else if err != nil {
-			return fmt.Errorf("write services config: %w", err)
+			return fmt.Errorf("write run config: %w", err)
 		} else {
-			output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s/%s", domain.ProjectDirName, domain.ServicesFileName))
+			output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s/%s", domain.ProjectDirName, domain.RunFileName))
 		}
 	}
 

@@ -12,9 +12,9 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// ErrServicesFileExists is returned by WriteServices when the target file
-// already exists — callers decide whether to skip or surface the condition.
-var ErrServicesFileExists = errors.New("services file already exists")
+// ErrRunFileExists is returned by WriteRun when the target file already
+// exists — callers decide whether to skip or surface the condition.
+var ErrRunFileExists = errors.New("run file already exists")
 
 // WriteProjectParams holds the inputs for writing a project config file.
 type WriteProjectParams struct {
@@ -42,21 +42,21 @@ func WriteProject(params WriteProjectParams) error {
 	return nil
 }
 
-// WriteServicesParams holds the inputs for writing a services config file.
-type WriteServicesParams struct {
+// WriteRunParams holds the inputs for writing a run config file.
+type WriteRunParams struct {
 	ProjectDir string
-	Config     domain.ServicesConfig
+	Config     domain.RunConfig
 }
 
-// WriteServices encodes cfg as TOML and writes it to .wtm/services.toml.
-// Returns ErrServicesFileExists if the file already exists; the file is never
+// WriteRun encodes cfg as TOML and writes it to .wtm/run.toml.
+// Returns ErrRunFileExists if the file already exists; the file is never
 // overwritten.
-func WriteServices(params WriteServicesParams) error {
+func WriteRun(params WriteRunParams) error {
 	dir := filepath.Join(params.ProjectDir, domain.ProjectDirName)
-	path := filepath.Join(dir, domain.ServicesFileName)
+	path := filepath.Join(dir, domain.RunFileName)
 
 	if _, err := os.Stat(path); err == nil {
-		return ErrServicesFileExists
+		return ErrRunFileExists
 	}
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -65,7 +65,7 @@ func WriteServices(params WriteServicesParams) error {
 
 	var buf bytes.Buffer
 	if err := toml.NewEncoder(&buf).Encode(params.Config); err != nil {
-		return fmt.Errorf("encode services: %w", err)
+		return fmt.Errorf("encode run config: %w", err)
 	}
 
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {

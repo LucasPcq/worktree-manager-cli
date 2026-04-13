@@ -15,17 +15,17 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// newSvcUpCmd creates the wtm svc up subcommand.
-func newSvcUpCmd() *cobra.Command {
+// newRunUpCmd creates the wtm run up subcommand.
+func newRunUpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "up [profile]",
-		Short: "Start a service profile",
-		Long:  "Start all services in a profile.\nWithout arguments, starts the default profile (or shows a picker if multiple exist).",
+		Short: "Start a profile's jobs",
+		Long:  "Start every job in a profile, in declared order.\nWithout arguments, uses the default profile (or shows a picker if multiple exist).\nTasks block the profile and abort it on failure; services launch detached.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  runUp,
 	}
 
-	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop services on other worktrees before starting")
+	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop jobs on other worktrees before starting")
 	cmd.Flags().Bool(domain.FlagParallel, false, "Start without stopping other worktrees")
 	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
 
@@ -43,16 +43,23 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	svcCfg, err := config.LoadServices(result.ProjectDir)
+	runCfg, err := config.LoadRun(result.ProjectDir)
 	if err != nil {
-		return fmt.Errorf("load services config: %w", err)
+		return fmt.Errorf("load run config: %w", err)
 	}
 
-	for _, warning := range config.ValidateServices(svcCfg) {
+	warnings, errs := config.ValidateRun(runCfg)
+	for _, warning := range warnings {
 		output.Warning(cmd.ErrOrStderr(), warning)
 	}
+	if len(errs) > 0 {
+		for _, e := range errs {
+			output.Error(cmd.ErrOrStderr(), e)
+		}
+		return fmt.Errorf("invalid run config")
+	}
 
-	services, err := resolveProfileServices(args, svcCfg)
+	jobs, err := resolveProfileJobs(args, runCfg)
 	if err != nil {
 		return err
 	}
@@ -64,103 +71,153 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	client := process.NewClient(socketPath)
 
-	if err := handleConcurrentServices(cmd, client, dir); err != nil {
+	if err := handleConcurrentJobs(cmd, client, dir); err != nil {
 		return err
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	results := make([]output.ServiceActionResult, 0, len(services))
+	results := make([]output.JobActionResult, 0, len(jobs))
 
-	for i := range services {
-		svc := services[i]
-		stopSpinner := startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s...", svc.Name))
+	for i := range jobs {
+		job := jobs[i]
+
+		if job.Kind == domain.JobKindTask {
+			if err := runTaskJob(cmd, client, job, dir, format, &results); err != nil {
+				if format == domain.OutputJSON {
+					return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
+				}
+				output.Blank(cmd.OutOrStdout())
+				return err
+			}
+			continue
+		}
+
+		stopSpinner := startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s...", job.Name))
 		resp, sendErr := client.Send(process.Request{
 			Action:  process.ActionStart,
-			Service: &svc,
+			Job:     &job,
 			WorkDir: dir,
 		})
 		stopSpinner()
 		if sendErr != nil {
-			results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionError, Message: sendErr.Error()})
+			results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: sendErr.Error()})
 			if format != domain.OutputJSON {
-				output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", svc.Name, sendErr))
+				output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", job.Name, sendErr))
 			}
 			continue
 		}
 		if resp.Status == process.StatusError {
-			results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionError, Message: resp.Message})
+			results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: resp.Message})
 			if format != domain.OutputJSON {
 				output.Error(cmd.ErrOrStderr(), resp.Message)
 			}
 			continue
 		}
-		results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionStarted})
+		results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
 		if format != domain.OutputJSON {
-			output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", svc.Name))
+			output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", job.Name))
 		}
 	}
 
 	if format == domain.OutputJSON {
-		return output.WriteServiceResultsJSON(cmd.OutOrStdout(), results)
+		return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
 	}
 
 	output.Blank(cmd.OutOrStdout())
 	return nil
 }
 
-func resolveProfileServices(args []string, svcCfg domain.ServicesConfig) ([]domain.ServiceConfig, error) {
+// runTaskJob blocks while the daemon runs a task and surfaces the outcome to
+// the user with a spinner. Output is not streamed here — the task's hub is
+// live on the daemon so the user can `wtm run logs <task>` from another
+// terminal to follow along. Returns an error when the task fails so the
+// caller can abort the profile.
+func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig, dir string, format string, results *[]output.JobActionResult) error {
+	var stopSpinner func()
+	if format != domain.OutputJSON {
+		stopSpinner = startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Running task %s...", job.Name))
+	}
+	resp, err := client.Send(process.Request{
+		Action:  process.ActionStart,
+		Job:     &job,
+		WorkDir: dir,
+	})
+	if stopSpinner != nil {
+		stopSpinner()
+	}
+	if err != nil {
+		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: err.Error()})
+		return fmt.Errorf("task %s: %w", job.Name, err)
+	}
+	if resp.Status == process.StatusError {
+		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: resp.Message})
+		if format != domain.OutputJSON {
+			output.Error(cmd.ErrOrStderr(), resp.Message)
+		}
+		return fmt.Errorf("task %s failed", job.Name)
+	}
+
+	*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionDone})
+	if format != domain.OutputJSON {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s done", job.Name))
+	}
+	return nil
+}
+
+func resolveProfileJobs(args []string, cfg domain.RunConfig) ([]domain.JobConfig, error) {
 	if len(args) > 0 {
-		profile, ok := svcCfg.FindProfile(args[0])
+		profile, ok := cfg.FindProfile(args[0])
 		if !ok {
 			return nil, fmt.Errorf("profile %q not found in config", args[0])
 		}
-		return svcCfg.ProfileServices(profile), nil
+		return cfg.ProfileJobs(profile), nil
 	}
 
 	// 1 profile or less → use default
-	if len(svcCfg.Profiles) <= 1 {
-		profile, ok := svcCfg.DefaultProfile()
+	if len(cfg.Profiles) <= 1 {
+		profile, ok := cfg.DefaultProfile()
 		if !ok {
-			return svcCfg.Services, nil
+			return cfg.Jobs, nil
 		}
-		return svcCfg.ProfileServices(profile), nil
+		return cfg.ProfileJobs(profile), nil
 	}
 
 	// 2+ profiles → interactive picker
-	profile, err := pickProfile(svcCfg)
+	profile, err := pickProfile(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	return svcCfg.ProfileServices(profile), nil
+	return cfg.ProfileJobs(profile), nil
 }
 
-func pickProfile(svcCfg domain.ServicesConfig) (domain.ProfileConfig, error) {
-	defaultProfile, _ := svcCfg.DefaultProfile()
+func pickProfile(cfg domain.RunConfig) (domain.ProfileConfig, error) {
+	defaultProfile, _ := cfg.DefaultProfile()
 
-	items := make([]components.SelectItem, 0, len(svcCfg.Profiles))
-	for _, p := range svcCfg.Profiles {
+	items := make([]components.SelectItem, 0, len(cfg.Profiles))
+	for _, p := range cfg.Profiles {
 		label := p.Name
-		if len(p.Services) > 0 {
-			label += fmt.Sprintf(" (%s)", joinServiceNames(p.Services))
+		if len(p.Jobs) > 0 {
+			label += fmt.Sprintf(" (%s)", joinJobNames(p.Jobs))
 		}
 		items = append(items, components.SelectItem{Label: label, Value: p.Name})
 	}
 
 	sl := components.NewSelectList(components.NewSelectListParams{
 		Title:       "Select profile",
-		Description: "Which services to start?",
+		Description: "Which profile to start?",
 		Items:       items,
 	})
 
-	selected := defaultProfile.Name
-	result, err := components.RunStandaloneSelect(sl)
+	selected, err := components.RunStandaloneSelect(sl)
 	if err != nil {
 		return domain.ProfileConfig{}, domain.ErrUserAborted
 	}
-	selected = result
+	if selected == "" {
+		selected = defaultProfile.Name
+	}
 
-	profile, ok := svcCfg.FindProfile(selected)
+	profile, ok := cfg.FindProfile(selected)
 	if !ok {
 		return domain.ProfileConfig{}, fmt.Errorf("profile %q not found", selected)
 	}
@@ -168,7 +225,7 @@ func pickProfile(svcCfg domain.ServicesConfig) (domain.ProfileConfig, error) {
 	return profile, nil
 }
 
-func joinServiceNames(names []string) string {
+func joinJobNames(names []string) string {
 	result := ""
 	for i, n := range names {
 		if i > 0 {
@@ -179,9 +236,9 @@ func joinServiceNames(names []string) string {
 	return result
 }
 
-// handleConcurrentServices checks if services are running on other worktrees
-// and handles the exclusive/parallel decision.
-func handleConcurrentServices(cmd *cobra.Command, client *process.Client, currentDir string) error {
+// handleConcurrentJobs checks if jobs are running on other worktrees and
+// handles the exclusive/parallel decision.
+func handleConcurrentJobs(cmd *cobra.Command, client *process.Client, currentDir string) error {
 	exclusiveFlag, _ := cmd.Flags().GetBool(domain.FlagExclusive)
 	parallelFlag, _ := cmd.Flags().GetBool(domain.FlagParallel)
 
@@ -189,19 +246,19 @@ func handleConcurrentServices(cmd *cobra.Command, client *process.Client, curren
 		return nil
 	}
 
-	otherWorktrees, otherNames := findOtherRunningServices(client, currentDir)
+	otherWorktrees, otherNames := findOtherRunningJobs(client, currentDir)
 	if len(otherWorktrees) == 0 {
 		return nil
 	}
 
 	if exclusiveFlag {
-		return stopOtherServices(client, otherWorktrees, cmd)
+		return stopOtherJobs(client, otherWorktrees, cmd)
 	}
 
-	return promptConcurrentServices(cmd, client, otherWorktrees, otherNames)
+	return promptConcurrentJobs(cmd, client, otherWorktrees, otherNames)
 }
 
-func findOtherRunningServices(client *process.Client, currentDir string) (map[string]bool, map[string][]string) {
+func findOtherRunningJobs(client *process.Client, currentDir string) (map[string]bool, map[string][]string) {
 	resp, err := client.Send(process.Request{Action: process.ActionList})
 	if err != nil {
 		return nil, nil
@@ -210,25 +267,25 @@ func findOtherRunningServices(client *process.Client, currentDir string) (map[st
 	otherWorktrees := make(map[string]bool)
 	otherNames := make(map[string][]string)
 
-	for _, svc := range resp.Services {
-		if svc.Status != domain.ServiceStatusRunning {
+	for _, job := range resp.Jobs {
+		if job.Status != domain.JobStatusRunning {
 			continue
 		}
-		if svc.WorkDir == currentDir {
+		if job.WorkDir == currentDir {
 			continue
 		}
-		otherWorktrees[svc.WorkDir] = true
-		otherNames[svc.WorkDir] = append(otherNames[svc.WorkDir], svc.Name)
+		otherWorktrees[job.WorkDir] = true
+		otherNames[job.WorkDir] = append(otherNames[job.WorkDir], job.Name)
 	}
 
 	return otherWorktrees, otherNames
 }
 
-func promptConcurrentServices(cmd *cobra.Command, client *process.Client, otherWorktrees map[string]bool, otherNames map[string][]string) error {
+func promptConcurrentJobs(cmd *cobra.Command, client *process.Client, otherWorktrees map[string]bool, otherNames map[string][]string) error {
 	output.Blank(cmd.ErrOrStderr())
 	for dir, names := range otherNames {
 		short := filepath.Base(dir)
-		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("Services running on %s (%s)", short, strings.Join(names, ", ")))
+		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("Jobs running on %s (%s)", short, strings.Join(names, ", ")))
 	}
 
 	items := []components.SelectItem{
@@ -237,7 +294,7 @@ func promptConcurrentServices(cmd *cobra.Command, client *process.Client, otherW
 	}
 
 	sl := components.NewSelectList(components.NewSelectListParams{
-		Title: "Stop other services before starting?",
+		Title: "Stop other jobs before starting?",
 		Items: items,
 	})
 
@@ -248,27 +305,26 @@ func promptConcurrentServices(cmd *cobra.Command, client *process.Client, otherW
 
 	if choice == "yes" {
 		output.Blank(cmd.ErrOrStderr())
-		return stopOtherServices(client, otherWorktrees, cmd)
+		return stopOtherJobs(client, otherWorktrees, cmd)
 	}
 	return nil
 }
 
-func stopOtherServices(client *process.Client, worktrees map[string]bool, cmd *cobra.Command) error {
+func stopOtherJobs(client *process.Client, worktrees map[string]bool, cmd *cobra.Command) error {
 	for dir := range worktrees {
 		resp, err := client.Send(process.Request{
 			Action:  process.ActionStopAll,
 			WorkDir: dir,
 		})
 		if err != nil {
-			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("stop services in %s: %v", filepath.Base(dir), err))
+			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("stop jobs in %s: %v", filepath.Base(dir), err))
 			continue
 		}
 		if resp.Status == process.StatusError {
-			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("stop services in %s: %s", filepath.Base(dir), resp.Message))
+			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("stop jobs in %s: %s", filepath.Base(dir), resp.Message))
 			continue
 		}
-		output.Success(cmd.ErrOrStderr(), fmt.Sprintf("Stopped services in %s", filepath.Base(dir)))
+		output.Success(cmd.ErrOrStderr(), fmt.Sprintf("Stopped jobs in %s", filepath.Base(dir)))
 	}
 	return nil
 }
-

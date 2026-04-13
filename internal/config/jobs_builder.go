@@ -8,33 +8,35 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// BuildDockerServices builds a ServicesConfig with one [[services]] entry per
-// detected docker-compose file, using the provided compose command invocation
-// (e.g. "docker compose" or "docker-compose"). No profile is emitted.
-func BuildDockerServices(composeCmd string, files []string) domain.ServicesConfig {
-	services := make([]domain.ServiceConfig, 0, len(files))
+// BuildDockerJobs builds a RunConfig with one [[job]] entry per detected
+// docker-compose file, using the provided compose command (e.g.
+// "docker compose" or "docker-compose"). Each job is kind="service" with a
+// stop command, meaning they run as detached services. No profile is emitted.
+func BuildDockerJobs(composeCmd string, files []string) domain.RunConfig {
+	jobs := make([]domain.JobConfig, 0, len(files))
 	counts := map[string]int{}
 	for _, f := range files {
-		base := serviceNameFromComposeFile(f)
+		base := jobNameFromComposeFile(f)
 		counts[base]++
 		name := base
 		if counts[base] > 1 {
 			name = fmt.Sprintf("%s-%d", base, counts[base])
 		}
-		services = append(services, domain.ServiceConfig{
+		jobs = append(jobs, domain.JobConfig{
 			Name: name,
+			Kind: domain.JobKindService,
 			Cmd:  fmt.Sprintf("%s -f %s up -d", composeCmd, f),
 			Stop: fmt.Sprintf("%s -f %s down --remove-orphans", composeCmd, f),
 			Cwd:  ".",
 		})
 	}
-	return domain.ServicesConfig{Services: services}
+	return domain.RunConfig{Jobs: jobs}
 }
 
-// serviceNameFromComposeFile turns "docker-compose.dev.yml" into
+// jobNameFromComposeFile turns "docker-compose.dev.yml" into
 // "docker-compose-dev", "docker-compose.yaml" into "docker-compose", and
 // "docker-compose.prod.yaml" into "docker-compose-prod".
-func serviceNameFromComposeFile(path string) string {
+func jobNameFromComposeFile(path string) string {
 	base := filepath.Base(path)
 	base = strings.TrimSuffix(base, filepath.Ext(base))
 	if base == "docker-compose" || base == "" {

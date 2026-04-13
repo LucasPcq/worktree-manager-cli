@@ -157,8 +157,8 @@ func stopServicesForWorktree(cmd *cobra.Command, projectDir string, branch strin
 	}
 
 	hasRunning := false
-	for _, svc := range resp.Services {
-		if svc.WorkDir == wt.Path && svc.Status == domain.ServiceStatusRunning {
+	for _, svc := range resp.Jobs {
+		if svc.WorkDir == wt.Path && svc.Status == domain.JobStatusRunning {
 			hasRunning = true
 			break
 		}

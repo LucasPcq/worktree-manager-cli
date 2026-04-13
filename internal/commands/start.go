@@ -12,12 +12,12 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
-// newSvcStartCmd creates the wtm svc start subcommand.
-func newSvcStartCmd() *cobra.Command {
+// newRunStartCmd creates the wtm run start subcommand.
+func newRunStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "start <service>",
-		Short: "Start a single service",
-		Long:  "Start an individual service by name (defined in .wtm/services.toml).",
+		Use:   "start <job>",
+		Short: "Start a single job",
+		Long:  "Start an individual job by name (defined in .wtm/run.toml). Tasks run inline and block until they exit; services launch in the background.",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runStart,
 	}
@@ -36,14 +36,14 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	svcCfg, err := config.LoadServices(result.ProjectDir)
+	runCfg, err := config.LoadRun(result.ProjectDir)
 	if err != nil {
-		return fmt.Errorf("load services config: %w", err)
+		return fmt.Errorf("load run config: %w", err)
 	}
 
-	svc, ok := svcCfg.FindService(args[0])
+	job, ok := runCfg.FindJob(args[0])
 	if !ok {
-		return fmt.Errorf("service %q not found in config", args[0])
+		return fmt.Errorf("job %q not found in config", args[0])
 	}
 
 	socketPath := process.SocketPath()
@@ -52,30 +52,61 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	client := process.NewClient(socketPath)
-	stopSpinner := startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s...", svc.Name))
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
+	if job.Kind == domain.JobKindTask {
+		var stopSpinner func()
+		if format != domain.OutputJSON {
+			stopSpinner = startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Running task %s...", job.Name))
+		}
+		resp, err := client.Send(process.Request{
+			Action:  process.ActionStart,
+			Job:     &job,
+			WorkDir: dir,
+		})
+		if stopSpinner != nil {
+			stopSpinner()
+		}
+		if err != nil {
+			return fmt.Errorf("task %s: %w", job.Name, err)
+		}
+		if resp.Status == process.StatusError {
+			return fmt.Errorf("%s", resp.Message)
+		}
+		if format == domain.OutputJSON {
+			return output.WriteJobResultJSON(cmd.OutOrStdout(), output.JobActionResult{
+				Name:   job.Name,
+				Status: domain.JobActionDone,
+			})
+		}
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s done", job.Name))
+		output.Blank(cmd.OutOrStdout())
+		return nil
+	}
+
+	stopSpinner := startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s...", job.Name))
 	resp, err := client.Send(process.Request{
 		Action:  process.ActionStart,
-		Service: &svc,
+		Job:     &job,
 		WorkDir: dir,
 	})
 	stopSpinner()
 	if err != nil {
-		return fmt.Errorf("start %s: %w", svc.Name, err)
+		return fmt.Errorf("start %s: %w", job.Name, err)
 	}
 	if resp.Status == process.StatusError {
 		return fmt.Errorf("%s", resp.Message)
 	}
 
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
-		return output.WriteServiceResultJSON(cmd.OutOrStdout(), output.ServiceActionResult{
-			Name:   svc.Name,
-			Status: domain.ServiceActionStarted,
+		return output.WriteJobResultJSON(cmd.OutOrStdout(), output.JobActionResult{
+			Name:   job.Name,
+			Status: domain.JobActionStarted,
 		})
 	}
 
 	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", svc.Name))
+	output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", job.Name))
 	output.Blank(cmd.OutOrStdout())
 	return nil
 }

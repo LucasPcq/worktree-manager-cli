@@ -91,7 +91,7 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []infr
 	}
 
 	prs := loadPRsGraceful(cfgResult.ProjectDir)
-	services := loadServicesGraceful()
+	services := loadJobsGraceful()
 
 	return worktreepicker.Run(worktreepicker.RunParams{
 		Statuses: filtered,

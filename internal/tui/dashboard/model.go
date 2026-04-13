@@ -55,7 +55,7 @@ type Model struct {
 	projectDir       string
 	workDir          string
 	program          *tea.Program
-	serviceStatuses  []process.ServiceInfo
+	serviceStatuses  []process.JobInfo
 	width            int
 	height           int
 	keys             keyMap
@@ -455,8 +455,8 @@ func (m *Model) handleWorktreeAction(msg tea.KeyMsg, selected domain.WorktreeSta
 		return m, tea.Quit
 
 	case key.Matches(msg, m.keys.ProfileUp):
-		if !hasServicesConfig(selected.Path) {
-			m.logbar.message = "No .wtm/services.toml found in this worktree"
+		if !hasRunConfig(selected.Path) {
+			m.logbar.message = "No .wtm/run.toml found in this worktree"
 			return m, nil
 		}
 		m.logbar.message = fmt.Sprintf("Starting profile in %s...", selected.Branch)

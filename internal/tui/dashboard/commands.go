@@ -99,7 +99,7 @@ func loadServiceStatuses() tea.Cmd {
 		if err != nil {
 			return serviceListMsg{Err: err}
 		}
-		return serviceListMsg{Services: resp.Services}
+		return serviceListMsg{Services: resp.Jobs}
 	}
 }
 
@@ -137,7 +137,7 @@ func viewLogsCmd(worktreePath string) tea.Cmd {
 	})
 }
 
-func stopServicesCmd(worktreePath string, services []process.ServiceInfo) tea.Cmd {
+func stopServicesCmd(worktreePath string, services []process.JobInfo) tea.Cmd {
 	return func() tea.Msg {
 		socketPath := process.SocketPath()
 		if !process.IsDaemonRunning(socketPath) {
@@ -191,12 +191,12 @@ func execCheckoutPR(prNumber int) tea.Cmd {
 	})
 }
 
-func hasServicesConfig(projectDir string) bool {
-	cfg, err := config.LoadServices(projectDir)
+func hasRunConfig(projectDir string) bool {
+	cfg, err := config.LoadRun(projectDir)
 	if err != nil {
 		return false
 	}
-	return len(cfg.Services) > 0
+	return len(cfg.Jobs) > 0
 }
 
 func loadPRs(projectDir string, filter domain.PRFilter) tea.Cmd {

@@ -55,7 +55,7 @@ func runLs(cmd *cobra.Command, _ []string) error {
 	prs := loadPRsGraceful(result.ProjectDir)
 
 	// Load services (graceful degradation)
-	services := loadServicesGraceful()
+	services := loadJobsGraceful()
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
@@ -105,7 +105,7 @@ func loadPRsGraceful(projectDir string) []domain.PRInfo {
 	return prs
 }
 
-func loadServicesGraceful() []process.ServiceInfo {
+func loadJobsGraceful() []process.JobInfo {
 	socketPath := process.SocketPath()
 	if !process.IsDaemonRunning(socketPath) {
 		return nil
@@ -115,7 +115,7 @@ func loadServicesGraceful() []process.ServiceInfo {
 	if err != nil {
 		return nil
 	}
-	return resp.Services
+	return resp.Jobs
 }
 
 const (
@@ -134,7 +134,7 @@ func pickWorktreeAndAction(
 	statuses []domain.WorktreeStatus,
 	activeBranch string,
 	prs []domain.PRInfo,
-	services []process.ServiceInfo,
+	services []process.JobInfo,
 ) (domain.WorktreeStatus, string, error) {
 	wtItems := make([]components.SelectItem, 0, len(statuses))
 	for i, s := range statuses {
@@ -221,7 +221,7 @@ func pickWorktreeAndAction(
 	return statuses[idx], actionSL.Value(), nil
 }
 
-func buildWorktreeLabel(s domain.WorktreeStatus, activeBranch string, prs []domain.PRInfo, services []process.ServiceInfo) string {
+func buildWorktreeLabel(s domain.WorktreeStatus, activeBranch string, prs []domain.PRInfo, services []process.JobInfo) string {
 	label := s.Branch
 
 	var tags []string
@@ -238,7 +238,7 @@ func buildWorktreeLabel(s domain.WorktreeStatus, activeBranch string, prs []doma
 		}
 	}
 	for _, svc := range services {
-		if svc.WorkDir == s.Path && svc.Status == domain.ServiceStatusRunning {
+		if svc.WorkDir == s.Path && svc.Status == domain.JobStatusRunning {
 			tags = append(tags, "services")
 			break
 		}
@@ -287,7 +287,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 				return err
 			}
 		}
-		c := exec.Command(bin, "svc", "up")
+		c := exec.Command(bin, "run", "up")
 		c.Dir = selected.Path
 		c.Stdin = os.Stdin
 		c.Stdout = os.Stdout
@@ -295,7 +295,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return c.Run()
 
 	case lsActionServicesUp:
-		cmd := exec.Command(bin, "svc", "up")
+		cmd := exec.Command(bin, "run", "up")
 		cmd.Dir = selected.Path
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -303,7 +303,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return cmd.Run()
 
 	case lsActionServicesDown:
-		cmd := exec.Command(bin, "svc", "down")
+		cmd := exec.Command(bin, "run", "down")
 		cmd.Dir = selected.Path
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -311,7 +311,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return cmd.Run()
 
 	case lsActionLogs:
-		cmd := exec.Command(bin, "svc", "logs")
+		cmd := exec.Command(bin, "run", "logs")
 		cmd.Dir = selected.Path
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout

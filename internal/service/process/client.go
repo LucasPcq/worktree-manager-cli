@@ -24,8 +24,18 @@ func NewClient(socketPath string) *Client {
 	return &Client{socketPath: socketPath}
 }
 
-// Send sends a request to the daemon and returns the response.
+// Send sends a request to the daemon and returns the first terminal response
+// (StatusOK, StatusDone, or StatusError). Intermediate StatusOutput chunks
+// are discarded — use SendStream when the caller wants to forward them.
 func (c *Client) Send(req Request) (Response, error) {
+	return c.SendStream(req, nil)
+}
+
+// SendStream sends the request and iterates over every response. `onOutput`
+// is invoked with each StatusOutput chunk's Data (useful for streaming task
+// stdout/stderr to the user). Returns the first terminal response
+// (StatusOK, StatusDone, or StatusError) received.
+func (c *Client) SendStream(req Request, onOutput func([]byte)) (Response, error) {
 	conn, err := net.Dial("unix", c.socketPath)
 	if err != nil {
 		return Response{}, fmt.Errorf("connect to daemon: %w", err)
@@ -39,12 +49,19 @@ func (c *Client) Send(req Request) (Response, error) {
 		return Response{}, fmt.Errorf("send request: %w", err)
 	}
 
-	var resp Response
-	if err := decoder.Decode(&resp); err != nil {
-		return Response{}, fmt.Errorf("read response: %w", err)
+	for {
+		var resp Response
+		if err := decoder.Decode(&resp); err != nil {
+			return Response{}, fmt.Errorf("read response: %w", err)
+		}
+		if resp.Status == StatusOutput {
+			if onOutput != nil && len(resp.Data) > 0 {
+				onOutput(resp.Data)
+			}
+			continue
+		}
+		return resp, nil
 	}
-
-	return resp, nil
 }
 
 // AttachParams holds inputs for attaching to a service.

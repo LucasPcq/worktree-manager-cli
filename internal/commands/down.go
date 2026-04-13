@@ -12,17 +12,17 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
-// newSvcDownCmd creates the wtm svc down subcommand.
-func newSvcDownCmd() *cobra.Command {
+// newRunDownCmd creates the wtm run down subcommand.
+func newRunDownCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "down [profile]",
-		Short: "Stop services running in the current worktree",
-		Long:  "Stop services running in the current worktree.\nWith a profile argument, stops only that profile's services.\nServices running in other worktrees are never touched.",
+		Short: "Stop jobs running in the current worktree",
+		Long:  "Stop jobs running in the current worktree.\nWith a profile argument, stops only that profile's jobs.\nJobs running in other worktrees are never touched.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  runDown,
 	}
 	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
-	cmd.Flags().Bool(domain.FlagAll, false, "Stop services across every worktree (bypasses per-worktree scoping)")
+	cmd.Flags().Bool(domain.FlagAll, false, "Stop jobs across every worktree (bypasses per-worktree scoping)")
 	return cmd
 }
 
@@ -38,10 +38,10 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	if !process.IsDaemonRunning(socketPath) {
 		if format == domain.OutputJSON {
-			return output.WriteServiceResultsJSON(cmd.OutOrStdout(), nil)
+			return output.WriteJobResultsJSON(cmd.OutOrStdout(), nil)
 		}
 		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), "No services running.")
+		output.Message(cmd.OutOrStdout(), "No jobs running.")
 		output.Blank(cmd.OutOrStdout())
 		return nil
 	}
@@ -59,47 +59,47 @@ func runDown(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		svcCfg, err := config.LoadServices(root)
+		runCfg, err := config.LoadRun(root)
 		if err != nil {
-			return fmt.Errorf("load services config: %w", err)
+			return fmt.Errorf("load run config: %w", err)
 		}
 
-		profile, ok := svcCfg.FindProfile(args[0])
+		profile, ok := runCfg.FindProfile(args[0])
 		if !ok {
 			return fmt.Errorf("profile %q not found in config", args[0])
 		}
 
-		services := svcCfg.ProfileServices(profile)
-		results := make([]output.ServiceActionResult, 0, len(services))
-		for _, svc := range services {
-			stopSpinner := startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s...", svc.Name))
+		jobs := runCfg.ProfileJobs(profile)
+		results := make([]output.JobActionResult, 0, len(jobs))
+		for _, job := range jobs {
+			stopSpinner := startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s...", job.Name))
 			resp, sendErr := client.Send(process.Request{
 				Action:  process.ActionStop,
-				Name:    svc.Name,
+				Name:    job.Name,
 				WorkDir: dir,
 			})
 			stopSpinner()
 			if sendErr != nil {
-				results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionError, Message: sendErr.Error()})
+				results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: sendErr.Error()})
 				if format != domain.OutputJSON {
-					output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", svc.Name, sendErr))
+					output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", job.Name, sendErr))
 				}
 				continue
 			}
 			if resp.Status == process.StatusError {
-				results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionError, Message: resp.Message})
+				results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: resp.Message})
 				if format != domain.OutputJSON {
-					output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %s", svc.Name, resp.Message))
+					output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %s", job.Name, resp.Message))
 				}
 				continue
 			}
-			results = append(results, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionStopped})
+			results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStopped})
 			if format != domain.OutputJSON {
-				output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", svc.Name))
+				output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", job.Name))
 			}
 		}
 		if format == domain.OutputJSON {
-			return output.WriteServiceResultsJSON(cmd.OutOrStdout(), results)
+			return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
 		}
 		output.Blank(cmd.OutOrStdout())
 		return nil
@@ -114,38 +114,38 @@ func runDown(cmd *cobra.Command, args []string) error {
 		req.WorkDir = dir
 	}
 
-	stopSpinner := startSpinner(cmd.ErrOrStderr(), "Stopping services...")
+	stopSpinner := startSpinner(cmd.ErrOrStderr(), "Stopping jobs...")
 	resp, err := client.Send(req)
 	stopSpinner()
 	if err != nil {
-		return fmt.Errorf("stop all services: %w", err)
+		return fmt.Errorf("stop all jobs: %w", err)
 	}
 	if resp.Status == process.StatusError {
 		return fmt.Errorf("stop all: %s", resp.Message)
 	}
 
 	if format == domain.OutputJSON {
-		stopped := make([]output.ServiceActionResult, 0, len(resp.Services))
-		for _, svc := range resp.Services {
-			stopped = append(stopped, output.ServiceActionResult{Name: svc.Name, Status: domain.ServiceActionStopped})
+		stopped := make([]output.JobActionResult, 0, len(resp.Jobs))
+		for _, job := range resp.Jobs {
+			stopped = append(stopped, output.JobActionResult{Name: job.Name, Status: domain.JobActionStopped})
 		}
-		return output.WriteServiceResultsJSON(cmd.OutOrStdout(), stopped)
+		return output.WriteJobResultsJSON(cmd.OutOrStdout(), stopped)
 	}
 
-	if len(resp.Services) == 0 {
+	if len(resp.Jobs) == 0 {
 		if all {
-			output.Message(cmd.OutOrStdout(), "No services running.")
+			output.Message(cmd.OutOrStdout(), "No jobs running.")
 		} else {
-			output.Message(cmd.OutOrStdout(), "No services running in this worktree.")
+			output.Message(cmd.OutOrStdout(), "No jobs running in this worktree.")
 		}
 		output.Blank(cmd.OutOrStdout())
 		return nil
 	}
-	for i, svc := range resp.Services {
+	for i, job := range resp.Jobs {
 		if i > 0 {
 			output.Blank(cmd.OutOrStdout())
 		}
-		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", svc.Name))
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", job.Name))
 	}
 	output.Blank(cmd.OutOrStdout())
 	return nil

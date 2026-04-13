@@ -1,11 +1,11 @@
 ---
 name: using-wtm
-description: Use this skill whenever the user wants to create, list, switch, focus, or clean git worktrees; start, stop, or inspect per-worktree dev services; or list, create, or check out GitHub pull requests — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
+description: Use this skill whenever the user wants to create, list, switch, focus, or clean git worktrees; start, stop, or inspect per-worktree dev jobs (services + tasks); or list, create, or check out GitHub pull requests — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
 ---
 
 # Using wtm
 
-wtm is a CLI that manages **git worktrees**, **per-worktree dev services** (via a background daemon), and **GitHub pull requests**. It's designed to be driven by LLMs: every data command accepts `--output json` and prints machine-parseable results to stdout, while human messages stay on stderr.
+wtm is a CLI that manages **git worktrees**, **per-worktree dev jobs** (long-running services + one-shot tasks, via a background daemon), and **GitHub pull requests**. It's designed to be driven by LLMs: every data command accepts `--output json` and prints machine-parseable results to stdout, while human messages stay on stderr.
 
 ## How to drive wtm from an LLM
 
@@ -23,8 +23,8 @@ Run these before taking action so you have names to pass as arguments:
 |---|---|
 | All worktrees (branch, path, PR, services, dirty?) | `wtm wt list --output json` |
 | All open PRs (number, title, branch, state, draft, url) | `wtm pr list --output json` |
-| Declared services + profiles from `.wtm/services.toml` | `wtm svc list --output json` |
-| Services running right now (name, status, pid, workdir) | `wtm svc ps --output json` |
+| Declared jobs + profiles from `.wtm/run.toml` | `wtm run list --output json` |
+| Jobs running right now (name, kind, status, pid, workdir) | `wtm run ps --output json` |
 
 ## Worktree commands (`wtm wt`)
 
@@ -34,17 +34,22 @@ Run these before taking action so you have names to pass as arguments:
 - **`wtm wt go <branch>`** and **`wtm wt switch <branch>`** — navigate to a worktree (and start services, for `switch`). These **require the user's shell integration** to `cd`, so an LLM can't drive them directly. Prefer `wt list` + tell the user which branch to run `switch` on.
 - **`wtm wt focus <branch>`** — mark a worktree as the active one in the dashboard / state. Pass the branch explicitly.
 
-## Service commands (`wtm svc`)
+## Run commands (`wtm run`)
 
-Services are defined in `.wtm/services.toml` and executed by a background daemon. Profiles are named groups of services.
+Jobs are defined in `.wtm/run.toml` and executed by a background daemon. Each job has a `kind`:
 
-- **`wtm svc list --output json`** — config introspection (what's declared).
-- **`wtm svc ps --output json`** — runtime state (what's running).
-- **`wtm svc up [profile] --output json`** — start all services in a profile. No arg → default profile. Flags: `--exclusive` (stop services on other worktrees first), `--parallel` (don't stop anything).
-- **`wtm svc down [profile] --output json`** — stop services in the **current worktree** (or a specific profile). Other worktrees are never touched. Add `--all` to stop services across every worktree.
-- **`wtm svc start <service> --output json`** — start one service.
-- **`wtm svc stop <service> --output json`** — stop one service.
-- **`wtm svc logs [service]`** — stream logs. No `--output json` here: logs are a raw text stream (already machine-readable).
+- **`kind = "service"`** — long-running. With a `stop` command, it's a detached launcher (e.g. `docker compose up -d`); otherwise it's tracked by PID and killed via SIGTERM.
+- **`kind = "task"`** — one-shot script. Blocks the profile, streams output live, removed after exit. A non-zero exit aborts the profile.
+
+Profiles are named groups of jobs (run in declared order). The same TOML can host multiple profiles (e.g. `dev`, `test`, `staging`).
+
+- **`wtm run list --output json`** — config introspection (jobs + profiles declared).
+- **`wtm run ps --output json`** — runtime state (jobs running right now, with kind).
+- **`wtm run up [profile] --output json`** — execute a profile in order. No arg → default profile. Flags: `--exclusive` (stop jobs on other worktrees first), `--parallel` (don't stop anything).
+- **`wtm run down [profile] --output json`** — stop jobs in the **current worktree** (or a specific profile). Other worktrees are never touched. Add `--all` to stop jobs across every worktree.
+- **`wtm run start <job> --output json`** — start one job. Tasks block until they exit; services launch in the background.
+- **`wtm run stop <job> --output json`** — stop one job.
+- **`wtm run logs [job]`** — attach to a job's PTY. No `--output json`: it's a raw text stream (already machine-readable).
 
 ## Pull request commands (`wtm pr`)
 

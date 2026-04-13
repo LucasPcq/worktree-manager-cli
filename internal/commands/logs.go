@@ -16,12 +16,12 @@ import (
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
-// newSvcLogsCmd creates the wtm svc logs subcommand.
-func newSvcLogsCmd() *cobra.Command {
+// newRunLogsCmd creates the wtm run logs subcommand.
+func newRunLogsCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "logs [service]",
-		Short: "Stream service output",
-		Long:  "Without arguments, stream all running services (multiplexed).\nWith a service name, attach to that single service PTY.\nPress Ctrl+C to detach.",
+		Use:   "logs [job]",
+		Short: "Attach to a job's output",
+		Long:  "Without arguments, stream all running jobs (multiplexed).\nWith a job name, attach to that single job's PTY.\nPress Ctrl+C to detach.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  runLogs,
 	}
@@ -36,13 +36,13 @@ func runLogs(_ *cobra.Command, args []string) error {
 	dir, _ := os.Getwd()
 
 	if len(args) > 0 {
-		return attachSingleService(socketPath, args[0], dir)
+		return attachSingleJob(socketPath, args[0], dir)
 	}
 
-	return multiplexAllServices(socketPath, dir)
+	return multiplexAllJobs(socketPath, dir)
 }
 
-func attachSingleService(socketPath string, name string, dir string) error {
+func attachSingleJob(socketPath string, name string, dir string) error {
 	fd := int(os.Stdin.Fd())
 	cols, rows, err := term.GetSize(fd)
 	if err != nil {
@@ -99,31 +99,31 @@ func attachSingleService(socketPath string, name string, dir string) error {
 	return nil
 }
 
-// serviceColors cycles through distinct colors for each service prefix.
-var serviceColors = []func(string) string{
+// jobColors cycles through distinct colors for each job's log prefix.
+var jobColors = []func(string) string{
 	func(s string) string { return styles.Primary.Render(s) },
 	func(s string) string { return styles.Success.Render(s) },
 	func(s string) string { return styles.Warning.Render(s) },
 	func(s string) string { return styles.Muted.Render(s) },
 }
 
-func multiplexAllServices(socketPath string, dir string) error {
+func multiplexAllJobs(socketPath string, dir string) error {
 	client := process.NewClient(socketPath)
 	resp, err := client.Send(process.Request{Action: process.ActionList})
 	if err != nil {
-		return fmt.Errorf("list services: %w", err)
+		return fmt.Errorf("list jobs: %w", err)
 	}
 
-	var running []process.ServiceInfo
-	for _, svc := range resp.Services {
-		if svc.WorkDir == dir && svc.Status == domain.ServiceStatusRunning {
-			running = append(running, svc)
+	var running []process.JobInfo
+	for _, job := range resp.Jobs {
+		if job.WorkDir == dir && job.Status == domain.JobStatusRunning {
+			running = append(running, job)
 		}
 	}
 
 	if len(running) == 0 {
 		output.Blank(os.Stdout)
-		output.Message(os.Stdout, "No running services in this worktree.")
+		output.Message(os.Stdout, "No running jobs in this worktree.")
 		output.Blank(os.Stdout)
 		return nil
 	}
@@ -138,19 +138,19 @@ func multiplexAllServices(socketPath string, dir string) error {
 	var wg sync.WaitGroup
 	done := make(chan struct{})
 
-	// Attach to each service and prefix output
-	for i, svc := range running {
-		colorFn := serviceColors[i%len(serviceColors)]
-		prefix := colorFn(fmt.Sprintf("[%s]", svc.Name))
+	// Attach to each job and prefix output
+	for i, job := range running {
+		colorFn := jobColors[i%len(jobColors)]
+		prefix := colorFn(fmt.Sprintf("[%s]", job.Name))
 
 		conn, attachErr := client.Attach(process.AttachParams{
-			Name:    svc.Name,
+			Name:    job.Name,
 			WorkDir: dir,
 			Cols:    cols,
 			Rows:    rows,
 		})
 		if attachErr != nil {
-			output.Error(os.Stderr, fmt.Sprintf("%s: %v", svc.Name, attachErr))
+			output.Error(os.Stderr, fmt.Sprintf("%s: %v", job.Name, attachErr))
 			continue
 		}
 

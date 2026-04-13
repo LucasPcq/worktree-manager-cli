@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.7.0 — Run config refactor (services + tasks unifiés en jobs)
+
+### Breaking changes
+
+- **`.wtm/services.toml` → `.wtm/run.toml`** — le fichier de config est renommé. Sections refactorées : plus de `[[services]]` / `[[profiles]]`, on a maintenant `[[job]]` (avec `kind = "service"` ou `"task"`) et `[[profile]]` (avec `jobs = [...]` au lieu de `services = [...]`). Aucune migration auto — les anciens fichiers ne sont plus lus.
+- **CLI `wtm svc *` → `wtm run *`** — toutes les sous-commandes basculent (`run up`, `run down`, `run ps`, `run logs`, `run start`, `run stop`, `run list`).
+- **Helpers exportés / shell wrapper** — le wrapper `wt switch` appelle maintenant `wtm run up` (regénéré via `wtm shell init`).
+
+### New features
+
+- **Type `task` pour les scripts one-shot** — `kind = "task"` modélise les commandes qui doivent terminer avec succès avant que le profil continue (migrations, seeds, formatters). Le daemon stream l'output live au CLI, le job disparaît de `run ps` après exit, et un échec abort le reste du profil.
+- **Streaming NDJSON pour les tasks** — le protocole daemon/CLI gère plusieurs `Response` par requête (`StatusOutput` pour les chunks, `StatusDone` pour la fin). Le CLI forward le contenu sur stdout pour suivre l'exécution en direct.
+- **Colonne `KIND` dans `run ps`** — distingue services et tasks dans la table et le picker.
+- **Validation stricte du format** — `kind` requis, `task` ne peut pas avoir de `stop`, profils référencent uniquement des jobs déclarés. Les erreurs sont remontées avant l'exécution.
+
+### Improvements
+
+- **Init docker-compose génère du `[[job]]` directement** — la détection à `wtm init` écrit dans `.wtm/run.toml` avec `kind = "service"` et `stop` configuré (donc détaché).
+- **Skill `using-wtm` mis à jour** — la doc agent reflète le nouveau vocabulaire (jobs, kinds, run.toml, `wtm run *`).
+
 ## v0.6.2 — Style polish (suite)
 
 ### Bug fixes

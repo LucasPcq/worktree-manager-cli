@@ -86,10 +86,14 @@ const (
 	OutputText = "text"
 	OutputJSON = "json"
 
-	// Service action result statuses emitted by `svc *` JSON output.
-	ServiceActionStarted = "started"
-	ServiceActionStopped = "stopped"
-	ServiceActionError   = "error"
+	// RunFileName is the run config file name (inside .wtm/).
+	RunFileName = "run.toml"
+
+	// Job action result statuses emitted by `run *` JSON output.
+	JobActionStarted = "started"
+	JobActionStopped = "stopped"
+	JobActionDone    = "done"
+	JobActionError   = "error"
 
 	// Metadata files created inside each worktree's .wtm/ directory.
 	MetaFileName    = "meta.json"

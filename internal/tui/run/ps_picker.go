@@ -1,4 +1,4 @@
-package svcpicker
+package runpicker
 
 import (
 	"errors"
@@ -19,48 +19,51 @@ const (
 )
 
 // sentinelStopAll is the item value used to signal the global stop-all entry.
-// Distinct from any real service name.
+// Distinct from any real job name.
 const sentinelStopAll = "__wtm_stop_all__"
 
-// PsPickerResult describes the selected running service and chosen action.
+// PsPickerResult describes the selected running job and chosen action.
 type PsPickerResult struct {
 	Name   string
 	Action string
 }
 
-// RunPsPicker shows the running-services picker with contextual actions.
+// RunPsPicker shows the running-jobs picker with contextual actions.
 // Returns domain.ErrUserAborted on cancel.
-func RunPsPicker(services []process.ServiceInfo) (PsPickerResult, error) {
-	if len(services) == 0 {
+func RunPsPicker(jobs []process.JobInfo) (PsPickerResult, error) {
+	if len(jobs) == 0 {
 		return PsPickerResult{}, domain.ErrUserAborted
 	}
 
-	items := make([]components.SelectItem, 0, len(services)+2)
-	for _, s := range services {
-		badges := []components.Badge{statusBadge(s.Status)}
-		if s.WorkDir != "" {
+	items := make([]components.SelectItem, 0, len(jobs)+2)
+	for _, j := range jobs {
+		badges := []components.Badge{statusBadge(j.Status)}
+		if j.Kind != "" {
+			badges = append(badges, components.Badge{Text: string(j.Kind), Variant: components.BadgeNeutral})
+		}
+		if j.WorkDir != "" {
 			badges = append(badges, components.Badge{
-				Text:    filepath.Base(s.WorkDir),
+				Text:    filepath.Base(j.WorkDir),
 				Variant: components.BadgeNeutral,
 			})
 		}
 		items = append(items, components.SelectItem{
-			Label:  s.Name,
-			Value:  s.Name,
+			Label:  j.Name,
+			Value:  j.Name,
 			Badges: badges,
 		})
 	}
 	items = append(items,
 		components.SelectItem{Separator: true},
 		components.SelectItem{
-			Label:  "Stop all running services",
+			Label:  "Stop all running jobs",
 			Value:  sentinelStopAll,
 			Danger: true,
 		},
 	)
 
 	sl := components.NewSelectList(components.NewSelectListParams{
-		Title: "Running services",
+		Title: "Running jobs",
 		Items: items,
 	})
 	selectedName, err := components.RunStandaloneSelect(sl)
@@ -75,7 +78,7 @@ func RunPsPicker(services []process.ServiceInfo) (PsPickerResult, error) {
 		return PsPickerResult{Action: ActionPsStopAll}, nil
 	}
 
-	selected := findService(services, selectedName)
+	selected := findJob(jobs, selectedName)
 	action, err := pickPsAction(selected)
 	if err != nil {
 		return PsPickerResult{}, err
@@ -83,18 +86,18 @@ func RunPsPicker(services []process.ServiceInfo) (PsPickerResult, error) {
 	return PsPickerResult{Name: selected.Name, Action: action}, nil
 }
 
-func findService(services []process.ServiceInfo, name string) process.ServiceInfo {
-	for _, s := range services {
-		if s.Name == name {
-			return s
+func findJob(jobs []process.JobInfo, name string) process.JobInfo {
+	for _, j := range jobs {
+		if j.Name == name {
+			return j
 		}
 	}
-	return process.ServiceInfo{Name: name}
+	return process.JobInfo{Name: name}
 }
 
-func pickPsAction(svc process.ServiceInfo) (string, error) {
+func pickPsAction(job process.JobInfo) (string, error) {
 	var items []components.SelectItem
-	if svc.Status == domain.ServiceStatusRunning {
+	if job.Status == domain.JobStatusRunning {
 		items = []components.SelectItem{
 			{Label: "Stop", Value: ActionPsStop},
 			{Label: "Logs (attach)", Value: ActionPsLogs},
@@ -107,7 +110,7 @@ func pickPsAction(svc process.ServiceInfo) (string, error) {
 	}
 
 	sl := components.NewSelectList(components.NewSelectListParams{
-		Title: fmt.Sprintf("Action for %s", svc.Name),
+		Title: fmt.Sprintf("Action for %s", job.Name),
 		Items: items,
 	})
 	action, err := components.RunStandaloneSelect(sl)
@@ -120,11 +123,11 @@ func pickPsAction(svc process.ServiceInfo) (string, error) {
 	return action, nil
 }
 
-func statusBadge(status domain.ServiceStatus) components.Badge {
+func statusBadge(status domain.JobStatus) components.Badge {
 	switch status {
-	case domain.ServiceStatusRunning:
+	case domain.JobStatusRunning:
 		return components.Badge{Text: string(status), Variant: components.BadgeSuccess}
-	case domain.ServiceStatusCrashed:
+	case domain.JobStatusCrashed:
 		return components.Badge{Text: string(status), Variant: components.BadgeWarning}
 	default:
 		return components.Badge{Text: string(status), Variant: components.BadgeNeutral}

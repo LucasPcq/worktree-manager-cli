@@ -18,7 +18,7 @@ func init() {
 	)
 
 	rootCmd.AddCommand(commands.NewWtCmd())
-	rootCmd.AddCommand(commands.NewSvcCmd())
+	rootCmd.AddCommand(commands.NewRunCmd())
 	rootCmd.AddCommand(commands.NewPRCmd())
 
 	initCmd := commands.NewInitCmd()

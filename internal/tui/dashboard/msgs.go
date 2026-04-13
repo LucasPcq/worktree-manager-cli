@@ -40,7 +40,7 @@ type actionDoneMsg struct {
 
 // serviceListMsg is sent when service statuses have been loaded from the daemon.
 type serviceListMsg struct {
-	Services []process.ServiceInfo
+	Services []process.JobInfo
 	Err      error
 }
 
