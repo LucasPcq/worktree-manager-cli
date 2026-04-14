@@ -6,12 +6,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/BurntSushi/toml"
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
 // LoadRun reads and parses .wtm/run.toml from the project directory.
-// Returns an empty config (no error) if the file does not exist.
+// Returns an empty config (no error) if the file does not exist. Unknown
+// keys (typos like `[[profiles]]` instead of `[[profile]]`) surface as
+// errors rather than being silently ignored.
 func LoadRun(projectDir string) (domain.RunConfig, error) {
 	path := filepath.Join(projectDir, domain.ProjectDirName, domain.RunFileName)
 
@@ -20,8 +21,8 @@ func LoadRun(projectDir string) (domain.RunConfig, error) {
 	}
 
 	var cfg domain.RunConfig
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		return domain.RunConfig{}, fmt.Errorf("parse %s: %w", path, err)
+	if err := decodeStrict(path, &cfg); err != nil {
+		return domain.RunConfig{}, err
 	}
 
 	return cfg, nil
@@ -38,7 +39,7 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 			continue
 		}
 		if jobNames[j.Name] {
-			warnings = append(warnings, fmt.Sprintf("duplicate job name %q — only the first definition is used", j.Name))
+			errs = append(errs, fmt.Sprintf("duplicate job name %q — names must be unique across the file", j.Name))
 		}
 		jobNames[j.Name] = true
 
@@ -68,7 +69,7 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 			continue
 		}
 		if seenProfiles[p.Name] {
-			warnings = append(warnings, fmt.Sprintf("duplicate profile name %q — only the first definition is used", p.Name))
+			errs = append(errs, fmt.Sprintf("duplicate profile name %q — names must be unique across the file", p.Name))
 		}
 		seenProfiles[p.Name] = true
 
@@ -83,7 +84,7 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 		}
 	}
 	if defaultCount > 1 {
-		warnings = append(warnings, fmt.Sprintf("%d profiles marked as default — only the first is used", defaultCount))
+		errs = append(errs, fmt.Sprintf("%d profiles marked as default — only one profile can be the default", defaultCount))
 	}
 
 	return warnings, errs

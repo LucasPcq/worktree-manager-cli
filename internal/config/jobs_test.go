@@ -1,11 +1,43 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
+
+func TestLoadRunRejectsTypoedSection(t *testing.T) {
+	dir := t.TempDir()
+	wtmDir := filepath.Join(dir, domain.ProjectDirName)
+	if err := os.MkdirAll(wtmDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(wtmDir, domain.RunFileName)
+	body := `
+[[job]]
+name = "dev"
+kind = "service"
+cmd = "pnpm dev"
+
+[[profiles]]
+name = "full"
+jobs = ["dev"]
+`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadRun(dir)
+	if err == nil {
+		t.Fatal("expected error for typoed [[profiles]] section")
+	}
+	if !strings.Contains(err.Error(), "profiles") {
+		t.Errorf("expected error to mention 'profiles', got: %v", err)
+	}
+}
 
 func TestValidateRunOK(t *testing.T) {
 	cfg := domain.RunConfig{
@@ -87,9 +119,50 @@ func TestValidateRunDuplicateJob(t *testing.T) {
 			{Name: "dev", Kind: domain.JobKindService, Cmd: "echo dup"},
 		},
 	}
-	warnings, _ := ValidateRun(cfg)
-	if len(warnings) == 0 {
-		t.Fatal("expected warning for duplicate job name")
+	_, errs := ValidateRun(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected error for duplicate job name")
+	}
+	if !strings.Contains(strings.Join(errs, " "), "duplicate job name") {
+		t.Errorf("unexpected error: %v", errs)
+	}
+}
+
+func TestValidateRunDuplicateProfile(t *testing.T) {
+	cfg := domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "dev", Kind: domain.JobKindService, Cmd: "pnpm dev"},
+		},
+		Profiles: []domain.ProfileConfig{
+			{Name: "full", Jobs: []string{"dev"}},
+			{Name: "full", Jobs: []string{"dev"}},
+		},
+	}
+	_, errs := ValidateRun(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected error for duplicate profile name")
+	}
+	if !strings.Contains(strings.Join(errs, " "), "duplicate profile name") {
+		t.Errorf("unexpected error: %v", errs)
+	}
+}
+
+func TestValidateRunMultipleDefaults(t *testing.T) {
+	cfg := domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "dev", Kind: domain.JobKindService, Cmd: "pnpm dev"},
+		},
+		Profiles: []domain.ProfileConfig{
+			{Name: "a", Jobs: []string{"dev"}, Default: true},
+			{Name: "b", Jobs: []string{"dev"}, Default: true},
+		},
+	}
+	_, errs := ValidateRun(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected error for multiple default profiles")
+	}
+	if !strings.Contains(strings.Join(errs, " "), "default") {
+		t.Errorf("unexpected error: %v", errs)
 	}
 }
 

@@ -64,6 +64,7 @@ func WriteRun(params WriteRunParams) error {
 	}
 
 	var buf bytes.Buffer
+	buf.WriteString("#:schema ./schemas/run.schema.json\n\n")
 	if err := toml.NewEncoder(&buf).Encode(params.Config); err != nil {
 		return fmt.Errorf("encode run config: %w", err)
 	}
@@ -87,7 +88,7 @@ func WriteGlobal(answers domain.InitGlobalAnswers) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	content := fmt.Sprintf("shell = %q\nagent = %q\n", answers.Shell, answers.Agent)
+	content := fmt.Sprintf("#:schema ./schemas/global.schema.json\n\nshell = %q\nagent = %q\n", answers.Shell, answers.Agent)
 
 	path := filepath.Join(dir, domain.GlobalConfigFile)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -104,7 +105,7 @@ func WriteGlobalTo(path string, answers domain.InitGlobalAnswers) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	content := fmt.Sprintf("shell = %q\nagent = %q\n", answers.Shell, answers.Agent)
+	content := fmt.Sprintf("#:schema ./schemas/global.schema.json\n\nshell = %q\nagent = %q\n", answers.Shell, answers.Agent)
 
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)

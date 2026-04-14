@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.0 — Strict TOML decoding + JSON Schema autocomplete
+
+### New features
+
+- **JSON Schema bundled pour les 3 fichiers de config** — `.wtm/run.toml`, `.wtm/config.toml`, `~/.config/wtm/config.toml`. Fichiers embarqués dans le binaire et écrits dans `.wtm/schemas/` (ou `~/.config/wtm/schemas/`) au moment du `wtm init`. Chaque TOML généré est préfixé par `#:schema ./schemas/...json`.
+- **`wtm schema dump`** — extrait les schémas embarqués vers le disque pour les régénérer après upgrade. `--global` cible le schéma global.
+- **Autocomplete + validation IDE via Taplo** — l'extension "Even Better TOML" (VS Code / Cursor / JetBrains) lit la directive `#:schema` et fournit autocomplete sur les champs et enums (kind, env.strategy, agent, shell), hover docs, erreurs en live.
+
+### Bug fixes
+
+- **Decode TOML strict** — les clés inconnues (typos comme `[[profiles]]` au lieu de `[[profile]]`) sont maintenant rejetées avec un message clair `unknown keys in /path: profiles` au lieu d'être silencieusement ignorées.
+
 ## v0.7.0 — Run config refactor (services + tasks unifiés en jobs)
 
 ### Breaking changes

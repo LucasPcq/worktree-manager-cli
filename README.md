@@ -531,6 +531,25 @@ The project `.wtm/config.toml` can override the agent setting. Shell is always g
 
 ---
 
+## IDE autocomplete + validation
+
+Every TOML file `wtm init` writes starts with a `#:schema ./schemas/...json` directive. Pair it with the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml) extension (Taplo, also bundled in JetBrains' TOML plugin) to get:
+
+- **Autocomplete** on every field name and enum value (`kind = "service" | "task"`, `env.strategy = "example" | "main" | "parent"`, etc.)
+- **Hover docs** describing each option
+- **Real-time validation** flagging unknown keys, missing required fields, and bad enum values before you ever run wtm
+
+The schemas are bundled with the binary. `wtm init` writes them to `.wtm/schemas/` so the directive resolves locally — no internet required. Re-extract them after upgrading wtm with:
+
+```bash
+wtm schema dump            # writes .wtm/schemas/{run,project}.schema.json
+wtm schema dump --global   # writes ~/.config/wtm/schemas/global.schema.json
+```
+
+Even without the editor extension, wtm itself rejects unknown keys at load time — typos like `[[profiles]]` instead of `[[profile]]` surface as `unknown keys in /path/.wtm/run.toml: profiles` rather than being silently ignored.
+
+---
+
 ## Worktree metadata
 
 Each worktree created by `wtm wt create` contains a `.wtm/` directory with:

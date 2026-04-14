@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/LucasPcq/worktree-manager-cli/main/schemas/project.schema.json",
+  "title": "wtm project config",
+  "description": "Schema for .wtm/config.toml — per-project settings versioned with the repo.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "worktrees": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base_path": {
+          "type": "string",
+          "description": "Directory where worktrees are created, relative to the project root. Defaults to ../.trees."
+        },
+        "base_branch": {
+          "type": "string",
+          "description": "Default base branch for new worktrees. Usually `main` or `master`."
+        }
+      }
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": ["example", "main", "parent"],
+          "description": "How .env files are provisioned in new worktrees. example = copy .env.example as .env; main = copy from main worktree; parent = copy from the source worktree (--from), fall back to main."
+        },
+        "copy_files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Extra files (relative to project root) copied into each new worktree. Used for env files outside the standard locations."
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "on_create": {
+          "type": "array",
+          "description": "Commands to run after a worktree is created. Entries can be a plain string or a table {cmd, cwd, continue_on_error}.",
+          "items": {
+            "oneOf": [
+              { "type": "string", "description": "Shell command to run in the new worktree." },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["cmd"],
+                "properties": {
+                  "cmd": { "type": "string", "description": "Shell command to run." },
+                  "cwd": { "type": "string", "description": "Working directory relative to the worktree root." },
+                  "continue_on_error": { "type": "boolean", "description": "If true, a non-zero exit doesn't abort subsequent hooks." }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "github": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "auto_draft": {
+          "type": "boolean",
+          "description": "If true, `wtm pr create` defaults to a draft PR (the user can override with --draft=false)."
+        }
+      }
+    },
+    "agents": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": ["claude-code", "cursor", "none"],
+          "description": "AI agent integration generated for the project (skill assets, etc.)."
+        }
+      }
+    },
+    "integrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vscode_project_manager": {
+          "type": "boolean",
+          "description": "If true, sync new worktrees with the VS Code Project Manager extension."
+        },
+        "cursor_project_manager": {
+          "type": "boolean",
+          "description": "If true, sync new worktrees with the Cursor Project Manager extension."
+        }
+      }
+    }
+  }
+}

@@ -26,7 +26,6 @@ on_create = [
 
 [github]
 auto_draft  = true
-base_branch = "develop"
 
 [agents]
 default = "cursor"

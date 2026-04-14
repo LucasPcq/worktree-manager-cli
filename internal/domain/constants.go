@@ -81,6 +81,7 @@ const (
 	FlagOutput    = "output"
 	FlagYes       = "yes"
 	FlagAll       = "all"
+	FlagGlobal    = "global"
 
 	// Output format values for FlagOutput.
 	OutputText = "text"
@@ -88,6 +89,11 @@ const (
 
 	// RunFileName is the run config file name (inside .wtm/).
 	RunFileName = "run.toml"
+
+	// SchemasDirName is the directory (inside .wtm/ or under the global
+	// config dir) where `wtm schema dump` writes the JSON Schema files
+	// that editors reference via the TOML `#:schema` directive.
+	SchemasDirName = "schemas"
 
 	// Job action result statuses emitted by `run *` JSON output.
 	JobActionStarted = "started"
