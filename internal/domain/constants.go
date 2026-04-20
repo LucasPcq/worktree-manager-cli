@@ -82,6 +82,16 @@ const (
 	FlagYes       = "yes"
 	FlagAll       = "all"
 	FlagGlobal    = "global"
+	FlagMerge     = "merge"
+	FlagReplace   = "replace"
+
+	// Script classification keywords for package.json → run.toml mapping.
+	// A script is classified as a long-running service when its name matches
+	// one of these keywords exactly, as a prefix ("<kw>:"), or as a suffix (":<kw>").
+	ScriptKeyDev   = "dev"
+	ScriptKeyStart = "start"
+	ScriptKeyServe = "serve"
+	ScriptKeyWatch = "watch"
 
 	// Output format values for FlagOutput.
 	OutputText = "text"

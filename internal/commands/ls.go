@@ -221,50 +221,6 @@ func pickWorktreeAndAction(
 	return statuses[idx], actionSL.Value(), nil
 }
 
-func buildWorktreeLabel(s domain.WorktreeStatus, activeBranch string, prs []domain.PRInfo, services []process.JobInfo) string {
-	label := s.Branch
-
-	var tags []string
-	if s.IsParent {
-		tags = append(tags, "parent")
-	}
-	if s.Branch == activeBranch {
-		tags = append(tags, "active")
-	}
-	for _, pr := range prs {
-		if pr.Branch == s.Branch {
-			tags = append(tags, fmt.Sprintf("PR #%d", pr.Number))
-			break
-		}
-	}
-	for _, svc := range services {
-		if svc.WorkDir == s.Path && svc.Status == domain.JobStatusRunning {
-			tags = append(tags, "services")
-			break
-		}
-	}
-	if s.IsDirty {
-		tags = append(tags, "dirty")
-	}
-
-	if len(tags) > 0 {
-		label += "  (" + joinTags(tags) + ")"
-	}
-
-	return label
-}
-
-func joinTags(tags []string) string {
-	result := ""
-	for i, t := range tags {
-		if i > 0 {
-			result += ", "
-		}
-		result += t
-	}
-	return result
-}
-
 func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.WorktreeStatus, prs []domain.PRInfo, result configResult) error {
 	bin, err := os.Executable()
 	if err != nil {

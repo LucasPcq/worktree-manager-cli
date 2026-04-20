@@ -296,6 +296,28 @@ wtm run logs dev        # attach to a single job
 
 Press `Ctrl+C` to detach — services keep running in the background.
 
+#### `wtm run export`
+
+Emit `.wtm/run.toml` as JSON on stdout — useful for sharing a service layout between projects or teammates.
+
+```bash
+wtm run export                     # full config as JSON
+wtm run export --profile dev       # only the "dev" profile and its jobs
+wtm run export > layout.json       # save to file
+```
+
+#### `wtm run import [file|-]`
+
+Ingest a JSON run config. Pass a file path, `-`, or omit the argument to read from stdin.
+
+```bash
+wtm run import layout.json                    # merge into .wtm/run.toml
+wtm run import layout.json --replace --force  # overwrite entirely
+wtm run export | wtm run import -             # roundtrip (no-op when names match)
+```
+
+By default, new jobs and profiles are appended; duplicate names are skipped with a warning.
+
 ---
 
 ### `wtm pr` — Pull requests

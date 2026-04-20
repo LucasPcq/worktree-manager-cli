@@ -1,5 +1,7 @@
 package domain
 
+import "fmt"
+
 // JobKind distinguishes a long-running service from a one-shot task.
 type JobKind string
 
@@ -16,11 +18,11 @@ const (
 
 // JobConfig defines a managed job from .wtm/run.toml.
 type JobConfig struct {
-	Name string  `toml:"name"`
-	Kind JobKind `toml:"kind"`
-	Cmd  string  `toml:"cmd"`
-	Stop string  `toml:"stop,omitempty"`
-	Cwd  string  `toml:"cwd,omitempty"`
+	Name string  `toml:"name"           json:"name"`
+	Kind JobKind `toml:"kind"           json:"kind"`
+	Cmd  string  `toml:"cmd"            json:"cmd"`
+	Stop string  `toml:"stop,omitempty" json:"stop,omitempty"`
+	Cwd  string  `toml:"cwd,omitempty"  json:"cwd,omitempty"`
 }
 
 // IsDetached reports whether the job is a service with a stop command,
@@ -32,17 +34,17 @@ func (j JobConfig) IsDetached() bool {
 
 // ProfileConfig defines a named, ordered group of jobs.
 type ProfileConfig struct {
-	Name    string   `toml:"name"`
-	Jobs    []string `toml:"jobs"`
-	Default bool     `toml:"default"`
+	Name    string   `toml:"name"    json:"name"`
+	Jobs    []string `toml:"jobs"    json:"jobs"`
+	Default bool     `toml:"default" json:"default"`
 }
 
 // RunConfig is the top-level structure of .wtm/run.toml. Each [[job]] and
 // [[profile]] block declares one entry; the Go field names are kept plural
 // because they hold the slices of all entries.
 type RunConfig struct {
-	Jobs     []JobConfig     `toml:"job"`
-	Profiles []ProfileConfig `toml:"profile"`
+	Jobs     []JobConfig     `toml:"job"              json:"job"`
+	Profiles []ProfileConfig `toml:"profile,omitempty" json:"profile"`
 }
 
 // JobStatus represents the current state of a managed job.
@@ -97,4 +99,17 @@ func (c RunConfig) ProfileJobs(profile ProfileConfig) []JobConfig {
 		}
 	}
 	return jobs
+}
+
+// FilterToProfile returns a new RunConfig containing only the named profile
+// and the jobs it references. Returns an error if the profile is not found.
+func (c RunConfig) FilterToProfile(name string) (RunConfig, error) {
+	p, ok := c.FindProfile(name)
+	if !ok {
+		return RunConfig{}, fmt.Errorf("profile %q not found", name)
+	}
+	return RunConfig{
+		Jobs:     c.ProfileJobs(p),
+		Profiles: []ProfileConfig{p},
+	}, nil
 }

@@ -2,6 +2,7 @@ package init
 
 import (
 	"fmt"
+	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -13,15 +14,16 @@ import (
 // Returns ErrUserAborted if the user presses Esc at the first step.
 func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
 	var (
-		steps               []components.Step
-		idxBasePath         int
-		idxBaseBranch       int
-		idxEnvStrategy      int
-		idxInstallCommand   int
-		idxEnvFiles         = -1
-		idxMonorepoPackages = -1
-		idxDockerCompose    = -1
-		idxAgent            int
+		steps                []components.Step
+		idxBasePath          int
+		idxBaseBranch        int
+		idxEnvStrategy       int
+		idxInstallCommand    int
+		idxEnvFiles          = -1
+		idxMonorepoPackages  = -1
+		idxDockerCompose     = -1
+		idxPackageScripts    = -1
+		idxAgent             int
 	)
 
 	stepIdx := 0
@@ -144,6 +146,34 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		stepIdx++
 	}
 
+	if len(detection.PackageScripts) > 0 {
+		idxPackageScripts = stepIdx
+		pm := string(detection.PackageManager)
+		items := make([]components.MultiSelectItem, 0, len(detection.PackageScripts))
+		for i, s := range detection.PackageScripts {
+			scope := "root"
+			if s.Workspace != "" {
+				scope = s.Workspace
+			}
+			label := fmt.Sprintf("%s / %s — %s run %s", scope, s.Name, pm, s.Name)
+			items = append(items, components.MultiSelectItem{
+				Label:    label,
+				Value:    fmt.Sprintf("%d", i),
+				Selected: s.Kind == domain.JobKindService,
+			})
+		}
+		steps = append(steps, components.Step{
+			Name: "Package scripts",
+			Model: components.NewMultiSelect(components.NewMultiSelectParams{
+				Title:       "Package.json scripts",
+				Description: "Selected scripts become jobs in .wtm/run.toml (dev-style scripts → services, others → tasks)",
+				Items:       items,
+			}),
+			Summary: packageScriptsSummary,
+		})
+		stepIdx++
+	}
+
 	idxAgent = stepIdx
 	steps = append(steps, components.Step{
 		Name: "Project AI agent",
@@ -184,6 +214,7 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		IdxEnvFiles:         idxEnvFiles,
 		IdxMonorepoPackages: idxMonorepoPackages,
 		IdxDockerCompose:    idxDockerCompose,
+		IdxPackageScripts:   idxPackageScripts,
 		IdxAgent:            idxAgent,
 	})
 }
@@ -198,6 +229,7 @@ type extractProjectParams struct {
 	IdxEnvFiles         int
 	IdxMonorepoPackages int
 	IdxDockerCompose    int
+	IdxPackageScripts   int
 	IdxAgent            int
 }
 
@@ -280,6 +312,20 @@ func extractProjectAnswers(p extractProjectParams) (domain.InitProjectAnswers, e
 		}
 	}
 
+	if p.IdxPackageScripts >= 0 {
+		msModel, ok := finalSteps[p.IdxPackageScripts].Model.(components.MultiSelectModel)
+		if !ok {
+			return domain.InitProjectAnswers{}, domain.ErrUserAborted
+		}
+		for _, idxStr := range msModel.Values() {
+			idx, parseErr := strconv.Atoi(idxStr)
+			if parseErr != nil || idx < 0 || idx >= len(p.Detection.PackageScripts) {
+				continue
+			}
+			answers.SelectedPackageScripts = append(answers.SelectedPackageScripts, p.Detection.PackageScripts[idx])
+		}
+	}
+
 	agentModel, ok := finalSteps[p.IdxAgent].Model.(components.SelectListModel)
 	if !ok {
 		return domain.InitProjectAnswers{}, domain.ErrUserAborted
@@ -325,14 +371,12 @@ func multiSelectSummary(model any) string {
 	return fmt.Sprintf("%d files selected", len(vals))
 }
 
-func confirmSummary(model any) string {
-	cm, ok := model.(components.ConfirmModel)
+func packageScriptsSummary(model any) string {
+	ms, ok := model.(components.MultiSelectModel)
 	if !ok {
 		return ""
 	}
-	if cm.Confirmed() {
-		return "Yes"
-	}
-	return "No"
+	n := len(ms.Values())
+	return fmt.Sprintf("%d scripts selected", n)
 }
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased] — Package.json script detection + run export/import
+
+### New features
+
+- **`wtm init` détecte les scripts `package.json`** — après les docker-compose files, une étape MultiSelect propose les scripts du `package.json` racine et, si `pnpm-workspace.yaml` est présent, ceux de chaque workspace. Les scripts `dev`/`start`/`serve`/`watch` (ou leurs formes préfixées `dev:*` / `*:dev`) sont pré-sélectionnés comme `kind="service"` ; les autres (`build`, `test`, `lint`…) comme `kind="task"`.
+- **`wtm run export [--profile <name>]`** — émet `.wtm/run.toml` comme JSON sur stdout. Compatible avec `--profile` pour exporter un seul profil et ses jobs.
+- **`wtm run import [file|-] [--replace --force]`** — ingère un payload JSON et le fusionne dans `.wtm/run.toml`. Par défaut, les nouveaux jobs/profils sont appendés, les doublons sont ignorés avec un avertissement. `--replace --force` écrase le fichier entièrement.
+
+### Breaking changes
+
+- **`wtm run list --output json` : champs JSON en minuscules** — les clés passent de PascalCase (`Jobs`, `Name`, `Kind`) à lowercase (`job`, `name`, `kind`), alignées sur `run.schema.json`. Impacte tout script ou outil qui parsait la sortie JSON de `run list`.
+
 ## v0.8.0 — Strict TOML decoding + JSON Schema autocomplete
 
 ### New features

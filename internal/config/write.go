@@ -46,16 +46,16 @@ func WriteProject(params WriteProjectParams) error {
 type WriteRunParams struct {
 	ProjectDir string
 	Config     domain.RunConfig
+	Force      bool // overwrite .wtm/run.toml if it already exists
 }
 
 // WriteRun encodes cfg as TOML and writes it to .wtm/run.toml.
-// Returns ErrRunFileExists if the file already exists; the file is never
-// overwritten.
+// Returns ErrRunFileExists if the file already exists and Force is false.
 func WriteRun(params WriteRunParams) error {
 	dir := filepath.Join(params.ProjectDir, domain.ProjectDirName)
 	path := filepath.Join(dir, domain.RunFileName)
 
-	if _, err := os.Stat(path); err == nil {
+	if _, err := os.Stat(path); err == nil && !params.Force {
 		return ErrRunFileExists
 	}
 

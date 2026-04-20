@@ -183,16 +183,3 @@ func WritePRListJSON(w io.Writer, prs []domain.PRInfo) error {
 func WritePRCreateJSON(w io.Writer, pr domain.PRInfo) error {
 	return encodeJSON(w, pr)
 }
-
-func reviewIcon(state string) string {
-	switch state {
-	case "APPROVED":
-		return styles.CleanIndicator.Render("✓")
-	case "CHANGES_REQUESTED":
-		return styles.DirtyIndicator.Render("✗")
-	case "COMMENTED":
-		return styles.Muted.Render("●")
-	default:
-		return styles.Muted.Render("○")
-	}
-}

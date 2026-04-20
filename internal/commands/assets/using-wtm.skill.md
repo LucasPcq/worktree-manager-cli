@@ -50,6 +50,8 @@ Profiles are named groups of jobs (run in declared order). The same TOML can hos
 - **`wtm run start <job> --output json`** — start one job. Tasks block until they exit; services launch in the background.
 - **`wtm run stop <job> --output json`** — stop one job.
 - **`wtm run logs [job]`** — attach to a job's PTY. No `--output json`: it's a raw text stream (already machine-readable).
+- **`wtm run export [--profile <name>]`** — emit `.wtm/run.toml` as JSON on stdout. Use `--profile` to export only one profile and its jobs. Pipe to a file: `wtm run export > layout.json`.
+- **`wtm run import [file|-] [--replace --force] [--output json]`** — ingest a JSON run config. Omit the file or pass `-` to read from stdin. Default: append new jobs/profiles, skip duplicates (prints what was added/skipped). `--replace --force` overwrites the file entirely.
 
 ## Pull request commands (`wtm pr`)
 

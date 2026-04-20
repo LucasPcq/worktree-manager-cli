@@ -43,6 +43,42 @@ func WritePRCheckoutJSON(w io.Writer, payload PRCheckoutJSON) error {
 	return encodeJSON(w, payload)
 }
 
+// ImportResult describes the outcome of a wtm run import operation.
+type ImportResult struct {
+	Added   []string `json:"added"`
+	Skipped []string `json:"skipped"`
+}
+
+// WriteImportResultJSON writes the import result as JSON.
+func WriteImportResultJSON(w io.Writer, result ImportResult) error {
+	if result.Added == nil {
+		result.Added = []string{}
+	}
+	if result.Skipped == nil {
+		result.Skipped = []string{}
+	}
+	return encodeJSON(w, result)
+}
+
+// WriteImportResultText writes the import result as human-readable text.
+func WriteImportResultText(w io.Writer, result ImportResult) error {
+	if len(result.Added) > 0 {
+		if _, err := fmt.Fprintf(w, "%sAdded: %s\n", Indent, strings.Join(result.Added, ", ")); err != nil {
+			return err
+		}
+	}
+	if len(result.Skipped) > 0 {
+		if _, err := fmt.Fprintf(w, "%sSkipped (duplicate): %s\n", Indent, strings.Join(result.Skipped, ", ")); err != nil {
+			return err
+		}
+	}
+	if len(result.Added) == 0 && len(result.Skipped) == 0 {
+		_, err := fmt.Fprintf(w, "%sNothing to import.\n", Indent)
+		return err
+	}
+	return nil
+}
+
 // WriteRunConfigJSON writes the JSON payload for `run list`.
 func WriteRunConfigJSON(w io.Writer, cfg domain.RunConfig) error {
 	if cfg.Jobs == nil {
