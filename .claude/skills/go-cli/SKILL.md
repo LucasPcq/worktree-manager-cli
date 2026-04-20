@@ -1,6 +1,6 @@
 ---
 name: go-cli
-description: Expert guidance for developing CLI applications in Go following strict architectural principles, using Cobra, Viper, Bubbletea, and Lipgloss. Use this skill whenever the user is building, extending, or refactoring a Go CLI — including adding commands, flags, subcommands, TUI components, config parsing, output formatting, error handling, or structuring packages. Trigger on any mention of "go CLI", "cobra", "viper", "bubbletea", "bubble tea", "lipgloss", "TUI", "go command", "go flag", "go binary", "charm", or any request to scaffold or improve a Go terminal application. Also trigger when the user references the project's CLAUDE.md principles in the context of Go code.
+description: Expert guidance for developing CLI applications in Go following strict architectural principles, using Cobra, Bubbletea, and Lipgloss. Use this skill whenever the user is building, extending, or refactoring a Go CLI — including adding commands, flags, subcommands, TUI components, config parsing, output formatting, error handling, or structuring packages. Trigger on any mention of "go CLI", "cobra", "bubbletea", "bubble tea", "lipgloss", "TUI", "go command", "go flag", "go binary", "charm", or any request to scaffold or improve a Go terminal application. Also trigger when the user references the project's CLAUDE.md principles in the context of Go code, when adding a new command, or when discussing test patterns for commands.
 ---
 
 # Go CLI Development Skill
@@ -8,7 +8,7 @@ description: Expert guidance for developing CLI applications in Go following str
 ## Stack
 
 - **Cobra** — command routing and flag parsing
-- **Viper** — configuration loading (files, env vars, flags)
+- **BurntSushi/toml** — configuration loading (strict decode with unknown-key rejection)
 - **Bubbletea** — TUI programs (Model/Update/View)
 - **Lipgloss** — terminal styling, centralized in `internal/styles/`
 
@@ -34,13 +34,6 @@ if condition {
 
 // ✅ Prefer
 result := resolveResult(condition)
-
-func resolveResult(condition bool) string {
-  if condition {
-    return "a"
-  }
-  return "b"
-}
 ```
 
 ### 2. Structs for 2+ parameters — always use named fields
@@ -64,34 +57,36 @@ func RunCommand(params RunCommandParams) error
 ### 3. Shared types — single source of truth
 
 All domain types, enums, and error sentinels live in `internal/domain/`
-(`constants.go`, `errors.go`, `types.go`). Never duplicate a type across packages.
+(`constants.go`, `errors.go`, `types.go`, `jobs.go`, `init.go`). Never duplicate a type across packages.
 
 ### 4. Validate at the boundary
 
 Validate all external input (flags, env vars, config files) in `internal/config/`
-before it reaches the service layer. Use `go-playground/validator` struct tags or
-explicit guard clauses.
-
-```go
-type Config struct {
-  Host   string `validate:"required,hostname"`
-  Port   int    `validate:"required,min=1,max=65535"`
-  Format string `validate:"required,oneof=json text table"`
-}
-```
+before it reaches the service layer. Use explicit guard clauses.
 
 ### 5. Centralized constants — no magic strings or numbers
 
-All flag names, env var keys, exit codes, format identifiers, and Viper keys
-must be declared as typed constants in `internal/domain/constants.go`.
+All flag names, command names, exit codes, and format identifiers
+must be declared as constants in `internal/domain/constants.go`.
 
 ```go
 const (
-  ExitCodeError    = 1
-  FlagOutputFormat = "output-format"
-  ViperKeyHost     = "server.host"
-  FormatJSON       = "json"
-  FormatTable      = "table"
+  // CLI command names — used in Use: and exec.Command(bin, ...) call sites
+  CmdRun      = "run"
+  CmdWt       = "wt"
+  CmdUp       = "up"
+  CmdDown     = "down"
+  CmdStart    = "start"
+  CmdStop     = "stop"
+
+  // Flag names
+  FlagOutput  = "output"
+  FlagForce   = "force"
+  FlagProfile = "profile"
+
+  // Output format values
+  OutputText  = "text"
+  OutputJSON  = "json"
 )
 ```
 
@@ -102,7 +97,7 @@ Never nest `if` blocks. The happy path is always the last statement.
 ### 7. No unsafe type assertions
 
 Always use the comma-ok idiom. Prefer typed interfaces and concrete structs
-over `any`/`interface{}`. Type at the source, not downstream.
+over `any`/`interface{}`.
 
 ```go
 // ❌  val := data.(string)
@@ -122,25 +117,27 @@ Only comment non-obvious decisions or workarounds (with an issue reference).
 
 ```
 cmd/
-  root.go                     ← cobra root, global flags, version
-  <command>.go                ← one file per top-level command
+  root.go                     ← cobra root, version, help
 
 internal/
-  commands/                   ← flag wiring only → delegates to service
-  domain/                     ← types, errors, constants (single source of truth)
-  config/                     ← load & validate .wtm.toml + ~/.config/wtm/config.toml
+  commands/                   ← flag wiring only → delegates to service (zero logic)
+  domain/                     ← types, errors, constants, pure functions
+  config/                     ← load & validate .wtm/config.toml + run.toml
   service/                    ← all business logic, organized by domain:
-    worktree/                 ←   git worktree operations (create, list, remove)
+    worktree/                 ←   create, list, clean, resolve
     env/                      ←   .env file provisioning strategies
-    hooks/                    ←   on_create / on_focus / on_blur hook execution
+    hooks/                    ←   on_create hook execution
     shell/                    ←   shell integration generation (zsh, bash, fish)
     state/                    ←   global state (~/.config/wtm/state.json)
+    process/                  ←   daemon, job manager, socket client
+    github/                   ←   PR operations via gh CLI
+    detect/                   ←   auto-detection (package manager, env files, scripts)
     integration/              ←   third-party adapters (VS Code, Cursor)
-    detect/                   ←   auto-detection (base branch, env files, package manager)
-  styles/                     ← all Lipgloss styles (see section below)
-  output/                     ← plain-text / JSON / table renderers
-  tui/                        ← Bubbletea models (see section below)
+  output/                     ← format and print results (zero decision logic)
+  styles/                     ← all Lipgloss styles + shared Indent constant
+  tui/                        ← Bubbletea models (zero business logic, rendering only)
   infra/                      ← I/O, git exec, filesystem wrappers
+  testutil/gittest/           ← shared test helpers (InitRepo, CreateBranch)
 ```
 
 **Hard rules:**
@@ -148,6 +145,7 @@ internal/
 - `service/` has zero imports of `cobra`, `bubbletea`, `lipgloss`
 - `output/` and `tui/` have zero decision logic — only rendering
 - `styles/` is the only package allowed to instantiate `lipgloss.Style`
+- `domain/` imports only stdlib
 
 ### 10. Validate before commit — run `build-validator`
 
@@ -157,38 +155,59 @@ Before marking any task done, invoke the `build-validator` subagent.
 
 ## Cobra — Command Patterns
 
-### Standard (plain-text) command
+### Standard command
+
+The real pattern used in this project — no dependency injection, uses helper functions:
 
 ```go
-// internal/commands/deploy.go
-func NewDeployCommand(svc service.DeployService) *cobra.Command {
-  var params DeployFlagParams
-
+// internal/commands/start.go
+func newRunStartCmd() *cobra.Command {
   cmd := &cobra.Command{
-    Use:   "deploy",
-    Short: "Deploy a resource",
-    RunE: func(cmd *cobra.Command, args []string) error {
-      return runDeploy(cmd.Context(), svc, params)
-    },
+    Use:   domain.CmdStart + " <job>",
+    Short: "Start a single job",
+    Args:  cobra.ExactArgs(1),
+    RunE:  runStart,
   }
-
-  cmd.Flags().StringVar(&params.Environment, FlagEnvironment, "", "Target environment")
-  cmd.Flags().BoolVar(&params.DryRun, FlagDryRun, false, "Simulate without applying")
-  _ = cmd.MarkFlagRequired(FlagEnvironment)
-
+  addOutputFlag(cmd)
   return cmd
 }
 
-func runDeploy(ctx context.Context, svc service.DeployService, params DeployFlagParams) error {
-  input, err := mapDeployInput(params)
+func runStart(cmd *cobra.Command, args []string) error {
+  dir, err := os.Getwd()
   if err != nil {
-    return err
+    return fmt.Errorf("get working directory: %w", err)
   }
-  result, err := svc.Deploy(ctx, input)
-  if err != nil {
-    return err
+
+  result, ok := loadConfig(cmd, dir)
+  if !ok {
+    return nil
   }
-  return output.PrintDeploy(result)
+
+  // ... delegate to service, format output
+}
+```
+
+Key conventions:
+- `Use:` always uses `domain.CmdXxx` constants (+ literal arg placeholders)
+- `addOutputFlag(cmd)` instead of duplicating the output flag registration
+- `loadConfig(cmd, dir)` resolves project root and loads config
+- Unexported constructor (`newRunStartCmd`), registered by the parent group
+
+### Adding a new command
+
+1. Create `internal/commands/<name>.go` with unexported constructor
+2. Use `domain.CmdXxx` for the `Use:` field (add constant if new)
+3. Register in the parent group's `NewXxxCmd()` function
+4. Follow the `runStart` pattern: getwd → loadConfig → delegate → format output
+
+### Shared flag helpers
+
+```go
+// internal/commands/helpers.go
+
+// addOutputFlag registers the standard --output flag on cmd.
+func addOutputFlag(cmd *cobra.Command) {
+  cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
 }
 ```
 
@@ -198,23 +217,7 @@ The command runner is the only place where `tea.NewProgram` is called.
 All TUI state lives in `internal/tui/`, never in `commands/`.
 
 ```go
-// internal/commands/browse.go
-func NewBrowseCommand(svc service.ItemService) *cobra.Command {
-  return &cobra.Command{
-    Use:   "browse",
-    Short: "Browse items interactively",
-    RunE: func(cmd *cobra.Command, args []string) error {
-      return runBrowseTUI(cmd.Context(), svc)
-    },
-  }
-}
-
-func runBrowseTUI(ctx context.Context, svc service.ItemService) error {
-  items, err := svc.List(ctx)
-  if err != nil {
-    return fmt.Errorf("load items: %w", err)
-  }
-
+func runBrowseTUI(ctx context.Context, items []domain.Item) error {
   model := tui.NewBrowseModel(items)
   program := tea.NewProgram(model, tea.WithAltScreen())
 
@@ -233,234 +236,141 @@ func runBrowseTUI(ctx context.Context, svc service.ItemService) error {
 
 ---
 
-## Viper — Configuration
+## Configuration — BurntSushi/toml
 
-Bind flags to Viper keys using constants. Always validate after loading.
+The project uses BurntSushi/toml with a custom strict decoder that rejects unknown keys.
 
 ```go
-// internal/config/config.go
-func Load(params LoadParams) (Config, error) {
-  viper.SetConfigFile(params.ConfigPath)
-  viper.AutomaticEnv()
-
-  if err := viper.BindPFlag(ViperKeyHost, params.Flags.Lookup(FlagHost)); err != nil {
-    return Config{}, fmt.Errorf("bind flag: %w", err)
-  }
-
-  if err := viper.ReadInConfig(); err != nil {
-    return Config{}, fmt.Errorf("read config: %w", err)
-  }
-
-  cfg := Config{
-    Host: viper.GetString(ViperKeyHost),
-    Port: viper.GetInt(ViperKeyPort),
-  }
-
-  if err := validate.Struct(cfg); err != nil {
-    return Config{}, fmt.Errorf("invalid config: %w", err)
-  }
-
-  return cfg, nil
-}
+// internal/config/strict.go
+func decodeStrict(path string, out any, ignorePrefixes ...string) error
+func decodeStrictBytes(source string, data []byte, out any, ignorePrefixes ...string) error
 ```
+
+Struct tags are `toml:"..."` (+ `json:"..."` for types that get JSON-exported).
+Config files include a `#:schema ./schemas/xxx.json` directive for editor support.
 
 ---
 
 ## Bubbletea — TUI Architecture
 
-### File layout — one directory per screen
+### Shared components
 
+All reusable TUI primitives live in `internal/tui/components/`:
+- `WizardModel` — multi-step form driver
+- `SelectListModel` — single-choice list with filter
+- `MultiSelectModel` — toggle-able multi-choice list
+- `TextInputModel` — single-line input with validation
+- `ConfirmModel` — yes/no dialog
+- `RunStandaloneSelect(model)` / `RunStandaloneConfirm(model)` — one-shot wrappers
+
+### Screen-specific TUI
+
+Each screen lives in its own package under `internal/tui/`:
 ```
 internal/tui/
-  browse/
-    model.go     ← Model struct + Init/Update/View
-    keys.go      ← keybindings (key.Binding)
-    msgs.go      ← custom tea.Msg types for this screen
-```
-
-### Model structure
-
-```go
-// internal/tui/browse/model.go
-
-// BrowseModel holds all state for the browse screen.
-// It must not hold business logic — only UI state.
-type BrowseModel struct {
-  items    []domain.Item
-  cursor   int
-  selected *domain.Item
-  err      error
-}
-
-func NewBrowseModel(items []domain.Item) BrowseModel {
-  return BrowseModel{items: items}
-}
-
-func (m BrowseModel) Init() tea.Cmd {
-  return nil
-}
-
-func (m BrowseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-  switch msg := msg.(type) {
-  case tea.KeyMsg:
-    return m.handleKey(msg)
-  case errMsg:
-    return m.withError(msg.err), nil
-  }
-  return m, nil
-}
-
-func (m BrowseModel) View() string {
-  if m.err != nil {
-    return styles.Error.Render(m.err.Error())
-  }
-  return m.renderList()
-}
-
-// Selected returns the item chosen by the user, if any.
-func (m BrowseModel) Selected() *domain.Item {
-  return m.selected
-}
-```
-
-### Custom messages — typed, never `interface{}`
-
-```go
-// internal/tui/browse/msgs.go
-type errMsg struct{ err error }
-type itemsLoadedMsg struct{ items []domain.Item }
-```
-
-### Keybindings — centralized per screen
-
-```go
-// internal/tui/browse/keys.go
-type keyMap struct {
-  Up     key.Binding
-  Down   key.Binding
-  Select key.Binding
-  Quit   key.Binding
-}
-
-var defaultKeys = keyMap{
-  Up:     key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-  Down:   key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-  Select: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
-  Quit:   key.NewBinding(key.WithKeys("q", "esc"), key.WithHelp("q", "quit")),
-}
-```
-
-### Async calls — always via tea.Cmd
-
-Never call service methods directly inside `Update` or `View`.
-Wrap them as `tea.Cmd` so Bubbletea manages the goroutine.
-
-```go
-func loadItems(svc service.ItemService) tea.Cmd {
-  return func() tea.Msg {
-    items, err := svc.List(context.Background())
-    if err != nil {
-      return errMsg{err: err}
-    }
-    return itemsLoadedMsg{items: items}
-  }
-}
+  components/    ← shared primitives (wizard, selectlist, multiselect, confirm)
+  new/           ← wt create wizard
+  pr/            ← pr create wizard, env picker
+  run/           ← run list picker, run ps picker
+  init/          ← global + project init wizards
+  clean/         ← worktree picker + deletion confirm
+  worktreepicker/ ← shared worktree-selection picker
 ```
 
 ### Rules
 - `Update` is a pure function — no side effects, only return `(tea.Model, tea.Cmd)`
-- Never import `lipgloss` in `model.go` — delegate all styling to `styles/`
+- Never import `lipgloss` in TUI models — delegate all styling to `styles/`
 - Never import `cobra` or `service` inside a `tui/` model
+- TUI packages may import `domain/` (types) and `styles/` (rendering)
 
 ---
 
 ## Lipgloss — Centralized Styles
 
-All styles live in `internal/styles/`, split by concern (Charm community convention).
-Never declare a `lipgloss.NewStyle()` outside this package.
+All styles live in `internal/styles/`, split by concern:
+- `colors.go` — adaptive color palette
+- `text.go` — typography styles + `Indent` constant
+- `components.go` — composed styles (list items, badges, inputs)
+- `indicators.go` — status indicators (DirtyIndicator, CleanIndicator)
 
-```
-internal/styles/
-  colors.go      ← adaptive color palette
-  text.go        ← typography (title, subtitle, muted, error, success)
-  layout.go      ← box, padding, border, width helpers
-  components.go  ← composed styles (list item active/inactive, badge, status)
-```
-
-### colors.go
-
+The `Indent` constant is the canonical source for left-padding:
 ```go
-package styles
-
-import "github.com/charmbracelet/lipgloss"
-
-var (
-  ColorPrimary = lipgloss.AdaptiveColor{Light: "#0F62FE", Dark: "#78A9FF"}
-  ColorMuted   = lipgloss.AdaptiveColor{Light: "#6F6F6F", Dark: "#8D8D8D"}
-  ColorError   = lipgloss.AdaptiveColor{Light: "#DA1E28", Dark: "#FF8389"}
-  ColorSuccess = lipgloss.AdaptiveColor{Light: "#198038", Dark: "#42BE65"}
-)
+// internal/styles/text.go
+const Indent = "  "
 ```
 
-### text.go
-
-```go
-package styles
-
-import "github.com/charmbracelet/lipgloss"
-
-var (
-  Title   = lipgloss.NewStyle().Bold(true).Foreground(ColorPrimary)
-  Muted   = lipgloss.NewStyle().Foreground(ColorMuted)
-  Error   = lipgloss.NewStyle().Foreground(ColorError)
-  Success = lipgloss.NewStyle().Foreground(ColorSuccess)
-)
-```
-
-### components.go
-
-```go
-package styles
-
-import "github.com/charmbracelet/lipgloss"
-
-var (
-  ListItemActive = lipgloss.NewStyle().
-      Bold(true).
-      Foreground(ColorPrimary).
-      PaddingLeft(1)
-
-  ListItemInactive = lipgloss.NewStyle().
-      Foreground(ColorMuted).
-      PaddingLeft(1)
-)
-```
-
-### Usage rule
-
-```go
-// ✅ In any View() function
-return styles.Title.Render("My Title")
-
-// ❌ Never inline lipgloss in model or output files
-return lipgloss.NewStyle().Bold(true).Render("My Title")
-```
+`output/block.go` aliases it as `output.Indent`. TUI components use `styles.Indent`.
+Never write a literal `"  "` for padding — always use the constant.
 
 ---
 
-## Error Handling
+## Output — Formatted Printing
 
-Always wrap errors with context. Use sentinel errors for known failure modes.
+`internal/output/block.go` provides shared helpers for structured terminal output:
 
 ```go
-var (
-  ErrNotFound     = errors.New("resource not found")
-  ErrUnauthorized = errors.New("unauthorized")
-)
+output.Blank(w)                    // empty line
+output.Success(w, "Done")          // ✓ Done
+output.Warning(w, "Be careful")    // ! Be careful
+output.Error(w, "Failed")          // ✗ Failed
+output.Message(w, "Info")          // plain indented line
+output.SectionTitle(w, "TITLE")    // bold title
+output.InfoLine(w, "key", "value") // key  value
+output.Announce(w, "Title", items) // padded block: blank + title + key-values + blank
+```
 
-if err != nil {
-  return fmt.Errorf("deploy %s: %w", params.Environment, err)
+JSON output uses `encodeJSON(w, v)` (pretty-printed, no HTML escaping).
+
+---
+
+## Testing Patterns
+
+### Unit tests — config/service/domain
+
+Use `t.TempDir()` + real files, style from existing tests:
+
+```go
+func TestMyFeature(t *testing.T) {
+  dir := t.TempDir()
+  // write test fixtures
+  os.WriteFile(filepath.Join(dir, "file.toml"), []byte(content), 0o644)
+  // call function under test
+  result, err := config.LoadRun(dir)
+  // assert
 }
+```
+
+### Integration tests — command-level via Cobra
+
+Use `WTM_PROJECT_DIR` env var to bypass git resolution, and `gittest.InitRepo` for real repos:
+
+```go
+func TestRunExportEmpty(t *testing.T) {
+  dir := gittest.InitRepo(t)
+  t.Setenv("WTM_PROJECT_DIR", dir)
+
+  // Write minimal .wtm/config.toml
+  config.WriteProject(config.WriteProjectParams{ProjectDir: dir, Answers: ...})
+
+  // Execute command via Cobra
+  cmd := NewRunCmd()
+  var out bytes.Buffer
+  cmd.SetOut(&out)
+  cmd.SetArgs([]string{domain.CmdExport})
+  err := cmd.Execute()
+
+  // Assert on stdout JSON
+  var got domain.RunConfig
+  json.Unmarshal(out.Bytes(), &got)
+}
+```
+
+### Shared test helpers
+
+`internal/testutil/gittest/gittest.go`:
+```go
+gittest.InitRepo(t)           // temp git repo with initial commit
+gittest.CreateBranch(t, dir, name) // create a local branch
 ```
 
 ---
@@ -469,7 +379,7 @@ if err != nil {
 
 Before calling `build-validator`, verify manually:
 - [ ] All new types are in `internal/domain/`
-- [ ] All new flag / viper / env names use constants from `constants.go`
+- [ ] All flag and command names use constants from `constants.go`
 - [ ] No function has more than 1 unstructured parameter
 - [ ] All external input is validated in `internal/config/` before reaching service
 - [ ] No nested conditionals — early returns throughout
@@ -478,5 +388,7 @@ Before calling `build-validator`, verify manually:
 - [ ] No `lipgloss` imports outside `internal/styles/`
 - [ ] No `cobra` or `bubbletea` imports inside `internal/service/`
 - [ ] All async service calls in TUI wrapped as `tea.Cmd`
+- [ ] `addOutputFlag(cmd)` used instead of manual flag registration
+- [ ] `styles.Indent` used instead of literal `"  "` for padding
 
 Then run **`build-validator`**.
