@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -19,7 +18,7 @@ import (
 
 func newPRCheckoutCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "checkout [number]",
+		Use:   domain.CmdCheckout + " [number]",
 		Short: "Create a worktree from an existing pull request",
 		Long:  "Create a worktree from a pull request.\nWithout arguments, shows an interactive picker of open PRs.",
 		Args:  cobra.MaximumNArgs(1),
@@ -27,7 +26,7 @@ func newPRCheckoutCmd() *cobra.Command {
 	}
 
 	cmd.Flags().String(domain.FlagEnvFrom, "", "Override env strategy (example, main, parent)")
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 
 	return cmd
 }
@@ -80,8 +79,8 @@ type checkoutPRParams struct {
 	EnvFromOverride string // empty triggers the interactive env wizard
 }
 
-// checkoutPR is the shared implementation used by `wtm pr checkout`,
-// the `wtm pr list` picker action, and the dashboard keybinding.
+// checkoutPR is the shared implementation used by `wtm pr checkout`
+// and the `wtm pr list` picker action.
 func checkoutPR(cmd *cobra.Command, result configResult, params checkoutPRParams) error {
 	output.Loading(cmd.ErrOrStderr(), fmt.Sprintf("Fetching PR #%d...", params.Number))
 
@@ -100,7 +99,7 @@ func checkoutPR(cmd *cobra.Command, result configResult, params checkoutPRParams
 		return fmt.Errorf("list local branches: %w", err)
 	}
 
-	if err := validatePRForCheckout(pr, localBranches); err != nil {
+	if err := ghservice.ValidatePRForCheckout(pr, localBranches); err != nil {
 		return err
 	}
 
@@ -154,14 +153,3 @@ func checkoutPR(cmd *cobra.Command, result configResult, params checkoutPRParams
 	return nil
 }
 
-// validatePRForCheckout performs the pure pre-flight checks.
-// Pulled out so it can be unit-tested without hitting the API or the filesystem.
-func validatePRForCheckout(pr domain.PRInfo, localBranches []string) error {
-	if pr.IsFork {
-		return fmt.Errorf("PR #%d is from a fork — fork support is tracked in LUC-40", pr.Number)
-	}
-	if slices.Contains(localBranches, pr.Branch) {
-		return fmt.Errorf("local branch %q already exists — run `wtm wt clean %s` first", pr.Branch, pr.Branch)
-	}
-	return nil
-}

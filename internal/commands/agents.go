@@ -51,7 +51,7 @@ func newAgentsInstallCmd() *cobra.Command {
 	}
 	cmd.Flags().Bool(domain.FlagYes, false, "Non-interactive: install into every detected destination")
 	cmd.Flags().Bool(domain.FlagAll, false, "Include destinations that don't yet exist (creates skill dirs)")
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 	return cmd
 }
 

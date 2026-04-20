@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -22,7 +23,11 @@ type configResult struct {
 
 // projectRoot returns the main worktree path (where .wtm/config.toml lives).
 // Works from any worktree — resolves back to the parent repo.
+// WTM_PROJECT_DIR overrides git resolution; useful in tests and CI.
 func projectRoot(dir string) (string, error) {
+	if override := os.Getenv("WTM_PROJECT_DIR"); override != "" {
+		return override, nil
+	}
 	mainPath, err := infra.FindMainWorktreePath(infra.FindMainWorktreeParams{
 		ProjectDir: dir,
 	})
@@ -52,6 +57,12 @@ func loadConfig(cmd *cobra.Command, dir string) (configResult, bool) {
 	}
 
 	return configResult{Config: cfg, ProjectDir: root}, true
+}
+
+// addOutputFlag registers the standard --output flag on cmd.
+// Used by every command that supports --output text|json.
+func addOutputFlag(cmd *cobra.Command) {
+	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
 }
 
 // startSpinner displays a spinner with a message and returns a stop function.

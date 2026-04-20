@@ -14,13 +14,13 @@ import (
 // newRunStopCmd creates the wtm run stop subcommand.
 func newRunStopCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "stop <job>",
+		Use:   domain.CmdStop + " <job>",
 		Short: "Stop a single job",
 		Long:  "Stop an individual running job by name.",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runStop,
 	}
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 	return cmd
 }
 

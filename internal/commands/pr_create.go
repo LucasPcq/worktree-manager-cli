@@ -18,7 +18,7 @@ import (
 
 func newPRCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "create",
+		Use:   domain.CmdCreate,
 		Short: "Create a pull request for the current branch",
 		RunE:  runPRCreate,
 	}
@@ -26,7 +26,7 @@ func newPRCreateCmd() *cobra.Command {
 	cmd.Flags().String(domain.FlagTitle, "", "PR title (skips wizard for this field)")
 	cmd.Flags().String(domain.FlagBase, "", "Base branch (skips wizard for this field)")
 	cmd.Flags().Bool(domain.FlagDraft, false, "Create as draft PR")
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 
 	return cmd
 }

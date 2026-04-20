@@ -18,7 +18,7 @@ import (
 // newWtCleanCmd creates the wtm wt clean subcommand.
 func newWtCleanCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "clean [branch]",
+		Use:   domain.CmdClean + " [branch]",
 		Short: "Remove a worktree and its local branch",
 		Long:  "Remove a git worktree and delete the local branch. The remote branch is never touched.\nWithout arguments, shows an interactive picker.",
 		Args:  cobra.MaximumNArgs(1),
@@ -26,7 +26,7 @@ func newWtCleanCmd() *cobra.Command {
 	}
 
 	cmd.Flags().Bool(domain.FlagForce, false, "Bypass all safety checks")
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 
 	return cmd
 }
@@ -110,7 +110,7 @@ func doClean(cmd *cobra.Command, params worktree.CleanParams, format string) err
 		wtPath = wt.Path
 	}
 
-	stopServicesForWorktree(cmd, params.ProjectDir, params.Branch)
+	stopWorktreeServices(cmd, params.ProjectDir, params.Branch)
 
 	err := worktree.Clean(params)
 	if errors.Is(err, domain.ErrCannotCleanParent) {
@@ -136,7 +136,7 @@ func doClean(cmd *cobra.Command, params worktree.CleanParams, format string) err
 	return nil
 }
 
-func stopServicesForWorktree(cmd *cobra.Command, projectDir string, branch string) {
+func stopWorktreeServices(cmd *cobra.Command, projectDir string, branch string) {
 	socketPath := process.SocketPath()
 	if !process.IsDaemonRunning(socketPath) {
 		return
@@ -151,26 +151,7 @@ func stopServicesForWorktree(cmd *cobra.Command, projectDir string, branch strin
 	}
 
 	client := process.NewClient(socketPath)
-	resp, err := client.Send(process.Request{Action: process.ActionList})
-	if err != nil {
-		return
+	if process.StopWorktreeJobs(client, wt.Path) {
+		output.Success(cmd.ErrOrStderr(), fmt.Sprintf("Stopped services on %s", branch))
 	}
-
-	hasRunning := false
-	for _, svc := range resp.Jobs {
-		if svc.WorkDir == wt.Path && svc.Status == domain.JobStatusRunning {
-			hasRunning = true
-			break
-		}
-	}
-
-	if !hasRunning {
-		return
-	}
-
-	client.Send(process.Request{
-		Action:  process.ActionStopAll,
-		WorkDir: wt.Path,
-	})
-	output.Success(cmd.ErrOrStderr(), fmt.Sprintf("Stopped services on %s", branch))
 }

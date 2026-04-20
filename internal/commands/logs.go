@@ -19,7 +19,7 @@ import (
 // newRunLogsCmd creates the wtm run logs subcommand.
 func newRunLogsCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "logs [job]",
+		Use:   domain.CmdLogs + " [job]",
 		Short: "Attach to a job's output",
 		Long:  "Without arguments, stream all running jobs (multiplexed).\nWith a job name, attach to that single job's PTY.\nPress Ctrl+C to detach.",
 		Args:  cobra.MaximumNArgs(1),

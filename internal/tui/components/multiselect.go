@@ -130,7 +130,7 @@ func (m MultiSelectModel) View() string {
 			}
 			b.WriteString(styles.ListItemSelected.Render(line))
 		} else {
-			b.WriteString(styles.ListItemNormal.Render("  " + check + " " + item.Label))
+			b.WriteString(styles.ListItemNormal.Render(styles.Indent + check + " " + item.Label))
 		}
 
 		if i < end-1 {

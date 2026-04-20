@@ -10,7 +10,8 @@ import (
 
 // Indent is the standard left padding used by all TUI components.
 // Use this to align non-TUI output with TUI prompts.
-const Indent = "  "
+// The canonical definition lives in styles.Indent; this alias keeps callers unchanged.
+const Indent = styles.Indent
 
 // Warning prints a styled warning line: "  ! message".
 func Warning(w io.Writer, msg string) {
@@ -63,4 +64,22 @@ func Intro(w io.Writer, msg string) {
 // Blank prints an empty line for vertical spacing.
 func Blank(w io.Writer) {
 	fmt.Fprintln(w)
+}
+
+// AnnounceItem is a label-value pair displayed inside an Announce block.
+type AnnounceItem struct {
+	Label string
+	Value string
+}
+
+// Announce prints a padded block with a blank line above, a bold section title,
+// indented key-value rows, and a blank line below. Use it before an interactive
+// picker to describe what is about to happen.
+func Announce(w io.Writer, title string, items []AnnounceItem) {
+	Blank(w)
+	SectionTitle(w, title)
+	for _, item := range items {
+		InfoLine(w, item.Label, item.Value)
+	}
+	Blank(w)
 }

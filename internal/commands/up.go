@@ -18,7 +18,7 @@ import (
 // newRunUpCmd creates the wtm run up subcommand.
 func newRunUpCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "up [profile]",
+		Use:   domain.CmdUp + " [profile]",
 		Short: "Start a profile's jobs",
 		Long:  "Start every job in a profile, in declared order.\nWithout arguments, uses the default profile (or shows a picker if multiple exist).\nTasks block the profile and abort it on failure; services launch detached.",
 		Args:  cobra.MaximumNArgs(1),
@@ -27,7 +27,7 @@ func newRunUpCmd() *cobra.Command {
 
 	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop jobs on other worktrees before starting")
 	cmd.Flags().Bool(domain.FlagParallel, false, "Start without stopping other worktrees")
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 
 	return cmd
 }

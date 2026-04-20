@@ -6,39 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/LucasPcq/wtm/internal/testutil/gittest"
 )
 
-// initTestRepo creates a temporary git repo with an initial commit and returns its path.
-func initTestRepo(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-
-	commands := [][]string{
-		{"git", "init"},
-		{"git", "config", "user.email", "test@test.com"},
-		{"git", "config", "user.name", "Test"},
-		{"git", "commit", "--allow-empty", "-m", "initial"},
-	}
-
-	for _, args := range commands {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%s failed: %s: %v", strings.Join(args, " "), out, err)
-		}
-	}
-
-	return dir
-}
-
-func createBranch(t *testing.T, dir string, name string) {
-	t.Helper()
-	cmd := exec.Command("git", "branch", name)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git branch %s: %s: %v", name, out, err)
-	}
-}
+func initTestRepo(t *testing.T) string { return gittest.InitRepo(t) }
+func createBranch(t *testing.T, dir, name string) { gittest.CreateBranch(t, dir, name) }
 
 func TestListLocalBranches(t *testing.T) {
 	dir := initTestRepo(t)

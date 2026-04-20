@@ -17,12 +17,12 @@ import (
 // newRunPsCmd creates the wtm run ps subcommand.
 func newRunPsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "ps",
+		Use:   domain.CmdPs,
 		Short: "List currently running jobs",
 		Long:  "Show the jobs managed by the background daemon (name, kind, status, PID, worktree).\nIn a TTY, offers an interactive picker with stop/logs/restart actions.",
 		RunE:  runRunPs,
 	}
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 	return cmd
 }
 
@@ -66,13 +66,13 @@ func execRunPsAction(cmd *cobra.Command, pick runpicker.PsPickerResult) error {
 	var args []string
 	switch pick.Action {
 	case runpicker.ActionPsStop:
-		args = []string{"run", "stop", pick.Name}
+		args = []string{domain.CmdRun, domain.CmdStop, pick.Name}
 	case runpicker.ActionPsLogs:
-		args = []string{"run", "logs", pick.Name}
+		args = []string{domain.CmdRun, domain.CmdLogs, pick.Name}
 	case runpicker.ActionPsRestart:
-		args = []string{"run", "start", pick.Name}
+		args = []string{domain.CmdRun, domain.CmdStart, pick.Name}
 	case runpicker.ActionPsStopAll:
-		args = []string{"run", "down", "--all"}
+		args = []string{domain.CmdRun, domain.CmdDown, "--all"}
 	default:
 		return nil
 	}

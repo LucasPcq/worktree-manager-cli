@@ -34,9 +34,6 @@ func init() {
 	rootCmd.AddCommand(commands.NewAgentsCmd())
 
 	rootCmd.AddCommand(commands.NewResolveCmd())
-	if domain.FeatureDashboard {
-		rootCmd.AddCommand(commands.NewDashboardCmd())
-	}
 	rootCmd.AddCommand(commands.NewDaemonCmd())
 }
 
@@ -51,10 +48,7 @@ var rootCmd = &cobra.Command{
 	SilenceUsage:  true,
 }
 
-func rootRunE(cmd *cobra.Command, args []string) error {
-	if domain.FeatureDashboard {
-		return commands.RunDashboard(cmd, args)
-	}
+func rootRunE(cmd *cobra.Command, _ []string) error {
 	return cmd.Help()
 }
 

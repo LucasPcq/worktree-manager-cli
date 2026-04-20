@@ -19,17 +19,16 @@ import (
 )
 
 const (
-	prActionBrowser   = "browser"
-	prActionDetails   = "details"
-	prActionDashboard = "dashboard"
-	prActionCheckout  = "checkout"
-	prActionGo        = "go"
+	prActionBrowser  = "browser"
+	prActionDetails  = "details"
+	prActionCheckout = "checkout"
+	prActionGo       = "go"
 )
 
 // NewPRCmd creates the wtm pr command group.
 func NewPRCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "pr",
+		Use:     domain.CmdPr,
 		Short:   "Manage pull requests",
 		GroupID: domain.CmdGroupCore,
 	}
@@ -43,14 +42,14 @@ func NewPRCmd() *cobra.Command {
 
 func newPRListCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list",
+		Use:   domain.CmdList,
 		Short: "List open pull requests",
 		RunE:  runPRList,
 	}
 
-	cmd.Flags().Bool("review", false, "Show only PRs where you are requested as reviewer")
-	cmd.Flags().Bool("mine", false, "Show only your PRs")
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	cmd.Flags().Bool(domain.FlagReview, false, "Show only PRs where you are requested as reviewer")
+	cmd.Flags().Bool(domain.FlagMine, false, "Show only your PRs")
+	addOutputFlag(cmd)
 
 	return cmd
 }
@@ -63,8 +62,8 @@ func runPRList(cmd *cobra.Command, _ []string) error {
 
 	filter := domain.PRFilterAll
 
-	review, _ := cmd.Flags().GetBool("review")
-	mine, _ := cmd.Flags().GetBool("mine")
+	review, _ := cmd.Flags().GetBool(domain.FlagReview)
+	mine, _ := cmd.Flags().GetBool(domain.FlagMine)
 
 	if review {
 		filter = domain.PRFilterReviewRequested
@@ -164,10 +163,6 @@ func pickPRAndAction(prs []domain.PRInfo, existingBranches []string) (domain.PRI
 	actionItems = append(actionItems, components.SelectItem{Label: "Open in browser", Value: prActionBrowser})
 	actionItems = append(actionItems, components.SelectItem{Label: "View details", Value: prActionDetails})
 
-	if domain.FeatureDashboard {
-		actionItems = append(actionItems, components.SelectItem{Label: "Open in dashboard", Value: prActionDashboard})
-	}
-
 	action, err := components.RunStandaloneSelect(
 		components.NewSelectList(components.NewSelectListParams{
 			Title: fmt.Sprintf("#%d — %s", selectedPR.Number, truncate(selectedPR.Title, 30)),
@@ -193,9 +188,6 @@ func executePRAction(cmd *cobra.Command, action string, pr domain.PRInfo, projec
 		output.PrintPRDetail(cmd.OutOrStdout(), pr)
 		return nil
 
-	case prActionDashboard:
-		return runDashboardWithPR(cmd, projectDir, pr.Number)
-
 	case prActionCheckout:
 		result, ok := loadConfig(cmd, projectDir)
 		if !ok {
@@ -220,15 +212,6 @@ func executePRAction(cmd *cobra.Command, action string, pr domain.PRInfo, projec
 	}
 
 	return nil
-}
-
-func runDashboardWithPR(cmd *cobra.Command, projectDir string, prNumber int) error {
-	result, ok := loadConfig(cmd, projectDir)
-	if !ok {
-		return nil
-	}
-
-	return launchDashboard(cmd, result, launchDashboardParams{InitialPR: &prNumber})
 }
 
 // worktreeBranches returns the branch names of all existing worktrees (graceful degradation).

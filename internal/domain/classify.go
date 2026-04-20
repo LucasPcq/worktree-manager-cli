@@ -1,16 +1,12 @@
-package config
+package domain
 
-import (
-	"strings"
+import "strings"
 
-	"github.com/LucasPcq/wtm/internal/domain"
-)
-
-var serviceKeywords = []string{
-	domain.ScriptKeyDev,
-	domain.ScriptKeyStart,
-	domain.ScriptKeyServe,
-	domain.ScriptKeyWatch,
+var scriptServiceKeywords = []string{
+	ScriptKeyDev,
+	ScriptKeyStart,
+	ScriptKeyServe,
+	ScriptKeyWatch,
 }
 
 // ClassifyScriptKind returns JobKindService for long-running dev scripts and
@@ -21,17 +17,17 @@ var serviceKeywords = []string{
 //   - exact match: name == kw
 //   - prefix:      name starts with kw+":"   (e.g. "dev:api")
 //   - suffix:      name ends with   ":"+kw   (e.g. "api:dev")
-func ClassifyScriptKind(scriptName string) domain.JobKind {
-	for _, kw := range serviceKeywords {
+func ClassifyScriptKind(scriptName string) JobKind {
+	for _, kw := range scriptServiceKeywords {
 		if scriptName == kw {
-			return domain.JobKindService
+			return JobKindService
 		}
 		if strings.HasPrefix(scriptName, kw+":") {
-			return domain.JobKindService
+			return JobKindService
 		}
 		if strings.HasSuffix(scriptName, ":"+kw) {
-			return domain.JobKindService
+			return JobKindService
 		}
 	}
-	return domain.JobKindTask
+	return JobKindTask
 }

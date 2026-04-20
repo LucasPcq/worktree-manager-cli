@@ -18,12 +18,12 @@ import (
 // newRunListCmd creates the wtm run list subcommand.
 func newRunListCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list",
+		Use:   domain.CmdList,
 		Short: "List jobs and profiles declared in .wtm/run.toml",
 		Long:  "Show the jobs and profiles configured for the project.\nIn a TTY, offers an interactive picker with start/stop/logs actions.",
 		RunE:  runRunList,
 	}
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 	return cmd
 }
 
@@ -78,15 +78,15 @@ func execRunListAction(cmd *cobra.Command, pick runpicker.ListPickerResult) erro
 	var args []string
 	switch {
 	case pick.Kind == runpicker.KindProfile && pick.Action == runpicker.ActionUp:
-		args = []string{"run", "up", pick.Name}
+		args = []string{domain.CmdRun, domain.CmdUp, pick.Name}
 	case pick.Kind == runpicker.KindProfile && pick.Action == runpicker.ActionDown:
-		args = []string{"run", "down", pick.Name}
+		args = []string{domain.CmdRun, domain.CmdDown, pick.Name}
 	case pick.Kind == runpicker.KindJob && pick.Action == runpicker.ActionStart:
-		args = []string{"run", "start", pick.Name}
+		args = []string{domain.CmdRun, domain.CmdStart, pick.Name}
 	case pick.Kind == runpicker.KindJob && pick.Action == runpicker.ActionStop:
-		args = []string{"run", "stop", pick.Name}
+		args = []string{domain.CmdRun, domain.CmdStop, pick.Name}
 	case pick.Kind == runpicker.KindJob && pick.Action == runpicker.ActionLogs:
-		args = []string{"run", "logs", pick.Name}
+		args = []string{domain.CmdRun, domain.CmdLogs, pick.Name}
 	default:
 		return nil
 	}

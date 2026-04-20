@@ -32,7 +32,7 @@ Run these before taking action so you have names to pass as arguments:
 - **`wtm wt create <branch> --from <base> --output json`** — create a new worktree, run env provisioning + `on_create` hooks. Optional: `--env-from example|main|parent` to override the env strategy.
 - **`wtm wt clean <branch> --force --output json`** — remove worktree and local branch (remote untouched). `--force` is mandatory in JSON mode.
 - **`wtm wt go <branch>`** and **`wtm wt switch <branch>`** — navigate to a worktree (and start services, for `switch`). These **require the user's shell integration** to `cd`, so an LLM can't drive them directly. Prefer `wt list` + tell the user which branch to run `switch` on.
-- **`wtm wt focus <branch>`** — mark a worktree as the active one in the dashboard / state. Pass the branch explicitly.
+- **`wtm wt focus <branch>`** — mark a worktree as the active one in the state file. Pass the branch explicitly.
 
 ## Run commands (`wtm run`)
 

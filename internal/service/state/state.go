@@ -11,11 +11,7 @@ import (
 )
 
 // State represents the current wtm global state.
-type State struct {
-	ActiveWorktree     string `json:"active_worktree"`
-	ActiveWorktreePath string `json:"active_worktree_path"`
-	FocusedAt          string `json:"focused_at"`
-}
+type State struct{}
 
 // Load reads the state from ~/.config/wtm/state.json.
 // Returns a zero-value State if the file does not exist.

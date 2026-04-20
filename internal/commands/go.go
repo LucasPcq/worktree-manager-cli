@@ -10,7 +10,7 @@ import (
 // newWtGoCmd creates the wtm wt go subcommand (fallback when shell wrapper is not configured).
 func newWtGoCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "go [branch]",
+		Use:   domain.CmdGo + " [branch]",
 		Short: "Switch to a worktree",
 		Long:  "Navigate to a worktree directory. Requires shell integration to work.",
 		RunE:  runGo,

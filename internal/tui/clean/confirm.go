@@ -22,14 +22,12 @@ type ConfirmResult struct {
 func RunConfirm(check worktree.CleanCheckResult) (ConfirmResult, error) {
 	w := os.Stderr
 
-	output.Blank(w)
 	printWarnings(w, check)
 
-	output.Blank(w)
-	output.SectionTitle(w, "Will delete:")
-	output.InfoLine(w, "worktree", check.WorktreePath)
-	output.InfoLine(w, "branch  ", check.Branch)
-	output.Blank(w)
+	output.Announce(w, "Will delete:", []output.AnnounceItem{
+		{Label: "worktree", Value: check.WorktreePath},
+		{Label: "branch  ", Value: check.Branch},
+	})
 
 	items := []components.SelectItem{
 		{Label: "Yes, delete", Value: "yes"},

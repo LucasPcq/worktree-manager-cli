@@ -15,13 +15,13 @@ import (
 // newRunStartCmd creates the wtm run start subcommand.
 func newRunStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "start <job>",
+		Use:   domain.CmdStart + " <job>",
 		Short: "Start a single job",
 		Long:  "Start an individual job by name (defined in .wtm/run.toml). Tasks run inline and block until they exit; services launch in the background.",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runStart,
 	}
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 	return cmd
 }
 

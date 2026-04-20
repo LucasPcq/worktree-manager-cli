@@ -15,13 +15,13 @@ import (
 // newRunDownCmd creates the wtm run down subcommand.
 func newRunDownCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "down [profile]",
+		Use:   domain.CmdDown + " [profile]",
 		Short: "Stop jobs running in the current worktree",
 		Long:  "Stop jobs running in the current worktree.\nWith a profile argument, stops only that profile's jobs.\nJobs running in other worktrees are never touched.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  runDown,
 	}
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 	cmd.Flags().Bool(domain.FlagAll, false, "Stop jobs across every worktree (bypasses per-worktree scoping)")
 	return cmd
 }

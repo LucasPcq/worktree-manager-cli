@@ -129,7 +129,7 @@ func (m WizardModel) View() string {
 
 	step := m.steps[m.current]
 	if desc := m.stepDescription(step); desc != "" {
-		b.WriteString(styles.Muted.Render("  " + desc))
+		b.WriteString(styles.Muted.Render(styles.Indent + desc))
 		b.WriteString("\n\n")
 	}
 	b.WriteString(m.viewStep(m.current))

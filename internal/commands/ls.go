@@ -23,12 +23,12 @@ import (
 // newWtListCmd creates the wtm wt list subcommand.
 func newWtListCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list",
+		Use:   domain.CmdList,
 		Short: "List all worktrees",
 		Long:  "List all git worktrees with their status, PR info, and running services.",
 		RunE:  runLs,
 	}
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 	return cmd
 }
 
@@ -125,9 +125,6 @@ const (
 	lsActionServicesDown = "services-down"
 	lsActionLogs         = "logs"
 	lsActionClean        = "clean"
-	lsActionCreatePR     = "create-pr"
-	lsActionOpenPR       = "open-pr"
-	lsActionDashboard    = "dashboard"
 )
 
 func pickWorktreeAndAction(
@@ -161,10 +158,6 @@ func pickWorktreeAndAction(
 		{Separator: true},
 		{Label: "Clean (delete worktree)", Value: lsActionClean, Danger: true},
 	}
-	if domain.FeatureDashboard {
-		actionItems = append(actionItems, components.SelectItem{Label: "Open in dashboard", Value: lsActionDashboard})
-	}
-
 	wiz := components.NewWizard([]components.Step{
 		{
 			Name:  "Worktree",
@@ -243,7 +236,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 				return err
 			}
 		}
-		c := exec.Command(bin, "run", "up")
+		c := exec.Command(bin, domain.CmdRun, domain.CmdUp)
 		c.Dir = selected.Path
 		c.Stdin = os.Stdin
 		c.Stdout = os.Stdout
@@ -251,7 +244,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return c.Run()
 
 	case lsActionServicesUp:
-		cmd := exec.Command(bin, "run", "up")
+		cmd := exec.Command(bin, domain.CmdRun, domain.CmdUp)
 		cmd.Dir = selected.Path
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -259,7 +252,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return cmd.Run()
 
 	case lsActionServicesDown:
-		cmd := exec.Command(bin, "run", "down")
+		cmd := exec.Command(bin, domain.CmdRun, domain.CmdDown)
 		cmd.Dir = selected.Path
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -267,7 +260,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return cmd.Run()
 
 	case lsActionLogs:
-		cmd := exec.Command(bin, "run", "logs")
+		cmd := exec.Command(bin, domain.CmdRun, domain.CmdLogs)
 		cmd.Dir = selected.Path
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -275,30 +268,12 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return cmd.Run()
 
 	case lsActionClean:
-		cmd := exec.Command(bin, "wt", "clean", selected.Branch)
+		cmd := exec.Command(bin, domain.CmdWt, domain.CmdClean, selected.Branch)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 
-	case lsActionCreatePR:
-		cmd := exec.Command(bin, "pr", "create")
-		cmd.Dir = selected.Path
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
-
-	case lsActionOpenPR:
-		for _, pr := range prs {
-			if pr.Branch == selected.Branch {
-				return exec.Command("open", pr.URL).Run()
-			}
-		}
-
-	case lsActionDashboard:
-		branch := selected.Branch
-		return launchDashboard(cmd, result, launchDashboardParams{InitialBranch: &branch})
 	}
 
 	return nil

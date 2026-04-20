@@ -106,7 +106,7 @@ func createProjectConfig(cmd *cobra.Command, dir string) error {
 		return err
 	}
 
-	runCfg := buildRunConfig(answers, detection)
+	runCfg := config.BuildInitRunConfig(answers, detection.PackageManager)
 	if len(runCfg.Jobs) > 0 {
 		err := config.WriteRun(config.WriteRunParams{
 			ProjectDir: dir,
@@ -161,40 +161,7 @@ func dumpProjectSchemas(projectDir string) error {
 }
 
 func buildDetectionResult(dir string) domain.InitDetectionResult {
-	pm := detect.PackageManager(dir)
-	scripts := detect.PackageJSONScripts(dir)
-	for i := range scripts {
-		scripts[i].Kind = config.ClassifyScriptKind(scripts[i].Name)
-	}
-	return domain.InitDetectionResult{
-		BaseBranch:         detect.BaseBranch(dir),
-		EnvFiles:           detect.EnvFiles(dir),
-		PackageManager:     pm,
-		InstallCommand:     detect.InstallCommand(pm),
-		DockerComposeFiles: detect.DockerComposeFiles(dir),
-		DockerComposeCmd:   detect.DockerComposeCommand(),
-		MonorepoPackages:   detect.PnpmWorkspacePackages(dir),
-		PackageScripts:     scripts,
-	}
+	return detect.ProjectEnvironment(dir)
 }
 
-// buildRunConfig assembles a RunConfig from docker-compose files and selected
-// package.json scripts, merging both sources into a single config.
-func buildRunConfig(answers domain.InitProjectAnswers, detection domain.InitDetectionResult) domain.RunConfig {
-	runCfg := domain.RunConfig{}
-
-	if len(answers.DockerComposeFiles) > 0 {
-		runCfg = config.BuildDockerJobs(answers.DockerComposeCmd, answers.DockerComposeFiles)
-	}
-
-	if len(answers.SelectedPackageScripts) > 0 {
-		scriptsCfg := config.BuildScriptJobs(config.BuildScriptJobsParams{
-			PackageManager: detection.PackageManager,
-			Scripts:        answers.SelectedPackageScripts,
-		})
-		runCfg, _ = config.MergeRunConfigs(runCfg, scriptsCfg)
-	}
-
-	return runCfg
-}
 

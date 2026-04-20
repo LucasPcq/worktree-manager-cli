@@ -216,7 +216,7 @@ func (m SelectListModel) renderNormalItem(item SelectItem) string {
 		label = styles.DangerText.Render(label)
 	}
 
-	left := "  " + label
+	left := styles.Indent + label
 	badgesStr := m.renderBadgesStyled(item.Badges)
 	badgesPlainLen := m.badgesPlainLen(item.Badges)
 
@@ -268,7 +268,7 @@ func (m SelectListModel) renderSeparator() string {
 	if width < 4 {
 		width = 4
 	}
-	return styles.Divider.Render("  " + strings.Repeat("─", width))
+	return styles.Divider.Render(styles.Indent + strings.Repeat("─", width))
 }
 
 func (m *SelectListModel) refilter() {

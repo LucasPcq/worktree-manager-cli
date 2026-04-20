@@ -84,6 +84,8 @@ const (
 	FlagGlobal    = "global"
 	FlagMerge     = "merge"
 	FlagReplace   = "replace"
+	FlagMine      = "mine"
+	FlagReview    = "review"
 
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches
@@ -121,6 +123,26 @@ const (
 	// CmdGroupSetup is the Cobra group ID for setup commands.
 	CmdGroupSetup = "setup"
 
+	// CLI command names — used in Use: declarations and exec.Command(bin, …) call sites.
+	// Centralised here so a rename is a single-file change with no silent breakage.
+	CmdWt       = "wt"
+	CmdRun      = "run"
+	CmdPr       = "pr"
+	CmdGo       = "go"
+	CmdCreate   = "create"
+	CmdClean    = "clean"
+	CmdList     = "list"
+	CmdSwitch   = "switch"
+	CmdUp       = "up"
+	CmdDown     = "down"
+	CmdStart    = "start"
+	CmdStop     = "stop"
+	CmdLogs     = "logs"
+	CmdPs       = "ps"
+	CmdCheckout = "checkout"
+	CmdExport   = "export"
+	CmdImport   = "import"
+
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"
 
@@ -132,7 +154,4 @@ const (
 
 	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
 	CtrlCByte byte = 0x03
-
-	// FeatureDashboard controls whether the interactive dashboard is available.
-	FeatureDashboard = false
 )

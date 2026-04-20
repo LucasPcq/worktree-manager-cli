@@ -9,7 +9,7 @@ import (
 // NewWtCmd creates the wtm wt command group.
 func NewWtCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "wt",
+		Use:     domain.CmdWt,
 		Short:   "Manage worktrees",
 		GroupID: domain.CmdGroupCore,
 	}

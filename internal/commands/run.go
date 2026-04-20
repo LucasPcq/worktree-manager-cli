@@ -10,7 +10,7 @@ import (
 // (services + one-shot tasks) declared in .wtm/run.toml.
 func NewRunCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "run",
+		Use:     domain.CmdRun,
 		Short:   "Manage dev jobs (services + tasks)",
 		Long:    "Run commands and profiles declared in .wtm/run.toml — long-running services and one-shot tasks.",
 		GroupID: domain.CmdGroupCore,

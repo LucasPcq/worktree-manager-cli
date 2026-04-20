@@ -17,7 +17,7 @@ import (
 // newRunImportCmd creates the wtm run import subcommand.
 func newRunImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "import [file]",
+		Use:   domain.CmdImport + " [file]",
 		Short: "Import a JSON run config into .wtm/run.toml",
 		Long: `Read a JSON run config payload from a file (or stdin) and merge it into .wtm/run.toml.
 
@@ -30,7 +30,7 @@ Use --replace --force to overwrite the file entirely.`,
 	}
 	cmd.Flags().Bool(domain.FlagReplace, false, "Overwrite .wtm/run.toml entirely (requires --force)")
 	cmd.Flags().Bool(domain.FlagForce, false, "Confirm destructive --replace")
-	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
+	addOutputFlag(cmd)
 	return cmd
 }
 

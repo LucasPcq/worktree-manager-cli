@@ -14,7 +14,7 @@ import (
 // newRunExportCmd creates the wtm run export subcommand.
 func newRunExportCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "export",
+		Use:   domain.CmdExport,
 		Short: "Export .wtm/run.toml as JSON on stdout",
 		Long:  "Emit the current run config as JSON. Pipe to a file and use with wtm run import to share configurations.",
 		RunE:  runRunExport,

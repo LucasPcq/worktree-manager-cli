@@ -40,7 +40,7 @@ func BuildScriptJobs(params BuildScriptJobsParams) domain.RunConfig {
 
 		jobs = append(jobs, domain.JobConfig{
 			Name: name,
-			Kind: ClassifyScriptKind(s.Name),
+			Kind: domain.ClassifyScriptKind(s.Name),
 			Cmd:  fmt.Sprintf("%s run %s", pm, s.Name),
 			Cwd:  cwd,
 		})
@@ -71,6 +71,23 @@ func scriptJobName(s domain.PackageScript) string {
 		return s.Name
 	}
 	return s.PkgName + "-" + s.Name
+}
+
+// BuildInitRunConfig assembles a RunConfig from the answers collected during
+// wtm init, merging docker-compose jobs and selected package.json script jobs.
+func BuildInitRunConfig(answers domain.InitProjectAnswers, pm domain.PackageManager) domain.RunConfig {
+	runCfg := domain.RunConfig{}
+	if len(answers.DockerComposeFiles) > 0 {
+		runCfg = BuildDockerJobs(answers.DockerComposeCmd, answers.DockerComposeFiles)
+	}
+	if len(answers.SelectedPackageScripts) > 0 {
+		scriptsCfg := BuildScriptJobs(BuildScriptJobsParams{
+			PackageManager: pm,
+			Scripts:        answers.SelectedPackageScripts,
+		})
+		runCfg, _ = MergeRunConfigs(runCfg, scriptsCfg)
+	}
+	return runCfg
 }
 
 // BuildDockerJobs builds a RunConfig with one [[job]] entry per detected
