@@ -36,3 +36,22 @@ func SortStatuses(statuses []domain.WorktreeStatus) {
 func HasWarnings(result domain.CleanCheckResult) bool {
 	return result.UnpushedCommits > 0 || result.HasOpenPR || result.IsDirty
 }
+
+// FilterStatusesByMatches returns the subset of statuses whose branch appears in matches.
+// Returns statuses unchanged when matches is empty.
+func FilterStatusesByMatches(statuses []domain.WorktreeStatus, matches []domain.GitWorktree) []domain.WorktreeStatus {
+	if len(matches) == 0 {
+		return statuses
+	}
+	allowed := make(map[string]struct{}, len(matches))
+	for _, m := range matches {
+		allowed[m.Branch] = struct{}{}
+	}
+	out := make([]domain.WorktreeStatus, 0, len(matches))
+	for _, s := range statuses {
+		if _, ok := allowed[s.Branch]; ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}

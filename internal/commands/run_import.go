@@ -70,7 +70,7 @@ func runRunImport(cmd *cobra.Command, args []string) error {
 	}
 
 	if replace {
-		return writeAndReport(cmd, result.ProjectDir, incoming, config.MergeResult{}, format, true)
+		return writeAndReport(cmd, result.ProjectDir, incoming, rules.MergeResult{}, format, true)
 	}
 
 	existing, err := config.LoadRun(result.ProjectDir)
@@ -78,11 +78,11 @@ func runRunImport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load existing run config: %w", err)
 	}
 
-	merged, mergeResult := config.MergeRunConfigs(existing, incoming)
+	merged, mergeResult := rules.MergeRunConfigs(existing, incoming)
 	return writeAndReport(cmd, result.ProjectDir, merged, mergeResult, format, false)
 }
 
-func writeAndReport(cmd *cobra.Command, projectDir string, cfg domain.RunConfig, mergeResult config.MergeResult, format string, replace bool) error {
+func writeAndReport(cmd *cobra.Command, projectDir string, cfg domain.RunConfig, mergeResult rules.MergeResult, format string, replace bool) error {
 	if err := config.WriteRun(config.WriteRunParams{
 		ProjectDir: projectDir,
 		Config:     cfg,

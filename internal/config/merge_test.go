@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func TestMergeRunConfigsEmpty(t *testing.T) {
@@ -14,7 +15,7 @@ func TestMergeRunConfigsEmpty(t *testing.T) {
 		},
 	}
 
-	out, result := MergeRunConfigs(dst, src)
+	out, result := rules.MergeRunConfigs(dst, src)
 
 	if len(out.Jobs) != 1 {
 		t.Fatalf("expected 1 job, got %d", len(out.Jobs))
@@ -32,12 +33,12 @@ func TestMergeRunConfigsDuplicateSkipped(t *testing.T) {
 	dst := domain.RunConfig{Jobs: []domain.JobConfig{existing}}
 	src := domain.RunConfig{
 		Jobs: []domain.JobConfig{
-			{Name: "dev", Kind: domain.JobKindService, Cmd: "vite"},  // duplicate
+			{Name: "dev", Kind: domain.JobKindService, Cmd: "vite"},   // duplicate
 			{Name: "build", Kind: domain.JobKindTask, Cmd: "pnpm build"}, // new
 		},
 	}
 
-	out, result := MergeRunConfigs(dst, src)
+	out, result := rules.MergeRunConfigs(dst, src)
 
 	if len(out.Jobs) != 2 {
 		t.Fatalf("expected 2 jobs, got %d", len(out.Jobs))
@@ -67,7 +68,7 @@ func TestMergeRunConfigsDstUnmutated(t *testing.T) {
 	}
 
 	origLen := len(dst.Jobs)
-	MergeRunConfigs(dst, src)
+	rules.MergeRunConfigs(dst, src)
 
 	if len(dst.Jobs) != origLen {
 		t.Errorf("dst was mutated: expected %d jobs, got %d", origLen, len(dst.Jobs))
@@ -88,12 +89,12 @@ func TestMergeRunConfigsProfiles(t *testing.T) {
 			{Name: "build", Kind: domain.JobKindTask, Cmd: "pnpm build"},
 		},
 		Profiles: []domain.ProfileConfig{
-			{Name: "full", Jobs: []string{"build"}},   // duplicate
-			{Name: "ci", Jobs: []string{"build"}},     // new
+			{Name: "full", Jobs: []string{"build"}}, // duplicate
+			{Name: "ci", Jobs: []string{"build"}},   // new
 		},
 	}
 
-	out, result := MergeRunConfigs(dst, src)
+	out, result := rules.MergeRunConfigs(dst, src)
 
 	if len(out.Profiles) != 2 {
 		t.Fatalf("expected 2 profiles, got %d", len(out.Profiles))

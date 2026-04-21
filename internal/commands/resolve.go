@@ -10,6 +10,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
@@ -84,7 +85,7 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 		return domain.WorktreeStatus{}, fmt.Errorf("list worktrees: %w", err)
 	}
 
-	filtered := filterStatusesByMatches(statuses, matches)
+	filtered := rules.FilterStatusesByMatches(statuses, matches)
 	if len(filtered) == 0 {
 		filtered = statuses
 	}
@@ -100,19 +101,3 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 	})
 }
 
-func filterStatusesByMatches(statuses []domain.WorktreeStatus, matches []domain.GitWorktree) []domain.WorktreeStatus {
-	if len(matches) == 0 {
-		return statuses
-	}
-	allowed := make(map[string]struct{}, len(matches))
-	for _, m := range matches {
-		allowed[m.Branch] = struct{}{}
-	}
-	out := make([]domain.WorktreeStatus, 0, len(matches))
-	for _, s := range statuses {
-		if _, ok := allowed[s.Branch]; ok {
-			out = append(out, s)
-		}
-	}
-	return out
-}

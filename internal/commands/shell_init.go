@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/shell"
 )
 
@@ -20,6 +21,6 @@ func NewShellInitCmd() *cobra.Command {
 
 func runShellInit(cmd *cobra.Command, _ []string) error {
 	detected := shell.DetectShell()
-	fmt.Fprint(cmd.OutOrStdout(), shell.GenerateShellInit(detected))
+	fmt.Fprint(cmd.OutOrStdout(), rules.GenerateShellInit(detected))
 	return nil
 }

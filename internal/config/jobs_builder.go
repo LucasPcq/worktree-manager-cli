@@ -86,7 +86,7 @@ func BuildInitRunConfig(answers domain.InitProjectAnswers, pm domain.PackageMana
 			PackageManager: pm,
 			Scripts:        answers.SelectedPackageScripts,
 		})
-		runCfg, _ = MergeRunConfigs(runCfg, scriptsCfg)
+		runCfg, _ = rules.MergeRunConfigs(runCfg, scriptsCfg)
 	}
 	return runCfg
 }

@@ -18,7 +18,7 @@ func ProjectEnvironment(dir string) domain.InitDetectionResult {
 		BaseBranch:         BaseBranch(dir),
 		EnvFiles:           EnvFiles(dir),
 		PackageManager:     pm,
-		InstallCommand:     InstallCommand(pm),
+		InstallCommand:     rules.InstallCommand(pm),
 		DockerComposeFiles: DockerComposeFiles(dir),
 		DockerComposeCmd:   DockerComposeCommand(),
 		MonorepoPackages:   PnpmWorkspacePackages(dir),

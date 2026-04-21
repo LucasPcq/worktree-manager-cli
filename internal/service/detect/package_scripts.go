@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // PackageJSONScripts returns all package.json scripts under projectDir,
@@ -47,7 +47,7 @@ func readPackageScripts(dir, workspace string) []domain.PackageScript {
 		return nil
 	}
 
-	pkgName := stripScope(pkg.Name)
+	pkgName := rules.StripScope(pkg.Name)
 	if pkgName == "" {
 		pkgName = filepath.Base(dir)
 	}
@@ -69,17 +69,4 @@ func readPackageScripts(dir, workspace string) []domain.PackageScript {
 	}
 
 	return scripts
-}
-
-// stripScope removes an npm scope prefix from a package name.
-// "@acme/web" → "web", "my-app" → "my-app".
-func stripScope(name string) string {
-	if !strings.HasPrefix(name, "@") {
-		return name
-	}
-	parts := strings.SplitN(name, "/", 2)
-	if len(parts) == 2 {
-		return parts[1]
-	}
-	return name
 }

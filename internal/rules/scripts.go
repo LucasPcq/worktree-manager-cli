@@ -13,6 +13,19 @@ var scriptServiceKeywords = []string{
 	domain.ScriptKeyWatch,
 }
 
+// StripScope removes an npm scope prefix from a package name.
+// "@acme/web" → "web", "my-app" → "my-app".
+func StripScope(name string) string {
+	if !strings.HasPrefix(name, "@") {
+		return name
+	}
+	parts := strings.SplitN(name, "/", 2)
+	if len(parts) == 2 {
+		return parts[1]
+	}
+	return name
+}
+
 // ClassifyScriptKind returns JobKindService for long-running dev scripts and
 // JobKindTask for everything else.
 //

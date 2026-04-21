@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -76,7 +77,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 		if listErr != nil {
 			return fmt.Errorf("list branches: %w", listErr)
 		}
-		if !branchInList(branches, fromFlag) {
+		if !slices.Contains(branches, fromFlag) {
 			return fmt.Errorf("%w: %s", domain.ErrBranchNotFound, fromFlag)
 		}
 	}
@@ -124,11 +125,3 @@ func runNewWizard(params runNewWizardParams) (newpicker.WizardResult, error) {
 	})
 }
 
-func branchInList(branches []string, target string) bool {
-	for _, b := range branches {
-		if b == target {
-			return true
-		}
-	}
-	return false
-}

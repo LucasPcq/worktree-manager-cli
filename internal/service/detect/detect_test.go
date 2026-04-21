@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func touchFile(t *testing.T, path string) {
@@ -103,7 +104,7 @@ func TestInstallCommand(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := InstallCommand(tt.pm)
+		got := rules.InstallCommand(tt.pm)
 		if got != tt.want {
 			t.Errorf("InstallCommand(%s) = %q, want %q", tt.pm, got, tt.want)
 		}

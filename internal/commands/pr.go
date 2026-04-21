@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -150,7 +151,7 @@ func pickPRAndAction(prs []domain.PRInfo, existingBranches []string) (domain.PRI
 	}
 
 	// Step 2: build contextual action items based on worktree existence
-	branchHasWorktree := containsString(existingBranches, selectedPR.Branch)
+	branchHasWorktree := slices.Contains(existingBranches, selectedPR.Branch)
 
 	var actionItems []components.SelectItem
 	if branchHasWorktree {
@@ -225,15 +226,6 @@ func worktreeBranches(projectDir string) []string {
 		branches = append(branches, wt.Branch)
 	}
 	return branches
-}
-
-func containsString(ss []string, target string) bool {
-	for _, s := range ss {
-		if s == target {
-			return true
-		}
-	}
-	return false
 }
 
 func truncate(s string, maxLen int) string {
