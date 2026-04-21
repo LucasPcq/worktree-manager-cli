@@ -121,9 +121,10 @@ cmd/
 
 internal/
   commands/                   ← flag wiring only → delegates to service (zero logic)
-  domain/                     ← types, errors, constants, pure functions
+  domain/                     ← types, errors, constants only (no methods, no functions)
+  rules/                      ← pure business rules (stdlib + domain only, no I/O)
   config/                     ← load & validate .wtm/config.toml + run.toml
-  service/                    ← all business logic, organized by domain:
+  service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   create, list, clean, resolve
     env/                      ←   .env file provisioning strategies
     hooks/                    ←   on_create hook execution
@@ -142,10 +143,11 @@ internal/
 
 **Hard rules:**
 - `commands/` has zero business logic
+- `domain/` imports only stdlib (unchanged)
+- `rules/` imports only stdlib + internal/domain
 - `service/` has zero imports of `cobra`, `bubbletea`, `lipgloss`
 - `output/` and `tui/` have zero decision logic — only rendering
 - `styles/` is the only package allowed to instantiate `lipgloss.Style`
-- `domain/` imports only stdlib
 
 ### 10. Validate before commit — run `build-validator`
 
@@ -387,6 +389,7 @@ Before calling `build-validator`, verify manually:
 - [ ] No business logic in `commands/` or `tui/`
 - [ ] No `lipgloss` imports outside `internal/styles/`
 - [ ] No `cobra` or `bubbletea` imports inside `internal/service/`
+- [ ] Pure functions (no I/O) live in internal/rules/, not in service/
 - [ ] All async service calls in TUI wrapped as `tea.Cmd`
 - [ ] `addOutputFlag(cmd)` used instead of manual flag registration
 - [ ] `styles.Indent` used instead of literal `"  "` for padding

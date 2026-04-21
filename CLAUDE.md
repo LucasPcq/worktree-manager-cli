@@ -39,6 +39,9 @@ All types, enums, sentinel errors, and constants are defined once in
 `internal/domain/`. Import from there everywhere.
 Never copy-paste a type across packages.
 
+Pure functions with no I/O (lookups, transforms, classification) live in
+`internal/rules/`, not in `internal/domain/` or `internal/service/`.
+
 ## 4. Validate all external input
 
 Config files, CLI flags, and environment variables are validated at the
@@ -96,9 +99,10 @@ Do not comment what the code already says. Add comments only for:
 cmd/                          ← entry points, cobra setup only
 internal/
   commands/                   ← flag wiring, delegates to service (zero business logic)
-  domain/                     ← types, errors, constants (single source of truth)
+  domain/                     ← types, errors, constants only (no methods, no functions)
+  rules/                      ← pure functions (stdlib + domain only, no I/O)
   config/                     ← load & validate .wtm.toml + ~/.config/wtm/config.toml
-  service/                    ← all business logic, organized by domain:
+  service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
     env/                      ←   .env file provisioning strategies
     hooks/                    ←   on_create / on_focus / on_blur hook execution
@@ -114,6 +118,8 @@ internal/
 
 **Hard rules:**
 - `commands/` has zero business logic
+- `domain/` has types, errors, and constants only — no methods, no free functions
+- `rules/` imports only stdlib and `internal/domain` — no I/O, no side effects
 - `service/` has zero imports of `cobra`, `bubbletea`, `lipgloss`
 - `output/` and `tui/` have zero decision logic — only rendering
 - `styles/` is the only package allowed to instantiate `lipgloss.Style`
