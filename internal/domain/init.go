@@ -1,5 +1,17 @@
 package domain
 
+// PackageManager represents a detected package manager.
+type PackageManager string
+
+const (
+	PkgManagerPnpm PackageManager = "pnpm"
+	PkgManagerNpm  PackageManager = "npm"
+	PkgManagerYarn PackageManager = "yarn"
+	PkgManagerGo   PackageManager = "go"
+	PkgManagerPip  PackageManager = "pip"
+	PkgManagerNone PackageManager = "none"
+)
+
 // PackageScript is one script entry discovered via package.json, possibly
 // inside a pnpm workspace package.
 type PackageScript struct {
