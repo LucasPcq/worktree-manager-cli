@@ -9,6 +9,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
@@ -41,7 +42,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load run config: %w", err)
 	}
 
-	job, ok := runCfg.FindJob(args[0])
+	job, ok := rules.FindJob(runCfg, args[0])
 	if !ok {
 		return fmt.Errorf("job %q not found in config", args[0])
 	}

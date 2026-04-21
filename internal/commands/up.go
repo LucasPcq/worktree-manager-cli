@@ -11,6 +11,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
@@ -166,20 +167,20 @@ func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig
 
 func resolveProfileJobs(args []string, cfg domain.RunConfig) ([]domain.JobConfig, error) {
 	if len(args) > 0 {
-		profile, ok := cfg.FindProfile(args[0])
+		profile, ok := rules.FindProfile(cfg, args[0])
 		if !ok {
 			return nil, fmt.Errorf("profile %q not found in config", args[0])
 		}
-		return cfg.ProfileJobs(profile), nil
+		return rules.ProfileJobs(cfg, profile), nil
 	}
 
 	// 1 profile or less → use default
 	if len(cfg.Profiles) <= 1 {
-		profile, ok := cfg.DefaultProfile()
+		profile, ok := rules.DefaultProfile(cfg)
 		if !ok {
 			return cfg.Jobs, nil
 		}
-		return cfg.ProfileJobs(profile), nil
+		return rules.ProfileJobs(cfg, profile), nil
 	}
 
 	// 2+ profiles → interactive picker
@@ -188,11 +189,11 @@ func resolveProfileJobs(args []string, cfg domain.RunConfig) ([]domain.JobConfig
 		return nil, err
 	}
 
-	return cfg.ProfileJobs(profile), nil
+	return rules.ProfileJobs(cfg, profile), nil
 }
 
 func pickProfile(cfg domain.RunConfig) (domain.ProfileConfig, error) {
-	defaultProfile, _ := cfg.DefaultProfile()
+	defaultProfile, _ := rules.DefaultProfile(cfg)
 
 	items := make([]components.SelectItem, 0, len(cfg.Profiles))
 	for _, p := range cfg.Profiles {
@@ -217,7 +218,7 @@ func pickProfile(cfg domain.RunConfig) (domain.ProfileConfig, error) {
 		selected = defaultProfile.Name
 	}
 
-	profile, ok := cfg.FindProfile(selected)
+	profile, ok := rules.FindProfile(cfg, selected)
 	if !ok {
 		return domain.ProfileConfig{}, fmt.Errorf("profile %q not found", selected)
 	}

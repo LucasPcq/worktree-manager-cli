@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func TestLoadRunRejectsTypoedSection(t *testing.T) {
@@ -261,7 +262,7 @@ func TestBuildDockerJobsKind(t *testing.T) {
 	if j.Stop == "" {
 		t.Error("expected stop command on docker job")
 	}
-	if !j.IsDetached() {
+	if !rules.IsDetached(j) {
 		t.Error("expected docker job to be detached")
 	}
 }

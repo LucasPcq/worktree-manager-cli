@@ -15,6 +15,7 @@ import (
 	"github.com/creack/pty"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // ansiCSI matches CSI-style ANSI escape sequences (colors, cursor moves, line
@@ -123,7 +124,7 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 	switch {
 	case job.Kind == domain.JobKindTask:
 		return m.runTask(managed, streamer)
-	case job.IsDetached():
+	case rules.IsDetached(job):
 		if err := m.waitDetached(managed); err != nil {
 			m.mu.Lock()
 			delete(m.jobs, key)

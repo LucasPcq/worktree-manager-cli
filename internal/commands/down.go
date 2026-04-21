@@ -9,6 +9,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
@@ -64,12 +65,12 @@ func runDown(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("load run config: %w", err)
 		}
 
-		profile, ok := runCfg.FindProfile(args[0])
+		profile, ok := rules.FindProfile(runCfg, args[0])
 		if !ok {
 			return fmt.Errorf("profile %q not found in config", args[0])
 		}
 
-		jobs := runCfg.ProfileJobs(profile)
+		jobs := rules.ProfileJobs(runCfg, profile)
 		results := make([]output.JobActionResult, 0, len(jobs))
 		for _, job := range jobs {
 			stopSpinner := startSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s...", job.Name))

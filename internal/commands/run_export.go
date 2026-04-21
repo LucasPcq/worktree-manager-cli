@@ -9,6 +9,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // newRunExportCmd creates the wtm run export subcommand.
@@ -41,7 +42,7 @@ func runRunExport(cmd *cobra.Command, _ []string) error {
 
 	profile, _ := cmd.Flags().GetString(domain.FlagProfile)
 	if profile != "" {
-		runCfg, err = runCfg.FilterToProfile(profile)
+		runCfg, err = rules.FilterToProfile(runCfg, profile)
 		if err != nil {
 			return err
 		}
