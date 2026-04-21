@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // ListParams holds inputs for listing worktrees with status.
@@ -35,7 +35,7 @@ func List(params ListParams) ([]domain.WorktreeStatus, error) {
 		statuses = append(statuses, status)
 	}
 
-	sortStatuses(statuses)
+	rules.SortStatuses(statuses)
 
 	return statuses, nil
 }
@@ -80,13 +80,4 @@ func worktreeCreatedAt(wtPath string) time.Time {
 		return time.Time{}
 	}
 	return info.ModTime()
-}
-
-func sortStatuses(statuses []domain.WorktreeStatus) {
-	sort.SliceStable(statuses, func(i, j int) bool {
-		if statuses[i].IsParent != statuses[j].IsParent {
-			return statuses[i].IsParent
-		}
-		return statuses[i].CreatedAt.Before(statuses[j].CreatedAt)
-	})
 }

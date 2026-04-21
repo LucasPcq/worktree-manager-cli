@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/env"
 	"github.com/LucasPcq/wtm/internal/service/hooks"
 )
@@ -33,7 +33,7 @@ type CreateResult struct {
 
 // Create orchestrates worktree creation: git worktree add, env copy, metadata, hooks.
 func Create(params CreateParams) (CreateResult, error) {
-	sanitized := sanitizeBranchName(params.Branch)
+	sanitized := rules.SanitizeBranchName(params.Branch)
 	worktreePath := filepath.Join(params.ProjectDir, params.Config.Project.Worktrees.BasePath, sanitized)
 
 	if _, err := os.Stat(worktreePath); err == nil {
@@ -49,7 +49,7 @@ func Create(params CreateParams) (CreateResult, error) {
 		return CreateResult{}, err
 	}
 
-	strategy := resolveEnvStrategy(params)
+	strategy := rules.ResolveEnvStrategy(params.Config.Project.Env.Strategy, params.EnvFromOverride)
 
 	mainPath, err := infra.FindMainWorktreePath(infra.FindMainWorktreeParams{
 		ProjectDir: params.ProjectDir,
@@ -104,17 +104,6 @@ func Create(params CreateParams) (CreateResult, error) {
 	}, nil
 }
 
-// SanitizeBranchName replaces slashes with dashes for use as a directory name.
-func sanitizeBranchName(name string) string {
-	return strings.ReplaceAll(name, "/", "-")
-}
-
-func resolveEnvStrategy(params CreateParams) domain.EnvStrategy {
-	if params.EnvFromOverride != "" {
-		return domain.EnvStrategy(params.EnvFromOverride)
-	}
-	return params.Config.Project.Env.Strategy
-}
 
 func writeMetadata(worktreePath string, metadata domain.WorktreeMetadata) error {
 	metaDir := filepath.Join(worktreePath, domain.ProjectDirName)
