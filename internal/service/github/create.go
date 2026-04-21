@@ -4,12 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // CreatePRParams holds inputs for creating a pull request.
@@ -45,7 +43,7 @@ func CreatePR(params CreatePRParams) (domain.PRInfo, error) {
 	}
 
 	url := strings.TrimSpace(string(data))
-	number, err := extractPRNumber(url)
+	number, err := rules.ExtractPRNumber(url)
 	if err != nil {
 		return domain.PRInfo{}, fmt.Errorf("parse PR URL %q: %w", url, err)
 	}
@@ -58,42 +56,6 @@ func CreatePR(params CreatePRParams) (domain.PRInfo, error) {
 		Draft:  params.Draft,
 		URL:    url,
 	}, nil
-}
-
-var prNumberPattern = regexp.MustCompile(`/pull/(\d+)$`)
-
-func extractPRNumber(url string) (int, error) {
-	m := prNumberPattern.FindStringSubmatch(url)
-	if len(m) < 2 {
-		return 0, fmt.Errorf("no PR number found")
-	}
-	return strconv.Atoi(m[1])
-}
-
-// BranchTitleFromName generates a human-readable PR title from a branch name.
-func BranchTitleFromName(branch string) string {
-	prefixes := []string{"feature/", "fix/", "chore/", "hotfix/", "bugfix/", "refactor/", "docs/"}
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(branch, prefix) {
-			branch = strings.TrimPrefix(branch, prefix)
-			break
-		}
-	}
-
-	issueIDPattern := regexp.MustCompile(`^[A-Z]+-\d+-`)
-	branch = issueIDPattern.ReplaceAllString(branch, "")
-
-	branch = strings.ReplaceAll(branch, "-", " ")
-	branch = strings.ReplaceAll(branch, "_", " ")
-
-	branch = strings.TrimSpace(branch)
-	if len(branch) == 0 {
-		return branch
-	}
-
-	runes := []rune(branch)
-	runes[0] = unicode.ToUpper(runes[0])
-	return string(runes)
 }
 
 // DetectPRTemplate looks for a PR template in the repository.

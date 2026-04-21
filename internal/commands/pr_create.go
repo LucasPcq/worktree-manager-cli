@@ -11,6 +11,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	prwizard "github.com/LucasPcq/wtm/internal/tui/pr"
@@ -107,7 +108,7 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 		// Resolve defaults for wizard
 		defaultTitle := title
 		if defaultTitle == "" {
-			defaultTitle = ghservice.BranchTitleFromName(branch)
+			defaultTitle = rules.BranchTitleFromName(branch)
 		}
 
 		defaultBase := base

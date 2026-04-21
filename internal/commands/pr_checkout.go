@@ -11,6 +11,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	prwizard "github.com/LucasPcq/wtm/internal/tui/pr"
@@ -99,7 +100,7 @@ func checkoutPR(cmd *cobra.Command, result configResult, params checkoutPRParams
 		return fmt.Errorf("list local branches: %w", err)
 	}
 
-	if err := ghservice.ValidatePRForCheckout(pr, localBranches); err != nil {
+	if err := rules.ValidatePRForCheckout(pr, localBranches); err != nil {
 		return err
 	}
 
