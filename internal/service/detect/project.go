@@ -1,6 +1,9 @@
 package detect
 
-import "github.com/LucasPcq/wtm/internal/domain"
+import (
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
+)
 
 // ProjectEnvironment runs all detection probes for a project directory and
 // returns a fully-populated InitDetectionResult. Package script kinds are
@@ -9,7 +12,7 @@ func ProjectEnvironment(dir string) domain.InitDetectionResult {
 	pm := PackageManager(dir)
 	scripts := PackageJSONScripts(dir)
 	for i := range scripts {
-		scripts[i].Kind = domain.ClassifyScriptKind(scripts[i].Name)
+		scripts[i].Kind = rules.ClassifyScriptKind(scripts[i].Name)
 	}
 	return domain.InitDetectionResult{
 		BaseBranch:         BaseBranch(dir),

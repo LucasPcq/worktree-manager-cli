@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // BuildScriptJobsParams holds the inputs for BuildScriptJobs.
@@ -40,7 +41,7 @@ func BuildScriptJobs(params BuildScriptJobsParams) domain.RunConfig {
 
 		jobs = append(jobs, domain.JobConfig{
 			Name: name,
-			Kind: domain.ClassifyScriptKind(s.Name),
+			Kind: rules.ClassifyScriptKind(s.Name),
 			Cmd:  fmt.Sprintf("%s run %s", pm, s.Name),
 			Cwd:  cwd,
 		})
