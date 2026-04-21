@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func TestRunHooksSuccess(t *testing.T) {
@@ -76,7 +77,7 @@ func TestRunHooksCwdOverride(t *testing.T) {
 }
 
 func TestInterpolate(t *testing.T) {
-	vars := TemplateVars{
+	vars := rules.TemplateVars{
 		Worktree:   "/trees/feat-auth",
 		Branch:     "feature/auth",
 		Root:       "/repo",
@@ -95,15 +96,15 @@ func TestInterpolate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := interpolate(tt.input, vars)
+		got := rules.Interpolate(tt.input, vars)
 		if got != tt.want {
-			t.Errorf("interpolate(%q) = %q, want %q", tt.input, got, tt.want)
+			t.Errorf("Interpolate(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }
 
 func TestResolveTemplateVars(t *testing.T) {
-	vars := TemplateVars{
+	vars := rules.TemplateVars{
 		Worktree: "/trees/feat",
 		Branch:   "feat",
 	}
@@ -113,7 +114,7 @@ func TestResolveTemplateVars(t *testing.T) {
 		Cwd: "{{worktree}}/apps",
 	}
 
-	resolved := resolveTemplateVars(hook, vars)
+	resolved := rules.ResolveTemplateVars(hook, vars)
 
 	if resolved.Cmd != "echo feat" {
 		t.Errorf("cmd: expected 'echo feat', got %q", resolved.Cmd)

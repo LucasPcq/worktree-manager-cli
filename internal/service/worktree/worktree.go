@@ -69,7 +69,7 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		hookErr := hooks.RunHooks(hooks.RunHooksParams{
 			Hooks:   params.Config.Project.Hooks.OnCreate,
 			WorkDir: worktreePath,
-			Vars: hooks.TemplateVars{
+			Vars: rules.TemplateVars{
 				Worktree:   worktreePath,
 				Branch:     params.Branch,
 				Root:       mainPath,
