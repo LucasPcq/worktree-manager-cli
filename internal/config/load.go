@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // LoadParams holds the inputs for loading configuration.
@@ -33,7 +34,7 @@ func Load(params LoadParams) (domain.Config, error) {
 	cfg := merge(project, global)
 	applyDefaults(&cfg)
 
-	if err := Validate(cfg); err != nil {
+	if err := rules.Validate(cfg); err != nil {
 		return domain.Config{}, err
 	}
 

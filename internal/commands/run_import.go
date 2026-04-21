@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // newRunImportCmd creates the wtm run import subcommand.
@@ -63,7 +64,7 @@ func runRunImport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse JSON: %w", err)
 	}
 
-	_, errs := config.ValidateRun(incoming)
+	_, errs := rules.ValidateRun(incoming)
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid run config:\n  %s", strings.Join(errs, "\n  "))
 	}

@@ -49,7 +49,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load run config: %w", err)
 	}
 
-	warnings, errs := config.ValidateRun(runCfg)
+	warnings, errs := rules.ValidateRun(runCfg)
 	for _, warning := range warnings {
 		output.Warning(cmd.ErrOrStderr(), warning)
 	}
