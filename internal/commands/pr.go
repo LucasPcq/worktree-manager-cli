@@ -196,7 +196,7 @@ func executePRAction(cmd *cobra.Command, action string, pr domain.PRInfo, projec
 		return checkoutPR(cmd, result, checkoutPRParams{Number: pr.Number})
 
 	case prActionGo:
-		result, err := worktree.Resolve(worktree.ResolveParams{
+		result, err := worktree.Resolve(domain.ResolveParams{
 			ProjectDir: projectDir,
 			Query:      pr.Branch,
 		})

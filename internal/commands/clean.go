@@ -57,7 +57,7 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cleanParams := worktree.CleanParams{
+	cleanParams := domain.CleanParams{
 		ProjectDir: result.ProjectDir,
 		Branch:     branch,
 		Force:      force,
@@ -101,7 +101,7 @@ func resolveBranchArg(args []string, projectDir string) (string, error) {
 	return cleanui.RunWorktreePicker(projectDir)
 }
 
-func doClean(cmd *cobra.Command, params worktree.CleanParams, format string) error {
+func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error {
 	wtPath := ""
 	if wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
 		ProjectDir: params.ProjectDir,

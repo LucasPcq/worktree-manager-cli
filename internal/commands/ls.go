@@ -43,7 +43,7 @@ func runLs(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	statuses, err := worktree.List(worktree.ListParams{
+	statuses, err := worktree.List(domain.ListParams{
 		ProjectDir: result.ProjectDir,
 		Config:     result.Config,
 	})

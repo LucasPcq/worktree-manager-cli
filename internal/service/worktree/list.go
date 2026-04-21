@@ -11,15 +11,9 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-// ListParams holds inputs for listing worktrees with status.
-type ListParams struct {
-	ProjectDir string
-	Config     domain.Config
-}
-
 // List returns all worktrees enriched with git status, sorted with parent first
 // then children by creation date (oldest first).
-func List(params ListParams) ([]domain.WorktreeStatus, error) {
+func List(params domain.ListParams) ([]domain.WorktreeStatus, error) {
 	gitWorktrees, err := infra.ListWorktrees(infra.ListWorktreesParams{
 		ProjectDir: params.ProjectDir,
 	})
@@ -40,7 +34,7 @@ func List(params ListParams) ([]domain.WorktreeStatus, error) {
 	return statuses, nil
 }
 
-func buildStatus(gitWorktree infra.GitWorktree, baseBranch string) domain.WorktreeStatus {
+func buildStatus(gitWorktree domain.GitWorktree, baseBranch string) domain.WorktreeStatus {
 	dirty, _ := infra.IsDirty(infra.IsDirtyParams{WorktreePath: gitWorktree.Path})
 
 	ahead := 0

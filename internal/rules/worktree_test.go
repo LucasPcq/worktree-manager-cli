@@ -69,3 +69,47 @@ func TestSortStatusesByCreationDate(t *testing.T) {
 		t.Errorf("expected newer third, got %s", statuses[2].Branch)
 	}
 }
+
+func TestHasWarnings_NoWarnings(t *testing.T) {
+	result := domain.CleanCheckResult{}
+
+	if HasWarnings(result) {
+		t.Error("expected HasWarnings to return false for zero-value result")
+	}
+}
+
+func TestHasWarnings_IsDirty(t *testing.T) {
+	result := domain.CleanCheckResult{IsDirty: true}
+
+	if !HasWarnings(result) {
+		t.Error("expected HasWarnings to return true when IsDirty is true")
+	}
+}
+
+func TestHasWarnings_UnpushedCommits(t *testing.T) {
+	result := domain.CleanCheckResult{UnpushedCommits: 3}
+
+	if !HasWarnings(result) {
+		t.Error("expected HasWarnings to return true when UnpushedCommits > 0")
+	}
+}
+
+func TestHasWarnings_HasOpenPR(t *testing.T) {
+	result := domain.CleanCheckResult{HasOpenPR: true}
+
+	if !HasWarnings(result) {
+		t.Error("expected HasWarnings to return true when HasOpenPR is true")
+	}
+}
+
+func TestHasWarnings_MultipleWarnings(t *testing.T) {
+	result := domain.CleanCheckResult{
+		IsDirty:         true,
+		UnpushedCommits: 2,
+		HasOpenPR:       true,
+	}
+
+	if !HasWarnings(result) {
+		t.Error("expected HasWarnings to return true when multiple warnings are present")
+	}
+}

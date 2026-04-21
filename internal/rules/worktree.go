@@ -31,3 +31,8 @@ func SortStatuses(statuses []domain.WorktreeStatus) {
 		return statuses[i].CreatedAt.Before(statuses[j].CreatedAt)
 	})
 }
+
+// HasWarnings reports whether any condition warrants showing the force option.
+func HasWarnings(result domain.CleanCheckResult) bool {
+	return result.UnpushedCommits > 0 || result.HasOpenPR || result.IsDirty
+}

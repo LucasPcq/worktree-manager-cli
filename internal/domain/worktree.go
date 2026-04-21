@@ -45,3 +45,64 @@ type WorktreeListPR struct {
 	URL    string `json:"url"`
 	State  string `json:"state"`
 }
+
+// GitWorktree represents a worktree entry from git worktree list.
+type GitWorktree struct {
+	Path   string
+	Branch string
+	IsMain bool
+}
+
+// CreateParams holds all inputs needed to create a new worktree.
+type CreateParams struct {
+	ProjectDir      string
+	Branch          string
+	FromBranch      string
+	Config          Config
+	EnvFromOverride string
+}
+
+// CreateResult holds the output of a successful worktree creation.
+type CreateResult struct {
+	Branch   string           `json:"branch"`
+	Path     string           `json:"path"`
+	Metadata WorktreeMetadata `json:"metadata"`
+}
+
+// CleanParams holds inputs for cleaning a worktree.
+type CleanParams struct {
+	ProjectDir string
+	Branch     string
+	Force      bool
+	Config     Config
+}
+
+// CleanCheckResult holds the pre-deletion check results.
+type CleanCheckResult struct {
+	WorktreePath    string
+	Branch          string
+	UnpushedCommits int
+	HasOpenPR       bool
+	PRUrl           string
+	IsDirty         bool
+	IsParent        bool
+}
+
+// ListParams holds inputs for listing worktrees with status.
+type ListParams struct {
+	ProjectDir string
+	Config     Config
+}
+
+// ResolveParams holds inputs for resolving a branch query to a worktree path.
+type ResolveParams struct {
+	ProjectDir string
+	Query      string
+}
+
+// ResolveResult indicates whether the resolution is direct or needs a picker.
+type ResolveResult struct {
+	Path      string
+	Ambiguous bool
+	Matches   []GitWorktree
+}

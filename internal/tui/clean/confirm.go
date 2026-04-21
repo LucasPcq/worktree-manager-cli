@@ -7,7 +7,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
-	"github.com/LucasPcq/wtm/internal/service/worktree"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
@@ -19,7 +19,7 @@ type ConfirmResult struct {
 
 // RunConfirm displays warnings from pre-deletion checks and asks for confirmation.
 // Returns ErrUserAborted if the user declines.
-func RunConfirm(check worktree.CleanCheckResult) (ConfirmResult, error) {
+func RunConfirm(check domain.CleanCheckResult) (ConfirmResult, error) {
 	w := os.Stderr
 
 	printWarnings(w, check)
@@ -33,7 +33,7 @@ func RunConfirm(check worktree.CleanCheckResult) (ConfirmResult, error) {
 		{Label: "Yes, delete", Value: "yes"},
 	}
 
-	if check.HasWarnings() {
+	if rules.HasWarnings(check) {
 		items = append(items,
 			components.SelectItem{Separator: true},
 			components.SelectItem{Label: "Yes, force delete (bypass all checks)", Value: "force", Danger: true},
@@ -65,7 +65,7 @@ func RunConfirm(check worktree.CleanCheckResult) (ConfirmResult, error) {
 	}, nil
 }
 
-func printWarnings(w *os.File, check worktree.CleanCheckResult) {
+func printWarnings(w *os.File, check domain.CleanCheckResult) {
 	if check.IsDirty {
 		output.Warning(w, "Worktree has uncommitted changes")
 	}

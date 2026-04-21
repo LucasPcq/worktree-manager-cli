@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
@@ -38,7 +37,7 @@ func runResolve(cmd *cobra.Command, args []string) error {
 
 	query := strings.Join(args, " ")
 
-	result, err := worktree.Resolve(worktree.ResolveParams{
+	result, err := worktree.Resolve(domain.ResolveParams{
 		ProjectDir: root,
 		Query:      query,
 	})
@@ -71,13 +70,13 @@ func runResolve(cmd *cobra.Command, args []string) error {
 
 // pickAmbiguousWorktree shows the shared worktree picker, filtered to the
 // branches that matched the user's query.
-func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []infra.GitWorktree) (domain.WorktreeStatus, error) {
+func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []domain.GitWorktree) (domain.WorktreeStatus, error) {
 	cfgResult, ok := loadConfig(cmd, projectDir)
 	if !ok {
 		return domain.WorktreeStatus{}, domain.ErrUserAborted
 	}
 
-	statuses, err := worktree.List(worktree.ListParams{
+	statuses, err := worktree.List(domain.ListParams{
 		ProjectDir: cfgResult.ProjectDir,
 		Config:     cfgResult.Config,
 	})
@@ -101,7 +100,7 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []infr
 	})
 }
 
-func filterStatusesByMatches(statuses []domain.WorktreeStatus, matches []infra.GitWorktree) []domain.WorktreeStatus {
+func filterStatusesByMatches(statuses []domain.WorktreeStatus, matches []domain.GitWorktree) []domain.WorktreeStatus {
 	if len(matches) == 0 {
 		return statuses
 	}

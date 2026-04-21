@@ -81,7 +81,7 @@ func runNew(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	createResult, err := worktree.Create(worktree.CreateParams{
+	createResult, err := worktree.Create(domain.CreateParams{
 		ProjectDir:      result.ProjectDir,
 		Branch:          branch,
 		FromBranch:      fromBranch,

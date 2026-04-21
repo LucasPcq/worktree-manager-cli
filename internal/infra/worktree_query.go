@@ -8,20 +8,13 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// GitWorktree represents a worktree entry from git worktree list.
-type GitWorktree struct {
-	Path   string
-	Branch string
-	IsMain bool
-}
-
 // ListWorktreesParams holds inputs for listing worktrees.
 type ListWorktreesParams struct {
 	ProjectDir string
 }
 
 // ListWorktrees returns all git worktrees with their path and branch.
-func ListWorktrees(params ListWorktreesParams) ([]GitWorktree, error) {
+func ListWorktrees(params ListWorktreesParams) ([]domain.GitWorktree, error) {
 	cmd := exec.Command("git", "worktree", "list", "--porcelain")
 	cmd.Dir = params.ProjectDir
 	out, err := cmd.Output()
@@ -29,8 +22,8 @@ func ListWorktrees(params ListWorktreesParams) ([]GitWorktree, error) {
 		return nil, fmt.Errorf("git worktree list: %w", err)
 	}
 
-	var worktrees []GitWorktree
-	var current GitWorktree
+	var worktrees []domain.GitWorktree
+	var current domain.GitWorktree
 	isFirst := true
 
 	for _, line := range strings.Split(string(out), "\n") {
@@ -39,7 +32,7 @@ func ListWorktrees(params ListWorktreesParams) ([]GitWorktree, error) {
 			if current.Path != "" {
 				worktrees = append(worktrees, current)
 			}
-			current = GitWorktree{
+			current = domain.GitWorktree{
 				Path:   strings.TrimPrefix(line, "worktree "),
 				IsMain: isFirst,
 			}
@@ -87,10 +80,10 @@ type FindWorktreeByBranchParams struct {
 }
 
 // FindWorktreeByBranch returns the worktree matching the given branch name.
-func FindWorktreeByBranch(params FindWorktreeByBranchParams) (GitWorktree, error) {
+func FindWorktreeByBranch(params FindWorktreeByBranchParams) (domain.GitWorktree, error) {
 	worktrees, err := ListWorktrees(ListWorktreesParams{ProjectDir: params.ProjectDir})
 	if err != nil {
-		return GitWorktree{}, err
+		return domain.GitWorktree{}, err
 	}
 
 	for _, wt := range worktrees {
@@ -99,5 +92,5 @@ func FindWorktreeByBranch(params FindWorktreeByBranchParams) (GitWorktree, error
 		}
 	}
 
-	return GitWorktree{}, fmt.Errorf("%w: %s", domain.ErrWorktreeNotFound, params.Branch)
+	return domain.GitWorktree{}, fmt.Errorf("%w: %s", domain.ErrWorktreeNotFound, params.Branch)
 }
