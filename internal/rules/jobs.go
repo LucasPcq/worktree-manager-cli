@@ -49,7 +49,7 @@ func FindJob(cfg domain.RunConfig, name string) (domain.JobConfig, bool) {
 // ProfileJobs returns the JobConfig list for a profile, preserving the
 // declared order.
 func ProfileJobs(cfg domain.RunConfig, profile domain.ProfileConfig) []domain.JobConfig {
-	var jobs []domain.JobConfig
+	jobs := make([]domain.JobConfig, 0, len(profile.Jobs))
 	for _, name := range profile.Jobs {
 		if j, ok := FindJob(cfg, name); ok {
 			jobs = append(jobs, j)
