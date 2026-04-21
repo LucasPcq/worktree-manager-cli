@@ -105,9 +105,8 @@ internal/
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
     env/                      ←   .env file provisioning strategies
-    hooks/                    ←   on_create / on_focus / on_blur hook execution
+    hooks/                    ←   on_create hook execution
     shell/                    ←   shell integration generation (zsh, bash, fish)
-    state/                    ←   global state (~/.config/wtm/state.json)
     integration/              ←   third-party adapters (VS Code, Cursor)
     detect/                   ←   auto-detection (base branch, env files, package manager)
   output/                     ← format and print results (zero decision logic)

@@ -29,9 +29,6 @@ const (
 	// GlobalConfigFile is the user-level config file name.
 	GlobalConfigFile = "config.toml"
 
-	// StateFileName is the global state file name.
-	StateFileName = "state.json"
-
 	// DefaultBasePath is the default directory for worktrees, relative to project root.
 	// One level up so worktrees are created outside the main repo directory.
 	DefaultBasePath = "../.trees"

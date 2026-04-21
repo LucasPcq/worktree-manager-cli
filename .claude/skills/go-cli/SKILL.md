@@ -129,7 +129,6 @@ internal/
     env/                      ←   .env file provisioning strategies
     hooks/                    ←   on_create hook execution
     shell/                    ←   shell integration generation (zsh, bash, fish)
-    state/                    ←   global state (~/.config/wtm/state.json)
     process/                  ←   daemon, job manager, socket client
     github/                   ←   PR operations via gh CLI
     detect/                   ←   auto-detection (package manager, env files, scripts)
