@@ -104,7 +104,6 @@ func Create(params CreateParams) (CreateResult, error) {
 	}, nil
 }
 
-
 func writeMetadata(worktreePath string, metadata domain.WorktreeMetadata) error {
 	metaDir := filepath.Join(worktreePath, domain.ProjectDirName)
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {

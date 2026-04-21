@@ -12,7 +12,9 @@ func SanitizeBranchName(name string) string {
 	return strings.ReplaceAll(name, "/", "-")
 }
 
-// ResolveEnvStrategy returns the override strategy if set, otherwise the default.
+// ResolveEnvStrategy returns override cast to EnvStrategy if non-empty, otherwise strategy.
+// The caller is responsible for ensuring override is a valid EnvStrategy value;
+// validation occurs at the config boundary before this function is called.
 func ResolveEnvStrategy(strategy domain.EnvStrategy, override string) domain.EnvStrategy {
 	if override != "" {
 		return domain.EnvStrategy(override)
