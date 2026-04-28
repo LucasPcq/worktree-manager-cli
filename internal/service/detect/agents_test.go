@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/LucasPcq/wtm/internal/domain"
 )
 
 func TestAgentTargets_DetectsProjectArtifacts(t *testing.T) {
@@ -16,24 +18,24 @@ func TestAgentTargets_DetectsProjectArtifacts(t *testing.T) {
 	}
 
 	got := AgentTargets(project)
-	byKind := map[AgentKind]AgentTarget{}
+	byKind := map[domain.AgentKind]domain.AgentTarget{}
 	for _, tg := range got {
 		byKind[tg.Kind] = tg
 	}
 
-	if !byKind[AgentKindClaudeProject].Exists {
+	if !byKind[domain.AgentKindClaudeProject].Exists {
 		t.Error("expected project .claude to be detected")
 	}
-	if byKind[AgentKindCursorProject].Exists {
+	if byKind[domain.AgentKindCursorProject].Exists {
 		t.Error("cursor project should not be detected")
 	}
-	if byKind[AgentKindClaudeGlobal].Exists {
+	if byKind[domain.AgentKindClaudeGlobal].Exists {
 		t.Error("global .claude should not exist in tmp HOME")
 	}
-	if byKind[AgentKindClaudeProject].IsGlobal {
+	if byKind[domain.AgentKindClaudeProject].IsGlobal {
 		t.Error("project target flagged as global")
 	}
-	if !byKind[AgentKindClaudeGlobal].IsGlobal {
+	if !byKind[domain.AgentKindClaudeGlobal].IsGlobal {
 		t.Error("global target not flagged as global")
 	}
 }

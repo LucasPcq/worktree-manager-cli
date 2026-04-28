@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 )
 
 // PackageManager detects the package manager from lockfiles in the project directory.
@@ -21,7 +22,7 @@ func PackageManager(projectDir string) domain.PackageManager {
 	}
 
 	for _, check := range checks {
-		if fileExists(filepath.Join(projectDir, check.lockfile)) {
+		if infra.FileExists(filepath.Join(projectDir, check.lockfile)) {
 			return check.pm
 		}
 	}
