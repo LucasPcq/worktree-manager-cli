@@ -24,6 +24,12 @@
 
 - **Decode TOML strict** — les clés inconnues (typos comme `[[profiles]]` au lieu de `[[profile]]`) sont maintenant rejetées avec un message clair `unknown keys in /path: profiles` au lieu d'être silencieusement ignorées.
 
+## v0.7.2 — Reset terminal modes après détach de `wtm run logs`
+
+### Bug fixes
+
+- **Le terminal n'est plus corrompu après détach d'un service TUI** — Sortir d'un `wtm run logs <service>` sur un service à TUI interactif (turbo, vite, vim, dev servers à HMR souris) laissait le terminal coincé en mouse-tracking + alt-screen + curseur masqué : taper produisait du garbage, et chaque mouvement de souris écho `<button>;<col>;<row>M` au prompt. La séquence "soft detach" (désactivation des cinq modes mouse, sortie d'alt-screen, ré-affichage du curseur, reset SGR) est désormais émise via `defer` à la sortie de `attachSingleJob` et `multiplexAllJobs`, donc sur Ctrl+C, EOF, ou erreur de connexion. Re-réintègre le fix `4ac6219` perdu au merge du gros refactor `9e8ac08` (PR #7).
+
 ## v0.7.1 — Stop tue toute l'arborescence de processus
 
 ### Bug fixes
