@@ -24,6 +24,12 @@
 
 - **Decode TOML strict** — les clés inconnues (typos comme `[[profiles]]` au lieu de `[[profile]]`) sont maintenant rejetées avec un message clair `unknown keys in /path: profiles` au lieu d'être silencieusement ignorées.
 
+## v0.7.1 — Stop tue toute l'arborescence de processus
+
+### Bug fixes
+
+- **`wtm run stop` / `run down` n'orphelinent plus les processus enfants** — `stopWithSignal` envoyait SIGTERM uniquement au PID direct (npm/pnpm), laissant les enfants (node, vite, turbo, nest, tsc, esbuild, …) tourner détachés en arrière-plan. Le signal cible désormais l'intégralité du process group via `kill -PGID`, attend la sortie effective avant de marquer le job *stopped*, et escalade vers SIGKILL après 5 secondes si le groupe ignore SIGTERM. Validé end-to-end sur un projet pnpm + turbo (web + api + tsc watch + esbuild) — toute l'arborescence est nettoyée.
+
 ## v0.7.0 — Run config refactor (services + tasks unifiés en jobs)
 
 ### Breaking changes
