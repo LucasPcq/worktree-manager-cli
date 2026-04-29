@@ -8,42 +8,18 @@ import (
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 )
 
-// CleanParams holds inputs for cleaning a worktree.
-type CleanParams struct {
-	ProjectDir string
-	Branch     string
-	Force      bool
-	Config     domain.Config
-}
-
-// CleanCheckResult holds the pre-deletion check results.
-type CleanCheckResult struct {
-	WorktreePath    string
-	Branch          string
-	UnpushedCommits int
-	HasOpenPR       bool
-	PRUrl           string
-	IsDirty         bool
-	IsParent        bool
-}
-
-// HasWarnings returns true if any condition warrants showing the force option.
-func (c CleanCheckResult) HasWarnings() bool {
-	return c.UnpushedCommits > 0 || c.HasOpenPR || c.IsDirty
-}
-
 // Check performs pre-deletion checks without deleting anything.
-func Check(params CleanParams) (CleanCheckResult, error) {
+func Check(params domain.CleanParams) (domain.CleanCheckResult, error) {
 	wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
 		ProjectDir: params.ProjectDir,
 		Branch:     params.Branch,
 	})
 	if err != nil {
-		return CleanCheckResult{}, err
+		return domain.CleanCheckResult{}, err
 	}
 
 	if wt.IsMain {
-		return CleanCheckResult{}, domain.ErrCannotCleanParent
+		return domain.CleanCheckResult{}, domain.ErrCannotCleanParent
 	}
 
 	unpushed, _ := infra.UnpushedCommits(infra.UnpushedCommitsParams{
@@ -58,7 +34,7 @@ func Check(params CleanParams) (CleanCheckResult, error) {
 
 	dirty, _ := infra.IsDirty(infra.IsDirtyParams{WorktreePath: wt.Path})
 
-	return CleanCheckResult{
+	return domain.CleanCheckResult{
 		WorktreePath:    wt.Path,
 		Branch:          params.Branch,
 		UnpushedCommits: unpushed,
@@ -70,7 +46,7 @@ func Check(params CleanParams) (CleanCheckResult, error) {
 }
 
 // Clean removes the worktree and deletes the local branch.
-func Clean(params CleanParams) error {
+func Clean(params domain.CleanParams) error {
 	wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
 		ProjectDir: params.ProjectDir,
 		Branch:     params.Branch,

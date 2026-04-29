@@ -177,7 +177,7 @@ Without shell integration, `wtm wt go` cannot change your working directory. The
 
 #### `wtm wt switch [branch]`
 
-Navigate to a worktree **and** start its services in one command. Combines `wt go` + `svc up`.
+Navigate to a worktree **and** start its services in one command. Combines `wt go` + `run up`.
 
 ```bash
 wtm wt switch feature/auth               # go + start default profile
@@ -215,85 +215,108 @@ wtm wt clean feature/auth --force   # skip all safety checks
 
 ---
 
-### `wtm svc` — Service management
+### `wtm run` — Dev jobs (services + tasks)
 
-#### `wtm svc list`
+#### `wtm run list`
 
-List the services and profiles declared in `.wtm/services.toml`. In a terminal, shows an interactive picker with inline actions (start/stop/logs).
-
-```bash
-wtm svc list                # picker if TTY, table if piped
-wtm svc list --output json  # machine-readable
-```
-
-The picker lets you pick either a profile (actions: `up`, `down`) or a service (actions: `start`, `stop`, `logs`) without having to remember which command to run.
-
-#### `wtm svc ps`
-
-List services currently managed by the background daemon (running or crashed). In a terminal, shows an interactive picker with stop/logs/restart actions.
+List the jobs and profiles declared in `.wtm/run.toml`. In a terminal, shows an interactive picker with inline actions (start/stop/logs).
 
 ```bash
-wtm svc ps                  # picker if TTY, table if piped
-wtm svc ps --output json    # machine-readable
+wtm run list                # picker if TTY, table if piped
+wtm run list --output json  # machine-readable
 ```
 
-#### `wtm svc up [profile]`
+The picker lets you pick either a profile (actions: `up`, `down`) or a job (actions: `start`, `stop`, `logs`).
 
-Start a service profile defined in `.wtm/services.toml`.
+#### `wtm run ps`
+
+List jobs currently managed by the background daemon (running or crashed), with their kind. In a terminal, shows an interactive picker with stop/logs/restart actions.
 
 ```bash
-wtm svc up                  # start default profile (or picker if multiple)
-wtm svc up backend          # start a specific profile
-wtm svc up --exclusive      # stop services on other worktrees first
-wtm svc up --parallel       # start without stopping others
+wtm run ps                  # picker if TTY, table if piped
+wtm run ps --output json    # machine-readable
 ```
 
-If services are already running on another worktree, `svc up` prompts you to stop them or run in parallel.
+#### `wtm run up [profile]`
+
+Execute a profile defined in `.wtm/run.toml`. Jobs run in declared order — services launch in the background, tasks block and stream output. A failing task aborts the rest of the profile.
+
+```bash
+wtm run up                  # start default profile (or picker if multiple)
+wtm run up full             # start a specific profile
+wtm run up --exclusive      # stop jobs on other worktrees first
+wtm run up --parallel       # start without stopping others
+```
+
+If services are already running on another worktree, `run up` prompts you to stop them or run in parallel.
 
 **Flags:**
 | Flag | Description |
 |---|---|
-| `--exclusive` | Stop services on other worktrees before starting |
+| `--exclusive` | Stop jobs on other worktrees before starting |
 | `--parallel` | Start without stopping other worktrees |
 
-#### `wtm svc down [profile]`
+#### `wtm run down [profile]`
 
-Stop services running in the **current worktree**. Services in other worktrees are never touched unless you pass `--all`.
+Stop jobs running in the **current worktree**. Jobs in other worktrees are never touched unless you pass `--all`.
 
 ```bash
-wtm svc down            # stop services in this worktree
-wtm svc down backend    # stop a specific profile (this worktree)
-wtm svc down --all      # stop every running service across all worktrees
+wtm run down            # stop jobs in this worktree
+wtm run down full       # stop a specific profile (this worktree)
+wtm run down --all      # stop every running job across all worktrees
 ```
 
-`svc ps` also offers a "Stop all running services" entry at the bottom of its picker, which shells out to `svc down --all`.
+`run ps` also offers a "Stop all running jobs" entry at the bottom of its picker, which shells out to `run down --all`.
 
-#### `wtm svc start <service>`
+#### `wtm run start <job>`
 
-Start a single service by name.
+Start a single job by name. Tasks run inline and block until they exit; services launch in the background.
 
 ```bash
-wtm svc start api
+wtm run start dev       # start the "dev" service
+wtm run start migrate   # run the "migrate" task to completion
 ```
 
-#### `wtm svc stop <service>`
+#### `wtm run stop <job>`
 
-Stop a single running service by name.
+Stop a single running job by name.
 
 ```bash
-wtm svc stop api
+wtm run stop dev
 ```
 
-#### `wtm svc logs [service]`
+#### `wtm run logs [job]`
 
-Stream service output. Without arguments, multiplexes all running services with colored prefixes. With a service name, attaches to that single service's PTY.
+Attach to a job's output. Without arguments, multiplexes all running jobs with colored prefixes. With a job name, attaches to that single job's PTY.
 
 ```bash
-wtm svc logs            # stream all running services (multiplexed)
-wtm svc logs api        # attach to a single service
+wtm run logs            # stream all running jobs (multiplexed)
+wtm run logs dev        # attach to a single job
 ```
 
 Press `Ctrl+C` to detach — services keep running in the background.
+
+#### `wtm run export`
+
+Emit `.wtm/run.toml` as JSON on stdout — useful for sharing a service layout between projects or teammates.
+
+```bash
+wtm run export                     # full config as JSON
+wtm run export --profile dev       # only the "dev" profile and its jobs
+wtm run export > layout.json       # save to file
+```
+
+#### `wtm run import [file|-]`
+
+Ingest a JSON run config. Pass a file path, `-`, or omit the argument to read from stdin.
+
+```bash
+wtm run import layout.json                    # merge into .wtm/run.toml
+wtm run import layout.json --replace --force  # overwrite entirely
+wtm run export | wtm run import -             # roundtrip (no-op when names match)
+```
+
+By default, new jobs and profiles are appended; duplicate names are skipped with a warning.
 
 ---
 
@@ -350,21 +373,21 @@ Every data-returning command supports `--output json` for scripting and LLM agen
 ```bash
 wtm wt list --output json
 wtm pr list --output json
-wtm svc list --output json
+wtm run list --output json
 ```
 
 Supported commands:
 
 - `wt list`, `wt create`, `wt clean` (requires `--force`)
 - `pr list`, `pr create`, `pr checkout`
-- `svc list`, `svc ps`, `svc up`, `svc down`, `svc start`, `svc stop`
+- `run list`, `run ps`, `run up`, `run down`, `run start`, `run stop`
 
 Example — pipe into `jq`:
 
 ```bash
 wtm wt list --output json | jq '.[] | select(.is_dirty).branch'
 wtm pr list --output json | jq '.[].number'
-wtm svc ps --output json | jq '.[] | select(.status=="running").name'
+wtm run ps --output json | jq '.[] | select(.status=="running").name'
 ```
 
 See also [Teach your LLM to use wtm](#teach-your-llm-to-use-wtm) above — `wtm agents install` drops a `using-wtm` skill into `.claude/` or `.cursor/` so agents can drive every command without being told.
@@ -464,50 +487,56 @@ on_create = [
 
 ---
 
-### Services config — `.wtm/services.toml`
+### Run config — `.wtm/run.toml`
 
-Optional file for managing long-running services (dev servers, docker, workers). Committed to the repo — shared by the team.
+Optional file for managing dev jobs — long-running services (dev servers, docker, workers) and one-shot tasks (migrations, seeds, formatters). Committed to the repo — shared by the team.
 
 ```toml
-[[services]]
-name = "api"
-cmd = "docker-compose up api db"
-stop = "docker-compose stop api db"
-cwd = "."
+[[job]]
+name = "docker"
+kind = "service"
+cmd  = "docker compose up -d"
+stop = "docker compose down"
 
-[[services]]
-name = "web"
-cmd = "pnpm dev"
-cwd = "apps/web"
+[[job]]
+name = "migrate"
+kind = "task"
+cmd  = "pnpm migrate"
 
-[[services]]
-name = "worker"
-cmd = "docker-compose up worker"
-stop = "docker-compose stop worker"
+[[job]]
+name = "seed"
+kind = "task"
+cmd  = "pnpm seed"
 
-[[profiles]]
+[[job]]
+name = "dev"
+kind = "service"
+cmd  = "pnpm dev"
+cwd  = "apps/web"
+
+[[profile]]
 name = "full"
-services = ["api", "web", "worker"]
+jobs = ["docker", "migrate", "seed", "dev"]
 default = true
 
-[[profiles]]
+[[profile]]
 name = "back"
-services = ["api", "worker"]
-
-[[profiles]]
-name = "front"
-services = ["web", "api"]
+jobs = ["docker", "migrate"]
 ```
 
-**Services** define individual components (a dev server, a database, a worker). **Profiles** group services into named sets you start together. One profile can be marked `default = true`.
+**Jobs** declare commands to run. Two kinds:
+- `kind = "service"` — long-running. With a `stop` command set, it's treated as detached (e.g. `docker compose up -d` whose containers persist after the launcher exits). Without a `stop`, it's tracked by PID and killed via SIGTERM.
+- `kind = "task"` — one-shot script. Blocks the profile, streams output live, removed from `run ps` after exit. A non-zero exit aborts the rest of the profile.
 
-- `wtm svc up [profile]` / `wtm svc down [profile]` — start or stop a whole profile
-- `wtm svc start <service>` / `wtm svc stop <service>` — start or stop a single service
-- `wtm svc logs` — stream all running services (multiplexed), or `wtm svc logs <service>` for one
+**Profiles** group jobs into named, ordered sets you start together. One profile can be marked `default = true`.
 
-Services run in a background daemon with PTY support. Press `Ctrl+C` to detach without killing the service.
+- `wtm run up [profile]` / `wtm run down [profile]` — start or stop a whole profile
+- `wtm run start <job>` / `wtm run stop <job>` — start or stop a single job
+- `wtm run logs` — stream all running jobs (multiplexed), or `wtm run logs <job>` for one
 
-Each worktree has its own copy of this file (it's versioned in git), so services started in worktree A are independent from worktree B.
+Services run in a background daemon with PTY support. Press `Ctrl+C` to detach without killing them. Tasks run inline and stream their output back over the daemon's connection.
+
+Each worktree has its own copy of this file (it's versioned in git), so jobs started in worktree A are independent from worktree B.
 
 ---
 
@@ -521,6 +550,25 @@ agent = "claude-code"  # claude-code | cursor | none
 ```
 
 The project `.wtm/config.toml` can override the agent setting. Shell is always global.
+
+---
+
+## IDE autocomplete + validation
+
+Every TOML file `wtm init` writes starts with a `#:schema ./schemas/...json` directive. Pair it with the [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml) extension (Taplo, also bundled in JetBrains' TOML plugin) to get:
+
+- **Autocomplete** on every field name and enum value (`kind = "service" | "task"`, `env.strategy = "example" | "main" | "parent"`, etc.)
+- **Hover docs** describing each option
+- **Real-time validation** flagging unknown keys, missing required fields, and bad enum values before you ever run wtm
+
+The schemas are bundled with the binary. `wtm init` writes them to `.wtm/schemas/` so the directive resolves locally — no internet required. Re-extract them after upgrading wtm with:
+
+```bash
+wtm schema dump            # writes .wtm/schemas/{run,project}.schema.json
+wtm schema dump --global   # writes ~/.config/wtm/schemas/global.schema.json
+```
+
+Even without the editor extension, wtm itself rejects unknown keys at load time — typos like `[[profiles]]` instead of `[[profile]]` surface as `unknown keys in /path/.wtm/run.toml: profiles` rather than being silently ignored.
 
 ---
 

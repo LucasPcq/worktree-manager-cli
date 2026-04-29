@@ -144,12 +144,12 @@ func (m standaloneModel) View() string {
 	out := "\n"
 
 	if m.title != "" {
-		out += styles.BreadcrumbActive.Render("  " + m.title)
+		out += styles.BreadcrumbActive.Render(styles.Indent + m.title)
 		out += "\n\n"
 	}
 
 	if m.desc != "" {
-		out += styles.Muted.Render("  " + m.desc)
+		out += styles.Muted.Render(styles.Indent + m.desc)
 		out += "\n\n"
 	}
 

@@ -1,0 +1,79 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/LucasPcq/worktree-manager-cli/main/schemas/run.schema.json",
+  "title": "wtm run config",
+  "description": "Schema for .wtm/run.toml — declares jobs (services and tasks) and profiles that compose them.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "job": {
+      "type": "array",
+      "description": "List of jobs the project can run.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "kind", "cmd"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Job name. Must be unique across all [[job]] entries in this file (enforced at load time). Referenced from profiles and from `wtm run start|stop|logs`."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["service", "task"],
+            "description": "service = long-running process (pnpm dev, docker compose). task = one-shot script (pnpm migrate, pnpm seed) that must exit 0 before the profile continues."
+          },
+          "cmd": {
+            "type": "string",
+            "description": "Shell command to start the job."
+          },
+          "stop": {
+            "type": "string",
+            "description": "Optional stop command. When set on a service, marks it as detached: wtm waits for `cmd` to exit on start (e.g. `docker compose up -d`) and uses `stop` to shut it down later. Tasks cannot have a stop command."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Working directory relative to the worktree root. Defaults to the worktree root."
+          }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "kind": { "const": "task" } } },
+            "then": {
+              "not": { "required": ["stop"] },
+              "description": "Tasks cannot declare a stop command."
+            }
+          }
+        ]
+      }
+    },
+    "profile": {
+      "type": "array",
+      "description": "Named groups of jobs run together via `wtm run up [profile]`.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "jobs"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Profile name. Must be unique across all [[profile]] entries in this file (enforced at load time). Used as the argument to `wtm run up <name>`."
+          },
+          "jobs": {
+            "type": "array",
+            "description": "Ordered list of job names. Jobs run sequentially: tasks block, services start in the background. The same job cannot appear twice.",
+            "items": { "type": "string" },
+            "uniqueItems": true,
+            "minItems": 1
+          },
+          "default": {
+            "type": "boolean",
+            "description": "If true, this profile runs when `wtm run up` is invoked without a profile argument. At most one profile in the file can have default = true (enforced at load time)."
+          }
+        }
+      }
+    }
+  }
+}

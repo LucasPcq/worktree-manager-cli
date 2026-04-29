@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -108,6 +109,66 @@ func TestWriteProjectEmptyEnvAndHooks(t *testing.T) {
 	var raw map[string]interface{}
 	if _, err := toml.Decode(content, &raw); err != nil {
 		t.Fatalf("generated file is not valid TOML: %v", err)
+	}
+}
+
+func TestWriteRunCreatesFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg := domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "dev", Kind: domain.JobKindService, Cmd: "pnpm dev"},
+		},
+	}
+
+	if err := WriteRun(WriteRunParams{ProjectDir: dir, Config: cfg}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, domain.ProjectDirName, domain.RunFileName))
+	if err != nil {
+		t.Fatalf("file not created: %v", err)
+	}
+	if !strings.Contains(string(data), `name = "dev"`) {
+		t.Error("expected job name in output")
+	}
+}
+
+func TestWriteRunRefusesOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	cfg := domain.RunConfig{
+		Jobs: []domain.JobConfig{{Name: "a", Kind: domain.JobKindService, Cmd: "echo a"}},
+	}
+
+	if err := WriteRun(WriteRunParams{ProjectDir: dir, Config: cfg}); err != nil {
+		t.Fatalf("first write failed: %v", err)
+	}
+	if err := WriteRun(WriteRunParams{ProjectDir: dir, Config: cfg}); !errors.Is(err, ErrRunFileExists) {
+		t.Errorf("expected ErrRunFileExists, got %v", err)
+	}
+}
+
+func TestWriteRunForceOverwrites(t *testing.T) {
+	dir := t.TempDir()
+	orig := domain.RunConfig{
+		Jobs: []domain.JobConfig{{Name: "old", Kind: domain.JobKindTask, Cmd: "echo old"}},
+	}
+	if err := WriteRun(WriteRunParams{ProjectDir: dir, Config: orig}); err != nil {
+		t.Fatalf("first write failed: %v", err)
+	}
+
+	updated := domain.RunConfig{
+		Jobs: []domain.JobConfig{{Name: "new", Kind: domain.JobKindTask, Cmd: "echo new"}},
+	}
+	if err := WriteRun(WriteRunParams{ProjectDir: dir, Config: updated, Force: true}); err != nil {
+		t.Fatalf("force write failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ProjectDirName, domain.RunFileName))
+	if !strings.Contains(string(data), `name = "new"`) {
+		t.Error("expected updated job name after force overwrite")
+	}
+	if strings.Contains(string(data), `name = "old"`) {
+		t.Error("expected old job to be gone after force overwrite")
 	}
 }
 

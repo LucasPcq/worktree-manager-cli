@@ -12,9 +12,9 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// ErrServicesFileExists is returned by WriteServices when the target file
-// already exists — callers decide whether to skip or surface the condition.
-var ErrServicesFileExists = errors.New("services file already exists")
+// ErrRunFileExists is returned by WriteRun when the target file already
+// exists — callers decide whether to skip or surface the condition.
+var ErrRunFileExists = errors.New("run file already exists")
 
 // WriteProjectParams holds the inputs for writing a project config file.
 type WriteProjectParams struct {
@@ -42,21 +42,21 @@ func WriteProject(params WriteProjectParams) error {
 	return nil
 }
 
-// WriteServicesParams holds the inputs for writing a services config file.
-type WriteServicesParams struct {
+// WriteRunParams holds the inputs for writing a run config file.
+type WriteRunParams struct {
 	ProjectDir string
-	Config     domain.ServicesConfig
+	Config     domain.RunConfig
+	Force      bool // overwrite .wtm/run.toml if it already exists
 }
 
-// WriteServices encodes cfg as TOML and writes it to .wtm/services.toml.
-// Returns ErrServicesFileExists if the file already exists; the file is never
-// overwritten.
-func WriteServices(params WriteServicesParams) error {
+// WriteRun encodes cfg as TOML and writes it to .wtm/run.toml.
+// Returns ErrRunFileExists if the file already exists and Force is false.
+func WriteRun(params WriteRunParams) error {
 	dir := filepath.Join(params.ProjectDir, domain.ProjectDirName)
-	path := filepath.Join(dir, domain.ServicesFileName)
+	path := filepath.Join(dir, domain.RunFileName)
 
-	if _, err := os.Stat(path); err == nil {
-		return ErrServicesFileExists
+	if _, err := os.Stat(path); err == nil && !params.Force {
+		return ErrRunFileExists
 	}
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -64,8 +64,9 @@ func WriteServices(params WriteServicesParams) error {
 	}
 
 	var buf bytes.Buffer
+	buf.WriteString("#:schema ./schemas/run.schema.json\n\n")
 	if err := toml.NewEncoder(&buf).Encode(params.Config); err != nil {
-		return fmt.Errorf("encode services: %w", err)
+		return fmt.Errorf("encode run config: %w", err)
 	}
 
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
@@ -87,7 +88,7 @@ func WriteGlobal(answers domain.InitGlobalAnswers) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	content := fmt.Sprintf("shell = %q\nagent = %q\n", answers.Shell, answers.Agent)
+	content := fmt.Sprintf("#:schema ./schemas/global.schema.json\n\nshell = %q\nagent = %q\n", answers.Shell, answers.Agent)
 
 	path := filepath.Join(dir, domain.GlobalConfigFile)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -104,7 +105,7 @@ func WriteGlobalTo(path string, answers domain.InitGlobalAnswers) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	content := fmt.Sprintf("shell = %q\nagent = %q\n", answers.Shell, answers.Agent)
+	content := fmt.Sprintf("#:schema ./schemas/global.schema.json\n\nshell = %q\nagent = %q\n", answers.Shell, answers.Agent)
 
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)

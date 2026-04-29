@@ -2,10 +2,11 @@ package detect
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/LucasPcq/wtm/internal/infra"
 )
 
 // EnvFiles scans the project directory recursively for .env and .env.example files.
@@ -83,17 +84,7 @@ func DockerComposeFiles(projectDir string) []string {
 	return files
 }
 
-// DockerComposeCommand returns the invocation form of docker-compose available
-// on the host: "docker compose" (v2 plugin), "docker-compose" (v1 standalone),
-// or "docker compose" as a sensible default when neither is detectable.
+// DockerComposeCommand returns the docker-compose invocation available on the host.
 func DockerComposeCommand() string {
-	if _, err := exec.LookPath("docker"); err == nil {
-		if err := exec.Command("docker", "compose", "version").Run(); err == nil {
-			return "docker compose"
-		}
-	}
-	if _, err := exec.LookPath("docker-compose"); err == nil {
-		return "docker-compose"
-	}
-	return "docker compose"
+	return infra.DockerComposeCommand()
 }

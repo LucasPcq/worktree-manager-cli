@@ -29,9 +29,6 @@ const (
 	// GlobalConfigFile is the user-level config file name.
 	GlobalConfigFile = "config.toml"
 
-	// StateFileName is the global state file name.
-	StateFileName = "state.json"
-
 	// DefaultBasePath is the default directory for worktrees, relative to project root.
 	// One level up so worktrees are created outside the main repo directory.
 	DefaultBasePath = "../.trees"
@@ -81,15 +78,37 @@ const (
 	FlagOutput    = "output"
 	FlagYes       = "yes"
 	FlagAll       = "all"
+	FlagGlobal    = "global"
+	FlagMerge     = "merge"
+	FlagReplace   = "replace"
+	FlagMine      = "mine"
+	FlagReview    = "review"
+
+	// Script classification keywords for package.json → run.toml mapping.
+	// A script is classified as a long-running service when its name matches
+	// one of these keywords exactly, as a prefix ("<kw>:"), or as a suffix (":<kw>").
+	ScriptKeyDev   = "dev"
+	ScriptKeyStart = "start"
+	ScriptKeyServe = "serve"
+	ScriptKeyWatch = "watch"
 
 	// Output format values for FlagOutput.
 	OutputText = "text"
 	OutputJSON = "json"
 
-	// Service action result statuses emitted by `svc *` JSON output.
-	ServiceActionStarted = "started"
-	ServiceActionStopped = "stopped"
-	ServiceActionError   = "error"
+	// RunFileName is the run config file name (inside .wtm/).
+	RunFileName = "run.toml"
+
+	// SchemasDirName is the directory (inside .wtm/ or under the global
+	// config dir) where `wtm schema dump` writes the JSON Schema files
+	// that editors reference via the TOML `#:schema` directive.
+	SchemasDirName = "schemas"
+
+	// Job action result statuses emitted by `run *` JSON output.
+	JobActionStarted = "started"
+	JobActionStopped = "stopped"
+	JobActionDone    = "done"
+	JobActionError   = "error"
 
 	// Metadata files created inside each worktree's .wtm/ directory.
 	MetaFileName    = "meta.json"
@@ -100,6 +119,26 @@ const (
 
 	// CmdGroupSetup is the Cobra group ID for setup commands.
 	CmdGroupSetup = "setup"
+
+	// CLI command names — used in Use: declarations and exec.Command(bin, …) call sites.
+	// Centralised here so a rename is a single-file change with no silent breakage.
+	CmdWt       = "wt"
+	CmdRun      = "run"
+	CmdPr       = "pr"
+	CmdGo       = "go"
+	CmdCreate   = "create"
+	CmdClean    = "clean"
+	CmdList     = "list"
+	CmdSwitch   = "switch"
+	CmdUp       = "up"
+	CmdDown     = "down"
+	CmdStart    = "start"
+	CmdStop     = "stop"
+	CmdLogs     = "logs"
+	CmdPs       = "ps"
+	CmdCheckout = "checkout"
+	CmdExport   = "export"
+	CmdImport   = "import"
 
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"
@@ -112,7 +151,4 @@ const (
 
 	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
 	CtrlCByte byte = 0x03
-
-	// FeatureDashboard controls whether the interactive dashboard is available.
-	FeatureDashboard = false
 )

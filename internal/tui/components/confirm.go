@@ -95,7 +95,7 @@ func (m ConfirmModel) View() string {
 			}
 			b.WriteString(styles.ListItemSelected.Render(line))
 		} else {
-			b.WriteString(styles.ListItemNormal.Render("  " + opt))
+			b.WriteString(styles.ListItemNormal.Render(styles.Indent + opt))
 		}
 
 		if i == 0 {

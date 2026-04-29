@@ -5,10 +5,19 @@ import (
 	"os"
 	"strings"
 
-	"github.com/LucasPcq/wtm/internal/commands"
+	"github.com/spf13/cobra"
+
+	"github.com/LucasPcq/wtm/internal/commands/agents"
+	"github.com/LucasPcq/wtm/internal/commands/daemon"
+	"github.com/LucasPcq/wtm/internal/commands/initcmd"
+	"github.com/LucasPcq/wtm/internal/commands/pr"
+	"github.com/LucasPcq/wtm/internal/commands/resolve"
+	"github.com/LucasPcq/wtm/internal/commands/run"
+	"github.com/LucasPcq/wtm/internal/commands/schema"
+	"github.com/LucasPcq/wtm/internal/commands/shell"
+	"github.com/LucasPcq/wtm/internal/commands/wt"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
-	"github.com/spf13/cobra"
 )
 
 func init() {
@@ -17,25 +26,22 @@ func init() {
 		&cobra.Group{ID: domain.CmdGroupSetup, Title: "Setup:"},
 	)
 
-	rootCmd.AddCommand(commands.NewWtCmd())
-	rootCmd.AddCommand(commands.NewSvcCmd())
-	rootCmd.AddCommand(commands.NewPRCmd())
+	rootCmd.AddCommand(wt.NewCmd())
+	rootCmd.AddCommand(run.NewCmd())
+	rootCmd.AddCommand(pr.NewCmd())
 
-	initCmd := commands.NewInitCmd()
+	initCmd := initcmd.NewCmd()
 	initCmd.GroupID = domain.CmdGroupSetup
 	rootCmd.AddCommand(initCmd)
 
-	shellInitCmd := commands.NewShellInitCmd()
+	shellInitCmd := shell.NewCmd()
 	shellInitCmd.GroupID = domain.CmdGroupSetup
 	rootCmd.AddCommand(shellInitCmd)
 
-	rootCmd.AddCommand(commands.NewAgentsCmd())
-
-	rootCmd.AddCommand(commands.NewResolveCmd())
-	if domain.FeatureDashboard {
-		rootCmd.AddCommand(commands.NewDashboardCmd())
-	}
-	rootCmd.AddCommand(commands.NewDaemonCmd())
+	rootCmd.AddCommand(schema.NewCmd())
+	rootCmd.AddCommand(agents.NewCmd())
+	rootCmd.AddCommand(resolve.NewCmd())
+	rootCmd.AddCommand(daemon.NewCmd())
 }
 
 var version = domain.Version
@@ -49,10 +55,7 @@ var rootCmd = &cobra.Command{
 	SilenceUsage:  true,
 }
 
-func rootRunE(cmd *cobra.Command, args []string) error {
-	if domain.FeatureDashboard {
-		return commands.RunDashboard(cmd, args)
-	}
+func rootRunE(cmd *cobra.Command, _ []string) error {
 	return cmd.Help()
 }
 

@@ -11,21 +11,14 @@ import (
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
-
-// TemplateVars holds the variables available for interpolation in hook commands.
-type TemplateVars struct {
-	Worktree   string
-	Branch     string
-	Root       string
-	FromBranch string
-}
 
 // RunHooksParams holds inputs for executing lifecycle hooks.
 type RunHooksParams struct {
 	Hooks   []domain.HookCommand
 	WorkDir string
-	Vars    TemplateVars
+	Vars    rules.TemplateVars
 	Output  io.Writer // if nil, uses os.Stdout/Stderr (CLI mode). Set to capture output (TUI mode).
 }
 
@@ -38,7 +31,7 @@ func RunHooks(params RunHooksParams) error {
 	}
 
 	for _, hook := range params.Hooks {
-		resolved := resolveTemplateVars(hook, params.Vars)
+		resolved := rules.ResolveTemplateVars(hook, params.Vars)
 		err := runSingleHook(resolved, params.WorkDir, output)
 		if err == nil {
 			continue
@@ -50,25 +43,6 @@ func RunHooks(params RunHooksParams) error {
 	}
 
 	return nil
-}
-
-func resolveTemplateVars(hook domain.HookCommand, vars TemplateVars) domain.HookCommand {
-	hook.Cmd = interpolate(hook.Cmd, vars)
-	hook.Cwd = interpolate(hook.Cwd, vars)
-	return hook
-}
-
-func interpolate(s string, vars TemplateVars) string {
-	if s == "" {
-		return s
-	}
-	r := strings.NewReplacer(
-		"{{worktree}}", vars.Worktree,
-		"{{branch}}", vars.Branch,
-		"{{root}}", vars.Root,
-		"{{from_branch}}", vars.FromBranch,
-	)
-	return r.Replace(s)
 }
 
 func runSingleHook(hook domain.HookCommand, defaultDir string, output io.Writer) error {

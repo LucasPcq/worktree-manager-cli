@@ -111,7 +111,7 @@ func (m TextInputModel) View() string {
 
 	if m.err != nil {
 		b.WriteString("\n")
-		b.WriteString(styles.DangerText.Render("  " + m.err.Error()))
+		b.WriteString(styles.DangerText.Render(styles.Indent + m.err.Error()))
 	}
 
 	return b.String()

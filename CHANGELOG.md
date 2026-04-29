@@ -1,5 +1,49 @@
 # Changelog
 
+## [Unreleased] — Package.json script detection + run export/import
+
+### New features
+
+- **`wtm init` détecte les scripts `package.json`** — après les docker-compose files, une étape MultiSelect propose les scripts du `package.json` racine et, si `pnpm-workspace.yaml` est présent, ceux de chaque workspace. Les scripts `dev`/`start`/`serve`/`watch` (ou leurs formes préfixées `dev:*` / `*:dev`) sont pré-sélectionnés comme `kind="service"` ; les autres (`build`, `test`, `lint`…) comme `kind="task"`.
+- **`wtm run export [--profile <name>]`** — émet `.wtm/run.toml` comme JSON sur stdout. Compatible avec `--profile` pour exporter un seul profil et ses jobs.
+- **`wtm run import [file|-] [--replace --force]`** — ingère un payload JSON et le fusionne dans `.wtm/run.toml`. Par défaut, les nouveaux jobs/profils sont appendés, les doublons sont ignorés avec un avertissement. `--replace --force` écrase le fichier entièrement.
+
+### Breaking changes
+
+- **`wtm run list --output json` : champs JSON en minuscules** — les clés passent de PascalCase (`Jobs`, `Name`, `Kind`) à lowercase (`job`, `name`, `kind`), alignées sur `run.schema.json`. Impacte tout script ou outil qui parsait la sortie JSON de `run list`.
+
+## v0.8.0 — Strict TOML decoding + JSON Schema autocomplete
+
+### New features
+
+- **JSON Schema bundled pour les 3 fichiers de config** — `.wtm/run.toml`, `.wtm/config.toml`, `~/.config/wtm/config.toml`. Fichiers embarqués dans le binaire et écrits dans `.wtm/schemas/` (ou `~/.config/wtm/schemas/`) au moment du `wtm init`. Chaque TOML généré est préfixé par `#:schema ./schemas/...json`.
+- **`wtm schema dump`** — extrait les schémas embarqués vers le disque pour les régénérer après upgrade. `--global` cible le schéma global.
+- **Autocomplete + validation IDE via Taplo** — l'extension "Even Better TOML" (VS Code / Cursor / JetBrains) lit la directive `#:schema` et fournit autocomplete sur les champs et enums (kind, env.strategy, agent, shell), hover docs, erreurs en live.
+
+### Bug fixes
+
+- **Decode TOML strict** — les clés inconnues (typos comme `[[profiles]]` au lieu de `[[profile]]`) sont maintenant rejetées avec un message clair `unknown keys in /path: profiles` au lieu d'être silencieusement ignorées.
+
+## v0.7.0 — Run config refactor (services + tasks unifiés en jobs)
+
+### Breaking changes
+
+- **`.wtm/services.toml` → `.wtm/run.toml`** — le fichier de config est renommé. Sections refactorées : plus de `[[services]]` / `[[profiles]]`, on a maintenant `[[job]]` (avec `kind = "service"` ou `"task"`) et `[[profile]]` (avec `jobs = [...]` au lieu de `services = [...]`). Aucune migration auto — les anciens fichiers ne sont plus lus.
+- **CLI `wtm svc *` → `wtm run *`** — toutes les sous-commandes basculent (`run up`, `run down`, `run ps`, `run logs`, `run start`, `run stop`, `run list`).
+- **Helpers exportés / shell wrapper** — le wrapper `wt switch` appelle maintenant `wtm run up` (regénéré via `wtm shell init`).
+
+### New features
+
+- **Type `task` pour les scripts one-shot** — `kind = "task"` modélise les commandes qui doivent terminer avec succès avant que le profil continue (migrations, seeds, formatters). Le daemon stream l'output live au CLI, le job disparaît de `run ps` après exit, et un échec abort le reste du profil.
+- **Streaming NDJSON pour les tasks** — le protocole daemon/CLI gère plusieurs `Response` par requête (`StatusOutput` pour les chunks, `StatusDone` pour la fin). Le CLI forward le contenu sur stdout pour suivre l'exécution en direct.
+- **Colonne `KIND` dans `run ps`** — distingue services et tasks dans la table et le picker.
+- **Validation stricte du format** — `kind` requis, `task` ne peut pas avoir de `stop`, profils référencent uniquement des jobs déclarés. Les erreurs sont remontées avant l'exécution.
+
+### Improvements
+
+- **Init docker-compose génère du `[[job]]` directement** — la détection à `wtm init` écrit dans `.wtm/run.toml` avec `kind = "service"` et `stop` configuré (donc détaché).
+- **Skill `using-wtm` mis à jour** — la doc agent reflète le nouveau vocabulaire (jobs, kinds, run.toml, `wtm run *`).
+
 ## v0.6.2 — Style polish (suite)
 
 ### Bug fixes

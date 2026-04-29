@@ -6,10 +6,11 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func TestGenerateShellInitZsh(t *testing.T) {
-	out := GenerateShellInit(domain.ShellZsh)
+	out := rules.GenerateShellInit(domain.ShellZsh)
 
 	if !strings.Contains(out, "wtm()") {
 		t.Error("expected bash/zsh function definition")
@@ -32,7 +33,7 @@ func TestGenerateShellInitZsh(t *testing.T) {
 }
 
 func TestGenerateShellInitBash(t *testing.T) {
-	out := GenerateShellInit(domain.ShellBash)
+	out := rules.GenerateShellInit(domain.ShellBash)
 
 	if !strings.Contains(out, "wtm()") {
 		t.Error("expected bash function definition")
@@ -40,7 +41,7 @@ func TestGenerateShellInitBash(t *testing.T) {
 }
 
 func TestGenerateShellInitFish(t *testing.T) {
-	out := GenerateShellInit(domain.ShellFish)
+	out := rules.GenerateShellInit(domain.ShellFish)
 
 	if !strings.Contains(out, "function wtm") {
 		t.Error("expected fish function definition")

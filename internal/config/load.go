@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/BurntSushi/toml"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // LoadParams holds the inputs for loading configuration.
@@ -34,7 +34,7 @@ func Load(params LoadParams) (domain.Config, error) {
 	cfg := merge(project, global)
 	applyDefaults(&cfg)
 
-	if err := Validate(cfg); err != nil {
+	if err := rules.Validate(cfg); err != nil {
 		return domain.Config{}, err
 	}
 
@@ -49,8 +49,12 @@ func loadProjectConfig(path string) (domain.ProjectConfig, error) {
 	}
 
 	var raw rawProjectConfig
-	if _, err := toml.DecodeFile(path, &raw); err != nil {
-		return domain.ProjectConfig{}, fmt.Errorf("parse %s: %w", path, err)
+	// hooks.on_create entries are decoded as []interface{} (string|table union)
+	// so the inner table keys (cmd, cwd, continue_on_error) appear as
+	// "undecoded" to the strict checker even though the custom unmarshaler
+	// reads them — skip that sub-tree.
+	if err := decodeStrict(path, &raw, "hooks.on_create"); err != nil {
+		return domain.ProjectConfig{}, err
 	}
 
 	hooks, err := decodeHooksConfig(raw.Hooks)
@@ -122,8 +126,8 @@ func loadGlobalConfig() (domain.GlobalConfig, error) {
 	}
 
 	var cfg domain.GlobalConfig
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		return domain.GlobalConfig{}, fmt.Errorf("parse %s: %w", path, err)
+	if err := decodeStrict(path, &cfg); err != nil {
+		return domain.GlobalConfig{}, err
 	}
 
 	return cfg, nil

@@ -5,11 +5,10 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/infra"
 )
 
 func TestResolveExactMatch(t *testing.T) {
-	worktrees := []infra.GitWorktree{
+	worktrees := []domain.GitWorktree{
 		{Path: "/repo", Branch: "main", IsMain: true},
 		{Path: "/trees/feature-auth", Branch: "feature/auth"},
 		{Path: "/trees/feature-auth-v2", Branch: "feature/auth-v2"},
@@ -26,7 +25,7 @@ func TestResolveExactMatch(t *testing.T) {
 }
 
 func TestResolveSubstringUnique(t *testing.T) {
-	worktrees := []infra.GitWorktree{
+	worktrees := []domain.GitWorktree{
 		{Path: "/repo", Branch: "main", IsMain: true},
 		{Path: "/trees/feature-login", Branch: "feature/login"},
 	}
@@ -42,7 +41,7 @@ func TestResolveSubstringUnique(t *testing.T) {
 }
 
 func TestResolveSubstringAmbiguous(t *testing.T) {
-	worktrees := []infra.GitWorktree{
+	worktrees := []domain.GitWorktree{
 		{Path: "/repo", Branch: "main", IsMain: true},
 		{Path: "/trees/feature-auth", Branch: "feature/auth"},
 		{Path: "/trees/feature-auth-v2", Branch: "feature/auth-v2"},
@@ -59,7 +58,7 @@ func TestResolveSubstringAmbiguous(t *testing.T) {
 }
 
 func TestResolveEmptyQuery(t *testing.T) {
-	worktrees := []infra.GitWorktree{
+	worktrees := []domain.GitWorktree{
 		{Path: "/repo", Branch: "main", IsMain: true},
 		{Path: "/trees/feat", Branch: "feat"},
 	}
@@ -75,7 +74,7 @@ func TestResolveEmptyQuery(t *testing.T) {
 }
 
 func TestResolveNotFound(t *testing.T) {
-	worktrees := []infra.GitWorktree{
+	worktrees := []domain.GitWorktree{
 		{Path: "/repo", Branch: "main", IsMain: true},
 	}
 
@@ -87,18 +86,18 @@ func TestResolveNotFound(t *testing.T) {
 }
 
 // resolveFromList is a test helper that applies the resolve logic to a pre-built list.
-func resolveFromList(worktrees []infra.GitWorktree, query string) ResolveResult {
+func resolveFromList(worktrees []domain.GitWorktree, query string) domain.ResolveResult {
 	if query == "" {
-		return ResolveResult{Ambiguous: true, Matches: worktrees}
+		return domain.ResolveResult{Ambiguous: true, Matches: worktrees}
 	}
 
 	for _, wt := range worktrees {
 		if wt.Branch == query {
-			return ResolveResult{Path: wt.Path}
+			return domain.ResolveResult{Path: wt.Path}
 		}
 	}
 
-	var matches []infra.GitWorktree
+	var matches []domain.GitWorktree
 	for _, wt := range worktrees {
 		if contains(wt.Branch, query) {
 			matches = append(matches, wt)
@@ -106,13 +105,13 @@ func resolveFromList(worktrees []infra.GitWorktree, query string) ResolveResult 
 	}
 
 	if len(matches) == 1 {
-		return ResolveResult{Path: matches[0].Path}
+		return domain.ResolveResult{Path: matches[0].Path}
 	}
 	if len(matches) > 1 {
-		return ResolveResult{Ambiguous: true, Matches: matches}
+		return domain.ResolveResult{Ambiguous: true, Matches: matches}
 	}
 
-	return ResolveResult{}
+	return domain.ResolveResult{}
 }
 
 func contains(s string, substr string) bool {

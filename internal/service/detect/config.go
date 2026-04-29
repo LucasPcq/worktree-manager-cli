@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 )
 
 // GlobalConfigExists checks whether ~/.config/wtm/config.toml exists.
@@ -13,10 +14,10 @@ func GlobalConfigExists() bool {
 	if err != nil {
 		return false
 	}
-	return fileExists(filepath.Join(configDir, domain.GlobalConfigDir, domain.GlobalConfigFile))
+	return infra.FileExists(filepath.Join(configDir, domain.GlobalConfigDir, domain.GlobalConfigFile))
 }
 
 // ProjectConfigExists checks whether .wtm/config.toml exists in the given directory.
 func ProjectConfigExists(projectDir string) bool {
-	return fileExists(filepath.Join(projectDir, domain.ProjectDirName, domain.ConfigFileName))
+	return infra.FileExists(filepath.Join(projectDir, domain.ProjectDirName, domain.ConfigFileName))
 }

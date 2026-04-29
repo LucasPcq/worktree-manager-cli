@@ -4,22 +4,16 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sort"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
-
-// ListParams holds inputs for listing worktrees with status.
-type ListParams struct {
-	ProjectDir string
-	Config     domain.Config
-}
 
 // List returns all worktrees enriched with git status, sorted with parent first
 // then children by creation date (oldest first).
-func List(params ListParams) ([]domain.WorktreeStatus, error) {
+func List(params domain.ListParams) ([]domain.WorktreeStatus, error) {
 	gitWorktrees, err := infra.ListWorktrees(infra.ListWorktreesParams{
 		ProjectDir: params.ProjectDir,
 	})
@@ -35,12 +29,12 @@ func List(params ListParams) ([]domain.WorktreeStatus, error) {
 		statuses = append(statuses, status)
 	}
 
-	sortStatuses(statuses)
+	rules.SortStatuses(statuses)
 
 	return statuses, nil
 }
 
-func buildStatus(gitWorktree infra.GitWorktree, baseBranch string) domain.WorktreeStatus {
+func buildStatus(gitWorktree domain.GitWorktree, baseBranch string) domain.WorktreeStatus {
 	dirty, _ := infra.IsDirty(infra.IsDirtyParams{WorktreePath: gitWorktree.Path})
 
 	ahead := 0
@@ -80,13 +74,4 @@ func worktreeCreatedAt(wtPath string) time.Time {
 		return time.Time{}
 	}
 	return info.ModTime()
-}
-
-func sortStatuses(statuses []domain.WorktreeStatus) {
-	sort.SliceStable(statuses, func(i, j int) bool {
-		if statuses[i].IsParent != statuses[j].IsParent {
-			return statuses[i].IsParent
-		}
-		return statuses[i].CreatedAt.Before(statuses[j].CreatedAt)
-	})
 }

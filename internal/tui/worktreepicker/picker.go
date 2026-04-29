@@ -20,7 +20,7 @@ type RunParams struct {
 	Statuses     []domain.WorktreeStatus
 	ActiveBranch string
 	PRs          []domain.PRInfo
-	Services     []process.ServiceInfo
+	Services     []process.JobInfo
 	Title        string
 }
 
@@ -80,7 +80,7 @@ func Run(params RunParams) (domain.WorktreeStatus, error) {
 
 // BuildBadges returns the styled badges for a worktree row (parent, PR,
 // services, dirty/clean) used by both `wt list` and the switch picker.
-func BuildBadges(s domain.WorktreeStatus, prs []domain.PRInfo, services []process.ServiceInfo) []components.Badge {
+func BuildBadges(s domain.WorktreeStatus, prs []domain.PRInfo, services []process.JobInfo) []components.Badge {
 	var badges []components.Badge
 	if s.IsParent {
 		badges = append(badges, components.Badge{Text: "parent", Variant: components.BadgeNeutral})
@@ -92,7 +92,7 @@ func BuildBadges(s domain.WorktreeStatus, prs []domain.PRInfo, services []proces
 		}
 	}
 	for _, svc := range services {
-		if svc.WorkDir == s.Path && svc.Status == domain.ServiceStatusRunning {
+		if svc.WorkDir == s.Path && svc.Status == domain.JobStatusRunning {
 			badges = append(badges, components.Badge{Text: "services", Variant: components.BadgeSuccess})
 			break
 		}

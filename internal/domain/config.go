@@ -1,5 +1,23 @@
 package domain
 
+// ShellType represents a supported shell for integration.
+type ShellType string
+
+const (
+	ShellZsh  ShellType = "zsh"
+	ShellBash ShellType = "bash"
+	ShellFish ShellType = "fish"
+)
+
+// AgentType represents a supported AI agent.
+type AgentType string
+
+const (
+	AgentClaudeCode AgentType = "claude-code"
+	AgentCursor     AgentType = "cursor"
+	AgentNone       AgentType = "none"
+)
+
 // ProjectConfig maps to .wtm.toml (project-level configuration).
 type ProjectConfig struct {
 	Worktrees    WorktreesConfig    `toml:"worktrees"`

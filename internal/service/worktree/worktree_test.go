@@ -9,43 +9,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-func TestSanitizeBranchName(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"feature/login", "feature-login"},
-		{"fix/auth/step-2", "fix-auth-step-2"},
-		{"simple", "simple"},
-		{"a/b/c/d", "a-b-c-d"},
-	}
-
-	for _, tt := range tests {
-		got := sanitizeBranchName(tt.input)
-		if got != tt.want {
-			t.Errorf("sanitizeBranchName(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
-func TestResolveEnvStrategy(t *testing.T) {
-	cfg := domain.Config{
-		Project: domain.ProjectConfig{
-			Env: domain.EnvConfig{Strategy: domain.EnvStrategyExample},
-		},
-	}
-
-	params := CreateParams{Config: cfg}
-	if got := resolveEnvStrategy(params); got != domain.EnvStrategyExample {
-		t.Errorf("expected example, got %s", got)
-	}
-
-	params.EnvFromOverride = "parent"
-	if got := resolveEnvStrategy(params); got != domain.EnvStrategyParent {
-		t.Errorf("expected parent override, got %s", got)
-	}
-}
-
 func TestWriteMetadata(t *testing.T) {
 	dir := t.TempDir()
 

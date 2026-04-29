@@ -15,33 +15,41 @@ const (
 
 // Request is a JSON message sent from client to daemon.
 type Request struct {
-	Action  RequestAction        `json:"action"`
-	Service *domain.ServiceConfig `json:"service,omitempty"`
-	Name    string               `json:"name,omitempty"`
-	WorkDir string               `json:"work_dir,omitempty"`
-	Cols    int                  `json:"cols,omitempty"`
-	Rows    int                  `json:"rows,omitempty"`
+	Action  RequestAction     `json:"action"`
+	Job     *domain.JobConfig `json:"job,omitempty"`
+	Name    string            `json:"name,omitempty"`
+	WorkDir string            `json:"work_dir,omitempty"`
+	Cols    int               `json:"cols,omitempty"`
+	Rows    int               `json:"rows,omitempty"`
 }
 
-// ResponseStatus is the status field in a daemon response.
+// ResponseStatus is the status field in a daemon response. For long-lived
+// actions like launching a task, the daemon emits multiple NDJSON responses:
+// zero or more StatusOutput with Data chunks, followed by StatusDone (success)
+// or StatusError (failure). Simple actions end with a single StatusOK.
 type ResponseStatus string
 
 const (
-	StatusOK    ResponseStatus = "ok"
-	StatusError ResponseStatus = "error"
+	StatusOK     ResponseStatus = "ok"
+	StatusError  ResponseStatus = "error"
+	StatusOutput ResponseStatus = "output" // streamed chunk of task output
+	StatusDone   ResponseStatus = "done"   // task exited successfully
 )
 
-// ServiceInfo is the JSON representation of a managed service.
-type ServiceInfo struct {
-	Name    string               `json:"name"`
-	Status  domain.ServiceStatus `json:"status"`
-	PID     int                  `json:"pid"`
-	WorkDir string               `json:"work_dir"`
+// JobInfo is the JSON representation of a managed job.
+type JobInfo struct {
+	Name    string           `json:"name"`
+	Kind    domain.JobKind   `json:"kind"`
+	Status  domain.JobStatus `json:"status"`
+	PID     int              `json:"pid"`
+	WorkDir string           `json:"work_dir"`
 }
 
 // Response is a JSON message sent from daemon to client.
 type Response struct {
 	Status   ResponseStatus `json:"status"`
 	Message  string         `json:"message,omitempty"`
-	Services []ServiceInfo  `json:"services,omitempty"`
+	Jobs     []JobInfo      `json:"jobs,omitempty"`
+	Data     []byte         `json:"data,omitempty"`      // task output chunk
+	ExitCode *int           `json:"exit_code,omitempty"` // final task exit code
 }

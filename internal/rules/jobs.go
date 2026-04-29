@@ -1,0 +1,123 @@
+package rules
+
+import (
+	"fmt"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+)
+
+// IsDetached reports whether the job is a service with a stop command,
+// meaning the launcher process exits after starting detached work
+// (e.g. docker compose up -d).
+func IsDetached(job domain.JobConfig) bool {
+	return job.Kind == domain.JobKindService && job.Stop != ""
+}
+
+// DefaultProfile returns the profile marked as default, or the first one.
+func DefaultProfile(cfg domain.RunConfig) (domain.ProfileConfig, bool) {
+	for _, p := range cfg.Profiles {
+		if p.Default {
+			return p, true
+		}
+	}
+	if len(cfg.Profiles) > 0 {
+		return cfg.Profiles[0], true
+	}
+	return domain.ProfileConfig{}, false
+}
+
+// FindProfile returns a profile by name.
+func FindProfile(cfg domain.RunConfig, name string) (domain.ProfileConfig, bool) {
+	for _, p := range cfg.Profiles {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return domain.ProfileConfig{}, false
+}
+
+// FindJob returns a job by name.
+func FindJob(cfg domain.RunConfig, name string) (domain.JobConfig, bool) {
+	for _, j := range cfg.Jobs {
+		if j.Name == name {
+			return j, true
+		}
+	}
+	return domain.JobConfig{}, false
+}
+
+// ProfileJobs returns the JobConfig list for a profile, preserving the
+// declared order.
+func ProfileJobs(cfg domain.RunConfig, profile domain.ProfileConfig) []domain.JobConfig {
+	jobs := make([]domain.JobConfig, 0, len(profile.Jobs))
+	for _, name := range profile.Jobs {
+		if j, ok := FindJob(cfg, name); ok {
+			jobs = append(jobs, j)
+		}
+	}
+	return jobs
+}
+
+// FilterToProfile returns a new RunConfig containing only the named profile
+// and the jobs it references. Returns an error if the profile is not found.
+func FilterToProfile(cfg domain.RunConfig, name string) (domain.RunConfig, error) {
+	p, ok := FindProfile(cfg, name)
+	if !ok {
+		return domain.RunConfig{}, fmt.Errorf("profile %q not found", name)
+	}
+	return domain.RunConfig{
+		Jobs:     ProfileJobs(cfg, p),
+		Profiles: []domain.ProfileConfig{p},
+	}, nil
+}
+
+// MergeResult summarizes what happened during a MergeRunConfigs call.
+type MergeResult struct {
+	Added   []string
+	Skipped []string
+}
+
+// MergeRunConfigs merges src into dst. Jobs and profiles in src that share a
+// name with an existing entry in dst are skipped (names go into Skipped); new
+// entries are appended (names go into Added). dst is never mutated.
+func MergeRunConfigs(dst, src domain.RunConfig) (domain.RunConfig, MergeResult) {
+	out := domain.RunConfig{
+		Jobs:     make([]domain.JobConfig, len(dst.Jobs)),
+		Profiles: make([]domain.ProfileConfig, len(dst.Profiles)),
+	}
+	copy(out.Jobs, dst.Jobs)
+	copy(out.Profiles, dst.Profiles)
+
+	existingJobs := make(map[string]bool, len(dst.Jobs))
+	for _, j := range dst.Jobs {
+		existingJobs[j.Name] = true
+	}
+	existingProfiles := make(map[string]bool, len(dst.Profiles))
+	for _, p := range dst.Profiles {
+		existingProfiles[p.Name] = true
+	}
+
+	var result MergeResult
+
+	for _, j := range src.Jobs {
+		if existingJobs[j.Name] {
+			result.Skipped = append(result.Skipped, j.Name)
+			continue
+		}
+		out.Jobs = append(out.Jobs, j)
+		result.Added = append(result.Added, j.Name)
+		existingJobs[j.Name] = true
+	}
+
+	for _, p := range src.Profiles {
+		if existingProfiles[p.Name] {
+			result.Skipped = append(result.Skipped, p.Name)
+			continue
+		}
+		out.Profiles = append(out.Profiles, p)
+		result.Added = append(result.Added, p.Name)
+		existingProfiles[p.Name] = true
+	}
+
+	return out, result
+}

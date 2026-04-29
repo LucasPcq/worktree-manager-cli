@@ -26,7 +26,6 @@ on_create = [
 
 [github]
 auto_draft  = true
-base_branch = "develop"
 
 [agents]
 default = "cursor"
@@ -189,35 +188,6 @@ func TestHookCommandMixedParsing(t *testing.T) {
 	}
 }
 
-func TestValidateInvalidEnvStrategy(t *testing.T) {
-	cfg := validConfig()
-	cfg.Project.Env.Strategy = "invalid"
-
-	err := Validate(cfg)
-	if !errors.Is(err, domain.ErrInvalidEnvStrategy) {
-		t.Errorf("expected ErrInvalidEnvStrategy, got %v", err)
-	}
-}
-
-func TestValidateInvalidShellType(t *testing.T) {
-	cfg := validConfig()
-	cfg.Global.Shell = "powershell"
-
-	err := Validate(cfg)
-	if !errors.Is(err, domain.ErrInvalidShellType) {
-		t.Errorf("expected ErrInvalidShellType, got %v", err)
-	}
-}
-
-func TestValidateInvalidAgentType(t *testing.T) {
-	cfg := validConfig()
-	cfg.Project.Agents.Default = "copilot"
-
-	err := Validate(cfg)
-	if !errors.Is(err, domain.ErrInvalidAgentType) {
-		t.Errorf("expected ErrInvalidAgentType, got %v", err)
-	}
-}
 
 func TestMergeGlobalAgentFallback(t *testing.T) {
 	project := domain.ProjectConfig{}
@@ -313,23 +283,3 @@ func TestApplyDefaults_AllEmpty(t *testing.T) {
 	}
 }
 
-func validConfig() domain.Config {
-	return domain.Config{
-		Project: domain.ProjectConfig{
-			Worktrees: domain.WorktreesConfig{
-				BasePath:   domain.DefaultBasePath,
-				BaseBranch: domain.DefaultBaseBranch,
-			},
-			Env: domain.EnvConfig{
-				Strategy: domain.DefaultEnvStrategy,
-			},
-			Agents: domain.AgentsConfig{
-				Default: domain.DefaultAgent,
-			},
-		},
-		Global: domain.GlobalConfig{
-			Shell: domain.DefaultShell,
-			Agent: domain.AgentType(domain.DefaultAgent),
-		},
-	}
-}
