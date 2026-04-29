@@ -67,6 +67,7 @@ func attachSingleJob(socketPath string, name string, dir string) error {
 		return fmt.Errorf("set terminal raw mode: %w", err)
 	}
 	defer term.Restore(fd, oldState)
+	defer process.ResetTerminalState(os.Stdout)
 
 	done := make(chan struct{}, 1)
 
@@ -127,6 +128,8 @@ func multiplexAllJobs(socketPath string, dir string) error {
 		output.Blank(os.Stdout)
 		return nil
 	}
+
+	defer process.ResetTerminalState(os.Stdout)
 
 	fd := int(os.Stdin.Fd())
 	cols, rows, err := term.GetSize(fd)
