@@ -2,6 +2,7 @@
 package process
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 
@@ -39,6 +41,12 @@ const (
 	defaultPTYCols = 120
 )
 
+// stopGracePeriod is how long Stop waits for a process group to exit on
+// SIGTERM before escalating to SIGKILL. Long enough for well-behaved dev
+// servers (next, vite, turbo) to flush and shut down their children, short
+// enough that the user doesn't notice a hang.
+const stopGracePeriod = 5 * time.Second
+
 // ManagedJob holds the state of a running job.
 type ManagedJob struct {
 	Name    string
@@ -48,7 +56,8 @@ type ManagedJob struct {
 	Status  domain.JobStatus
 	PID     int
 	WorkDir string
-	output  *outputHub // nil for detached launcher-style services
+	output  *outputHub    // nil for detached launcher-style services
+	exited  chan struct{} // closed when the underlying process has been reaped
 }
 
 // Manager tracks and controls running jobs.
@@ -102,6 +111,14 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 		cmd.Dir = workDir
 	}
 	cmd.Env = jobEnv(job.Kind)
+	// Tasks run through a plain pipe; without Setpgid they would inherit the
+	// daemon's process group, leaving us no safe way to signal the whole
+	// subtree on Stop. Services run through pty.Start, which forces Setsid
+	// (a stronger guarantee than Setpgid), so they already get their own
+	// process group automatically.
+	if job.Kind == domain.JobKindTask {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	}
 
 	output, err := spawnJob(cmd, job.Kind)
 	if err != nil {
@@ -117,6 +134,7 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 		Status:  domain.JobStatusRunning,
 		PID:     cmd.Process.Pid,
 		WorkDir: workDir,
+		exited:  make(chan struct{}),
 	}
 	m.jobs[key] = managed
 	m.mu.Unlock()
@@ -246,6 +264,8 @@ func lookupEnv(env []string, key string) (string, bool) {
 // the job's output hub so `run logs <task>` can also attach while it runs.
 // The job is removed from the map on exit, whatever the outcome.
 func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
+	defer close(job.exited)
+
 	key := jobKey(job.Name, job.WorkDir)
 
 	job.output = newOutputHub(outputHistoryBytes)
@@ -300,6 +320,8 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 // captured output so the user sees what went wrong. On success, the job
 // stays registered as Running (the real work is detached).
 func (m *Manager) waitDetached(job *ManagedJob) error {
+	defer close(job.exited)
+
 	buf := newRingBuffer(detachedOutputBufferSize)
 	drained := make(chan struct{})
 	go func() {
@@ -494,8 +516,11 @@ func (m *Manager) stopAllMatching(keep func(*ManagedJob) bool) error {
 }
 
 func (m *Manager) stopByKey(key string) error {
+	// Snapshot the running flag under the lock so we don't race with
+	// waitForExit, which mutates Status to Crashed in its own goroutine.
 	m.mu.Lock()
 	job, ok := m.jobs[key]
+	isRunning := ok && job.Status == domain.JobStatusRunning
 	m.mu.Unlock()
 
 	if !ok {
@@ -509,7 +534,7 @@ func (m *Manager) stopByKey(key string) error {
 		return m.stopWithCommand(job)
 	}
 
-	if job.Status != domain.JobStatusRunning {
+	if !isRunning {
 		return nil
 	}
 
@@ -612,8 +637,27 @@ func (m *Manager) stopWithSignal(job *ManagedJob) error {
 		return nil
 	}
 
-	if err := job.Cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		return fmt.Errorf("signal %s: %w", job.Name, err)
+	pid := job.Cmd.Process.Pid
+
+	// A negative PID targets the whole process group, so npm AND every
+	// node child it spawned receive SIGTERM. ESRCH means the group is
+	// already gone, which is fine. Any other failure (e.g. job spawned
+	// without its own group) falls back to signalling just the parent.
+	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		if sigErr := job.Cmd.Process.Signal(syscall.SIGTERM); sigErr != nil && !errors.Is(sigErr, os.ErrProcessDone) {
+			return fmt.Errorf("signal %s: %w", job.Name, sigErr)
+		}
+	}
+
+	// Wait for actual reaping so the caller never sees "stopped" while a
+	// child is still running. Dev TUIs (next, vite, turbo) sometimes
+	// swallow SIGTERM to run their own cleanup — escalate to SIGKILL on
+	// the whole group if they overrun the grace period.
+	select {
+	case <-job.exited:
+	case <-time.After(stopGracePeriod):
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		<-job.exited
 	}
 
 	m.markStopped(job)
@@ -621,6 +665,8 @@ func (m *Manager) stopWithSignal(job *ManagedJob) error {
 }
 
 func (m *Manager) waitForExit(job *ManagedJob) {
+	defer close(job.exited)
+
 	_ = job.Cmd.Wait()
 
 	m.mu.Lock()
