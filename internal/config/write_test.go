@@ -25,14 +25,14 @@ func TestWriteProjectRendersValidTOML(t *testing.T) {
 	}
 
 	err := WriteProject(WriteProjectParams{
-		ProjectDir: dir,
-		Answers:    answers,
+		StateDir: dir,
+		Answers:  answers,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	path := filepath.Join(dir, domain.ProjectDirName, domain.ConfigFileName)
+	path := filepath.Join(dir, domain.ConfigFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read file: %v", err)
@@ -70,14 +70,14 @@ func TestWriteProjectWithAgentOverride(t *testing.T) {
 	}
 
 	err := WriteProject(WriteProjectParams{
-		ProjectDir: dir,
-		Answers:    answers,
+		StateDir: dir,
+		Answers:  answers,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, _ := os.ReadFile(filepath.Join(dir, domain.ProjectDirName, domain.ConfigFileName))
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
 	content := string(data)
 
 	if !strings.Contains(content, `default = "cursor"`) {
@@ -95,14 +95,14 @@ func TestWriteProjectEmptyEnvAndHooks(t *testing.T) {
 	}
 
 	err := WriteProject(WriteProjectParams{
-		ProjectDir: dir,
-		Answers:    answers,
+		StateDir: dir,
+		Answers:  answers,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, _ := os.ReadFile(filepath.Join(dir, domain.ProjectDirName, domain.ConfigFileName))
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
 	content := string(data)
 
 	// Should still be valid TOML
@@ -120,11 +120,11 @@ func TestWriteRunCreatesFile(t *testing.T) {
 		},
 	}
 
-	if err := WriteRun(WriteRunParams{ProjectDir: dir, Config: cfg}); err != nil {
+	if err := WriteRun(WriteRunParams{StateDir: dir, Config: cfg}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, domain.ProjectDirName, domain.RunFileName))
+	data, err := os.ReadFile(filepath.Join(dir, domain.RunFileName))
 	if err != nil {
 		t.Fatalf("file not created: %v", err)
 	}
@@ -139,10 +139,10 @@ func TestWriteRunRefusesOverwrite(t *testing.T) {
 		Jobs: []domain.JobConfig{{Name: "a", Kind: domain.JobKindService, Cmd: "echo a"}},
 	}
 
-	if err := WriteRun(WriteRunParams{ProjectDir: dir, Config: cfg}); err != nil {
+	if err := WriteRun(WriteRunParams{StateDir: dir, Config: cfg}); err != nil {
 		t.Fatalf("first write failed: %v", err)
 	}
-	if err := WriteRun(WriteRunParams{ProjectDir: dir, Config: cfg}); !errors.Is(err, ErrRunFileExists) {
+	if err := WriteRun(WriteRunParams{StateDir: dir, Config: cfg}); !errors.Is(err, ErrRunFileExists) {
 		t.Errorf("expected ErrRunFileExists, got %v", err)
 	}
 }
@@ -152,18 +152,18 @@ func TestWriteRunForceOverwrites(t *testing.T) {
 	orig := domain.RunConfig{
 		Jobs: []domain.JobConfig{{Name: "old", Kind: domain.JobKindTask, Cmd: "echo old"}},
 	}
-	if err := WriteRun(WriteRunParams{ProjectDir: dir, Config: orig}); err != nil {
+	if err := WriteRun(WriteRunParams{StateDir: dir, Config: orig}); err != nil {
 		t.Fatalf("first write failed: %v", err)
 	}
 
 	updated := domain.RunConfig{
 		Jobs: []domain.JobConfig{{Name: "new", Kind: domain.JobKindTask, Cmd: "echo new"}},
 	}
-	if err := WriteRun(WriteRunParams{ProjectDir: dir, Config: updated, Force: true}); err != nil {
+	if err := WriteRun(WriteRunParams{StateDir: dir, Config: updated, Force: true}); err != nil {
 		t.Fatalf("force write failed: %v", err)
 	}
 
-	data, _ := os.ReadFile(filepath.Join(dir, domain.ProjectDirName, domain.RunFileName))
+	data, _ := os.ReadFile(filepath.Join(dir, domain.RunFileName))
 	if !strings.Contains(string(data), `name = "new"`) {
 		t.Error("expected updated job name after force overwrite")
 	}
@@ -221,15 +221,15 @@ func TestWriteProjectRoundTrip(t *testing.T) {
 	}
 
 	err := WriteProject(WriteProjectParams{
-		ProjectDir: dir,
-		Answers:    answers,
+		StateDir: dir,
+		Answers:  answers,
 	})
 	if err != nil {
 		t.Fatalf("WriteProject: %v", err)
 	}
 
 	// Load it back using the existing config loader
-	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ProjectDirName, domain.ConfigFileName))
+	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
 	if err != nil {
 		t.Fatalf("loadProjectConfig: %v", err)
 	}

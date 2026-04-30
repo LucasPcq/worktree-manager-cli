@@ -147,7 +147,7 @@ func FormatRunConfig(cfg domain.RunConfig) string {
 
 	if len(cfg.Profiles) == 0 && len(cfg.Jobs) == 0 {
 		b.WriteString(Indent)
-		b.WriteString("No jobs or profiles defined in .wtm/run.toml.\n")
+		b.WriteString("No jobs or profiles defined in run.toml.\n")
 	}
 
 	return b.String()

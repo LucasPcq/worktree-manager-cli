@@ -8,12 +8,14 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // DetailParams holds inputs for loading worktree details.
 type DetailParams struct {
 	WorktreePath string
 	ProjectDir   string
+	StateDir     string
 	Branch       string
 	BaseBranch   string
 }
@@ -35,7 +37,7 @@ func Detail(params DetailParams) DetailResult {
 		Path:   params.WorktreePath,
 	}
 
-	result.SourceBranch = loadSourceBranch(params.WorktreePath)
+	result.SourceBranch = loadSourceBranch(params.StateDir, params.Branch)
 	result.ModifiedFiles, _ = infra.ListModifiedFiles(infra.ListModifiedFilesParams{
 		WorktreePath: params.WorktreePath,
 	})
@@ -43,13 +45,13 @@ func Detail(params DetailParams) DetailResult {
 		ProjectDir: params.ProjectDir,
 		Branch:     params.Branch,
 	})
-	result.ContextNotes = loadContextNotes(params.WorktreePath)
+	result.ContextNotes = loadContextNotes(params.StateDir, params.Branch)
 
 	return result
 }
 
-func loadSourceBranch(worktreePath string) string {
-	metaPath := filepath.Join(worktreePath, domain.ProjectDirName, domain.MetaFileName)
+func loadSourceBranch(stateDir, branch string) string {
+	metaPath := filepath.Join(rules.WorktreeMetaDir(stateDir, branch), domain.MetaFileName)
 	data, err := os.ReadFile(metaPath)
 	if err != nil {
 		return ""
@@ -61,8 +63,8 @@ func loadSourceBranch(worktreePath string) string {
 	return meta.SourceBranch
 }
 
-func loadContextNotes(worktreePath string) string {
-	contextPath := filepath.Join(worktreePath, domain.ProjectDirName, domain.ContextFileName)
+func loadContextNotes(stateDir, branch string) string {
+	contextPath := filepath.Join(rules.WorktreeMetaDir(stateDir, branch), domain.ContextFileName)
 	data, err := os.ReadFile(contextPath)
 	if err != nil {
 		return ""

@@ -19,7 +19,7 @@ func newStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdStart + " <job>",
 		Short: "Start a single job",
-		Long:  "Start an individual job by name (defined in .wtm/run.toml). Tasks run inline and block until they exit; services launch in the background.",
+		Long:  "Start an individual job by name (defined in run.toml). Tasks run inline and block until they exit; services launch in the background.",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runStart,
 	}
@@ -38,7 +38,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	runCfg, err := config.LoadRun(result.ProjectDir)
+	runCfg, err := config.LoadRun(result.StateDir)
 	if err != nil {
 		return fmt.Errorf("load run config: %w", err)
 	}

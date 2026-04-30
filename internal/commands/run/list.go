@@ -20,7 +20,7 @@ import (
 func newListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdList,
-		Short: "List jobs and profiles declared in .wtm/run.toml",
+		Short: "List jobs and profiles declared in run.toml",
 		Long:  "Show the jobs and profiles configured for the project.\nIn a TTY, offers an interactive picker with start/stop/logs actions.",
 		RunE:  runList,
 	}
@@ -39,7 +39,7 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	runCfg, err := config.LoadRun(result.ProjectDir)
+	runCfg, err := config.LoadRun(result.StateDir)
 	if err != nil {
 		return fmt.Errorf("load run config: %w", err)
 	}
@@ -55,7 +55,7 @@ func runList(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(runCfg.Jobs) == 0 && len(runCfg.Profiles) == 0 {
-		output.Message(cmd.OutOrStdout(), "No jobs or profiles defined in .wtm/run.toml.")
+		output.Message(cmd.OutOrStdout(), "No jobs or profiles defined in run.toml.")
 		return nil
 	}
 

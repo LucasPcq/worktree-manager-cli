@@ -85,6 +85,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 	createResult, err := worktree.Create(domain.CreateParams{
 		ProjectDir:      result.ProjectDir,
+		StateDir:        result.StateDir,
 		Branch:          branch,
 		FromBranch:      fromBranch,
 		Config:          result.Config,

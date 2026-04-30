@@ -13,7 +13,7 @@ func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "schema",
 		Short:   "Inspect or extract bundled JSON Schemas",
-		Long:    "JSON Schemas describe the structure of wtm's TOML config files.\nUse `wtm schema dump` to write them to .wtm/schemas/ so editors can pick them up via the `#:schema` directive.",
+		Long:    "JSON Schemas describe the structure of wtm's TOML config files.\nUse `wtm schema dump` to write them to <git-common-dir>/wtm/schemas/ so editors can pick them up via the `#:schema` directive.",
 		GroupID: domain.CmdGroupSetup,
 	}
 	cmd.AddCommand(newDumpCmd())

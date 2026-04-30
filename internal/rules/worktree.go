@@ -1,6 +1,8 @@
 package rules
 
 import (
+	"net/url"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -10,6 +12,19 @@ import (
 // SanitizeBranchName replaces slashes with dashes for use as a directory name.
 func SanitizeBranchName(name string) string {
 	return strings.ReplaceAll(name, "/", "-")
+}
+
+// EncodeBranchSegment percent-encodes a branch name for use as a single
+// path segment under <state-dir>/worktrees/. Slashes become %2F so that
+// `feat/x` doesn't create a nested directory.
+func EncodeBranchSegment(branch string) string {
+	return url.PathEscape(branch)
+}
+
+// WorktreeMetaDir returns <state-dir>/worktrees/<encoded-branch>/, the
+// directory holding meta.json and context.md for one worktree.
+func WorktreeMetaDir(stateDir, branch string) string {
+	return filepath.Join(stateDir, domain.WorktreesSubdir, EncodeBranchSegment(branch))
 }
 
 // ResolveEnvStrategy returns override cast to EnvStrategy if non-empty, otherwise strategy.

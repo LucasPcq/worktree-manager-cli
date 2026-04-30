@@ -17,7 +17,7 @@ func GlobalConfigExists() bool {
 	return infra.FileExists(filepath.Join(configDir, domain.GlobalConfigDir, domain.GlobalConfigFile))
 }
 
-// ProjectConfigExists checks whether .wtm/config.toml exists in the given directory.
-func ProjectConfigExists(projectDir string) bool {
-	return infra.FileExists(filepath.Join(projectDir, domain.ProjectDirName, domain.ConfigFileName))
+// ProjectConfigExists checks whether config.toml exists in the given state dir.
+func ProjectConfigExists(stateDir string) bool {
+	return infra.FileExists(filepath.Join(stateDir, domain.ConfigFileName))
 }
