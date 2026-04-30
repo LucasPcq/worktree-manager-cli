@@ -123,7 +123,7 @@ internal/
   commands/                   ← flag wiring only → delegates to service (zero logic)
   domain/                     ← types, errors, constants only (no methods, no functions)
   rules/                      ← pure business rules (stdlib + domain only, no I/O)
-  config/                     ← load & validate .wtm/config.toml + run.toml
+  config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   create, list, clean, resolve
     env/                      ←   .env file provisioning strategies
@@ -191,8 +191,23 @@ func runStart(cmd *cobra.Command, args []string) error {
 Key conventions:
 - `Use:` always uses `domain.CmdXxx` constants (+ literal arg placeholders)
 - `addOutputFlag(cmd)` instead of duplicating the output flag registration
-- `loadConfig(cmd, dir)` resolves project root and loads config
+- `shared.LoadConfig(cmd, dir)` resolves the main worktree path **and** the state dir, then loads `<state-dir>/config.toml`. Returns `ConfigResult{Config, ProjectDir, StateDir}`.
 - Unexported constructor (`newRunStartCmd`), registered by the parent group
+
+### State-dir resolution
+
+wtm stores all of its state under `<git-common-dir>/wtm/` (i.e. `.git/wtm/` for a normal clone), so nothing leaks into the user's working tree. Resolution helpers live in `internal/commands/shared/`:
+
+```go
+shared.StateDir(dir)                   // <git-common-dir>/wtm/
+shared.WorktreeStateDir(WorktreeStateDirParams{Dir, Branch})  // <state-dir>/worktrees/<encoded-branch>/
+```
+
+The git common dir is fetched via `infra.GitCommonDir(GitCommonDirParams{Dir})` which wraps `git rev-parse --git-common-dir`. Branch names are encoded for filesystem safety with `rules.EncodeBranchSegment(branch)` (slashes → `%2F`).
+
+Two env-var overrides exist for tests / CI:
+- `WTM_PROJECT_DIR` — bypasses git for the main worktree path
+- `WTM_STATE_DIR`   — bypasses git for the state dir
 
 ### Adding a new command
 
@@ -328,30 +343,32 @@ JSON output uses `encodeJSON(w, v)` (pretty-printed, no HTML escaping).
 
 ### Unit tests — config/service/domain
 
-Use `t.TempDir()` + real files, style from existing tests:
+Use `t.TempDir()` as the state dir, write fixtures directly inside it (no nested `.wtm/` segment):
 
 ```go
 func TestMyFeature(t *testing.T) {
-  dir := t.TempDir()
+  stateDir := t.TempDir()
   // write test fixtures
-  os.WriteFile(filepath.Join(dir, "file.toml"), []byte(content), 0o644)
-  // call function under test
-  result, err := config.LoadRun(dir)
+  os.WriteFile(filepath.Join(stateDir, domain.RunFileName), []byte(content), 0o644)
+  // call function under test — config layer takes a state dir
+  result, err := config.LoadRun(stateDir)
   // assert
 }
 ```
 
 ### Integration tests — command-level via Cobra
 
-Use `WTM_PROJECT_DIR` env var to bypass git resolution, and `gittest.InitRepo` for real repos:
+Use `gittest.InitRepo` for the git repo, plus both `WTM_PROJECT_DIR` and `WTM_STATE_DIR` so the command short-circuits any git lookup:
 
 ```go
 func TestRunExportEmpty(t *testing.T) {
   dir := gittest.InitRepo(t)
+  stateDir := filepath.Join(dir, ".git", "wtm")
   t.Setenv("WTM_PROJECT_DIR", dir)
+  t.Setenv("WTM_STATE_DIR", stateDir)
 
-  // Write minimal .wtm/config.toml
-  config.WriteProject(config.WriteProjectParams{ProjectDir: dir, Answers: ...})
+  // Write minimal config.toml into the state dir
+  config.WriteProject(config.WriteProjectParams{StateDir: stateDir, Answers: ...})
 
   // Execute command via Cobra
   cmd := NewRunCmd()
