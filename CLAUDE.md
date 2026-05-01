@@ -101,7 +101,7 @@ internal/
   commands/                   ← flag wiring, delegates to service (zero business logic)
   domain/                     ← types, errors, constants only (no methods, no functions)
   rules/                      ← pure functions (stdlib + domain only, no I/O)
-  config/                     ← load & validate .wtm.toml + ~/.config/wtm/config.toml
+  config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/, plus ~/.config/wtm/config.toml
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
     env/                      ←   .env file provisioning strategies

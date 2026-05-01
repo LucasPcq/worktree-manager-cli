@@ -17,24 +17,27 @@ type MultiSelectItem struct {
 
 // MultiSelectModel is a checkbox list with space toggle and enter confirm.
 type MultiSelectModel struct {
-	items   []MultiSelectItem
-	cursor  int
-	width   int
-	height  int
-	offset  int
-	title   string
-	desc    string
-	done    bool
-	aborted bool
+	items    []MultiSelectItem
+	cursor   int
+	width    int
+	height   int
+	offset   int
+	title    string
+	desc     string
+	validate func([]string) error
+	err      error
+	done     bool
+	aborted  bool
 }
 
 // NewMultiSelect creates a MultiSelectModel.
 func NewMultiSelect(params NewMultiSelectParams) MultiSelectModel {
 	return MultiSelectModel{
-		items: params.Items,
-		title: params.Title,
-		desc:  params.Description,
-		width: 80,
+		items:    params.Items,
+		title:    params.Title,
+		desc:     params.Description,
+		validate: params.Validate,
+		width:    80,
 	}
 }
 
@@ -43,6 +46,9 @@ type NewMultiSelectParams struct {
 	Title       string
 	Description string
 	Items       []MultiSelectItem
+	// Validate is called on Enter and after each toggle. When it returns an
+	// error, Enter does not advance and the message is rendered below the list.
+	Validate func([]string) error
 }
 
 // Done returns true after the user confirmed.
@@ -85,7 +91,14 @@ func (m MultiSelectModel) Update(msg tea.Msg) (MultiSelectModel, tea.Cmd) {
 		if m.cursor >= 0 && m.cursor < len(m.items) {
 			m.items[m.cursor].Selected = !m.items[m.cursor].Selected
 		}
+		m.refreshValidation()
 	case "enter":
+		if m.validate != nil {
+			if err := m.validate(m.Values()); err != nil {
+				m.err = err
+				return m, nil
+			}
+		}
 		m.done = true
 	case "esc":
 		m.aborted = true
@@ -93,6 +106,19 @@ func (m MultiSelectModel) Update(msg tea.Msg) (MultiSelectModel, tea.Cmd) {
 
 	m.clampOffset()
 	return m, nil
+}
+
+// refreshValidation re-runs validate against the current selection so the
+// error clears the moment the user fixes the state.
+func (m *MultiSelectModel) refreshValidation() {
+	if m.validate == nil {
+		return
+	}
+	if err := m.validate(m.Values()); err != nil {
+		m.err = err
+	} else {
+		m.err = nil
+	}
 }
 
 // View renders the checkbox list.
@@ -136,6 +162,11 @@ func (m MultiSelectModel) View() string {
 		if i < end-1 {
 			b.WriteString("\n")
 		}
+	}
+
+	if m.err != nil {
+		b.WriteString("\n\n")
+		b.WriteString(errorBanner(m.err.Error()))
 	}
 
 	return b.String()

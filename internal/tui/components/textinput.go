@@ -32,6 +32,9 @@ func NewTextInput(params NewTextInputParams) TextInputModel {
 	if params.Placeholder != "" {
 		ti.Placeholder = params.Placeholder
 	}
+	if params.Default != "" {
+		ti.SetValue(params.Default)
+	}
 
 	m := TextInputModel{
 		input:    ti,
@@ -49,6 +52,7 @@ type NewTextInputParams struct {
 	Title       string
 	Description string
 	Placeholder string
+	Default     string
 	Validate    func(string) error
 }
 
@@ -99,7 +103,15 @@ func (m TextInputModel) Update(msg tea.Msg) (TextInputModel, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
-	m.err = nil
+	if m.validate != nil {
+		if err := m.validate(m.input.Value()); err != nil {
+			m.err = err
+		} else {
+			m.err = nil
+		}
+	} else {
+		m.err = nil
+	}
 	return m, cmd
 }
 
@@ -110,8 +122,8 @@ func (m TextInputModel) View() string {
 	b.WriteString(m.input.View())
 
 	if m.err != nil {
-		b.WriteString("\n")
-		b.WriteString(styles.DangerText.Render(styles.Indent + m.err.Error()))
+		b.WriteString("\n\n")
+		b.WriteString(errorBanner(m.err.Error()))
 	}
 
 	return b.String()

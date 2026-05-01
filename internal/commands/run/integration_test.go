@@ -17,10 +17,12 @@ import (
 func setupTestProject(t *testing.T) string {
 	t.Helper()
 	dir := gittest.InitRepo(t)
+	stateDir := filepath.Join(dir, ".git", "wtm")
 	t.Setenv("WTM_PROJECT_DIR", dir)
+	t.Setenv("WTM_STATE_DIR", stateDir)
 
 	if err := config.WriteProject(config.WriteProjectParams{
-		ProjectDir: dir,
+		StateDir: stateDir,
 		Answers: domain.InitProjectAnswers{
 			BasePath:    "../.trees",
 			BaseBranch:  "main",
@@ -30,15 +32,15 @@ func setupTestProject(t *testing.T) string {
 		t.Fatalf("setup project: %v", err)
 	}
 
-	return dir
+	return stateDir
 }
 
-func writeRunTOML(t *testing.T, dir string, cfg domain.RunConfig) {
+func writeRunTOML(t *testing.T, stateDir string, cfg domain.RunConfig) {
 	t.Helper()
 	if err := config.WriteRun(config.WriteRunParams{
-		ProjectDir: dir,
-		Config:     cfg,
-		Force:      true,
+		StateDir: stateDir,
+		Config:   cfg,
+		Force:    true,
 	}); err != nil {
 		t.Fatalf("write run.toml: %v", err)
 	}
@@ -247,7 +249,7 @@ func TestRunExportImportRoundtrip(t *testing.T) {
 		t.Fatalf("write layout: %v", err)
 	}
 
-	os.Remove(filepath.Join(dir, domain.ProjectDirName, domain.RunFileName))
+	os.Remove(filepath.Join(dir, domain.RunFileName))
 
 	_, _, err = runCmd(t, domain.CmdImport, layoutPath)
 	if err != nil {

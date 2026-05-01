@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
@@ -22,7 +23,7 @@ func NewCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Initialize wtm configuration",
-		Long:  "Interactive wizard to set up global config and project .wtm/config.toml.",
+		Long:  "Interactive wizard to set up global config and project config in <git-common-dir>/wtm/config.toml.",
 		RunE:  runInit,
 	}
 }
@@ -37,14 +38,19 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if detect.ProjectConfigExists(dir) {
+	stateDir, err := shared.StateDir(dir)
+	if err != nil {
+		return fmt.Errorf("wtm must be run inside a git repository: %w", err)
+	}
+
+	if detect.ProjectConfigExists(stateDir) {
 		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), ".wtm/config.toml already exists. Delete it or edit it manually to reconfigure.")
+		output.Message(cmd.OutOrStdout(), fmt.Sprintf("%s already exists. Run `wtm config edit` to modify it.", filepath.Join(stateDir, domain.ConfigFileName)))
 		output.Blank(cmd.OutOrStdout())
 		return nil
 	}
 
-	return createProjectConfig(cmd, dir)
+	return createProjectConfig(cmd, dir, stateDir)
 }
 
 func ensureGlobalConfig(cmd *cobra.Command) error {
@@ -79,9 +85,9 @@ func ensureGlobalConfig(cmd *cobra.Command) error {
 	return nil
 }
 
-func createProjectConfig(cmd *cobra.Command, dir string) error {
+func createProjectConfig(cmd *cobra.Command, dir, stateDir string) error {
 	output.Blank(cmd.OutOrStdout())
-	output.Intro(cmd.OutOrStdout(), "No .wtm/config.toml found. Let's initialize this project.")
+	output.Intro(cmd.OutOrStdout(), "No wtm config found for this repo. Let's initialize it.")
 	output.Blank(cmd.OutOrStdout())
 
 	detection := detect.ProjectEnvironment(dir)
@@ -95,30 +101,31 @@ func createProjectConfig(cmd *cobra.Command, dir string) error {
 	}
 
 	if err := config.WriteProject(config.WriteProjectParams{
-		ProjectDir: dir,
-		Answers:    answers,
+		StateDir: stateDir,
+		Answers:  answers,
 	}); err != nil {
 		return fmt.Errorf("write project config: %w", err)
 	}
 
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s/%s", domain.ProjectDirName, domain.ConfigFileName))
+	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s", filepath.Join(stateDir, domain.ConfigFileName)))
 
-	if err := dumpProjectSchemas(dir); err != nil {
+	if err := dumpProjectSchemas(stateDir); err != nil {
 		return err
 	}
 
 	runCfg := rules.BuildInitRunConfig(answers, detection.PackageManager)
 	if len(runCfg.Jobs) > 0 {
+		runPath := filepath.Join(stateDir, domain.RunFileName)
 		err := config.WriteRun(config.WriteRunParams{
-			ProjectDir: dir,
-			Config:     runCfg,
+			StateDir: stateDir,
+			Config:   runCfg,
 		})
 		if errors.Is(err, config.ErrRunFileExists) {
-			output.Message(cmd.OutOrStdout(), fmt.Sprintf("%s/%s already exists — left untouched", domain.ProjectDirName, domain.RunFileName))
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf("%s already exists — left untouched", runPath))
 		} else if err != nil {
 			return fmt.Errorf("write run config: %w", err)
 		} else {
-			output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s/%s", domain.ProjectDirName, domain.RunFileName))
+			output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s", runPath))
 		}
 	}
 
@@ -144,11 +151,11 @@ func dumpGlobalSchema() error {
 	return nil
 }
 
-// dumpProjectSchemas extracts the bundled JSON Schemas into .wtm/schemas/
+// dumpProjectSchemas extracts the bundled JSON Schemas into <state-dir>/schemas/
 // alongside the project config files so editors (Taplo, etc.) can resolve
 // the `#:schema ./schemas/...json` directive at the top of each TOML.
-func dumpProjectSchemas(projectDir string) error {
-	schemaDir := filepath.Join(projectDir, domain.ProjectDirName, domain.SchemasDirName)
+func dumpProjectSchemas(stateDir string) error {
+	schemaDir := filepath.Join(stateDir, domain.SchemasDirName)
 	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", schemaDir, err)
 	}

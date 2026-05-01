@@ -56,12 +56,12 @@ func runDown(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("get working directory: %w", err)
 		}
 
-		root, err := shared.ProjectRoot(dir)
+		stateDir, err := shared.StateDir(dir)
 		if err != nil {
 			return err
 		}
 
-		runCfg, err := config.LoadRun(root)
+		runCfg, err := config.LoadRun(stateDir)
 		if err != nil {
 			return fmt.Errorf("load run config: %w", err)
 		}

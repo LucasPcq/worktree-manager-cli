@@ -11,11 +11,7 @@ import (
 
 func TestLoadRunRejectsTypoedSection(t *testing.T) {
 	dir := t.TempDir()
-	wtmDir := filepath.Join(dir, domain.ProjectDirName)
-	if err := os.MkdirAll(wtmDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(wtmDir, domain.RunFileName)
+	path := filepath.Join(dir, domain.RunFileName)
 	body := `
 [[job]]
 name = "dev"

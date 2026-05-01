@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/commands/agents"
+	"github.com/LucasPcq/wtm/internal/commands/configcmd"
 	"github.com/LucasPcq/wtm/internal/commands/daemon"
 	"github.com/LucasPcq/wtm/internal/commands/initcmd"
 	"github.com/LucasPcq/wtm/internal/commands/pr"
@@ -33,6 +34,8 @@ func init() {
 	initCmd := initcmd.NewCmd()
 	initCmd.GroupID = domain.CmdGroupSetup
 	rootCmd.AddCommand(initCmd)
+
+	rootCmd.AddCommand(configcmd.NewCmd())
 
 	shellInitCmd := shell.NewCmd()
 	shellInitCmd.GroupID = domain.CmdGroupSetup

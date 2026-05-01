@@ -61,7 +61,8 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		EnvStrategy:  strategy,
 	}
 
-	if err := writeMetadata(worktreePath, metadata); err != nil {
+	metaDir := rules.WorktreeMetaDir(params.StateDir, params.Branch)
+	if err := writeMetadata(metaDir, metadata); err != nil {
 		return domain.CreateResult{}, err
 	}
 
@@ -88,8 +89,7 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 	}, nil
 }
 
-func writeMetadata(worktreePath string, metadata domain.WorktreeMetadata) error {
-	metaDir := filepath.Join(worktreePath, domain.ProjectDirName)
+func writeMetadata(metaDir string, metadata domain.WorktreeMetadata) error {
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", metaDir, err)
 	}

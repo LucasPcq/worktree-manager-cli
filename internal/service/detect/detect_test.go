@@ -163,9 +163,9 @@ func TestProjectConfigExists(t *testing.T) {
 		t.Error("expected false for empty dir")
 	}
 
-	touchFile(t, filepath.Join(dir, domain.ProjectDirName, domain.ConfigFileName))
+	touchFile(t, filepath.Join(dir, domain.ConfigFileName))
 	if !ProjectConfigExists(dir) {
-		t.Error("expected true after creating .wtm.toml")
+		t.Error("expected true after creating config.toml")
 	}
 }
 

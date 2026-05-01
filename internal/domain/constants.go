@@ -17,10 +17,15 @@ const (
 	// ExitCodeUsage indicates invalid usage or bad input.
 	ExitCodeUsage = 2
 
-	// ProjectDirName is the project-level wtm directory.
-	ProjectDirName = ".wtm"
+	// StateDirName is the wtm state directory inside the git common dir
+	// (i.e. <git-common-dir>/wtm/). Never committed — git ignores .git/.
+	StateDirName = "wtm"
 
-	// ConfigFileName is the project-level config file name (inside .wtm/).
+	// WorktreesSubdir is the subdirectory under the state dir that holds
+	// per-worktree metadata: <state-dir>/worktrees/<encoded-branch>/.
+	WorktreesSubdir = "worktrees"
+
+	// ConfigFileName is the project-level config file name (inside <state-dir>/).
 	ConfigFileName = "config.toml"
 
 	// GlobalConfigDir is the subdirectory under ~/.config for wtm.
@@ -83,6 +88,12 @@ const (
 	FlagReplace   = "replace"
 	FlagMine      = "mine"
 	FlagReview    = "review"
+	FlagCmd       = "cmd"
+	FlagKind      = "kind"
+	FlagStop      = "stop"
+	FlagCwd       = "cwd"
+	FlagJobs      = "jobs"
+	FlagDefault   = "default"
 
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches
@@ -96,10 +107,10 @@ const (
 	OutputText = "text"
 	OutputJSON = "json"
 
-	// RunFileName is the run config file name (inside .wtm/).
+	// RunFileName is the run config file name (inside <state-dir>/).
 	RunFileName = "run.toml"
 
-	// SchemasDirName is the directory (inside .wtm/ or under the global
+	// SchemasDirName is the directory (inside <state-dir>/ or under the global
 	// config dir) where `wtm schema dump` writes the JSON Schema files
 	// that editors reference via the TOML `#:schema` directive.
 	SchemasDirName = "schemas"
@@ -109,8 +120,11 @@ const (
 	JobActionStopped = "stopped"
 	JobActionDone    = "done"
 	JobActionError   = "error"
+	JobActionAdded   = "added"
+	JobActionRemoved = "removed"
+	JobActionUpdated = "updated"
 
-	// Metadata files created inside each worktree's .wtm/ directory.
+	// Metadata files created per worktree inside <state-dir>/worktrees/<branch>/.
 	MetaFileName    = "meta.json"
 	ContextFileName = "context.md"
 
@@ -139,6 +153,11 @@ const (
 	CmdCheckout = "checkout"
 	CmdExport   = "export"
 	CmdImport   = "import"
+	CmdJob      = "job"
+	CmdProfile  = "profile"
+	CmdAdd      = "add"
+	CmdRm       = "rm"
+	CmdEdit     = "edit"
 
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"

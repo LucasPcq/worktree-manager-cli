@@ -15,15 +15,18 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 )
 
-// ConfigResult holds the loaded config and the resolved project root.
+// ConfigResult holds the loaded config along with the resolved paths every
+// command needs: the main worktree (for git ops & BasePath resolution) and
+// the state dir (for wtm config / run / metadata files).
 type ConfigResult struct {
 	Config     domain.Config
 	ProjectDir string
+	StateDir   string
 }
 
-// ProjectRoot returns the main worktree path (where .wtm/config.toml lives).
-// Works from any worktree — resolves back to the parent repo.
-// WTM_PROJECT_DIR overrides git resolution; useful in tests and CI.
+// ProjectRoot returns the main worktree path. Works from any worktree —
+// resolves back to the parent repo. WTM_PROJECT_DIR overrides git resolution;
+// useful in tests and CI.
 func ProjectRoot(dir string) (string, error) {
 	if override := os.Getenv("WTM_PROJECT_DIR"); override != "" {
 		return override, nil
@@ -37,8 +40,9 @@ func ProjectRoot(dir string) (string, error) {
 	return mainPath, nil
 }
 
-// LoadConfig resolves the project root and loads .wtm/config.toml from there.
-// Returns the config and root path, or prints an error and returns false.
+// LoadConfig resolves the main worktree + state dir and loads config.toml
+// from the state dir. Returns the config and resolved paths, or prints an
+// error and returns false.
 func LoadConfig(cmd *cobra.Command, dir string) (ConfigResult, bool) {
 	root, err := ProjectRoot(dir)
 	if err != nil {
@@ -46,9 +50,15 @@ func LoadConfig(cmd *cobra.Command, dir string) (ConfigResult, bool) {
 		return ConfigResult{}, false
 	}
 
-	cfg, err := config.Load(config.LoadParams{ProjectDir: root})
+	stateDir, err := StateDir(dir)
+	if err != nil {
+		output.Error(cmd.ErrOrStderr(), err.Error())
+		return ConfigResult{}, false
+	}
+
+	cfg, err := config.Load(config.LoadParams{StateDir: stateDir})
 	if errors.Is(err, domain.ErrConfigNotFound) {
-		output.Warning(cmd.ErrOrStderr(), "No .wtm/config.toml found. Run `wtm init` first.")
+		output.Warning(cmd.ErrOrStderr(), "No wtm config found. Run `wtm init` first.")
 		return ConfigResult{}, false
 	}
 	if err != nil {
@@ -56,7 +66,7 @@ func LoadConfig(cmd *cobra.Command, dir string) (ConfigResult, bool) {
 		return ConfigResult{}, false
 	}
 
-	return ConfigResult{Config: cfg, ProjectDir: root}, true
+	return ConfigResult{Config: cfg, ProjectDir: root, StateDir: stateDir}, true
 }
 
 // AddOutputFlag registers the standard --output flag on cmd.

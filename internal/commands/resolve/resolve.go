@@ -78,6 +78,7 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 
 	statuses, err := worktree.List(domain.ListParams{
 		ProjectDir: cfgResult.ProjectDir,
+		StateDir:   cfgResult.StateDir,
 		Config:     cfgResult.Config,
 	})
 	if err != nil {

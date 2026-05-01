@@ -13,13 +13,13 @@ import (
 
 // LoadParams holds the inputs for loading configuration.
 type LoadParams struct {
-	ProjectDir string
+	StateDir string
 }
 
 // Load reads project and global config files, merges them, applies defaults,
-// and validates the result. Returns ErrConfigNotFound if .wtm.toml is absent.
+// and validates the result. Returns ErrConfigNotFound if config.toml is absent.
 func Load(params LoadParams) (domain.Config, error) {
-	projectPath := filepath.Join(params.ProjectDir, domain.ProjectDirName, domain.ConfigFileName)
+	projectPath := filepath.Join(params.StateDir, domain.ConfigFileName)
 
 	project, err := loadProjectConfig(projectPath)
 	if err != nil {
@@ -41,7 +41,7 @@ func Load(params LoadParams) (domain.Config, error) {
 	return cfg, nil
 }
 
-// loadProjectConfig reads and parses the project .wtm.toml file.
+// loadProjectConfig reads and parses the project config.toml file.
 // Returns ErrConfigNotFound if the file does not exist.
 func loadProjectConfig(path string) (domain.ProjectConfig, error) {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {

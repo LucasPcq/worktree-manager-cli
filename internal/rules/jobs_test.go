@@ -71,3 +71,70 @@ func jobNames(jobs []domain.JobConfig) []string {
 	}
 	return out
 }
+
+func TestFindExistingDefaultProfile(t *testing.T) {
+	cfg := domain.RunConfig{
+		Profiles: []domain.ProfileConfig{
+			{Name: "dev", Default: true},
+			{Name: "ci"},
+		},
+	}
+
+	if got := FindExistingDefaultProfile(cfg, ""); got != "dev" {
+		t.Errorf("expected 'dev', got %q", got)
+	}
+	if got := FindExistingDefaultProfile(cfg, "dev"); got != "" {
+		t.Errorf("expected empty when excluding 'dev', got %q", got)
+	}
+	if got := FindExistingDefaultProfile(domain.RunConfig{}, ""); got != "" {
+		t.Errorf("expected empty for empty cfg, got %q", got)
+	}
+}
+
+func TestApplyDefaultOverride(t *testing.T) {
+	cfg := domain.RunConfig{
+		Profiles: []domain.ProfileConfig{
+			{Name: "dev", Default: true},
+			{Name: "ci", Default: true},
+			{Name: "staging"},
+		},
+	}
+
+	out := ApplyDefaultOverride(cfg, "ci")
+
+	for _, p := range out.Profiles {
+		switch p.Name {
+		case "ci":
+			if !p.Default {
+				t.Errorf("expected 'ci' to keep Default=true, got false")
+			}
+		case "dev":
+			if p.Default {
+				t.Errorf("expected 'dev' to be flipped to Default=false, got true")
+			}
+		case "staging":
+			if p.Default {
+				t.Errorf("expected 'staging' Default to remain false")
+			}
+		}
+	}
+
+	// Input must not be mutated.
+	if !cfg.Profiles[0].Default {
+		t.Errorf("ApplyDefaultOverride must not mutate input — original 'dev' was flipped")
+	}
+}
+
+func TestApplyDefaultOverride_NoDefaultsToFlip(t *testing.T) {
+	cfg := domain.RunConfig{
+		Profiles: []domain.ProfileConfig{
+			{Name: "dev", Default: true},
+		},
+	}
+
+	out := ApplyDefaultOverride(cfg, "dev")
+
+	if !out.Profiles[0].Default {
+		t.Errorf("expected 'dev' to remain Default=true")
+	}
+}

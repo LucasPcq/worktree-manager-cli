@@ -18,23 +18,23 @@ var ErrRunFileExists = errors.New("run file already exists")
 
 // WriteProjectParams holds the inputs for writing a project config file.
 type WriteProjectParams struct {
-	ProjectDir string
-	Answers    domain.InitProjectAnswers
+	StateDir string
+	Answers  domain.InitProjectAnswers
 }
 
-// WriteProject renders the .wtm.toml template and writes it to the project directory.
+// WriteProject renders the project config template and writes it to
+// <state-dir>/config.toml.
 func WriteProject(params WriteProjectParams) error {
 	var buf bytes.Buffer
 	if err := parsedTemplate.Execute(&buf, params.Answers); err != nil {
 		return fmt.Errorf("render template: %w", err)
 	}
 
-	dir := filepath.Join(params.ProjectDir, domain.ProjectDirName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", dir, err)
+	if err := os.MkdirAll(params.StateDir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", params.StateDir, err)
 	}
 
-	path := filepath.Join(dir, domain.ConfigFileName)
+	path := filepath.Join(params.StateDir, domain.ConfigFileName)
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
@@ -44,23 +44,22 @@ func WriteProject(params WriteProjectParams) error {
 
 // WriteRunParams holds the inputs for writing a run config file.
 type WriteRunParams struct {
-	ProjectDir string
-	Config     domain.RunConfig
-	Force      bool // overwrite .wtm/run.toml if it already exists
+	StateDir string
+	Config   domain.RunConfig
+	Force    bool // overwrite run.toml if it already exists
 }
 
-// WriteRun encodes cfg as TOML and writes it to .wtm/run.toml.
+// WriteRun encodes cfg as TOML and writes it to <state-dir>/run.toml.
 // Returns ErrRunFileExists if the file already exists and Force is false.
 func WriteRun(params WriteRunParams) error {
-	dir := filepath.Join(params.ProjectDir, domain.ProjectDirName)
-	path := filepath.Join(dir, domain.RunFileName)
+	path := filepath.Join(params.StateDir, domain.RunFileName)
 
 	if _, err := os.Stat(path); err == nil && !params.Force {
 		return ErrRunFileExists
 	}
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", dir, err)
+	if err := os.MkdirAll(params.StateDir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", params.StateDir, err)
 	}
 
 	var buf bytes.Buffer

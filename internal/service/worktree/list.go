@@ -25,7 +25,7 @@ func List(params domain.ListParams) ([]domain.WorktreeStatus, error) {
 	statuses := make([]domain.WorktreeStatus, 0, len(gitWorktrees))
 
 	for _, gitWorktree := range gitWorktrees {
-		status := buildStatus(gitWorktree, baseBranch)
+		status := buildStatus(gitWorktree, baseBranch, params.StateDir)
 		statuses = append(statuses, status)
 	}
 
@@ -34,7 +34,7 @@ func List(params domain.ListParams) ([]domain.WorktreeStatus, error) {
 	return statuses, nil
 }
 
-func buildStatus(gitWorktree domain.GitWorktree, baseBranch string) domain.WorktreeStatus {
+func buildStatus(gitWorktree domain.GitWorktree, baseBranch, stateDir string) domain.WorktreeStatus {
 	dirty, _ := infra.IsDirty(infra.IsDirtyParams{WorktreePath: gitWorktree.Path})
 
 	ahead := 0
@@ -52,12 +52,15 @@ func buildStatus(gitWorktree domain.GitWorktree, baseBranch string) domain.Workt
 		IsParent:     gitWorktree.IsMain,
 		IsDirty:      dirty,
 		CommitsAhead: ahead,
-		CreatedAt:    worktreeCreatedAt(gitWorktree.Path),
+		CreatedAt:    worktreeCreatedAt(stateDir, gitWorktree.Branch, gitWorktree.Path),
 	}
 }
 
-func worktreeCreatedAt(wtPath string) time.Time {
-	metaPath := filepath.Join(wtPath, domain.ProjectDirName, domain.MetaFileName)
+// worktreeCreatedAt reads the recorded creation time from the per-worktree
+// meta.json. Falls back to the worktree directory mtime when meta is absent
+// (e.g. worktrees created outside wtm).
+func worktreeCreatedAt(stateDir, branch, fallbackPath string) time.Time {
+	metaPath := filepath.Join(rules.WorktreeMetaDir(stateDir, branch), domain.MetaFileName)
 	data, err := os.ReadFile(metaPath)
 	if err == nil {
 		var meta domain.WorktreeMetadata
@@ -69,7 +72,7 @@ func worktreeCreatedAt(wtPath string) time.Time {
 		}
 	}
 
-	info, err := os.Stat(wtPath)
+	info, err := os.Stat(fallbackPath)
 	if err != nil {
 		return time.Time{}
 	}

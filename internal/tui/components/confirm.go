@@ -12,6 +12,7 @@ import (
 type ConfirmModel struct {
 	title     string
 	desc      string
+	warning   string
 	cursor    int
 	width     int
 	done      bool
@@ -26,10 +27,11 @@ func NewConfirm(params NewConfirmParams) ConfirmModel {
 		cursor = 0
 	}
 	return ConfirmModel{
-		title: params.Title,
-		desc:  params.Description,
-		width: 80,
-		cursor: cursor,
+		title:   params.Title,
+		desc:    params.Description,
+		warning: params.Warning,
+		width:   80,
+		cursor:  cursor,
 	}
 }
 
@@ -37,7 +39,10 @@ func NewConfirm(params NewConfirmParams) ConfirmModel {
 type NewConfirmParams struct {
 	Title       string
 	Description string
-	DefaultYes  bool
+	// Warning, when non-empty, renders above the Yes/No options as a styled
+	// "! message" banner — same look as output.Warning, mirrored inside the wizard.
+	Warning    string
+	DefaultYes bool
 }
 
 // Done returns true after the user confirmed or denied.
@@ -81,6 +86,11 @@ func (m ConfirmModel) Update(msg tea.Msg) (ConfirmModel, tea.Cmd) {
 // View renders the yes/no prompt.
 func (m ConfirmModel) View() string {
 	var b strings.Builder
+
+	if m.warning != "" {
+		b.WriteString(warningBanner(m.warning))
+		b.WriteString("\n\n")
+	}
 
 	options := [2]string{"Yes", "No"}
 

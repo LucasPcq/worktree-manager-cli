@@ -9,7 +9,8 @@ type Worktree struct {
 	Branch string
 }
 
-// WorktreeMetadata is written to .wtm/meta.json inside each created worktree.
+// WorktreeMetadata is written to <state-dir>/worktrees/<branch>/meta.json
+// for every worktree managed by wtm.
 type WorktreeMetadata struct {
 	SourceBranch string      `json:"source_branch"`
 	CreatedAt    string      `json:"created_at"`
@@ -56,6 +57,7 @@ type GitWorktree struct {
 // CreateParams holds all inputs needed to create a new worktree.
 type CreateParams struct {
 	ProjectDir      string
+	StateDir        string
 	Branch          string
 	FromBranch      string
 	Config          Config
@@ -91,6 +93,7 @@ type CleanCheckResult struct {
 // ListParams holds inputs for listing worktrees with status.
 type ListParams struct {
 	ProjectDir string
+	StateDir   string
 	Config     Config
 }
 

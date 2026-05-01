@@ -126,6 +126,7 @@ func checkoutPR(cmd *cobra.Command, result shared.ConfigResult, params checkoutP
 	output.Loading(cmd.ErrOrStderr(), fmt.Sprintf("Creating worktree %s...", p.Branch))
 	createResult, err := worktree.Create(domain.CreateParams{
 		ProjectDir:      result.ProjectDir,
+		StateDir:        result.StateDir,
 		Branch:          p.Branch,
 		FromBranch:      "origin/" + p.Branch,
 		Config:          result.Config,

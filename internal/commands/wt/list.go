@@ -45,6 +45,7 @@ func runList(cmd *cobra.Command, _ []string) error {
 
 	statuses, err := worktree.List(domain.ListParams{
 		ProjectDir: result.ProjectDir,
+		StateDir:   result.StateDir,
 		Config:     result.Config,
 	})
 	if err != nil {

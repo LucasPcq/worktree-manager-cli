@@ -14,7 +14,14 @@ import (
 // JobActionResult is a single job's outcome emitted by `run *` commands.
 type JobActionResult struct {
 	Name    string `json:"name"`
-	Status  string `json:"status"`            // "started", "stopped", "done", "error"
+	Status  string `json:"status"`            // "started", "stopped", "done", "error", "added", "removed"
+	Message string `json:"message,omitempty"` // error detail when Status == "error"
+}
+
+// ProfileActionResult is a single profile's outcome emitted by `run profile` commands.
+type ProfileActionResult struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`            // "added", "removed"
 	Message string `json:"message,omitempty"` // error detail when Status == "error"
 }
 
@@ -35,6 +42,11 @@ func WriteJobResultsJSON(w io.Writer, results []JobActionResult) error {
 
 // WriteJobResultJSON writes a single job outcome (start/stop single job).
 func WriteJobResultJSON(w io.Writer, result JobActionResult) error {
+	return encodeJSON(w, result)
+}
+
+// WriteProfileResultJSON writes a single profile outcome.
+func WriteProfileResultJSON(w io.Writer, result ProfileActionResult) error {
 	return encodeJSON(w, result)
 }
 
@@ -88,6 +100,22 @@ func WriteRunConfigJSON(w io.Writer, cfg domain.RunConfig) error {
 		cfg.Profiles = []domain.ProfileConfig{}
 	}
 	return encodeJSON(w, cfg)
+}
+
+// WriteJobsJSON writes the JSON array of jobs for `run job list`.
+func WriteJobsJSON(w io.Writer, jobs []domain.JobConfig) error {
+	if jobs == nil {
+		jobs = []domain.JobConfig{}
+	}
+	return encodeJSON(w, jobs)
+}
+
+// WriteProfilesJSON writes the JSON array of profiles for `run profile list`.
+func WriteProfilesJSON(w io.Writer, profiles []domain.ProfileConfig) error {
+	if profiles == nil {
+		profiles = []domain.ProfileConfig{}
+	}
+	return encodeJSON(w, profiles)
 }
 
 // WriteRunningJobsJSON writes the JSON payload for `run ps`.
@@ -147,7 +175,7 @@ func FormatRunConfig(cfg domain.RunConfig) string {
 
 	if len(cfg.Profiles) == 0 && len(cfg.Jobs) == 0 {
 		b.WriteString(Indent)
-		b.WriteString("No jobs or profiles defined in .wtm/run.toml.\n")
+		b.WriteString("No jobs or profiles defined in run.toml.\n")
 	}
 
 	return b.String()

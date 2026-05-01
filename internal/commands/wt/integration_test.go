@@ -23,10 +23,12 @@ func runWtCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
 
 func TestWtCreateAndClean(t *testing.T) {
 	dir := gittest.InitRepo(t)
+	stateDir := filepath.Join(dir, ".git", "wtm")
 	t.Setenv("WTM_PROJECT_DIR", dir)
+	t.Setenv("WTM_STATE_DIR", stateDir)
 	t.Setenv(domain.EnvGoFile, "")
 
-	if err := setupMinimalConfig(t, dir); err != nil {
+	if err := setupMinimalConfig(t, stateDir); err != nil {
 		t.Fatalf("setup config: %v", err)
 	}
 
@@ -55,10 +57,9 @@ func TestWtCreateAndClean(t *testing.T) {
 	}
 }
 
-func setupMinimalConfig(t *testing.T, dir string) error {
+func setupMinimalConfig(t *testing.T, stateDir string) error {
 	t.Helper()
-	wtmDir := filepath.Join(dir, domain.ProjectDirName)
-	if err := os.MkdirAll(wtmDir, 0o755); err != nil {
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return err
 	}
 	content := `#:schema ./schemas/project.schema.json
@@ -82,5 +83,5 @@ auto_draft = false
 vscode_project_manager = false
 cursor_project_manager = false
 `
-	return os.WriteFile(filepath.Join(wtmDir, domain.ConfigFileName), []byte(content), 0o644)
+	return os.WriteFile(filepath.Join(stateDir, domain.ConfigFileName), []byte(content), 0o644)
 }

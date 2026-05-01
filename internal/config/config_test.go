@@ -52,9 +52,9 @@ func writeFile(t *testing.T, dir string, name string, content string) {
 
 func TestLoadFullConfig(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, domain.ProjectDirName), domain.ConfigFileName, fullToml)
+	writeFile(t, dir, domain.ConfigFileName, fullToml)
 
-	cfg, err := Load(LoadParams{ProjectDir: dir})
+	cfg, err := Load(LoadParams{StateDir: dir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,9 +81,9 @@ func TestLoadFullConfig(t *testing.T) {
 
 func TestLoadMinimalConfigAppliesDefaults(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, domain.ProjectDirName), domain.ConfigFileName, minimalToml)
+	writeFile(t, dir, domain.ConfigFileName, minimalToml)
 
-	cfg, err := Load(LoadParams{ProjectDir: dir})
+	cfg, err := Load(LoadParams{StateDir: dir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestLoadMinimalConfigAppliesDefaults(t *testing.T) {
 func TestLoadMissingProjectConfigReturnsError(t *testing.T) {
 	dir := t.TempDir()
 
-	_, err := Load(LoadParams{ProjectDir: dir})
+	_, err := Load(LoadParams{StateDir: dir})
 	if !errors.Is(err, domain.ErrConfigNotFound) {
 		t.Errorf("expected ErrConfigNotFound, got %v", err)
 	}
@@ -116,12 +116,12 @@ func TestLoadMissingProjectConfigReturnsError(t *testing.T) {
 
 func TestHookCommandStringParsing(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, domain.ProjectDirName), domain.ConfigFileName, `
+	writeFile(t, dir, domain.ConfigFileName, `
 [hooks]
 on_create = ["pnpm install"]
 `)
 
-	cfg, err := Load(LoadParams{ProjectDir: dir})
+	cfg, err := Load(LoadParams{StateDir: dir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -141,14 +141,14 @@ on_create = ["pnpm install"]
 
 func TestHookCommandObjectParsing(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, domain.ProjectDirName), domain.ConfigFileName, `
+	writeFile(t, dir, domain.ConfigFileName, `
 [hooks]
 on_create = [
   { cmd = "pnpm install", cwd = "apps/api" },
 ]
 `)
 
-	cfg, err := Load(LoadParams{ProjectDir: dir})
+	cfg, err := Load(LoadParams{StateDir: dir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -168,9 +168,9 @@ on_create = [
 
 func TestHookCommandMixedParsing(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, domain.ProjectDirName), domain.ConfigFileName, fullToml)
+	writeFile(t, dir, domain.ConfigFileName, fullToml)
 
-	cfg, err := Load(LoadParams{ProjectDir: dir})
+	cfg, err := Load(LoadParams{StateDir: dir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -220,12 +220,12 @@ func TestMergeProjectOverridesGlobal(t *testing.T) {
 
 func TestLoad_CorruptedTOML(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, domain.ProjectDirName), domain.ConfigFileName, `
+	writeFile(t, dir, domain.ConfigFileName, `
 [worktrees
 this is not valid toml !!!
 `)
 
-	_, err := Load(LoadParams{ProjectDir: dir})
+	_, err := Load(LoadParams{StateDir: dir})
 	if err == nil {
 		t.Fatal("expected error for corrupted TOML, got nil")
 	}

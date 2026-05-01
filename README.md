@@ -87,7 +87,9 @@ wtm init
 
 On first run, creates two files:
 - **Global config** (`~/.config/wtm/config.toml`) — shell type, default AI agent
-- **Project config** (`.wtm/config.toml`) — worktree settings, env strategy, hooks
+- **Project config** (`<git-common-dir>/wtm/config.toml`) — worktree settings, env strategy, hooks
+
+Both files live outside the working tree, so nothing is ever committed to your repo. The project config is scoped to your local clone (it lives inside `.git/`), invisible to teammates and to `git status`.
 
 The wizard auto-detects:
 - Default branch (via `git symbolic-ref`)
@@ -96,7 +98,29 @@ The wizard auto-detects:
 - Docker Compose files
 - Monorepo packages (via `pnpm-workspace.yaml`)
 
-If `.wtm/config.toml` already exists, the command exits — delete it or edit manually to reconfigure.
+If a project config already exists, the command exits — use `wtm config edit` to modify it.
+
+---
+
+### `wtm config` — Inspect or edit the project config
+
+#### `wtm config show`
+
+Print the resolved `config.toml` and its on-disk path.
+
+```bash
+wtm config show
+```
+
+#### `wtm config edit`
+
+Open `<git-common-dir>/wtm/config.toml` in `$EDITOR` (falls back to `vi`). After save, the file is re-validated and any error is surfaced.
+
+```bash
+wtm config edit
+```
+
+`#:schema` directives at the top of the file resolve to the bundled JSON schemas, so editors like VS Code (with [Even Better TOML](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)) auto-complete every field.
 
 ---
 
@@ -136,8 +160,8 @@ wtm wt create feature/auth --from main --env-from parent
 **What happens:**
 1. Creates a git worktree at `<base_path>/<branch-name>` (slashes become dashes)
 2. Copies `.env` files according to the configured strategy
-3. Creates `.wtm/meta.json` (source branch, timestamp, strategy used)
-4. Creates `.wtm/context.md` (empty, for your notes)
+3. Records `meta.json` (source branch, timestamp, strategy used) under `<git-common-dir>/wtm/worktrees/<branch>/`
+4. Creates an empty `context.md` next to it for your notes
 5. Runs `on_create` hooks
 
 **Flags:**
@@ -219,7 +243,7 @@ wtm wt clean feature/auth --force   # skip all safety checks
 
 #### `wtm run list`
 
-List the jobs and profiles declared in `.wtm/run.toml`. In a terminal, shows an interactive picker with inline actions (start/stop/logs).
+List the jobs and profiles declared in `run.toml`. In a terminal, shows an interactive picker with inline actions (start/stop/logs).
 
 ```bash
 wtm run list                # picker if TTY, table if piped
@@ -239,7 +263,7 @@ wtm run ps --output json    # machine-readable
 
 #### `wtm run up [profile]`
 
-Execute a profile defined in `.wtm/run.toml`. Jobs run in declared order — services launch in the background, tasks block and stream output. A failing task aborts the rest of the profile.
+Execute a profile defined in `run.toml`. Jobs run in declared order — services launch in the background, tasks block and stream output. A failing task aborts the rest of the profile.
 
 ```bash
 wtm run up                  # start default profile (or picker if multiple)
@@ -298,7 +322,7 @@ Press `Ctrl+C` to detach — services keep running in the background.
 
 #### `wtm run export`
 
-Emit `.wtm/run.toml` as JSON on stdout — useful for sharing a service layout between projects or teammates.
+Emit `run.toml` as JSON on stdout — useful for sharing a service layout between projects or teammates.
 
 ```bash
 wtm run export                     # full config as JSON
@@ -311,12 +335,66 @@ wtm run export > layout.json       # save to file
 Ingest a JSON run config. Pass a file path, `-`, or omit the argument to read from stdin.
 
 ```bash
-wtm run import layout.json                    # merge into .wtm/run.toml
+wtm run import layout.json                    # merge into run.toml
 wtm run import layout.json --replace --force  # overwrite entirely
 wtm run export | wtm run import -             # roundtrip (no-op when names match)
 ```
 
 By default, new jobs and profiles are appended; duplicate names are skipped with a warning.
+
+#### `wtm run job add|rm|edit` — CRUD on jobs
+
+Manage individual jobs in `run.toml` without opening the file by hand.
+
+```bash
+# Add a service (flag-driven, LLM-friendly)
+wtm run job add api --cmd "go run ./cmd/api" --kind service --stop "pkill api"
+
+# Add a task
+wtm run job add migrate --cmd "make migrate" --kind task
+
+# Add interactively (wizard pops up when name or --cmd is missing)
+wtm run job add
+
+# Remove (no arg → interactive picker)
+wtm run job rm                   # picker over all jobs
+wtm run job rm migrate           # by name; errors if any profile references the job
+wtm run job rm migrate --force   # also strips the reference from those profiles
+
+# Edit (no arg → interactive picker → pre-filled wizard)
+wtm run job edit                 # picker, then wizard
+wtm run job edit api             # straight to the pre-filled wizard
+
+# List (TTY = picker → Edit/Remove menu; non-TTY or --output json = listing)
+wtm run job list
+wtm run job list --output json
+```
+
+#### `wtm run profile add|rm|edit` — CRUD on profiles
+
+```bash
+# Add a profile (flag-driven)
+wtm run profile add dev --jobs api,migrate --default
+
+# Add interactively
+wtm run profile add
+
+# Remove (no arg → picker; jobs are left untouched)
+wtm run profile rm
+wtm run profile rm dev
+
+# Edit (no arg → picker → pre-filled wizard)
+wtm run profile edit
+wtm run profile edit dev
+
+# List (same pattern as run job list)
+wtm run profile list
+wtm run profile list --output json
+```
+
+When you mark a profile as `--default` (or via the wizard) while another profile is already the default, the previous default is automatically unset — no need to clear it first.
+
+All `add` / `rm` commands support `--output text|json`. `edit` is intrinsically interactive.
 
 ---
 
@@ -396,9 +474,23 @@ See also [Teach your LLM to use wtm](#teach-your-llm-to-use-wtm) above — `wtm 
 
 ## Configuration
 
-### Project config — `.wtm/config.toml`
+All wtm files live under `<git-common-dir>/wtm/` (i.e. `.git/wtm/` for a normal clone — `git rev-parse --git-common-dir` for the exact path). Git never commits anything inside `.git/`, so wtm is invisible to teammates and to `git status`. Worktree usage is personal: each developer can adopt or skip wtm without affecting the rest of the team.
 
-Generated by `wtm init`. Committed to the repo — shared by the team.
+```
+<git-common-dir>/wtm/
+├── config.toml                       # project-level settings (this section)
+├── run.toml                          # jobs + profiles (next section)
+├── schemas/                          # JSON schemas for editor auto-complete
+└── worktrees/<encoded-branch>/
+    ├── meta.json                     # per-worktree metadata
+    └── context.md                    # per-worktree notes
+```
+
+You can edit any file by hand if you want — they're plain TOML, validated at load time. The discoverable path is `wtm config show` / `wtm config edit` and the `wtm run import` flow.
+
+### Project config — `<git-common-dir>/wtm/config.toml`
+
+Generated by `wtm init`. Per-clone — never committed.
 
 ```toml
 [worktrees]
@@ -487,9 +579,9 @@ on_create = [
 
 ---
 
-### Run config — `.wtm/run.toml`
+### Run config — `<git-common-dir>/wtm/run.toml`
 
-Optional file for managing dev jobs — long-running services (dev servers, docker, workers) and one-shot tasks (migrations, seeds, formatters). Committed to the repo — shared by the team.
+Optional file for managing dev jobs — long-running services (dev servers, docker, workers) and one-shot tasks (migrations, seeds, formatters). Per-clone — never committed. Use `wtm run export | wtm run import -` to share layouts between machines or teammates.
 
 ```toml
 [[job]]
@@ -536,7 +628,7 @@ jobs = ["docker", "migrate"]
 
 Services run in a background daemon with PTY support. Press `Ctrl+C` to detach without killing them. Tasks run inline and stream their output back over the daemon's connection.
 
-Each worktree has its own copy of this file (it's versioned in git), so jobs started in worktree A are independent from worktree B.
+`run.toml` is shared across every worktree of the same clone (loaded from the main repo's git common dir). Jobs are scoped per worktree at runtime: starting `dev` from worktree A runs it with `cwd = A`, starting it from worktree B runs a separate process. The daemon tracks them independently and `wtm run down` only stops jobs from the current worktree unless you pass `--all`.
 
 ---
 
@@ -549,7 +641,7 @@ shell = "zsh"          # zsh | bash | fish
 agent = "claude-code"  # claude-code | cursor | none
 ```
 
-The project `.wtm/config.toml` can override the agent setting. Shell is always global.
+The project `config.toml` can override the agent setting. Shell is always global.
 
 ---
 
@@ -561,23 +653,25 @@ Every TOML file `wtm init` writes starts with a `#:schema ./schemas/...json` dir
 - **Hover docs** describing each option
 - **Real-time validation** flagging unknown keys, missing required fields, and bad enum values before you ever run wtm
 
-The schemas are bundled with the binary. `wtm init` writes them to `.wtm/schemas/` so the directive resolves locally — no internet required. Re-extract them after upgrading wtm with:
+The schemas are bundled with the binary. `wtm init` writes them to `<git-common-dir>/wtm/schemas/` so the directive resolves locally — no internet required. Re-extract them after upgrading wtm with:
 
 ```bash
-wtm schema dump            # writes .wtm/schemas/{run,project}.schema.json
+wtm schema dump            # writes <git-common-dir>/wtm/schemas/{run,project}.schema.json
 wtm schema dump --global   # writes ~/.config/wtm/schemas/global.schema.json
 ```
 
-Even without the editor extension, wtm itself rejects unknown keys at load time — typos like `[[profiles]]` instead of `[[profile]]` surface as `unknown keys in /path/.wtm/run.toml: profiles` rather than being silently ignored.
+Even without the editor extension, wtm itself rejects unknown keys at load time — typos like `[[profiles]]` instead of `[[profile]]` surface as `unknown keys in <path>/run.toml: profiles` rather than being silently ignored.
 
 ---
 
 ## Worktree metadata
 
-Each worktree created by `wtm wt create` contains a `.wtm/` directory with:
+Each worktree created by `wtm wt create` records two files under `<git-common-dir>/wtm/worktrees/<encoded-branch>/`:
 
 - **`meta.json`** — source branch, creation timestamp, env strategy used
 - **`context.md`** — empty file for your notes (branch context, PR links, etc.)
+
+Branch names are URL-path-escaped on disk (e.g. `feat/x` → `feat%2Fx/`) so slashes don't create nested directories. Both files live alongside `git`'s own per-worktree state, completely outside the working tree.
 
 ---
 

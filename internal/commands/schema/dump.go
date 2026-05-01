@@ -16,8 +16,8 @@ import (
 func newDumpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dump",
-		Short: "Write embedded schemas to .wtm/schemas/ (or ~/.config/wtm/schemas with --global)",
-		Long:  "Extract every JSON Schema bundled with this wtm binary so editors can resolve the `#:schema` directives in your TOML files.\nProject schemas land in .wtm/schemas/. Use --global to write the global schema next to ~/.config/wtm/config.toml.",
+		Short: "Write embedded schemas to <state-dir>/schemas/ (or ~/.config/wtm/schemas with --global)",
+		Long:  "Extract every JSON Schema bundled with this wtm binary so editors can resolve the `#:schema` directives in your TOML files.\nProject schemas land in <git-common-dir>/wtm/schemas/. Use --global to write the global schema next to ~/.config/wtm/config.toml.",
 		RunE:  runDump,
 	}
 	cmd.Flags().Bool(domain.FlagGlobal, false, "Write the global config schema instead of the project ones")
@@ -49,11 +49,11 @@ func runDump(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
 	}
-	root, err := shared.ProjectRoot(wd)
+	stateDir, err := shared.StateDir(wd)
 	if err != nil {
 		return err
 	}
-	schemaDir := filepath.Join(root, domain.ProjectDirName, domain.SchemasDirName)
+	schemaDir := filepath.Join(stateDir, domain.SchemasDirName)
 	written, err := writeSchemas(schemaDir, []schemas.Schema{schemas.Project, schemas.Run})
 	if err != nil {
 		return err

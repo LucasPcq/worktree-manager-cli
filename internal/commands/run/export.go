@@ -17,7 +17,7 @@ import (
 func newExportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdExport,
-		Short: "Export .wtm/run.toml as JSON on stdout",
+		Short: "Export run.toml as JSON on stdout",
 		Long:  "Emit the current run config as JSON. Pipe to a file and use with wtm run import to share configurations.",
 		RunE:  runExport,
 	}
@@ -36,7 +36,7 @@ func runExport(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	runCfg, err := config.LoadRun(result.ProjectDir)
+	runCfg, err := config.LoadRun(result.StateDir)
 	if err != nil {
 		return fmt.Errorf("load run config: %w", err)
 	}

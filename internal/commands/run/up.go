@@ -45,7 +45,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	runCfg, err := config.LoadRun(result.ProjectDir)
+	runCfg, err := config.LoadRun(result.StateDir)
 	if err != nil {
 		return fmt.Errorf("load run config: %w", err)
 	}

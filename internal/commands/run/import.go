@@ -20,8 +20,8 @@ import (
 func newImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdImport + " [file]",
-		Short: "Import a JSON run config into .wtm/run.toml",
-		Long: `Read a JSON run config payload from a file (or stdin) and merge it into .wtm/run.toml.
+		Short: "Import a JSON run config into run.toml",
+		Long: `Read a JSON run config payload from a file (or stdin) and merge it into run.toml.
 
 Pass "-" or omit the argument to read from stdin.
 
@@ -30,7 +30,7 @@ Use --replace --force to overwrite the file entirely.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: runImport,
 	}
-	cmd.Flags().Bool(domain.FlagReplace, false, "Overwrite .wtm/run.toml entirely (requires --force)")
+	cmd.Flags().Bool(domain.FlagReplace, false, "Overwrite run.toml entirely (requires --force)")
 	cmd.Flags().Bool(domain.FlagForce, false, "Confirm destructive --replace")
 	shared.AddOutputFlag(cmd)
 	return cmd
@@ -71,23 +71,23 @@ func runImport(cmd *cobra.Command, args []string) error {
 	}
 
 	if replace {
-		return writeAndReport(cmd, result.ProjectDir, incoming, rules.MergeResult{}, format, true)
+		return writeAndReport(cmd, result.StateDir, incoming, rules.MergeResult{}, format, true)
 	}
 
-	existing, err := config.LoadRun(result.ProjectDir)
+	existing, err := config.LoadRun(result.StateDir)
 	if err != nil {
 		return fmt.Errorf("load existing run config: %w", err)
 	}
 
 	merged, mergeResult := rules.MergeRunConfigs(existing, incoming)
-	return writeAndReport(cmd, result.ProjectDir, merged, mergeResult, format, false)
+	return writeAndReport(cmd, result.StateDir, merged, mergeResult, format, false)
 }
 
-func writeAndReport(cmd *cobra.Command, projectDir string, cfg domain.RunConfig, mergeResult rules.MergeResult, format string, replace bool) error {
+func writeAndReport(cmd *cobra.Command, stateDir string, cfg domain.RunConfig, mergeResult rules.MergeResult, format string, replace bool) error {
 	if err := config.WriteRun(config.WriteRunParams{
-		ProjectDir: projectDir,
-		Config:     cfg,
-		Force:      true,
+		StateDir: stateDir,
+		Config:   cfg,
+		Force:    true,
 	}); err != nil {
 		return fmt.Errorf("write run config: %w", err)
 	}

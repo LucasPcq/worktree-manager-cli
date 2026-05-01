@@ -23,8 +23,9 @@ Run these before taking action so you have names to pass as arguments:
 |---|---|
 | All worktrees (branch, path, PR, services, dirty?) | `wtm wt list --output json` |
 | All open PRs (number, title, branch, state, draft, url) | `wtm pr list --output json` |
-| Declared jobs + profiles from `.wtm/run.toml` | `wtm run list --output json` |
+| Declared jobs + profiles | `wtm run list --output json` |
 | Jobs running right now (name, kind, status, pid, workdir) | `wtm run ps --output json` |
+| Resolved project config (TOML on stdout) | `wtm config show` |
 
 ## Worktree commands (`wtm wt`)
 
@@ -36,7 +37,7 @@ Run these before taking action so you have names to pass as arguments:
 
 ## Run commands (`wtm run`)
 
-Jobs are defined in `.wtm/run.toml` and executed by a background daemon. Each job has a `kind`:
+Jobs are declared in a per-clone `run.toml` (managed by wtm — agents never touch it directly) and executed by a background daemon. Each job has a `kind`:
 
 - **`kind = "service"`** — long-running. With a `stop` command, it's a detached launcher (e.g. `docker compose up -d`); otherwise it's tracked by PID and killed via SIGTERM.
 - **`kind = "task"`** — one-shot script. Blocks the profile, streams output live, removed after exit. A non-zero exit aborts the profile.
@@ -50,8 +51,22 @@ Profiles are named groups of jobs (run in declared order). The same TOML can hos
 - **`wtm run start <job> --output json`** — start one job. Tasks block until they exit; services launch in the background.
 - **`wtm run stop <job> --output json`** — stop one job.
 - **`wtm run logs [job]`** — attach to a job's PTY. No `--output json`: it's a raw text stream (already machine-readable).
-- **`wtm run export [--profile <name>]`** — emit `.wtm/run.toml` as JSON on stdout. Use `--profile` to export only one profile and its jobs. Pipe to a file: `wtm run export > layout.json`.
+- **`wtm run export [--profile <name>]`** — emit the run config as JSON on stdout. Use `--profile` to export only one profile and its jobs. Pipe to a file: `wtm run export > layout.json`.
 - **`wtm run import [file|-] [--replace --force] [--output json]`** — ingest a JSON run config. Omit the file or pass `-` to read from stdin. Default: append new jobs/profiles, skip duplicates (prints what was added/skipped). `--replace --force` overwrites the file entirely.
+- **`wtm run job add <name> --cmd "..." [--kind service|task] [--stop "..."] [--cwd ...] [--output json]`** — append a job to `run.toml`. Pass all required flags for non-interactive use; otherwise drops into a wizard. `--kind` defaults to `service`.
+- **`wtm run job rm <name> [--force] [--output json]`** — remove a job. Without `<name>` runs an interactive picker (do not invoke from an agent in that form). With a name, errors if any profile references the job; `--force` strips those references too.
+- **`wtm run job edit [name]`** — pre-filled wizard over an existing job. Always interactive — **never invoke from an agent**. Use `wtm run export` to read the current state, then propose changes (or use `wtm run job rm <name> --force` followed by `wtm run job add` with the new flags).
+- **`wtm run profile add <name> --jobs job1,job2 [--default] [--output json]`** — append a profile referencing existing jobs.
+- **`wtm run profile rm <name> [--output json]`** — remove a profile (jobs are untouched). Without `<name>` runs an interactive picker.
+- **`wtm run profile edit [name]`** — pre-filled wizard. Same caveat as `run job edit`.
+- **`wtm run job list --output json`** — emits the jobs slice; `wtm run job list` without `--output json` is a TTY picker (do not invoke without `--output json` from an agent).
+- **`wtm run profile list --output json`** — emits the profiles slice; same caveat as `wtm run job list` without the JSON flag.
+- **Default profile auto-override** — `wtm run profile add <name> --jobs ... --default` (or the wizard "Default? yes") automatically unsets any previous default. No more "two defaults" rejection at save.
+
+## Config commands (`wtm config`)
+
+- **`wtm config show`** — print the resolved project `config.toml` and its on-disk path. Use it to inspect `worktrees.base_path`, `env.strategy`, `hooks.on_create`, etc., before suggesting changes. Output is plain TOML on stdout.
+- **`wtm config edit`** — opens `$EDITOR` on the config file. Interactive — **never invoke from an agent**. If the user wants to change a setting, run `wtm config show` to read the current state, then ask the user to run `wtm config edit` (or do the edit through a `Write`/`Edit` on the printed path if you have those tools and the user authorized the change).
 
 ## Pull request commands (`wtm pr`)
 
@@ -82,3 +97,4 @@ On non-zero exit, read stderr. Common cases:
 - A command requires shell integration (`wt go`, `wt switch` without a shell wrapper installed).
 - A destructive action (`wt clean`) wasn't explicitly authorized by the user — do **not** add `--force` on your own initiative.
 - `wtm init` is needed — the wizard is interactive and the user must answer questions.
+- `wtm config edit` would be the natural answer — it opens `$EDITOR`. Either ask the user to run it themselves, or read with `wtm config show` and write the change directly to the path if you have a file-edit tool.
