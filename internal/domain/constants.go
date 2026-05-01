@@ -88,6 +88,12 @@ const (
 	FlagReplace   = "replace"
 	FlagMine      = "mine"
 	FlagReview    = "review"
+	FlagCmd       = "cmd"
+	FlagKind      = "kind"
+	FlagStop      = "stop"
+	FlagCwd       = "cwd"
+	FlagJobs      = "jobs"
+	FlagDefault   = "default"
 
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches
@@ -114,6 +120,9 @@ const (
 	JobActionStopped = "stopped"
 	JobActionDone    = "done"
 	JobActionError   = "error"
+	JobActionAdded   = "added"
+	JobActionRemoved = "removed"
+	JobActionUpdated = "updated"
 
 	// Metadata files created per worktree inside <state-dir>/worktrees/<branch>/.
 	MetaFileName    = "meta.json"
@@ -144,6 +153,11 @@ const (
 	CmdCheckout = "checkout"
 	CmdExport   = "export"
 	CmdImport   = "import"
+	CmdJob      = "job"
+	CmdProfile  = "profile"
+	CmdAdd      = "add"
+	CmdRm       = "rm"
+	CmdEdit     = "edit"
 
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"

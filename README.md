@@ -342,6 +342,60 @@ wtm run export | wtm run import -             # roundtrip (no-op when names matc
 
 By default, new jobs and profiles are appended; duplicate names are skipped with a warning.
 
+#### `wtm run job add|rm|edit` — CRUD on jobs
+
+Manage individual jobs in `run.toml` without opening the file by hand.
+
+```bash
+# Add a service (flag-driven, LLM-friendly)
+wtm run job add api --cmd "go run ./cmd/api" --kind service --stop "pkill api"
+
+# Add a task
+wtm run job add migrate --cmd "make migrate" --kind task
+
+# Add interactively (wizard pops up when name or --cmd is missing)
+wtm run job add
+
+# Remove (no arg → interactive picker)
+wtm run job rm                   # picker over all jobs
+wtm run job rm migrate           # by name; errors if any profile references the job
+wtm run job rm migrate --force   # also strips the reference from those profiles
+
+# Edit (no arg → interactive picker → pre-filled wizard)
+wtm run job edit                 # picker, then wizard
+wtm run job edit api             # straight to the pre-filled wizard
+
+# List (TTY = picker → Edit/Remove menu; non-TTY or --output json = listing)
+wtm run job list
+wtm run job list --output json
+```
+
+#### `wtm run profile add|rm|edit` — CRUD on profiles
+
+```bash
+# Add a profile (flag-driven)
+wtm run profile add dev --jobs api,migrate --default
+
+# Add interactively
+wtm run profile add
+
+# Remove (no arg → picker; jobs are left untouched)
+wtm run profile rm
+wtm run profile rm dev
+
+# Edit (no arg → picker → pre-filled wizard)
+wtm run profile edit
+wtm run profile edit dev
+
+# List (same pattern as run job list)
+wtm run profile list
+wtm run profile list --output json
+```
+
+When you mark a profile as `--default` (or via the wizard) while another profile is already the default, the previous default is automatically unset — no need to clear it first.
+
+All `add` / `rm` commands support `--output text|json`. `edit` is intrinsically interactive.
+
 ---
 
 ### `wtm pr` — Pull requests

@@ -71,6 +71,35 @@ func FilterToProfile(cfg domain.RunConfig, name string) (domain.RunConfig, error
 	}, nil
 }
 
+// FindExistingDefaultProfile returns the name of the profile currently marked
+// default, excluding `exclude`. Returns "" if no other default exists.
+func FindExistingDefaultProfile(cfg domain.RunConfig, exclude string) string {
+	for _, p := range cfg.Profiles {
+		if p.Default && p.Name != exclude {
+			return p.Name
+		}
+	}
+	return ""
+}
+
+// ApplyDefaultOverride returns a copy of cfg where every profile other than
+// keepName has Default=false. Pure — input is not mutated. Use after a wizard
+// run when the user (re)confirmed a new default to prevent ValidateRun from
+// rejecting two defaults.
+func ApplyDefaultOverride(cfg domain.RunConfig, keepName string) domain.RunConfig {
+	out := domain.RunConfig{
+		Jobs:     cfg.Jobs,
+		Profiles: make([]domain.ProfileConfig, len(cfg.Profiles)),
+	}
+	copy(out.Profiles, cfg.Profiles)
+	for i, p := range out.Profiles {
+		if p.Default && p.Name != keepName {
+			out.Profiles[i].Default = false
+		}
+	}
+	return out
+}
+
 // MergeResult summarizes what happened during a MergeRunConfigs call.
 type MergeResult struct {
 	Added   []string

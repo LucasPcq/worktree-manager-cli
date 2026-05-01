@@ -53,6 +53,15 @@ Profiles are named groups of jobs (run in declared order). The same TOML can hos
 - **`wtm run logs [job]`** — attach to a job's PTY. No `--output json`: it's a raw text stream (already machine-readable).
 - **`wtm run export [--profile <name>]`** — emit the run config as JSON on stdout. Use `--profile` to export only one profile and its jobs. Pipe to a file: `wtm run export > layout.json`.
 - **`wtm run import [file|-] [--replace --force] [--output json]`** — ingest a JSON run config. Omit the file or pass `-` to read from stdin. Default: append new jobs/profiles, skip duplicates (prints what was added/skipped). `--replace --force` overwrites the file entirely.
+- **`wtm run job add <name> --cmd "..." [--kind service|task] [--stop "..."] [--cwd ...] [--output json]`** — append a job to `run.toml`. Pass all required flags for non-interactive use; otherwise drops into a wizard. `--kind` defaults to `service`.
+- **`wtm run job rm <name> [--force] [--output json]`** — remove a job. Without `<name>` runs an interactive picker (do not invoke from an agent in that form). With a name, errors if any profile references the job; `--force` strips those references too.
+- **`wtm run job edit [name]`** — pre-filled wizard over an existing job. Always interactive — **never invoke from an agent**. Use `wtm run export` to read the current state, then propose changes (or use `wtm run job rm <name> --force` followed by `wtm run job add` with the new flags).
+- **`wtm run profile add <name> --jobs job1,job2 [--default] [--output json]`** — append a profile referencing existing jobs.
+- **`wtm run profile rm <name> [--output json]`** — remove a profile (jobs are untouched). Without `<name>` runs an interactive picker.
+- **`wtm run profile edit [name]`** — pre-filled wizard. Same caveat as `run job edit`.
+- **`wtm run job list --output json`** — emits the jobs slice; `wtm run job list` without `--output json` is a TTY picker (do not invoke without `--output json` from an agent).
+- **`wtm run profile list --output json`** — emits the profiles slice; same caveat as `wtm run job list` without the JSON flag.
+- **Default profile auto-override** — `wtm run profile add <name> --jobs ... --default` (or the wizard "Default? yes") automatically unsets any previous default. No more "two defaults" rejection at save.
 
 ## Config commands (`wtm config`)
 

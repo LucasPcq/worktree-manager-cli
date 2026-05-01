@@ -3,16 +3,18 @@ package run
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/commands/run/jobcmd"
+	"github.com/LucasPcq/wtm/internal/commands/run/profilecmd"
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
 // NewCmd creates the wtm run command group — manages dev jobs
-// (services + one-shot tasks) declared in .wtm/run.toml.
+// (services + one-shot tasks) declared in run.toml.
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     domain.CmdRun,
 		Short:   "Manage dev jobs (services + tasks)",
-		Long:    "Run commands and profiles declared in .wtm/run.toml — long-running services and one-shot tasks.",
+		Long:    "Run commands and profiles declared in <git-common-dir>/wtm/run.toml — long-running services and one-shot tasks.",
 		GroupID: domain.CmdGroupCore,
 	}
 
@@ -25,6 +27,8 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(newLogsCmd())
 	cmd.AddCommand(newExportCmd())
 	cmd.AddCommand(newImportCmd())
+	cmd.AddCommand(jobcmd.NewCmd())
+	cmd.AddCommand(profilecmd.NewCmd())
 
 	return cmd
 }
