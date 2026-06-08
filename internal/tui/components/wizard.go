@@ -12,8 +12,12 @@ import (
 // Step defines one step in a wizard.
 // Model must be a SelectListModel, TextInputModel, ConfirmModel, or MultiSelectModel.
 type Step struct {
-	Name    string
-	Model   any
+	Name  string
+	Model any
+	// Build, when set, rebuilds Model from the already-completed prior steps each
+	// time the wizard enters this step. Use it for steps whose contents depend on
+	// an earlier selection.
+	Build   func(prev []Step) any
 	Summary func(model any) string
 }
 
@@ -194,8 +198,21 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 		m.done = true
 		return m, tea.Quit
 	}
+	m.buildStep(m.current)
 	m.propagateSize(m.current)
 	return m, m.initStep(m.current)
+}
+
+// buildStep rebuilds a step's model from prior steps when a Build hook is set.
+func (m *WizardModel) buildStep(stepIdx int) {
+	if stepIdx <= 0 || stepIdx >= len(m.steps) {
+		return
+	}
+	step := &m.steps[stepIdx]
+	if step.Build == nil {
+		return
+	}
+	step.Model = step.Build(m.steps[:stepIdx])
 }
 
 func (m WizardModel) goBack() (tea.Model, tea.Cmd) {

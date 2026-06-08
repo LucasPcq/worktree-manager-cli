@@ -212,7 +212,10 @@ func (m SelectListModel) renderSelectedItem(item SelectItem) string {
 
 func (m SelectListModel) renderNormalItem(item SelectItem) string {
 	label := item.Label
-	if item.Danger {
+	switch {
+	case item.Disabled:
+		label = styles.Muted.Render(label)
+	case item.Danger:
 		label = styles.DangerText.Render(label)
 	}
 

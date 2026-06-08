@@ -3,9 +3,11 @@ package wt
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
@@ -43,17 +45,39 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	statuses, err := worktree.List(domain.ListParams{
-		ProjectDir: result.ProjectDir,
-		StateDir:   result.StateDir,
-		Config:     result.Config,
-	})
-	if err != nil {
-		return fmt.Errorf("list worktrees: %w", err)
-	}
+	var (
+		statuses []domain.WorktreeStatus
+		listErr  error
+		prs      []domain.PRInfo
+		conn     domain.GHConnection
+		services []process.JobInfo
+		wg       sync.WaitGroup
+	)
 
-	prs := shared.LoadPRsGraceful(result.ProjectDir)
-	services := shared.LoadJobsGraceful()
+	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Loading worktrees…")
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		statuses, listErr = worktree.List(domain.ListParams{
+			ProjectDir: result.ProjectDir,
+			StateDir:   result.StateDir,
+			Config:     result.Config,
+		})
+	}()
+	go func() {
+		defer wg.Done()
+		prs, conn = shared.LoadPRs(result.ProjectDir)
+	}()
+	go func() {
+		defer wg.Done()
+		services = shared.LoadJobsGraceful()
+	}()
+	wg.Wait()
+	stop()
+
+	if listErr != nil {
+		return fmt.Errorf("list worktrees: %w", listErr)
+	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
@@ -79,7 +103,14 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	selected, action, err := pickWorktreeAndAction(statuses, "", prs, services)
+	showGHBanner(cmd.OutOrStdout(), conn)
+
+	selected, action, err := pickWorktreeAndAction(pickParams{
+		statuses: statuses,
+		prs:      prs,
+		services: services,
+		conn:     conn,
+	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
 	}
@@ -93,24 +124,57 @@ func runList(cmd *cobra.Command, _ []string) error {
 const (
 	lsActionGo           = "go"
 	lsActionSwitch       = "switch"
+	lsActionOpenPR       = "open-pr"
 	lsActionServicesUp   = "services-up"
 	lsActionServicesDown = "services-down"
 	lsActionLogs         = "logs"
 	lsActionClean        = "clean"
 )
 
-func pickWorktreeAndAction(
-	statuses []domain.WorktreeStatus,
-	activeBranch string,
-	prs []domain.PRInfo,
-	services []process.JobInfo,
-) (domain.WorktreeStatus, string, error) {
+// showGHBanner prints a bordered hint when the GitHub CLI is unavailable, so the
+// user knows why PR badges and the Open PR action are missing.
+func showGHBanner(w io.Writer, conn domain.GHConnection) {
+	switch conn {
+	case domain.GHConnectionNotInstalled:
+		output.Callout(w, "GitHub CLI not found", []string{
+			"Install it to see PRs linked to your worktrees:",
+			"https://cli.github.com",
+		})
+	case domain.GHConnectionNotAuthenticated:
+		output.Callout(w, "GitHub not connected", []string{
+			"Connect to see PRs linked to your worktrees:",
+			"run `gh auth login`",
+		})
+	}
+}
+
+// findPRForBranch returns the open PR whose head matches the given branch.
+func findPRForBranch(prs []domain.PRInfo, branch string) (domain.PRInfo, bool) {
+	for _, pr := range prs {
+		if pr.Branch == branch {
+			return pr, true
+		}
+	}
+	return domain.PRInfo{}, false
+}
+
+// pickParams holds the inputs for the worktree/action wizard.
+type pickParams struct {
+	statuses []domain.WorktreeStatus
+	prs      []domain.PRInfo
+	services []process.JobInfo
+	conn     domain.GHConnection
+}
+
+func pickWorktreeAndAction(params pickParams) (domain.WorktreeStatus, string, error) {
+	statuses := params.statuses
+
 	wtItems := make([]components.SelectItem, 0, len(statuses))
 	for i, s := range statuses {
 		wtItems = append(wtItems, components.SelectItem{
 			Label:  s.Branch,
 			Value:  strconv.Itoa(i),
-			Badges: worktreepicker.BuildBadges(s, prs, services),
+			Badges: worktreepicker.BuildBadges(s, params.prs, params.services),
 		})
 	}
 
@@ -119,16 +183,6 @@ func pickWorktreeAndAction(
 		branchByIdx[strconv.Itoa(i)] = s.Branch
 	}
 
-	actionItems := []components.SelectItem{
-		{Label: "Go (cd to worktree)", Value: lsActionGo},
-		{Label: "Switch (go + start services)", Value: lsActionSwitch},
-		{Separator: true},
-		{Label: "Start profile", Value: lsActionServicesUp},
-		{Label: "Stop profile", Value: lsActionServicesDown},
-		{Label: "View logs", Value: lsActionLogs},
-		{Separator: true},
-		{Label: "Clean (delete worktree)", Value: lsActionClean, Danger: true},
-	}
 	wiz := components.NewWizard([]components.Step{
 		{
 			Name:  "Worktree",
@@ -146,7 +200,12 @@ func pickWorktreeAndAction(
 		},
 		{
 			Name:  "Action",
-			Model: components.NewSelectList(components.NewSelectListParams{Title: "Action", Items: actionItems}),
+			Model: components.NewSelectList(components.NewSelectListParams{Title: "Action"}),
+			Build: func(prev []components.Step) any {
+				selected := selectedWorktree(prev, statuses)
+				items := buildActionItems(selected, params.prs, params.conn)
+				return components.NewSelectList(components.NewSelectListParams{Title: "Action", Items: items})
+			},
 			Summary: func(m any) string {
 				sl, ok := m.(components.SelectListModel)
 				if !ok {
@@ -185,6 +244,41 @@ func pickWorktreeAndAction(
 	return statuses[idx], actionSL.Value(), nil
 }
 
+// selectedWorktree resolves the worktree chosen in the wizard's first step.
+func selectedWorktree(prev []components.Step, statuses []domain.WorktreeStatus) domain.WorktreeStatus {
+	if len(prev) == 0 {
+		return domain.WorktreeStatus{}
+	}
+	sl, ok := prev[0].Model.(components.SelectListModel)
+	if !ok {
+		return domain.WorktreeStatus{}
+	}
+	idx, err := strconv.Atoi(sl.Value())
+	if err != nil || idx < 0 || idx >= len(statuses) {
+		return domain.WorktreeStatus{}
+	}
+	return statuses[idx]
+}
+
+// buildActionItems builds the action menu for a worktree. The Open PR entry is
+// disabled when the branch has no open PR or the GitHub CLI is unavailable.
+func buildActionItems(selected domain.WorktreeStatus, prs []domain.PRInfo, conn domain.GHConnection) []components.SelectItem {
+	_, hasPR := findPRForBranch(prs, selected.Branch)
+	openPRDisabled := !hasPR || conn != domain.GHConnectionOK
+
+	return []components.SelectItem{
+		{Label: "Go (cd to worktree)", Value: lsActionGo},
+		{Label: "Switch (go + start services)", Value: lsActionSwitch},
+		{Label: "Open PR", Value: lsActionOpenPR, Disabled: openPRDisabled},
+		{Separator: true},
+		{Label: "Start profile", Value: lsActionServicesUp},
+		{Label: "Stop profile", Value: lsActionServicesDown},
+		{Label: "View logs", Value: lsActionLogs},
+		{Separator: true},
+		{Label: "Clean (delete worktree)", Value: lsActionClean, Danger: true},
+	}
+}
+
 func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.WorktreeStatus, prs []domain.PRInfo, result shared.ConfigResult) error {
 	bin, err := os.Executable()
 	if err != nil {
@@ -213,6 +307,13 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
 		return c.Run()
+
+	case lsActionOpenPR:
+		pr, ok := findPRForBranch(prs, selected.Branch)
+		if !ok {
+			return nil
+		}
+		return exec.Command("open", pr.URL).Run()
 
 	case lsActionServicesUp:
 		cmd := exec.Command(bin, domain.CmdRun, domain.CmdUp)
