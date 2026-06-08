@@ -26,6 +26,28 @@ func TestSanitizeBranchName(t *testing.T) {
 	}
 }
 
+func TestIsPathWithin(t *testing.T) {
+	tests := []struct {
+		name   string
+		dir    string
+		target string
+		want   bool
+	}{
+		{"equal", "/repo/.trees/feat", "/repo/.trees/feat", true},
+		{"nested", "/repo/.trees/feat", "/repo/.trees/feat/src/main.go", true},
+		{"sibling", "/repo/.trees/feat", "/repo/.trees/other", false},
+		{"outside", "/repo/.trees/feat", "/repo", false},
+		{"unrelated", "/repo/.trees/feat", "/tmp/x", false},
+		{"prefix-not-segment", "/repo/feat", "/repo/feature", false},
+	}
+
+	for _, tt := range tests {
+		if got := IsPathWithin(tt.dir, tt.target); got != tt.want {
+			t.Errorf("IsPathWithin(%q, %q) = %v, want %v", tt.dir, tt.target, got, tt.want)
+		}
+	}
+}
+
 func TestResolveEnvStrategy(t *testing.T) {
 	if got := ResolveEnvStrategy(domain.EnvStrategyExample, ""); got != domain.EnvStrategyExample {
 		t.Errorf("expected example, got %s", got)

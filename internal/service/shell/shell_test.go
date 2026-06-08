@@ -27,8 +27,8 @@ func TestGenerateShellInitZsh(t *testing.T) {
 	if !strings.Contains(out, `"$2" = "go"`) {
 		t.Error("expected go subcommand interception")
 	}
-	if !strings.Contains(out, `"$2" = "clean"`) {
-		t.Error("expected clean subcommand interception")
+	if !strings.Contains(out, domain.EnvGoFile) {
+		t.Error("expected WTM_GO_FILE bridge for cd-after-command (clean redirect)")
 	}
 }
 

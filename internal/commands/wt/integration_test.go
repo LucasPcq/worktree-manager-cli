@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -55,6 +56,101 @@ func TestWtCreateAndClean(t *testing.T) {
 	if _, err := os.Stat(wtPath); !os.IsNotExist(err) {
 		t.Errorf("expected worktree dir to be removed, stat returned: %v", err)
 	}
+}
+
+func TestCleanRedirectsToBaseWhenInsideWorktree(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	stateDir := filepath.Join(dir, ".git", "wtm")
+	t.Setenv("WTM_PROJECT_DIR", dir)
+	t.Setenv("WTM_STATE_DIR", stateDir)
+
+	goFile := filepath.Join(t.TempDir(), "go-file")
+	t.Setenv(domain.EnvGoFile, goFile)
+
+	if err := setupMinimalConfig(t, stateDir); err != nil {
+		t.Fatalf("setup config: %v", err)
+	}
+
+	branch := "feat/redirect-test"
+	if _, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON); err != nil {
+		t.Fatalf("wt create: %v", err)
+	}
+
+	wtPath := resolveWorktreePath(t, dir, branch)
+
+	restore := chdir(t, wtPath)
+	if _, _, err := runWtCmd(t, domain.CmdClean, branch, "--force", "--output", domain.OutputJSON); err != nil {
+		restore()
+		t.Fatalf("wt clean: %v", err)
+	}
+	restore()
+
+	got, err := os.ReadFile(goFile)
+	if err != nil {
+		t.Fatalf("read go-file: %v", err)
+	}
+	if string(got) != dir {
+		t.Errorf("go-file = %q, want base repo %q", string(got), dir)
+	}
+}
+
+func TestCleanDoesNotRedirectFromOtherWorktree(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	stateDir := filepath.Join(dir, ".git", "wtm")
+	t.Setenv("WTM_PROJECT_DIR", dir)
+	t.Setenv("WTM_STATE_DIR", stateDir)
+
+	goFile := filepath.Join(t.TempDir(), "go-file")
+	t.Setenv(domain.EnvGoFile, goFile)
+
+	if err := setupMinimalConfig(t, stateDir); err != nil {
+		t.Fatalf("setup config: %v", err)
+	}
+
+	branch := "feat/other-test"
+	if _, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON); err != nil {
+		t.Fatalf("wt create: %v", err)
+	}
+
+	// Stay in the base repo while cleaning a different worktree.
+	restore := chdir(t, dir)
+	if _, _, err := runWtCmd(t, domain.CmdClean, branch, "--force", "--output", domain.OutputJSON); err != nil {
+		restore()
+		t.Fatalf("wt clean: %v", err)
+	}
+	restore()
+
+	if _, err := os.Stat(goFile); !os.IsNotExist(err) {
+		t.Errorf("expected no go-file to be written, stat returned: %v", err)
+	}
+}
+
+// resolveWorktreePath returns the on-disk path of the worktree for branch,
+// tolerating the sanitized-name fallback used when the raw name has slashes.
+func resolveWorktreePath(t *testing.T, dir, branch string) string {
+	t.Helper()
+	candidate := filepath.Join(filepath.Dir(dir), ".trees", branch)
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
+	}
+	sanitized := filepath.Join(filepath.Dir(dir), ".trees", strings.ReplaceAll(branch, "/", "-"))
+	if _, err := os.Stat(sanitized); err != nil {
+		t.Fatalf("worktree dir not found at %q or %q", candidate, sanitized)
+	}
+	return sanitized
+}
+
+// chdir switches into path and returns a function restoring the previous cwd.
+func chdir(t *testing.T, path string) func() {
+	t.Helper()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(path); err != nil {
+		t.Fatalf("chdir %q: %v", path, err)
+	}
+	return func() { _ = os.Chdir(prev) }
 }
 
 func setupMinimalConfig(t *testing.T, stateDir string) error {

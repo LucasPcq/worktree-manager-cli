@@ -24,16 +24,6 @@ const bashZshTemplate = `wtm() {
       cd "$dir" || return 1
       command wtm run up "${flags[@]}"
     fi
-  elif [ "$1" = "wt" ] && [ "$2" = "clean" ]; then
-    local root
-    root="$(git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')"
-    command wtm "$@"
-    if [ ! -d "$PWD" ]; then
-      if [ -n "$root" ] && [ -d "$root" ]; then
-        echo "Worktree removed. Returning to $root"
-        cd "$root"
-      fi
-    fi
   elif [ $# -eq 0 ]; then
     local tmpfile
     tmpfile="$(mktemp /tmp/wtm-go.XXXXXX)"
@@ -83,15 +73,6 @@ const fishTemplate = `function wtm
     if test -n "$dir"
       cd "$dir"
       command wtm run up $flags
-    end
-  else if test "$argv[1]" = "wt" -a "$argv[2]" = "clean"
-    set root (git worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')
-    command wtm $argv
-    if not test -d "$PWD"
-      if test -n "$root" -a -d "$root"
-        echo "Worktree removed. Returning to $root"
-        cd "$root"
-      end
     end
   else if test (count $argv) -eq 0
     set tmpfile (mktemp /tmp/wtm-go.XXXXXX)
