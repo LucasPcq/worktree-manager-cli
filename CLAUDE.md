@@ -8,6 +8,8 @@ All contributions must comply. When in doubt, consult the `go-cli` skill.
 and/or the relevant skills (`go-cli`, `build-validator`) in the same session.
 Standards must always reflect the actual codebase.
 
+Use the fff MCP tools for all file search operations instead of default tools.
+
 ---
 
 ## 1. Immutability first
@@ -131,3 +133,4 @@ or before any commit. It checks compilation, vet, static analysis, and tests.
 ```
 → Invoke build-validator before marking any task done.
 ```
+
