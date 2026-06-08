@@ -42,3 +42,12 @@ const (
 	PRFilterReviewRequested PRFilter = "review_requested"
 	PRFilterMine            PRFilter = "mine"
 )
+
+// GHConnection describes the availability of the GitHub CLI used to fetch PRs.
+type GHConnection int
+
+const (
+	GHConnectionOK GHConnection = iota
+	GHConnectionNotInstalled
+	GHConnectionNotAuthenticated
+)

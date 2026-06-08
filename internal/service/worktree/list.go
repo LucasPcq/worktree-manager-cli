@@ -4,12 +4,16 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
+
+// statusWorkers bounds concurrent git probes when building worktree status.
+const statusWorkers = 8
 
 // List returns all worktrees enriched with git status, sorted with parent first
 // then children by creation date (oldest first).
@@ -22,12 +26,20 @@ func List(params domain.ListParams) ([]domain.WorktreeStatus, error) {
 	}
 
 	baseBranch := params.Config.Project.Worktrees.BaseBranch
-	statuses := make([]domain.WorktreeStatus, 0, len(gitWorktrees))
+	statuses := make([]domain.WorktreeStatus, len(gitWorktrees))
 
-	for _, gitWorktree := range gitWorktrees {
-		status := buildStatus(gitWorktree, baseBranch, params.StateDir)
-		statuses = append(statuses, status)
+	sem := make(chan struct{}, statusWorkers)
+	var wg sync.WaitGroup
+	for i, gitWorktree := range gitWorktrees {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, wt domain.GitWorktree) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			statuses[idx] = buildStatus(wt, baseBranch, params.StateDir)
+		}(i, gitWorktree)
 	}
+	wg.Wait()
 
 	rules.SortStatuses(statuses)
 

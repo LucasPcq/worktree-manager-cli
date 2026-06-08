@@ -47,6 +47,15 @@ func SortStatuses(statuses []domain.WorktreeStatus) {
 	})
 }
 
+// IsPathWithin reports whether target is dir itself or nested under it.
+func IsPathWithin(dir, target string) bool {
+	rel, err := filepath.Rel(dir, target)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
 // HasWarnings reports whether any condition warrants showing the force option.
 func HasWarnings(result domain.CleanCheckResult) bool {
 	return result.UnpushedCommits > 0 || result.HasOpenPR || result.IsDirty

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	cleanui "github.com/LucasPcq/wtm/internal/tui/clean"
@@ -111,6 +113,10 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 		wtPath = wt.Path
 	}
 
+	// Decide before removal (paths must still exist to resolve symlinks).
+	cwd, _ := os.Getwd()
+	insideRemoved := wtPath != "" && cwd != "" && rules.IsPathWithin(resolveSymlinks(wtPath), resolveSymlinks(cwd))
+
 	stopWorktreeServices(cmd, params.ProjectDir, params.Branch)
 
 	err := worktree.Clean(params)
@@ -124,6 +130,10 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 		return err
 	}
 
+	if insideRemoved {
+		redirectToBase(params.ProjectDir)
+	}
+
 	if format == domain.OutputJSON {
 		return output.WriteWorktreeCleanJSON(cmd.OutOrStdout(), output.WriteWorktreeCleanJSONParams{
 			Branch: params.Branch,
@@ -135,6 +145,26 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Cleaned worktree and branch %s", params.Branch))
 	output.Blank(cmd.OutOrStdout())
 	return nil
+}
+
+// redirectToBase asks the shell wrapper to cd into the base repo, avoiding a
+// stale "ghost" directory after removing the worktree we were sitting in. It
+// relies on the WTM_GO_FILE bridge (see wtm shell-init); a no-op without it.
+func redirectToBase(baseDir string) {
+	goFile := os.Getenv(domain.EnvGoFile)
+	if goFile == "" {
+		return
+	}
+	_ = os.WriteFile(goFile, []byte(baseDir), 0o644)
+}
+
+// resolveSymlinks returns the canonical path, falling back to the input when it
+// cannot be resolved (e.g. the path no longer exists).
+func resolveSymlinks(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
 }
 
 func stopWorktreeServices(cmd *cobra.Command, projectDir string, branch string) {

@@ -66,4 +66,14 @@ var (
 
 	// HelpBar renders the bottom help text.
 	HelpBar = lipgloss.NewStyle().Foreground(ColorMuted)
+
+	// Callout renders a bordered notice box used to surface optional hints.
+	Callout = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorWarning).
+		Padding(0, 1).
+		MarginLeft(2)
+
+	// CalloutTitle renders the emphasized first line of a Callout box.
+	CalloutTitle = lipgloss.NewStyle().Foreground(ColorWarning).Bold(true)
 )

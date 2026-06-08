@@ -66,6 +66,14 @@ func Blank(w io.Writer) {
 	fmt.Fprintln(w)
 }
 
+// Callout prints a bordered notice box with a bold title followed by body lines.
+// Use it to surface an optional, non-blocking hint above an interactive flow.
+func Callout(w io.Writer, title string, lines []string) {
+	rows := append([]string{styles.CalloutTitle.Render(title)}, lines...)
+	box := styles.Callout.Render(strings.Join(rows, "\n"))
+	fmt.Fprintf(w, "\n%s\n", box)
+}
+
 // AnnounceItem is a label-value pair displayed inside an Announce block.
 type AnnounceItem struct {
 	Label string
