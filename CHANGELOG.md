@@ -15,6 +15,21 @@
 
 - **`wtm run list --output json` : champs JSON en minuscules** — les clés passent de PascalCase (`Jobs`, `Name`, `Kind`) à lowercase (`job`, `name`, `kind`), alignées sur `run.schema.json`. Impacte tout script ou outil qui parsait la sortie JSON de `run list`.
 
+## v0.9.0 — `wt list` interactif + retour au repo de base après clean
+
+### New features
+
+- **`wtm wt list` enrichie** — spinner de chargement pendant la récupération des worktrees, PRs et services ; bandeau d'avertissement quand la GitHub CLI est absente (non installée / non authentifiée) ; nouvelle action **Open PR** pour ouvrir directement la PR liée à une branche.
+- **Retour automatique au repo de base après suppression** — quand on supprime le worktree dans lequel on se trouve (via `wt list` → Clean ou `wtm wt clean`), le shell est ramené dans le repo de base au lieu de rester bloqué dans un dossier fantôme. S'appuie sur le pont `WTM_GO_FILE` existant.
+
+### Improvements
+
+- Suppression de la branche dédiée `wt clean` du wrapper shell et de son heuristique fragile `$PWD` ; le mécanisme générique `WTM_GO_FILE` gère désormais toutes les voies d'entrée.
+
+### Migration
+
+- **Re-`eval` de `wtm shell-init` requis** — le template du wrapper shell a changé. Les utilisateurs existants doivent re-`eval "$(wtm shell-init)"` (re-source `.zshrc`/`.bashrc`/config fish) pour bénéficier du retour automatique au repo de base.
+
 ## v0.8.0 — Strict TOML decoding + JSON Schema autocomplete
 
 ### New features
