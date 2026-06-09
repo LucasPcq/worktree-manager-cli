@@ -129,6 +129,16 @@ func multiplexAllJobs(socketPath string, dir string) error {
 		return nil
 	}
 
+	return multiplexJobs(socketPath, dir, running)
+}
+
+// multiplexJobs attaches to every job in `running` and prints their output as
+// color-prefixed lines on a single stream. Ctrl+C detaches from all of them
+// without stopping the jobs. Used both by `run logs` (no args) and by
+// `run up` once a profile's services are live.
+func multiplexJobs(socketPath string, dir string, running []process.JobInfo) error {
+	client := process.NewClient(socketPath)
+
 	defer process.ResetTerminalState(os.Stdout)
 
 	fd := int(os.Stdin.Fd())

@@ -79,6 +79,7 @@ const (
 	FlagDraft     = "draft"
 	FlagExclusive = "exclusive"
 	FlagParallel  = "parallel"
+	FlagDetach    = "detach"
 	FlagProfile   = "profile"
 	FlagOutput    = "output"
 	FlagYes       = "yes"

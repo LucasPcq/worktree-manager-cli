@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/config"
@@ -29,6 +30,7 @@ func newUpCmd() *cobra.Command {
 
 	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop jobs on other worktrees before starting")
 	cmd.Flags().Bool(domain.FlagParallel, false, "Start without stopping other worktrees")
+	cmd.Flags().BoolP(domain.FlagDetach, "d", false, "Start jobs and return immediately instead of tailing their logs")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -125,23 +127,86 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
 	}
 
+	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
+	if detach || !term.IsTerminal(int(os.Stdin.Fd())) {
+		output.Blank(cmd.OutOrStdout())
+		return nil
+	}
+
+	return watchProfileServices(cmd, jobs, dir)
+}
+
+// watchProfileServices tails the foreground services that a profile just
+// started, unifying `run up` + `run logs` into a single command. A lone
+// service is attached directly (full PTY, so its own TUI — turbo, vite —
+// renders natively and stays interactive); two or more are multiplexed as
+// color-prefixed log lines. Detached launchers (docker compose up -d) have no
+// attachable output and are skipped. Ctrl+C detaches without stopping anything.
+func watchProfileServices(cmd *cobra.Command, jobs []domain.JobConfig, dir string) error {
+	watchable := make(map[string]bool)
+	for i := range jobs {
+		job := jobs[i]
+		if job.Kind == domain.JobKindService && !rules.IsDetached(job) {
+			watchable[job.Name] = true
+		}
+	}
+	if len(watchable) == 0 {
+		output.Blank(cmd.OutOrStdout())
+		return nil
+	}
+
+	socketPath := process.SocketPath()
+	client := process.NewClient(socketPath)
+	resp, err := client.Send(process.Request{Action: process.ActionList})
+	if err != nil {
+		output.Blank(cmd.OutOrStdout())
+		return nil
+	}
+
+	var running []process.JobInfo
+	for _, job := range resp.Jobs {
+		if job.WorkDir == dir && job.Status == domain.JobStatusRunning && watchable[job.Name] {
+			running = append(running, job)
+		}
+	}
+	if len(running) == 0 {
+		output.Blank(cmd.OutOrStdout())
+		return nil
+	}
+
 	output.Blank(cmd.OutOrStdout())
-	return nil
+	output.Loading(cmd.OutOrStdout(), "Tailing logs — Ctrl+C to detach (services keep running)")
+	output.Blank(cmd.OutOrStdout())
+
+	var watchErr error
+	if len(running) == 1 {
+		watchErr = attachSingleJob(socketPath, running[0].Name, dir)
+	} else {
+		watchErr = multiplexJobs(socketPath, dir, running)
+	}
+
+	output.Blank(cmd.ErrOrStderr())
+	output.Message(cmd.ErrOrStderr(), "Detached. Services keep running in the background.")
+	output.Loading(cmd.ErrOrStderr(), "wtm run logs to reattach · wtm run down to stop")
+	return watchErr
 }
 
 func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig, dir string, format string, results *[]output.JobActionResult) error {
-	var stopSpinner func()
+	// JSON mode stays silent on stdout (the structured results are the payload),
+	// so we don't stream raw task output that would corrupt the JSON document.
+	var onOutput func([]byte)
 	if format != domain.OutputJSON {
-		stopSpinner = shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Running task %s...", job.Name))
+		out := cmd.OutOrStdout()
+		output.Blank(out)
+		output.Loading(out, fmt.Sprintf("Running task %s", job.Name))
+		onOutput = func(chunk []byte) { _, _ = out.Write(chunk) }
 	}
-	resp, err := client.Send(process.Request{
+
+	resp, err := client.SendStream(process.Request{
 		Action:  process.ActionStart,
 		Job:     &job,
 		WorkDir: dir,
-	})
-	if stopSpinner != nil {
-		stopSpinner()
-	}
+	}, onOutput)
 	if err != nil {
 		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: err.Error()})
 		return fmt.Errorf("task %s: %w", job.Name, err)
