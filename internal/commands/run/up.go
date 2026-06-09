@@ -81,6 +81,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	results := make([]output.JobActionResult, 0, len(jobs))
+	var started []domain.JobConfig
 
 	for i := range jobs {
 		job := jobs[i]
@@ -90,8 +91,11 @@ func runUp(cmd *cobra.Command, args []string) error {
 				if format == domain.OutputJSON {
 					return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
 				}
-				output.Blank(cmd.OutOrStdout())
-				return err
+				// A failing task aborts the remaining jobs. We deliberately
+				// leave already-started services running (docker/DB stay up for
+				// the fix-and-retry loop) and report the partial state instead.
+				reportProfileAbort(cmd, jobs, i, started)
+				return domain.ErrAborted
 			}
 			continue
 		}
@@ -118,6 +122,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
+		started = append(started, job)
 		if format != domain.OutputJSON {
 			output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", job.Name))
 		}
@@ -224,6 +229,36 @@ func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig
 		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s done", job.Name))
 	}
 	return nil
+}
+
+// reportProfileAbort prints the partial state after a task aborts a profile:
+// the step that failed, the services left running (never torn down, so the
+// fix-and-retry loop keeps docker/DB warm), the jobs that never started, and
+// the two next actions. Keeps the user out of a silent intermediate state.
+func reportProfileAbort(cmd *cobra.Command, jobs []domain.JobConfig, failedIdx int, started []domain.JobConfig) {
+	w := cmd.ErrOrStderr()
+	output.Blank(w)
+	output.Warning(w, fmt.Sprintf("Profile aborted at step %d/%d (%s).", failedIdx+1, len(jobs), jobs[failedIdx].Name))
+
+	if len(started) > 0 {
+		names := make([]string, len(started))
+		for i, j := range started {
+			names[i] = j.Name
+		}
+		output.InfoLine(w, "Left running:", strings.Join(names, ", "))
+	}
+
+	if failedIdx+1 < len(jobs) {
+		notStarted := make([]string, 0, len(jobs)-failedIdx-1)
+		for _, j := range jobs[failedIdx+1:] {
+			notStarted = append(notStarted, j.Name)
+		}
+		output.InfoLine(w, "Not started: ", strings.Join(notStarted, ", "))
+	}
+
+	output.Blank(w)
+	output.Loading(w, "fix and re-run `wtm run up` · `wtm run down` to stop everything")
+	output.Blank(w)
 }
 
 func resolveProfileJobs(args []string, cfg domain.RunConfig) ([]domain.JobConfig, error) {
