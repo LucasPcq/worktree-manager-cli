@@ -3,7 +3,6 @@ package wt
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -103,7 +102,7 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	showGHBanner(cmd.OutOrStdout(), conn)
+	shared.ShowGHBanner(cmd.OutOrStdout(), conn)
 
 	selected, action, err := pickWorktreeAndAction(pickParams{
 		statuses: statuses,
@@ -130,23 +129,6 @@ const (
 	lsActionLogs         = "logs"
 	lsActionClean        = "clean"
 )
-
-// showGHBanner prints a bordered hint when the GitHub CLI is unavailable, so the
-// user knows why PR badges and the Open PR action are missing.
-func showGHBanner(w io.Writer, conn domain.GHConnection) {
-	switch conn {
-	case domain.GHConnectionNotInstalled:
-		output.Callout(w, "GitHub CLI not found", []string{
-			"Install it to see PRs linked to your worktrees:",
-			"https://cli.github.com",
-		})
-	case domain.GHConnectionNotAuthenticated:
-		output.Callout(w, "GitHub not connected", []string{
-			"Connect to see PRs linked to your worktrees:",
-			"run `gh auth login`",
-		})
-	}
-}
 
 // findPRForBranch returns the open PR whose head matches the given branch.
 func findPRForBranch(prs []domain.PRInfo, branch string) (domain.PRInfo, bool) {

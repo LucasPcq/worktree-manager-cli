@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
@@ -76,13 +78,41 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 		return domain.WorktreeStatus{}, domain.ErrUserAborted
 	}
 
-	statuses, err := worktree.List(domain.ListParams{
-		ProjectDir: cfgResult.ProjectDir,
-		StateDir:   cfgResult.StateDir,
-		Config:     cfgResult.Config,
-	})
-	if err != nil {
-		return domain.WorktreeStatus{}, fmt.Errorf("list worktrees: %w", err)
+	// Load worktree statuses, PRs (gh — the slow one), and running services in
+	// parallel behind a single spinner, mirroring `wt list`. Everything goes to
+	// stderr: stdout is reserved for the resolved path the shell wrapper reads.
+	var (
+		statuses []domain.WorktreeStatus
+		listErr  error
+		prs      []domain.PRInfo
+		conn     domain.GHConnection
+		services []process.JobInfo
+		wg       sync.WaitGroup
+	)
+
+	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Loading worktrees…")
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		statuses, listErr = worktree.List(domain.ListParams{
+			ProjectDir: cfgResult.ProjectDir,
+			StateDir:   cfgResult.StateDir,
+			Config:     cfgResult.Config,
+		})
+	}()
+	go func() {
+		defer wg.Done()
+		prs, conn = shared.LoadPRs(cfgResult.ProjectDir)
+	}()
+	go func() {
+		defer wg.Done()
+		services = shared.LoadJobsGraceful()
+	}()
+	wg.Wait()
+	stop()
+
+	if listErr != nil {
+		return domain.WorktreeStatus{}, fmt.Errorf("list worktrees: %w", listErr)
 	}
 
 	filtered := rules.FilterStatusesByMatches(statuses, matches)
@@ -90,8 +120,7 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 		filtered = statuses
 	}
 
-	prs := shared.LoadPRsGraceful(cfgResult.ProjectDir)
-	services := shared.LoadJobsGraceful()
+	shared.ShowGHBanner(cmd.ErrOrStderr(), conn)
 
 	return worktreepicker.Run(worktreepicker.RunParams{
 		Statuses: filtered,
