@@ -45,11 +45,18 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 
 	client := process.NewClient(socketPath)
+	var stopSpinner func()
+	if format != domain.OutputJSON {
+		stopSpinner = shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s…", args[0]))
+	}
 	resp, err := client.Send(process.Request{
 		Action:  process.ActionStop,
 		Name:    args[0],
 		WorkDir: dir,
 	})
+	if stopSpinner != nil {
+		stopSpinner()
+	}
 	if err != nil {
 		return fmt.Errorf("stop %s: %w", args[0], err)
 	}

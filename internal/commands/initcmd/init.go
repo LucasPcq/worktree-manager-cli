@@ -90,7 +90,9 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string) error {
 	output.Intro(cmd.OutOrStdout(), "No wtm config found for this repo. Let's initialize it.")
 	output.Blank(cmd.OutOrStdout())
 
+	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Detecting project settings…")
 	detection := detect.ProjectEnvironment(dir)
+	stop()
 
 	answers, err := initwizard.RunProjectWizard(detection)
 	if errors.Is(err, domain.ErrUserAborted) {

@@ -71,7 +71,9 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return doClean(cmd, cleanParams, format)
 	}
 
+	stopCheck := shared.StartSpinner(cmd.ErrOrStderr(), "Checking worktree…")
 	check, err := worktree.Check(cleanParams)
+	stopCheck()
 	if errors.Is(err, domain.ErrCannotCleanParent) {
 		output.Blank(cmd.ErrOrStderr())
 		output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
@@ -119,7 +121,14 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 
 	stopWorktreeServices(cmd, params.ProjectDir, params.Branch)
 
+	var stop func()
+	if format != domain.OutputJSON {
+		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Cleaning worktree…")
+	}
 	err := worktree.Clean(params)
+	if stop != nil {
+		stop()
+	}
 	if errors.Is(err, domain.ErrCannotCleanParent) {
 		output.Blank(cmd.ErrOrStderr())
 		output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")

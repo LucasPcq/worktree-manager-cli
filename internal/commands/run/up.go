@@ -69,9 +69,21 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
 	socketPath := process.SocketPath()
+	var stopDaemonSpinner func()
+	if format != domain.OutputJSON {
+		stopDaemonSpinner = shared.StartSpinner(cmd.ErrOrStderr(), "Connecting to daemon…")
+	}
 	if err := process.EnsureDaemon(socketPath); err != nil {
+		if stopDaemonSpinner != nil {
+			stopDaemonSpinner()
+		}
 		return fmt.Errorf("ensure daemon: %w", err)
+	}
+	if stopDaemonSpinner != nil {
+		stopDaemonSpinner()
 	}
 
 	client := process.NewClient(socketPath)
@@ -79,8 +91,6 @@ func runUp(cmd *cobra.Command, args []string) error {
 	if err := handleConcurrentJobs(cmd, client, dir); err != nil {
 		return err
 	}
-
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	results := make([]output.JobActionResult, 0, len(jobs))
 	var started []domain.JobConfig
 
@@ -97,7 +107,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s...", job.Name))
+		stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s…", job.Name))
 		resp, sendErr := client.Send(process.Request{
 			Action:  process.ActionStart,
 			Job:     &job,

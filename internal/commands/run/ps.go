@@ -29,11 +29,14 @@ func newPsCmd() *cobra.Command {
 
 func runPs(cmd *cobra.Command, _ []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	jobs := shared.LoadJobsGraceful()
 
 	if format == domain.OutputJSON {
-		return output.WriteRunningJobsJSON(cmd.OutOrStdout(), jobs)
+		return output.WriteRunningJobsJSON(cmd.OutOrStdout(), shared.LoadJobsGraceful())
 	}
+
+	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), "Loading jobs…")
+	jobs := shared.LoadJobsGraceful()
+	stopSpinner()
 
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		fmt.Fprint(cmd.OutOrStdout(), output.FormatRunningJobs(jobs))

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
@@ -27,11 +28,14 @@ func newLogsCmd() *cobra.Command {
 	}
 }
 
-func runLogs(_ *cobra.Command, args []string) error {
+func runLogs(cmd *cobra.Command, args []string) error {
 	socketPath := process.SocketPath()
+	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), "Connecting to daemon…")
 	if err := process.EnsureDaemon(socketPath); err != nil {
+		stopSpinner()
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
+	stopSpinner()
 
 	dir, _ := os.Getwd()
 

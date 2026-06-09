@@ -58,7 +58,12 @@ func runList(cmd *cobra.Command, _ []string) error {
 		filter = domain.PRFilterMine
 	}
 
-	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Fetching pull requests...")
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
+	stop := func() {}
+	if format != domain.OutputJSON {
+		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Loading pull requests…")
+	}
 	prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
 		ProjectDir: dir,
 		Filter:     filter,
@@ -68,7 +73,6 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list PRs: %w", err)
 	}
 
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
 		return output.WritePRListJSON(cmd.OutOrStdout(), prs)
 	}
@@ -226,7 +230,7 @@ func projectRootFromCwd() (string, error) {
 // pickPRNumber fetches the list of open PRs and shows a picker.
 // Returns the selected PR number, or 0 if the user aborts.
 func pickPRNumber(cmd *cobra.Command, projectDir string) (int, error) {
-	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Fetching pull requests...")
+	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Loading pull requests…")
 	prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
 		ProjectDir: projectDir,
 		Filter:     domain.PRFilterAll,

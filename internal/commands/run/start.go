@@ -48,13 +48,24 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("job %q not found in config", args[0])
 	}
 
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
 	socketPath := process.SocketPath()
+	var stopDaemonSpinner func()
+	if format != domain.OutputJSON {
+		stopDaemonSpinner = shared.StartSpinner(cmd.ErrOrStderr(), "Connecting to daemon…")
+	}
 	if err := process.EnsureDaemon(socketPath); err != nil {
+		if stopDaemonSpinner != nil {
+			stopDaemonSpinner()
+		}
 		return fmt.Errorf("ensure daemon: %w", err)
+	}
+	if stopDaemonSpinner != nil {
+		stopDaemonSpinner()
 	}
 
 	client := process.NewClient(socketPath)
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	if job.Kind == domain.JobKindTask {
 		// Stream the task's output live (text mode); JSON mode stays silent on
@@ -88,7 +99,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s...", job.Name))
+	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s…", job.Name))
 	resp, err := client.Send(process.Request{
 		Action:  process.ActionStart,
 		Job:     &job,

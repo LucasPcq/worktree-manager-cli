@@ -83,6 +83,17 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
+	// on_create hooks stream their own output, so only show a spinner for the
+	// silent path (git worktree add + env copy) on the human-facing run.
+	hasHooks := len(result.Config.Project.Hooks.OnCreate) > 0
+	showSpinner := format != domain.OutputJSON && !hasHooks
+	var stop func()
+	if showSpinner {
+		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Creating worktree…")
+	}
+
 	createResult, err := worktree.Create(domain.CreateParams{
 		ProjectDir:      result.ProjectDir,
 		StateDir:        result.StateDir,
@@ -91,11 +102,13 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		Config:          result.Config,
 		EnvFromOverride: envOverride,
 	})
+	if stop != nil {
+		stop()
+	}
 	if err != nil {
 		return err
 	}
 
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
 		return output.WriteWorktreeCreateJSON(cmd.OutOrStdout(), createResult)
 	}
