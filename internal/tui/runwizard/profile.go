@@ -14,6 +14,7 @@ import (
 const (
 	stepProfileName = iota
 	stepProfileJobs
+	stepProfileOrder
 	stepProfileDefault
 )
 
@@ -32,6 +33,21 @@ func RunProfileWizard(params ProfileWizardParams) (domain.ProfileConfig, error) 
 		return domain.ProfileConfig{}, fmt.Errorf("cannot define a profile: no jobs declared yet — add a job first")
 	}
 
+	wiz := components.NewWizard(buildProfileSteps(params))
+	finalModel, err := tea.NewProgram(wiz).Run()
+	if err != nil {
+		return domain.ProfileConfig{}, fmt.Errorf("wizard: %w", err)
+	}
+	final, ok := finalModel.(components.WizardModel)
+	if !ok || final.Aborted() {
+		return domain.ProfileConfig{}, domain.ErrUserAborted
+	}
+
+	return extractProfile(final.Steps()), nil
+}
+
+// buildProfileSteps assembles the wizard steps for the profile add/edit flow.
+func buildProfileSteps(params ProfileWizardParams) []components.Step {
 	nameInput := components.NewTextInput(components.NewTextInputParams{
 		Title:       "Profile name",
 		Description: "Unique identifier for this profile",
@@ -74,23 +90,25 @@ func RunProfileWizard(params ProfileWizardParams) (domain.ProfileConfig, error) 
 		DefaultYes:  params.Initial.Default,
 	})
 
-	steps := []components.Step{
+	orderStep := components.NewReorderList(components.NewReorderListParams{Title: "Order"})
+
+	return []components.Step{
 		{Name: "Name", Model: nameInput, Summary: components.TextSummary},
 		{Name: "Jobs", Model: jobsSelect, Summary: components.MultiSelectSummary("(none)")},
+		{
+			Name:  "Order",
+			Model: orderStep,
+			Build: func(prev []components.Step) any {
+				return components.NewReorderList(components.NewReorderListParams{
+					Title:       "Order",
+					Description: "Reorder execution order — shift+↑/↓ to move, enter to confirm",
+					Items:       buildReorderItems(params.Existing, selectedJobNames(prev)),
+				})
+			},
+			Summary: components.ReorderSummary,
+		},
 		{Name: "Default", Model: defaultConfirm, Summary: components.ConfirmSummary("yes", "no")},
 	}
-
-	wiz := components.NewWizard(steps)
-	finalModel, err := tea.NewProgram(wiz).Run()
-	if err != nil {
-		return domain.ProfileConfig{}, fmt.Errorf("wizard: %w", err)
-	}
-	final, ok := finalModel.(components.WizardModel)
-	if !ok || final.Aborted() {
-		return domain.ProfileConfig{}, domain.ErrUserAborted
-	}
-
-	return extractProfile(final.Steps()), nil
 }
 
 // buildJobItems lists existing jobs in the multiselect, putting jobs already
@@ -125,12 +143,38 @@ func buildJobItems(cfg domain.RunConfig, selected []string) []components.MultiSe
 	return items
 }
 
+// selectedJobNames returns the job names selected at the Jobs step, in the order
+// the multiselect lists them.
+func selectedJobNames(prev []components.Step) []string {
+	if c, ok := prev[stepProfileJobs].Model.(components.MultiSelectModel); ok {
+		return c.Values()
+	}
+	return nil
+}
+
+// buildReorderItems maps job names to reorder items, reusing the "name (kind)"
+// label format and skipping any name no longer present in the config.
+func buildReorderItems(cfg domain.RunConfig, names []string) []components.ReorderItem {
+	items := make([]components.ReorderItem, 0, len(names))
+	for _, name := range names {
+		j, ok := rules.FindJob(cfg, name)
+		if !ok {
+			continue
+		}
+		items = append(items, components.ReorderItem{
+			Label: fmt.Sprintf("%s (%s)", j.Name, j.Kind),
+			Value: j.Name,
+		})
+	}
+	return items
+}
+
 func extractProfile(steps []components.Step) domain.ProfileConfig {
 	var p domain.ProfileConfig
 	if c, ok := steps[stepProfileName].Model.(components.TextInputModel); ok {
 		p.Name = c.Value()
 	}
-	if c, ok := steps[stepProfileJobs].Model.(components.MultiSelectModel); ok {
+	if c, ok := steps[stepProfileOrder].Model.(components.ReorderListModel); ok {
 		p.Jobs = c.Values()
 	}
 	if c, ok := steps[stepProfileDefault].Model.(components.ConfirmModel); ok {
