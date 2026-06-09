@@ -1,9 +1,24 @@
 # Changelog
 
-## [Unreleased] — Package.json script detection + run export/import
+## v0.10.0 — Run unifié (start + tail, tasks streamées) + ordre des jobs de profil
 
 ### New features
 
+- **`wtm run up` / `run start` : lancement unifié avec tail intégré** — les jobs démarrent et leur sortie est streamée dans la foulée (services en arrière-plan, tasks one-shot en direct) ; plus besoin d'enchaîner `start` puis `logs` à la main.
+- **Ordonnancement des jobs dans le wizard de profil** — nouveau step **Order** après la sélection des jobs (`run profile add` / `edit`) : on réordonne l'ordre d'exécution avec `shift+↑/↓` (ou `J`/`K`). L'ordre choisi est persisté dans `run.toml` et respecté à l'exécution (ex. une task `build` avant le `server`).
+
+### Improvements
+
+- **Gestion homogène des échecs service/task** — un échec de task abort proprement le reste du profil, les logs d'échec sont remontés, et le rapport d'abort est nettoyé quand une task échoue.
+- **Spinners de chargement uniformes** — spinners cohérents sur l'ensemble des commandes (`run`, `wt`, `pr`, `resolve`…) et ellipses normalisées (`…`).
+- **Picker `wt go` / `wt switch` enrichi** — spinner de chargement, fetch parallèle des worktrees et callout GitHub CLI quand `gh` est absent.
+
+## v0.9.0 — `wt list` interactif, run export/import + CRUD jobs/profiles
+
+### New features
+
+- **`wtm wt list` enrichie** — spinner de chargement pendant la récupération des worktrees, PRs et services ; bandeau d'avertissement quand la GitHub CLI est absente (non installée / non authentifiée) ; nouvelle action **Open PR** pour ouvrir directement la PR liée à une branche.
+- **Retour automatique au repo de base après suppression** — quand on supprime le worktree dans lequel on se trouve (via `wt list` → Clean ou `wtm wt clean`), le shell est ramené dans le repo de base au lieu de rester bloqué dans un dossier fantôme. S'appuie sur le pont `WTM_GO_FILE` existant.
 - **`wtm init` détecte les scripts `package.json`** — après les docker-compose files, une étape MultiSelect propose les scripts du `package.json` racine et, si `pnpm-workspace.yaml` est présent, ceux de chaque workspace. Les scripts `dev`/`start`/`serve`/`watch` (ou leurs formes préfixées `dev:*` / `*:dev`) sont pré-sélectionnés comme `kind="service"` ; les autres (`build`, `test`, `lint`…) comme `kind="task"`.
 - **`wtm run export [--profile <name>]`** — émet `.wtm/run.toml` comme JSON sur stdout. Compatible avec `--profile` pour exporter un seul profil et ses jobs.
 - **`wtm run import [file|-] [--replace --force]`** — ingère un payload JSON et le fusionne dans `.wtm/run.toml`. Par défaut, les nouveaux jobs/profils sont appendés, les doublons sont ignorés avec un avertissement. `--replace --force` écrase le fichier entièrement.
@@ -14,13 +29,6 @@
 ### Breaking changes
 
 - **`wtm run list --output json` : champs JSON en minuscules** — les clés passent de PascalCase (`Jobs`, `Name`, `Kind`) à lowercase (`job`, `name`, `kind`), alignées sur `run.schema.json`. Impacte tout script ou outil qui parsait la sortie JSON de `run list`.
-
-## v0.9.0 — `wt list` interactif + retour au repo de base après clean
-
-### New features
-
-- **`wtm wt list` enrichie** — spinner de chargement pendant la récupération des worktrees, PRs et services ; bandeau d'avertissement quand la GitHub CLI est absente (non installée / non authentifiée) ; nouvelle action **Open PR** pour ouvrir directement la PR liée à une branche.
-- **Retour automatique au repo de base après suppression** — quand on supprime le worktree dans lequel on se trouve (via `wt list` → Clean ou `wtm wt clean`), le shell est ramené dans le repo de base au lieu de rester bloqué dans un dossier fantôme. S'appuie sur le pont `WTM_GO_FILE` existant.
 
 ### Improvements
 
