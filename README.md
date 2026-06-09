@@ -283,10 +283,11 @@ wtm run up --parallel       # start without stopping others
 
 `run up` does not tail when output is piped, with `--output json`, or with `-d/--detach` — it starts the jobs and returns (the original behavior, ideal for scripts and LLM agents).
 
-**On failure:** a failing task aborts the rest of the profile. Services already started are **left running** (docker/DB stay warm for the fix-and-retry loop — wtm never tears down what it didn't fail to start), and `run up` prints where it stopped, what's still running, and what never started:
+**On failure:** any failing job — a task exiting non-zero **or** a service that fails to start — aborts the rest of the profile the same way. Jobs already started are **left running** (docker/DB stay warm for the fix-and-retry loop — wtm never tears down what it didn't fail to start), and `run up` prints where it stopped, what's still running, and what never started:
 
 ```
 ✗ task migrate failed (exit 1)
+ERROR: relation "users" does not exist
 
   ! Profile aborted at step 2/3 (migrate).
   Left running:  docker
@@ -295,7 +296,7 @@ wtm run up --parallel       # start without stopping others
   › fix and re-run `wtm run up` · `wtm run down` to stop everything
 ```
 
-Re-run `wtm run up` after the fix, or `wtm run down` to stop everything.
+The failing job's output is shown so you see *why* it failed — streamed live in the terminal, and embedded in the error entry under `--output json` so scripts and LLM agents get the reason too. Re-running `wtm run up` while services are still up is safe: already-running services are reported as such and skipped, not treated as errors.
 
 If services are already running on another worktree, `run up` prompts you to stop them or run in parallel.
 

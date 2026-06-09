@@ -99,7 +99,7 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 	m.mu.Lock()
 	if existing, ok := m.jobs[key]; ok && existing.Status == domain.JobStatusRunning {
 		m.mu.Unlock()
-		return fmt.Errorf("job %s is already running", job.Name)
+		return fmt.Errorf("job %s %s", job.Name, domain.JobAlreadyRunningSuffix)
 	}
 
 	cmd := exec.Command(parts[0], parts[1:]...)

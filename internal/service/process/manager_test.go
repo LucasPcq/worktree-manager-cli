@@ -32,6 +32,29 @@ func TestManagerStartTask_StreamsOutput(t *testing.T) {
 	}
 }
 
+// TestManagerStartService_AlreadyRunning verifies the daemon contract the CLI
+// relies on: starting a service that is already running returns an error whose
+// message ends with domain.JobAlreadyRunningSuffix, so `run up` can treat a
+// repeat start as a benign no-op instead of aborting the profile.
+func TestManagerStartService_AlreadyRunning(t *testing.T) {
+	m := NewManager()
+	dir := t.TempDir()
+
+	job := domain.JobConfig{Name: "server", Kind: domain.JobKindService, Cmd: "sleep 30"}
+	if err := m.Start(job, dir, nil); err != nil {
+		t.Fatalf("first start: %v", err)
+	}
+	t.Cleanup(func() { _ = m.StopAll() })
+
+	err := m.Start(job, dir, nil)
+	if err == nil {
+		t.Fatal("expected error starting an already-running service")
+	}
+	if !strings.Contains(err.Error(), domain.JobAlreadyRunningSuffix) {
+		t.Errorf("expected error to contain %q, got %v", domain.JobAlreadyRunningSuffix, err)
+	}
+}
+
 // TestManagerStartTask_FailureExitCode verifies that a failing task streams its
 // output AND returns a concise error carrying the real exit code (the captured
 // block is omitted because the streamer already saw it live).

@@ -1,6 +1,7 @@
 package run
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -86,16 +87,12 @@ func runUp(cmd *cobra.Command, args []string) error {
 	for i := range jobs {
 		job := jobs[i]
 
+		// Tasks and services abort the profile the same way on failure: stop
+		// launching the rest, leave what's running, and report the partial
+		// state (or emit the JSON results in machine mode).
 		if job.Kind == domain.JobKindTask {
 			if err := runTaskJob(cmd, client, job, dir, format, &results); err != nil {
-				if format == domain.OutputJSON {
-					return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
-				}
-				// A failing task aborts the remaining jobs. We deliberately
-				// leave already-started services running (docker/DB stay up for
-				// the fix-and-retry loop) and report the partial state instead.
-				reportProfileAbort(cmd, jobs, i, started)
-				return domain.ErrAborted
+				return abortProfile(cmd, jobs, i, started, results, format)
 			}
 			continue
 		}
@@ -112,14 +109,24 @@ func runUp(cmd *cobra.Command, args []string) error {
 			if format != domain.OutputJSON {
 				output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", job.Name, sendErr))
 			}
-			continue
+			return abortProfile(cmd, jobs, i, started, results, format)
 		}
 		if resp.Status == process.StatusError {
+			// A repeat start (re-running `run up` while services are up) is
+			// benign: count the job as running and keep going.
+			if strings.Contains(resp.Message, domain.JobAlreadyRunningSuffix) {
+				results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
+				started = append(started, job)
+				if format != domain.OutputJSON {
+					output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s already running", job.Name))
+				}
+				continue
+			}
 			results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: resp.Message})
 			if format != domain.OutputJSON {
 				output.Error(cmd.ErrOrStderr(), resp.Message)
 			}
-			continue
+			return abortProfile(cmd, jobs, i, started, results, format)
 		}
 		results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
 		started = append(started, job)
@@ -197,14 +204,19 @@ func watchProfileServices(cmd *cobra.Command, jobs []domain.JobConfig, dir strin
 }
 
 func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig, dir string, format string, results *[]output.JobActionResult) error {
-	// JSON mode stays silent on stdout (the structured results are the payload),
-	// so we don't stream raw task output that would corrupt the JSON document.
-	var onOutput func([]byte)
+	// We always capture the streamed output so failures carry the "why" — live
+	// on stdout in text mode (the user reads it as it runs), and into the JSON
+	// result's message in machine mode (LLM/CI never sees the live stream).
+	var captured bytes.Buffer
+	onOutput := func(chunk []byte) { _, _ = captured.Write(chunk) }
 	if format != domain.OutputJSON {
 		out := cmd.OutOrStdout()
 		output.Blank(out)
 		output.Loading(out, fmt.Sprintf("Running task %s", job.Name))
-		onOutput = func(chunk []byte) { _, _ = out.Write(chunk) }
+		onOutput = func(chunk []byte) {
+			_, _ = captured.Write(chunk)
+			_, _ = out.Write(chunk)
+		}
 	}
 
 	resp, err := client.SendStream(process.Request{
@@ -217,7 +229,13 @@ func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig
 		return fmt.Errorf("task %s: %w", job.Name, err)
 	}
 	if resp.Status == process.StatusError {
-		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: resp.Message})
+		// In text mode the output already streamed live, so the result only
+		// needs the concise reason; JSON consumers get the captured logs too.
+		message := resp.Message
+		if logs := strings.TrimSpace(captured.String()); logs != "" && format == domain.OutputJSON {
+			message = resp.Message + "\n" + logs
+		}
+		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: message})
 		if format != domain.OutputJSON {
 			output.Error(cmd.ErrOrStderr(), resp.Message)
 		}
@@ -229,6 +247,19 @@ func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig
 		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s done", job.Name))
 	}
 	return nil
+}
+
+// abortProfile ends a profile run early after a job failed. In JSON mode it
+// emits the accumulated results (the error entry is already in there) and exits
+// zero so the document stays parseable; in text mode it prints the partial-state
+// report and returns ErrAborted so the process exits non-zero without a second
+// error line on top of the report.
+func abortProfile(cmd *cobra.Command, jobs []domain.JobConfig, failedIdx int, started []domain.JobConfig, results []output.JobActionResult, format string) error {
+	if format == domain.OutputJSON {
+		return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
+	}
+	reportProfileAbort(cmd, jobs, failedIdx, started)
+	return domain.ErrAborted
 }
 
 // reportProfileAbort prints the partial state after a task aborts a profile:

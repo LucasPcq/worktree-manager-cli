@@ -171,4 +171,10 @@ const (
 
 	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
 	CtrlCByte byte = 0x03
+
+	// JobAlreadyRunningSuffix is the tail of the daemon error returned when a
+	// job is started while already running. Callers match on it to treat a
+	// repeat start (e.g. re-running `run up` while services are up) as a benign
+	// no-op rather than a failure that aborts the profile.
+	JobAlreadyRunningSuffix = "is already running"
 )
