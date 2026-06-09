@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
@@ -27,11 +28,14 @@ func newLogsCmd() *cobra.Command {
 	}
 }
 
-func runLogs(_ *cobra.Command, args []string) error {
+func runLogs(cmd *cobra.Command, args []string) error {
 	socketPath := process.SocketPath()
+	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), "Connecting to daemon…")
 	if err := process.EnsureDaemon(socketPath); err != nil {
+		stopSpinner()
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
+	stopSpinner()
 
 	dir, _ := os.Getwd()
 
@@ -128,6 +132,16 @@ func multiplexAllJobs(socketPath string, dir string) error {
 		output.Blank(os.Stdout)
 		return nil
 	}
+
+	return multiplexJobs(socketPath, dir, running)
+}
+
+// multiplexJobs attaches to every job in `running` and prints their output as
+// color-prefixed lines on a single stream. Ctrl+C detaches from all of them
+// without stopping the jobs. Used both by `run logs` (no args) and by
+// `run up` once a profile's services are live.
+func multiplexJobs(socketPath string, dir string, running []process.JobInfo) error {
+	client := process.NewClient(socketPath)
 
 	defer process.ResetTerminalState(os.Stdout)
 

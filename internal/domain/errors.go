@@ -27,6 +27,11 @@ var (
 	// ErrUserAborted is returned when the user cancels an interactive prompt.
 	ErrUserAborted = errors.New("user aborted")
 
+	// ErrAborted signals a command that failed after already printing its own
+	// report (e.g. a profile aborted by a failing task). The top-level handler
+	// exits non-zero without printing a second, redundant error line.
+	ErrAborted = errors.New("aborted")
+
 	// ErrNotGitRepo is returned when the current directory is not a git repository.
 	ErrNotGitRepo = errors.New("not a git repository")
 

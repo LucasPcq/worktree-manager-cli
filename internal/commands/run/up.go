@@ -1,12 +1,14 @@
 package run
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/config"
@@ -29,6 +31,7 @@ func newUpCmd() *cobra.Command {
 
 	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop jobs on other worktrees before starting")
 	cmd.Flags().Bool(domain.FlagParallel, false, "Start without stopping other worktrees")
+	cmd.Flags().BoolP(domain.FlagDetach, "d", false, "Start jobs and return immediately instead of tailing their logs")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -66,9 +69,21 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
 	socketPath := process.SocketPath()
+	var stopDaemonSpinner func()
+	if format != domain.OutputJSON {
+		stopDaemonSpinner = shared.StartSpinner(cmd.ErrOrStderr(), "Connecting to daemon…")
+	}
 	if err := process.EnsureDaemon(socketPath); err != nil {
+		if stopDaemonSpinner != nil {
+			stopDaemonSpinner()
+		}
 		return fmt.Errorf("ensure daemon: %w", err)
+	}
+	if stopDaemonSpinner != nil {
+		stopDaemonSpinner()
 	}
 
 	client := process.NewClient(socketPath)
@@ -76,25 +91,23 @@ func runUp(cmd *cobra.Command, args []string) error {
 	if err := handleConcurrentJobs(cmd, client, dir); err != nil {
 		return err
 	}
-
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	results := make([]output.JobActionResult, 0, len(jobs))
+	var started []domain.JobConfig
 
 	for i := range jobs {
 		job := jobs[i]
 
+		// Tasks and services abort the profile the same way on failure: stop
+		// launching the rest, leave what's running, and report the partial
+		// state (or emit the JSON results in machine mode).
 		if job.Kind == domain.JobKindTask {
 			if err := runTaskJob(cmd, client, job, dir, format, &results); err != nil {
-				if format == domain.OutputJSON {
-					return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
-				}
-				output.Blank(cmd.OutOrStdout())
-				return err
+				return abortProfile(cmd, jobs, i, started, results, format)
 			}
 			continue
 		}
 
-		stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s...", job.Name))
+		stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s…", job.Name))
 		resp, sendErr := client.Send(process.Request{
 			Action:  process.ActionStart,
 			Job:     &job,
@@ -106,16 +119,27 @@ func runUp(cmd *cobra.Command, args []string) error {
 			if format != domain.OutputJSON {
 				output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", job.Name, sendErr))
 			}
-			continue
+			return abortProfile(cmd, jobs, i, started, results, format)
 		}
 		if resp.Status == process.StatusError {
+			// A repeat start (re-running `run up` while services are up) is
+			// benign: count the job as running and keep going.
+			if strings.Contains(resp.Message, domain.JobAlreadyRunningSuffix) {
+				results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
+				started = append(started, job)
+				if format != domain.OutputJSON {
+					output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s already running", job.Name))
+				}
+				continue
+			}
 			results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: resp.Message})
 			if format != domain.OutputJSON {
 				output.Error(cmd.ErrOrStderr(), resp.Message)
 			}
-			continue
+			return abortProfile(cmd, jobs, i, started, results, format)
 		}
 		results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
+		started = append(started, job)
 		if format != domain.OutputJSON {
 			output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", job.Name))
 		}
@@ -125,29 +149,103 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
 	}
 
+	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
+	if detach || !term.IsTerminal(int(os.Stdin.Fd())) {
+		output.Blank(cmd.OutOrStdout())
+		return nil
+	}
+
+	return watchProfileServices(cmd, jobs, dir)
+}
+
+// watchProfileServices tails the foreground services that a profile just
+// started, unifying `run up` + `run logs` into a single command. A lone
+// service is attached directly (full PTY, so its own TUI — turbo, vite —
+// renders natively and stays interactive); two or more are multiplexed as
+// color-prefixed log lines. Detached launchers (docker compose up -d) have no
+// attachable output and are skipped. Ctrl+C detaches without stopping anything.
+func watchProfileServices(cmd *cobra.Command, jobs []domain.JobConfig, dir string) error {
+	watchable := make(map[string]bool)
+	for i := range jobs {
+		job := jobs[i]
+		if job.Kind == domain.JobKindService && !rules.IsDetached(job) {
+			watchable[job.Name] = true
+		}
+	}
+	if len(watchable) == 0 {
+		output.Blank(cmd.OutOrStdout())
+		return nil
+	}
+
+	socketPath := process.SocketPath()
+	client := process.NewClient(socketPath)
+	resp, err := client.Send(process.Request{Action: process.ActionList})
+	if err != nil {
+		output.Blank(cmd.OutOrStdout())
+		return nil
+	}
+
+	var running []process.JobInfo
+	for _, job := range resp.Jobs {
+		if job.WorkDir == dir && job.Status == domain.JobStatusRunning && watchable[job.Name] {
+			running = append(running, job)
+		}
+	}
+	if len(running) == 0 {
+		output.Blank(cmd.OutOrStdout())
+		return nil
+	}
+
 	output.Blank(cmd.OutOrStdout())
-	return nil
+	output.Loading(cmd.OutOrStdout(), "Tailing logs — Ctrl+C to detach (services keep running)")
+	output.Blank(cmd.OutOrStdout())
+
+	var watchErr error
+	if len(running) == 1 {
+		watchErr = attachSingleJob(socketPath, running[0].Name, dir)
+	} else {
+		watchErr = multiplexJobs(socketPath, dir, running)
+	}
+
+	output.Blank(cmd.ErrOrStderr())
+	output.Message(cmd.ErrOrStderr(), "Detached. Services keep running in the background.")
+	output.Loading(cmd.ErrOrStderr(), "wtm run logs to reattach · wtm run down to stop")
+	return watchErr
 }
 
 func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig, dir string, format string, results *[]output.JobActionResult) error {
-	var stopSpinner func()
+	// We always capture the streamed output so failures carry the "why" — live
+	// on stdout in text mode (the user reads it as it runs), and into the JSON
+	// result's message in machine mode (LLM/CI never sees the live stream).
+	var captured bytes.Buffer
+	onOutput := func(chunk []byte) { _, _ = captured.Write(chunk) }
 	if format != domain.OutputJSON {
-		stopSpinner = shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Running task %s...", job.Name))
+		out := cmd.OutOrStdout()
+		output.Blank(out)
+		output.Loading(out, fmt.Sprintf("Running task %s", job.Name))
+		onOutput = func(chunk []byte) {
+			_, _ = captured.Write(chunk)
+			_, _ = out.Write(chunk)
+		}
 	}
-	resp, err := client.Send(process.Request{
+
+	resp, err := client.SendStream(process.Request{
 		Action:  process.ActionStart,
 		Job:     &job,
 		WorkDir: dir,
-	})
-	if stopSpinner != nil {
-		stopSpinner()
-	}
+	}, onOutput)
 	if err != nil {
 		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: err.Error()})
 		return fmt.Errorf("task %s: %w", job.Name, err)
 	}
 	if resp.Status == process.StatusError {
-		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: resp.Message})
+		// In text mode the output already streamed live, so the result only
+		// needs the concise reason; JSON consumers get the captured logs too.
+		message := resp.Message
+		if logs := strings.TrimSpace(captured.String()); logs != "" && format == domain.OutputJSON {
+			message = resp.Message + "\n" + logs
+		}
+		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: message})
 		if format != domain.OutputJSON {
 			output.Error(cmd.ErrOrStderr(), resp.Message)
 		}
@@ -159,6 +257,49 @@ func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig
 		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s done", job.Name))
 	}
 	return nil
+}
+
+// abortProfile ends a profile run early after a job failed. In JSON mode it
+// emits the accumulated results (the error entry is already in there) and exits
+// zero so the document stays parseable; in text mode it prints the partial-state
+// report and returns ErrAborted so the process exits non-zero without a second
+// error line on top of the report.
+func abortProfile(cmd *cobra.Command, jobs []domain.JobConfig, failedIdx int, started []domain.JobConfig, results []output.JobActionResult, format string) error {
+	if format == domain.OutputJSON {
+		return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
+	}
+	reportProfileAbort(cmd, jobs, failedIdx, started)
+	return domain.ErrAborted
+}
+
+// reportProfileAbort prints the partial state after a task aborts a profile:
+// the step that failed, the services left running (never torn down, so the
+// fix-and-retry loop keeps docker/DB warm), the jobs that never started, and
+// the two next actions. Keeps the user out of a silent intermediate state.
+func reportProfileAbort(cmd *cobra.Command, jobs []domain.JobConfig, failedIdx int, started []domain.JobConfig) {
+	w := cmd.ErrOrStderr()
+	output.Blank(w)
+	output.Warning(w, fmt.Sprintf("Profile aborted at step %d/%d (%s).", failedIdx+1, len(jobs), jobs[failedIdx].Name))
+
+	if len(started) > 0 {
+		names := make([]string, len(started))
+		for i, j := range started {
+			names[i] = j.Name
+		}
+		output.InfoLine(w, "Left running:", strings.Join(names, ", "))
+	}
+
+	if failedIdx+1 < len(jobs) {
+		notStarted := make([]string, 0, len(jobs)-failedIdx-1)
+		for _, j := range jobs[failedIdx+1:] {
+			notStarted = append(notStarted, j.Name)
+		}
+		output.InfoLine(w, "Not started: ", strings.Join(notStarted, ", "))
+	}
+
+	output.Blank(w)
+	output.Loading(w, "fix and re-run `wtm run up` · `wtm run down` to stop everything")
+	output.Blank(w)
 }
 
 func resolveProfileJobs(args []string, cfg domain.RunConfig) ([]domain.JobConfig, error) {

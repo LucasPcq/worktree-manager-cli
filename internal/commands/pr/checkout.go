@@ -80,12 +80,18 @@ type checkoutPRParams struct {
 
 // checkoutPR is the shared implementation used by runCheckout and executePRAction.
 func checkoutPR(cmd *cobra.Command, result shared.ConfigResult, params checkoutPRParams) error {
-	output.Loading(cmd.ErrOrStderr(), fmt.Sprintf("Fetching PR #%d...", params.Number))
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	jsonMode := format == domain.OutputJSON
 
+	stop := func() {}
+	if !jsonMode {
+		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Fetching PR…")
+	}
 	p, err := ghservice.GetPRDetail(ghservice.GetPRDetailParams{
 		ProjectDir: result.ProjectDir,
 		Number:     params.Number,
 	})
+	stop()
 	if err != nil {
 		return fmt.Errorf("fetch PR: %w", err)
 	}
@@ -115,15 +121,22 @@ func checkoutPR(cmd *cobra.Command, result shared.ConfigResult, params checkoutP
 		envFromOverride = picked
 	}
 
-	output.Loading(cmd.ErrOrStderr(), fmt.Sprintf("Fetching branch %s from origin...", p.Branch))
-	if err := infra.FetchBranch(infra.FetchBranchParams{
+	stopFetch := func() {}
+	if !jsonMode {
+		stopFetch = shared.StartSpinner(cmd.ErrOrStderr(), "Fetching branch from origin…")
+	}
+	fetchErr := infra.FetchBranch(infra.FetchBranchParams{
 		ProjectDir: result.ProjectDir,
 		Branch:     p.Branch,
-	}); err != nil {
-		return err
+	})
+	stopFetch()
+	if fetchErr != nil {
+		return fetchErr
 	}
 
-	output.Loading(cmd.ErrOrStderr(), fmt.Sprintf("Creating worktree %s...", p.Branch))
+	if !jsonMode {
+		output.Loading(cmd.ErrOrStderr(), fmt.Sprintf("Creating worktree %s…", p.Branch))
+	}
 	createResult, err := worktree.Create(domain.CreateParams{
 		ProjectDir:      result.ProjectDir,
 		StateDir:        result.StateDir,
@@ -136,8 +149,7 @@ func checkoutPR(cmd *cobra.Command, result shared.ConfigResult, params checkoutP
 		return err
 	}
 
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	if format == domain.OutputJSON {
+	if jsonMode {
 		return output.WritePRCheckoutJSON(cmd.OutOrStdout(), output.PRCheckoutJSON{
 			Number: p.Number,
 			Branch: p.Branch,

@@ -74,7 +74,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 		jobs := rules.ProfileJobs(runCfg, profile)
 		results := make([]output.JobActionResult, 0, len(jobs))
 		for _, job := range jobs {
-			stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s...", job.Name))
+			stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s…", job.Name))
 			resp, sendErr := client.Send(process.Request{
 				Action:  process.ActionStop,
 				Name:    job.Name,
@@ -116,7 +116,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 		req.WorkDir = dir
 	}
 
-	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), "Stopping jobs...")
+	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), "Stopping jobs…")
 	resp, err := client.Send(req)
 	stopSpinner()
 	if err != nil {

@@ -49,6 +49,15 @@ func MultiSelectSummary(emptyLabel string) func(any) string {
 	}
 }
 
+// ReorderSummary returns the comma-joined values of a ReorderListModel step in
+// their final order. Use as a Step.Summary.
+func ReorderSummary(model any) string {
+	if c, ok := model.(ReorderListModel); ok {
+		return strings.Join(c.Values(), ", ")
+	}
+	return ""
+}
+
 // ConfirmSummary returns yesLabel or noLabel based on the user's choice.
 func ConfirmSummary(yesLabel, noLabel string) func(any) string {
 	return func(model any) string {

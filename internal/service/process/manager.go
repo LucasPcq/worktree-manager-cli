@@ -99,7 +99,7 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 	m.mu.Lock()
 	if existing, ok := m.jobs[key]; ok && existing.Status == domain.JobStatusRunning {
 		m.mu.Unlock()
-		return fmt.Errorf("job %s is already running", job.Name)
+		return fmt.Errorf("job %s %s", job.Name, domain.JobAlreadyRunningSuffix)
 	}
 
 	cmd := exec.Command(parts[0], parts[1:]...)
@@ -271,12 +271,17 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	job.output = newOutputHub(outputHistoryBytes)
 	go m.drainToHub(job)
 
-	var unsub func()
+	// streamDone is closed once the streaming goroutine has drained every
+	// buffered chunk. We wait on it before returning so the caller (the daemon)
+	// never emits its terminal response while StatusOutput chunks are still in
+	// flight on the same connection.
+	var streamDone chan struct{}
 	if streamer != nil {
-		_, ch, release, subErr := job.output.Subscribe()
+		_, ch, _, subErr := job.output.Subscribe()
 		if subErr == nil {
-			unsub = release
+			streamDone = make(chan struct{})
 			go func() {
+				defer close(streamDone)
 				for chunk := range ch {
 					_, _ = streamer.Write(chunk)
 				}
@@ -297,9 +302,11 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 		job.output.mu.Unlock()
 	}
 
+	// Closing the hub closes the subscriber channel, which lets the streaming
+	// goroutine drain and exit; wait for it so all chunks reach the client.
 	job.output.close()
-	if unsub != nil {
-		unsub()
+	if streamDone != nil {
+		<-streamDone
 	}
 
 	m.mu.Lock()
@@ -307,12 +314,28 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	m.mu.Unlock()
 
 	if waitErr != nil {
+		exit := exitCodeOf(waitErr)
+		// When a streamer was attached the client already saw the output live,
+		// so we return a concise error instead of re-embedding the full capture.
+		if streamer != nil {
+			return fmt.Errorf("task %s failed (exit %d)", job.Name, exit)
+		}
 		if captured != "" {
-			return fmt.Errorf("task %s failed:\n%s", job.Name, captured)
+			return fmt.Errorf("task %s failed (exit %d):\n%s", job.Name, exit, captured)
 		}
 		return fmt.Errorf("task %s failed: %w", job.Name, waitErr)
 	}
 	return nil
+}
+
+// exitCodeOf extracts the process exit code from a Cmd.Wait error, falling
+// back to 1 when the error is not an *exec.ExitError.
+func exitCodeOf(err error) int {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return 1
 }
 
 // waitDetached drains PTY output into a bounded buffer and blocks until the

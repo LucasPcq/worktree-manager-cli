@@ -48,27 +48,40 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("job %q not found in config", args[0])
 	}
 
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
 	socketPath := process.SocketPath()
+	var stopDaemonSpinner func()
+	if format != domain.OutputJSON {
+		stopDaemonSpinner = shared.StartSpinner(cmd.ErrOrStderr(), "Connecting to daemon…")
+	}
 	if err := process.EnsureDaemon(socketPath); err != nil {
+		if stopDaemonSpinner != nil {
+			stopDaemonSpinner()
+		}
 		return fmt.Errorf("ensure daemon: %w", err)
+	}
+	if stopDaemonSpinner != nil {
+		stopDaemonSpinner()
 	}
 
 	client := process.NewClient(socketPath)
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	if job.Kind == domain.JobKindTask {
-		var stopSpinner func()
+		// Stream the task's output live (text mode); JSON mode stays silent on
+		// stdout so the structured result remains a clean JSON document.
+		var onOutput func([]byte)
 		if format != domain.OutputJSON {
-			stopSpinner = shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Running task %s...", job.Name))
+			out := cmd.OutOrStdout()
+			output.Blank(out)
+			output.Loading(out, fmt.Sprintf("Running task %s", job.Name))
+			onOutput = func(chunk []byte) { _, _ = out.Write(chunk) }
 		}
-		resp, err := client.Send(process.Request{
+		resp, err := client.SendStream(process.Request{
 			Action:  process.ActionStart,
 			Job:     &job,
 			WorkDir: dir,
-		})
-		if stopSpinner != nil {
-			stopSpinner()
-		}
+		}, onOutput)
 		if err != nil {
 			return fmt.Errorf("task %s: %w", job.Name, err)
 		}
@@ -86,7 +99,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s...", job.Name))
+	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s…", job.Name))
 	resp, err := client.Send(process.Request{
 		Action:  process.ActionStart,
 		Job:     &job,

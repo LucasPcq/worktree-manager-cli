@@ -263,20 +263,47 @@ wtm run ps --output json    # machine-readable
 
 #### `wtm run up [profile]`
 
-Execute a profile defined in `run.toml`. Jobs run in declared order — services launch in the background, tasks block and stream output. A failing task aborts the rest of the profile.
+Execute a profile defined in `run.toml`. Jobs run in declared order — tasks block and **stream their output live** (a non-zero exit aborts the rest of the profile), services launch in the background.
+
+Once the profile's services are up, `run up` **tails their logs automatically** so you don't need a separate `run logs` — start and watch in one command, like `docker compose up`:
+
+- a single foreground service is attached directly (full PTY), so its own TUI — turbo, vite, next — renders natively and stays interactive;
+- two or more are multiplexed as color-prefixed log lines;
+- detached launchers (`docker compose up -d`) are skipped (nothing to tail).
+
+Press `Ctrl+C` to **detach** — the services keep running in the background.
 
 ```bash
-wtm run up                  # start default profile (or picker if multiple)
+wtm run up                  # start default profile, then tail its services
 wtm run up full             # start a specific profile
+wtm run up -d               # start and return immediately (no tail)
 wtm run up --exclusive      # stop jobs on other worktrees first
 wtm run up --parallel       # start without stopping others
 ```
+
+`run up` does not tail when output is piped, with `--output json`, or with `-d/--detach` — it starts the jobs and returns (the original behavior, ideal for scripts and LLM agents).
+
+**On failure:** any failing job — a task exiting non-zero **or** a service that fails to start — aborts the rest of the profile the same way. Jobs already started are **left running** (docker/DB stay warm for the fix-and-retry loop — wtm never tears down what it didn't fail to start), and `run up` prints where it stopped, what's still running, and what never started:
+
+```
+✗ task migrate failed (exit 1)
+ERROR: relation "users" does not exist
+
+  ! Profile aborted at step 2/3 (migrate).
+  Left running:  docker
+  Not started:   dev
+
+  › fix and re-run `wtm run up` · `wtm run down` to stop everything
+```
+
+The failing job's output is shown so you see *why* it failed — streamed live in the terminal, and embedded in the error entry under `--output json` so scripts and LLM agents get the reason too. Re-running `wtm run up` while services are still up is safe: already-running services are reported as such and skipped, not treated as errors.
 
 If services are already running on another worktree, `run up` prompts you to stop them or run in parallel.
 
 **Flags:**
 | Flag | Description |
 |---|---|
+| `-d, --detach` | Start jobs and return immediately instead of tailing their logs |
 | `--exclusive` | Stop jobs on other worktrees before starting |
 | `--parallel` | Start without stopping other worktrees |
 
@@ -626,7 +653,7 @@ jobs = ["docker", "migrate"]
 - `wtm run start <job>` / `wtm run stop <job>` — start or stop a single job
 - `wtm run logs` — stream all running jobs (multiplexed), or `wtm run logs <job>` for one
 
-Services run in a background daemon with PTY support. Press `Ctrl+C` to detach without killing them. Tasks run inline and stream their output back over the daemon's connection.
+Services run in a background daemon with PTY support; `run up` tails them automatically (press `Ctrl+C` to detach without killing them). Tasks run inline and stream their output live back over the daemon's connection.
 
 `run.toml` is shared across every worktree of the same clone (loaded from the main repo's git common dir). Jobs are scoped per worktree at runtime: starting `dev` from worktree A runs it with `cwd = A`, starting it from worktree B runs a separate process. The daemon tracks them independently and `wtm run down` only stops jobs from the current worktree unless you pass `--all`.
 

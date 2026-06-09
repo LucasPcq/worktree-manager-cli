@@ -10,7 +10,8 @@ import (
 )
 
 // Step defines one step in a wizard.
-// Model must be a SelectListModel, TextInputModel, ConfirmModel, or MultiSelectModel.
+// Model must be a SelectListModel, TextInputModel, ConfirmModel, MultiSelectModel,
+// or ReorderListModel.
 type Step struct {
 	Name  string
 	Model any
@@ -101,6 +102,10 @@ func (m WizardModel) updateStep(step *Step, msg tea.Msg) (advanced bool, back bo
 		updated, c := child.Update(msg)
 		step.Model = updated
 		return updated.Done(), updated.Aborted(), c
+	case ReorderListModel:
+		updated, c := child.Update(msg)
+		step.Model = updated
+		return updated.Done(), updated.Aborted(), c
 	}
 	return false, false, nil
 }
@@ -159,6 +164,8 @@ func (m WizardModel) renderHelpBar() string {
 		help += " • / filter"
 	case MultiSelectModel:
 		help += " • space toggle"
+	case ReorderListModel:
+		help += " • shift+↑/↓ move"
 	}
 	if m.current > 0 {
 		help += " • esc back"
@@ -186,6 +193,10 @@ func (m *WizardModel) propagateSize(stepIdx int) {
 		child.width = m.width
 		m.steps[stepIdx].Model = child
 	case MultiSelectModel:
+		child.width = m.width
+		child.height = h
+		m.steps[stepIdx].Model = child
+	case ReorderListModel:
 		child.width = m.width
 		child.height = h
 		m.steps[stepIdx].Model = child
@@ -237,6 +248,8 @@ func (m WizardModel) initStep(stepIdx int) tea.Cmd {
 		return child.Init()
 	case MultiSelectModel:
 		return child.Init()
+	case ReorderListModel:
+		return child.Init()
 	}
 	return nil
 }
@@ -250,6 +263,8 @@ func (m WizardModel) viewStep(stepIdx int) string {
 	case ConfirmModel:
 		return child.View()
 	case MultiSelectModel:
+		return child.View()
+	case ReorderListModel:
 		return child.View()
 	}
 	return ""
@@ -276,6 +291,10 @@ func (m *WizardModel) resetStep(stepIdx int) {
 		child.done = false
 		child.aborted = false
 		m.steps[stepIdx].Model = child
+	case ReorderListModel:
+		child.done = false
+		child.aborted = false
+		m.steps[stepIdx].Model = child
 	}
 }
 
@@ -288,6 +307,8 @@ func (m WizardModel) stepDescription(step Step) string {
 	case ConfirmModel:
 		return child.desc
 	case MultiSelectModel:
+		return child.desc
+	case ReorderListModel:
 		return child.desc
 	}
 	return ""

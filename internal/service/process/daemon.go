@@ -141,13 +141,13 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 	}
 
 	if req.Job.Kind == domain.JobKindTask {
-		// Tasks block until the command exits but their output is not streamed
-		// over the socket — the CLI just shows a spinner. Users who want to
-		// follow the output can attach with `wtm run logs <task>` in another
-		// terminal (the hub is live while the task runs).
-		err := d.manager.Start(*req.Job, req.WorkDir, nil)
+		// Tasks block until the command exits and stream their output back over
+		// the socket as StatusOutput chunks, so the CLI can render it live
+		// (`run up` / `run start`). Start blocks until every chunk has been
+		// flushed, so the terminal response below never races the stream.
+		err := d.manager.Start(*req.Job, req.WorkDir, responseStreamWriter{encoder: encoder})
 		if err != nil {
-			code := 1
+			code := exitCodeOf(err)
 			encoder.Encode(Response{Status: StatusError, Message: err.Error(), ExitCode: &code})
 			return
 		}
@@ -272,6 +272,22 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 	}()
 
 	<-done
+}
+
+// responseStreamWriter adapts a job's output stream onto the daemon
+// connection: each write is encoded as a StatusOutput response so the client
+// can forward task output to the user in real time. It is only ever written to
+// by the task's single streaming goroutine, so the encoder sees no concurrent
+// use while the task runs.
+type responseStreamWriter struct {
+	encoder *json.Encoder
+}
+
+func (w responseStreamWriter) Write(p []byte) (int, error) {
+	if err := w.encoder.Encode(Response{Status: StatusOutput, Data: p}); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 // SocketPath returns the default daemon socket path.

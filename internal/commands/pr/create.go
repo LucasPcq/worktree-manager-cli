@@ -54,10 +54,17 @@ func runCreate(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("resolve branch: %w", err)
 	}
 
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
+	stopCheck := func() {}
+	if format != domain.OutputJSON {
+		stopCheck = shared.StartSpinner(cmd.ErrOrStderr(), "Checking for existing PR…")
+	}
 	hasPR, prURL := ghservice.HasOpenPR(ghservice.HasOpenPRParams{
 		ProjectDir: dir,
 		Branch:     branch,
 	})
+	stopCheck()
 	if hasPR {
 		output.Blank(cmd.ErrOrStderr())
 		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("PR already exists for branch %s", branch))
@@ -77,7 +84,7 @@ func runCreate(cmd *cobra.Command, _ []string) error {
 		if err := confirmPush(); err != nil {
 			return nil
 		}
-		stop := shared.StartSpinner(cmd.ErrOrStderr(), "Pushing branch...")
+		stop := shared.StartSpinner(cmd.ErrOrStderr(), "Pushing branch…")
 		pushErr := infra.PushBranch(infra.PushBranchParams{
 			ProjectDir: dir,
 			Branch:     branch,
@@ -142,7 +149,7 @@ func runCreate(cmd *cobra.Command, _ []string) error {
 
 	body := ghservice.DetectPRTemplate(dir)
 
-	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Creating pull request...")
+	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Creating pull request…")
 	p, err := ghservice.CreatePR(ghservice.CreatePRParams{
 		ProjectDir: dir,
 		Title:      title,
@@ -156,7 +163,6 @@ func runCreate(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
 		return output.WritePRCreateJSON(cmd.OutOrStdout(), p)
 	}

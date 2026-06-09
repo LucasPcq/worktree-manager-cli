@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"strings"
 
@@ -89,9 +90,13 @@ func init() {
 // Execute runs the root command and exits with the appropriate code.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		output.Blank(os.Stderr)
-		output.Error(os.Stderr, err.Error())
-		output.Blank(os.Stderr)
+		// ErrAborted means the command already printed its own report; just
+		// propagate the non-zero exit without a second error line.
+		if !errors.Is(err, domain.ErrAborted) {
+			output.Blank(os.Stderr)
+			output.Error(os.Stderr, err.Error())
+			output.Blank(os.Stderr)
+		}
 		os.Exit(domain.ExitCodeError)
 	}
 }
