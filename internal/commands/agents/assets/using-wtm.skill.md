@@ -65,9 +65,9 @@ Profiles are named groups of jobs (run in declared order). The same TOML can hos
 
 - **`wtm run list --output json`** — config introspection (jobs + profiles declared).
 - **`wtm run ps --output json`** — runtime state (jobs running right now, with kind).
-- **`wtm run up [profile] --output json`** — execute a profile in order. No arg → default profile. Flags: `--exclusive` (stop jobs on other worktrees first), `--parallel` (don't stop anything).
+- **`wtm run up [profile] --output json`** — execute a profile in order. No arg → default profile. Flags: `--exclusive` (stop jobs on other worktrees first), `--parallel` (don't stop anything), `-d`/`--detach` (start and return immediately without tailing — implied in `--output json`/piped mode, where services always stay detached). A failing job (task **or** service) aborts the rest of the profile and exits non-zero, leaving already-started services running and emitting a partial-state report. Re-running `run up` while services are already up is a benign no-op, not an abort.
 - **`wtm run down [profile] --output json`** — stop jobs in the **current worktree** (or a specific profile). Other worktrees are never touched. Add `--all` to stop jobs across every worktree.
-- **`wtm run start <job> --output json`** — start one job. Tasks block until they exit; services launch in the background.
+- **`wtm run start <job> --output json`** — start one job. Tasks block until they exit (their output is captured in the JSON result); services launch in the background. In text mode `start`/`up` now tail foreground output, but `--output json`/piped mode stays detached — add `-d`/`--detach` if you want the same detach behavior in text mode.
 - **`wtm run stop <job> --output json`** — stop one job.
 - **`wtm run logs [job]`** — attach to a job's PTY. No `--output json`: it's a raw text stream (already machine-readable).
 - **`wtm run export [--profile <name>]`** — emit the run config as JSON on stdout. Use `--profile` to export only one profile and its jobs. Pipe to a file: `wtm run export > layout.json`.
@@ -113,6 +113,7 @@ On non-zero exit, read stderr. Common cases:
 - exit `14` (`job not found`) → the job isn't declared in `run.toml`; check `run list`.
 - exit `15` (`wt extract` conflict) → the selected changes clash with the target worktree; nothing was changed. Retry with `--on-conflict resolve` to apply conflict markers for the user to resolve, or pick another `--to` target.
 - `gh: …` → the `gh` CLI isn't authenticated; tell the user to run `gh auth login`.
+- A `run up`/`run start` job failed → in `--output json` mode the failing task's captured output is embedded in the error entry, so read it to surface *why* it failed. Already-started services stay up (fix-and-retry loop); re-run `run up` once fixed.
 
 ## Escalate to the user when
 
