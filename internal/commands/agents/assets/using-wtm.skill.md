@@ -88,7 +88,7 @@ Backed by the `gh` CLI — the user must have `gh auth login` set up.
 
 - **`wtm pr list --output json`** — open PRs. Filters: `--mine`, `--review`.
 - **`wtm pr create --title "..." --base <branch> --yes --output json`** — creates a PR for the current branch. Add `--draft` for draft PRs. Pass `--title` AND `--base` AND `--draft` (or omit `--draft`) to skip the wizard entirely. Use **`--yes`** (implied by `--output json`) to auto-push an unpushed branch and skip prompts. If a PR already exists, it prints the existing PR JSON and exits `13`.
-- **`wtm pr checkout <number> --output json`** — fetch the PR's branch and create a worktree for it. Optional: `--env-from`. Refuses fork PRs.
+- **`wtm pr checkout <number> --output json`** — fetch the PR's branch and create a worktree for it. Optional: `--env-from`. Fork PRs are out of scope by design — fall back to `gh pr checkout <number>`.
 
 ## Conventions and invariants
 
