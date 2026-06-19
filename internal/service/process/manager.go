@@ -547,7 +547,10 @@ func (m *Manager) stopByKey(key string) error {
 	m.mu.Unlock()
 
 	if !ok {
-		return fmt.Errorf("job not found")
+		// Idempotent: a job that isn't tracked is already stopped, so stopping
+		// it again is a no-op success. Whether the job name is actually declared
+		// is validated at the command layer (which has the run.toml config).
+		return nil
 	}
 
 	// Always run the stop command if configured — handles detached processes

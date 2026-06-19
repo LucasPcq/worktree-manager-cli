@@ -27,7 +27,7 @@ func Check(params domain.CleanParams) (domain.CleanCheckResult, error) {
 		Branch:     params.Branch,
 	})
 
-	haspr, prurl := ghservice.HasOpenPR(ghservice.HasOpenPRParams{
+	haspr, _, prurl := ghservice.HasOpenPR(ghservice.HasOpenPRParams{
 		ProjectDir: params.ProjectDir,
 		Branch:     params.Branch,
 	})

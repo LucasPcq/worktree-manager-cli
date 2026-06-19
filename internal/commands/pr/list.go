@@ -175,9 +175,9 @@ func executePRAction(cmd *cobra.Command, action string, p domain.PRInfo, project
 		return nil
 
 	case prActionCheckout:
-		result, ok := shared.LoadConfig(cmd, projectDir)
-		if !ok {
-			return nil
+		result, err := shared.LoadConfig(cmd, projectDir)
+		if err != nil {
+			return err
 		}
 		return checkoutPR(cmd, result, checkoutPRParams{Number: p.Number})
 

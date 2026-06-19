@@ -33,9 +33,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	result, ok := shared.LoadConfig(cmd, dir)
-	if !ok {
-		return nil
+	result, err := shared.LoadConfig(cmd, dir)
+	if err != nil {
+		return err
 	}
 
 	runCfg, err := config.LoadRun(result.StateDir)

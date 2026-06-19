@@ -40,33 +40,30 @@ func ProjectRoot(dir string) (string, error) {
 	return mainPath, nil
 }
 
-// LoadConfig resolves the main worktree + state dir and loads config.toml
-// from the state dir. Returns the config and resolved paths, or prints an
-// error and returns false.
-func LoadConfig(cmd *cobra.Command, dir string) (ConfigResult, bool) {
+// LoadConfig resolves the main worktree + state dir and loads config.toml from
+// the state dir. On failure it returns an error for the caller to propagate so
+// the top-level handler can pick the right exit code (e.g. ExitCodeConfigNotFound
+// when the repo is uninitialized); it does not print anything itself.
+func LoadConfig(cmd *cobra.Command, dir string) (ConfigResult, error) {
 	root, err := ProjectRoot(dir)
 	if err != nil {
-		output.Error(cmd.ErrOrStderr(), err.Error())
-		return ConfigResult{}, false
+		return ConfigResult{}, err
 	}
 
 	stateDir, err := StateDir(dir)
 	if err != nil {
-		output.Error(cmd.ErrOrStderr(), err.Error())
-		return ConfigResult{}, false
+		return ConfigResult{}, err
 	}
 
 	cfg, err := config.Load(config.LoadParams{StateDir: stateDir})
 	if errors.Is(err, domain.ErrConfigNotFound) {
-		output.Warning(cmd.ErrOrStderr(), "No wtm config found. Run `wtm init` first.")
-		return ConfigResult{}, false
+		return ConfigResult{}, fmt.Errorf("no wtm config found — run `wtm init` first: %w", domain.ErrConfigNotFound)
 	}
 	if err != nil {
-		output.Error(cmd.ErrOrStderr(), fmt.Sprintf("Loading config: %v", err))
-		return ConfigResult{}, false
+		return ConfigResult{}, fmt.Errorf("loading config: %w", err)
 	}
 
-	return ConfigResult{Config: cfg, ProjectDir: root, StateDir: stateDir}, true
+	return ConfigResult{Config: cfg, ProjectDir: root, StateDir: stateDir}, nil
 }
 
 // AddOutputFlag registers the standard --output flag on cmd.

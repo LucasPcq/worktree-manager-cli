@@ -28,6 +28,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().String(domain.FlagTitle, "", "PR title (skips wizard for this field)")
 	cmd.Flags().String(domain.FlagBase, "", "Base branch (skips wizard for this field)")
 	cmd.Flags().Bool(domain.FlagDraft, false, "Create as draft PR")
+	cmd.Flags().Bool(domain.FlagYes, false, "Non-interactive: auto-push an unpushed branch and skip confirmation prompts")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -44,9 +45,9 @@ func runCreate(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	result, ok := shared.LoadConfig(cmd, dir)
-	if !ok {
-		return nil
+	result, err := shared.LoadConfig(cmd, dir)
+	if err != nil {
+		return err
 	}
 
 	branch, err := infra.CurrentBranch(cwd)
@@ -55,25 +56,41 @@ func runCreate(cmd *cobra.Command, _ []string) error {
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
+	// JSON output implies non-interactive: confirmation prompts can't run.
+	nonInteractive := yes || format == domain.OutputJSON
 
 	stopCheck := func() {}
 	if format != domain.OutputJSON {
 		stopCheck = shared.StartSpinner(cmd.ErrOrStderr(), "Checking for existing PR…")
 	}
-	hasPR, prURL := ghservice.HasOpenPR(ghservice.HasOpenPRParams{
+	hasPR, prNumber, prURL := ghservice.HasOpenPR(ghservice.HasOpenPRParams{
 		ProjectDir: dir,
 		Branch:     branch,
 	})
 	stopCheck()
 	if hasPR {
+		if format == domain.OutputJSON {
+			if err := output.WritePRCreateJSON(cmd.OutOrStdout(), domain.PRInfo{
+				Number: prNumber,
+				Branch: branch,
+				State:  "open",
+				URL:    prURL,
+			}); err != nil {
+				return err
+			}
+			return fmt.Errorf("%w for branch %s", domain.ErrPRExists, branch)
+		}
 		output.Blank(cmd.ErrOrStderr())
 		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("PR already exists for branch %s", branch))
 		output.InfoLine(cmd.ErrOrStderr(), "URL", prURL)
-		if err := promptOpenExistingPR(prURL); err != nil {
-			return err
+		if !nonInteractive {
+			if err := promptOpenExistingPR(prURL); err != nil {
+				return err
+			}
 		}
 		output.Blank(cmd.ErrOrStderr())
-		return nil
+		return fmt.Errorf("%w for branch %s", domain.ErrPRExists, branch)
 	}
 
 	if !infra.BranchExistsOnRemote(infra.BranchExistsOnRemoteParams{
@@ -81,8 +98,10 @@ func runCreate(cmd *cobra.Command, _ []string) error {
 		Branch:     branch,
 	}) {
 		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("Branch %s has not been pushed to origin.", branch))
-		if err := confirmPush(); err != nil {
-			return nil
+		if !nonInteractive {
+			if err := confirmPush(); err != nil {
+				return nil
+			}
 		}
 		stop := shared.StartSpinner(cmd.ErrOrStderr(), "Pushing branch…")
 		pushErr := infra.PushBranch(infra.PushBranchParams{
@@ -108,7 +127,22 @@ func runCreate(cmd *cobra.Command, _ []string) error {
 
 	allFlagsProvided := titleFlag != "" && baseFlag != "" && draftChanged
 
-	if !allFlagsProvided {
+	switch {
+	case allFlagsProvided:
+		// nothing to resolve — flags fully specify the PR.
+	case nonInteractive:
+		// Non-interactive: never open the wizard. Fill any unset field from
+		// derived defaults (branch title, config base branch, auto_draft).
+		if title == "" {
+			title = rules.BranchTitleFromName(branch)
+		}
+		if base == "" {
+			base = result.Config.Project.Worktrees.BaseBranch
+		}
+		if !draftChanged {
+			draft = result.Config.Project.Github.AutoDraft
+		}
+	default:
 		defaultTitle := title
 		if defaultTitle == "" {
 			defaultTitle = rules.BranchTitleFromName(branch)
