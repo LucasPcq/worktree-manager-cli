@@ -34,3 +34,15 @@ func GitCommonDir(params GitCommonDirParams) (string, error) {
 	}
 	return abs, nil
 }
+
+// Toplevel runs `git rev-parse --show-toplevel` and returns the root directory
+// of the worktree containing dir.
+func Toplevel(dir string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git rev-parse --show-toplevel: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}

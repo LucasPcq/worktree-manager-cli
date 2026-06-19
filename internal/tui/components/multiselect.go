@@ -8,11 +8,33 @@ import (
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
+// TagVariant selects the color of a MultiSelectItem's status tag.
+type TagVariant int
+
+const (
+	// TagNeutral renders the tag in the muted color.
+	TagNeutral TagVariant = iota
+	// TagSuccess renders the tag in green.
+	TagSuccess
+	// TagWarning renders the tag in yellow.
+	TagWarning
+	// TagDanger renders the tag in red.
+	TagDanger
+)
+
+// multiSelectTagWidth is the fixed column width of the optional status tag so
+// labels stay aligned regardless of tag length.
+const multiSelectTagWidth = 3
+
 // MultiSelectItem represents a toggleable entry in a MultiSelect.
 type MultiSelectItem struct {
 	Label    string
 	Value    string
 	Selected bool
+	// Tag is an optional short status word shown before the label. It is colored
+	// per Variant on normal rows and left plain on the highlighted row.
+	Tag     string
+	Variant TagVariant
 }
 
 // MultiSelectModel is a checkbox list with space toggle and enter confirm.
@@ -149,14 +171,15 @@ func (m MultiSelectModel) View() string {
 		}
 
 		if selected {
-			line := "▸ " + check + " " + item.Label
-			pad := m.width - len(line)
+			line := "▸ " + check + " " + plainTag(item.Tag) + item.Label
+			pad := m.width - PrintableWidth(line)
 			if pad > 0 {
 				line += strings.Repeat(" ", pad)
 			}
 			b.WriteString(styles.ListItemSelected.Render(line))
 		} else {
-			b.WriteString(styles.ListItemNormal.Render(styles.Indent + check + " " + item.Label))
+			line := styles.Indent + check + " " + coloredTag(item.Tag, item.Variant) + item.Label
+			b.WriteString(styles.ListItemNormal.Render(line))
 		}
 
 		if i < end-1 {
@@ -170,6 +193,46 @@ func (m MultiSelectModel) View() string {
 	}
 
 	return b.String()
+}
+
+// plainTag returns the padded, uncolored tag followed by a space, or an empty
+// string when there is no tag. Used on the highlighted row where coloring would
+// break the background fill.
+func plainTag(tag string) string {
+	if tag == "" {
+		return ""
+	}
+	return padTag(tag) + " "
+}
+
+// coloredTag returns the padded tag colored per variant followed by a space, or
+// an empty string when there is no tag.
+func coloredTag(tag string, variant TagVariant) string {
+	if tag == "" {
+		return ""
+	}
+	return renderTag(variant, padTag(tag)) + " "
+}
+
+func padTag(tag string) string {
+	pad := multiSelectTagWidth - PrintableWidth(tag)
+	if pad > 0 {
+		return tag + strings.Repeat(" ", pad)
+	}
+	return tag
+}
+
+func renderTag(variant TagVariant, tag string) string {
+	switch variant {
+	case TagSuccess:
+		return styles.Success.Render(tag)
+	case TagWarning:
+		return styles.Warning.Render(tag)
+	case TagDanger:
+		return styles.DangerText.Render(tag)
+	default:
+		return styles.Muted.Render(tag)
+	}
 }
 
 func (m MultiSelectModel) visibleHeight() int {

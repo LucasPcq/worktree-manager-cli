@@ -55,4 +55,19 @@ var (
 
 	// ErrJobNotFound is returned when a referenced job is not declared in run.toml.
 	ErrJobNotFound = errors.New("job not found")
+
+	// ErrExtractConflict is returned when the selected changes do not apply
+	// cleanly onto the target worktree. The extraction is aborted and the source
+	// worktree is left untouched.
+	ErrExtractConflict = errors.New("cannot apply the selected changes")
+
+	// ErrNoChangesToExtract is returned when the source worktree has no
+	// uncommitted changes to extract.
+	ErrNoChangesToExtract = errors.New("no uncommitted changes to extract")
+
+	// ErrNoFilesSelected is returned when the user selects no files to extract.
+	ErrNoFilesSelected = errors.New("no files selected")
+
+	// ErrSameWorktree is returned when the target worktree equals the source.
+	ErrSameWorktree = errors.New("target worktree must differ from the source")
 )
