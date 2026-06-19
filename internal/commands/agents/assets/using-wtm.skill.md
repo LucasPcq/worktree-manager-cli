@@ -1,6 +1,6 @@
 ---
 name: using-wtm
-description: Use this skill whenever the user wants to create, list, switch, focus, or clean git worktrees; start, stop, or inspect per-worktree dev jobs (services + tasks); or list, create, or check out GitHub pull requests — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
+description: Use this skill whenever the user wants to create, list, switch, focus, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or list, create, or check out GitHub pull requests — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
 ---
 
 # Using wtm
@@ -28,6 +28,7 @@ wtm is a CLI that manages **git worktrees**, **per-worktree dev jobs** (long-run
 | `12` | config not found — repo not initialized (`wtm init`) |
 | `13` | a pull request already exists for the branch |
 | `14` | service/job not declared in `run.toml` |
+| `15` | `wt extract`: selected changes conflict with the target worktree |
 
 ## Discovery first — know before you act
 
@@ -46,6 +47,10 @@ Run these before taking action so you have names to pass as arguments:
 - **`wtm wt list --output json`** — inventory of worktrees.
 - **`wtm wt create <branch> --from <base> --output json`** — create a new worktree, run env provisioning + `on_create` hooks. Optional: `--env-from example|main|parent` to override the env strategy. Add **`--if-not-exists`** to make it idempotent (succeeds with `"already_exists": true` instead of exit `10` when the worktree is already there).
 - **`wtm wt clean <branch> --force --output json`** — remove worktree and local branch (remote untouched). `--force` is mandatory in JSON mode. Idempotent: cleaning an absent worktree succeeds with `"already_absent": true`.
+- **`wtm wt extract --files <a,b> --to <branch> [--from <base>] [--keep] [--on-conflict abort|resolve] --output json`** — move a subset of the **current worktree's uncommitted changes** to another worktree. Ideal when a change has grown too large or unrelated for one PR: split part of it onto a sibling branch for easier review and parallel work. `--files` is a comma-separated list of paths (from `git status` / `wt list`); `--to` is the target branch — an existing worktree, or one created on the fly from `--from` (defaults to the source's parent branch). Default is a **move** (files removed from the source once they land); `--keep` copies instead. JSON returns `files[]` (each `{path, status}`), `source_branch`, `target_branch`, `kept`, and `conflicts[]`.
+  - **Unified safety rule:** the source is cleaned only when the **whole** extraction applies cleanly. If anything conflicts, the source is left **fully intact and recoverable** — there is never a half-moved state.
+  - **On conflict** (a selected file was also changed in the target): default **`--on-conflict abort`** changes nothing and exits **`15`**, naming the conflicting files on stderr. **`--on-conflict resolve`** instead applies the changes into the target with git **conflict markers** (`<<<<<<<`) on the conflicting files — like a rebase — keeps the source intact, exits `0`, and lists the marked files in `conflicts[]`. The user then resolves the markers in the target and discards the same files in the source; or discards in the target to undo.
+  - No uncommitted changes → exits `0` with empty `files[]`. Untracked-file name collisions in the target cannot be merged → always abort (exit `15`).
 - **`wtm wt go <branch>`** and **`wtm wt switch <branch>`** — navigate to a worktree (and start services, for `switch`). These **require the user's shell integration** to `cd`, so an LLM can't drive them directly. Prefer `wt list` + tell the user which branch to run `switch` on.
 - **`wtm wt focus <branch>`** — mark a worktree as the active one in the state file. Pass the branch explicitly.
 
@@ -105,6 +110,7 @@ On non-zero exit, read stderr. Common cases:
 - exit `11` (`branch not found`) / `worktree not found` → the name is wrong; re-list.
 - exit `13` (`PR already exists`) → the existing PR JSON was printed on stdout; use it instead of creating a new one.
 - exit `14` (`job not found`) → the job isn't declared in `run.toml`; check `run list`.
+- exit `15` (`wt extract` conflict) → the selected changes clash with the target worktree; nothing was changed. Retry with `--on-conflict resolve` to apply conflict markers for the user to resolve, or pick another `--to` target.
 - `gh: …` → the `gh` CLI isn't authenticated; tell the user to run `gh auth login`.
 
 ## Escalate to the user when
