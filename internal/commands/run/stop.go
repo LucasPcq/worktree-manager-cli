@@ -7,8 +7,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
+	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
@@ -32,6 +34,20 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
+	// Validate the job is declared so a typo'd name fails with a precise exit
+	// code instead of silently no-opping at the daemon.
+	stateDir, err := shared.StateDir(dir)
+	if err != nil {
+		return err
+	}
+	runCfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		return fmt.Errorf("load run config: %w", err)
+	}
+	if _, declared := rules.FindJob(runCfg, args[0]); !declared {
+		return fmt.Errorf("%w: %s", domain.ErrJobNotFound, args[0])
+	}
 
 	socketPath := process.SocketPath()
 	if !process.IsDaemonRunning(socketPath) {

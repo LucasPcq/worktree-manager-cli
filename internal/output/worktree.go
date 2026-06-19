@@ -214,8 +214,9 @@ func WriteWorktreeCreateJSON(w io.Writer, v any) error {
 
 // WriteWorktreeCleanJSONParams holds inputs for the clean payload.
 type WriteWorktreeCleanJSONParams struct {
-	Branch string `json:"branch"`
-	Path   string `json:"path"`
+	Branch        string `json:"branch"`
+	Path          string `json:"path"`
+	AlreadyAbsent bool   `json:"already_absent"`
 }
 
 // WriteWorktreeCleanJSON writes the JSON payload for `wt clean`.

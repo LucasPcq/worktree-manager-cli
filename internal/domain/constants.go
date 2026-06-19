@@ -17,6 +17,13 @@ const (
 	// ExitCodeUsage indicates invalid usage or bad input.
 	ExitCodeUsage = 2
 
+	// Granular exit codes let LLM agents branch precisely on failure cause.
+	ExitCodeWorktreeExists  = 10 // a worktree or its path already exists
+	ExitCodeBranchNotFound  = 11 // the requested branch does not exist locally
+	ExitCodeConfigNotFound  = 12 // the repo has no wtm config (run `wtm init`)
+	ExitCodePRExists        = 13 // a pull request already exists for the branch
+	ExitCodeServiceNotFound = 14 // the referenced job is not declared in run.toml
+
 	// StateDirName is the wtm state directory inside the git common dir
 	// (i.e. <git-common-dir>/wtm/). Never committed — git ignores .git/.
 	StateDirName = "wtm"
@@ -95,6 +102,16 @@ const (
 	FlagCwd       = "cwd"
 	FlagJobs      = "jobs"
 	FlagDefault   = "default"
+
+	// init flags (non-interactive bootstrap).
+	FlagIfNotExists    = "if-not-exists"
+	FlagNonInteractive = "non-interactive"
+	FlagAgent          = "agent"
+	FlagShell          = "shell"
+	FlagBasePath       = "base-path"
+	FlagBaseBranch     = "base-branch"
+	FlagEnvStrategy    = "env-strategy"
+	FlagInstallCommand = "install-command"
 
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches

@@ -143,7 +143,7 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 	case job.Kind == domain.JobKindTask:
 		return m.runTask(managed, streamer)
 	case rules.IsDetached(job):
-		if err := m.waitDetached(managed); err != nil {
+		if err := m.waitDetached(managed, streamer); err != nil {
 			m.mu.Lock()
 			delete(m.jobs, key)
 			m.mu.Unlock()
@@ -338,17 +338,23 @@ func exitCodeOf(err error) int {
 	return 1
 }
 
-// waitDetached drains PTY output into a bounded buffer and blocks until the
-// launcher process exits. On non-zero exit, returns an error containing the
-// captured output so the user sees what went wrong. On success, the job
-// stays registered as Running (the real work is detached).
-func (m *Manager) waitDetached(job *ManagedJob) error {
+// waitDetached drains PTY output and blocks until the launcher process exits.
+// When a streamer is provided the launcher's output is mirrored to it live
+// (so `run up` shows the `docker compose up -d` lines as they happen, just like
+// a task), while a bounded buffer keeps a copy to embed in the error on
+// failure. On success, the job stays registered as Running (the real work is
+// detached).
+func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 	defer close(job.exited)
 
 	buf := newRingBuffer(detachedOutputBufferSize)
+	var sink io.Writer = buf
+	if streamer != nil {
+		sink = io.MultiWriter(buf, streamer)
+	}
 	drained := make(chan struct{})
 	go func() {
-		_, _ = io.Copy(buf, job.PTY)
+		_, _ = io.Copy(sink, job.PTY)
 		close(drained)
 	}()
 
@@ -360,6 +366,12 @@ func (m *Manager) waitDetached(job *ManagedJob) error {
 	<-drained
 
 	if err != nil {
+		// When a streamer was attached the client already saw the output live,
+		// so return a concise error instead of re-embedding the capture (mirrors
+		// runTask) — otherwise `run up` would print the launcher output twice.
+		if streamer != nil {
+			return fmt.Errorf("job %s failed (exit %d)", job.Name, exitCodeOf(err))
+		}
 		out := cleanPTYOutput(buf.String())
 		if out == "" {
 			return fmt.Errorf("job %s failed: %w", job.Name, err)
@@ -547,7 +559,10 @@ func (m *Manager) stopByKey(key string) error {
 	m.mu.Unlock()
 
 	if !ok {
-		return fmt.Errorf("job not found")
+		// Idempotent: a job that isn't tracked is already stopped, so stopping
+		// it again is a no-op success. Whether the job name is actually declared
+		// is validated at the command layer (which has the run.toml config).
+		return nil
 	}
 
 	// Always run the stop command if configured — handles detached processes

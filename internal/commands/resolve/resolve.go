@@ -73,9 +73,9 @@ func runResolve(cmd *cobra.Command, args []string) error {
 }
 
 func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []domain.GitWorktree) (domain.WorktreeStatus, error) {
-	cfgResult, ok := shared.LoadConfig(cmd, projectDir)
-	if !ok {
-		return domain.WorktreeStatus{}, domain.ErrUserAborted
+	cfgResult, err := shared.LoadConfig(cmd, projectDir)
+	if err != nil {
+		return domain.WorktreeStatus{}, err
 	}
 
 	// Load worktree statuses, PRs (gh — the slow one), and running services in

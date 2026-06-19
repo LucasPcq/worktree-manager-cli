@@ -55,6 +55,84 @@ func TestManagerStartService_AlreadyRunning(t *testing.T) {
 	}
 }
 
+// TestManagerStartDetached_StreamsOutput verifies that a detached launcher
+// (a service with a Stop command, e.g. docker compose up -d) mirrors its
+// startup output to the provided streamer live, and stays registered as
+// running after the launcher process exits.
+func TestManagerStartDetached_StreamsOutput(t *testing.T) {
+	m := NewManager()
+	dir := t.TempDir()
+
+	var buf bytes.Buffer
+	job := domain.JobConfig{Name: "compose", Kind: domain.JobKindService, Cmd: "echo creating-container", Stop: "echo down"}
+
+	if err := m.Start(job, dir, &buf); err != nil {
+		t.Fatalf("start detached: %v", err)
+	}
+	t.Cleanup(func() { _ = m.StopAll() })
+
+	if !strings.Contains(buf.String(), "creating-container") {
+		t.Errorf("expected streamed launcher output to contain %q, got %q", "creating-container", buf.String())
+	}
+	jobs := m.List()
+	if len(jobs) != 1 || jobs[0].Status != domain.JobStatusRunning {
+		t.Errorf("expected detached job to stay registered as running, got %+v", jobs)
+	}
+}
+
+// TestManagerStartDetached_FailureConciseWhenStreamed verifies that a failing
+// detached launcher streams its output live and returns a CONCISE error (the
+// capture is not re-embedded, since the client already saw it), and is removed.
+func TestManagerStartDetached_FailureConciseWhenStreamed(t *testing.T) {
+	m := NewManager()
+	dir := t.TempDir()
+
+	script := filepath.Join(dir, "up.sh")
+	if err := os.WriteFile(script, []byte("echo pull-failed\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	var buf bytes.Buffer
+	job := domain.JobConfig{Name: "compose", Kind: domain.JobKindService, Cmd: "sh " + script, Stop: "echo down"}
+
+	err := m.Start(job, dir, &buf)
+	if err == nil {
+		t.Fatal("expected error for failing detached launcher")
+	}
+	if !strings.Contains(buf.String(), "pull-failed") {
+		t.Errorf("expected streamed output to contain %q, got %q", "pull-failed", buf.String())
+	}
+	if strings.Contains(err.Error(), "pull-failed") {
+		t.Errorf("expected concise error without re-embedded output, got %v", err)
+	}
+	if len(m.List()) != 0 {
+		t.Errorf("expected failed detached job to be removed, still have %d", len(m.List()))
+	}
+}
+
+// TestManagerStartDetached_FailureEmbedsOutputWhenNotStreamed verifies that
+// without a streamer (e.g. JSON mode) the captured output is embedded in the
+// error so the failure reason still reaches the caller.
+func TestManagerStartDetached_FailureEmbedsOutputWhenNotStreamed(t *testing.T) {
+	m := NewManager()
+	dir := t.TempDir()
+
+	script := filepath.Join(dir, "up.sh")
+	if err := os.WriteFile(script, []byte("echo pull-failed\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	job := domain.JobConfig{Name: "compose", Kind: domain.JobKindService, Cmd: "sh " + script, Stop: "echo down"}
+
+	err := m.Start(job, dir, nil)
+	if err == nil {
+		t.Fatal("expected error for failing detached launcher")
+	}
+	if !strings.Contains(err.Error(), "pull-failed") {
+		t.Errorf("expected error to embed captured output, got %v", err)
+	}
+}
+
 // TestManagerStartTask_FailureExitCode verifies that a failing task streams its
 // output AND returns a concise error carrying the real exit code (the captured
 // block is omitted because the streamer already saw it live).

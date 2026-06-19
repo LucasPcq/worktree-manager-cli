@@ -47,9 +47,9 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	result, ok := shared.LoadConfig(cmd, dir)
-	if !ok {
-		return nil
+	result, err := shared.LoadConfig(cmd, dir)
+	if err != nil {
+		return err
 	}
 
 	branch, err := resolveBranchArg(args, result.ProjectDir)
@@ -74,6 +74,12 @@ func runClean(cmd *cobra.Command, args []string) error {
 	stopCheck := shared.StartSpinner(cmd.ErrOrStderr(), "Checking worktree…")
 	check, err := worktree.Check(cleanParams)
 	stopCheck()
+	if errors.Is(err, domain.ErrWorktreeNotFound) {
+		output.Blank(cmd.OutOrStdout())
+		output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", branch))
+		output.Blank(cmd.OutOrStdout())
+		return nil
+	}
 	if errors.Is(err, domain.ErrCannotCleanParent) {
 		output.Blank(cmd.ErrOrStderr())
 		output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
@@ -128,6 +134,20 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 	err := worktree.Clean(params)
 	if stop != nil {
 		stop()
+	}
+	if errors.Is(err, domain.ErrWorktreeNotFound) {
+		// Idempotent: cleaning an absent worktree is a no-op success so agents
+		// can safely retry.
+		if format == domain.OutputJSON {
+			return output.WriteWorktreeCleanJSON(cmd.OutOrStdout(), output.WriteWorktreeCleanJSONParams{
+				Branch:        params.Branch,
+				AlreadyAbsent: true,
+			})
+		}
+		output.Blank(cmd.OutOrStdout())
+		output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", params.Branch))
+		output.Blank(cmd.OutOrStdout())
+		return nil
 	}
 	if errors.Is(err, domain.ErrCannotCleanParent) {
 		output.Blank(cmd.ErrOrStderr())

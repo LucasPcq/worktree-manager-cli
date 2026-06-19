@@ -20,6 +20,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/wt"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func init() {
@@ -97,6 +98,6 @@ func Execute() {
 			output.Error(os.Stderr, err.Error())
 			output.Blank(os.Stderr)
 		}
-		os.Exit(domain.ExitCodeError)
+		os.Exit(rules.ExitCode(err))
 	}
 }

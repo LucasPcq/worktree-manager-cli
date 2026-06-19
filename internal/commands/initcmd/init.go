@@ -20,12 +20,37 @@ import (
 
 // NewCmd creates the wtm init command.
 func NewCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize wtm configuration",
-		Long:  "Interactive wizard to set up global config and project config in <git-common-dir>/wtm/config.toml.",
+		Long:  "Interactive wizard to set up global config and project config in <git-common-dir>/wtm/config.toml.\nPass --non-interactive (or any config flag) to bootstrap from flags + auto-detection instead.",
 		RunE:  runInit,
 	}
+
+	cmd.Flags().Bool(domain.FlagNonInteractive, false, "Bootstrap from flags + auto-detection; never prompt")
+	cmd.Flags().String(domain.FlagAgent, "", "Global AI agent: claude-code, cursor, or none")
+	cmd.Flags().String(domain.FlagShell, "", "Global shell: zsh, bash, or fish")
+	cmd.Flags().String(domain.FlagBasePath, "", "Worktree directory, relative to repo root")
+	cmd.Flags().String(domain.FlagBaseBranch, "", "Default base branch for new worktrees")
+	cmd.Flags().String(domain.FlagEnvStrategy, "", "Env provisioning strategy: example, main, or parent")
+	cmd.Flags().String(domain.FlagInstallCommand, "", "Command to run after creating a worktree")
+
+	return cmd
+}
+
+// initFlagged reports whether the user passed --non-interactive or any of the
+// value flags, which switches init into the non-interactive, flag-driven path.
+func initFlagged(cmd *cobra.Command) bool {
+	for _, name := range []string{
+		domain.FlagNonInteractive, domain.FlagAgent, domain.FlagShell,
+		domain.FlagBasePath, domain.FlagBaseBranch, domain.FlagEnvStrategy,
+		domain.FlagInstallCommand,
+	} {
+		if cmd.Flags().Changed(name) {
+			return true
+		}
+	}
+	return false
 }
 
 func runInit(cmd *cobra.Command, _ []string) error {
@@ -34,7 +59,9 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	if err := ensureGlobalConfig(cmd); err != nil {
+	flagged := initFlagged(cmd)
+
+	if err := ensureGlobalConfig(cmd, flagged); err != nil {
 		return err
 	}
 
@@ -50,23 +77,20 @@ func runInit(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	return createProjectConfig(cmd, dir, stateDir)
+	return createProjectConfig(cmd, dir, stateDir, flagged)
 }
 
-func ensureGlobalConfig(cmd *cobra.Command) error {
+func ensureGlobalConfig(cmd *cobra.Command, flagged bool) error {
 	if detect.GlobalConfigExists() {
 		return nil
 	}
 
-	output.Message(cmd.OutOrStdout(), "No global config found. Let's set one up.")
-	output.Blank(cmd.OutOrStdout())
-
-	answers, err := initwizard.RunGlobalWizard()
+	answers, err := resolveGlobalAnswers(cmd, flagged)
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("global wizard: %w", err)
+		return err
 	}
 
 	if err := config.WriteGlobal(answers); err != nil {
@@ -85,21 +109,73 @@ func ensureGlobalConfig(cmd *cobra.Command) error {
 	return nil
 }
 
-func createProjectConfig(cmd *cobra.Command, dir, stateDir string) error {
+// resolveGlobalAnswers builds the global config either from flags (non-interactive)
+// or the interactive wizard.
+func resolveGlobalAnswers(cmd *cobra.Command, flagged bool) (domain.InitGlobalAnswers, error) {
+	if flagged {
+		agent, _ := cmd.Flags().GetString(domain.FlagAgent)
+		shell, _ := cmd.Flags().GetString(domain.FlagShell)
+		return rules.BuildGlobalAnswers(rules.InitGlobalFlags{Agent: agent, Shell: shell})
+	}
+
+	output.Message(cmd.OutOrStdout(), "No global config found. Let's set one up.")
 	output.Blank(cmd.OutOrStdout())
-	output.Intro(cmd.OutOrStdout(), "No wtm config found for this repo. Let's initialize it.")
-	output.Blank(cmd.OutOrStdout())
+
+	answers, err := initwizard.RunGlobalWizard()
+	if err != nil {
+		if errors.Is(err, domain.ErrUserAborted) {
+			return domain.InitGlobalAnswers{}, err
+		}
+		return domain.InitGlobalAnswers{}, fmt.Errorf("global wizard: %w", err)
+	}
+	return answers, nil
+}
+
+// resolveProjectAnswers builds the project config either from flags + detection
+// (non-interactive) or the interactive wizard.
+func resolveProjectAnswers(cmd *cobra.Command, flagged bool, detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
+	if flagged {
+		nonInteractive, _ := cmd.Flags().GetBool(domain.FlagNonInteractive)
+		basePath, _ := cmd.Flags().GetString(domain.FlagBasePath)
+		baseBranch, _ := cmd.Flags().GetString(domain.FlagBaseBranch)
+		envStrategy, _ := cmd.Flags().GetString(domain.FlagEnvStrategy)
+		installCommand, _ := cmd.Flags().GetString(domain.FlagInstallCommand)
+		return rules.BuildProjectAnswers(rules.InitProjectFlags{
+			BasePath:       basePath,
+			BaseBranch:     baseBranch,
+			EnvStrategy:    envStrategy,
+			InstallCommand: installCommand,
+			NonInteractive: nonInteractive,
+		}, detection)
+	}
+
+	answers, err := initwizard.RunProjectWizard(detection)
+	if err != nil {
+		if errors.Is(err, domain.ErrUserAborted) {
+			return domain.InitProjectAnswers{}, err
+		}
+		return domain.InitProjectAnswers{}, fmt.Errorf("project wizard: %w", err)
+	}
+	return answers, nil
+}
+
+func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool) error {
+	if !flagged {
+		output.Blank(cmd.OutOrStdout())
+		output.Intro(cmd.OutOrStdout(), "No wtm config found for this repo. Let's initialize it.")
+		output.Blank(cmd.OutOrStdout())
+	}
 
 	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Detecting project settings…")
 	detection := detect.ProjectEnvironment(dir)
 	stop()
 
-	answers, err := initwizard.RunProjectWizard(detection)
+	answers, err := resolveProjectAnswers(cmd, flagged, detection)
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("project wizard: %w", err)
+		return err
 	}
 
 	if err := config.WriteProject(config.WriteProjectParams{

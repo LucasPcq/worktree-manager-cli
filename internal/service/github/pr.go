@@ -13,11 +13,12 @@ type HasOpenPRParams struct {
 	Branch     string
 }
 
-// HasOpenPR checks if a branch has an open PR via the gh CLI.
-// Returns false gracefully if gh is not installed, not authenticated, or the call fails.
-func HasOpenPR(params HasOpenPRParams) (bool, string) {
+// HasOpenPR checks if a branch has an open PR via the gh CLI. Returns the PR
+// number and URL when found. Returns false gracefully if gh is not installed,
+// not authenticated, or the call fails.
+func HasOpenPR(params HasOpenPRParams) (bool, int, string) {
 	if err := ensureAuth(); err != nil {
-		return false, ""
+		return false, 0, ""
 	}
 
 	type prItem struct {
@@ -32,15 +33,15 @@ func HasOpenPR(params HasOpenPRParams) (bool, string) {
 		"--limit", "1",
 	)
 	if err != nil {
-		return false, ""
+		return false, 0, ""
 	}
 
 	items, err := parseJSON[[]prItem](data)
 	if err != nil || len(items) == 0 {
-		return false, ""
+		return false, 0, ""
 	}
 
-	return true, items[0].URL
+	return true, items[0].Number, items[0].URL
 }
 
 // ListPRsParams holds inputs for listing pull requests.

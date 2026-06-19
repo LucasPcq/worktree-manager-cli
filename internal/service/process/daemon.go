@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 var daemonIdleTimeout = time.Duration(domain.DaemonIdleTimeoutSeconds) * time.Second
@@ -153,6 +154,19 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		}
 		zero := 0
 		encoder.Encode(Response{Status: StatusDone, Message: fmt.Sprintf("task %s done", req.Job.Name), ExitCode: &zero})
+		return
+	}
+
+	// Detached launchers (e.g. docker compose up -d) run like a task for their
+	// lifetime — they stream their startup output and then exit — but stay
+	// registered as Running afterwards. Stream that output live so `run up`
+	// shows the launcher's lines as they happen, then send the terminal "started".
+	if rules.IsDetached(*req.Job) {
+		if err := d.manager.Start(*req.Job, req.WorkDir, responseStreamWriter{encoder: encoder}); err != nil {
+			encoder.Encode(Response{Status: StatusError, Message: err.Error()})
+			return
+		}
+		encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name)})
 		return
 	}
 

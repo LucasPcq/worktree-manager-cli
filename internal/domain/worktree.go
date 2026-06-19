@@ -62,13 +62,15 @@ type CreateParams struct {
 	FromBranch      string
 	Config          Config
 	EnvFromOverride string
+	IfNotExists     bool
 }
 
 // CreateResult holds the output of a successful worktree creation.
 type CreateResult struct {
-	Branch   string           `json:"branch"`
-	Path     string           `json:"path"`
-	Metadata WorktreeMetadata `json:"metadata"`
+	Branch        string           `json:"branch"`
+	Path          string           `json:"path"`
+	Metadata      WorktreeMetadata `json:"metadata"`
+	AlreadyExists bool             `json:"already_exists"`
 }
 
 // CleanParams holds inputs for cleaning a worktree.

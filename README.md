@@ -465,7 +465,7 @@ Behavior:
 - Runs `on_create` hooks exactly like `wtm wt create`
 - Refuses if a local branch with the same name already exists — run `wtm wt clean <branch>` first
 
-**Limitation** — PRs from forks are not supported yet. Use `gh pr checkout` as a fallback for fork PRs.
+**Forks (by design)** — wtm doesn't check out fork PRs. A fork's branch lives on the contributor's repo (not `origin`) and a fork worktree couldn't push back, which breaks wtm's "develop here" model. To review a fork PR, use `gh pr checkout <number>`.
 
 ---
 

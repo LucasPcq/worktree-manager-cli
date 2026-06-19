@@ -21,6 +21,15 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 	worktreePath := filepath.Join(params.ProjectDir, params.Config.Project.Worktrees.BasePath, sanitized)
 
 	if _, err := os.Stat(worktreePath); err == nil {
+		// Idempotent path: with --if-not-exists, an existing worktree is a
+		// no-op success so agents can safely retry.
+		if params.IfNotExists {
+			return domain.CreateResult{
+				Branch:        params.Branch,
+				Path:          worktreePath,
+				AlreadyExists: true,
+			}, nil
+		}
 		return domain.CreateResult{}, fmt.Errorf("%w: %s", domain.ErrWorktreePathExists, worktreePath)
 	}
 

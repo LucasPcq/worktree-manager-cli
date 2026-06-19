@@ -28,6 +28,7 @@ func newCreateCmd() *cobra.Command {
 
 	cmd.Flags().String(domain.FlagFrom, "", "Source branch (skips interactive picker)")
 	cmd.Flags().String(domain.FlagEnvFrom, "", "Override env strategy (example, main, parent)")
+	cmd.Flags().Bool(domain.FlagIfNotExists, false, "Succeed silently if the worktree already exists (idempotent)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -40,15 +41,16 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 	fromFlag, _ := cmd.Flags().GetString(domain.FlagFrom)
 	envFromFlag, _ := cmd.Flags().GetString(domain.FlagEnvFrom)
+	ifNotExists, _ := cmd.Flags().GetBool(domain.FlagIfNotExists)
 
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	result, ok := shared.LoadConfig(cmd, dir)
-	if !ok {
-		return nil
+	result, err := shared.LoadConfig(cmd, dir)
+	if err != nil {
+		return err
 	}
 
 	fromBranch := fromFlag
@@ -101,6 +103,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		FromBranch:      fromBranch,
 		Config:          result.Config,
 		EnvFromOverride: envOverride,
+		IfNotExists:     ifNotExists,
 	})
 	if stop != nil {
 		stop()
@@ -114,7 +117,11 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created worktree %s at %s", branch, createResult.Path))
+	if createResult.AlreadyExists {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already exists at %s", branch, createResult.Path))
+	} else {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created worktree %s at %s", branch, createResult.Path))
+	}
 	output.Blank(cmd.OutOrStdout())
 
 	return nil
