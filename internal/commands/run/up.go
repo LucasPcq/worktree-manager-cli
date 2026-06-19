@@ -107,6 +107,15 @@ func runUp(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
+		// Detached launchers (docker compose up -d) stream their startup output
+		// live like a task, then stay running in the background.
+		if rules.IsDetached(job) {
+			if err := runDetachedJob(cmd, client, job, dir, format, &results, &started); err != nil {
+				return abortProfile(cmd, jobs, i, started, results, format)
+			}
+			continue
+		}
+
 		stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s…", job.Name))
 		resp, sendErr := client.Send(process.Request{
 			Action:  process.ActionStart,
@@ -255,6 +264,69 @@ func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig
 	*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionDone})
 	if format != domain.OutputJSON {
 		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s done", job.Name))
+	}
+	return nil
+}
+
+// runDetachedJob starts a detached launcher (e.g. docker compose up -d) and
+// streams its output live — the launcher runs, prints its lines, and exits,
+// freeing the terminal — exactly like a task, except the job stays registered
+// as running afterwards. Returns a non-nil error only when the profile should
+// abort; an already-running launcher is a benign no-op.
+func runDetachedJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig, dir string, format string, results *[]output.JobActionResult, started *[]domain.JobConfig) error {
+	// Always capture the streamed output so a failure carries the "why" — live
+	// on stdout in text mode, and into the JSON result's message in machine mode.
+	var captured bytes.Buffer
+	onOutput := func(chunk []byte) { _, _ = captured.Write(chunk) }
+	if format != domain.OutputJSON {
+		out := cmd.OutOrStdout()
+		output.Blank(out)
+		output.Loading(out, fmt.Sprintf("Starting %s", job.Name))
+		onOutput = func(chunk []byte) {
+			_, _ = captured.Write(chunk)
+			_, _ = out.Write(chunk)
+		}
+	}
+
+	resp, err := client.SendStream(process.Request{
+		Action:  process.ActionStart,
+		Job:     &job,
+		WorkDir: dir,
+	}, onOutput)
+	if err != nil {
+		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: err.Error()})
+		if format != domain.OutputJSON {
+			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", job.Name, err))
+		}
+		return fmt.Errorf("service %s: %w", job.Name, err)
+	}
+	if resp.Status == process.StatusError {
+		// Re-running `run up` while the launcher's work is already up is benign.
+		if strings.Contains(resp.Message, domain.JobAlreadyRunningSuffix) {
+			*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
+			*started = append(*started, job)
+			if format != domain.OutputJSON {
+				output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s already running", job.Name))
+			}
+			return nil
+		}
+		// In text mode the output already streamed live, so the result only
+		// needs the concise reason; JSON consumers get the captured logs too.
+		message := resp.Message
+		if logs := strings.TrimSpace(captured.String()); logs != "" && format == domain.OutputJSON {
+			message = resp.Message + "\n" + logs
+		}
+		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: message})
+		if format != domain.OutputJSON {
+			output.Error(cmd.ErrOrStderr(), resp.Message)
+		}
+		return fmt.Errorf("service %s failed", job.Name)
+	}
+
+	*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
+	*started = append(*started, job)
+	if format != domain.OutputJSON {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", job.Name))
 	}
 	return nil
 }
