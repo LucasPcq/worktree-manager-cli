@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.11.0 — CLI pilotable par agents LLM + logs des services détachés en live
+
+### New features
+
+- **`wtm pr create --yes`** — mode non-interactif : push automatiquement une branche non poussée et saute les prompts (implicite avec `--output json`). Corrige un cas où `pr create --output json` sur une branche non poussée s'arrêtait silencieusement.
+- **`wtm init` pilotable par flags** — `--non-interactive`, `--agent`, `--shell`, `--base-path`, `--base-branch`, `--env-strategy`, `--install-command`. Résolution `flags > détection > défauts`, échoue proprement si la base branch est introuvable en non-interactif. Un agent peut bootstrapper un projet sans wizard.
+- **`wtm wt create --if-not-exists`** — succès idempotent (`already_exists: true`) si le worktree existe déjà, au lieu d'échouer.
+- **Codes de sortie granulaires** — `10` worktree existe, `11` branch introuvable, `12` config introuvable, `13` PR existe déjà, `14` job non déclaré. Agents et scripts peuvent brancher sur la cause d'échec.
+- **Logs des launchers détachés en live** — un service détaché (`docker compose up -d`…) streame sa sortie de démarrage en direct pendant `wtm run up` (réseau/conteneurs créés et démarrés), comme une task — au lieu d'un simple spinner puis « started ».
+
+### Breaking changes
+
+- **`config not found` sort en code 12 (au lieu de 0)** — toute commande hors d'un repo initialisé échoue désormais avec un code non nul ; un script comptant sur un exit 0 silencieux doit être ajusté.
+- **`wtm pr create` sort en code 13 si une PR existe déjà** (au lieu de 0) ; en mode JSON la PR existante est imprimée sur stdout.
+
+### Improvements
+
+- **`wtm wt clean` idempotent** — supprimer un worktree déjà absent réussit en no-op (`already_absent: true`).
+- **`run stop` / `run down` rejouables** — stopper un job déjà arrêté est un no-op ; un job non déclaré renvoie le code 14.
+- **Forks documentés** — `wtm pr checkout` d'une PR de fork reste refusé (par design), message clair vers `gh pr checkout` ; README + skill `using-wtm` à jour, référence morte supprimée.
+
 ## v0.10.0 — Run unifié (start + tail, tasks streamées) + ordre des jobs de profil
 
 ### New features
