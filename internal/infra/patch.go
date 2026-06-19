@@ -2,6 +2,7 @@ package infra
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -70,6 +71,88 @@ func ApplyPatch(params ApplyPatchParams) error {
 		return fmt.Errorf("git apply: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
+}
+
+// MergeFileParams holds inputs for a 3-way file merge between worktrees.
+type MergeFileParams struct {
+	SourceWorktree string
+	TargetWorktree string
+	RelPath        string
+	SourceBranch   string
+	TargetBranch   string
+}
+
+// MergeFile performs a 3-way merge of RelPath with `git merge-file`, writing the
+// result into the target worktree's copy. The merge base is the source's HEAD
+// version; "ours" is the target's current content; "theirs" is the source's
+// working content. On conflict it writes conflict markers in place and returns
+// conflicted=true; a clean merge returns false.
+func MergeFile(params MergeFileParams) (bool, error) {
+	base, err := writeTempFile("wtm-merge-base-*", showHead(params.SourceWorktree, params.RelPath))
+	if err != nil {
+		return false, err
+	}
+	defer os.Remove(base)
+
+	otherPath := filepath.Join(params.SourceWorktree, params.RelPath)
+	if !FileExists(otherPath) {
+		empty, tmpErr := writeTempFile("wtm-merge-other-*", nil)
+		if tmpErr != nil {
+			return false, tmpErr
+		}
+		defer os.Remove(empty)
+		otherPath = empty
+	}
+
+	targetPath := filepath.Join(params.TargetWorktree, params.RelPath)
+	if !FileExists(targetPath) {
+		if mkErr := os.MkdirAll(filepath.Dir(targetPath), 0o755); mkErr != nil {
+			return false, mkErr
+		}
+		if wErr := os.WriteFile(targetPath, nil, 0o644); wErr != nil {
+			return false, wErr
+		}
+	}
+
+	cmd := exec.Command("git", "merge-file",
+		"-L", params.TargetBranch, "-L", "base", "-L", "incoming ("+params.SourceBranch+")",
+		targetPath, base, otherPath)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return false, nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 && exitErr.ExitCode() < 128 {
+		return true, nil
+	}
+	return false, fmt.Errorf("git merge-file %s: %s: %w", params.RelPath, strings.TrimSpace(string(out)), err)
+}
+
+// showHead returns the HEAD version of relPath in the worktree, or nil when the
+// file is not tracked at HEAD (e.g. newly added).
+func showHead(worktree, relPath string) []byte {
+	cmd := exec.Command("git", "-C", worktree, "show", "HEAD:"+relPath)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+func writeTempFile(pattern string, content []byte) (string, error) {
+	f, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", fmt.Errorf("create temp file: %w", err)
+	}
+	if _, err := f.Write(content); err != nil {
+		f.Close()
+		return "", fmt.Errorf("write temp file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("close temp file: %w", err)
+	}
+	return f.Name(), nil
 }
 
 // ResetPathsParams holds inputs for unstaging paths.

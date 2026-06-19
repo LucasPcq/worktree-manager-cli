@@ -33,16 +33,27 @@ func Extract(params domain.ExtractParams) (domain.ExtractResult, error) {
 		return domain.ExtractResult{}, err
 	}
 
+	conflicts := conflictingFiles(params.SourcePath, params.TargetPath, tracked)
+	if len(conflicts) > 0 && params.ConflictMode != domain.OnConflictResolve {
+		return domain.ExtractResult{}, conflictError(conflicts, params.TargetBranch)
+	}
+
+	if len(conflicts) > 0 {
+		return resolveExtract(params, tracked, untracked, conflicts)
+	}
+
+	return cleanExtract(params, tracked, untracked)
+}
+
+// cleanExtract handles the no-conflict path: apply the whole selection to the
+// target and, unless Keep is set, remove it from the source (full move).
+func cleanExtract(params domain.ExtractParams, tracked, untracked []string) (domain.ExtractResult, error) {
 	patch, err := infra.DiffFiles(infra.DiffFilesParams{
 		WorktreePath: params.SourcePath,
 		Files:        tracked,
 	})
 	if err != nil {
 		return domain.ExtractResult{}, err
-	}
-
-	if conflicts := conflictingFiles(params.SourcePath, params.TargetPath, tracked); len(conflicts) > 0 {
-		return domain.ExtractResult{}, conflictError(conflicts, params.TargetBranch)
 	}
 
 	if err := infra.ApplyPatch(infra.ApplyPatchParams{
@@ -79,8 +90,89 @@ func Extract(params domain.ExtractParams) (domain.ExtractResult, error) {
 		Files:        params.Files,
 		TargetPath:   params.TargetPath,
 		TargetBranch: params.TargetBranch,
+		SourceBranch: params.SourceBranch,
 		Kept:         params.Keep,
 	}, nil
+}
+
+// resolveExtract handles the conflict path in resolve mode: clean files are
+// applied normally, conflicting files are written with merge markers, untracked
+// files are copied, and the source is left fully intact (recoverable).
+func resolveExtract(params domain.ExtractParams, tracked, untracked, conflicts []string) (domain.ExtractResult, error) {
+	clean := subtract(tracked, conflicts)
+
+	cleanPatch, err := infra.DiffFiles(infra.DiffFilesParams{
+		WorktreePath: params.SourcePath,
+		Files:        clean,
+	})
+	if err != nil {
+		return domain.ExtractResult{}, err
+	}
+	if err := infra.ApplyPatch(infra.ApplyPatchParams{
+		WorktreePath: params.TargetPath,
+		Patch:        cleanPatch,
+		ThreeWay:     true,
+	}); err != nil {
+		rollbackTarget(params.TargetPath, cleanPatch, clean)
+		return domain.ExtractResult{}, conflictError(clean, params.TargetBranch)
+	}
+
+	for _, f := range conflicts {
+		if _, err := infra.MergeFile(infra.MergeFileParams{
+			SourceWorktree: params.SourcePath,
+			TargetWorktree: params.TargetPath,
+			RelPath:        f,
+			SourceBranch:   params.SourceBranch,
+			TargetBranch:   params.TargetBranch,
+		}); err != nil {
+			return domain.ExtractResult{}, fmt.Errorf("merge %s: %w", f, err)
+		}
+	}
+
+	if err := copyUntracked(copyUntrackedParams{
+		SourcePath: params.SourcePath,
+		TargetPath: params.TargetPath,
+		Files:      untracked,
+	}); err != nil {
+		return domain.ExtractResult{}, err
+	}
+
+	return domain.ExtractResult{
+		Files:        params.Files,
+		TargetPath:   params.TargetPath,
+		TargetBranch: params.TargetBranch,
+		SourceBranch: params.SourceBranch,
+		Kept:         true,
+		Conflicts:    conflicts,
+	}, nil
+}
+
+// ConflictCheckParams holds inputs for detecting conflicting files.
+type ConflictCheckParams struct {
+	SourcePath string
+	TargetPath string
+	Files      []domain.ExtractFile
+}
+
+// ConflictingFiles returns the selected tracked files whose changes do not apply
+// cleanly onto the target worktree. Used to decide whether to prompt the user.
+func ConflictingFiles(params ConflictCheckParams) []string {
+	tracked, _ := splitByStatus(params.Files)
+	return conflictingFiles(params.SourcePath, params.TargetPath, tracked)
+}
+
+func subtract(all, remove []string) []string {
+	set := make(map[string]struct{}, len(remove))
+	for _, r := range remove {
+		set[r] = struct{}{}
+	}
+	out := make([]string, 0, len(all))
+	for _, a := range all {
+		if _, ok := set[a]; !ok {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 func splitByStatus(files []domain.ExtractFile) (tracked, untracked []string) {

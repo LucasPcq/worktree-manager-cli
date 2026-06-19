@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -163,6 +164,68 @@ func TestExtractUntrackedCollisionAborts(t *testing.T) {
 	}
 	if got := readFile(t, env.target, "c.txt"); got != "already here\n" {
 		t.Errorf("target c.txt clobbered: %q", got)
+	}
+}
+
+func TestExtractResolveWritesMarkersAndKeepsSource(t *testing.T) {
+	env := setupExtract(t)
+	writeFile(t, env.source, "a.txt", "line1\nSRC\nline3\n")
+	writeFile(t, env.target, "a.txt", "line1\nTGT\nline3\n")
+
+	result, err := Extract(domain.ExtractParams{
+		SourcePath:   env.source,
+		SourceBranch: "main",
+		TargetPath:   env.target,
+		TargetBranch: "feat",
+		ConflictMode: domain.OnConflictResolve,
+		Files:        []domain.ExtractFile{{Path: "a.txt", Status: domain.ExtractStatusModified}},
+	})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	if len(result.Conflicts) != 1 || result.Conflicts[0] != "a.txt" {
+		t.Errorf("result.Conflicts = %v, want [a.txt]", result.Conflicts)
+	}
+	if got := readFile(t, env.target, "a.txt"); !strings.Contains(got, "<<<<<<<") || !strings.Contains(got, ">>>>>>>") {
+		t.Errorf("target a.txt missing conflict markers:\n%s", got)
+	}
+	if got := readFile(t, env.source, "a.txt"); got != "line1\nSRC\nline3\n" {
+		t.Errorf("source a.txt changed in resolve mode: %q", got)
+	}
+}
+
+func TestExtractResolveAppliesCleanFilesAlongsideConflicts(t *testing.T) {
+	env := setupExtract(t)
+	// a.txt conflicts; b.txt is a clean change (target untouched on b.txt)
+	writeFile(t, env.source, "a.txt", "line1\nSRC\nline3\n")
+	writeFile(t, env.target, "a.txt", "line1\nTGT\nline3\n")
+	writeFile(t, env.source, "b.txt", "base\nappended\n")
+
+	result, err := Extract(domain.ExtractParams{
+		SourcePath:   env.source,
+		SourceBranch: "main",
+		TargetPath:   env.target,
+		TargetBranch: "feat",
+		ConflictMode: domain.OnConflictResolve,
+		Files: []domain.ExtractFile{
+			{Path: "a.txt", Status: domain.ExtractStatusModified},
+			{Path: "b.txt", Status: domain.ExtractStatusModified},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	if len(result.Conflicts) != 1 || result.Conflicts[0] != "a.txt" {
+		t.Errorf("result.Conflicts = %v, want [a.txt]", result.Conflicts)
+	}
+	if got := readFile(t, env.target, "b.txt"); got != "base\nappended\n" {
+		t.Errorf("clean file b.txt not applied to target: %q", got)
+	}
+	// source fully intact (nothing removed in resolve mode)
+	if got := readFile(t, env.source, "b.txt"); got != "base\nappended\n" {
+		t.Errorf("source b.txt should be kept: %q", got)
 	}
 }
 

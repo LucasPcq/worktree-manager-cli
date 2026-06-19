@@ -103,9 +103,14 @@ const (
 	FlagCwd       = "cwd"
 	FlagJobs      = "jobs"
 	FlagDefault   = "default"
-	FlagTo        = "to"
-	FlagKeep      = "keep"
-	FlagFiles     = "files"
+	FlagTo         = "to"
+	FlagKeep       = "keep"
+	FlagFiles      = "files"
+	FlagOnConflict = "on-conflict"
+
+	// On-conflict modes for `wt extract`.
+	OnConflictAbort   = "abort"
+	OnConflictResolve = "resolve"
 
 	// init flags (non-interactive bootstrap).
 	FlagIfNotExists    = "if-not-exists"

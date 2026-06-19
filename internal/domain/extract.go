@@ -24,10 +24,15 @@ type ExtractFile struct {
 // worktree to the target worktree.
 type ExtractParams struct {
 	SourcePath   string
+	SourceBranch string
 	TargetPath   string
 	TargetBranch string
 	Files        []ExtractFile
 	Keep         bool
+	// ConflictMode selects what happens when the changes do not apply cleanly:
+	// OnConflictAbort (default) leaves everything untouched; OnConflictResolve
+	// writes conflict markers into the target and keeps the source intact.
+	ConflictMode string
 }
 
 // ExtractResult is the outcome of a successful extraction.
@@ -35,5 +40,9 @@ type ExtractResult struct {
 	Files        []ExtractFile `json:"files"`
 	TargetPath   string        `json:"target_path"`
 	TargetBranch string        `json:"target_branch"`
+	SourceBranch string        `json:"source_branch"`
 	Kept         bool          `json:"kept"`
+	// Conflicts lists the files written with conflict markers in resolve mode.
+	// Empty on a clean extraction.
+	Conflicts []string `json:"conflicts"`
 }

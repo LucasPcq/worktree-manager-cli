@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -24,7 +25,8 @@ func newExtractCmd() *cobra.Command {
 		Short: "Move uncommitted changes to another worktree",
 		Long: "Move a subset of the current worktree's uncommitted changes to another worktree\n" +
 			"(new or existing) to split an oversized PR or isolate unrelated work.\n" +
-			"The extraction is transactional: on conflict it aborts, leaving the source intact.",
+			"On conflict it aborts by default, leaving the source intact; --on-conflict resolve\n" +
+			"applies conflict markers in the target so you can resolve them like a rebase.",
 		RunE: runExtract,
 	}
 
@@ -32,6 +34,7 @@ func newExtractCmd() *cobra.Command {
 	cmd.Flags().String(domain.FlagTo, "", "Target worktree branch; created if it does not exist")
 	cmd.Flags().String(domain.FlagFrom, "", "Parent branch when creating the target worktree")
 	cmd.Flags().Bool(domain.FlagKeep, false, "Copy instead of move (keep the changes in the source)")
+	cmd.Flags().String(domain.FlagOnConflict, "", "On conflict: abort (default) or resolve (write conflict markers in the target)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -73,7 +76,7 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	selected, target, err := resolveSelectionAndTarget(resolveParams{
+	selected, target, keep, err := resolveSelectionAndTarget(resolveParams{
 		cmd:          cmd,
 		cfg:          cfg,
 		sourceBranch: sourceBranch,
@@ -86,13 +89,32 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	keep, _ := cmd.Flags().GetBool(domain.FlagKeep)
+	conflictMode, err := resolveConflictMode(resolveConflictModeParams{
+		cmd:        cmd,
+		sourcePath: sourcePath,
+		target:     target,
+		selected:   selected,
+	})
+	if errors.Is(err, domain.ErrUserAborted) {
+		if format != domain.OutputJSON {
+			output.Blank(cmd.OutOrStdout())
+			output.Message(cmd.OutOrStdout(), "Cancelled — nothing was changed.")
+			output.Blank(cmd.OutOrStdout())
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
 	result, err := worktree.Extract(domain.ExtractParams{
 		SourcePath:   sourcePath,
+		SourceBranch: sourceBranch,
 		TargetPath:   target.path,
 		TargetBranch: target.branch,
 		Files:        selected,
 		Keep:         keep,
+		ConflictMode: conflictMode,
 	})
 	if err != nil {
 		return err
@@ -101,8 +123,59 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 	if format == domain.OutputJSON {
 		return output.WriteExtractJSON(cmd.OutOrStdout(), result)
 	}
+	if len(result.Conflicts) > 0 {
+		output.PrintExtractConflicts(cmd.OutOrStdout(), result)
+		return nil
+	}
 	output.PrintExtractResult(cmd.OutOrStdout(), result)
 	return nil
+}
+
+type resolveConflictModeParams struct {
+	cmd        *cobra.Command
+	sourcePath string
+	target     extractTarget
+	selected   []domain.ExtractFile
+}
+
+// resolveConflictMode decides what Extract does on conflict. No conflict → abort
+// (unused). On conflict: honor --on-conflict, else prompt on a TTY, else default
+// to abort. Returns ErrUserAborted when the user declines the prompt.
+func resolveConflictMode(p resolveConflictModeParams) (string, error) {
+	conflicts := worktree.ConflictingFiles(worktree.ConflictCheckParams{
+		SourcePath: p.sourcePath,
+		TargetPath: p.target.path,
+		Files:      p.selected,
+	})
+	if len(conflicts) == 0 {
+		return domain.OnConflictAbort, nil
+	}
+
+	if p.cmd.Flags().Changed(domain.FlagOnConflict) {
+		mode, _ := p.cmd.Flags().GetString(domain.FlagOnConflict)
+		if mode != domain.OnConflictAbort && mode != domain.OnConflictResolve {
+			return "", fmt.Errorf("invalid --%s value %q: use %s or %s",
+				domain.FlagOnConflict, mode, domain.OnConflictAbort, domain.OnConflictResolve)
+		}
+		return mode, nil
+	}
+
+	if !isInteractive() {
+		return domain.OnConflictAbort, nil
+	}
+
+	resolve, err := extracttui.ConfirmResolve(conflicts, p.target.branch)
+	if err != nil {
+		return "", err
+	}
+	if !resolve {
+		return "", domain.ErrUserAborted
+	}
+	return domain.OnConflictResolve, nil
+}
+
+func isInteractive() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 // listExtractFiles returns the uncommitted files of a worktree classified for
@@ -134,11 +207,13 @@ type resolveParams struct {
 // worktree, from flags or the interactive wizard. When the target is chosen
 // interactively, it loops so that backing out of the new-worktree sub-flow
 // returns to the Target step with the file selection preserved.
-func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTarget, error) {
+func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTarget, bool, error) {
 	filesFlag, _ := p.cmd.Flags().GetStringSlice(domain.FlagFiles)
 	toFlag, _ := p.cmd.Flags().GetString(domain.FlagTo)
+	keepFlag, _ := p.cmd.Flags().GetBool(domain.FlagKeep)
 	needFiles := len(filesFlag) == 0
 	needTarget := toFlag == ""
+	needMode := !p.cmd.Flags().Changed(domain.FlagKeep) && isInteractive()
 
 	preselected := filesFlag
 	startAtTarget := false
@@ -150,11 +225,12 @@ func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTa
 			sourceBranch:  p.sourceBranch,
 			needFiles:     needFiles,
 			needTarget:    needTarget,
+			needMode:      needMode,
 			preselected:   preselected,
 			startAtTarget: startAtTarget,
 		})
 		if err != nil {
-			return nil, extractTarget{}, err
+			return nil, extractTarget{}, false, err
 		}
 
 		selectedPaths := filesFlag
@@ -164,7 +240,12 @@ func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTa
 		}
 		selected, err := filterByPaths(p.available, selectedPaths)
 		if err != nil {
-			return nil, extractTarget{}, err
+			return nil, extractTarget{}, false, err
+		}
+
+		keep := keepFlag
+		if needMode {
+			keep = wizard.Keep
 		}
 
 		target, err := resolveTarget(resolveTargetParams{
@@ -179,9 +260,9 @@ func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTa
 			continue
 		}
 		if err != nil {
-			return nil, extractTarget{}, err
+			return nil, extractTarget{}, false, err
 		}
-		return selected, target, nil
+		return selected, target, keep, nil
 	}
 }
 
@@ -191,14 +272,15 @@ type runWizardParams struct {
 	sourceBranch  string
 	needFiles     bool
 	needTarget    bool
+	needMode      bool
 	preselected   []string
 	startAtTarget bool
 }
 
-// runWizard runs the unified file+target selection wizard, skipping any step
-// already resolved from a flag. Returns a zero result when nothing is needed.
+// runWizard runs the unified file+target+mode selection wizard, skipping any
+// step already resolved from a flag. Returns a zero result when nothing is needed.
 func runWizard(params runWizardParams) (extracttui.RunResult, error) {
-	if !params.needFiles && !params.needTarget {
+	if !params.needFiles && !params.needTarget && !params.needMode {
 		return extracttui.RunResult{}, nil
 	}
 
@@ -221,6 +303,7 @@ func runWizard(params runWizardParams) (extracttui.RunResult, error) {
 		SourceBranch:  params.sourceBranch,
 		NeedFiles:     params.needFiles,
 		NeedTarget:    params.needTarget,
+		NeedMode:      params.needMode,
 		Preselected:   params.preselected,
 		StartAtTarget: params.startAtTarget,
 	})

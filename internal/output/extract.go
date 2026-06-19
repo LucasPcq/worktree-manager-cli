@@ -28,6 +28,39 @@ func PrintExtractResult(w io.Writer, result domain.ExtractResult) {
 		fmt.Fprintf(w, "%s%s  %s  %s\n", Indent, Indent, extractTag(f.Status), f.Path)
 	}
 	Blank(w)
+	InfoLine(w, "source", result.SourceBranch+" · "+sourceState(result.Kept))
+	InfoLine(w, "worktree", result.TargetPath)
+	Blank(w)
+}
+
+// sourceState describes what happened to the source worktree after a clean
+// extraction: cleaned (move) or kept (copy).
+func sourceState(kept bool) string {
+	if kept {
+		return styles.Warning.Render("kept")
+	}
+	return styles.Success.Render("clean")
+}
+
+// PrintExtractConflicts renders the rebase-style summary when changes were
+// applied to the target with conflict markers, with both next-step paths.
+func PrintExtractConflicts(w io.Writer, result domain.ExtractResult) {
+	Blank(w)
+	Warning(w, fmt.Sprintf("Applied to %s with conflicts", styles.Bold.Render(result.TargetBranch)))
+	Blank(w)
+	SectionTitle(w, "Conflicts to resolve in "+result.TargetBranch)
+	for _, f := range result.Conflicts {
+		fmt.Fprintf(w, "%s%s%s\n", Indent, Indent, styles.Warning.Render(f))
+	}
+	if len(result.Files) > len(result.Conflicts) {
+		Blank(w)
+		Message(w, "The other files were applied cleanly.")
+	}
+	Blank(w)
+	Message(w, fmt.Sprintf("Nothing was removed from %s — your changes are safe there.", result.SourceBranch))
+	Message(w, fmt.Sprintf("• Finish the split: resolve the conflicts in %s, then discard the same files in %s.", result.TargetBranch, result.SourceBranch))
+	Message(w, fmt.Sprintf("• Undo: discard the applied changes in %s — %s stays untouched.", result.TargetBranch, result.SourceBranch))
+	Blank(w)
 	InfoLine(w, "worktree", result.TargetPath)
 	Blank(w)
 }
