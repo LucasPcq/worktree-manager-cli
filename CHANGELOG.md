@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.12.0 — `wt extract` : déplacer les changements non-commités entre worktrees
+
+### New features
+
+- **`wtm wt extract`** — déplace un sous-ensemble des changements non-commités du worktree courant vers un autre worktree (nouveau ou existant), pour découper une PR trop grosse ou isoler du travail sans rapport. Wizard interactif **Files → Target → Mode** (Move/Copy), chaque étape étant sautée si résolue par un flag. Pilotable sans TTY via `--files`, `--to`, `--from`, `--keep`, `--on-conflict`, `--output json`.
+- **Move vs copy** — les fichiers sont déplacés par défaut (retirés de la source une fois posés) ; `--keep` les copie.
+- **Règle de sécurité transactionnelle** — la source n'est nettoyée que si toute l'extraction s'applique proprement. Au moindre conflit, la source est laissée **totalement intacte et récupérable** — jamais d'état à moitié déplacé.
+- **Mode résolution de conflits** — `--on-conflict abort` (défaut) ne change rien et sort en code `15` ; `--on-conflict resolve` applique les changements dans la cible avec des marqueurs de conflit git (via `git merge-file`) pour résoudre comme un rebase, en gardant la source intacte.
+
 ## v0.11.0 — CLI pilotable par agents LLM + logs des services détachés en live
 
 ### New features
