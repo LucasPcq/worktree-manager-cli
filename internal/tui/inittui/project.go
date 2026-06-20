@@ -55,6 +55,7 @@ func (s *stepSet) at(key string) int {
 // pre-selects what's already configured. A nil prefill (full init) falls back to
 // detection-driven defaults with no "current/new" tags.
 type SectionPrefill struct {
+	BaseBranch     string
 	EnvStrategy    string
 	EnvCopyFiles   map[string]bool
 	InstallCommand string
@@ -100,6 +101,8 @@ func RunSectionWizard(sections []string, detection domain.InitDetectionResult, p
 	s := newStepSet()
 	for _, section := range sections {
 		switch section {
+		case domain.SectionWorktrees:
+			addWorktreesSteps(s, detection, prefill)
 		case domain.SectionEnv:
 			addEnvSteps(s, detection, nil, prefill)
 		case domain.SectionHooks:
@@ -161,6 +164,27 @@ func baseBranchStep(detection domain.InitDetectionResult) components.Step {
 		Summary: textInputSummary,
 		Callout: true,
 	}
+}
+
+// addWorktreesSteps adds the editable worktrees step (base branch only) for a
+// targeted re-init. base_path is intentionally not editable here — changing it
+// would orphan existing worktrees (tracked separately).
+func addWorktreesSteps(s *stepSet, detection domain.InitDetectionResult, prefill *SectionPrefill) {
+	def := ""
+	if prefill != nil {
+		def = prefill.BaseBranch
+	}
+	s.add(stepBaseBranch, components.Step{
+		Name: "Base branch",
+		Model: components.NewTextInput(components.NewTextInputParams{
+			Title:       "Base branch",
+			Description: "Default branch new worktrees are created from. Changing it only affects future worktrees.",
+			Placeholder: detection.BaseBranch,
+			Default:     def,
+		}),
+		Summary: textInputSummary,
+		Callout: true,
+	})
 }
 
 func envGate(detection domain.InitDetectionResult) components.Step {

@@ -15,6 +15,7 @@ func TestParseSections(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "single", input: []string{"services"}, want: []string{"services"}},
+		{name: "worktrees", input: []string{"worktrees"}, want: []string{"worktrees"}},
 		{name: "csv", input: []string{"env,services"}, want: []string{"env", "services"}},
 		{name: "repeated", input: []string{"env", "hooks"}, want: []string{"env", "hooks"}},
 		{name: "dedup", input: []string{"env", "env"}, want: []string{"env"}},

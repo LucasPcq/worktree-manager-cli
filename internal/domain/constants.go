@@ -135,9 +135,10 @@ const (
 	FlagOnly = "only"
 
 	// Init section identifiers — used by `wtm init --only <section>`.
-	SectionEnv      = "env"
-	SectionHooks    = "hooks"
-	SectionServices = "services"
+	SectionEnv       = "env"
+	SectionHooks     = "hooks"
+	SectionServices  = "services"
+	SectionWorktrees = "worktrees"
 
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches

@@ -20,9 +20,10 @@ import (
 // preserving order. Returns ExitCodeUsage-wrapped error on an unknown section.
 func parseSections(raw []string) ([]string, error) {
 	valid := map[string]bool{
-		domain.SectionEnv:      true,
-		domain.SectionHooks:    true,
-		domain.SectionServices: true,
+		domain.SectionWorktrees: true,
+		domain.SectionEnv:       true,
+		domain.SectionHooks:     true,
+		domain.SectionServices:  true,
 	}
 	seen := map[string]bool{}
 	var sections []string
@@ -33,8 +34,8 @@ func parseSections(raw []string) ([]string, error) {
 				continue
 			}
 			if !valid[name] {
-				return nil, fmt.Errorf("unknown section %q for --%s (valid: %s, %s, %s)",
-					name, domain.FlagOnly, domain.SectionEnv, domain.SectionHooks, domain.SectionServices)
+				return nil, fmt.Errorf("unknown section %q for --%s (valid: %s, %s, %s, %s)",
+					name, domain.FlagOnly, domain.SectionWorktrees, domain.SectionEnv, domain.SectionHooks, domain.SectionServices)
 			}
 			if !seen[name] {
 				seen[name] = true
@@ -59,7 +60,7 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 
 	var answers domain.InitProjectAnswers
 	if nonInteractive {
-		built, err := buildReinitAnswers(cmd, detection)
+		built, err := buildReinitAnswers(cmd, stateDir, detection)
 		if err != nil {
 			return err
 		}
@@ -104,7 +105,7 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 			return err
 		}
 	}
-	if contains(sections, domain.SectionEnv) || contains(sections, domain.SectionHooks) {
+	if contains(sections, domain.SectionWorktrees) || contains(sections, domain.SectionEnv) || contains(sections, domain.SectionHooks) {
 		if err := applyConfigReinit(cmd, stateDir, sections, answers); err != nil {
 			return err
 		}
@@ -127,6 +128,7 @@ func buildPrefill(stateDir string, detection domain.InitDetectionResult) (*initw
 	}
 
 	return &initwizard.SectionPrefill{
+		BaseBranch:     cfg.Worktrees.BaseBranch,
 		EnvStrategy:    string(cfg.Env.Strategy),
 		EnvCopyFiles:   toSet(cfg.Env.CopyFiles),
 		InstallCommand: rules.InstallCommandFromHooks(cfg.Hooks.OnCreate),
@@ -145,13 +147,32 @@ func toSet(values []string) map[string]bool {
 	return set
 }
 
-// buildReinitAnswers resolves answers from flags + detection for the
-// non-interactive path. NonInteractive is intentionally left false so the base
-// branch falls back to a default (it is ignored — re-init never rewrites it).
-func buildReinitAnswers(cmd *cobra.Command, detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
+// buildReinitAnswers resolves answers for the non-interactive path. Scalar
+// values (base branch, env strategy, install command) keep their current config
+// value unless a flag overrides them; the detected lists (env files, docker,
+// scripts, monorepo) are regenerated from detection. NonInteractive is left
+// false so an unresolved base branch falls back to a default rather than erroring.
+func buildReinitAnswers(cmd *cobra.Command, stateDir string, detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
+	cfg, err := config.LoadProjectRaw(stateDir)
+	if err != nil {
+		return domain.InitProjectAnswers{}, fmt.Errorf("load project config: %w", err)
+	}
+
+	baseBranch, _ := cmd.Flags().GetString(domain.FlagBaseBranch)
+	if baseBranch == "" {
+		baseBranch = cfg.Worktrees.BaseBranch
+	}
 	envStrategy, _ := cmd.Flags().GetString(domain.FlagEnvStrategy)
+	if envStrategy == "" {
+		envStrategy = string(cfg.Env.Strategy)
+	}
 	installCommand, _ := cmd.Flags().GetString(domain.FlagInstallCommand)
+	if installCommand == "" {
+		installCommand = rules.InstallCommandFromHooks(cfg.Hooks.OnCreate)
+	}
+
 	return rules.BuildProjectAnswers(rules.InitProjectFlags{
+		BaseBranch:     baseBranch,
 		EnvStrategy:    envStrategy,
 		InstallCommand: installCommand,
 	}, detection)
@@ -184,6 +205,9 @@ func applyConfigReinit(cmd *cobra.Command, stateDir string, sections []string, a
 		return fmt.Errorf("load project config: %w", err)
 	}
 
+	if contains(sections, domain.SectionWorktrees) {
+		cfg.Worktrees.BaseBranch = answers.BaseBranch
+	}
 	if contains(sections, domain.SectionEnv) {
 		cfg.Env.Strategy = answers.EnvStrategy
 		cfg.Env.CopyFiles = answers.EnvCopyFiles
@@ -216,6 +240,8 @@ func reinitWarning(sections []string) string {
 	var lines []string
 	for _, s := range sections {
 		switch s {
+		case domain.SectionWorktrees:
+			lines = append(lines, "config.toml [worktrees] base_branch will be rewritten")
 		case domain.SectionEnv:
 			lines = append(lines, "config.toml [env] will be rewritten")
 		case domain.SectionHooks:
