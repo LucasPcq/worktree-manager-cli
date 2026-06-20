@@ -11,29 +11,121 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// RunProjectWizard presents the project init wizard pre-populated with detection results.
-// Returns ErrUserAborted if the user presses Esc at the first step.
+// Step keys identify wizard steps so extraction is positional-independent —
+// the same builders feed both the full init wizard and the targeted
+// `wtm init --only <section>` re-init wizard.
+const (
+	stepBasePath     = "base_path"
+	stepBaseBranch   = "base_branch"
+	stepEnvGate      = "env_gate"
+	stepEnvStrategy  = "env_strategy"
+	stepEnvFiles     = "env_files"
+	stepHooksGate    = "hooks_gate"
+	stepInstall      = "install"
+	stepMonorepo     = "monorepo"
+	stepServicesGate = "services_gate"
+	stepDocker       = "docker"
+	stepScripts      = "scripts"
+)
+
+// stepSet accumulates wizard steps and records each one's index by key.
+type stepSet struct {
+	steps []components.Step
+	idx   map[string]int
+}
+
+func newStepSet() *stepSet {
+	return &stepSet{idx: map[string]int{}}
+}
+
+func (s *stepSet) add(key string, step components.Step) {
+	s.idx[key] = len(s.steps)
+	s.steps = append(s.steps, step)
+}
+
+// at returns the index of a registered step, or -1 if it was not built.
+func (s *stepSet) at(key string) int {
+	if i, ok := s.idx[key]; ok {
+		return i
+	}
+	return -1
+}
+
+// RunProjectWizard presents the full project init wizard pre-populated with
+// detection results. Returns ErrUserAborted if the user aborts.
 //
 // The wizard is organised by concept. Each optional section (env, hooks,
 // services) is introduced by a "gate" step that explains what the section does
 // and offers Configure / Skip; its sub-steps auto-skip when the gate is skipped.
 func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
-	var (
-		steps               []components.Step
-		idxBasePath         int
-		idxBaseBranch       int
-		idxEnvStrategy      int
-		idxInstallCommand   int
-		idxEnvFiles         = -1
-		idxMonorepoPackages = -1
-		idxDockerCompose    = -1
-		idxPackageScripts   = -1
-	)
+	s := newStepSet()
 
-	stepIdx := 0
+	s.add(stepBasePath, basePathStep())
+	s.add(stepBaseBranch, baseBranchStep(detection))
 
-	idxBasePath = stepIdx
-	steps = append(steps, components.Step{
+	s.add(stepEnvGate, envGate(detection))
+	addEnvSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepEnvGate)))
+
+	s.add(stepHooksGate, hooksGate(detection))
+	addHooksSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepHooksGate)))
+
+	s.add(stepServicesGate, servicesGate(detection))
+	addServicesSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepServicesGate)))
+
+	final, err := runWizard(s.steps)
+	if err != nil {
+		return domain.InitProjectAnswers{}, err
+	}
+	return extractProjectAnswers(final, detection, s.idx), nil
+}
+
+// RunSectionWizard presents a targeted wizard for the requested sections only,
+// without gates or core steps. Used by `wtm init --only <section>`. Returns a
+// nil-ish answers set with no steps when nothing is configurable (e.g. services
+// requested but none detected); callers handle the empty case.
+func RunSectionWizard(sections []string, detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
+	s := newStepSet()
+	for _, section := range sections {
+		switch section {
+		case domain.SectionEnv:
+			addEnvSteps(s, detection, nil)
+		case domain.SectionHooks:
+			addHooksSteps(s, detection, nil)
+		case domain.SectionServices:
+			addServicesSteps(s, detection, nil)
+		}
+	}
+
+	if len(s.steps) == 0 {
+		return domain.InitProjectAnswers{}, nil
+	}
+
+	final, err := runWizard(s.steps)
+	if err != nil {
+		return domain.InitProjectAnswers{}, err
+	}
+	return extractProjectAnswers(final, detection, s.idx), nil
+}
+
+// runWizard runs the bubbletea program for the given steps and returns the
+// final model, mapping abort/quit to ErrUserAborted.
+func runWizard(steps []components.Step) (components.WizardModel, error) {
+	wiz := components.NewWizard(steps)
+	finalModel, err := tea.NewProgram(wiz).Run()
+	if err != nil {
+		return components.WizardModel{}, fmt.Errorf("wizard: %w", err)
+	}
+	final, ok := finalModel.(components.WizardModel)
+	if !ok || final.Aborted() {
+		return components.WizardModel{}, domain.ErrUserAborted
+	}
+	return final, nil
+}
+
+// ── Step builders ───────────────────────────────────────────────────────────
+
+func basePathStep() components.Step {
+	return components.Step{
 		Name: "Worktree directory",
 		Model: components.NewTextInput(components.NewTextInputParams{
 			Title:       "Worktree directory",
@@ -42,11 +134,11 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		}),
 		Summary: textInputSummary,
 		Callout: true,
-	})
-	stepIdx++
+	}
+}
 
-	idxBaseBranch = stepIdx
-	steps = append(steps, components.Step{
+func baseBranchStep(detection domain.InitDetectionResult) components.Step {
+	return components.Step{
 		Name: "Base branch",
 		Model: components.NewTextInput(components.NewTextInputParams{
 			Title:       "Base branch",
@@ -55,12 +147,11 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		}),
 		Summary: textInputSummary,
 		Callout: true,
-	})
-	stepIdx++
+	}
+}
 
-	// ── Env section ──────────────────────────────────────────────────────────
-	idxEnvGate := stepIdx
-	steps = append(steps, sectionGate(sectionGateParams{
+func envGate(detection domain.InitDetectionResult) components.Step {
+	return sectionGate(sectionGateParams{
 		Name: "Environment files",
 		Description: "Each new worktree is a clean checkout — your local .env files aren't carried over. " +
 			"wtm can copy them in automatically so the worktree runs without redoing your local setup.",
@@ -68,12 +159,11 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		ConfigureLabel:   "Configure .env copying",
 		SkipLabel:        "Skip — I'll handle .env myself",
 		DefaultConfigure: len(detection.EnvFiles) > 0,
-	}))
-	stepIdx++
-	skipWhenEnvGated := autoSkipWhenGateSkipped(idxEnvGate)
+	})
+}
 
-	idxEnvStrategy = stepIdx
-	steps = append(steps, components.Step{
+func addEnvSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool) {
+	s.add(stepEnvStrategy, components.Step{
 		Name: "Env strategy",
 		Model: components.NewSelectList(components.NewSelectListParams{
 			Title:       "Env strategy",
@@ -85,38 +175,32 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 			},
 		}),
 		Summary:  selectListSummary,
-		AutoSkip: skipWhenEnvGated,
+		AutoSkip: autoSkip,
 		Callout:  true,
 	})
-	stepIdx++
 
-	if len(detection.EnvFiles) > 0 {
-		idxEnvFiles = stepIdx
-		items := make([]components.MultiSelectItem, 0, len(detection.EnvFiles))
-		for _, f := range detection.EnvFiles {
-			items = append(items, components.MultiSelectItem{
-				Label:    f,
-				Value:    f,
-				Selected: true,
-			})
-		}
-		steps = append(steps, components.Step{
-			Name: "Env files",
-			Model: components.NewMultiSelect(components.NewMultiSelectParams{
-				Title:       "Env files to copy",
-				Description: "Which of the detected .env files wtm should copy into every new worktree.",
-				Items:       items,
-			}),
-			Summary:  multiSelectSummary,
-			AutoSkip: skipWhenEnvGated,
-			Callout:  true,
-		})
-		stepIdx++
+	if len(detection.EnvFiles) == 0 {
+		return
 	}
+	items := make([]components.MultiSelectItem, 0, len(detection.EnvFiles))
+	for _, f := range detection.EnvFiles {
+		items = append(items, components.MultiSelectItem{Label: f, Value: f, Selected: true})
+	}
+	s.add(stepEnvFiles, components.Step{
+		Name: "Env files",
+		Model: components.NewMultiSelect(components.NewMultiSelectParams{
+			Title:       "Env files to copy",
+			Description: "Which of the detected .env files wtm should copy into every new worktree.",
+			Items:       items,
+		}),
+		Summary:  multiSelectSummary,
+		AutoSkip: autoSkip,
+		Callout:  true,
+	})
+}
 
-	// ── Hooks section ────────────────────────────────────────────────────────
-	idxHooksGate := stepIdx
-	steps = append(steps, sectionGate(sectionGateParams{
+func hooksGate(detection domain.InitDetectionResult) components.Step {
+	return sectionGate(sectionGateParams{
 		Name: "Post-create hooks",
 		Description: "Run commands automatically right after a worktree is created — typically installing " +
 			"dependencies — so it's ready to use immediately instead of needing manual steps.",
@@ -124,12 +208,11 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		ConfigureLabel:   "Configure setup commands",
 		SkipLabel:        "Skip — no automatic commands",
 		DefaultConfigure: detection.InstallCommand != "",
-	}))
-	stepIdx++
-	skipWhenHooksGated := autoSkipWhenGateSkipped(idxHooksGate)
+	})
+}
 
-	idxInstallCommand = stepIdx
-	steps = append(steps, components.Step{
+func addHooksSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool) {
+	s.add(stepInstall, components.Step{
 		Name: "Install command",
 		Model: components.NewTextInput(components.NewTextInputParams{
 			Title:       "Install command",
@@ -137,38 +220,32 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 			Placeholder: detection.InstallCommand,
 		}),
 		Summary:  textInputSummary,
-		AutoSkip: skipWhenHooksGated,
+		AutoSkip: autoSkip,
 		Callout:  true,
 	})
-	stepIdx++
 
-	if len(detection.MonorepoPackages) > 0 {
-		idxMonorepoPackages = stepIdx
-		items := make([]components.MultiSelectItem, 0, len(detection.MonorepoPackages))
-		for _, pkg := range detection.MonorepoPackages {
-			items = append(items, components.MultiSelectItem{
-				Label:    pkg,
-				Value:    pkg,
-				Selected: true,
-			})
-		}
-		steps = append(steps, components.Step{
-			Name: "Monorepo packages",
-			Model: components.NewMultiSelect(components.NewMultiSelectParams{
-				Title:       "Monorepo packages",
-				Description: fmt.Sprintf("Also run '%s' inside these packages on worktree creation (monorepo setups).", detection.InstallCommand),
-				Items:       items,
-			}),
-			Summary:  multiSelectSummary,
-			AutoSkip: skipWhenHooksGated,
-			Callout:  true,
-		})
-		stepIdx++
+	if len(detection.MonorepoPackages) == 0 {
+		return
 	}
+	items := make([]components.MultiSelectItem, 0, len(detection.MonorepoPackages))
+	for _, pkg := range detection.MonorepoPackages {
+		items = append(items, components.MultiSelectItem{Label: pkg, Value: pkg, Selected: true})
+	}
+	s.add(stepMonorepo, components.Step{
+		Name: "Monorepo packages",
+		Model: components.NewMultiSelect(components.NewMultiSelectParams{
+			Title:       "Monorepo packages",
+			Description: fmt.Sprintf("Also run '%s' inside these packages on worktree creation (monorepo setups).", detection.InstallCommand),
+			Items:       items,
+		}),
+		Summary:  multiSelectSummary,
+		AutoSkip: autoSkip,
+		Callout:  true,
+	})
+}
 
-	// ── Services section ─────────────────────────────────────────────────────
-	idxServicesGate := stepIdx
-	steps = append(steps, sectionGate(sectionGateParams{
+func servicesGate(detection domain.InitDetectionResult) components.Step {
+	return sectionGate(sectionGateParams{
 		Name: "Services & tasks",
 		Description: "Let wtm run your dev stack per worktree — long-running services (databases, dev servers) " +
 			"and one-off tasks — so you start/stop everything with `wtm run` instead of juggling terminals.",
@@ -176,21 +253,16 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 		ConfigureLabel:   "Configure services & tasks",
 		SkipLabel:        "Skip — no service management",
 		DefaultConfigure: len(detection.DockerComposeFiles) > 0 || len(detection.PackageScripts) > 0,
-	}))
-	stepIdx++
-	skipWhenServicesGated := autoSkipWhenGateSkipped(idxServicesGate)
+	})
+}
 
+func addServicesSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool) {
 	if len(detection.DockerComposeFiles) > 0 {
-		idxDockerCompose = stepIdx
 		items := make([]components.MultiSelectItem, 0, len(detection.DockerComposeFiles))
 		for _, f := range detection.DockerComposeFiles {
-			items = append(items, components.MultiSelectItem{
-				Label:    f,
-				Value:    f,
-				Selected: true,
-			})
+			items = append(items, components.MultiSelectItem{Label: f, Value: f, Selected: true})
 		}
-		steps = append(steps, components.Step{
+		s.add(stepDocker, components.Step{
 			Name: "Docker services",
 			Model: components.NewMultiSelect(components.NewMultiSelectParams{
 				Title:       "Docker Compose services",
@@ -198,29 +270,27 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 				Items:       items,
 			}),
 			Summary:  multiSelectSummary,
-			AutoSkip: skipWhenServicesGated,
+			AutoSkip: autoSkip,
 			Callout:  true,
 		})
-		stepIdx++
 	}
 
 	if len(detection.PackageScripts) > 0 {
-		idxPackageScripts = stepIdx
 		pm := string(detection.PackageManager)
 		items := make([]components.MultiSelectItem, 0, len(detection.PackageScripts))
-		for i, s := range detection.PackageScripts {
+		for i, script := range detection.PackageScripts {
 			scope := "root"
-			if s.Workspace != "" {
-				scope = s.Workspace
+			if script.Workspace != "" {
+				scope = script.Workspace
 			}
-			label := fmt.Sprintf("%s / %s — %s run %s", scope, s.Name, pm, s.Name)
+			label := fmt.Sprintf("%s / %s — %s run %s", scope, script.Name, pm, script.Name)
 			items = append(items, components.MultiSelectItem{
 				Label:    label,
-				Value:    fmt.Sprintf("%d", i),
-				Selected: s.Kind == domain.JobKindService,
+				Value:    strconv.Itoa(i),
+				Selected: script.Kind == domain.JobKindService,
 			})
 		}
-		steps = append(steps, components.Step{
+		s.add(stepScripts, components.Step{
 			Name: "Package scripts",
 			Model: components.NewMultiSelect(components.NewMultiSelectParams{
 				Title:       "Package.json scripts",
@@ -228,151 +298,104 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 				Items:       items,
 			}),
 			Summary:  packageScriptsSummary,
-			AutoSkip: skipWhenServicesGated,
+			AutoSkip: autoSkip,
 			Callout:  true,
 		})
-		stepIdx++
 	}
-
-	wiz := components.NewWizard(steps)
-	finalModel, err := tea.NewProgram(wiz).Run()
-	if err != nil {
-		return domain.InitProjectAnswers{}, fmt.Errorf("project wizard: %w", err)
-	}
-
-	final, ok := finalModel.(components.WizardModel)
-	if !ok {
-		return domain.InitProjectAnswers{}, domain.ErrUserAborted
-	}
-	if final.Aborted() {
-		return domain.InitProjectAnswers{}, domain.ErrUserAborted
-	}
-
-	return extractProjectAnswers(extractProjectParams{
-		Final:               final,
-		Detection:           detection,
-		IdxBasePath:         idxBasePath,
-		IdxBaseBranch:       idxBaseBranch,
-		IdxEnvStrategy:      idxEnvStrategy,
-		IdxInstallCommand:   idxInstallCommand,
-		IdxEnvFiles:         idxEnvFiles,
-		IdxMonorepoPackages: idxMonorepoPackages,
-		IdxDockerCompose:    idxDockerCompose,
-		IdxPackageScripts:   idxPackageScripts,
-	})
 }
 
-type extractProjectParams struct {
-	Final               components.WizardModel
-	Detection           domain.InitDetectionResult
-	IdxBasePath         int
-	IdxBaseBranch       int
-	IdxEnvStrategy      int
-	IdxInstallCommand   int
-	IdxEnvFiles         int
-	IdxMonorepoPackages int
-	IdxDockerCompose    int
-	IdxPackageScripts   int
+// ── Extraction ──────────────────────────────────────────────────────────────
+
+// extractProjectAnswers reads the answers from the final wizard model using the
+// step-key→index map, tolerating absent steps (targeted re-init builds a subset).
+func extractProjectAnswers(final components.WizardModel, detection domain.InitDetectionResult, idx map[string]int) domain.InitProjectAnswers {
+	steps := final.Steps()
+	answers := domain.InitProjectAnswers{}
+
+	at := func(key string) int {
+		if i, ok := idx[key]; ok {
+			return i
+		}
+		return -1
+	}
+
+	if i := at(stepBasePath); i >= 0 {
+		if m, ok := steps[i].Model.(components.TextInputModel); ok {
+			answers.BasePath = m.Value()
+		}
+	}
+	if answers.BasePath == "" {
+		answers.BasePath = domain.DefaultBasePath
+	}
+
+	if i := at(stepBaseBranch); i >= 0 {
+		if m, ok := steps[i].Model.(components.TextInputModel); ok {
+			answers.BaseBranch = m.Value()
+		}
+	}
+	if answers.BaseBranch == "" {
+		answers.BaseBranch = detection.BaseBranch
+	}
+
+	// Env section.
+	if i := at(stepEnvStrategy); i >= 0 {
+		if final.Skipped(i) {
+			answers.SkipEnv = true
+		} else if m, ok := steps[i].Model.(components.SelectListModel); ok {
+			answers.EnvStrategy = domain.EnvStrategy(m.Value())
+			if fi := at(stepEnvFiles); fi >= 0 && !final.Skipped(fi) {
+				if fm, ok := steps[fi].Model.(components.MultiSelectModel); ok {
+					answers.EnvCopyFiles = fm.Values()
+				}
+			}
+		}
+	}
+
+	// Hooks section.
+	if i := at(stepInstall); i >= 0 {
+		if final.Skipped(i) {
+			answers.SkipHooks = true
+		} else if m, ok := steps[i].Model.(components.TextInputModel); ok {
+			installCommand := m.Value()
+			if installCommand == "" {
+				installCommand = detection.InstallCommand
+			}
+			answers.InstallCommand = installCommand
+			if mi := at(stepMonorepo); mi >= 0 && !final.Skipped(mi) && installCommand != "" {
+				if mm, ok := steps[mi].Model.(components.MultiSelectModel); ok {
+					for _, pkg := range mm.Values() {
+						answers.OnCreateExtra = append(answers.OnCreateExtra, domain.HookCommand{Cmd: installCommand, Cwd: pkg})
+					}
+				}
+			}
+		}
+	}
+
+	// Services section.
+	if i := at(stepDocker); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.MultiSelectModel); ok {
+			answers.DockerComposeFiles = m.Values()
+			if len(answers.DockerComposeFiles) > 0 {
+				answers.DockerComposeCmd = detection.DockerComposeCmd
+			}
+		}
+	}
+	if i := at(stepScripts); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.MultiSelectModel); ok {
+			for _, idxStr := range m.Values() {
+				n, err := strconv.Atoi(idxStr)
+				if err != nil || n < 0 || n >= len(detection.PackageScripts) {
+					continue
+				}
+				answers.SelectedPackageScripts = append(answers.SelectedPackageScripts, detection.PackageScripts[n])
+			}
+		}
+	}
+
+	return answers
 }
 
-func extractProjectAnswers(p extractProjectParams) (domain.InitProjectAnswers, error) {
-	finalSteps := p.Final.Steps()
-
-	basePathModel, ok := finalSteps[p.IdxBasePath].Model.(components.TextInputModel)
-	if !ok {
-		return domain.InitProjectAnswers{}, domain.ErrUserAborted
-	}
-	basePath := basePathModel.Value()
-	if basePath == "" {
-		basePath = domain.DefaultBasePath
-	}
-
-	baseBranchModel, ok := finalSteps[p.IdxBaseBranch].Model.(components.TextInputModel)
-	if !ok {
-		return domain.InitProjectAnswers{}, domain.ErrUserAborted
-	}
-	baseBranch := baseBranchModel.Value()
-	if baseBranch == "" {
-		baseBranch = p.Detection.BaseBranch
-	}
-
-	answers := domain.InitProjectAnswers{
-		BasePath:   basePath,
-		BaseBranch: baseBranch,
-	}
-
-	// Env section — skipping the strategy step opts the whole section out.
-	if p.Final.Skipped(p.IdxEnvStrategy) {
-		answers.SkipEnv = true
-	} else {
-		envStrategyModel, ok := finalSteps[p.IdxEnvStrategy].Model.(components.SelectListModel)
-		if !ok {
-			return domain.InitProjectAnswers{}, domain.ErrUserAborted
-		}
-		answers.EnvStrategy = domain.EnvStrategy(envStrategyModel.Value())
-		if p.IdxEnvFiles >= 0 && !p.Final.Skipped(p.IdxEnvFiles) {
-			msModel, ok := finalSteps[p.IdxEnvFiles].Model.(components.MultiSelectModel)
-			if !ok {
-				return domain.InitProjectAnswers{}, domain.ErrUserAborted
-			}
-			answers.EnvCopyFiles = msModel.Values()
-		}
-	}
-
-	// Hooks section — skipping the install step opts the whole section out.
-	if p.Final.Skipped(p.IdxInstallCommand) {
-		answers.SkipHooks = true
-	} else {
-		installCmdModel, ok := finalSteps[p.IdxInstallCommand].Model.(components.TextInputModel)
-		if !ok {
-			return domain.InitProjectAnswers{}, domain.ErrUserAborted
-		}
-		installCommand := installCmdModel.Value()
-		if installCommand == "" {
-			installCommand = p.Detection.InstallCommand
-		}
-		answers.InstallCommand = installCommand
-		if p.IdxMonorepoPackages >= 0 && !p.Final.Skipped(p.IdxMonorepoPackages) && installCommand != "" {
-			msModel, ok := finalSteps[p.IdxMonorepoPackages].Model.(components.MultiSelectModel)
-			if !ok {
-				return domain.InitProjectAnswers{}, domain.ErrUserAborted
-			}
-			for _, pkg := range msModel.Values() {
-				answers.OnCreateExtra = append(answers.OnCreateExtra, domain.HookCommand{
-					Cmd: installCommand,
-					Cwd: pkg,
-				})
-			}
-		}
-	}
-
-	if p.IdxDockerCompose >= 0 && !p.Final.Skipped(p.IdxDockerCompose) {
-		msModel, ok := finalSteps[p.IdxDockerCompose].Model.(components.MultiSelectModel)
-		if !ok {
-			return domain.InitProjectAnswers{}, domain.ErrUserAborted
-		}
-		answers.DockerComposeFiles = msModel.Values()
-		if len(answers.DockerComposeFiles) > 0 {
-			answers.DockerComposeCmd = p.Detection.DockerComposeCmd
-		}
-	}
-
-	if p.IdxPackageScripts >= 0 && !p.Final.Skipped(p.IdxPackageScripts) {
-		msModel, ok := finalSteps[p.IdxPackageScripts].Model.(components.MultiSelectModel)
-		if !ok {
-			return domain.InitProjectAnswers{}, domain.ErrUserAborted
-		}
-		for _, idxStr := range msModel.Values() {
-			idx, parseErr := strconv.Atoi(idxStr)
-			if parseErr != nil || idx < 0 || idx >= len(p.Detection.PackageScripts) {
-				continue
-			}
-			answers.SelectedPackageScripts = append(answers.SelectedPackageScripts, p.Detection.PackageScripts[idx])
-		}
-	}
-
-	return answers, nil
-}
+// ── Summaries & gate helpers ────────────────────────────────────────────────
 
 func textInputSummary(model any) string {
 	ti, ok := model.(components.TextInputModel)
@@ -402,8 +425,7 @@ func multiSelectSummary(model any) string {
 	if !ok {
 		return ""
 	}
-	vals := ms.Values()
-	return fmt.Sprintf("%d files selected", len(vals))
+	return fmt.Sprintf("%d files selected", len(ms.Values()))
 }
 
 func packageScriptsSummary(model any) string {
@@ -411,8 +433,7 @@ func packageScriptsSummary(model any) string {
 	if !ok {
 		return ""
 	}
-	n := len(ms.Values())
-	return fmt.Sprintf("%d scripts selected", n)
+	return fmt.Sprintf("%d scripts selected", len(ms.Values()))
 }
 
 // sectionGateParams holds the inputs for a section gate step.

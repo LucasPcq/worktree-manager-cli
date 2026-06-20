@@ -208,6 +208,70 @@ func TestWriteRunTemplateRefusesOverwrite(t *testing.T) {
 	}
 }
 
+func TestWriteProjectConfigPreservesAllSections(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := domain.ProjectConfig{
+		Worktrees: domain.WorktreesConfig{BasePath: "../.trees", BaseBranch: "develop"},
+		Env:       domain.EnvConfig{Strategy: domain.EnvStrategyParent, CopyFiles: []string{".env"}},
+		Hooks:     domain.HooksConfig{OnCreate: []domain.HookCommand{{Cmd: "pnpm install"}}},
+		Github:    domain.GithubConfig{AutoDraft: true},
+		Agents:    domain.AgentsConfig{Default: domain.AgentCursor},
+		Integrations: domain.IntegrationsConfig{
+			VSCodeProjectManager: true,
+			CursorProjectManager: true,
+		},
+	}
+
+	if err := WriteProjectConfig(WriteProjectConfigParams{StateDir: dir, Config: cfg}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
+	if err != nil {
+		t.Fatalf("loadProjectConfig: %v", err)
+	}
+
+	if got.Github.AutoDraft != true {
+		t.Error("github.auto_draft not preserved")
+	}
+	if !got.Integrations.VSCodeProjectManager || !got.Integrations.CursorProjectManager {
+		t.Errorf("integrations not preserved: %+v", got.Integrations)
+	}
+	if got.Agents.Default != domain.AgentCursor {
+		t.Errorf("agents.default not preserved: %q", got.Agents.Default)
+	}
+	if got.Env.Strategy != domain.EnvStrategyParent {
+		t.Errorf("env.strategy not preserved: %q", got.Env.Strategy)
+	}
+	if len(got.Hooks.OnCreate) != 1 || got.Hooks.OnCreate[0].Cmd != "pnpm install" {
+		t.Errorf("hooks not preserved: %+v", got.Hooks.OnCreate)
+	}
+}
+
+func TestWriteProjectConfigEmptyEnvStaysCommented(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := domain.ProjectConfig{
+		Worktrees: domain.WorktreesConfig{BasePath: "../.trees", BaseBranch: "main"},
+		// Env.Strategy empty → section must render commented to stay valid.
+	}
+
+	if err := WriteProjectConfig(WriteProjectConfigParams{StateDir: dir, Config: cfg}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
+	if strings.Contains(string(data), "\nstrategy = ") {
+		t.Error("empty env strategy should be commented out, not written as empty")
+	}
+
+	var raw map[string]interface{}
+	if _, err := toml.Decode(string(data), &raw); err != nil {
+		t.Fatalf("generated file is not valid TOML: %v", err)
+	}
+}
+
 func TestWriteRunCreatesFile(t *testing.T) {
 	dir := t.TempDir()
 	cfg := domain.RunConfig{

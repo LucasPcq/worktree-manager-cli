@@ -16,30 +16,110 @@ import (
 // exists — callers decide whether to skip or surface the condition.
 var ErrRunFileExists = errors.New("run file already exists")
 
+// projectTemplateData is the unified view rendered by the config template.
+// Both the init wizard answers and a full ProjectConfig (for re-init) convert
+// to it, so the template emits every section's actual values.
+type projectTemplateData struct {
+	BasePath             string
+	BaseBranch           string
+	SkipEnv              bool
+	EnvStrategy          string
+	EnvCopyFiles         []string
+	SkipHooks            bool
+	OnCreate             []domain.HookCommand
+	GithubAutoDraft      bool
+	AgentDefault         string
+	VSCodeProjectManager bool
+	CursorProjectManager bool
+}
+
 // WriteProjectParams holds the inputs for writing a project config file.
 type WriteProjectParams struct {
 	StateDir string
 	Answers  domain.InitProjectAnswers
 }
 
-// WriteProject renders the project config template and writes it to
-// <state-dir>/config.toml.
+// WriteProject renders the project config from init wizard answers and writes it
+// to <state-dir>/config.toml. Fresh init leaves github/integrations at defaults.
 func WriteProject(params WriteProjectParams) error {
+	return renderProjectConfig(params.StateDir, answersToTemplate(params.Answers))
+}
+
+// WriteProjectConfigParams holds the inputs for rewriting config.toml from a
+// full ProjectConfig (targeted re-init).
+type WriteProjectConfigParams struct {
+	StateDir string
+	Config   domain.ProjectConfig
+}
+
+// WriteProjectConfig re-renders config.toml from a full ProjectConfig, preserving
+// every section's current values (only manual comments are regenerated).
+func WriteProjectConfig(params WriteProjectConfigParams) error {
+	return renderProjectConfig(params.StateDir, configToTemplate(params.Config))
+}
+
+// renderProjectConfig renders the template data and writes config.toml.
+func renderProjectConfig(stateDir string, data projectTemplateData) error {
 	var buf bytes.Buffer
-	if err := parsedTemplate.Execute(&buf, params.Answers); err != nil {
+	if err := parsedTemplate.Execute(&buf, data); err != nil {
 		return fmt.Errorf("render template: %w", err)
 	}
 
-	if err := os.MkdirAll(params.StateDir, 0o755); err != nil {
-		return fmt.Errorf("create %s: %w", params.StateDir, err)
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", stateDir, err)
 	}
 
-	path := filepath.Join(params.StateDir, domain.ConfigFileName)
+	path := filepath.Join(stateDir, domain.ConfigFileName)
 	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 
 	return nil
+}
+
+// answersToTemplate converts init wizard answers to template data. The install
+// command and monorepo hooks collapse into a single on_create list.
+func answersToTemplate(a domain.InitProjectAnswers) projectTemplateData {
+	var onCreate []domain.HookCommand
+	if a.InstallCommand != "" {
+		onCreate = append(onCreate, domain.HookCommand{Cmd: a.InstallCommand})
+	}
+	onCreate = append(onCreate, a.OnCreateExtra...)
+
+	agentDefault := ""
+	if a.AgentOverride {
+		agentDefault = string(a.Agent)
+	}
+
+	return projectTemplateData{
+		BasePath:     a.BasePath,
+		BaseBranch:   a.BaseBranch,
+		SkipEnv:      a.SkipEnv,
+		EnvStrategy:  string(a.EnvStrategy),
+		EnvCopyFiles: a.EnvCopyFiles,
+		SkipHooks:    a.SkipHooks,
+		OnCreate:     onCreate,
+		AgentDefault: agentDefault,
+	}
+}
+
+// configToTemplate converts a full ProjectConfig to template data for re-init.
+// An empty env strategy is rendered as a commented (skipped) section so the file
+// stays valid.
+func configToTemplate(c domain.ProjectConfig) projectTemplateData {
+	return projectTemplateData{
+		BasePath:             c.Worktrees.BasePath,
+		BaseBranch:           c.Worktrees.BaseBranch,
+		SkipEnv:              c.Env.Strategy == "",
+		EnvStrategy:          string(c.Env.Strategy),
+		EnvCopyFiles:         c.Env.CopyFiles,
+		SkipHooks:            false,
+		OnCreate:             c.Hooks.OnCreate,
+		GithubAutoDraft:      c.Github.AutoDraft,
+		AgentDefault:         string(c.Agents.Default),
+		VSCodeProjectManager: c.Integrations.VSCodeProjectManager,
+		CursorProjectManager: c.Integrations.CursorProjectManager,
+	}
 }
 
 // WriteRunParams holds the inputs for writing a run config file.

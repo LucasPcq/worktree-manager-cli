@@ -38,23 +38,24 @@ copy_files = [
 on_create = []
 {{- else }}
 on_create = [
-{{- if .InstallCommand }}
-  "{{ .InstallCommand }}",
+{{- range .OnCreate }}
+{{- if or .Cwd .ContinueOnError }}
+  { cmd = "{{ .Cmd }}"{{ if .Cwd }}, cwd = "{{ .Cwd }}"{{ end }}{{ if .ContinueOnError }}, continue_on_error = true{{ end }} },
+{{- else }}
+  "{{ .Cmd }}",
 {{- end }}
-{{- range .OnCreateExtra }}
-  { cmd = "{{ .Cmd }}", cwd = "{{ .Cwd }}" },
 {{- end }}
 ]
 {{- end }}
 
 
 [github]
-auto_draft = false
+auto_draft = {{ .GithubAutoDraft }}
 
 [agents]
 # Default AI agent: claude-code | cursor | none
-{{ if .AgentOverride -}}
-default = "{{ .Agent }}"
+{{ if .AgentDefault -}}
+default = "{{ .AgentDefault }}"
 {{- else -}}
 # Inherits from global config (~/.config/wtm/config.toml)
 # default = "claude-code"
@@ -62,5 +63,5 @@ default = "{{ .Agent }}"
 
 [integrations]
 # Auto-register worktrees in VS Code / Cursor project manager
-vscode_project_manager = false
-cursor_project_manager = false
+vscode_project_manager = {{ .VSCodeProjectManager }}
+cursor_project_manager = {{ .CursorProjectManager }}

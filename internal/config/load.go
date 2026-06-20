@@ -41,6 +41,14 @@ func Load(params LoadParams) (domain.Config, error) {
 	return cfg, nil
 }
 
+// LoadProjectRaw reads the project config.toml without merging the global config
+// or applying defaults — the on-disk values exactly. Used by targeted re-init to
+// rewrite the file while preserving every untouched section's values.
+// Returns ErrConfigNotFound if the file does not exist.
+func LoadProjectRaw(stateDir string) (domain.ProjectConfig, error) {
+	return loadProjectConfig(filepath.Join(stateDir, domain.ConfigFileName))
+}
+
 // loadProjectConfig reads and parses the project config.toml file.
 // Returns ErrConfigNotFound if the file does not exist.
 func loadProjectConfig(path string) (domain.ProjectConfig, error) {

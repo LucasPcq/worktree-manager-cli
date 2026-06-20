@@ -23,7 +23,10 @@ func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize wtm configuration",
-		Long:  "Interactive wizard to set up global config and project config in <git-common-dir>/wtm/config.toml.\nPass --non-interactive (or any config flag) to bootstrap from flags + auto-detection instead.",
+		Long: "Interactive wizard to set up global config and project config in <git-common-dir>/wtm/config.toml.\n" +
+			"Pass --non-interactive (or any config flag) to bootstrap from flags + auto-detection instead.\n" +
+			"Use --only env|hooks|services to re-run init for specific sections and regenerate them cleanly\n" +
+			"(run.toml jobs are regenerated while profiles are preserved).",
 		RunE:  runInit,
 	}
 
@@ -37,6 +40,8 @@ func NewCmd() *cobra.Command {
 	cmd.Flags().Bool(domain.FlagSkipEnv, false, "Skip .env provisioning config")
 	cmd.Flags().Bool(domain.FlagSkipHooks, false, "Skip on_create hooks config")
 	cmd.Flags().Bool(domain.FlagSkipServices, false, "Skip service/task detection (docker, scripts)")
+	cmd.Flags().StringSlice(domain.FlagOnly, nil, "Re-init only these sections (env, hooks, services); regenerates them cleanly")
+	cmd.Flags().Bool(domain.FlagYes, false, "Skip the re-init confirmation prompt")
 
 	return cmd
 }
@@ -72,6 +77,14 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	stateDir, err := shared.StateDir(dir)
 	if err != nil {
 		return fmt.Errorf("wtm must be run inside a git repository: %w", err)
+	}
+
+	if only, _ := cmd.Flags().GetStringSlice(domain.FlagOnly); len(only) > 0 {
+		sections, err := parseSections(only)
+		if err != nil {
+			return err
+		}
+		return runReinit(cmd, dir, stateDir, sections)
 	}
 
 	if detect.ProjectConfigExists(stateDir) {
