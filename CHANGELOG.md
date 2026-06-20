@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.13.0 — Refonte de `wtm init` : gates de sections, re-init `--only`, éditeur de hooks `on_create`
+
+### New features
+
+- **Gates de sections à l'`init`** — chaque section optionnelle (`env`, `hooks`, `services`) démarre par une étape **Configurer / Passer** avec une intro explicative. Passer une section l'écrit en config **commentée** (template prêt à activer) plutôt qu'en valeurs vides. En non-interactif : `--skip-env`, `--skip-hooks`, `--skip-services`.
+- **`wtm init --only <section>`** — re-initialise proprement une ou plusieurs sections (`worktrees`, `env`, `hooks`, `services`) sans toucher aux autres. Accepte le CSV ou la répétition (`--only env,hooks`). Le wizard est **pré-rempli depuis la config existante** (base branch, stratégie env, fichiers copiés, hooks, et jobs détectés déjà configurés). `config.toml` préserve chaque section non ciblée ; `run.toml` régénère les jobs en **conservant les profiles**.
+- **Éditeur de liste de hooks `on_create`** — l'étape hooks devient un vrai éditeur : ajout / édition / suppression / réordonnancement (`shift+↑/↓`) des entrées, chacune avec `cmd`, `cwd` optionnel et toggle `continue_on_error`. Remplace l'ancien duo « install command + packages monorepo ». Pré-rempli depuis la détection à l'`init`, depuis le `on_create` courant en re-init.
+
+### Improvements
+
+- Quand une config existe déjà, `wtm init` guide vers `--only` pour re-initialiser une section ciblée au lieu de tout réécrire.
+
 ## v0.12.0 — `wt extract` : déplacer les changements non-commités entre worktrees
 
 ### New features
