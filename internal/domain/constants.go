@@ -122,6 +122,15 @@ const (
 	FlagEnvStrategy    = "env-strategy"
 	FlagInstallCommand = "install-command"
 
+	// init skip flags — opt out of optional config sections (non-interactive).
+	FlagSkipEnv      = "skip-env"
+	FlagSkipHooks    = "skip-hooks"
+	FlagSkipServices = "skip-services"
+
+	// init wizard section gate choices — whether to configure or skip a section.
+	WizardChoiceConfigure = "configure"
+	WizardChoiceSkip      = "skip"
+
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches
 	// one of these keywords exactly, as a prefix ("<kw>:"), or as a suffix (":<kw>").

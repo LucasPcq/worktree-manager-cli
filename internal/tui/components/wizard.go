@@ -20,11 +20,24 @@ type Step struct {
 	// an earlier selection.
 	Build   func(prev []Step) any
 	Summary func(model any) string
+	// AutoSkip, when set and returning true on entry, skips this step
+	// automatically and advances. Use it for steps that are irrelevant given an
+	// earlier answer (e.g. a sub-step whose section gate was set to "skip").
+	// Skipped steps are hidden from the breadcrumb and reported via Skipped(i).
+	AutoSkip func(w WizardModel) bool
+	// Callout renders this step's description as an emphasized intro callout
+	// (bold title + accent bar) instead of plain muted text. Use it for section
+	// gates that explain what a section does.
+	Callout bool
+	// CalloutNote is an optional secondary line shown in the callout (e.g.
+	// "Detected: …"). Only used when Callout is true.
+	CalloutNote string
 }
 
 // WizardModel manages a multi-step form with breadcrumb and back navigation.
 type WizardModel struct {
 	steps   []Step
+	skipped []bool
 	current int
 	width   int
 	height  int
@@ -35,8 +48,9 @@ type WizardModel struct {
 // NewWizard creates a wizard with the given steps.
 func NewWizard(steps []Step) WizardModel {
 	return WizardModel{
-		steps: steps,
-		width: 80,
+		steps:   steps,
+		skipped: make([]bool, len(steps)),
+		width:   80,
 	}
 }
 
@@ -60,6 +74,14 @@ func (m WizardModel) Aborted() bool { return m.aborted }
 
 // Steps returns the wizard steps for value extraction.
 func (m WizardModel) Steps() []Step { return m.steps }
+
+// Skipped reports whether the step at index i was skipped by the user.
+func (m WizardModel) Skipped(i int) bool {
+	if i < 0 || i >= len(m.skipped) {
+		return false
+	}
+	return m.skipped[i]
+}
 
 // Init initializes the current step's model (the first step unless the wizard
 // was created with NewWizardAtStep).
@@ -136,6 +158,9 @@ func (m WizardModel) View() string {
 	b.WriteString("\n\n")
 
 	for i := 0; i < m.current; i++ {
+		if m.skipped[i] {
+			continue
+		}
 		summary := ""
 		if m.steps[i].Summary != nil {
 			summary = m.steps[i].Summary(m.steps[i].Model)
@@ -151,7 +176,15 @@ func (m WizardModel) View() string {
 
 	step := m.steps[m.current]
 	if desc := m.stepDescription(step); desc != "" {
-		b.WriteString(styles.Muted.Render(styles.Indent + desc))
+		if step.Callout {
+			b.WriteString(styles.RenderIntro(styles.IntroParams{
+				Width: m.width,
+				Body:  desc,
+				Note:  step.CalloutNote,
+			}))
+		} else {
+			b.WriteString(styles.Muted.Render(indentLines(desc)))
+		}
 		b.WriteString("\n\n")
 	}
 	b.WriteString(m.viewStep(m.current))
@@ -164,10 +197,32 @@ func (m WizardModel) View() string {
 }
 
 func (m WizardModel) renderBreadcrumb() string {
-	counter := styles.Breadcrumb.Render(fmt.Sprintf("  Step %d/%d", m.current+1, len(m.steps)))
+	counter := styles.Breadcrumb.Render(fmt.Sprintf("  Step %d/%d", m.visiblePosition(), m.visibleCount()))
 	sep := styles.Breadcrumb.Render(" • ")
 	name := styles.BreadcrumbActive.Render(m.steps[m.current].Name)
 	return counter + sep + name
+}
+
+// visibleCount returns the number of steps not skipped (the effective length).
+func (m WizardModel) visibleCount() int {
+	n := 0
+	for i := range m.steps {
+		if !m.skipped[i] {
+			n++
+		}
+	}
+	return n
+}
+
+// visiblePosition returns the 1-based index of the current step among visible steps.
+func (m WizardModel) visiblePosition() int {
+	n := 0
+	for i := 0; i <= m.current && i < len(m.steps); i++ {
+		if !m.skipped[i] {
+			n++
+		}
+	}
+	return n
 }
 
 func (m WizardModel) renderHelpBar() string {
@@ -180,7 +235,7 @@ func (m WizardModel) renderHelpBar() string {
 	case ReorderListModel:
 		help += " • shift+↑/↓ move"
 	}
-	if m.current > 0 {
+	if m.visiblePosition() > 1 {
 		help += " • esc back"
 	} else {
 		help += " • esc cancel"
@@ -218,11 +273,19 @@ func (m *WizardModel) propagateSize(stepIdx int) {
 
 func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 	m.current++
+	for m.current < len(m.steps) {
+		m.buildStep(m.current)
+		if m.steps[m.current].AutoSkip != nil && m.steps[m.current].AutoSkip(m) {
+			m.skipped[m.current] = true
+			m.current++
+			continue
+		}
+		break
+	}
 	if m.current >= len(m.steps) {
 		m.done = true
 		return m, tea.Quit
 	}
-	m.buildStep(m.current)
 	m.propagateSize(m.current)
 	return m, m.initStep(m.current)
 }
@@ -240,12 +303,22 @@ func (m *WizardModel) buildStep(stepIdx int) {
 }
 
 func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
-	if m.current == 0 {
+	// Land on the nearest previous visible step, hopping over auto-skipped ones.
+	prev := m.current - 1
+	for prev >= 0 && m.skipped[prev] {
+		prev--
+	}
+	if prev < 0 {
 		m.aborted = true
 		return m, tea.Quit
 	}
 	m.resetStep(m.current)
-	m.current--
+	// Clear skip flags for the steps we hop back over so re-advancing
+	// re-evaluates AutoSkip against the (possibly changed) gate answer.
+	for i := prev; i < m.current; i++ {
+		m.skipped[i] = false
+	}
+	m.current = prev
 	m.resetStep(m.current)
 	m.propagateSize(m.current)
 	return m, m.initStep(m.current)
@@ -309,6 +382,16 @@ func (m *WizardModel) resetStep(stepIdx int) {
 		child.aborted = false
 		m.steps[stepIdx].Model = child
 	}
+}
+
+// indentLines prefixes every line with the standard indent so multi-line
+// descriptions stay aligned (lipgloss only pads the first line otherwise).
+func indentLines(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = styles.Indent + line
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m WizardModel) stepDescription(step Step) string {

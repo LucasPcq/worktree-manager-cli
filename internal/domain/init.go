@@ -41,16 +41,22 @@ type InitGlobalAnswers struct {
 }
 
 // InitProjectAnswers holds the wizard answers for project config setup.
+// The Skip* flags record sections the user opted out of (via the wizard skip
+// key or the --skip-* flags); they drive whether each section is written as
+// active config or left commented as a template.
 type InitProjectAnswers struct {
-	BasePath              string
-	BaseBranch            string
-	EnvCopyFiles          []string
-	EnvStrategy           EnvStrategy
-	InstallCommand        string
-	OnCreateExtra         []HookCommand
-	Agent                 AgentType
-	AgentOverride         bool
-	DockerComposeFiles    []string
-	DockerComposeCmd      string
+	BasePath               string
+	BaseBranch             string
+	EnvCopyFiles           []string
+	EnvStrategy            EnvStrategy
+	InstallCommand         string
+	OnCreateExtra          []HookCommand
+	Agent                  AgentType
+	AgentOverride          bool
+	DockerComposeFiles     []string
+	DockerComposeCmd       string
 	SelectedPackageScripts []PackageScript
+	SkipEnv                bool
+	SkipHooks              bool
+	SkipServices           bool
 }

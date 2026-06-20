@@ -15,6 +15,11 @@ base_branch = "{{ .BaseBranch }}"
 #   example — copy .env.example and rename to .env
 #   main    — copy .env from the main worktree
 #   parent  — copy .env from the source worktree
+{{- if .SkipEnv }}
+# Skipped during init. Uncomment to enable .env provisioning.
+# strategy = "example"
+# copy_files = [".env"]
+{{- else }}
 strategy = "{{ .EnvStrategy }}"
 
 # Files to copy into each new worktree
@@ -23,9 +28,15 @@ copy_files = [
   "{{ . }}",
 {{- end }}
 ]
+{{- end }}
 
 [hooks]
 # Commands run after creating a new worktree
+{{- if .SkipHooks }}
+# Skipped during init. Add setup commands to run on worktree creation, e.g.:
+#   on_create = ["pnpm install"]
+on_create = []
+{{- else }}
 on_create = [
 {{- if .InstallCommand }}
   "{{ .InstallCommand }}",
@@ -34,6 +45,7 @@ on_create = [
   { cmd = "{{ .Cmd }}", cwd = "{{ .Cwd }}" },
 {{- end }}
 ]
+{{- end }}
 
 
 [github]

@@ -14,13 +14,17 @@ type InitGlobalFlags struct {
 
 // InitProjectFlags holds the raw project-config inputs for non-interactive init.
 // NonInteractive makes unresolved required values fail rather than silently
-// falling back to a constant default.
+// falling back to a constant default. The Skip* flags opt out of optional
+// sections, mirroring the wizard skip key.
 type InitProjectFlags struct {
 	BasePath       string
 	BaseBranch     string
 	EnvStrategy    string
 	InstallCommand string
 	NonInteractive bool
+	SkipEnv        bool
+	SkipHooks      bool
+	SkipServices   bool
 }
 
 // BuildGlobalAnswers resolves global config from flags, falling back to the
@@ -68,39 +72,50 @@ func BuildProjectAnswers(flags InitProjectFlags, detection domain.InitDetectionR
 		baseBranch = domain.DefaultBaseBranch
 	}
 
-	envStrategy := domain.DefaultEnvStrategy
-	if flags.EnvStrategy != "" {
-		envStrategy = domain.EnvStrategy(flags.EnvStrategy)
-	}
-	if err := ValidateEnvStrategy(envStrategy); err != nil {
-		return domain.InitProjectAnswers{}, err
-	}
-
-	installCommand := flags.InstallCommand
-	if installCommand == "" {
-		installCommand = detection.InstallCommand
-	}
-
 	answers := domain.InitProjectAnswers{
-		BasePath:               basePath,
-		BaseBranch:             baseBranch,
-		EnvStrategy:            envStrategy,
-		InstallCommand:         installCommand,
-		EnvCopyFiles:           detection.EnvFiles,
-		SelectedPackageScripts: detection.PackageScripts,
+		BasePath:   basePath,
+		BaseBranch: baseBranch,
 	}
 
-	if len(detection.DockerComposeFiles) > 0 {
-		answers.DockerComposeFiles = detection.DockerComposeFiles
-		answers.DockerComposeCmd = detection.DockerComposeCmd
+	if flags.SkipEnv {
+		answers.SkipEnv = true
+	} else {
+		envStrategy := domain.DefaultEnvStrategy
+		if flags.EnvStrategy != "" {
+			envStrategy = domain.EnvStrategy(flags.EnvStrategy)
+		}
+		if err := ValidateEnvStrategy(envStrategy); err != nil {
+			return domain.InitProjectAnswers{}, err
+		}
+		answers.EnvStrategy = envStrategy
+		answers.EnvCopyFiles = detection.EnvFiles
 	}
 
-	if installCommand != "" {
-		for _, pkg := range detection.MonorepoPackages {
-			answers.OnCreateExtra = append(answers.OnCreateExtra, domain.HookCommand{
-				Cmd: installCommand,
-				Cwd: pkg,
-			})
+	if flags.SkipHooks {
+		answers.SkipHooks = true
+	} else {
+		installCommand := flags.InstallCommand
+		if installCommand == "" {
+			installCommand = detection.InstallCommand
+		}
+		answers.InstallCommand = installCommand
+		if installCommand != "" {
+			for _, pkg := range detection.MonorepoPackages {
+				answers.OnCreateExtra = append(answers.OnCreateExtra, domain.HookCommand{
+					Cmd: installCommand,
+					Cwd: pkg,
+				})
+			}
+		}
+	}
+
+	if flags.SkipServices {
+		answers.SkipServices = true
+	} else {
+		answers.SelectedPackageScripts = detection.PackageScripts
+		if len(detection.DockerComposeFiles) > 0 {
+			answers.DockerComposeFiles = detection.DockerComposeFiles
+			answers.DockerComposeCmd = detection.DockerComposeCmd
 		}
 	}
 

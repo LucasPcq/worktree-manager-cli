@@ -112,6 +112,102 @@ func TestWriteProjectEmptyEnvAndHooks(t *testing.T) {
 	}
 }
 
+func TestWriteProjectSkipEnvCommentsSection(t *testing.T) {
+	dir := t.TempDir()
+
+	answers := domain.InitProjectAnswers{
+		BasePath:   ".trees",
+		BaseBranch: "main",
+		SkipEnv:    true,
+	}
+
+	if err := WriteProject(WriteProjectParams{StateDir: dir, Answers: answers}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
+	content := string(data)
+
+	if strings.Contains(content, "\nstrategy = ") {
+		t.Error("expected env strategy to be commented out when skipped")
+	}
+	if !strings.Contains(content, "# Skipped during init") {
+		t.Error("expected skip marker comment in env section")
+	}
+
+	var raw map[string]interface{}
+	if _, err := toml.Decode(content, &raw); err != nil {
+		t.Fatalf("generated file is not valid TOML: %v", err)
+	}
+}
+
+func TestWriteProjectSkipHooksCommentsSection(t *testing.T) {
+	dir := t.TempDir()
+
+	answers := domain.InitProjectAnswers{
+		BasePath:    ".trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+		SkipHooks:   true,
+	}
+
+	if err := WriteProject(WriteProjectParams{StateDir: dir, Answers: answers}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
+	content := string(data)
+
+	if !strings.Contains(content, "on_create = []") {
+		t.Error("expected empty on_create when hooks skipped")
+	}
+
+	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
+	if err != nil {
+		t.Fatalf("loadProjectConfig: %v", err)
+	}
+	if len(cfg.Hooks.OnCreate) != 0 {
+		t.Errorf("expected no hooks, got %v", cfg.Hooks.OnCreate)
+	}
+}
+
+func TestWriteRunTemplateCreatesCommentedFile(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := WriteRunTemplate(WriteRunParams{StateDir: dir}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, domain.RunFileName))
+	if err != nil {
+		t.Fatalf("file not created: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "# [[job]]") {
+		t.Error("expected commented job example in template")
+	}
+
+	// A fully-commented template must parse as valid (empty) TOML.
+	var cfg domain.RunConfig
+	if _, err := toml.Decode(content, &cfg); err != nil {
+		t.Fatalf("template is not valid TOML: %v", err)
+	}
+	if len(cfg.Jobs) != 0 {
+		t.Errorf("expected no active jobs in template, got %d", len(cfg.Jobs))
+	}
+}
+
+func TestWriteRunTemplateRefusesOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteRunTemplate(WriteRunParams{StateDir: dir}); err != nil {
+		t.Fatalf("first write failed: %v", err)
+	}
+	if err := WriteRunTemplate(WriteRunParams{StateDir: dir}); !errors.Is(err, ErrRunFileExists) {
+		t.Errorf("expected ErrRunFileExists, got %v", err)
+	}
+}
+
 func TestWriteRunCreatesFile(t *testing.T) {
 	dir := t.TempDir()
 	cfg := domain.RunConfig{

@@ -100,6 +100,80 @@ func TestBuildProjectAnswers_InvalidEnvStrategy(t *testing.T) {
 	}
 }
 
+func TestBuildProjectAnswers_SkipEnv(t *testing.T) {
+	detection := domain.InitDetectionResult{
+		BaseBranch: "main",
+		EnvFiles:   []string{".env", ".env.local"},
+	}
+	got, err := rules.BuildProjectAnswers(rules.InitProjectFlags{SkipEnv: true}, detection)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !got.SkipEnv {
+		t.Error("SkipEnv = false, want true")
+	}
+	if got.EnvStrategy != "" {
+		t.Errorf("EnvStrategy = %q, want empty when skipped", got.EnvStrategy)
+	}
+	if len(got.EnvCopyFiles) != 0 {
+		t.Errorf("EnvCopyFiles = %v, want none when skipped", got.EnvCopyFiles)
+	}
+}
+
+func TestBuildProjectAnswers_SkipEnvIgnoresInvalidStrategy(t *testing.T) {
+	got, err := rules.BuildProjectAnswers(rules.InitProjectFlags{
+		BaseBranch:  "main",
+		EnvStrategy: "nope",
+		SkipEnv:     true,
+	}, domain.InitDetectionResult{})
+	if err != nil {
+		t.Fatalf("skipping env must bypass strategy validation, got %v", err)
+	}
+	if !got.SkipEnv {
+		t.Error("SkipEnv = false, want true")
+	}
+}
+
+func TestBuildProjectAnswers_SkipHooks(t *testing.T) {
+	detection := domain.InitDetectionResult{
+		BaseBranch:       "main",
+		InstallCommand:   "pnpm install",
+		MonorepoPackages: []string{"packages/a"},
+	}
+	got, err := rules.BuildProjectAnswers(rules.InitProjectFlags{SkipHooks: true}, detection)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !got.SkipHooks {
+		t.Error("SkipHooks = false, want true")
+	}
+	if got.InstallCommand != "" {
+		t.Errorf("InstallCommand = %q, want empty when skipped", got.InstallCommand)
+	}
+	if len(got.OnCreateExtra) != 0 {
+		t.Errorf("OnCreateExtra = %v, want none when skipped", got.OnCreateExtra)
+	}
+}
+
+func TestBuildProjectAnswers_SkipServices(t *testing.T) {
+	detection := domain.InitDetectionResult{
+		BaseBranch:         "main",
+		DockerComposeFiles: []string{"docker-compose.yml"},
+		DockerComposeCmd:   "docker compose",
+		PackageScripts:     []domain.PackageScript{{Name: "dev"}},
+	}
+	got, err := rules.BuildProjectAnswers(rules.InitProjectFlags{SkipServices: true}, detection)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !got.SkipServices {
+		t.Error("SkipServices = false, want true")
+	}
+	if len(got.DockerComposeFiles) != 0 || len(got.SelectedPackageScripts) != 0 {
+		t.Errorf("services not skipped: docker=%v scripts=%v", got.DockerComposeFiles, got.SelectedPackageScripts)
+	}
+}
+
 func TestBuildProjectAnswers_MonorepoToHooks(t *testing.T) {
 	detection := domain.InitDetectionResult{
 		BaseBranch:       "main",

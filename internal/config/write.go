@@ -75,6 +75,57 @@ func WriteRun(params WriteRunParams) error {
 	return nil
 }
 
+// runTemplateContent is a fully-commented run.toml written when init detects or
+// configures no services, so the user has a documented starting point to add
+// jobs and profiles by hand later.
+const runTemplateContent = `#:schema ./schemas/run.schema.json
+
+# wtm — service & task definitions
+# No services were configured during init. Uncomment and adapt the examples
+# below, then manage them with ` + "`wtm run`" + `.
+
+# A long-running service (started detached, stopped via its stop command):
+# [[job]]
+# name = "db"
+# kind = "service"
+# cmd  = "docker compose up -d"
+# stop = "docker compose down --remove-orphans"
+# cwd  = "."
+
+# A one-shot task (must exit 0; output streamed live):
+# [[job]]
+# name = "migrate"
+# kind = "task"
+# cmd  = "pnpm run migrate"
+# cwd  = "."
+
+# A named group of jobs started together:
+# [[profile]]
+# name    = "default"
+# jobs    = ["db"]
+# default = true
+`
+
+// WriteRunTemplate writes a commented run.toml template to <state-dir>/run.toml.
+// Returns ErrRunFileExists if the file already exists and Force is false.
+func WriteRunTemplate(params WriteRunParams) error {
+	path := filepath.Join(params.StateDir, domain.RunFileName)
+
+	if _, err := os.Stat(path); err == nil && !params.Force {
+		return ErrRunFileExists
+	}
+
+	if err := os.MkdirAll(params.StateDir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", params.StateDir, err)
+	}
+
+	if err := os.WriteFile(path, []byte(runTemplateContent), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+
+	return nil
+}
+
 // WriteGlobal creates the global config directory and writes config.toml.
 func WriteGlobal(answers domain.InitGlobalAnswers) error {
 	configDir, err := os.UserConfigDir()

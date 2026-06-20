@@ -34,6 +34,9 @@ func NewCmd() *cobra.Command {
 	cmd.Flags().String(domain.FlagBaseBranch, "", "Default base branch for new worktrees")
 	cmd.Flags().String(domain.FlagEnvStrategy, "", "Env provisioning strategy: example, main, or parent")
 	cmd.Flags().String(domain.FlagInstallCommand, "", "Command to run after creating a worktree")
+	cmd.Flags().Bool(domain.FlagSkipEnv, false, "Skip .env provisioning config")
+	cmd.Flags().Bool(domain.FlagSkipHooks, false, "Skip on_create hooks config")
+	cmd.Flags().Bool(domain.FlagSkipServices, false, "Skip service/task detection (docker, scripts)")
 
 	return cmd
 }
@@ -44,7 +47,8 @@ func initFlagged(cmd *cobra.Command) bool {
 	for _, name := range []string{
 		domain.FlagNonInteractive, domain.FlagAgent, domain.FlagShell,
 		domain.FlagBasePath, domain.FlagBaseBranch, domain.FlagEnvStrategy,
-		domain.FlagInstallCommand,
+		domain.FlagInstallCommand, domain.FlagSkipEnv, domain.FlagSkipHooks,
+		domain.FlagSkipServices,
 	} {
 		if cmd.Flags().Changed(name) {
 			return true
@@ -119,7 +123,6 @@ func resolveGlobalAnswers(cmd *cobra.Command, flagged bool) (domain.InitGlobalAn
 	}
 
 	output.Message(cmd.OutOrStdout(), "No global config found. Let's set one up.")
-	output.Blank(cmd.OutOrStdout())
 
 	answers, err := initwizard.RunGlobalWizard()
 	if err != nil {
@@ -140,12 +143,18 @@ func resolveProjectAnswers(cmd *cobra.Command, flagged bool, detection domain.In
 		baseBranch, _ := cmd.Flags().GetString(domain.FlagBaseBranch)
 		envStrategy, _ := cmd.Flags().GetString(domain.FlagEnvStrategy)
 		installCommand, _ := cmd.Flags().GetString(domain.FlagInstallCommand)
+		skipEnv, _ := cmd.Flags().GetBool(domain.FlagSkipEnv)
+		skipHooks, _ := cmd.Flags().GetBool(domain.FlagSkipHooks)
+		skipServices, _ := cmd.Flags().GetBool(domain.FlagSkipServices)
 		return rules.BuildProjectAnswers(rules.InitProjectFlags{
 			BasePath:       basePath,
 			BaseBranch:     baseBranch,
 			EnvStrategy:    envStrategy,
 			InstallCommand: installCommand,
 			NonInteractive: nonInteractive,
+			SkipEnv:        skipEnv,
+			SkipHooks:      skipHooks,
+			SkipServices:   skipServices,
 		}, detection)
 	}
 
@@ -163,7 +172,6 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool)
 	if !flagged {
 		output.Blank(cmd.OutOrStdout())
 		output.Intro(cmd.OutOrStdout(), "No wtm config found for this repo. Let's initialize it.")
-		output.Blank(cmd.OutOrStdout())
 	}
 
 	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Detecting project settings…")
@@ -192,19 +200,22 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool)
 	}
 
 	runCfg := rules.BuildInitRunConfig(answers, detection.PackageManager)
+	runPath := filepath.Join(stateDir, domain.RunFileName)
+	var runErr error
 	if len(runCfg.Jobs) > 0 {
-		runPath := filepath.Join(stateDir, domain.RunFileName)
-		err := config.WriteRun(config.WriteRunParams{
+		runErr = config.WriteRun(config.WriteRunParams{
 			StateDir: stateDir,
 			Config:   runCfg,
 		})
-		if errors.Is(err, config.ErrRunFileExists) {
-			output.Message(cmd.OutOrStdout(), fmt.Sprintf("%s already exists — left untouched", runPath))
-		} else if err != nil {
-			return fmt.Errorf("write run config: %w", err)
-		} else {
-			output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s", runPath))
-		}
+	} else {
+		runErr = config.WriteRunTemplate(config.WriteRunParams{StateDir: stateDir})
+	}
+	if errors.Is(runErr, config.ErrRunFileExists) {
+		output.Message(cmd.OutOrStdout(), fmt.Sprintf("%s already exists — left untouched", runPath))
+	} else if runErr != nil {
+		return fmt.Errorf("write run config: %w", runErr)
+	} else {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s", runPath))
 	}
 
 	output.Blank(cmd.OutOrStdout())

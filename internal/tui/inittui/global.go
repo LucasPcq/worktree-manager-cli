@@ -17,7 +17,7 @@ func RunGlobalWizard() (domain.InitGlobalAnswers, error) {
 			Name: "AI agent",
 			Model: components.NewSelectList(components.NewSelectListParams{
 				Title:       "Default AI agent",
-				Description: "Which agent do you use for development?",
+				Description: "wtm can scaffold agent integration files in each new worktree. Pick the agent you use, or None to skip that.",
 				Items: []components.SelectItem{
 					{Label: "Claude Code", Value: string(domain.AgentClaudeCode)},
 					{Label: "Cursor", Value: string(domain.AgentCursor)},
@@ -31,12 +31,13 @@ func RunGlobalWizard() (domain.InitGlobalAnswers, error) {
 				}
 				return sl.Value()
 			},
+			Callout: true,
 		},
 		{
 			Name: "Shell",
 			Model: components.NewSelectList(components.NewSelectListParams{
 				Title:       "Shell",
-				Description: "Your primary shell (for shell-init integration)",
+				Description: "wtm provides a shell function (via `wtm shell-init`) to jump between worktrees. Pick your primary shell so the integration matches.",
 				Items: []components.SelectItem{
 					{Label: "zsh", Value: string(domain.ShellZsh)},
 					{Label: "bash", Value: string(domain.ShellBash)},
@@ -50,6 +51,7 @@ func RunGlobalWizard() (domain.InitGlobalAnswers, error) {
 				}
 				return sl.Value()
 			},
+			Callout: true,
 		},
 	}
 
