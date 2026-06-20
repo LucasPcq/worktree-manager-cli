@@ -122,6 +122,29 @@ const (
 	FlagEnvStrategy    = "env-strategy"
 	FlagInstallCommand = "install-command"
 
+	// init skip flags — opt out of optional config sections (non-interactive).
+	FlagSkipEnv      = "skip-env"
+	FlagSkipHooks    = "skip-hooks"
+	FlagSkipServices = "skip-services"
+
+	// init wizard section gate choices — whether to configure or skip a section.
+	WizardChoiceConfigure = "configure"
+	WizardChoiceSkip      = "skip"
+
+	// SkipMarkerComment is the leading comment written into a config.toml section
+	// the user skipped during init. The config template emits it (followed by
+	// section-specific guidance) so a skipped section stays valid but inert.
+	SkipMarkerComment = "# Skipped during init."
+
+	// FlagOnly re-runs init for specific sections only (re-init / re-detect).
+	FlagOnly = "only"
+
+	// Init section identifiers — used by `wtm init --only <section>`.
+	SectionEnv       = "env"
+	SectionHooks     = "hooks"
+	SectionServices  = "services"
+	SectionWorktrees = "worktrees"
+
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches
 	// one of these keywords exactly, as a prefix ("<kw>:"), or as a suffix (":<kw>").

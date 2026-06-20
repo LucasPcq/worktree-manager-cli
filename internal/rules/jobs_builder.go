@@ -20,8 +20,6 @@ type BuildScriptJobsParams struct {
 // Job names are "<pkgName>-<scriptName>" for workspace scripts, "<scriptName>" for root.
 // Duplicate base names are disambiguated with a counter suffix ("-2", "-3", …).
 func BuildScriptJobs(params BuildScriptJobsParams) domain.RunConfig {
-	pm := resolveRunnerPrefix(params.PackageManager)
-
 	jobs := make([]domain.JobConfig, 0, len(params.Scripts))
 	counts := map[string]int{}
 
@@ -33,20 +31,37 @@ func BuildScriptJobs(params BuildScriptJobsParams) domain.RunConfig {
 			name = fmt.Sprintf("%s-%d", base, counts[base])
 		}
 
-		cwd := s.Workspace
-		if cwd == "" {
-			cwd = "."
-		}
-
 		jobs = append(jobs, domain.JobConfig{
 			Name: name,
 			Kind: ClassifyScriptKind(s.Name),
-			Cmd:  fmt.Sprintf("%s run %s", pm, s.Name),
-			Cwd:  cwd,
+			Cmd:  ScriptJobCmd(params.PackageManager, s.Name),
+			Cwd:  ScriptJobCwd(s.Workspace),
 		})
 	}
 
 	return domain.RunConfig{Jobs: jobs}
+}
+
+// ScriptJobCmd is the run.toml command emitted for a package script:
+// "<pm> run <name>". It is the single source of truth for that command shape,
+// shared by BuildScriptJobs and the prefill matcher in prefill.go.
+func ScriptJobCmd(pm domain.PackageManager, scriptName string) string {
+	return fmt.Sprintf("%s run %s", resolveRunnerPrefix(pm), scriptName)
+}
+
+// ScriptJobCwd is the run.toml cwd emitted for a package script: its workspace
+// dir, or "." for a root script.
+func ScriptJobCwd(workspace string) string {
+	if workspace == "" {
+		return "."
+	}
+	return workspace
+}
+
+// DockerComposeFileFlag is the "-f <file> " fragment shared by the docker job
+// commands BuildDockerJobs emits and the prefill matcher that detects them.
+func DockerComposeFileFlag(file string) string {
+	return "-f " + file + " "
 }
 
 // resolveRunnerPrefix returns the CLI prefix used in "X run <script>" commands.
@@ -107,8 +122,8 @@ func BuildDockerJobs(composeCmd string, files []string) domain.RunConfig {
 		jobs = append(jobs, domain.JobConfig{
 			Name: name,
 			Kind: domain.JobKindService,
-			Cmd:  fmt.Sprintf("%s -f %s up -d", composeCmd, f),
-			Stop: fmt.Sprintf("%s -f %s down --remove-orphans", composeCmd, f),
+			Cmd:  fmt.Sprintf("%s %sup -d", composeCmd, DockerComposeFileFlag(f)),
+			Stop: fmt.Sprintf("%s %sdown --remove-orphans", composeCmd, DockerComposeFileFlag(f)),
 			Cwd:  ".",
 		})
 	}

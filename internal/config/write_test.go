@@ -19,7 +19,7 @@ func TestWriteProjectRendersValidTOML(t *testing.T) {
 		BaseBranch:     "main",
 		EnvCopyFiles:   []string{".env", "apps/api/.env"},
 		EnvStrategy:    domain.EnvStrategyExample,
-		InstallCommand: "pnpm install",
+		OnCreate:       []domain.HookCommand{{Cmd: "pnpm install"}},
 		Agent:          domain.AgentClaudeCode,
 		AgentOverride:  false,
 	}
@@ -108,6 +108,200 @@ func TestWriteProjectEmptyEnvAndHooks(t *testing.T) {
 	// Should still be valid TOML
 	var raw map[string]interface{}
 	if _, err := toml.Decode(content, &raw); err != nil {
+		t.Fatalf("generated file is not valid TOML: %v", err)
+	}
+}
+
+func TestWriteProjectSkipEnvCommentsSection(t *testing.T) {
+	dir := t.TempDir()
+
+	answers := domain.InitProjectAnswers{
+		BasePath:   ".trees",
+		BaseBranch: "main",
+		SkipEnv:    true,
+	}
+
+	if err := WriteProject(WriteProjectParams{StateDir: dir, Answers: answers}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
+	content := string(data)
+
+	if strings.Contains(content, "\nstrategy = ") {
+		t.Error("expected env strategy to be commented out when skipped")
+	}
+	if !strings.Contains(content, domain.SkipMarkerComment) {
+		t.Error("expected skip marker comment in env section")
+	}
+
+	var raw map[string]interface{}
+	if _, err := toml.Decode(content, &raw); err != nil {
+		t.Fatalf("generated file is not valid TOML: %v", err)
+	}
+}
+
+func TestWriteProjectSkipHooksCommentsSection(t *testing.T) {
+	dir := t.TempDir()
+
+	answers := domain.InitProjectAnswers{
+		BasePath:    ".trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+		SkipHooks:   true,
+	}
+
+	if err := WriteProject(WriteProjectParams{StateDir: dir, Answers: answers}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
+	content := string(data)
+
+	if !strings.Contains(content, "on_create = []") {
+		t.Error("expected empty on_create when hooks skipped")
+	}
+
+	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
+	if err != nil {
+		t.Fatalf("loadProjectConfig: %v", err)
+	}
+	if len(cfg.Hooks.OnCreate) != 0 {
+		t.Errorf("expected no hooks, got %v", cfg.Hooks.OnCreate)
+	}
+}
+
+func TestWriteProjectRoundTripTableFormHook(t *testing.T) {
+	dir := t.TempDir()
+
+	answers := domain.InitProjectAnswers{
+		BasePath:    ".trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+		OnCreate: []domain.HookCommand{
+			{Cmd: "pnpm install"},
+			{Cmd: "pnpm db:migrate", Cwd: "apps/api", ContinueOnError: true},
+		},
+	}
+
+	if err := WriteProject(WriteProjectParams{StateDir: dir, Answers: answers}); err != nil {
+		t.Fatalf("WriteProject: %v", err)
+	}
+
+	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
+	if err != nil {
+		t.Fatalf("loadProjectConfig: %v", err)
+	}
+
+	if len(cfg.Hooks.OnCreate) != 2 {
+		t.Fatalf("expected 2 hooks, got %d: %+v", len(cfg.Hooks.OnCreate), cfg.Hooks.OnCreate)
+	}
+	if cfg.Hooks.OnCreate[0].Cmd != "pnpm install" || cfg.Hooks.OnCreate[0].Cwd != "" {
+		t.Errorf("bare hook not preserved: %+v", cfg.Hooks.OnCreate[0])
+	}
+	table := cfg.Hooks.OnCreate[1]
+	if table.Cmd != "pnpm db:migrate" || table.Cwd != "apps/api" || !table.ContinueOnError {
+		t.Errorf("table-form hook fields not preserved: %+v", table)
+	}
+}
+
+func TestWriteRunTemplateCreatesCommentedFile(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := WriteRunTemplate(WriteRunParams{StateDir: dir}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, domain.RunFileName))
+	if err != nil {
+		t.Fatalf("file not created: %v", err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "# [[job]]") {
+		t.Error("expected commented job example in template")
+	}
+
+	// A fully-commented template must parse as valid (empty) TOML.
+	var cfg domain.RunConfig
+	if _, err := toml.Decode(content, &cfg); err != nil {
+		t.Fatalf("template is not valid TOML: %v", err)
+	}
+	if len(cfg.Jobs) != 0 {
+		t.Errorf("expected no active jobs in template, got %d", len(cfg.Jobs))
+	}
+}
+
+func TestWriteRunTemplateRefusesOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteRunTemplate(WriteRunParams{StateDir: dir}); err != nil {
+		t.Fatalf("first write failed: %v", err)
+	}
+	if err := WriteRunTemplate(WriteRunParams{StateDir: dir}); !errors.Is(err, ErrRunFileExists) {
+		t.Errorf("expected ErrRunFileExists, got %v", err)
+	}
+}
+
+func TestWriteProjectConfigPreservesAllSections(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := domain.ProjectConfig{
+		Worktrees: domain.WorktreesConfig{BasePath: "../.trees", BaseBranch: "develop"},
+		Env:       domain.EnvConfig{Strategy: domain.EnvStrategyParent, CopyFiles: []string{".env"}},
+		Hooks:     domain.HooksConfig{OnCreate: []domain.HookCommand{{Cmd: "pnpm install"}}},
+		Github:    domain.GithubConfig{AutoDraft: true},
+		Agents:    domain.AgentsConfig{Default: domain.AgentCursor},
+		Integrations: domain.IntegrationsConfig{
+			VSCodeProjectManager: true,
+			CursorProjectManager: true,
+		},
+	}
+
+	if err := WriteProjectConfig(WriteProjectConfigParams{StateDir: dir, Config: cfg}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
+	if err != nil {
+		t.Fatalf("loadProjectConfig: %v", err)
+	}
+
+	if got.Github.AutoDraft != true {
+		t.Error("github.auto_draft not preserved")
+	}
+	if !got.Integrations.VSCodeProjectManager || !got.Integrations.CursorProjectManager {
+		t.Errorf("integrations not preserved: %+v", got.Integrations)
+	}
+	if got.Agents.Default != domain.AgentCursor {
+		t.Errorf("agents.default not preserved: %q", got.Agents.Default)
+	}
+	if got.Env.Strategy != domain.EnvStrategyParent {
+		t.Errorf("env.strategy not preserved: %q", got.Env.Strategy)
+	}
+	if len(got.Hooks.OnCreate) != 1 || got.Hooks.OnCreate[0].Cmd != "pnpm install" {
+		t.Errorf("hooks not preserved: %+v", got.Hooks.OnCreate)
+	}
+}
+
+func TestWriteProjectConfigEmptyEnvStaysCommented(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := domain.ProjectConfig{
+		Worktrees: domain.WorktreesConfig{BasePath: "../.trees", BaseBranch: "main"},
+		// Env.Strategy empty → section must render commented to stay valid.
+	}
+
+	if err := WriteProjectConfig(WriteProjectConfigParams{StateDir: dir, Config: cfg}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
+	if strings.Contains(string(data), "\nstrategy = ") {
+		t.Error("empty env strategy should be commented out, not written as empty")
+	}
+
+	var raw map[string]interface{}
+	if _, err := toml.Decode(string(data), &raw); err != nil {
 		t.Fatalf("generated file is not valid TOML: %v", err)
 	}
 }
@@ -215,7 +409,7 @@ func TestWriteProjectRoundTrip(t *testing.T) {
 		BaseBranch:     "develop",
 		EnvCopyFiles:   []string{".env", "apps/web/.env"},
 		EnvStrategy:    domain.EnvStrategyParent,
-		InstallCommand: "yarn install",
+		OnCreate:       []domain.HookCommand{{Cmd: "yarn install"}},
 		Agent:          domain.AgentNone,
 		AgentOverride:  true,
 	}
