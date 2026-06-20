@@ -15,7 +15,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
-	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
@@ -49,7 +48,7 @@ func runList(cmd *cobra.Command, _ []string) error {
 		listErr  error
 		prs      []domain.PRInfo
 		conn     domain.GHConnection
-		services []process.JobInfo
+		services []domain.JobInfo
 		wg       sync.WaitGroup
 	)
 
@@ -144,7 +143,7 @@ func findPRForBranch(prs []domain.PRInfo, branch string) (domain.PRInfo, bool) {
 type pickParams struct {
 	statuses []domain.WorktreeStatus
 	prs      []domain.PRInfo
-	services []process.JobInfo
+	services []domain.JobInfo
 	conn     domain.GHConnection
 }
 

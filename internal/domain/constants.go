@@ -23,6 +23,7 @@ const (
 	ExitCodeConfigNotFound  = 12 // the repo has no wtm config (run `wtm init`)
 	ExitCodePRExists        = 13 // a pull request already exists for the branch
 	ExitCodeServiceNotFound = 14 // the referenced job is not declared in run.toml
+	ExitCodeExtractConflict = 15 // selected changes do not apply cleanly onto the target worktree
 
 	// StateDirName is the wtm state directory inside the git common dir
 	// (i.e. <git-common-dir>/wtm/). Never committed — git ignores .git/.
@@ -102,6 +103,14 @@ const (
 	FlagCwd       = "cwd"
 	FlagJobs      = "jobs"
 	FlagDefault   = "default"
+	FlagTo         = "to"
+	FlagKeep       = "keep"
+	FlagFiles      = "files"
+	FlagOnConflict = "on-conflict"
+
+	// On-conflict modes for `wt extract`.
+	OnConflictAbort   = "abort"
+	OnConflictResolve = "resolve"
 
 	// init flags (non-interactive bootstrap).
 	FlagIfNotExists    = "if-not-exists"
@@ -176,6 +185,7 @@ const (
 	CmdAdd      = "add"
 	CmdRm       = "rm"
 	CmdEdit     = "edit"
+	CmdExtract  = "extract"
 
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"

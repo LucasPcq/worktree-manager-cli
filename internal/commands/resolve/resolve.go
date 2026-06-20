@@ -13,7 +13,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
-	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
@@ -86,7 +85,7 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 		listErr  error
 		prs      []domain.PRInfo
 		conn     domain.GHConnection
-		services []process.JobInfo
+		services []domain.JobInfo
 		wg       sync.WaitGroup
 	)
 

@@ -194,7 +194,7 @@ func watchProfileServices(cmd *cobra.Command, jobs []domain.JobConfig, dir strin
 		return nil
 	}
 
-	var running []process.JobInfo
+	var running []domain.JobInfo
 	for _, job := range resp.Jobs {
 		if job.WorkDir == dir && job.Status == domain.JobStatusRunning && watchable[job.Name] {
 			running = append(running, job)

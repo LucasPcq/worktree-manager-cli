@@ -40,6 +40,18 @@ func NewWizard(steps []Step) WizardModel {
 	}
 }
 
+// NewWizardAtStep creates a wizard positioned on the given step, with all prior
+// steps treated as already completed (their summaries show in the breadcrumb and
+// back navigation reaches them). Used to re-enter a flow without redoing earlier
+// answers. An out-of-range start falls back to the first step.
+func NewWizardAtStep(steps []Step, start int) WizardModel {
+	m := NewWizard(steps)
+	if start > 0 && start < len(steps) {
+		m.current = start
+	}
+	return m
+}
+
 // Done returns true when all steps have been completed.
 func (m WizardModel) Done() bool { return m.done }
 
@@ -49,13 +61,14 @@ func (m WizardModel) Aborted() bool { return m.aborted }
 // Steps returns the wizard steps for value extraction.
 func (m WizardModel) Steps() []Step { return m.steps }
 
-// Init initializes the first step's model.
+// Init initializes the current step's model (the first step unless the wizard
+// was created with NewWizardAtStep).
 func (m WizardModel) Init() tea.Cmd {
 	if len(m.steps) == 0 {
 		return tea.Quit
 	}
-	m.propagateSize(0)
-	return m.initStep(0)
+	m.propagateSize(m.current)
+	return m.initStep(m.current)
 }
 
 // Update delegates to the current step and manages transitions.

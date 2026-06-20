@@ -190,7 +190,7 @@ func (d *daemonServer) handleStop(encoder *json.Encoder, req Request) {
 func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
 	// Snapshot the jobs that are about to be stopped so the client can report
 	// which ones (or say "none running" when the list is empty).
-	var stopped []JobInfo
+	var stopped []domain.JobInfo
 	for _, job := range d.manager.List() {
 		if job.Status != domain.JobStatusRunning {
 			continue
@@ -198,7 +198,7 @@ func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
 		if req.WorkDir != "" && job.WorkDir != req.WorkDir {
 			continue
 		}
-		stopped = append(stopped, JobInfo{
+		stopped = append(stopped, domain.JobInfo{
 			Name:    job.Name,
 			Kind:    job.Config.Kind,
 			WorkDir: job.WorkDir,
@@ -223,9 +223,9 @@ func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
 
 func (d *daemonServer) handleList(encoder *json.Encoder, req Request) {
 	jobs := d.manager.List()
-	infos := make([]JobInfo, 0, len(jobs))
+	infos := make([]domain.JobInfo, 0, len(jobs))
 	for _, job := range jobs {
-		infos = append(infos, JobInfo{
+		infos = append(infos, domain.JobInfo{
 			Name:    job.Name,
 			Kind:    job.Config.Kind,
 			WorkDir: job.WorkDir,

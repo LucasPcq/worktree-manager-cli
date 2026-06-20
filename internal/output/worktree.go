@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -17,7 +16,7 @@ type FormatWorktreeListParams struct {
 	Statuses     []domain.WorktreeStatus
 	ActiveBranch string
 	PRInfos      []domain.PRInfo
-	Services     []process.JobInfo
+	Services     []domain.JobInfo
 }
 
 // FormatWorktreeList renders a list of worktree statuses as an aligned table string.
@@ -48,7 +47,7 @@ type row struct {
 	ahead    string
 }
 
-func buildRows(statuses []domain.WorktreeStatus, activeBranch string, prs []domain.PRInfo, svcs []process.JobInfo) []row {
+func buildRows(statuses []domain.WorktreeStatus, activeBranch string, prs []domain.PRInfo, svcs []domain.JobInfo) []row {
 	rows := make([]row, 0, len(statuses))
 	for _, s := range statuses {
 		r := row{
@@ -73,7 +72,7 @@ func formatPRTag(branch string, prs []domain.PRInfo) string {
 	return ""
 }
 
-func formatServicesTag(worktreePath string, svcs []process.JobInfo) string {
+func formatServicesTag(worktreePath string, svcs []domain.JobInfo) string {
 	for _, svc := range svcs {
 		if svc.WorkDir == worktreePath && svc.Status == domain.JobStatusRunning {
 			return styles.Success.Render("services")
@@ -167,7 +166,7 @@ func ansiOverhead(s string) int {
 type WriteWorktreeListJSONParams struct {
 	Statuses []domain.WorktreeStatus
 	PRInfos  []domain.PRInfo
-	Services []process.JobInfo
+	Services []domain.JobInfo
 }
 
 // WriteWorktreeListJSON writes a JSON array describing each worktree.
@@ -197,7 +196,7 @@ func matchPR(branch string, prs []domain.PRInfo) *domain.WorktreeListPR {
 	return nil
 }
 
-func matchRunningServices(worktreePath string, services []process.JobInfo) []string {
+func matchRunningServices(worktreePath string, services []domain.JobInfo) []string {
 	names := make([]string, 0)
 	for _, svc := range services {
 		if svc.WorkDir == worktreePath && svc.Status == domain.JobStatusRunning {

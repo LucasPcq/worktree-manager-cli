@@ -3,6 +3,7 @@ package components
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -149,8 +150,11 @@ func (m standaloneModel) View() string {
 	}
 
 	if m.desc != "" {
-		out += styles.Muted.Render(styles.Indent + m.desc)
-		out += "\n\n"
+		for _, line := range strings.Split(m.desc, "\n") {
+			out += styles.Muted.Render(styles.Indent + line)
+			out += "\n"
+		}
+		out += "\n"
 	}
 
 	switch child := m.child.(type) {

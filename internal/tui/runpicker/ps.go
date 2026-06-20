@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
@@ -30,7 +29,7 @@ type PsPickerResult struct {
 
 // RunPsPicker shows the running-jobs picker with contextual actions.
 // Returns domain.ErrUserAborted on cancel.
-func RunPsPicker(jobs []process.JobInfo) (PsPickerResult, error) {
+func RunPsPicker(jobs []domain.JobInfo) (PsPickerResult, error) {
 	if len(jobs) == 0 {
 		return PsPickerResult{}, domain.ErrUserAborted
 	}
@@ -86,16 +85,16 @@ func RunPsPicker(jobs []process.JobInfo) (PsPickerResult, error) {
 	return PsPickerResult{Name: selected.Name, Action: action}, nil
 }
 
-func findJob(jobs []process.JobInfo, name string) process.JobInfo {
+func findJob(jobs []domain.JobInfo, name string) domain.JobInfo {
 	for _, j := range jobs {
 		if j.Name == name {
 			return j
 		}
 	}
-	return process.JobInfo{Name: name}
+	return domain.JobInfo{Name: name}
 }
 
-func pickPsAction(job process.JobInfo) (string, error) {
+func pickPsAction(job domain.JobInfo) (string, error) {
 	var items []components.SelectItem
 	if job.Status == domain.JobStatusRunning {
 		items = []components.SelectItem{

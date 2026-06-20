@@ -62,6 +62,7 @@ wtm init
 wtm wt list                        # list all worktrees
 wtm wt create feature/my-feature   # create a worktree
 wtm wt switch feature/my-feature   # navigate + start services
+wtm wt extract --to refactor       # move uncommitted changes to another worktree
 wtm wt clean feature/my-feature    # clean up when done
 ```
 
@@ -236,6 +237,32 @@ wtm wt clean feature/auth --force   # skip all safety checks
 | Flag | Description |
 |---|---|
 | `--force` | Bypass all safety checks and delete immediately |
+
+#### `wtm wt extract`
+
+Move a subset of the **current worktree's uncommitted changes** to another worktree — to split an oversized PR or peel off unrelated work for easier review and parallel development. Without flags it runs an interactive wizard: pick files → target → move/copy.
+
+```bash
+wtm wt extract                                              # interactive: pick files, target, mode
+wtm wt extract --files src/api.go,src/db.go --to refactor  # move files to an existing worktree
+wtm wt extract --files src/api.go --to spike --from main   # create 'spike' from main, move into it
+wtm wt extract --files notes.md --to docs --keep           # copy instead of move (keep in source)
+```
+
+**Move vs copy:** files are **moved** by default (removed from the source once they land); `--keep` copies them instead.
+
+**Conflicts** (a selected file was also changed in the target): by default the extraction **aborts** and nothing changes (exit code `15`). With `--on-conflict resolve`, the changes are applied to the target with git **conflict markers** — like a rebase — so you can resolve them in your editor; the source is always kept intact in that case.
+
+**Safety:** the source is cleaned only when the whole extraction applies cleanly. If anything conflicts, the source is left fully intact and recoverable — there is never a half-moved state.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--files <a,b>` | Comma-separated files to extract (skips the file picker) |
+| `--to <branch>` | Target worktree branch; created if it doesn't exist |
+| `--from <base>` | Parent branch when creating the target worktree |
+| `--keep` | Copy instead of move (keep the changes in the source) |
+| `--on-conflict <abort\|resolve>` | On conflict: abort (default) or write conflict markers in the target |
 
 ---
 
@@ -483,7 +510,7 @@ wtm run list --output json
 
 Supported commands:
 
-- `wt list`, `wt create`, `wt clean` (requires `--force`)
+- `wt list`, `wt create`, `wt clean` (requires `--force`), `wt extract`
 - `pr list`, `pr create`, `pr checkout`
 - `run list`, `run ps`, `run up`, `run down`, `run start`, `run stop`
 

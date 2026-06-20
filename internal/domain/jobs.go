@@ -46,3 +46,13 @@ const (
 	JobStatusStopped JobStatus = "stopped"
 	JobStatusCrashed JobStatus = "crashed"
 )
+
+// JobInfo is the JSON representation of a managed job, shared across the daemon
+// protocol and the output/tui layers that render it.
+type JobInfo struct {
+	Name    string    `json:"name"`
+	Kind    JobKind   `json:"kind"`
+	Status  JobStatus `json:"status"`
+	PID     int       `json:"pid"`
+	WorkDir string    `json:"work_dir"`
+}

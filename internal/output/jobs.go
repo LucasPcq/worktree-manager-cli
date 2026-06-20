@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -119,9 +118,9 @@ func WriteProfilesJSON(w io.Writer, profiles []domain.ProfileConfig) error {
 }
 
 // WriteRunningJobsJSON writes the JSON payload for `run ps`.
-func WriteRunningJobsJSON(w io.Writer, jobs []process.JobInfo) error {
+func WriteRunningJobsJSON(w io.Writer, jobs []domain.JobInfo) error {
 	if jobs == nil {
-		jobs = []process.JobInfo{}
+		jobs = []domain.JobInfo{}
 	}
 	return encodeJSON(w, jobs)
 }
@@ -182,7 +181,7 @@ func FormatRunConfig(cfg domain.RunConfig) string {
 }
 
 // FormatRunningJobs renders a table of running (or recently running) jobs.
-func FormatRunningJobs(jobs []process.JobInfo) string {
+func FormatRunningJobs(jobs []domain.JobInfo) string {
 	if len(jobs) == 0 {
 		return "\n" + Indent + "No jobs running.\n\n"
 	}
