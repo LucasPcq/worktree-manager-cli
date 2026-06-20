@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.14.0 — Affichage instantané des worktrees + streaming des PRs
+
+### New features
+
+- **Liste des worktrees instantanée** — `wt list`, `wt go` et `wt switch` affichent les worktrees immédiatement et navigables, sans attendre GitHub. Les PRs sont fetchées en arrière-plan et remplissent les badges (`PR #x`) dès qu'elles arrivent ; une bannière de statut montre la progression (spinner animé) puis, si `gh` est indisponible, le hint d'installation/connexion.
+- **`wt list --with-prs`** — en non-interactif (pipe/JSON), les PRs ne sont plus fetchées par défaut (liste instantanée) ; `--with-prs` les inclut explicitement. Comportement **identique** entre texte et JSON.
+
+### Improvements
+
+- **Fetch GitHub allégé** — les pickers de worktrees ne récupèrent plus le champ `body` (lourd) des PRs, inutile pour les badges ; `pr list` garde le détail complet.
+- Action « Open PR » disponible immédiatement, l'URL étant résolue à la volée pendant le chargement.
+
 ## v0.13.0 — Refonte de `wtm init` : gates de sections, re-init `--only`, éditeur de hooks `on_create`
 
 ### New features
