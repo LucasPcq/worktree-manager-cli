@@ -16,7 +16,6 @@ func FormatSyncPlan(w io.Writer, plan domain.SyncPlan) {
 	SectionTitle(w, fmt.Sprintf("Sync plan (base: %s)", plan.BaseBranch))
 	if len(plan.Steps) == 0 {
 		Message(w, styles.Muted.Render("No worktrees to sync."))
-		Blank(w)
 		return
 	}
 	for i, step := range plan.Steps {
@@ -26,14 +25,19 @@ func FormatSyncPlan(w io.Writer, plan domain.SyncPlan) {
 		}
 		InfoLine(w, fmt.Sprintf("%d.", i+1), fmt.Sprintf("%s %s %s", step.Branch, styles.Muted.Render("←"), parent))
 	}
-	Blank(w)
 }
 
-// FormatSyncResult prints the detailed recap of a sync run: the base update,
-// one line per branch (parent, target commit, before→after, replayed count),
-// and a trailing summary of which branches are ready to push (or were pushed).
+// FormatSyncResult prints the detailed recap of a sync run: the base update and
+// one line per branch (parent, target commit, before→after, replayed count).
+// It is rendered BEFORE the push decision so the user sees what happened before
+// being asked to push. The push summary is a separate block
+// (see FormatSyncPushSummary).
+//
+// No leading blank: in interactive text mode the recap is always preceded by the
+// "Rebasing…" spinner, whose own leading blank line (shared.StartSpinner) already
+// provides the separating space. No trailing blank either: the next block (or
+// prompt) owns its leading space.
 func FormatSyncResult(w io.Writer, result domain.SyncResult) {
-	Blank(w)
 	if result.BaseUpdated {
 		InfoLine(w, "Base", fmt.Sprintf("%s  %s → %s  %s",
 			result.BaseBranch,
@@ -51,9 +55,14 @@ func FormatSyncResult(w io.Writer, result domain.SyncResult) {
 	for _, step := range result.Steps {
 		printStep(w, step)
 	}
+}
 
+// FormatSyncPushSummary prints the trailing summary of which branches were
+// pushed or are ready to push. Rendered AFTER the push decision so it reflects
+// the final state. Leads with a blank, never trails.
+func FormatSyncPushSummary(w io.Writer, steps []domain.SyncStepResult) {
 	Blank(w)
-	printPushSummary(w, result.Steps)
+	printPushSummary(w, steps)
 }
 
 func printStep(w io.Writer, step domain.SyncStepResult) {
@@ -72,7 +81,7 @@ func printStep(w io.Writer, step domain.SyncStepResult) {
 	case domain.SyncStatusUnknownParent:
 		Warning(w, fmt.Sprintf("%s skipped — no recorded parent branch", step.Branch))
 	case domain.SyncStatusConflict:
-		Error(w, fmt.Sprintf("%s conflict on %s — rebase aborted (working tree clean), resolve manually", step.Branch, step.SourceBranch))
+		Danger(w, fmt.Sprintf("%s conflict on %s — rebase aborted (working tree clean); descendants skipped", step.Branch, step.SourceBranch))
 	case domain.SyncStatusError:
 		Error(w, fmt.Sprintf("%s failed — %s", step.Branch, step.Detail))
 	}
@@ -97,14 +106,13 @@ func printPushSummary(w io.Writer, steps []domain.SyncStepResult) {
 	pushed := make([]string, 0)
 	ready := make([]string, 0)
 	for _, step := range steps {
-		if step.Status != domain.SyncStatusSynced {
-			continue
-		}
 		if step.Pushed {
 			pushed = append(pushed, step.Branch)
 			continue
 		}
-		ready = append(ready, step.Branch)
+		if step.PushPending {
+			ready = append(ready, step.Branch)
+		}
 	}
 
 	if len(pushed) > 0 {
@@ -115,7 +123,7 @@ func printPushSummary(w io.Writer, steps []domain.SyncStepResult) {
 			len(ready), strings.Join(ready, ", ")))
 	}
 	if len(pushed) == 0 && len(ready) == 0 {
-		Message(w, styles.Muted.Render("Nothing was rebased — no branch to push."))
+		Message(w, styles.Muted.Render("Everything is in sync with origin — nothing to push."))
 	}
 }
 

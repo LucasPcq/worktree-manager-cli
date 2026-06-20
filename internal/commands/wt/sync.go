@@ -98,6 +98,11 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// Recap first (text mode): the user sees what happened BEFORE being asked to push.
+	if interactive {
+		output.FormatSyncResult(cmd.OutOrStdout(), syncResult)
+	}
+
 	if !dryRun && decidePush(decidePushParams{
 		Push:        push,
 		NoPush:      noPush,
@@ -110,7 +115,10 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		})
 	}
 
-	if err := renderSync(cmd, syncResult, format); err != nil {
+	if interactive {
+		output.FormatSyncPushSummary(cmd.OutOrStdout(), syncResult.Steps)
+		output.Blank(cmd.OutOrStdout())
+	} else if err := output.WriteSyncResultJSON(cmd.OutOrStdout(), syncResult); err != nil {
 		return err
 	}
 
@@ -160,7 +168,7 @@ type decidePushParams struct {
 // push and neither --push nor --no-push, an interactive run asks once; a
 // non-interactive run only pushes when --push is set.
 func decidePush(params decidePushParams) bool {
-	ready := syncedReadyCount(params.Steps)
+	ready := pushableCount(params.Steps)
 	if ready == 0 || params.NoPush {
 		return false
 	}
@@ -183,18 +191,10 @@ func confirmPush(count int) bool {
 	return err == nil && confirmed
 }
 
-func renderSync(cmd *cobra.Command, result domain.SyncResult, format string) error {
-	if format == domain.OutputJSON {
-		return output.WriteSyncResultJSON(cmd.OutOrStdout(), result)
-	}
-	output.FormatSyncResult(cmd.OutOrStdout(), result)
-	return nil
-}
-
-func syncedReadyCount(steps []domain.SyncStepResult) int {
+func pushableCount(steps []domain.SyncStepResult) int {
 	count := 0
 	for _, step := range steps {
-		if step.Status == domain.SyncStatusSynced && !step.Pushed {
+		if step.PushPending && !step.Pushed {
 			count++
 		}
 	}

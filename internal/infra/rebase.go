@@ -136,6 +136,53 @@ func IsAncestor(params IsAncestorParams) bool {
 	return cmd.Run() == nil
 }
 
+// RemoteBranchParams holds inputs for an operation comparing a branch to its
+// own origin/<branch> remote-tracking ref.
+type RemoteBranchParams struct {
+	WorktreePath string
+	Branch       string
+}
+
+// RemoteHasUnintegratedCommits reports whether origin/<Branch> carries commits
+// that are NOT already present (by patch) in the local Branch. It runs
+// `git cherry <Branch> origin/<Branch>`, which marks remote commits with "-" when
+// their patch already exists locally (e.g. commits replayed by a prior rebase) and
+// "+" when genuinely missing. Only "+" lines count as a real divergence. A missing
+// remote ref or any error yields false (nothing to integrate). Reads local refs
+// only — no network.
+func RemoteHasUnintegratedCommits(params RemoteBranchParams) bool {
+	cmd := exec.Command("git", "-C", params.WorktreePath,
+		"cherry", params.Branch, "origin/"+params.Branch)
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if strings.HasPrefix(line, "+") {
+			return true
+		}
+	}
+	return false
+}
+
+// AheadOfRemote reports whether the local Branch has commits to force-push: true
+// when origin/<Branch> does not exist (a push would create it) or when the local
+// tip differs from the remote tip. Meant to be called only on non-diverged
+// branches (local is ahead or rewritten, never behind unresolved). Reads local
+// refs only — no network.
+func AheadOfRemote(params RemoteBranchParams) bool {
+	remoteRef := "origin/" + params.Branch
+	remoteTip, err := exec.Command("git", "-C", params.WorktreePath, "rev-parse", remoteRef).Output()
+	if err != nil {
+		return true
+	}
+	localTip, err := exec.Command("git", "-C", params.WorktreePath, "rev-parse", params.Branch).Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(localTip)) != strings.TrimSpace(string(remoteTip))
+}
+
 // PushForceParams holds inputs for a force-with-lease push.
 type PushForceParams struct {
 	WorktreePath string

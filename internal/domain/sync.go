@@ -59,8 +59,12 @@ type SyncStepResult struct {
 	NewTip          string         `json:"new_tip"`
 	OntoTip         string         `json:"onto_tip"`
 	CommitsReplayed int            `json:"commits_replayed"`
-	Pushed          bool           `json:"pushed"`
-	Detail          string         `json:"detail,omitempty"`
+	// PushPending is true when the branch has local commits that origin/<branch>
+	// lacks (ahead of, or rewritten relative to, its remote) and is eligible for
+	// a force-with-lease push. Set for synced and up_to_date branches.
+	PushPending bool   `json:"push_pending"`
+	Pushed      bool   `json:"pushed"`
+	Detail      string `json:"detail,omitempty"`
 }
 
 // SyncResult is the outcome of a full cascade sync.

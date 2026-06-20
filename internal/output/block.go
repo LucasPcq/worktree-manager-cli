@@ -18,6 +18,13 @@ func Warning(w io.Writer, msg string) {
 	fmt.Fprintf(w, "%s%s %s\n", Indent, styles.BadgeWarning.Render("!"), styles.Warning.Render(msg))
 }
 
+// Danger prints a styled failure line in the danger theme: "  ! message"
+// (red badge + red text) — the red counterpart of Warning, for failures that
+// should read like a skip rather than a hard crash.
+func Danger(w io.Writer, msg string) {
+	fmt.Fprintf(w, "%s%s %s\n", Indent, styles.BadgeDanger.Render("!"), styles.DangerText.Render(msg))
+}
+
 // InfoLine prints a styled key-value pair: "  label  value".
 func InfoLine(w io.Writer, label string, value string) {
 	fmt.Fprintf(w, "%s%s  %s\n", Indent, styles.Muted.Render(label), value)

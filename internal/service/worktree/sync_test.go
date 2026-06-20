@@ -145,6 +145,65 @@ func TestSyncDivergedBranchIsSkipped(t *testing.T) {
 	}
 }
 
+// TestSyncResyncAfterRebaseIsUpToDateAndPushable verifies that re-running sync
+// after a local-only rebase (no push) does NOT report the rebased branch as
+// diverged: its remote commits are already integrated (by patch), so it comes
+// back up_to_date and still pushable (ahead of origin/<branch>).
+func TestSyncResyncAfterRebaseIsUpToDateAndPushable(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	stateDir := filepath.Join(dir, ".git", "wtm")
+	trees := t.TempDir()
+	featPath := filepath.Join(trees, "feat")
+	dev1Path := filepath.Join(trees, "dev1")
+
+	initRemote(t, dir)
+
+	git(t, dir, "worktree", "add", "-b", "feat", featPath, "main")
+	commitFile(t, featPath, "feat.txt", "feat work")
+	git(t, featPath, "push", "-u", "origin", "feat")
+
+	git(t, dir, "worktree", "add", "-b", "dev1", dev1Path, "feat")
+	commitFile(t, dev1Path, "dev1.txt", "dev1 work")
+
+	// origin/feat advances (e.g. a PR merged into it) and main diverges.
+	advanceRemoteBranch(t, dir, "feat", "feat", "remote.txt")
+	commitFile(t, dir, "main.txt", "main moved")
+
+	writeMeta(t, stateDir, "feat", "main")
+	writeMeta(t, stateDir, "dev1", "feat")
+
+	// First sync: rebases everything locally, no push.
+	first, err := Sync(SyncParams{ProjectDir: dir, StateDir: stateDir, BaseBranch: "main"})
+	if err != nil {
+		t.Fatalf("first Sync error: %v", err)
+	}
+	if first.Steps[0].Status != domain.SyncStatusSynced {
+		t.Fatalf("feat first sync = %q, want synced (%+v)", first.Steps[0].Status, first.Steps)
+	}
+
+	// Second sync: nothing new to rebase, and the branch must NOT look diverged.
+	second, err := Sync(SyncParams{ProjectDir: dir, StateDir: stateDir, BaseBranch: "main"})
+	if err != nil {
+		t.Fatalf("second Sync error: %v", err)
+	}
+	byBranch := map[string]domain.SyncStepResult{}
+	for _, step := range second.Steps {
+		byBranch[step.Branch] = step
+	}
+	if got := byBranch["feat"].Status; got != domain.SyncStatusUpToDate {
+		t.Fatalf("feat re-sync = %q, want up_to_date (%+v)", got, second.Steps)
+	}
+	if !byBranch["feat"].PushPending {
+		t.Fatal("feat re-sync should be push_pending (local ahead of origin/feat, never pushed)")
+	}
+	if got := byBranch["dev1"].Status; got != domain.SyncStatusUpToDate {
+		t.Fatalf("dev1 re-sync = %q, want up_to_date (%+v)", got, second.Steps)
+	}
+	if !byBranch["dev1"].PushPending {
+		t.Fatal("dev1 re-sync should be push_pending (origin/dev1 does not exist)")
+	}
+}
+
 // TestSyncCascadeCleanRebase builds main → feat → dev1, advances main, then
 // verifies the cascade rebases both branches so main becomes their ancestor.
 func TestSyncCascadeCleanRebase(t *testing.T) {

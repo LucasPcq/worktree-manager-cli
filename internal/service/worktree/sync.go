@@ -104,7 +104,7 @@ func PushSynced(params PushSyncedParams) domain.SyncResult {
 
 	for i := range params.Result.Steps {
 		step := &params.Result.Steps[i]
-		if step.Status != domain.SyncStatusSynced {
+		if !step.PushPending || step.Pushed {
 			continue
 		}
 		path := pathByBranch[step.Branch]
@@ -254,14 +254,25 @@ func integrateRemote(step domain.SyncStep) integrateOutcome {
 		Ancestor:     step.Branch,
 		Descendant:   remoteRef,
 	})
-	if !remoteHasLocal {
-		return integrateDiverged
+	if remoteHasLocal {
+		infra.FastForwardBranch(infra.FastForwardParams{
+			WorktreePath: step.Path,
+			Onto:         remoteRef,
+		})
+		return integrateProceed
 	}
 
-	infra.FastForwardBranch(infra.FastForwardParams{
+	// Neither ref is an ancestor of the other. This is a genuine divergence only
+	// when the remote carries commits not already integrated (by patch) into the
+	// local branch. After a prior local rebase the remote's commits are
+	// patch-present locally (just rewritten), so there is nothing to reconcile —
+	// proceed and let the rebase see behind == 0 (up_to_date).
+	if infra.RemoteHasUnintegratedCommits(infra.RemoteBranchParams{
 		WorktreePath: step.Path,
-		Onto:         remoteRef,
-	})
+		Branch:       step.Branch,
+	}) {
+		return integrateDiverged
+	}
 	return integrateProceed
 }
 
@@ -330,6 +341,12 @@ func evaluateStep(e stepEval) (domain.SyncStepResult, bool) {
 		}); err == nil {
 			result.NewTip = tip
 		}
+		if !e.DryRun {
+			result.PushPending = infra.AheadOfRemote(infra.RemoteBranchParams{
+				WorktreePath: e.Step.Path,
+				Branch:       e.Step.Branch,
+			})
+		}
 		return result, false
 	}
 
@@ -344,6 +361,7 @@ func evaluateStep(e stepEval) (domain.SyncStepResult, bool) {
 
 	if e.DryRun {
 		result.Status = domain.SyncStatusSynced
+		result.PushPending = true
 		return result, false
 	}
 
@@ -371,5 +389,9 @@ func evaluateStep(e stepEval) (domain.SyncStepResult, bool) {
 	}); tipErr == nil {
 		result.NewTip = tip
 	}
+	result.PushPending = infra.AheadOfRemote(infra.RemoteBranchParams{
+		WorktreePath: e.Step.Path,
+		Branch:       e.Step.Branch,
+	})
 	return result, false
 }
