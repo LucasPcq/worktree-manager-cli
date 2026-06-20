@@ -98,22 +98,3 @@ func StartSpinner(w io.Writer, message string) func() {
 		<-stopped
 	}
 }
-
-// ShowGHBanner prints a bordered hint when the GitHub CLI is unavailable, so the
-// user knows why PR badges and PR-related actions are missing. Callers choose
-// the writer: stdout for human-facing listings, stderr for commands whose
-// stdout is consumed by tooling (e.g. `wtm resolve`).
-func ShowGHBanner(w io.Writer, conn domain.GHConnection) {
-	switch conn {
-	case domain.GHConnectionNotInstalled:
-		output.Callout(w, "GitHub CLI not found", []string{
-			"Install it to see PRs linked to your worktrees:",
-			"https://cli.github.com",
-		})
-	case domain.GHConnectionNotAuthenticated:
-		output.Callout(w, "GitHub not connected", []string{
-			"Connect to see PRs linked to your worktrees:",
-			"run `gh auth login`",
-		})
-	}
-}

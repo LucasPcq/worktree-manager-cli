@@ -19,7 +19,7 @@ const LoadingPRsText = "Loading pull requests…"
 
 // GHBanner returns the status banner shown in the picker once the PR fetch
 // completes, when the GitHub CLI is unavailable. An empty Title means gh is OK
-// (no banner). Mirrors the pre-streaming shared.ShowGHBanner content.
+// (no banner).
 func GHBanner(conn domain.GHConnection) components.WizardBanner {
 	switch conn {
 	case domain.GHConnectionNotInstalled:
