@@ -131,7 +131,7 @@ func TestWriteProjectSkipEnvCommentsSection(t *testing.T) {
 	if strings.Contains(content, "\nstrategy = ") {
 		t.Error("expected env strategy to be commented out when skipped")
 	}
-	if !strings.Contains(content, "# Skipped during init") {
+	if !strings.Contains(content, domain.SkipMarkerComment) {
 		t.Error("expected skip marker comment in env section")
 	}
 
@@ -168,6 +168,40 @@ func TestWriteProjectSkipHooksCommentsSection(t *testing.T) {
 	}
 	if len(cfg.Hooks.OnCreate) != 0 {
 		t.Errorf("expected no hooks, got %v", cfg.Hooks.OnCreate)
+	}
+}
+
+func TestWriteProjectRoundTripTableFormHook(t *testing.T) {
+	dir := t.TempDir()
+
+	answers := domain.InitProjectAnswers{
+		BasePath:    ".trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+		OnCreate: []domain.HookCommand{
+			{Cmd: "pnpm install"},
+			{Cmd: "pnpm db:migrate", Cwd: "apps/api", ContinueOnError: true},
+		},
+	}
+
+	if err := WriteProject(WriteProjectParams{StateDir: dir, Answers: answers}); err != nil {
+		t.Fatalf("WriteProject: %v", err)
+	}
+
+	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
+	if err != nil {
+		t.Fatalf("loadProjectConfig: %v", err)
+	}
+
+	if len(cfg.Hooks.OnCreate) != 2 {
+		t.Fatalf("expected 2 hooks, got %d: %+v", len(cfg.Hooks.OnCreate), cfg.Hooks.OnCreate)
+	}
+	if cfg.Hooks.OnCreate[0].Cmd != "pnpm install" || cfg.Hooks.OnCreate[0].Cwd != "" {
+		t.Errorf("bare hook not preserved: %+v", cfg.Hooks.OnCreate[0])
+	}
+	table := cfg.Hooks.OnCreate[1]
+	if table.Cmd != "pnpm db:migrate" || table.Cwd != "apps/api" || !table.ContinueOnError {
+		t.Errorf("table-form hook fields not preserved: %+v", table)
 	}
 }
 

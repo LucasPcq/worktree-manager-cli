@@ -131,6 +131,11 @@ const (
 	WizardChoiceConfigure = "configure"
 	WizardChoiceSkip      = "skip"
 
+	// SkipMarkerComment is the leading comment written into a config.toml section
+	// the user skipped during init. The config template emits it (followed by
+	// section-specific guidance) so a skipped section stays valid but inert.
+	SkipMarkerComment = "# Skipped during init."
+
 	// FlagOnly re-runs init for specific sections only (re-init / re-detect).
 	FlagOnly = "only"
 

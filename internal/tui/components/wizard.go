@@ -279,8 +279,8 @@ func (m *WizardModel) propagateSize(stepIdx int) {
 	case HookListModel:
 		child.width = m.width
 		child.height = h
-		child.cmdInput.Width = max(10, m.width-24)
-		child.cwdInput.Width = max(10, m.width-24)
+		child.cmdInput.Width = max(hookInputMinWidth, m.width-hookInputWidthInset)
+		child.cwdInput.Width = max(hookInputMinWidth, m.width-hookInputWidthInset)
 		m.steps[stepIdx].Model = child
 	}
 }

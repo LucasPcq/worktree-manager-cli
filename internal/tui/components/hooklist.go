@@ -11,6 +11,22 @@ import (
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
+const (
+	// hookInputCharLimit caps the cmd/cwd text inputs in the inline hook form.
+	hookInputCharLimit = 256
+
+	// hookInputWidthInset is the column budget reserved around the inline form
+	// inputs so they don't overrun the wizard frame.
+	hookInputWidthInset = 24
+
+	// hookInputMinWidth keeps the inputs usable when the terminal is narrow.
+	hookInputMinWidth = 10
+
+	// hookFormFieldCount is the number of focusable fields in the edit form:
+	// cmd, cwd, and the continue_on_error toggle. Drives focus wrap-around.
+	hookFormFieldCount = 3
+)
+
 // HookListModel edits an ordered list of on_create hooks. Browse mode lists the
 // hooks plus "+ Add a command" and "✓ Done" rows; edit mode is an inline form
 // with cmd, cwd, and a continue_on_error toggle.
@@ -119,12 +135,12 @@ func (m HookListModel) Update(msg tea.Msg) (HookListModel, tea.Cmd) {
 // startEdit switches to the inline form for the hook at idx, or a new hook (-1).
 func (m HookListModel) startEdit(idx int) HookListModel {
 	cmd := textinput.New()
-	cmd.CharLimit = 256
-	cmd.Width = max(10, m.width-24)
+	cmd.CharLimit = hookInputCharLimit
+	cmd.Width = max(hookInputMinWidth, m.width-hookInputWidthInset)
 	cmd.Placeholder = "pnpm install"
 	cwd := textinput.New()
-	cwd.CharLimit = 256
-	cwd.Width = max(10, m.width-24)
+	cwd.CharLimit = hookInputCharLimit
+	cwd.Width = max(hookInputMinWidth, m.width-hookInputWidthInset)
 	cwd.Placeholder = "repo root"
 
 	if idx >= 0 {
@@ -155,10 +171,10 @@ func (m HookListModel) updateEdit(msg tea.Msg) (HookListModel, tea.Cmd) {
 		m.editing = false
 		return m, nil
 	case "tab", "down":
-		m.formFocus = (m.formFocus + 1) % 3
+		m.formFocus = (m.formFocus + 1) % hookFormFieldCount
 		return m.syncFocus(), nil
 	case "shift+tab", "up":
-		m.formFocus = (m.formFocus + 2) % 3
+		m.formFocus = (m.formFocus + hookFormFieldCount - 1) % hookFormFieldCount
 		return m.syncFocus(), nil
 	case "enter":
 		return m.saveEdit()

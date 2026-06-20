@@ -1,7 +1,6 @@
 package rules
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -24,7 +23,7 @@ func InstallCommandFromHooks(onCreate []domain.HookCommand) string {
 func DockerFilesConfigured(run domain.RunConfig, files []string) map[string]bool {
 	configured := map[string]bool{}
 	for _, f := range files {
-		needle := "-f " + f + " "
+		needle := DockerComposeFileFlag(f)
 		for _, job := range run.Jobs {
 			if strings.Contains(job.Cmd, needle) {
 				configured[f] = true
@@ -39,14 +38,10 @@ func DockerFilesConfigured(run domain.RunConfig, files []string) map[string]bool
 // a job in run, matched on the "<pm> run <name>" command and cwd that
 // BuildScriptJobs emits.
 func ScriptsConfigured(run domain.RunConfig, scripts []domain.PackageScript, pm domain.PackageManager) map[int]bool {
-	prefix := resolveRunnerPrefix(pm)
 	configured := map[int]bool{}
 	for i, s := range scripts {
-		cmd := fmt.Sprintf("%s run %s", prefix, s.Name)
-		cwd := s.Workspace
-		if cwd == "" {
-			cwd = "."
-		}
+		cmd := ScriptJobCmd(pm, s.Name)
+		cwd := ScriptJobCwd(s.Workspace)
 		for _, job := range run.Jobs {
 			if job.Cmd == cmd && job.Cwd == cwd {
 				configured[i] = true
