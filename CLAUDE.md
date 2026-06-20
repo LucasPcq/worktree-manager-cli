@@ -8,6 +8,14 @@ All contributions must comply. When in doubt, consult the `go-cli` skill.
 and/or the relevant skills (`go-cli`, `build-validator`) in the same session.
 Standards must always reflect the actual codebase.
 
+**User-facing agent skill:** `internal/commands/agents/assets/using-wtm.skill.md`
+is the skill shipped to end users so their LLM can drive the `wtm` CLI. Whenever a
+change alters the user-facing command surface or agent-relevant behavior (new/renamed
+command or flag, changed `--output json` shape, new failure/abort semantics, changed
+interactive-vs-non-interactive behavior), update this skill in the same session so it
+stays aligned with the released CLI. Skip purely internal refactors and TUI-only
+changes that don't affect how an agent invokes wtm.
+
 Use the fff MCP tools for all file search operations instead of default tools.
 
 ---

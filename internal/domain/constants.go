@@ -145,6 +145,11 @@ const (
 	SectionServices  = "services"
 	SectionWorktrees = "worktrees"
 
+	// wt sync flags — cascade rebase of worktrees onto their recorded parent.
+	FlagDryRun = "dry-run"
+	FlagPush   = "push"
+	FlagNoPush = "no-push"
+
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches
 	// one of these keywords exactly, as a prefix ("<kw>:"), or as a suffix (":<kw>").
@@ -220,6 +225,7 @@ const (
 	CmdRm       = "rm"
 	CmdEdit     = "edit"
 	CmdExtract  = "extract"
+	CmdSync     = "sync"
 
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"
