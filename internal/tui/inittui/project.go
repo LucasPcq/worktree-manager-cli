@@ -51,6 +51,19 @@ func (s *stepSet) at(key string) int {
 	return -1
 }
 
+// SectionPrefill carries the current on-disk config so a targeted re-init wizard
+// pre-selects what's already configured. A nil prefill (full init) falls back to
+// detection-driven defaults with no "current/new" tags.
+type SectionPrefill struct {
+	EnvStrategy    string
+	EnvCopyFiles   map[string]bool
+	InstallCommand string
+	OnCreate       []domain.HookCommand
+	MonorepoCwds   map[string]bool
+	DockerFiles    map[string]bool
+	ScriptIndices  map[int]bool
+}
+
 // RunProjectWizard presents the full project init wizard pre-populated with
 // detection results. Returns ErrUserAborted if the user aborts.
 //
@@ -64,13 +77,13 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 	s.add(stepBaseBranch, baseBranchStep(detection))
 
 	s.add(stepEnvGate, envGate(detection))
-	addEnvSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepEnvGate)))
+	addEnvSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepEnvGate)), nil)
 
 	s.add(stepHooksGate, hooksGate(detection))
-	addHooksSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepHooksGate)))
+	addHooksSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepHooksGate)), nil)
 
 	s.add(stepServicesGate, servicesGate(detection))
-	addServicesSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepServicesGate)))
+	addServicesSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepServicesGate)), nil)
 
 	final, err := runWizard(s.steps)
 	if err != nil {
@@ -83,16 +96,16 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 // without gates or core steps. Used by `wtm init --only <section>`. Returns a
 // nil-ish answers set with no steps when nothing is configurable (e.g. services
 // requested but none detected); callers handle the empty case.
-func RunSectionWizard(sections []string, detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
+func RunSectionWizard(sections []string, detection domain.InitDetectionResult, prefill *SectionPrefill) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
 	for _, section := range sections {
 		switch section {
 		case domain.SectionEnv:
-			addEnvSteps(s, detection, nil)
+			addEnvSteps(s, detection, nil, prefill)
 		case domain.SectionHooks:
-			addHooksSteps(s, detection, nil)
+			addHooksSteps(s, detection, nil, prefill)
 		case domain.SectionServices:
-			addServicesSteps(s, detection, nil)
+			addServicesSteps(s, detection, nil, prefill)
 		}
 	}
 
@@ -162,17 +175,21 @@ func envGate(detection domain.InitDetectionResult) components.Step {
 	})
 }
 
-func addEnvSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool) {
+func addEnvSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool, prefill *SectionPrefill) {
+	strategyItems := []components.SelectItem{
+		{Label: "example — copy .env.example → .env", Value: string(domain.EnvStrategyExample)},
+		{Label: "main — copy .env from main worktree", Value: string(domain.EnvStrategyMain)},
+		{Label: "parent — copy .env from source worktree", Value: string(domain.EnvStrategyParent)},
+	}
+	if prefill != nil {
+		strategyItems = moveToFront(strategyItems, prefill.EnvStrategy)
+	}
 	s.add(stepEnvStrategy, components.Step{
 		Name: "Env strategy",
 		Model: components.NewSelectList(components.NewSelectListParams{
 			Title:       "Env strategy",
 			Description: "How wtm provisions .env files in a new worktree: copy .env.example, copy from your main worktree, or from the worktree you branched from.",
-			Items: []components.SelectItem{
-				{Label: "example — copy .env.example → .env", Value: string(domain.EnvStrategyExample)},
-				{Label: "main — copy .env from main worktree", Value: string(domain.EnvStrategyMain)},
-				{Label: "parent — copy .env from source worktree", Value: string(domain.EnvStrategyParent)},
-			},
+			Items:       strategyItems,
 		}),
 		Summary:  selectListSummary,
 		AutoSkip: autoSkip,
@@ -184,7 +201,8 @@ func addEnvSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func
 	}
 	items := make([]components.MultiSelectItem, 0, len(detection.EnvFiles))
 	for _, f := range detection.EnvFiles {
-		items = append(items, components.MultiSelectItem{Label: f, Value: f, Selected: true})
+		selected := prefillSelected(prefill, prefill != nil && prefill.EnvCopyFiles[f], true)
+		items = append(items, components.MultiSelectItem{Label: f, Value: f, Selected: selected})
 	}
 	s.add(stepEnvFiles, components.Step{
 		Name: "Env files",
@@ -211,17 +229,25 @@ func hooksGate(detection domain.InitDetectionResult) components.Step {
 	})
 }
 
-func addHooksSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool) {
+func addHooksSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool, prefill *SectionPrefill) {
+	installDefault := ""
+	calloutNote := ""
+	if prefill != nil {
+		installDefault = prefill.InstallCommand
+		calloutNote = formatOnCreate(prefill.OnCreate)
+	}
 	s.add(stepInstall, components.Step{
 		Name: "Install command",
 		Model: components.NewTextInput(components.NewTextInputParams{
 			Title:       "Install command",
 			Description: "Runs once right after a worktree is created — typically to install dependencies so it's ready to use.",
 			Placeholder: detection.InstallCommand,
+			Default:     installDefault,
 		}),
-		Summary:  textInputSummary,
-		AutoSkip: autoSkip,
-		Callout:  true,
+		Summary:     textInputSummary,
+		AutoSkip:    autoSkip,
+		Callout:     true,
+		CalloutNote: calloutNote,
 	})
 
 	if len(detection.MonorepoPackages) == 0 {
@@ -229,7 +255,8 @@ func addHooksSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip fu
 	}
 	items := make([]components.MultiSelectItem, 0, len(detection.MonorepoPackages))
 	for _, pkg := range detection.MonorepoPackages {
-		items = append(items, components.MultiSelectItem{Label: pkg, Value: pkg, Selected: true})
+		selected := prefillSelected(prefill, prefill != nil && prefill.MonorepoCwds[pkg], true)
+		items = append(items, components.MultiSelectItem{Label: pkg, Value: pkg, Selected: selected})
 	}
 	s.add(stepMonorepo, components.Step{
 		Name: "Monorepo packages",
@@ -256,11 +283,12 @@ func servicesGate(detection domain.InitDetectionResult) components.Step {
 	})
 }
 
-func addServicesSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool) {
+func addServicesSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool, prefill *SectionPrefill) {
 	if len(detection.DockerComposeFiles) > 0 {
 		items := make([]components.MultiSelectItem, 0, len(detection.DockerComposeFiles))
 		for _, f := range detection.DockerComposeFiles {
-			items = append(items, components.MultiSelectItem{Label: f, Value: f, Selected: true})
+			selected := prefillSelected(prefill, prefill != nil && prefill.DockerFiles[f], true)
+			items = append(items, components.MultiSelectItem{Label: f, Value: f, Selected: selected})
 		}
 		s.add(stepDocker, components.Step{
 			Name: "Docker services",
@@ -284,10 +312,11 @@ func addServicesSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip
 				scope = script.Workspace
 			}
 			label := fmt.Sprintf("%s / %s — %s run %s", scope, script.Name, pm, script.Name)
+			selected := prefillSelected(prefill, prefill != nil && prefill.ScriptIndices[i], script.Kind == domain.JobKindService)
 			items = append(items, components.MultiSelectItem{
 				Label:    label,
 				Value:    strconv.Itoa(i),
-				Selected: script.Kind == domain.JobKindService,
+				Selected: selected,
 			})
 		}
 		s.add(stepScripts, components.Step{
@@ -507,6 +536,50 @@ func gateValue(w components.WizardModel, idx int) string {
 		return ""
 	}
 	return sl.Value()
+}
+
+// prefillSelected decides a multiselect item's checked state. Without a prefill
+// (full init) it uses the detection default; with a prefill it checks the items
+// already present in the current config.
+func prefillSelected(prefill *SectionPrefill, configured, fullInitDefault bool) bool {
+	if prefill == nil {
+		return fullInitDefault
+	}
+	return configured
+}
+
+// moveToFront returns items with the entry matching value placed first, so a
+// SelectList highlights the currently-configured choice by default.
+func moveToFront(items []components.SelectItem, value string) []components.SelectItem {
+	if value == "" {
+		return items
+	}
+	for i, item := range items {
+		if item.Value == value {
+			reordered := []components.SelectItem{item}
+			reordered = append(reordered, items[:i]...)
+			reordered = append(reordered, items[i+1:]...)
+			return reordered
+		}
+	}
+	return items
+}
+
+// formatOnCreate renders the current on_create hooks as a one-line summary for
+// the install step callout (read-only context during re-init).
+func formatOnCreate(hooks []domain.HookCommand) string {
+	if len(hooks) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(hooks))
+	for _, h := range hooks {
+		if h.Cwd != "" {
+			parts = append(parts, fmt.Sprintf("%s @%s", h.Cmd, h.Cwd))
+		} else {
+			parts = append(parts, h.Cmd)
+		}
+	}
+	return "Current: " + strings.Join(parts, " · ")
 }
 
 func detectedEnv(d domain.InitDetectionResult) string {

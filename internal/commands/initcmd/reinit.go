@@ -65,7 +65,11 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 		}
 		answers = built
 	} else {
-		wizardAnswers, err := initwizard.RunSectionWizard(sections, detection)
+		prefill, err := buildPrefill(stateDir, detection)
+		if err != nil {
+			return err
+		}
+		wizardAnswers, err := initwizard.RunSectionWizard(sections, detection, prefill)
 		if errors.Is(err, domain.ErrUserAborted) {
 			return nil
 		}
@@ -83,7 +87,9 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 			Warning:     reinitWarning(sections),
 		}))
 		if errors.Is(err, components.ErrAborted) || (err == nil && !confirmed) {
+			output.Blank(cmd.OutOrStdout())
 			output.Message(cmd.OutOrStdout(), "Cancelled.")
+			output.Blank(cmd.OutOrStdout())
 			return nil
 		}
 		if err != nil {
@@ -106,6 +112,37 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 
 	output.Blank(cmd.OutOrStdout())
 	return nil
+}
+
+// buildPrefill snapshots the current config + run files so the interactive
+// re-init wizard pre-selects what's already configured.
+func buildPrefill(stateDir string, detection domain.InitDetectionResult) (*initwizard.SectionPrefill, error) {
+	cfg, err := config.LoadProjectRaw(stateDir)
+	if err != nil {
+		return nil, fmt.Errorf("load project config: %w", err)
+	}
+	runCfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		return nil, fmt.Errorf("load run config: %w", err)
+	}
+
+	return &initwizard.SectionPrefill{
+		EnvStrategy:    string(cfg.Env.Strategy),
+		EnvCopyFiles:   toSet(cfg.Env.CopyFiles),
+		InstallCommand: rules.InstallCommandFromHooks(cfg.Hooks.OnCreate),
+		OnCreate:       cfg.Hooks.OnCreate,
+		MonorepoCwds:   rules.MonorepoCwdsFromHooks(cfg.Hooks.OnCreate),
+		DockerFiles:    rules.DockerFilesConfigured(runCfg, detection.DockerComposeFiles),
+		ScriptIndices:  rules.ScriptsConfigured(runCfg, detection.PackageScripts, detection.PackageManager),
+	}, nil
+}
+
+func toSet(values []string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, v := range values {
+		set[v] = true
+	}
+	return set
 }
 
 // buildReinitAnswers resolves answers from flags + detection for the
