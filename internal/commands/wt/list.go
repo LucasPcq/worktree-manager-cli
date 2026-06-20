@@ -15,6 +15,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
@@ -29,6 +30,7 @@ func newListCmd() *cobra.Command {
 		RunE:  runList,
 	}
 	shared.AddOutputFlag(cmd)
+	cmd.Flags().Bool(domain.FlagWithPRs, false, "Include GitHub PR info in non-interactive output (fetched eagerly)")
 	return cmd
 }
 
@@ -43,17 +45,22 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	withPRs, _ := cmd.Flags().GetBool(domain.FlagWithPRs)
+	interactive := format != domain.OutputJSON && term.IsTerminal(int(os.Stdin.Fd()))
+
+	// Load worktree statuses and running services (both fast/local) in parallel.
+	// PRs (the slow gh call) are deferred: streamed into the picker interactively,
+	// or fetched only on demand (--with-prs) in non-interactive mode.
 	var (
 		statuses []domain.WorktreeStatus
 		listErr  error
-		prs      []domain.PRInfo
-		conn     domain.GHConnection
 		services []domain.JobInfo
 		wg       sync.WaitGroup
 	)
 
 	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Loading worktrees…")
-	wg.Add(3)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		statuses, listErr = worktree.List(domain.ListParams{
@@ -61,10 +68,6 @@ func runList(cmd *cobra.Command, _ []string) error {
 			StateDir:   result.StateDir,
 			Config:     result.Config,
 		})
-	}()
-	go func() {
-		defer wg.Done()
-		prs, conn = shared.LoadPRs(result.ProjectDir)
 	}()
 	go func() {
 		defer wg.Done()
@@ -77,16 +80,20 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list worktrees: %w", listErr)
 	}
 
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	if format == domain.OutputJSON {
-		return output.WriteWorktreeListJSON(cmd.OutOrStdout(), output.WriteWorktreeListJSONParams{
-			Statuses: statuses,
-			PRInfos:  prs,
-			Services: services,
-		})
-	}
-
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	// Non-interactive (JSON or piped text) behaves identically across formats:
+	// PRs are included only with --with-prs, since a pipe can't stream a loader.
+	if !interactive {
+		var prs []domain.PRInfo
+		if withPRs {
+			prs, _ = shared.LoadPRs(result.ProjectDir)
+		}
+		if format == domain.OutputJSON {
+			return output.WriteWorktreeListJSON(cmd.OutOrStdout(), output.WriteWorktreeListJSONParams{
+				Statuses: statuses,
+				PRInfos:  prs,
+				Services: services,
+			})
+		}
 		fmt.Fprint(cmd.OutOrStdout(), output.FormatWorktreeList(output.FormatWorktreeListParams{
 			Statuses:     statuses,
 			ActiveBranch: "",
@@ -101,13 +108,10 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	shared.ShowGHBanner(cmd.OutOrStdout(), conn)
-
-	selected, action, err := pickWorktreeAndAction(pickParams{
-		statuses: statuses,
-		prs:      prs,
-		services: services,
-		conn:     conn,
+	selected, action, prs, err := pickWorktreeAndAction(pickParams{
+		statuses:   statuses,
+		services:   services,
+		projectDir: result.ProjectDir,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
@@ -141,21 +145,27 @@ func findPRForBranch(prs []domain.PRInfo, branch string) (domain.PRInfo, bool) {
 
 // pickParams holds the inputs for the worktree/action wizard.
 type pickParams struct {
-	statuses []domain.WorktreeStatus
-	prs      []domain.PRInfo
-	services []domain.JobInfo
-	conn     domain.GHConnection
+	statuses   []domain.WorktreeStatus
+	services   []domain.JobInfo
+	projectDir string
 }
 
-func pickWorktreeAndAction(params pickParams) (domain.WorktreeStatus, string, error) {
+// pickWorktreeAndAction renders the worktree picker instantly and streams PRs
+// in asynchronously, refreshing the row badges when they arrive. It returns the
+// selected worktree, the chosen action, and the PRs loaded by the time the user
+// confirmed (used to resolve the Open PR action).
+func pickWorktreeAndAction(params pickParams) (domain.WorktreeStatus, string, []domain.PRInfo, error) {
 	statuses := params.statuses
 
 	wtItems := make([]components.SelectItem, 0, len(statuses))
 	for i, s := range statuses {
 		wtItems = append(wtItems, components.SelectItem{
-			Label:  s.Branch,
-			Value:  strconv.Itoa(i),
-			Badges: worktreepicker.BuildBadges(s, params.prs, params.services),
+			Label: s.Branch,
+			Value: strconv.Itoa(i),
+			Badges: worktreepicker.BuildBadges(worktreepicker.BuildBadgesParams{
+				Status:   s,
+				Services: params.services,
+			}),
 		})
 	}
 
@@ -164,65 +174,108 @@ func pickWorktreeAndAction(params pickParams) (domain.WorktreeStatus, string, er
 		branchByIdx[strconv.Itoa(i)] = s.Branch
 	}
 
-	wiz := components.NewWizard([]components.Step{
-		{
-			Name:  "Worktree",
-			Model: components.NewSelectList(components.NewSelectListParams{Title: "Select a worktree", Items: wtItems}),
-			Summary: func(m any) string {
-				sl, ok := m.(components.SelectListModel)
-				if !ok {
-					return ""
-				}
-				if name, found := branchByIdx[sl.Value()]; found {
-					return name
-				}
-				return sl.Value()
+	var (
+		loadedPRs  []domain.PRInfo
+		loadedConn domain.GHConnection
+		prsLoaded  bool
+	)
+
+	wiz := components.NewWizardWithParams(components.WizardParams{
+		Steps: []components.Step{
+			{
+				Name:  "Worktree",
+				Model: components.NewSelectList(components.NewSelectListParams{Title: "Select a worktree", Items: wtItems}),
+				Summary: func(m any) string {
+					sl, ok := m.(components.SelectListModel)
+					if !ok {
+						return ""
+					}
+					if name, found := branchByIdx[sl.Value()]; found {
+						return name
+					}
+					return sl.Value()
+				},
+			},
+			{
+				Name:  "Action",
+				Model: components.NewSelectList(components.NewSelectListParams{Title: "Action"}),
+				Build: func(prev []components.Step) any {
+					selected := selectedWorktree(prev, statuses)
+					items := buildActionItems(buildActionItemsParams{
+						selected:  selected,
+						prs:       loadedPRs,
+						conn:      loadedConn,
+						prsLoaded: prsLoaded,
+					})
+					return components.NewSelectList(components.NewSelectListParams{Title: "Action", Items: items})
+				},
+				Summary: func(m any) string {
+					sl, ok := m.(components.SelectListModel)
+					if !ok {
+						return ""
+					}
+					return sl.Value()
+				},
 			},
 		},
-		{
-			Name:  "Action",
-			Model: components.NewSelectList(components.NewSelectListParams{Title: "Action"}),
-			Build: func(prev []components.Step) any {
-				selected := selectedWorktree(prev, statuses)
-				items := buildActionItems(selected, params.prs, params.conn)
-				return components.NewSelectList(components.NewSelectListParams{Title: "Action", Items: items})
-			},
-			Summary: func(m any) string {
-				sl, ok := m.(components.SelectListModel)
+		InitCmd: worktreepicker.PRLoadCmd(func() ([]domain.PRInfo, domain.GHConnection) {
+			return shared.LoadPRs(params.projectDir)
+		}),
+		Loading:     true,
+		LoadingText: worktreepicker.LoadingPRsText,
+		OnMsg: func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+			loaded, ok := msg.(worktreepicker.PRsLoadedMsg)
+			if !ok {
+				return nil, false
+			}
+			loadedPRs = loaded.PRs
+			loadedConn = loaded.Conn
+			prsLoaded = true
+			badges := worktreepicker.BadgesByValue(worktreepicker.BadgesByValueParams{
+				Statuses: statuses,
+				PRs:      loaded.PRs,
+				Services: params.services,
+			})
+			w.UpdateStepModel(0, func(model any) any {
+				sl, ok := model.(components.SelectListModel)
 				if !ok {
-					return ""
+					return model
 				}
-				return sl.Value()
-			},
+				sl.SetBadges(badges)
+				return sl
+			})
+			w.SetLoading(false)
+			w.SetBanner(worktreepicker.GHBanner(loaded.Conn))
+			return nil, true
 		},
 	})
 
 	finalModel, err := tea.NewProgram(wiz).Run()
 	if err != nil {
-		return domain.WorktreeStatus{}, "", fmt.Errorf("wizard: %w", err)
+		return domain.WorktreeStatus{}, "", nil, fmt.Errorf("wizard: %w", err)
 	}
 
 	final, ok := finalModel.(components.WizardModel)
 	if !ok || final.Aborted() {
-		return domain.WorktreeStatus{}, "", domain.ErrUserAborted
+		return domain.WorktreeStatus{}, "", nil, domain.ErrUserAborted
 	}
 
 	wtSL, ok := final.Steps()[0].Model.(components.SelectListModel)
 	if !ok {
-		return domain.WorktreeStatus{}, "", fmt.Errorf("unexpected model type for worktree step")
+		return domain.WorktreeStatus{}, "", nil, fmt.Errorf("unexpected model type for worktree step")
 	}
 
 	idx, err := strconv.Atoi(wtSL.Value())
 	if err != nil {
-		return domain.WorktreeStatus{}, "", fmt.Errorf("parse worktree index: %w", err)
+		return domain.WorktreeStatus{}, "", nil, fmt.Errorf("parse worktree index: %w", err)
 	}
 
 	actionSL, ok := final.Steps()[1].Model.(components.SelectListModel)
 	if !ok {
-		return domain.WorktreeStatus{}, "", fmt.Errorf("unexpected model type for action step")
+		return domain.WorktreeStatus{}, "", nil, fmt.Errorf("unexpected model type for action step")
 	}
 
-	return statuses[idx], actionSL.Value(), nil
+	return statuses[idx], actionSL.Value(), loadedPRs, nil
 }
 
 // selectedWorktree resolves the worktree chosen in the wizard's first step.
@@ -241,11 +294,24 @@ func selectedWorktree(prev []components.Step, statuses []domain.WorktreeStatus) 
 	return statuses[idx]
 }
 
-// buildActionItems builds the action menu for a worktree. The Open PR entry is
-// disabled when the branch has no open PR or the GitHub CLI is unavailable.
-func buildActionItems(selected domain.WorktreeStatus, prs []domain.PRInfo, conn domain.GHConnection) []components.SelectItem {
-	_, hasPR := findPRForBranch(prs, selected.Branch)
-	openPRDisabled := !hasPR || conn != domain.GHConnectionOK
+// buildActionItemsParams holds the inputs for buildActionItems.
+type buildActionItemsParams struct {
+	selected  domain.WorktreeStatus
+	prs       []domain.PRInfo
+	conn      domain.GHConnection
+	prsLoaded bool
+}
+
+// buildActionItems builds the action menu for a worktree. While PRs are still
+// loading, the Open PR entry stays enabled optimistically (the action resolves
+// the URL per-branch at execution time); once loaded, it is disabled when the
+// branch has no open PR or the GitHub CLI is unavailable.
+func buildActionItems(params buildActionItemsParams) []components.SelectItem {
+	openPRDisabled := false
+	if params.prsLoaded {
+		_, hasPR := findPRForBranch(params.prs, params.selected.Branch)
+		openPRDisabled = !hasPR || params.conn != domain.GHConnectionOK
+	}
 
 	return []components.SelectItem{
 		{Label: "Go (cd to worktree)", Value: lsActionGo},
@@ -290,11 +356,19 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return c.Run()
 
 	case lsActionOpenPR:
-		pr, ok := findPRForBranch(prs, selected.Branch)
-		if !ok {
+		if pr, ok := findPRForBranch(prs, selected.Branch); ok {
+			return exec.Command("open", pr.URL).Run()
+		}
+		// PRs may not have finished streaming when the action menu was built;
+		// resolve the URL for this branch directly.
+		found, _, url := ghservice.HasOpenPR(ghservice.HasOpenPRParams{
+			ProjectDir: result.ProjectDir,
+			Branch:     selected.Branch,
+		})
+		if !found {
 			return nil
 		}
-		return exec.Command("open", pr.URL).Run()
+		return exec.Command("open", url).Run()
 
 	case lsActionServicesUp:
 		cmd := exec.Command(bin, domain.CmdRun, domain.CmdUp)

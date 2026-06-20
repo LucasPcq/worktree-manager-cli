@@ -48,6 +48,10 @@ func HasOpenPR(params HasOpenPRParams) (bool, int, string) {
 type ListPRsParams struct {
 	ProjectDir string
 	Filter     domain.PRFilter
+	// Lightweight drops the heavy `body` field from the fetch. Use it for
+	// worktree pickers that only render PR badges; leave false when the body is
+	// needed (e.g. `pr list` → View details).
+	Lightweight bool
 }
 
 // ListPRs fetches open PRs via gh CLI and filters them.
@@ -56,10 +60,15 @@ func ListPRs(params ListPRsParams) ([]domain.PRInfo, error) {
 		return nil, err
 	}
 
+	fields := domain.GHPRFieldsFull
+	if params.Lightweight {
+		fields = domain.GHPRFieldsLight
+	}
+
 	args := []string{
 		"pr", "list",
 		"--state", "open",
-		"--json", "number,title,author,headRefName,isDraft,createdAt,url,body,isCrossRepository",
+		"--json", fields,
 		"--limit", "50",
 	}
 
@@ -100,7 +109,7 @@ func GetPRDetail(params GetPRDetailParams) (domain.PRInfo, error) {
 	}
 
 	data, err := runGH(params.ProjectDir, "pr", "view", strconv.Itoa(params.Number),
-		"--json", "number,title,author,headRefName,baseRefName,isDraft,createdAt,url,body,isCrossRepository,statusCheckRollup,reviews",
+		"--json", "number,title,author,headRefName,isDraft,createdAt,url,body,isCrossRepository,statusCheckRollup,reviews",
 	)
 	if err != nil {
 		return domain.PRInfo{}, fmt.Errorf("get PR: %w", err)

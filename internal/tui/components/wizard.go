@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/styles"
@@ -34,6 +35,12 @@ type Step struct {
 	CalloutNote string
 }
 
+// WizardMsgHandler intercepts a message before it reaches the current step.
+// It receives the wizard (so it can mutate step models, e.g. refresh badges
+// when async data arrives) and returns a command plus whether it consumed the
+// message. A consumed message is not forwarded to the step.
+type WizardMsgHandler func(w *WizardModel, msg tea.Msg) (tea.Cmd, bool)
+
 // WizardModel manages a multi-step form with breadcrumb and back navigation.
 type WizardModel struct {
 	steps   []Step
@@ -43,6 +50,22 @@ type WizardModel struct {
 	height  int
 	done    bool
 	aborted bool
+	initCmd tea.Cmd
+	onMsg   WizardMsgHandler
+	// Async status banner, rendered under the breadcrumb. While loading, an
+	// animated spinner + loadingText is shown inside the box; once a handler
+	// calls SetLoading(false), the banner (if set) is shown instead.
+	spinner     spinner.Model
+	loading     bool
+	loadingText string
+	banner      WizardBanner
+}
+
+// WizardBanner is an optional titled notice shown in the wizard's status box
+// (e.g. a "GitHub not connected" hint surfaced after an async fetch).
+type WizardBanner struct {
+	Title string
+	Lines []string
 }
 
 // NewWizard creates a wizard with the given steps.
@@ -52,6 +75,50 @@ func NewWizard(steps []Step) WizardModel {
 		skipped: make([]bool, len(steps)),
 		width:   80,
 	}
+}
+
+// WizardParams holds inputs for a wizard that runs a background command and/or
+// intercepts messages (used for async streaming such as lazily-loaded PRs).
+type WizardParams struct {
+	Steps   []Step
+	InitCmd tea.Cmd
+	OnMsg   WizardMsgHandler
+	// Loading, when true, renders an animated spinner + LoadingText under the
+	// breadcrumb until a message handler calls SetLoading(false).
+	Loading     bool
+	LoadingText string
+}
+
+// NewWizardWithParams creates a wizard that fires InitCmd on start and routes
+// every message through OnMsg before the current step.
+func NewWizardWithParams(params WizardParams) WizardModel {
+	m := NewWizard(params.Steps)
+	m.initCmd = params.InitCmd
+	m.onMsg = params.OnMsg
+	m.loading = params.Loading
+	m.loadingText = params.LoadingText
+	sp := spinner.New()
+	sp.Spinner = spinner.MiniDot
+	sp.Style = styles.Muted
+	m.spinner = sp
+	return m
+}
+
+// SetLoading toggles the async loading state (stops the spinner when false).
+func (m *WizardModel) SetLoading(loading bool) { m.loading = loading }
+
+// SetBanner sets the status banner shown under the breadcrumb once loading has
+// finished (e.g. a "GitHub CLI not connected" hint). An empty Title hides it.
+func (m *WizardModel) SetBanner(banner WizardBanner) { m.banner = banner }
+
+// UpdateStepModel replaces the model of the step at stepIdx by applying fn.
+// Used by message handlers to mutate a step (e.g. refresh a SelectList's badges)
+// in response to async messages.
+func (m *WizardModel) UpdateStepModel(stepIdx int, fn func(model any) any) {
+	if stepIdx < 0 || stepIdx >= len(m.steps) {
+		return
+	}
+	m.steps[stepIdx].Model = fn(m.steps[stepIdx].Model)
 }
 
 // NewWizardAtStep creates a wizard positioned on the given step, with all prior
@@ -90,11 +157,33 @@ func (m WizardModel) Init() tea.Cmd {
 		return tea.Quit
 	}
 	m.propagateSize(m.current)
-	return m.initStep(m.current)
+	cmds := []tea.Cmd{m.initStep(m.current)}
+	if m.initCmd != nil {
+		cmds = append(cmds, m.initCmd)
+	}
+	if m.loading {
+		cmds = append(cmds, m.spinner.Tick)
+	}
+	return tea.Batch(cmds...)
 }
 
 // Update delegates to the current step and manages transitions.
 func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.onMsg != nil {
+		if cmd, handled := m.onMsg(&m, msg); handled {
+			return m, cmd
+		}
+	}
+
+	if _, ok := msg.(spinner.TickMsg); ok {
+		if !m.loading {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	}
+
 	if wsMsg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = wsMsg.Width
 		m.height = wsMsg.Height
@@ -157,9 +246,13 @@ func (m WizardModel) View() string {
 
 	var b strings.Builder
 
-	b.WriteString("\n")
 	b.WriteString(m.renderBreadcrumb())
 	b.WriteString("\n\n")
+
+	if status := m.renderStatusBanner(); status != "" {
+		b.WriteString(status)
+		b.WriteString("\n\n")
+	}
 
 	for i := 0; i < m.current; i++ {
 		if m.skipped[i] {
@@ -198,6 +291,20 @@ func (m WizardModel) View() string {
 	b.WriteString("\n")
 
 	return b.String()
+}
+
+// renderStatusBanner renders the async status box: an animated spinner while
+// loading, otherwise the banner (if set). Both share the same bordered box so
+// the loading state visually becomes the resulting notice.
+func (m WizardModel) renderStatusBanner() string {
+	if m.loading {
+		return styles.StatusBox.Render(m.spinner.View() + " " + styles.Muted.Render(m.loadingText))
+	}
+	if m.banner.Title != "" {
+		rows := append([]string{styles.CalloutTitle.Render(m.banner.Title)}, m.banner.Lines...)
+		return styles.StatusBox.Render(strings.Join(rows, "\n"))
+	}
+	return ""
 }
 
 func (m WizardModel) renderBreadcrumb() string {

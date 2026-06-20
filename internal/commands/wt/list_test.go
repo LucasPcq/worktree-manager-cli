@@ -39,7 +39,12 @@ func TestBuildActionItems_OpenPRGating(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			items := buildActionItems(domain.WorktreeStatus{Branch: tc.branch}, prs, tc.conn)
+			items := buildActionItems(buildActionItemsParams{
+				selected:  domain.WorktreeStatus{Branch: tc.branch},
+				prs:       prs,
+				conn:      tc.conn,
+				prsLoaded: true,
+			})
 
 			found := false
 			disabled := false
@@ -56,5 +61,27 @@ func TestBuildActionItems_OpenPRGating(t *testing.T) {
 				t.Errorf("Open PR disabled = %v, want %v", disabled, tc.wantDisabled)
 			}
 		})
+	}
+}
+
+// While PRs are still streaming in, Open PR stays enabled optimistically; the
+// action resolves the URL per-branch at execution time.
+func TestBuildActionItems_OpenPROptimisticWhileLoading(t *testing.T) {
+	items := buildActionItems(buildActionItemsParams{
+		selected:  domain.WorktreeStatus{Branch: "feature/none"},
+		prsLoaded: false,
+	})
+
+	found := false
+	for _, it := range items {
+		if it.Value == lsActionOpenPR {
+			found = true
+			if it.Disabled {
+				t.Error("Open PR should stay enabled while PRs are loading")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Open PR action missing from menu")
 	}
 }
