@@ -80,7 +80,8 @@ Detects `.claude/` and `.cursor/` (project and home) and installs a `using-wtm` 
 
 ### `wtm init`
 
-Interactive wizard that generates your configuration files.
+Interactive wizard that generates your configuration files. It's organized by concept, and
+each optional section is introduced by a short explanation so you know what it does.
 
 ```bash
 wtm init
@@ -99,7 +100,34 @@ The wizard auto-detects:
 - Docker Compose files
 - Monorepo packages (via `pnpm-workspace.yaml`)
 
-If a project config already exists, the command exits — use `wtm config edit` to modify it.
+**Optional sections.** Env provisioning, post-create hooks, and services/tasks are each
+introduced by a **Configure / Skip** gate whose default follows what was detected — so you can
+press Enter through and still land a sensible config, while discovering what wtm can do.
+Skipped sections are written commented, ready to enable later. The hooks step is a small
+editor where you **add, edit, remove, and reorder** `on_create` commands (cmd, cwd,
+continue-on-error).
+
+**Non-interactive bootstrap** (scripts / agents):
+
+```bash
+wtm init --non-interactive --base-branch main \
+  [--env-strategy example|main|parent] [--install-command "pnpm install"] \
+  [--skip-env] [--skip-hooks] [--skip-services]
+```
+
+**Reconfigure after init.** A config already exists? Instead of blocking, re-run init for a
+single section to regenerate it cleanly — pre-filled with your current values, with a
+confirmation before writing (`--yes` to skip):
+
+```bash
+wtm init --only env          # re-pick env strategy + files
+wtm init --only hooks        # edit the on_create command list
+wtm init --only services     # re-detect docker/scripts (run.toml jobs regenerated, profiles kept)
+wtm init --only worktrees    # change the default base branch
+```
+
+`--only` accepts several sections (`--only env,services`) and is fully scriptable with the
+flags above. `wtm config edit` remains available for hand edits.
 
 ---
 
