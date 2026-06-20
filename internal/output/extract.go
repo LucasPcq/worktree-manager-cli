@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -65,16 +66,18 @@ func PrintExtractConflicts(w io.Writer, result domain.ExtractResult) {
 	Blank(w)
 }
 
-// extractTag renders the aligned, colored status tag for a file: yellow "mod",
-// green "new", red "del".
+// extractTag renders the aligned, colored status tag for a file, reusing the
+// shared label text and deciding only the color: green "new", red "del",
+// yellow "mod".
 func extractTag(status domain.ExtractFileStatus) string {
+	label := rules.ExtractStatusLabel(status)
 	switch status {
 	case domain.ExtractStatusUntracked:
-		return styles.Success.Render("new")
+		return styles.Success.Render(label)
 	case domain.ExtractStatusDeleted:
-		return styles.DangerText.Render("del")
+		return styles.DangerText.Render(label)
 	default:
-		return styles.Warning.Render("mod")
+		return styles.Warning.Render(label)
 	}
 }
 

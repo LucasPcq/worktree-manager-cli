@@ -119,7 +119,7 @@ func multiplexAllJobs(socketPath string, dir string) error {
 		return fmt.Errorf("list jobs: %w", err)
 	}
 
-	var running []process.JobInfo
+	var running []domain.JobInfo
 	for _, job := range resp.Jobs {
 		if job.WorkDir == dir && job.Status == domain.JobStatusRunning {
 			running = append(running, job)
@@ -140,7 +140,7 @@ func multiplexAllJobs(socketPath string, dir string) error {
 // color-prefixed lines on a single stream. Ctrl+C detaches from all of them
 // without stopping the jobs. Used both by `run logs` (no args) and by
 // `run up` once a profile's services are live.
-func multiplexJobs(socketPath string, dir string, running []process.JobInfo) error {
+func multiplexJobs(socketPath string, dir string, running []domain.JobInfo) error {
 	client := process.NewClient(socketPath)
 
 	defer process.ResetTerminalState(os.Stdout)

@@ -60,6 +60,10 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	if err := validateOnConflict(cmd); err != nil {
+		return err
+	}
+
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	available, err := listExtractFiles(sourcePath)
@@ -142,7 +146,7 @@ type resolveConflictModeParams struct {
 // (unused). On conflict: honor --on-conflict, else prompt on a TTY, else default
 // to abort. Returns ErrUserAborted when the user declines the prompt.
 func resolveConflictMode(p resolveConflictModeParams) (string, error) {
-	conflicts := worktree.ConflictingFiles(worktree.ConflictCheckParams{
+	conflicts := worktree.ConflictingFiles(domain.ConflictCheckParams{
 		SourcePath: p.sourcePath,
 		TargetPath: p.target.path,
 		Files:      p.selected,
@@ -151,12 +155,9 @@ func resolveConflictMode(p resolveConflictModeParams) (string, error) {
 		return domain.OnConflictAbort, nil
 	}
 
+	// The flag value is validated at command entry, so it is safe to trust here.
 	if p.cmd.Flags().Changed(domain.FlagOnConflict) {
 		mode, _ := p.cmd.Flags().GetString(domain.FlagOnConflict)
-		if mode != domain.OnConflictAbort && mode != domain.OnConflictResolve {
-			return "", fmt.Errorf("invalid --%s value %q: use %s or %s",
-				domain.FlagOnConflict, mode, domain.OnConflictAbort, domain.OnConflictResolve)
-		}
 		return mode, nil
 	}
 
@@ -176,6 +177,20 @@ func resolveConflictMode(p resolveConflictModeParams) (string, error) {
 
 func isInteractive() bool {
 	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
+// validateOnConflict rejects an invalid --on-conflict value at the command
+// boundary, regardless of whether the extraction ends up conflicting.
+func validateOnConflict(cmd *cobra.Command) error {
+	if !cmd.Flags().Changed(domain.FlagOnConflict) {
+		return nil
+	}
+	mode, _ := cmd.Flags().GetString(domain.FlagOnConflict)
+	if mode != domain.OnConflictAbort && mode != domain.OnConflictResolve {
+		return fmt.Errorf("invalid --%s value %q: use %s or %s",
+			domain.FlagOnConflict, mode, domain.OnConflictAbort, domain.OnConflictResolve)
+	}
+	return nil
 }
 
 // listExtractFiles returns the uncommitted files of a worktree classified for
@@ -355,7 +370,11 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 			return extractTarget{path: wt.Path, branch: wt.Branch}, nil
 		}
 		fromFlag, _ := params.cmd.Flags().GetString(domain.FlagFrom)
-		return createTarget(params.cfg, toFlag, defaultParent(params.cfg, params.sourceBranch, fromFlag))
+		return createTarget(createTargetParams{
+			cfg:        params.cfg,
+			branch:     toFlag,
+			fromBranch: defaultParent(defaultParentParams{cfg: params.cfg, sourceBranch: params.sourceBranch, override: fromFlag}),
+		})
 	}
 
 	if !params.choice.CreateNew {
@@ -382,7 +401,7 @@ func createTargetInteractive(params resolveTargetParams) (extractTarget, error) 
 
 	wiz, err := newpicker.RunWizard(newpicker.WizardParams{
 		Branches:       branches,
-		DefaultBranch:  defaultParent(params.cfg, params.sourceBranch, ""),
+		DefaultBranch:  defaultParent(defaultParentParams{cfg: params.cfg, sourceBranch: params.sourceBranch}),
 		ConfigStrategy: params.cfg.Config.Project.Env.Strategy,
 		IncludeBranch:  true,
 	})
@@ -390,32 +409,44 @@ func createTargetInteractive(params resolveTargetParams) (extractTarget, error) 
 		return extractTarget{}, err
 	}
 
-	return createTarget(params.cfg, wiz.BranchName, wiz.FromBranch)
+	return createTarget(createTargetParams{cfg: params.cfg, branch: wiz.BranchName, fromBranch: wiz.FromBranch})
+}
+
+type defaultParentParams struct {
+	cfg          shared.ConfigResult
+	sourceBranch string
+	override     string
 }
 
 // defaultParent resolves the parent branch for a new target worktree: the
 // explicit override, else the source worktree's recorded parent, else the
 // configured base branch.
-func defaultParent(cfg shared.ConfigResult, sourceBranch, override string) string {
-	if override != "" {
-		return override
+func defaultParent(params defaultParentParams) string {
+	if params.override != "" {
+		return params.override
 	}
 	if parent := worktree.ParentBranch(worktree.ParentBranchParams{
-		StateDir: cfg.StateDir,
-		Branch:   sourceBranch,
+		StateDir: params.cfg.StateDir,
+		Branch:   params.sourceBranch,
 	}); parent != "" {
 		return parent
 	}
-	return cfg.Config.Project.Worktrees.BaseBranch
+	return params.cfg.Config.Project.Worktrees.BaseBranch
 }
 
-func createTarget(cfg shared.ConfigResult, branch, fromBranch string) (extractTarget, error) {
+type createTargetParams struct {
+	cfg        shared.ConfigResult
+	branch     string
+	fromBranch string
+}
+
+func createTarget(params createTargetParams) (extractTarget, error) {
 	res, err := worktree.Create(domain.CreateParams{
-		ProjectDir: cfg.ProjectDir,
-		StateDir:   cfg.StateDir,
-		Branch:     branch,
-		FromBranch: fromBranch,
-		Config:     cfg.Config,
+		ProjectDir: params.cfg.ProjectDir,
+		StateDir:   params.cfg.StateDir,
+		Branch:     params.branch,
+		FromBranch: params.fromBranch,
+		Config:     params.cfg.Config,
 	})
 	if err != nil {
 		return extractTarget{}, err

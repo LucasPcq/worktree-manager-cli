@@ -35,6 +35,14 @@ type ExtractParams struct {
 	ConflictMode string
 }
 
+// ConflictCheckParams holds inputs for detecting which selected files would not
+// apply cleanly onto the target worktree.
+type ConflictCheckParams struct {
+	SourcePath string
+	TargetPath string
+	Files      []ExtractFile
+}
+
 // ExtractResult is the outcome of a successful extraction.
 type ExtractResult struct {
 	Files        []ExtractFile `json:"files"`

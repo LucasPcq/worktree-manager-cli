@@ -10,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/styles"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
@@ -20,7 +19,7 @@ type RunParams struct {
 	Statuses     []domain.WorktreeStatus
 	ActiveBranch string
 	PRs          []domain.PRInfo
-	Services     []process.JobInfo
+	Services     []domain.JobInfo
 	Title        string
 }
 
@@ -80,7 +79,7 @@ func Run(params RunParams) (domain.WorktreeStatus, error) {
 
 // BuildBadges returns the styled badges for a worktree row (parent, PR,
 // services, dirty/clean) used by both `wt list` and the switch picker.
-func BuildBadges(s domain.WorktreeStatus, prs []domain.PRInfo, services []process.JobInfo) []components.Badge {
+func BuildBadges(s domain.WorktreeStatus, prs []domain.PRInfo, services []domain.JobInfo) []components.Badge {
 	var badges []components.Badge
 	if s.IsParent {
 		badges = append(badges, components.Badge{Text: "parent", Variant: components.BadgeNeutral})

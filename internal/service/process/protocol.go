@@ -36,20 +36,11 @@ const (
 	StatusDone   ResponseStatus = "done"   // task exited successfully
 )
 
-// JobInfo is the JSON representation of a managed job.
-type JobInfo struct {
-	Name    string           `json:"name"`
-	Kind    domain.JobKind   `json:"kind"`
-	Status  domain.JobStatus `json:"status"`
-	PID     int              `json:"pid"`
-	WorkDir string           `json:"work_dir"`
-}
-
 // Response is a JSON message sent from daemon to client.
 type Response struct {
-	Status   ResponseStatus `json:"status"`
-	Message  string         `json:"message,omitempty"`
-	Jobs     []JobInfo      `json:"jobs,omitempty"`
-	Data     []byte         `json:"data,omitempty"`      // task output chunk
-	ExitCode *int           `json:"exit_code,omitempty"` // final task exit code
+	Status   ResponseStatus   `json:"status"`
+	Message  string           `json:"message,omitempty"`
+	Jobs     []domain.JobInfo `json:"jobs,omitempty"`
+	Data     []byte           `json:"data,omitempty"`      // task output chunk
+	ExitCode *int             `json:"exit_code,omitempty"` // final task exit code
 }

@@ -35,7 +35,7 @@ func LoadPRs(projectDir string) ([]domain.PRInfo, domain.GHConnection) {
 }
 
 // LoadJobsGraceful fetches the daemon's running jobs, returning nil when the daemon is not running.
-func LoadJobsGraceful() []process.JobInfo {
+func LoadJobsGraceful() []domain.JobInfo {
 	socketPath := process.SocketPath()
 	if !process.IsDaemonRunning(socketPath) {
 		return nil
