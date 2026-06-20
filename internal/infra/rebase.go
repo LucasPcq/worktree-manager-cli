@@ -113,11 +113,11 @@ func revListCount(worktreePath, revRange string) (int, error) {
 	cmd := exec.Command("git", "-C", worktreePath, "rev-list", "--count", revRange)
 	out, err := cmd.Output()
 	if err != nil {
-		return 0, nil
+		return 0, fmt.Errorf("git rev-list --count %s: %w", revRange, err)
 	}
 	count, err := strconv.Atoi(strings.TrimSpace(string(out)))
 	if err != nil {
-		return 0, nil
+		return 0, fmt.Errorf("parse rev-list count %q: %w", strings.TrimSpace(string(out)), err)
 	}
 	return count, nil
 }
@@ -174,13 +174,25 @@ func AheadOfRemote(params RemoteBranchParams) bool {
 	remoteRef := "origin/" + params.Branch
 	remoteTip, err := exec.Command("git", "-C", params.WorktreePath, "rev-parse", remoteRef).Output()
 	if err != nil {
-		return true
+		// Only treat the branch as pushable when origin/<branch> genuinely does
+		// not exist (a push would create it). Any other rev-parse failure must
+		// NOT be read as "remote missing" — that could trigger an unwanted
+		// force-push under --push (non-interactive).
+		return !remoteRefExists(params.WorktreePath, remoteRef)
 	}
 	localTip, err := exec.Command("git", "-C", params.WorktreePath, "rev-parse", params.Branch).Output()
 	if err != nil {
 		return false
 	}
 	return strings.TrimSpace(string(localTip)) != strings.TrimSpace(string(remoteTip))
+}
+
+// remoteRefExists reports whether a remote-tracking ref (e.g. origin/<branch>)
+// is present locally. Reads local refs only — no network.
+func remoteRefExists(worktreePath, remoteRef string) bool {
+	cmd := exec.Command("git", "-C", worktreePath,
+		"show-ref", "--verify", "--quiet", "refs/remotes/"+remoteRef)
+	return cmd.Run() == nil
 }
 
 // PushForceParams holds inputs for a force-with-lease push.

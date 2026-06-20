@@ -303,3 +303,28 @@ func TestSyncSkipsDirtyAndDescendants(t *testing.T) {
 		t.Fatalf("dev1 status = %q, want skipped_ancestor", statusByBranch["dev1"])
 	}
 }
+
+// TestSyncMissingParentRefIsError verifies that when the recorded parent branch
+// does not exist as a ref, the failed behind-count is surfaced as an error
+// rather than silently read as "0 → up_to_date" (regression for the
+// error-swallowing revListCount).
+func TestSyncMissingParentRefIsError(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	stateDir := filepath.Join(dir, ".git", "wtm")
+	trees := t.TempDir()
+	featPath := filepath.Join(trees, "feat")
+
+	git(t, dir, "worktree", "add", "-b", "feat", featPath, "main")
+	commitFile(t, featPath, "feat.txt", "feat work")
+
+	// Record a parent branch that does not exist, so behind-counting fails.
+	writeMeta(t, stateDir, "feat", "ghost-parent")
+
+	result, err := Sync(SyncParams{ProjectDir: dir, StateDir: stateDir, BaseBranch: "main"})
+	if err != nil {
+		t.Fatalf("Sync error: %v", err)
+	}
+	if result.Steps[0].Status != domain.SyncStatusError {
+		t.Fatalf("feat status = %q, want error (%+v)", result.Steps[0].Status, result.Steps)
+	}
+}

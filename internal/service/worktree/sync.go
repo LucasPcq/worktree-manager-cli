@@ -305,7 +305,16 @@ func evaluateStep(e stepEval) (domain.SyncStepResult, bool) {
 		return result, true
 	}
 
-	if dirty, _ := infra.IsDirty(infra.IsDirtyParams{WorktreePath: e.Step.Path}); dirty {
+	dirty, dirtyErr := infra.IsDirty(infra.IsDirtyParams{WorktreePath: e.Step.Path})
+	if dirtyErr != nil {
+		// Could not determine cleanliness — do not rebase blind. Block the
+		// branch (and its descendants) so a real git failure is surfaced rather
+		// than silently treated as a clean worktree.
+		result.Status = domain.SyncStatusError
+		result.Detail = "cannot check working tree: " + dirtyErr.Error()
+		return result, true
+	}
+	if dirty {
 		result.Status = domain.SyncStatusSkippedDirty
 		result.Detail = "uncommitted changes"
 		return result, true
@@ -328,11 +337,18 @@ func evaluateStep(e stepEval) (domain.SyncStepResult, bool) {
 		result.OntoTip = tip
 	}
 
-	behind, _ := infra.Behind(infra.BehindParams{
+	behind, behindErr := infra.Behind(infra.BehindParams{
 		WorktreePath: e.Step.Path,
 		Branch:       e.Step.Branch,
 		Upstream:     e.Step.SourceBranch,
 	})
+	if behindErr != nil {
+		// A failed behind-count must not be read as "0 → up to date", which
+		// would skip the rebase and report a stale branch as synced.
+		result.Status = domain.SyncStatusError
+		result.Detail = behindErr.Error()
+		return result, true
+	}
 	if behind == 0 {
 		result.Status = domain.SyncStatusUpToDate
 		if tip, err := infra.Tip(infra.TipParams{
