@@ -77,20 +77,19 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 		return domain.WorktreeStatus{}, err
 	}
 
-	// Load worktree statuses, PRs (gh — the slow one), and running services in
-	// parallel behind a single spinner, mirroring `wt list`. Everything goes to
-	// stderr: stdout is reserved for the resolved path the shell wrapper reads.
+	// Load worktree statuses and running services (both fast/local) in parallel
+	// behind a single spinner. PRs (the slow gh call) are fetched lazily inside
+	// the picker so the list shows instantly. Everything goes to stderr: stdout
+	// is reserved for the resolved path the shell wrapper reads.
 	var (
 		statuses []domain.WorktreeStatus
 		listErr  error
-		prs      []domain.PRInfo
-		conn     domain.GHConnection
 		services []domain.JobInfo
 		wg       sync.WaitGroup
 	)
 
 	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Loading worktrees…")
-	wg.Add(3)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		statuses, listErr = worktree.List(domain.ListParams{
@@ -98,10 +97,6 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 			StateDir:   cfgResult.StateDir,
 			Config:     cfgResult.Config,
 		})
-	}()
-	go func() {
-		defer wg.Done()
-		prs, conn = shared.LoadPRs(cfgResult.ProjectDir)
 	}()
 	go func() {
 		defer wg.Done()
@@ -119,12 +114,12 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 		filtered = statuses
 	}
 
-	shared.ShowGHBanner(cmd.ErrOrStderr(), conn)
-
 	return worktreepicker.Run(worktreepicker.RunParams{
 		Statuses: filtered,
-		PRs:      prs,
 		Services: services,
 		Title:    "Select a worktree",
+		PRLoader: func() ([]domain.PRInfo, domain.GHConnection) {
+			return shared.LoadPRs(cfgResult.ProjectDir)
+		},
 	})
 }

@@ -68,6 +68,17 @@ func (m SelectListModel) Value() string {
 	return ""
 }
 
+// SetBadges replaces the badges of items whose Value is a key in byValue,
+// preserving cursor, filter, and scroll position. Used to refresh rows when
+// async data (e.g. PRs) arrives after the list is already on screen.
+func (m *SelectListModel) SetBadges(byValue map[string][]Badge) {
+	for i := range m.items {
+		if badges, ok := byValue[m.items[i].Value]; ok {
+			m.items[i].Badges = badges
+		}
+	}
+}
+
 // Init satisfies tea.Model.
 func (m SelectListModel) Init() tea.Cmd { return nil }
 

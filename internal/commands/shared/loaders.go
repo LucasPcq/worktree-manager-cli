@@ -16,11 +16,14 @@ func LoadPRsGraceful(projectDir string) []domain.PRInfo {
 
 // LoadPRs fetches open PRs for the project and reports the GitHub CLI
 // connection status, distinguishing "no PRs" from "gh unavailable" so callers
-// can hint the user. Returns nil PRs on any error.
+// can hint the user. Returns nil PRs on any error. It fetches the lightweight
+// field set (no body) since its only consumers are worktree pickers that render
+// PR badges.
 func LoadPRs(projectDir string) ([]domain.PRInfo, domain.GHConnection) {
 	prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
-		ProjectDir: projectDir,
-		Filter:     domain.PRFilterAll,
+		ProjectDir:  projectDir,
+		Filter:      domain.PRFilterAll,
+		Lightweight: true,
 	})
 	if err == nil {
 		return prs, domain.GHConnectionOK

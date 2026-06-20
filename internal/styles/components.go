@@ -76,4 +76,13 @@ var (
 
 	// CalloutTitle renders the emphasized first line of a Callout box.
 	CalloutTitle = lipgloss.NewStyle().Foreground(ColorWarning).Bold(true)
+
+	// StatusBox renders a neutral bordered box for an interactive flow's async
+	// status region (loading spinner, GitHub availability hint). The border is
+	// muted; severity is conveyed by the inner content, not the box.
+	StatusBox = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorMuted).
+			Padding(0, 1).
+			MarginLeft(2)
 )
