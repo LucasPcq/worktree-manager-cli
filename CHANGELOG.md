@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.15.0 — `wt sync` : rebase en cascade de toute la chaîne de worktrees
+
+### New features
+
+- **`wtm wt sync`** — remet à jour **toute la chaîne de worktrees** en une commande, dans l'ordre topologique (parents avant enfants), en s'appuyant sur le parent déjà tracké (`source_branch`). Pour la base puis chaque branche (`main → feat → dev1/dev2`) : fetch + fast-forward de la branche depuis son propre `origin/<branche>` (récupère une PR mergée dans le parent), puis rebase `--onto` sur le parent rafraîchi — seuls les commits propres de l'enfant sont rejoués. La cascade est **100 % locale** (les worktrees partagent `.git`).
+- **Push groupé découplé** — après une cascade réussie, un récap détaillé (parent, commit cible, avant→après, commits rejoués) s'affiche **avant** de proposer le push, puis un seul prompt pousse les branches rebasées en `--force-with-lease`. Flags : `--dry-run` (preview 100 % offline), `--base <branche>`, `--push` (seul moyen de push en mode `--output json`), `--no-push`, `-y`/`--yes`.
+- **Statuts par branche (`--output json`)** — `synced`, `up_to_date`, `skipped_dirty` (+ descendants `skipped_ancestor`), `diverged` (local **et** `origin/<branche>` ont divergé → laissé pour réconciliation manuelle), `conflict` (rebase auto-aborté, working tree propre), `error`, `unknown_parent`. Sortie non-zéro si au moins un `conflict`/`error`.
+
+### Improvements
+
+- **Erreurs git remontées au lieu d'être avalées** dans la cascade : un `rev-list`/`git status` en échec produit désormais un statut `error` bloquant plutôt qu'un faux `up_to_date`, et le push n'est tenté que si `origin/<branche>` est réellement absent (évite un force-push sur erreur transitoire).
+
 ## v0.14.0 — Affichage instantané des worktrees + streaming des PRs
 
 ### New features
