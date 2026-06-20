@@ -58,8 +58,11 @@ func TestBuildProjectAnswers_FlagsWinOverDetection(t *testing.T) {
 	if got.BasePath != "../wt" || got.BaseBranch != "main" {
 		t.Errorf("flags did not win: %+v", got)
 	}
-	if got.EnvStrategy != domain.EnvStrategyParent || got.InstallCommand != "pnpm install" {
+	if got.EnvStrategy != domain.EnvStrategyParent {
 		t.Errorf("flags did not win: %+v", got)
+	}
+	if len(got.OnCreate) == 0 || got.OnCreate[0].Cmd != "pnpm install" {
+		t.Errorf("install flag should win in on_create: %+v", got.OnCreate)
 	}
 	if len(got.EnvCopyFiles) != 1 || got.EnvCopyFiles[0] != ".env" {
 		t.Errorf("detected env files dropped: %+v", got.EnvCopyFiles)
@@ -81,8 +84,8 @@ func TestBuildProjectAnswers_FallsBackToDetectionThenDefaults(t *testing.T) {
 	if got.EnvStrategy != domain.DefaultEnvStrategy {
 		t.Errorf("EnvStrategy = %q, want default", got.EnvStrategy)
 	}
-	if got.InstallCommand != "go mod download" {
-		t.Errorf("InstallCommand = %q, want detected", got.InstallCommand)
+	if len(got.OnCreate) == 0 || got.OnCreate[0].Cmd != "go mod download" {
+		t.Errorf("on_create = %+v, want detected install", got.OnCreate)
 	}
 }
 
@@ -147,11 +150,8 @@ func TestBuildProjectAnswers_SkipHooks(t *testing.T) {
 	if !got.SkipHooks {
 		t.Error("SkipHooks = false, want true")
 	}
-	if got.InstallCommand != "" {
-		t.Errorf("InstallCommand = %q, want empty when skipped", got.InstallCommand)
-	}
-	if len(got.OnCreateExtra) != 0 {
-		t.Errorf("OnCreateExtra = %v, want none when skipped", got.OnCreateExtra)
+	if len(got.OnCreate) != 0 {
+		t.Errorf("OnCreate = %v, want none when skipped", got.OnCreate)
 	}
 }
 
@@ -184,10 +184,14 @@ func TestBuildProjectAnswers_MonorepoToHooks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(got.OnCreateExtra) != 2 {
-		t.Fatalf("expected 2 on_create hooks, got %d", len(got.OnCreateExtra))
+	// on_create = bare install + one hook per monorepo package.
+	if len(got.OnCreate) != 3 {
+		t.Fatalf("expected 3 on_create hooks, got %d", len(got.OnCreate))
 	}
-	if got.OnCreateExtra[0].Cmd != "pnpm install" || got.OnCreateExtra[0].Cwd != "packages/a" {
-		t.Errorf("unexpected hook: %+v", got.OnCreateExtra[0])
+	if got.OnCreate[0].Cmd != "pnpm install" || got.OnCreate[0].Cwd != "" {
+		t.Errorf("first hook should be the bare install command: %+v", got.OnCreate[0])
+	}
+	if got.OnCreate[1].Cwd != "packages/a" || got.OnCreate[2].Cwd != "packages/b" {
+		t.Errorf("monorepo hooks missing: %+v", got.OnCreate)
 	}
 }

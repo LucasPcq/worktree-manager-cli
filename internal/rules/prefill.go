@@ -18,17 +18,6 @@ func InstallCommandFromHooks(onCreate []domain.HookCommand) string {
 	return ""
 }
 
-// MonorepoCwdsFromHooks returns the set of cwds referenced by per-package hooks.
-func MonorepoCwdsFromHooks(onCreate []domain.HookCommand) map[string]bool {
-	cwds := map[string]bool{}
-	for _, h := range onCreate {
-		if h.Cwd != "" {
-			cwds[h.Cwd] = true
-		}
-	}
-	return cwds
-}
-
 // DockerFilesConfigured returns the set of detected docker-compose files that
 // already back a job in run, matched on the "-f <file> " fragment that
 // BuildDockerJobs emits.

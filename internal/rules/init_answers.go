@@ -98,13 +98,10 @@ func BuildProjectAnswers(flags InitProjectFlags, detection domain.InitDetectionR
 		if installCommand == "" {
 			installCommand = detection.InstallCommand
 		}
-		answers.InstallCommand = installCommand
 		if installCommand != "" {
+			answers.OnCreate = append(answers.OnCreate, domain.HookCommand{Cmd: installCommand})
 			for _, pkg := range detection.MonorepoPackages {
-				answers.OnCreateExtra = append(answers.OnCreateExtra, domain.HookCommand{
-					Cmd: installCommand,
-					Cwd: pkg,
-				})
+				answers.OnCreate = append(answers.OnCreate, domain.HookCommand{Cmd: installCommand, Cwd: pkg})
 			}
 		}
 	}

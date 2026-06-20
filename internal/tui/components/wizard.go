@@ -141,6 +141,10 @@ func (m WizardModel) updateStep(step *Step, msg tea.Msg) (advanced bool, back bo
 		updated, c := child.Update(msg)
 		step.Model = updated
 		return updated.Done(), updated.Aborted(), c
+	case HookListModel:
+		updated, c := child.Update(msg)
+		step.Model = updated
+		return updated.Done(), updated.Aborted(), c
 	}
 	return false, false, nil
 }
@@ -226,6 +230,10 @@ func (m WizardModel) visiblePosition() int {
 }
 
 func (m WizardModel) renderHelpBar() string {
+	if hl, ok := m.steps[m.current].Model.(HookListModel); ok {
+		return styles.HelpBar.Render(hl.helpHint())
+	}
+
 	help := "  enter confirm"
 	switch m.steps[m.current].Model.(type) {
 	case SelectListModel:
@@ -267,6 +275,12 @@ func (m *WizardModel) propagateSize(stepIdx int) {
 	case ReorderListModel:
 		child.width = m.width
 		child.height = h
+		m.steps[stepIdx].Model = child
+	case HookListModel:
+		child.width = m.width
+		child.height = h
+		child.cmdInput.Width = max(10, m.width-24)
+		child.cwdInput.Width = max(10, m.width-24)
 		m.steps[stepIdx].Model = child
 	}
 }
@@ -336,6 +350,8 @@ func (m WizardModel) initStep(stepIdx int) tea.Cmd {
 		return child.Init()
 	case ReorderListModel:
 		return child.Init()
+	case HookListModel:
+		return child.Init()
 	}
 	return nil
 }
@@ -351,6 +367,8 @@ func (m WizardModel) viewStep(stepIdx int) string {
 	case MultiSelectModel:
 		return child.View()
 	case ReorderListModel:
+		return child.View()
+	case HookListModel:
 		return child.View()
 	}
 	return ""
@@ -381,6 +399,11 @@ func (m *WizardModel) resetStep(stepIdx int) {
 		child.done = false
 		child.aborted = false
 		m.steps[stepIdx].Model = child
+	case HookListModel:
+		child.done = false
+		child.aborted = false
+		child.editing = false
+		m.steps[stepIdx].Model = child
 	}
 }
 
@@ -405,6 +428,8 @@ func (m WizardModel) stepDescription(step Step) string {
 	case MultiSelectModel:
 		return child.desc
 	case ReorderListModel:
+		return child.desc
+	case HookListModel:
 		return child.desc
 	}
 	return ""

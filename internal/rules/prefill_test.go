@@ -23,18 +23,6 @@ func TestInstallCommandFromHooks(t *testing.T) {
 	}
 }
 
-func TestMonorepoCwdsFromHooks(t *testing.T) {
-	hooks := []domain.HookCommand{
-		{Cmd: "pnpm install"},
-		{Cmd: "pnpm install", Cwd: "packages/api"},
-		{Cmd: "pnpm install", Cwd: "packages/web"},
-	}
-	got := rules.MonorepoCwdsFromHooks(hooks)
-	if len(got) != 2 || !got["packages/api"] || !got["packages/web"] {
-		t.Errorf("got %v, want {packages/api, packages/web}", got)
-	}
-}
-
 func TestDockerFilesConfigured(t *testing.T) {
 	run := domain.RunConfig{Jobs: []domain.JobConfig{
 		{Name: "docker-compose", Cmd: "docker compose -f docker-compose.yml up -d"},

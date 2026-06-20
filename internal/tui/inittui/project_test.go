@@ -3,7 +3,6 @@ package inittui
 import (
 	"testing"
 
-	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
@@ -49,16 +48,3 @@ func TestPrefillSelected(t *testing.T) {
 	}
 }
 
-func TestFormatOnCreate(t *testing.T) {
-	if got := formatOnCreate(nil); got != "" {
-		t.Errorf("empty hooks should yield empty string, got %q", got)
-	}
-	hooks := []domain.HookCommand{
-		{Cmd: "pnpm install"},
-		{Cmd: "pnpm install", Cwd: "packages/api"},
-	}
-	want := "Current: pnpm install · pnpm install @packages/api"
-	if got := formatOnCreate(hooks); got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}

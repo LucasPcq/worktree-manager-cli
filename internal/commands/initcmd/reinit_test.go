@@ -3,8 +3,6 @@ package initcmd
 import (
 	"strings"
 	"testing"
-
-	"github.com/LucasPcq/wtm/internal/domain"
 )
 
 func TestParseSections(t *testing.T) {
@@ -42,25 +40,3 @@ func TestParseSections(t *testing.T) {
 	}
 }
 
-func TestReinitHooksFromAnswers(t *testing.T) {
-	answers := domain.InitProjectAnswers{
-		InstallCommand: "pnpm install",
-		OnCreateExtra:  []domain.HookCommand{{Cmd: "pnpm install", Cwd: "packages/api"}},
-	}
-	got := reinitHooks(answers)
-	if len(got) != 2 {
-		t.Fatalf("expected 2 hooks, got %d", len(got))
-	}
-	if got[0].Cmd != "pnpm install" || got[0].Cwd != "" {
-		t.Errorf("first hook should be the bare install command, got %+v", got[0])
-	}
-	if got[1].Cwd != "packages/api" {
-		t.Errorf("second hook should carry the workspace cwd, got %+v", got[1])
-	}
-}
-
-func TestReinitHooksEmpty(t *testing.T) {
-	if got := reinitHooks(domain.InitProjectAnswers{}); len(got) != 0 {
-		t.Errorf("expected no hooks, got %v", got)
-	}
-}

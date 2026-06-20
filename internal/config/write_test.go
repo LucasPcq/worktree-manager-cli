@@ -19,7 +19,7 @@ func TestWriteProjectRendersValidTOML(t *testing.T) {
 		BaseBranch:     "main",
 		EnvCopyFiles:   []string{".env", "apps/api/.env"},
 		EnvStrategy:    domain.EnvStrategyExample,
-		InstallCommand: "pnpm install",
+		OnCreate:       []domain.HookCommand{{Cmd: "pnpm install"}},
 		Agent:          domain.AgentClaudeCode,
 		AgentOverride:  false,
 	}
@@ -375,7 +375,7 @@ func TestWriteProjectRoundTrip(t *testing.T) {
 		BaseBranch:     "develop",
 		EnvCopyFiles:   []string{".env", "apps/web/.env"},
 		EnvStrategy:    domain.EnvStrategyParent,
-		InstallCommand: "yarn install",
+		OnCreate:       []domain.HookCommand{{Cmd: "yarn install"}},
 		Agent:          domain.AgentNone,
 		AgentOverride:  true,
 	}

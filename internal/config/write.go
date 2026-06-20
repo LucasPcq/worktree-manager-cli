@@ -77,15 +77,8 @@ func renderProjectConfig(stateDir string, data projectTemplateData) error {
 	return nil
 }
 
-// answersToTemplate converts init wizard answers to template data. The install
-// command and monorepo hooks collapse into a single on_create list.
+// answersToTemplate converts init wizard answers to template data.
 func answersToTemplate(a domain.InitProjectAnswers) projectTemplateData {
-	var onCreate []domain.HookCommand
-	if a.InstallCommand != "" {
-		onCreate = append(onCreate, domain.HookCommand{Cmd: a.InstallCommand})
-	}
-	onCreate = append(onCreate, a.OnCreateExtra...)
-
 	agentDefault := ""
 	if a.AgentOverride {
 		agentDefault = string(a.Agent)
@@ -98,7 +91,7 @@ func answersToTemplate(a domain.InitProjectAnswers) projectTemplateData {
 		EnvStrategy:  string(a.EnvStrategy),
 		EnvCopyFiles: a.EnvCopyFiles,
 		SkipHooks:    a.SkipHooks,
-		OnCreate:     onCreate,
+		OnCreate:     a.OnCreate,
 		AgentDefault: agentDefault,
 	}
 }

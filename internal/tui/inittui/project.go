@@ -21,8 +21,7 @@ const (
 	stepEnvStrategy  = "env_strategy"
 	stepEnvFiles     = "env_files"
 	stepHooksGate    = "hooks_gate"
-	stepInstall      = "install"
-	stepMonorepo     = "monorepo"
+	stepHooks        = "hooks"
 	stepServicesGate = "services_gate"
 	stepDocker       = "docker"
 	stepScripts      = "scripts"
@@ -55,14 +54,12 @@ func (s *stepSet) at(key string) int {
 // pre-selects what's already configured. A nil prefill (full init) falls back to
 // detection-driven defaults with no "current/new" tags.
 type SectionPrefill struct {
-	BaseBranch     string
-	EnvStrategy    string
-	EnvCopyFiles   map[string]bool
-	InstallCommand string
-	OnCreate       []domain.HookCommand
-	MonorepoCwds   map[string]bool
-	DockerFiles    map[string]bool
-	ScriptIndices  map[int]bool
+	BaseBranch    string
+	EnvStrategy   string
+	EnvCopyFiles  map[string]bool
+	OnCreate      []domain.HookCommand
+	DockerFiles   map[string]bool
+	ScriptIndices map[int]bool
 }
 
 // RunProjectWizard presents the full project init wizard pre-populated with
@@ -254,42 +251,24 @@ func hooksGate(detection domain.InitDetectionResult) components.Step {
 }
 
 func addHooksSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool, prefill *SectionPrefill) {
-	installDefault := ""
-	calloutNote := ""
+	var hooks []domain.HookCommand
 	if prefill != nil {
-		installDefault = prefill.InstallCommand
-		calloutNote = formatOnCreate(prefill.OnCreate)
+		hooks = prefill.OnCreate
+	} else if detection.InstallCommand != "" {
+		hooks = append(hooks, domain.HookCommand{Cmd: detection.InstallCommand})
+		for _, pkg := range detection.MonorepoPackages {
+			hooks = append(hooks, domain.HookCommand{Cmd: detection.InstallCommand, Cwd: pkg})
+		}
 	}
-	s.add(stepInstall, components.Step{
-		Name: "Install command",
-		Model: components.NewTextInput(components.NewTextInputParams{
-			Title:       "Install command",
-			Description: "Runs once right after a worktree is created — typically to install dependencies so it's ready to use.",
-			Placeholder: detection.InstallCommand,
-			Default:     installDefault,
-		}),
-		Summary:     textInputSummary,
-		AutoSkip:    autoSkip,
-		Callout:     true,
-		CalloutNote: calloutNote,
-	})
 
-	if len(detection.MonorepoPackages) == 0 {
-		return
-	}
-	items := make([]components.MultiSelectItem, 0, len(detection.MonorepoPackages))
-	for _, pkg := range detection.MonorepoPackages {
-		selected := prefillSelected(prefill, prefill != nil && prefill.MonorepoCwds[pkg], true)
-		items = append(items, components.MultiSelectItem{Label: pkg, Value: pkg, Selected: selected})
-	}
-	s.add(stepMonorepo, components.Step{
-		Name: "Monorepo packages",
-		Model: components.NewMultiSelect(components.NewMultiSelectParams{
-			Title:       "Monorepo packages",
-			Description: fmt.Sprintf("Also run '%s' inside these packages on worktree creation (monorepo setups).", detection.InstallCommand),
-			Items:       items,
+	s.add(stepHooks, components.Step{
+		Name: "Post-create hooks",
+		Model: components.NewHookList(components.NewHookListParams{
+			Title:       "Post-create hooks",
+			Description: "Commands run after creating a worktree. Add, edit, remove or reorder them — then select Done.",
+			Hooks:       hooks,
 		}),
-		Summary:  multiSelectSummary,
+		Summary:  hookListSummary,
 		AutoSkip: autoSkip,
 		Callout:  true,
 	})
@@ -405,22 +384,11 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 	}
 
 	// Hooks section.
-	if i := at(stepInstall); i >= 0 {
+	if i := at(stepHooks); i >= 0 {
 		if final.Skipped(i) {
 			answers.SkipHooks = true
-		} else if m, ok := steps[i].Model.(components.TextInputModel); ok {
-			installCommand := m.Value()
-			if installCommand == "" {
-				installCommand = detection.InstallCommand
-			}
-			answers.InstallCommand = installCommand
-			if mi := at(stepMonorepo); mi >= 0 && !final.Skipped(mi) && installCommand != "" {
-				if mm, ok := steps[mi].Model.(components.MultiSelectModel); ok {
-					for _, pkg := range mm.Values() {
-						answers.OnCreateExtra = append(answers.OnCreateExtra, domain.HookCommand{Cmd: installCommand, Cwd: pkg})
-					}
-				}
-			}
+		} else if m, ok := steps[i].Model.(components.HookListModel); ok {
+			answers.OnCreate = m.Hooks()
 		}
 	}
 
@@ -487,6 +455,14 @@ func packageScriptsSummary(model any) string {
 		return ""
 	}
 	return fmt.Sprintf("%d scripts selected", len(ms.Values()))
+}
+
+func hookListSummary(model any) string {
+	hl, ok := model.(components.HookListModel)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%d command(s)", len(hl.Hooks()))
 }
 
 // sectionGateParams holds the inputs for a section gate step.
@@ -587,23 +563,6 @@ func moveToFront(items []components.SelectItem, value string) []components.Selec
 		}
 	}
 	return items
-}
-
-// formatOnCreate renders the current on_create hooks as a one-line summary for
-// the install step callout (read-only context during re-init).
-func formatOnCreate(hooks []domain.HookCommand) string {
-	if len(hooks) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(hooks))
-	for _, h := range hooks {
-		if h.Cwd != "" {
-			parts = append(parts, fmt.Sprintf("%s @%s", h.Cmd, h.Cwd))
-		} else {
-			parts = append(parts, h.Cmd)
-		}
-	}
-	return "Current: " + strings.Join(parts, " · ")
 }
 
 func detectedEnv(d domain.InitDetectionResult) string {

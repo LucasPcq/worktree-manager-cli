@@ -49,8 +49,7 @@ type InitProjectAnswers struct {
 	BaseBranch             string
 	EnvCopyFiles           []string
 	EnvStrategy            EnvStrategy
-	InstallCommand         string
-	OnCreateExtra          []HookCommand
+	OnCreate               []HookCommand
 	Agent                  AgentType
 	AgentOverride          bool
 	DockerComposeFiles     []string

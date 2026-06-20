@@ -128,14 +128,12 @@ func buildPrefill(stateDir string, detection domain.InitDetectionResult) (*initw
 	}
 
 	return &initwizard.SectionPrefill{
-		BaseBranch:     cfg.Worktrees.BaseBranch,
-		EnvStrategy:    string(cfg.Env.Strategy),
-		EnvCopyFiles:   toSet(cfg.Env.CopyFiles),
-		InstallCommand: rules.InstallCommandFromHooks(cfg.Hooks.OnCreate),
-		OnCreate:       cfg.Hooks.OnCreate,
-		MonorepoCwds:   rules.MonorepoCwdsFromHooks(cfg.Hooks.OnCreate),
-		DockerFiles:    rules.DockerFilesConfigured(runCfg, detection.DockerComposeFiles),
-		ScriptIndices:  rules.ScriptsConfigured(runCfg, detection.PackageScripts, detection.PackageManager),
+		BaseBranch:    cfg.Worktrees.BaseBranch,
+		EnvStrategy:   string(cfg.Env.Strategy),
+		EnvCopyFiles:  toSet(cfg.Env.CopyFiles),
+		OnCreate:      cfg.Hooks.OnCreate,
+		DockerFiles:   rules.DockerFilesConfigured(runCfg, detection.DockerComposeFiles),
+		ScriptIndices: rules.ScriptsConfigured(runCfg, detection.PackageScripts, detection.PackageManager),
 	}, nil
 }
 
@@ -213,7 +211,7 @@ func applyConfigReinit(cmd *cobra.Command, stateDir string, sections []string, a
 		cfg.Env.CopyFiles = answers.EnvCopyFiles
 	}
 	if contains(sections, domain.SectionHooks) {
-		cfg.Hooks.OnCreate = reinitHooks(answers)
+		cfg.Hooks.OnCreate = answers.OnCreate
 	}
 
 	if err := config.WriteProjectConfig(config.WriteProjectConfigParams{StateDir: stateDir, Config: cfg}); err != nil {
@@ -222,17 +220,6 @@ func applyConfigReinit(cmd *cobra.Command, stateDir string, sections []string, a
 
 	output.Success(cmd.OutOrStdout(), "Rewrote config.toml")
 	return nil
-}
-
-// reinitHooks builds the on_create hook list from the install command and any
-// monorepo package hooks collected during the wizard/flags.
-func reinitHooks(answers domain.InitProjectAnswers) []domain.HookCommand {
-	var hooks []domain.HookCommand
-	if answers.InstallCommand != "" {
-		hooks = append(hooks, domain.HookCommand{Cmd: answers.InstallCommand})
-	}
-	hooks = append(hooks, answers.OnCreateExtra...)
-	return hooks
 }
 
 // reinitWarning describes what each requested section's regeneration will touch.
