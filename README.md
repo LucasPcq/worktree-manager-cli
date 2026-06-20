@@ -292,6 +292,37 @@ wtm wt extract --files notes.md --to docs --keep           # copy instead of mov
 | `--keep` | Copy instead of move (keep the changes in the source) |
 | `--on-conflict <abort\|resolve>` | On conflict: abort (default) or write conflict markers in the target |
 
+#### `wtm wt sync`
+
+Rebase **every** managed worktree onto its recorded parent (its `source_branch`), in cascade. Keeps a whole stack of branches up to date in one command — `main → feature → spike` all get replayed onto a fresh base.
+
+```bash
+wtm wt sync              # rebase the whole cascade, then ask before pushing
+wtm wt sync --dry-run    # preview the plan, fully offline (no fetch/rebase/push)
+wtm wt sync --push       # rebase + force-push (with lease) without prompting
+wtm wt sync --no-push    # rebase locally only, never push
+wtm wt sync --base develop  # sync from a base branch other than the configured one
+```
+
+**What happens:**
+1. Fetches and fast-forwards the base branch
+2. Walks the worktrees in topological order (parents before children)
+3. For each branch: fetches + fast-forwards it from its own `origin/<branch>`, then rebases it onto its refreshed parent (`git rebase --onto`, replaying only that branch's own commits)
+4. Shows a per-branch recap, then (unless `--no-push`) asks once before force-pushing the rebased branches with `--force-with-lease`
+
+The cascade is **fully local** — pushing is a separate, explicitly confirmed step. On a conflict the rebase is **auto-aborted** (the working tree is left clean) and that branch's descendants are skipped; the command exits non-zero so you can resolve it manually and re-run.
+
+**Per-branch status:** `synced` (rebased), `up_to_date`, `skipped_dirty` (uncommitted changes), `skipped_ancestor` (a parent was skipped or failed), `diverged` (local **and** remote both moved — left untouched for manual reconcile), `conflict` (rebase aborted), `error`, `unknown_parent`.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--dry-run` | Preview the cascade without fetching, rebasing, or pushing |
+| `-y, --yes` | Skip the pre-sync confirmation |
+| `--push` | Force-push (with lease) rebased branches without prompting |
+| `--no-push` | Rebase locally only; never push |
+| `--base <branch>` | Base branch to sync from (defaults to config or detected base) |
+
 ---
 
 ### `wtm run` — Dev jobs (services + tasks)
@@ -538,7 +569,7 @@ wtm run list --output json
 
 Supported commands:
 
-- `wt list`, `wt create`, `wt clean` (requires `--force`), `wt extract`
+- `wt list`, `wt create`, `wt clean` (requires `--force`), `wt extract`, `wt sync`
 - `pr list`, `pr create`, `pr checkout`
 - `run list`, `run ps`, `run up`, `run down`, `run start`, `run stop`
 
