@@ -40,6 +40,8 @@ func ListWorktrees(params ListWorktreesParams) ([]domain.GitWorktree, error) {
 		case strings.HasPrefix(line, "branch "):
 			ref := strings.TrimPrefix(line, "branch ")
 			current.Branch = strings.TrimPrefix(ref, "refs/heads/")
+		case line == "locked" || strings.HasPrefix(line, "locked "):
+			current.Locked = true
 		}
 	}
 

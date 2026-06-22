@@ -325,6 +325,37 @@ The cascade is **fully local** — pushing is a separate, explicitly confirmed s
 
 ---
 
+#### `wtm wt relocate`
+
+Reconcile every worktree with the configured `base_path`. Worktrees scattered elsewhere are **moved** into it (`git worktree move`), and worktrees you created by hand (outside wtm) are **adopted** — wtm writes their metadata (recording a parent branch) so `wt sync` and `.env` sync work for them too. Use it to **change `base_path`** safely (with `--to`) or to **onboard a repo** that already has worktrees lying around.
+
+```bash
+wtm wt relocate                      # gather scattered worktrees into the current base_path + adopt external ones
+wtm wt relocate --to ../.worktrees   # change base_path to ../.worktrees and move existing worktrees there
+wtm wt relocate --dry-run            # preview the plan, change nothing
+wtm wt relocate --force              # move dirty or locked worktrees too
+```
+
+**What happens:**
+1. Shows a gate screen explaining the operation, then the per-worktree plan, and asks for confirmation (text mode)
+2. For each worktree to adopt, asks which branch to record as its parent (defaults to the base branch)
+3. Moves worktrees not already at their target path; writes `meta.json` for any worktree without it
+4. Rewrites the config `base_path` when `--to` changed it
+
+Dirty or locked worktrees are **skipped** unless `--force`. A target path that is already occupied is **blocked** and never overwritten. Re-running after committing/cleaning finishes the job — relocate always reconciles toward the configured `base_path`.
+
+**Per-worktree status:** `moved`, `moved_adopted` (moved **and** adopted), `adopted` (already in place, metadata written), `noop` (managed + already in place), `skipped_dirty`, `skipped_locked`, `blocked_dest`, `error`.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--to <path>` | New `base_path` (relative to repo root); also moves existing worktrees there |
+| `--dry-run` | Preview the plan without moving, adopting, or rewriting config |
+| `--force` | Move dirty or locked worktrees too |
+| `-y, --yes` | Skip the confirmation and parent prompts |
+
+---
+
 ### `wtm run` — Dev jobs (services + tasks)
 
 #### `wtm run list`

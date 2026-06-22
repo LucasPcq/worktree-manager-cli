@@ -43,6 +43,33 @@ func createWorktreeExisting(params CreateWorktreeParams) error {
 	return nil
 }
 
+// MoveWorktreeParams holds inputs for moving a git worktree to a new path.
+type MoveWorktreeParams struct {
+	ProjectDir string
+	From       string
+	To         string
+	Force      bool
+}
+
+// MoveWorktree relocates a git worktree directory via `git worktree move`. The
+// parent directory of To must already exist. Force passes `--force` twice, which
+// git requires to move a locked worktree (and is a harmless no-op otherwise).
+func MoveWorktree(params MoveWorktreeParams) error {
+	args := []string{"worktree", "move"}
+	if params.Force {
+		args = append(args, "--force", "--force")
+	}
+	args = append(args, params.From, params.To)
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = params.ProjectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git worktree move: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
 // RemoveWorktreeParams holds inputs for removing a git worktree.
 type RemoveWorktreeParams struct {
 	ProjectDir string

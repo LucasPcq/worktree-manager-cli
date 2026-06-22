@@ -1,0 +1,236 @@
+package worktree
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/LucasPcq/wtm/internal/config"
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/rules"
+)
+
+// RelocateParams holds inputs for planning and running a relocate.
+type RelocateParams struct {
+	ProjectDir     string
+	StateDir       string
+	Config         domain.Config
+	TargetBasePath string
+	BaseBranch     string
+	Force          bool
+	DryRun         bool
+	// Parents maps a branch to the parent chosen for adoption. A missing or empty
+	// entry falls back to BaseBranch.
+	Parents map[string]string
+}
+
+// PlanRelocate computes the relocate plan without moving anything. Used to
+// preview the operation and prompt for adoption parents before acting.
+func PlanRelocate(params RelocateParams) (domain.RelocatePlan, error) {
+	candidates, err := collectRelocateCandidates(params)
+	if err != nil {
+		return domain.RelocatePlan{}, err
+	}
+	return rules.BuildRelocatePlan(rules.BuildRelocatePlanParams{
+		Candidates: candidates,
+		ProjectDir: params.ProjectDir,
+		BasePath:   params.TargetBasePath,
+		BaseBranch: params.BaseBranch,
+		Force:      params.Force,
+	}), nil
+}
+
+// Relocate moves every managed worktree to the target base path, adopts any
+// worktree created outside wtm (writing its meta.json), and rewrites the config
+// base_path when it changed. Dirty/locked/blocked worktrees are reported as
+// skipped without aborting the run.
+func Relocate(params RelocateParams) (domain.RelocateResult, error) {
+	plan, err := PlanRelocate(params)
+	if err != nil {
+		return domain.RelocateResult{}, err
+	}
+
+	result := domain.RelocateResult{BasePath: params.TargetBasePath}
+	for _, step := range plan.Steps {
+		result.Steps = append(result.Steps, executeRelocateStep(executeRelocateStepParams{
+			Step:   step,
+			Params: params,
+		}))
+	}
+
+	if params.TargetBasePath != params.Config.Project.Worktrees.BasePath {
+		if updateErr := updateBasePath(params); updateErr != nil {
+			return result, updateErr
+		}
+		result.BasePathUpdated = !params.DryRun
+	}
+
+	return result, nil
+}
+
+func updateBasePath(params RelocateParams) error {
+	if params.DryRun {
+		return nil
+	}
+	updated := params.Config.Project
+	updated.Worktrees.BasePath = params.TargetBasePath
+	if err := config.WriteProjectConfig(config.WriteProjectConfigParams{
+		StateDir: params.StateDir,
+		Config:   updated,
+	}); err != nil {
+		return fmt.Errorf("update config base_path: %w", err)
+	}
+	return nil
+}
+
+func collectRelocateCandidates(params RelocateParams) ([]rules.RelocateCandidate, error) {
+	worktrees, err := infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: params.ProjectDir})
+	if err != nil {
+		return nil, err
+	}
+
+	candidates := make([]rules.RelocateCandidate, 0, len(worktrees))
+	for _, w := range worktrees {
+		if w.IsMain {
+			candidates = append(candidates, rules.RelocateCandidate{
+				Branch:   w.Branch,
+				FromPath: w.Path,
+				IsMain:   true,
+			})
+			continue
+		}
+
+		dirty, dirtyErr := infra.IsDirty(infra.IsDirtyParams{WorktreePath: w.Path})
+		to := rules.DesiredWorktreePath(rules.DesiredWorktreePathParams{
+			ProjectDir: params.ProjectDir,
+			BasePath:   params.TargetBasePath,
+			Branch:     w.Branch,
+		})
+
+		candidates = append(candidates, rules.RelocateCandidate{
+			Branch:       w.Branch,
+			FromPath:     w.Path,
+			IsManaged:    isManaged(params.StateDir, w.Branch),
+			IsDirty:      dirty,
+			InspectErr:   dirtyErr != nil,
+			IsLocked:     w.Locked,
+			DestOccupied: !samePath(w.Path, to) && pathExists(to),
+		})
+	}
+
+	return candidates, nil
+}
+
+type executeRelocateStepParams struct {
+	Step   domain.RelocateStep
+	Params RelocateParams
+}
+
+func executeRelocateStep(p executeRelocateStepParams) domain.RelocateStepResult {
+	res := domain.RelocateStepResult{
+		Branch:   p.Step.Branch,
+		FromPath: p.Step.FromPath,
+		ToPath:   p.Step.ToPath,
+		Parent:   resolveParent(p.Params, p.Step),
+	}
+
+	switch p.Step.Status {
+	case domain.RelocateStatusMove:
+		return runMoveStep(p, res)
+	case domain.RelocateStatusAdopt:
+		return runAdoptStep(p, res)
+	case domain.RelocateStatusError:
+		// The planner flags an error when a worktree needs moving but its
+		// working-tree state could not be determined (do not move blind).
+		res.Status = domain.RelocateStatusError
+		res.Detail = "could not determine working-tree state; re-run after resolving, or with --force to move anyway"
+		return res
+	default:
+		// Noop and every skip/block status carry through unchanged.
+		res.Status = p.Step.Status
+		return res
+	}
+}
+
+func runMoveStep(p executeRelocateStepParams, res domain.RelocateStepResult) domain.RelocateStepResult {
+	if !p.Params.DryRun {
+		if err := os.MkdirAll(filepath.Dir(res.ToPath), 0o755); err != nil {
+			return failStep(res, fmt.Errorf("create target dir: %w", err))
+		}
+		if err := infra.MoveWorktree(infra.MoveWorktreeParams{
+			ProjectDir: p.Params.ProjectDir,
+			From:       res.FromPath,
+			To:         res.ToPath,
+			Force:      p.Params.Force,
+		}); err != nil {
+			return failStep(res, err)
+		}
+	}
+
+	if !p.Step.Adopt {
+		res.Status = domain.RelocateStatusMoved
+		return res
+	}
+
+	if !p.Params.DryRun {
+		if err := adoptWorktree(p.Params.StateDir, res.Branch, res.Parent); err != nil {
+			return failStep(res, err)
+		}
+	}
+	res.Status = domain.RelocateStatusMovedAdopted
+	return res
+}
+
+func runAdoptStep(p executeRelocateStepParams, res domain.RelocateStepResult) domain.RelocateStepResult {
+	if !p.Params.DryRun {
+		if err := adoptWorktree(p.Params.StateDir, res.Branch, res.Parent); err != nil {
+			return failStep(res, err)
+		}
+	}
+	res.Status = domain.RelocateStatusAdopted
+	return res
+}
+
+func failStep(res domain.RelocateStepResult, err error) domain.RelocateStepResult {
+	res.Status = domain.RelocateStatusError
+	res.Detail = err.Error()
+	return res
+}
+
+func adoptWorktree(stateDir, branch, parent string) error {
+	metadata := domain.WorktreeMetadata{
+		SourceBranch: parent,
+		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+	}
+	return writeMetadata(rules.WorktreeMetaDir(stateDir, branch), metadata)
+}
+
+func resolveParent(params RelocateParams, step domain.RelocateStep) string {
+	if !step.Adopt {
+		return ""
+	}
+	if parent, ok := params.Parents[step.Branch]; ok && parent != "" {
+		return parent
+	}
+	if step.Parent != "" {
+		return step.Parent
+	}
+	return params.BaseBranch
+}
+
+func isManaged(stateDir, branch string) bool {
+	metaPath := filepath.Join(rules.WorktreeMetaDir(stateDir, branch), domain.MetaFileName)
+	_, err := os.Stat(metaPath)
+	return err == nil
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func samePath(a, b string) bool {
+	return filepath.Clean(a) == filepath.Clean(b)
+}

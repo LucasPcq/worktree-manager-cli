@@ -2,6 +2,8 @@ package rules
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -51,6 +53,20 @@ func ValidateAgentType(a domain.AgentType) error {
 	default:
 		return domain.ErrInvalidAgentType
 	}
+}
+
+// ValidateRelocateTarget checks the --to value for `wt relocate`. An empty
+// string means the flag was not provided (relocate then uses the current
+// base_path) and is allowed. A non-empty value must be a repo-relative path:
+// whitespace-only and absolute paths are rejected.
+func ValidateRelocateTarget(to string) error {
+	if to == "" {
+		return nil
+	}
+	if strings.TrimSpace(to) == "" || filepath.IsAbs(to) {
+		return domain.ErrInvalidBasePath
+	}
+	return nil
 }
 
 // ValidateRun checks for structural errors in the run config and returns

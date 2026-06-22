@@ -226,6 +226,7 @@ const (
 	CmdEdit     = "edit"
 	CmdExtract  = "extract"
 	CmdSync     = "sync"
+	CmdRelocate = "relocate"
 
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"

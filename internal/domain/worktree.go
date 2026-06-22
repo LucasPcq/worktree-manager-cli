@@ -52,6 +52,7 @@ type GitWorktree struct {
 	Path   string
 	Branch string
 	IsMain bool
+	Locked bool
 }
 
 // CreateParams holds all inputs needed to create a new worktree.

@@ -41,6 +41,10 @@ var (
 	// ErrWorktreePathExists is returned when the target worktree directory already exists.
 	ErrWorktreePathExists = errors.New("worktree path already exists")
 
+	// ErrInvalidBasePath is returned when --to is not a usable repo-relative path
+	// (blank/whitespace-only or absolute).
+	ErrInvalidBasePath = errors.New("invalid base path: must be a non-empty path relative to the repo root")
+
 	// ErrCannotCleanParent is returned when trying to clean the parent worktree.
 	ErrCannotCleanParent = errors.New("cannot clean the parent worktree")
 
