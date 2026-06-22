@@ -32,7 +32,7 @@ func TestMergeRunConfigsDuplicateSkipped(t *testing.T) {
 	dst := domain.RunConfig{Jobs: []domain.JobConfig{existing}}
 	src := domain.RunConfig{
 		Jobs: []domain.JobConfig{
-			{Name: "dev", Kind: domain.JobKindService, Cmd: "vite"},    // duplicate
+			{Name: "dev", Kind: domain.JobKindService, Cmd: "vite"},      // duplicate
 			{Name: "build", Kind: domain.JobKindTask, Cmd: "pnpm build"}, // new
 		},
 	}

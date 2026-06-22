@@ -72,7 +72,6 @@ func fullSeededConfig() domain.ProjectConfig {
 		Worktrees: domain.WorktreesConfig{BasePath: "../.trees", BaseBranch: "develop"},
 		Env:       domain.EnvConfig{Strategy: domain.EnvStrategyParent, CopyFiles: []string{".env"}},
 		Hooks:     domain.HooksConfig{OnCreate: []domain.HookCommand{{Cmd: "pnpm install"}}},
-		Github:    domain.GithubConfig{AutoDraft: true},
 	}
 }
 
@@ -109,9 +108,6 @@ func TestApplyConfigReinitOnlyRewritesRequestedSection(t *testing.T) {
 	// Every untouched section preserved its on-disk value.
 	if got.Worktrees.BaseBranch != "develop" {
 		t.Errorf("worktrees.base_branch clobbered: %q", got.Worktrees.BaseBranch)
-	}
-	if !got.Github.AutoDraft {
-		t.Error("github.auto_draft not preserved")
 	}
 	if len(got.Hooks.OnCreate) != 1 || got.Hooks.OnCreate[0].Cmd != "pnpm install" {
 		t.Errorf("hooks not preserved: %+v", got.Hooks.OnCreate)
@@ -197,4 +193,3 @@ func TestBuildReinitAnswersKeepsCurrentConfigUnlessFlagOverrides(t *testing.T) {
 		}
 	})
 }
-

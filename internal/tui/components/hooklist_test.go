@@ -49,8 +49,8 @@ func TestHookListAddAndDone(t *testing.T) {
 
 func TestHookListEmptyCmdRejected(t *testing.T) {
 	m := NewHookList(NewHookListParams{})
-	m = sendHook(m, key(tea.KeyEnter))   // start add
-	m = sendHook(m, key(tea.KeyEnter))   // save with empty cmd
+	m = sendHook(m, key(tea.KeyEnter)) // start add
+	m = sendHook(m, key(tea.KeyEnter)) // save with empty cmd
 	if !m.editing {
 		t.Error("empty command should keep the form open")
 	}

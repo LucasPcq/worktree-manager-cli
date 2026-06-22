@@ -14,7 +14,6 @@ type ProjectConfig struct {
 	Worktrees WorktreesConfig `toml:"worktrees"`
 	Env       EnvConfig       `toml:"env"`
 	Hooks     HooksConfig     `toml:"hooks"`
-	Github    GithubConfig    `toml:"github"`
 }
 
 // WorktreesConfig controls worktree creation defaults.
@@ -32,11 +31,6 @@ type EnvConfig struct {
 // HooksConfig defines lifecycle hooks as lists of commands.
 type HooksConfig struct {
 	OnCreate []HookCommand `toml:"on_create"`
-}
-
-// GithubConfig controls GitHub integration behavior.
-type GithubConfig struct {
-	AutoDraft bool `toml:"auto_draft"`
 }
 
 // GlobalConfig maps to ~/.config/wtm/config.toml (user-level configuration).

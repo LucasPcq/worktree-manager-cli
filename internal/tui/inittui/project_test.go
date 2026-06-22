@@ -47,4 +47,3 @@ func TestPrefillSelected(t *testing.T) {
 		t.Error("non-configured item should be unchecked regardless of detection default")
 	}
 }
-

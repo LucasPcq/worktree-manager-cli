@@ -169,9 +169,6 @@ copy_files = []
 
 [hooks]
 on_create = []
-
-[github]
-auto_draft = false
 `
 	return os.WriteFile(filepath.Join(stateDir, domain.ConfigFileName), []byte(content), 0o644)
 }

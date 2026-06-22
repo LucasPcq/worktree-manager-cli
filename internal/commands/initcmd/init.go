@@ -27,7 +27,7 @@ func NewCmd() *cobra.Command {
 			"Pass --non-interactive (or any config flag) to bootstrap from flags + auto-detection instead.\n" +
 			"Use --only env|hooks|services to re-run init for specific sections and regenerate them cleanly\n" +
 			"(run.toml jobs are regenerated while profiles are preserved).",
-		RunE:  runInit,
+		RunE: runInit,
 	}
 
 	cmd.Flags().Bool(domain.FlagNonInteractive, false, "Bootstrap from flags + auto-detection; never prompt")

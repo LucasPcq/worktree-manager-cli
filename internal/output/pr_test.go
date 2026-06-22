@@ -50,18 +50,3 @@ func TestWritePRListJSON_EmptyIsArray(t *testing.T) {
 		t.Errorf("expected array, got: %s", buf.String())
 	}
 }
-
-func TestWritePRCreateJSON_Shape(t *testing.T) {
-	pr := domain.PRInfo{Number: 42, URL: "http://x/42", Branch: "feat/y", State: "OPEN"}
-	var buf bytes.Buffer
-	if err := WritePRCreateJSON(&buf, pr); err != nil {
-		t.Fatal(err)
-	}
-	var got domain.PRInfo
-	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if got.Number != 42 || got.URL != "http://x/42" {
-		t.Errorf("wrong payload: %+v", got)
-	}
-}

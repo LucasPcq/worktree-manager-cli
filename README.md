@@ -543,7 +543,7 @@ All `add` / `rm` commands support `--output text|json`. `edit` is intrinsically 
 
 ### `wtm pr` — Pull requests
 
-Interact with GitHub pull requests from the CLI. Requires the [`gh` CLI](https://cli.github.com) installed and authenticated (`gh auth login`).
+Browse PRs and bridge them to worktrees from the CLI. Requires the [`gh` CLI](https://cli.github.com) installed and authenticated (`gh auth login`). Creating a PR is out of scope — `gh pr create` already does it well (templates, branch push, base detection).
 
 #### `wtm pr list`
 
@@ -553,16 +553,6 @@ List open pull requests. Interactive picker with actions (checkout, open in brow
 wtm pr list           # all open PRs
 wtm pr list --mine    # PRs you authored
 wtm pr list --review  # PRs where you are a requested reviewer
-```
-
-#### `wtm pr create`
-
-Create a PR for the current branch via an interactive wizard. Pushes the branch first if needed.
-
-```bash
-wtm pr create                              # full interactive
-wtm pr create --title "..." --base main    # skip wizard fields
-wtm pr create --draft                      # draft PR
 ```
 
 #### `wtm pr checkout [number]`
@@ -600,7 +590,7 @@ wtm run list --output json
 Supported commands:
 
 - `wt list`, `wt create`, `wt clean` (requires `--force`), `wt extract`, `wt sync`
-- `pr list`, `pr create`, `pr checkout`
+- `pr list`, `pr checkout`
 - `run list`, `run ps`, `run up`, `run down`, `run start`, `run stop`
 
 Example — pipe into `jq`:
@@ -661,9 +651,6 @@ on_create = [
   "pnpm install",
   { cmd = "pnpm install", cwd = "apps/api" },
 ]
-
-[github]
-auto_draft = false
 ```
 
 ### Hook format

@@ -1,6 +1,6 @@
 ---
 name: using-wtm
-description: Use this skill whenever the user wants to create, list, switch, focus, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or list, create, or check out GitHub pull requests — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
+description: Use this skill whenever the user wants to create, list, switch, focus, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or list or check out GitHub pull requests — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
 ---
 
 # Using wtm
@@ -12,7 +12,7 @@ wtm is a CLI that manages **git worktrees**, **per-worktree dev jobs** (long-run
 1. **Always pass arguments.** wtm commands without an argument often drop into an interactive picker, which you can't navigate. Pick the branch, PR number, profile, or service name from a prior `list` call first.
 2. **Always add `--output json`** on data commands. The JSON is pretty-printed on stdout with `snake_case` fields. Human text and warnings stay on stderr; ignore stderr unless exit code is non-zero.
 3. **Trust exit codes.** `0` on success, non-zero on failure. Beyond the generic `1`, wtm returns **granular codes** (see the Exit codes table) so you can branch precisely. Error detail is plain text on stderr — surface it to the user on failure.
-4. **Skip confirmations with the right flag.** `wt clean` needs `--force` (bypasses safety checks); `pr create` needs `--yes` (auto-pushes an unpushed branch and skips prompts); `run up` uses `--exclusive`. JSON mode is always non-interactive.
+4. **Skip confirmations with the right flag.** `wt clean` needs `--force` (bypasses safety checks); `run up` uses `--exclusive`. JSON mode is always non-interactive.
 5. **Operations are idempotent — safe to retry.** `wt create --if-not-exists` no-ops if the worktree exists; `wt clean` no-ops if it's already gone; `run up`/`run down`/`run stop` are safe to re-run.
 6. **Every command supports `--help`.** Run `wtm <cmd> --help` if you need flags beyond the reference below.
 
@@ -26,7 +26,6 @@ wtm is a CLI that manages **git worktrees**, **per-worktree dev jobs** (long-run
 | `10` | worktree (or its path) already exists |
 | `11` | branch not found |
 | `12` | config not found — repo not initialized (`wtm init`) |
-| `13` | a pull request already exists for the branch |
 | `14` | service/job not declared in `run.toml` |
 | `15` | `wt extract`: selected changes conflict with the target worktree |
 
@@ -95,8 +94,8 @@ Profiles are named groups of jobs (run in declared order). The same TOML can hos
 Backed by the `gh` CLI — the user must have `gh auth login` set up.
 
 - **`wtm pr list --output json`** — open PRs. Filters: `--mine`, `--review`.
-- **`wtm pr create --title "..." --base <branch> --yes --output json`** — creates a PR for the current branch. Add `--draft` for draft PRs. Pass `--title` AND `--base` AND `--draft` (or omit `--draft`) to skip the wizard entirely. Use **`--yes`** (implied by `--output json`) to auto-push an unpushed branch and skip prompts. If a PR already exists, it prints the existing PR JSON and exits `13`.
 - **`wtm pr checkout <number> --output json`** — fetch the PR's branch and create a worktree for it. Optional: `--env-from`. Fork PRs are out of scope by design — fall back to `gh pr checkout <number>`.
+- **Creating a PR is out of scope** — use `gh pr create` directly (it already handles templates, branch push, and base detection).
 
 ## Conventions and invariants
 
@@ -111,7 +110,6 @@ On non-zero exit, read stderr. Common cases:
 
 - exit `12` (`config not found`) → the repo isn't initialized. Run `wtm init --non-interactive` with flags (see below), or tell the user to run the interactive `wtm init`.
 - exit `11` (`branch not found`) / `worktree not found` → the name is wrong; re-list.
-- exit `13` (`PR already exists`) → the existing PR JSON was printed on stdout; use it instead of creating a new one.
 - exit `14` (`job not found`) → the job isn't declared in `run.toml`; check `run list`.
 - exit `15` (`wt extract` conflict) → the selected changes clash with the target worktree; nothing was changed. Retry with `--on-conflict resolve` to apply conflict markers for the user to resolve, or pick another `--to` target.
 - `gh: …` → the `gh` CLI isn't authenticated; tell the user to run `gh auth login`.

@@ -80,9 +80,6 @@ func loadProjectConfig(path string) (domain.ProjectConfig, error) {
 			CopyFiles: raw.Env.CopyFiles,
 		},
 		Hooks: hooks,
-		Github: domain.GithubConfig{
-			AutoDraft: raw.Github.AutoDraft,
-		},
 	}
 
 	return cfg, nil
@@ -100,9 +97,6 @@ type rawProjectConfig struct {
 		CopyFiles []string `toml:"copy_files"`
 	} `toml:"env"`
 	Hooks rawHooksConfig `toml:"hooks"`
-	Github struct {
-		AutoDraft bool `toml:"auto_draft"`
-	} `toml:"github"`
 }
 
 // loadGlobalConfig reads ~/.config/wtm/config.toml. Returns zero-value GlobalConfig

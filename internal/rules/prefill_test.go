@@ -42,8 +42,8 @@ func TestScriptsConfigured(t *testing.T) {
 		{Name: "api-dev", Cmd: "pnpm run dev", Cwd: "packages/api"},
 	}}
 	scripts := []domain.PackageScript{
-		{Name: "dev"},                          // index 0 → root, configured
-		{Name: "build"},                        // index 1 → not configured
+		{Name: "dev"},                            // index 0 → root, configured
+		{Name: "build"},                          // index 1 → not configured
 		{Name: "dev", Workspace: "packages/api"}, // index 2 → configured
 	}
 	got := rules.ScriptsConfigured(run, scripts, domain.PkgManagerPnpm)

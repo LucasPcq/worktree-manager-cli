@@ -51,9 +51,6 @@ var (
 	// ErrGHNotAuthenticated is returned when gh is not logged in to GitHub.
 	ErrGHNotAuthenticated = errors.New("not logged in to GitHub — run 'gh auth login'")
 
-	// ErrPRExists is returned when a pull request already exists for the branch.
-	ErrPRExists = errors.New("pull request already exists")
-
 	// ErrJobNotFound is returned when a referenced job is not declared in run.toml.
 	ErrJobNotFound = errors.New("job not found")
 

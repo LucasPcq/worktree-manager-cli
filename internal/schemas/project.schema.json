@@ -60,16 +60,6 @@
           }
         }
       }
-    },
-    "github": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "auto_draft": {
-          "type": "boolean",
-          "description": "If true, `wtm pr create` defaults to a draft PR (the user can override with --draft=false)."
-        }
-      }
     }
   }
 }

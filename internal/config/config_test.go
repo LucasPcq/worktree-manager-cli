@@ -23,9 +23,6 @@ on_create = [
   "pnpm install",
   { cmd = "pnpm install", cwd = "apps/api" },
 ]
-
-[github]
-auto_draft  = true
 `
 
 const minimalToml = `
@@ -60,9 +57,6 @@ func TestLoadFullConfig(t *testing.T) {
 	}
 	if len(cfg.Project.Env.CopyFiles) != 2 {
 		t.Errorf("expected 2 copy_files, got %d", len(cfg.Project.Env.CopyFiles))
-	}
-	if cfg.Project.Github.AutoDraft != true {
-		t.Error("expected auto_draft=true")
 	}
 }
 
@@ -172,7 +166,6 @@ func TestHookCommandMixedParsing(t *testing.T) {
 	}
 }
 
-
 func TestLoad_CorruptedTOML(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, domain.ConfigFileName, `
@@ -203,4 +196,3 @@ func TestApplyDefaults_AllEmpty(t *testing.T) {
 		t.Errorf("expected Shell=%s, got %s", domain.DefaultShell, cfg.Global.Shell)
 	}
 }
-

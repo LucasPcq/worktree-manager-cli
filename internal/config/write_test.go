@@ -15,11 +15,11 @@ func TestWriteProjectRendersValidTOML(t *testing.T) {
 	dir := t.TempDir()
 
 	answers := domain.InitProjectAnswers{
-		BasePath:       ".trees",
-		BaseBranch:     "main",
-		EnvCopyFiles:   []string{".env", "apps/api/.env"},
-		EnvStrategy:    domain.EnvStrategyExample,
-		OnCreate:       []domain.HookCommand{{Cmd: "pnpm install"}},
+		BasePath:     ".trees",
+		BaseBranch:   "main",
+		EnvCopyFiles: []string{".env", "apps/api/.env"},
+		EnvStrategy:  domain.EnvStrategyExample,
+		OnCreate:     []domain.HookCommand{{Cmd: "pnpm install"}},
 	}
 
 	err := WriteProject(WriteProjectParams{
@@ -220,7 +220,6 @@ func TestWriteProjectConfigPreservesAllSections(t *testing.T) {
 		Worktrees: domain.WorktreesConfig{BasePath: "../.trees", BaseBranch: "develop"},
 		Env:       domain.EnvConfig{Strategy: domain.EnvStrategyParent, CopyFiles: []string{".env"}},
 		Hooks:     domain.HooksConfig{OnCreate: []domain.HookCommand{{Cmd: "pnpm install"}}},
-		Github:    domain.GithubConfig{AutoDraft: true},
 	}
 
 	if err := WriteProjectConfig(WriteProjectConfigParams{StateDir: dir, Config: cfg}); err != nil {
@@ -232,9 +231,6 @@ func TestWriteProjectConfigPreservesAllSections(t *testing.T) {
 		t.Fatalf("loadProjectConfig: %v", err)
 	}
 
-	if got.Github.AutoDraft != true {
-		t.Error("github.auto_draft not preserved")
-	}
 	if got.Env.Strategy != domain.EnvStrategyParent {
 		t.Errorf("env.strategy not preserved: %q", got.Env.Strategy)
 	}
@@ -361,11 +357,11 @@ func TestWriteProjectRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
 	answers := domain.InitProjectAnswers{
-		BasePath:       ".trees",
-		BaseBranch:     "develop",
-		EnvCopyFiles:   []string{".env", "apps/web/.env"},
-		EnvStrategy:    domain.EnvStrategyParent,
-		OnCreate:       []domain.HookCommand{{Cmd: "yarn install"}},
+		BasePath:     ".trees",
+		BaseBranch:   "develop",
+		EnvCopyFiles: []string{".env", "apps/web/.env"},
+		EnvStrategy:  domain.EnvStrategyParent,
+		OnCreate:     []domain.HookCommand{{Cmd: "yarn install"}},
 	}
 
 	err := WriteProject(WriteProjectParams{
