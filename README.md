@@ -190,8 +190,7 @@ wtm wt create feature/auth --from main --env-from parent
 1. Creates a git worktree at `<base_path>/<branch-name>` (slashes become dashes)
 2. Copies `.env` files according to the configured strategy
 3. Records `meta.json` (source branch, timestamp, strategy used) under `<git-common-dir>/wtm/worktrees/<branch>/`
-4. Creates an empty `context.md` next to it for your notes
-5. Runs `on_create` hooks
+4. Runs `on_create` hooks
 
 **Flags:**
 | Flag | Description |
@@ -626,8 +625,7 @@ All wtm files live under `<git-common-dir>/wtm/` (i.e. `.git/wtm/` for a normal 
 ├── run.toml                          # jobs + profiles (next section)
 ├── schemas/                          # JSON schemas for editor auto-complete
 └── worktrees/<encoded-branch>/
-    ├── meta.json                     # per-worktree metadata
-    └── context.md                    # per-worktree notes
+    └── meta.json                     # per-worktree metadata
 ```
 
 You can edit any file by hand if you want — they're plain TOML, validated at load time. The discoverable path is `wtm config show` / `wtm config edit` and the `wtm run import` flow.
@@ -800,12 +798,11 @@ Even without the editor extension, wtm itself rejects unknown keys at load time 
 
 ## Worktree metadata
 
-Each worktree created by `wtm wt create` records two files under `<git-common-dir>/wtm/worktrees/<encoded-branch>/`:
+Each worktree created by `wtm wt create` records its metadata under `<git-common-dir>/wtm/worktrees/<encoded-branch>/`:
 
 - **`meta.json`** — source branch, creation timestamp, env strategy used
-- **`context.md`** — empty file for your notes (branch context, PR links, etc.)
 
-Branch names are URL-path-escaped on disk (e.g. `feat/x` → `feat%2Fx/`) so slashes don't create nested directories. Both files live alongside `git`'s own per-worktree state, completely outside the working tree.
+Branch names are URL-path-escaped on disk (e.g. `feat/x` → `feat%2Fx/`) so slashes don't create nested directories. It lives alongside `git`'s own per-worktree state, completely outside the working tree.
 
 ---
 

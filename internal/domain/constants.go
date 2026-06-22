@@ -186,9 +186,9 @@ const (
 	JobActionRemoved = "removed"
 	JobActionUpdated = "updated"
 
-	// Metadata files created per worktree inside <state-dir>/worktrees/<branch>/.
-	MetaFileName    = "meta.json"
-	ContextFileName = "context.md"
+	// MetaFileName is the metadata file created per worktree inside
+	// <state-dir>/worktrees/<branch>/.
+	MetaFileName = "meta.json"
 
 	// CmdGroupCore is the Cobra group ID for core commands.
 	CmdGroupCore = "core"
