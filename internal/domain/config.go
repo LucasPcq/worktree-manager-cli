@@ -25,7 +25,6 @@ type ProjectConfig struct {
 	Hooks        HooksConfig        `toml:"hooks"`
 	Github       GithubConfig       `toml:"github"`
 	Agents       AgentsConfig       `toml:"agents"`
-	Integrations IntegrationsConfig `toml:"integrations"`
 }
 
 // WorktreesConfig controls worktree creation defaults.
@@ -53,12 +52,6 @@ type GithubConfig struct {
 // AgentsConfig controls the default AI agent.
 type AgentsConfig struct {
 	Default AgentType `toml:"default"`
-}
-
-// IntegrationsConfig toggles third-party editor integrations.
-type IntegrationsConfig struct {
-	VSCodeProjectManager bool `toml:"vscode_project_manager"`
-	CursorProjectManager bool `toml:"cursor_project_manager"`
 }
 
 // GlobalConfig maps to ~/.config/wtm/config.toml (user-level configuration).

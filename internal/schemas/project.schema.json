@@ -81,20 +81,6 @@
           "description": "AI agent integration generated for the project (skill assets, etc.)."
         }
       }
-    },
-    "integrations": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "vscode_project_manager": {
-          "type": "boolean",
-          "description": "If true, sync new worktrees with the VS Code Project Manager extension."
-        },
-        "cursor_project_manager": {
-          "type": "boolean",
-          "description": "If true, sync new worktrees with the Cursor Project Manager extension."
-        }
-      }
     }
   }
 }

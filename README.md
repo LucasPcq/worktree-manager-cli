@@ -671,11 +671,6 @@ base_branch = "main"
 [agents]
 # Default AI agent: claude-code | cursor | none
 default = "claude-code"
-
-[integrations]
-# VS Code / Cursor Project Manager integration (coming soon)
-vscode_project_manager = false
-cursor_project_manager = false
 ```
 
 ### Hook format

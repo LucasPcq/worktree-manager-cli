@@ -86,10 +86,6 @@ func loadProjectConfig(path string) (domain.ProjectConfig, error) {
 		Agents: domain.AgentsConfig{
 			Default: domain.AgentType(raw.Agents.Default),
 		},
-		Integrations: domain.IntegrationsConfig{
-			VSCodeProjectManager: raw.Integrations.VSCodeProjectManager,
-			CursorProjectManager: raw.Integrations.CursorProjectManager,
-		},
 	}
 
 	return cfg, nil
@@ -113,10 +109,6 @@ type rawProjectConfig struct {
 	Agents struct {
 		Default string `toml:"default"`
 	} `toml:"agents"`
-	Integrations struct {
-		VSCodeProjectManager bool `toml:"vscode_project_manager"`
-		CursorProjectManager bool `toml:"cursor_project_manager"`
-	} `toml:"integrations"`
 }
 
 // loadGlobalConfig reads ~/.config/wtm/config.toml. Returns zero-value GlobalConfig

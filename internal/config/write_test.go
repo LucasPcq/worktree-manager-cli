@@ -251,10 +251,6 @@ func TestWriteProjectConfigPreservesAllSections(t *testing.T) {
 		Hooks:     domain.HooksConfig{OnCreate: []domain.HookCommand{{Cmd: "pnpm install"}}},
 		Github:    domain.GithubConfig{AutoDraft: true},
 		Agents:    domain.AgentsConfig{Default: domain.AgentCursor},
-		Integrations: domain.IntegrationsConfig{
-			VSCodeProjectManager: true,
-			CursorProjectManager: true,
-		},
 	}
 
 	if err := WriteProjectConfig(WriteProjectConfigParams{StateDir: dir, Config: cfg}); err != nil {
@@ -268,9 +264,6 @@ func TestWriteProjectConfigPreservesAllSections(t *testing.T) {
 
 	if got.Github.AutoDraft != true {
 		t.Error("github.auto_draft not preserved")
-	}
-	if !got.Integrations.VSCodeProjectManager || !got.Integrations.CursorProjectManager {
-		t.Errorf("integrations not preserved: %+v", got.Integrations)
 	}
 	if got.Agents.Default != domain.AgentCursor {
 		t.Errorf("agents.default not preserved: %q", got.Agents.Default)

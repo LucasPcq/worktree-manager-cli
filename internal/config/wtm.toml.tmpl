@@ -60,8 +60,3 @@ default = "{{ .AgentDefault }}"
 # Inherits from global config (~/.config/wtm/config.toml)
 # default = "claude-code"
 {{- end }}
-
-[integrations]
-# Auto-register worktrees in VS Code / Cursor project manager
-vscode_project_manager = {{ .VSCodeProjectManager }}
-cursor_project_manager = {{ .CursorProjectManager }}

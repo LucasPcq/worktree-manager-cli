@@ -20,17 +20,15 @@ var ErrRunFileExists = errors.New("run file already exists")
 // Both the init wizard answers and a full ProjectConfig (for re-init) convert
 // to it, so the template emits every section's actual values.
 type projectTemplateData struct {
-	BasePath             string
-	BaseBranch           string
-	SkipEnv              bool
-	EnvStrategy          string
-	EnvCopyFiles         []string
-	SkipHooks            bool
-	OnCreate             []domain.HookCommand
-	GithubAutoDraft      bool
-	AgentDefault         string
-	VSCodeProjectManager bool
-	CursorProjectManager bool
+	BasePath        string
+	BaseBranch      string
+	SkipEnv         bool
+	EnvStrategy     string
+	EnvCopyFiles    []string
+	SkipHooks       bool
+	OnCreate        []domain.HookCommand
+	GithubAutoDraft bool
+	AgentDefault    string
 }
 
 // WriteProjectParams holds the inputs for writing a project config file.
@@ -40,7 +38,7 @@ type WriteProjectParams struct {
 }
 
 // WriteProject renders the project config from init wizard answers and writes it
-// to <state-dir>/config.toml. Fresh init leaves github/integrations at defaults.
+// to <state-dir>/config.toml. Fresh init leaves github at defaults.
 func WriteProject(params WriteProjectParams) error {
 	return renderProjectConfig(params.StateDir, answersToTemplate(params.Answers))
 }
@@ -101,17 +99,15 @@ func answersToTemplate(a domain.InitProjectAnswers) projectTemplateData {
 // stays valid.
 func configToTemplate(c domain.ProjectConfig) projectTemplateData {
 	return projectTemplateData{
-		BasePath:             c.Worktrees.BasePath,
-		BaseBranch:           c.Worktrees.BaseBranch,
-		SkipEnv:              c.Env.Strategy == "",
-		EnvStrategy:          string(c.Env.Strategy),
-		EnvCopyFiles:         c.Env.CopyFiles,
-		SkipHooks:            false,
-		OnCreate:             c.Hooks.OnCreate,
-		GithubAutoDraft:      c.Github.AutoDraft,
-		AgentDefault:         string(c.Agents.Default),
-		VSCodeProjectManager: c.Integrations.VSCodeProjectManager,
-		CursorProjectManager: c.Integrations.CursorProjectManager,
+		BasePath:        c.Worktrees.BasePath,
+		BaseBranch:      c.Worktrees.BaseBranch,
+		SkipEnv:         c.Env.Strategy == "",
+		EnvStrategy:     string(c.Env.Strategy),
+		EnvCopyFiles:    c.Env.CopyFiles,
+		SkipHooks:       false,
+		OnCreate:        c.Hooks.OnCreate,
+		GithubAutoDraft: c.Github.AutoDraft,
+		AgentDefault:    string(c.Agents.Default),
 	}
 }
 

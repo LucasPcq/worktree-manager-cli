@@ -174,10 +174,6 @@ on_create = []
 auto_draft = false
 
 [agents]
-
-[integrations]
-vscode_project_manager = false
-cursor_project_manager = false
 `
 	return os.WriteFile(filepath.Join(stateDir, domain.ConfigFileName), []byte(content), 0o644)
 }

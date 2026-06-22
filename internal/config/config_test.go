@@ -29,10 +29,6 @@ auto_draft  = true
 
 [agents]
 default = "cursor"
-
-[integrations]
-vscode_project_manager = true
-cursor_project_manager = false
 `
 
 const minimalToml = `
@@ -73,9 +69,6 @@ func TestLoadFullConfig(t *testing.T) {
 	}
 	if cfg.Project.Agents.Default != domain.AgentCursor {
 		t.Errorf("expected agent=cursor, got %s", cfg.Project.Agents.Default)
-	}
-	if cfg.Project.Integrations.VSCodeProjectManager != true {
-		t.Error("expected vscode_project_manager=true")
 	}
 }
 
