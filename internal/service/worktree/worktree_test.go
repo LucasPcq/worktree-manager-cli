@@ -40,10 +40,4 @@ func TestWriteMetadata(t *testing.T) {
 	if parsed.EnvStrategy != domain.EnvStrategyExample {
 		t.Errorf("expected env_strategy=example, got %s", parsed.EnvStrategy)
 	}
-
-	// Verify context.md exists
-	contextPath := filepath.Join(dir, domain.ContextFileName)
-	if _, err := os.Stat(contextPath); os.IsNotExist(err) {
-		t.Error("context.md not found")
-	}
 }

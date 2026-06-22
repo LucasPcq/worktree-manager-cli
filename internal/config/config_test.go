@@ -23,16 +23,6 @@ on_create = [
   "pnpm install",
   { cmd = "pnpm install", cwd = "apps/api" },
 ]
-
-[github]
-auto_draft  = true
-
-[agents]
-default = "cursor"
-
-[integrations]
-vscode_project_manager = true
-cursor_project_manager = false
 `
 
 const minimalToml = `
@@ -68,15 +58,6 @@ func TestLoadFullConfig(t *testing.T) {
 	if len(cfg.Project.Env.CopyFiles) != 2 {
 		t.Errorf("expected 2 copy_files, got %d", len(cfg.Project.Env.CopyFiles))
 	}
-	if cfg.Project.Github.AutoDraft != true {
-		t.Error("expected auto_draft=true")
-	}
-	if cfg.Project.Agents.Default != domain.AgentCursor {
-		t.Errorf("expected agent=cursor, got %s", cfg.Project.Agents.Default)
-	}
-	if cfg.Project.Integrations.VSCodeProjectManager != true {
-		t.Error("expected vscode_project_manager=true")
-	}
 }
 
 func TestLoadMinimalConfigAppliesDefaults(t *testing.T) {
@@ -96,9 +77,6 @@ func TestLoadMinimalConfigAppliesDefaults(t *testing.T) {
 	}
 	if cfg.Project.Env.Strategy != domain.DefaultEnvStrategy {
 		t.Errorf("expected default strategy=%s, got %s", domain.DefaultEnvStrategy, cfg.Project.Env.Strategy)
-	}
-	if cfg.Project.Agents.Default != domain.DefaultAgent {
-		t.Errorf("expected default agent=%s, got %s", domain.DefaultAgent, cfg.Project.Agents.Default)
 	}
 	if cfg.Global.Shell != domain.DefaultShell {
 		t.Errorf("expected default shell=%s, got %s", domain.DefaultShell, cfg.Global.Shell)
@@ -188,36 +166,6 @@ func TestHookCommandMixedParsing(t *testing.T) {
 	}
 }
 
-
-func TestMergeGlobalAgentFallback(t *testing.T) {
-	project := domain.ProjectConfig{}
-	global := domain.GlobalConfig{
-		Shell: domain.ShellBash,
-		Agent: domain.AgentCursor,
-	}
-
-	cfg := merge(project, global)
-
-	if cfg.Project.Agents.Default != domain.AgentCursor {
-		t.Errorf("expected global agent to fill project default, got %s", cfg.Project.Agents.Default)
-	}
-}
-
-func TestMergeProjectOverridesGlobal(t *testing.T) {
-	project := domain.ProjectConfig{
-		Agents: domain.AgentsConfig{Default: domain.AgentNone},
-	}
-	global := domain.GlobalConfig{
-		Agent: domain.AgentCursor,
-	}
-
-	cfg := merge(project, global)
-
-	if cfg.Project.Agents.Default != domain.AgentNone {
-		t.Errorf("expected project agent to take priority, got %s", cfg.Project.Agents.Default)
-	}
-}
-
 func TestLoad_CorruptedTOML(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, domain.ConfigFileName, `
@@ -228,34 +176,6 @@ this is not valid toml !!!
 	_, err := Load(LoadParams{StateDir: dir})
 	if err == nil {
 		t.Fatal("expected error for corrupted TOML, got nil")
-	}
-}
-
-func TestMerge_ProjectOverridesGlobal(t *testing.T) {
-	project := domain.ProjectConfig{
-		Agents: domain.AgentsConfig{Default: domain.AgentCursor},
-	}
-	global := domain.GlobalConfig{
-		Agent: domain.AgentClaudeCode,
-	}
-
-	cfg := merge(project, global)
-
-	if cfg.Project.Agents.Default != domain.AgentCursor {
-		t.Errorf("expected project agent %s to override global, got %s", domain.AgentCursor, cfg.Project.Agents.Default)
-	}
-}
-
-func TestMerge_GlobalFillsEmpty(t *testing.T) {
-	project := domain.ProjectConfig{}
-	global := domain.GlobalConfig{
-		Agent: domain.AgentCursor,
-	}
-
-	cfg := merge(project, global)
-
-	if cfg.Project.Agents.Default != domain.AgentCursor {
-		t.Errorf("expected global agent to fill empty project default, got %s", cfg.Project.Agents.Default)
 	}
 }
 
@@ -272,14 +192,7 @@ func TestApplyDefaults_AllEmpty(t *testing.T) {
 	if cfg.Project.Env.Strategy != domain.DefaultEnvStrategy {
 		t.Errorf("expected Strategy=%s, got %s", domain.DefaultEnvStrategy, cfg.Project.Env.Strategy)
 	}
-	if cfg.Project.Agents.Default != domain.DefaultAgent {
-		t.Errorf("expected Agent=%s, got %s", domain.DefaultAgent, cfg.Project.Agents.Default)
-	}
 	if cfg.Global.Shell != domain.DefaultShell {
 		t.Errorf("expected Shell=%s, got %s", domain.DefaultShell, cfg.Global.Shell)
 	}
-	if cfg.Global.Agent != domain.AgentType(domain.DefaultAgent) {
-		t.Errorf("expected Global.Agent=%s, got %s", domain.DefaultAgent, cfg.Global.Agent)
-	}
 }
-

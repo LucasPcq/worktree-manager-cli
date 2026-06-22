@@ -88,10 +88,10 @@ func TestProfileWizardOrderDrivesFinalJobOrder(t *testing.T) {
 	wiz = drive(t, wiz,
 		keyEnter(), // Name: "dev" is seeded as default, confirm
 
-		keySpace(),         // Jobs: select "build" (index 0)
+		keySpace(),           // Jobs: select "build" (index 0)
 		keyDown(), keyDown(), // move cursor to "server" (index 2)
-		keySpace(),         // select "server"
-		keyEnter(),         // confirm Jobs -> selection order [build, server]
+		keySpace(), // select "server"
+		keyEnter(), // confirm Jobs -> selection order [build, server]
 
 		keyShiftDown(), // Order: move "build" below "server" -> [server, build]
 		keyEnter(),     // confirm Order

@@ -21,7 +21,6 @@ const (
 	ExitCodeWorktreeExists  = 10 // a worktree or its path already exists
 	ExitCodeBranchNotFound  = 11 // the requested branch does not exist locally
 	ExitCodeConfigNotFound  = 12 // the repo has no wtm config (run `wtm init`)
-	ExitCodePRExists        = 13 // a pull request already exists for the branch
 	ExitCodeServiceNotFound = 14 // the referenced job is not declared in run.toml
 	ExitCodeExtractConflict = 15 // selected changes do not apply cleanly onto the target worktree
 
@@ -52,9 +51,6 @@ const (
 	// DefaultEnvStrategy is the default .env provisioning strategy.
 	DefaultEnvStrategy = EnvStrategyExample
 
-	// DefaultAgent is the default AI agent.
-	DefaultAgent = AgentClaudeCode
-
 	// DefaultShell is the default shell for integration.
 	DefaultShell = ShellZsh
 
@@ -79,30 +75,28 @@ const (
 	EnvGoFile = "WTM_GO_FILE"
 
 	// Flag names.
-	FlagFrom      = "from"
-	FlagEnvFrom   = "env-from"
-	FlagForce     = "force"
-	FlagTitle     = "title"
-	FlagBase      = "base"
-	FlagDraft     = "draft"
-	FlagExclusive = "exclusive"
-	FlagParallel  = "parallel"
-	FlagDetach    = "detach"
-	FlagProfile   = "profile"
-	FlagOutput    = "output"
-	FlagYes       = "yes"
-	FlagAll       = "all"
-	FlagGlobal    = "global"
-	FlagMerge     = "merge"
-	FlagReplace   = "replace"
-	FlagMine      = "mine"
-	FlagReview    = "review"
-	FlagCmd       = "cmd"
-	FlagKind      = "kind"
-	FlagStop      = "stop"
-	FlagCwd       = "cwd"
-	FlagJobs      = "jobs"
-	FlagDefault   = "default"
+	FlagFrom       = "from"
+	FlagEnvFrom    = "env-from"
+	FlagForce      = "force"
+	FlagBase       = "base"
+	FlagExclusive  = "exclusive"
+	FlagParallel   = "parallel"
+	FlagDetach     = "detach"
+	FlagProfile    = "profile"
+	FlagOutput     = "output"
+	FlagYes        = "yes"
+	FlagAll        = "all"
+	FlagGlobal     = "global"
+	FlagMerge      = "merge"
+	FlagReplace    = "replace"
+	FlagMine       = "mine"
+	FlagReview     = "review"
+	FlagCmd        = "cmd"
+	FlagKind       = "kind"
+	FlagStop       = "stop"
+	FlagCwd        = "cwd"
+	FlagJobs       = "jobs"
+	FlagDefault    = "default"
 	FlagTo         = "to"
 	FlagKeep       = "keep"
 	FlagFiles      = "files"
@@ -115,7 +109,6 @@ const (
 	// init flags (non-interactive bootstrap).
 	FlagIfNotExists    = "if-not-exists"
 	FlagNonInteractive = "non-interactive"
-	FlagAgent          = "agent"
 	FlagShell          = "shell"
 	FlagBasePath       = "base-path"
 	FlagBaseBranch     = "base-branch"
@@ -190,9 +183,9 @@ const (
 	JobActionRemoved = "removed"
 	JobActionUpdated = "updated"
 
-	// Metadata files created per worktree inside <state-dir>/worktrees/<branch>/.
-	MetaFileName    = "meta.json"
-	ContextFileName = "context.md"
+	// MetaFileName is the metadata file created per worktree inside
+	// <state-dir>/worktrees/<branch>/.
+	MetaFileName = "meta.json"
 
 	// CmdGroupCore is the Cobra group ID for core commands.
 	CmdGroupCore = "core"
@@ -226,6 +219,7 @@ const (
 	CmdEdit     = "edit"
 	CmdExtract  = "extract"
 	CmdSync     = "sync"
+	CmdRelocate = "relocate"
 
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"

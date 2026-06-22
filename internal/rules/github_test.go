@@ -29,20 +29,6 @@ func TestValidatePRForCheckout_BranchExists(t *testing.T) {
 	}
 }
 
-func TestBranchTitleFromName(t *testing.T) {
-	cases := []struct{ branch, want string }{
-		{"feature/add-auth", "Add auth"},
-		{"fix/LUC-42-login-bug", "Login bug"},
-		{"my-branch", "My branch"},
-		{"", ""},
-	}
-	for _, c := range cases {
-		if got := BranchTitleFromName(c.branch); got != c.want {
-			t.Errorf("BranchTitleFromName(%q) = %q, want %q", c.branch, got, c.want)
-		}
-	}
-}
-
 func TestExtractPRNumber(t *testing.T) {
 	n, err := ExtractPRNumber("https://github.com/owner/repo/pull/42")
 	if err != nil || n != 42 {

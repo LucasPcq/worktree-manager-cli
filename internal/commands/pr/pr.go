@@ -15,7 +15,6 @@ func NewCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newListCmd())
-	cmd.AddCommand(newCreateCmd())
 	cmd.AddCommand(newCheckoutCmd())
 
 	return cmd

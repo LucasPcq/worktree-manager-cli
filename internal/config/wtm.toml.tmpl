@@ -47,21 +47,3 @@ on_create = [
 {{- end }}
 ]
 {{- end }}
-
-
-[github]
-auto_draft = {{ .GithubAutoDraft }}
-
-[agents]
-# Default AI agent: claude-code | cursor | none
-{{ if .AgentDefault -}}
-default = "{{ .AgentDefault }}"
-{{- else -}}
-# Inherits from global config (~/.config/wtm/config.toml)
-# default = "claude-code"
-{{- end }}
-
-[integrations]
-# Auto-register worktrees in VS Code / Cursor project manager
-vscode_project_manager = {{ .VSCodeProjectManager }}
-cursor_project_manager = {{ .CursorProjectManager }}

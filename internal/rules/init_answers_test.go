@@ -13,28 +13,22 @@ func TestBuildGlobalAnswers_Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.Agent != domain.DefaultAgent {
-		t.Errorf("Agent = %q, want default %q", got.Agent, domain.DefaultAgent)
-	}
 	if got.Shell != domain.DefaultShell {
 		t.Errorf("Shell = %q, want default %q", got.Shell, domain.DefaultShell)
 	}
 }
 
 func TestBuildGlobalAnswers_Flags(t *testing.T) {
-	got, err := rules.BuildGlobalAnswers(rules.InitGlobalFlags{Agent: "cursor", Shell: "fish"})
+	got, err := rules.BuildGlobalAnswers(rules.InitGlobalFlags{Shell: "fish"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.Agent != domain.AgentCursor || got.Shell != domain.ShellFish {
-		t.Errorf("got %+v, want agent=cursor shell=fish", got)
+	if got.Shell != domain.ShellFish {
+		t.Errorf("got %+v, want shell=fish", got)
 	}
 }
 
 func TestBuildGlobalAnswers_Invalid(t *testing.T) {
-	if _, err := rules.BuildGlobalAnswers(rules.InitGlobalFlags{Agent: "copilot"}); !errors.Is(err, domain.ErrInvalidAgentType) {
-		t.Errorf("expected ErrInvalidAgentType, got %v", err)
-	}
 	if _, err := rules.BuildGlobalAnswers(rules.InitGlobalFlags{Shell: "powershell"}); !errors.Is(err, domain.ErrInvalidShellType) {
 		t.Errorf("expected ErrInvalidShellType, got %v", err)
 	}

@@ -8,6 +8,31 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
+func TestValidateRelocateTarget(t *testing.T) {
+	cases := []struct {
+		name    string
+		to      string
+		wantErr bool
+	}{
+		{"empty means not provided", "", false},
+		{"relative path", "../.worktrees", false},
+		{"nested relative path", "worktrees/sub", false},
+		{"whitespace only", "   ", true},
+		{"absolute path", "/tmp/worktrees", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateRelocateTarget(tc.to)
+			if tc.wantErr && !errors.Is(err, domain.ErrInvalidBasePath) {
+				t.Fatalf("expected ErrInvalidBasePath for %q, got %v", tc.to, err)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("expected no error for %q, got %v", tc.to, err)
+			}
+		})
+	}
+}
+
 // --- Validate tests (migrated from config/config_test.go) ---
 
 func TestValidateInvalidEnvStrategy(t *testing.T) {
@@ -30,16 +55,6 @@ func TestValidateInvalidShellType(t *testing.T) {
 	}
 }
 
-func TestValidateInvalidAgentType(t *testing.T) {
-	cfg := validConfig()
-	cfg.Project.Agents.Default = "copilot"
-
-	err := Validate(cfg)
-	if !errors.Is(err, domain.ErrInvalidAgentType) {
-		t.Errorf("expected ErrInvalidAgentType, got %v", err)
-	}
-}
-
 func validConfig() domain.Config {
 	return domain.Config{
 		Project: domain.ProjectConfig{
@@ -50,13 +65,9 @@ func validConfig() domain.Config {
 			Env: domain.EnvConfig{
 				Strategy: domain.DefaultEnvStrategy,
 			},
-			Agents: domain.AgentsConfig{
-				Default: domain.DefaultAgent,
-			},
 		},
 		Global: domain.GlobalConfig{
 			Shell: domain.DefaultShell,
-			Agent: domain.AgentType(domain.DefaultAgent),
 		},
 	}
 }

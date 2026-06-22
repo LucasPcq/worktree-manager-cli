@@ -1,6 +1,6 @@
 # wtm — Worktree Manager
 
-Orchestrate git worktrees, AI agents, and team dev workflows from the terminal.
+Orchestrate git worktrees and team dev workflows from the terminal.
 
 `wtm` manages the lifecycle of git worktrees: creation, environment provisioning, hook execution, navigation, and cleanup. It replaces manual `git worktree` commands with a streamlined workflow designed for teams working on multiple branches simultaneously.
 
@@ -88,7 +88,7 @@ wtm init
 ```
 
 On first run, creates two files:
-- **Global config** (`~/.config/wtm/config.toml`) — shell type, default AI agent
+- **Global config** (`~/.config/wtm/config.toml`) — shell type
 - **Project config** (`<git-common-dir>/wtm/config.toml`) — worktree settings, env strategy, hooks
 
 Both files live outside the working tree, so nothing is ever committed to your repo. The project config is scoped to your local clone (it lives inside `.git/`), invisible to teammates and to `git status`.
@@ -190,8 +190,7 @@ wtm wt create feature/auth --from main --env-from parent
 1. Creates a git worktree at `<base_path>/<branch-name>` (slashes become dashes)
 2. Copies `.env` files according to the configured strategy
 3. Records `meta.json` (source branch, timestamp, strategy used) under `<git-common-dir>/wtm/worktrees/<branch>/`
-4. Creates an empty `context.md` next to it for your notes
-5. Runs `on_create` hooks
+4. Runs `on_create` hooks
 
 **Flags:**
 | Flag | Description |
@@ -322,6 +321,37 @@ The cascade is **fully local** — pushing is a separate, explicitly confirmed s
 | `--push` | Force-push (with lease) rebased branches without prompting |
 | `--no-push` | Rebase locally only; never push |
 | `--base <branch>` | Base branch to sync from (defaults to config or detected base) |
+
+---
+
+#### `wtm wt relocate`
+
+Reconcile every worktree with the configured `base_path`. Worktrees scattered elsewhere are **moved** into it (`git worktree move`), and worktrees you created by hand (outside wtm) are **adopted** — wtm writes their metadata (recording a parent branch) so `wt sync` and `.env` sync work for them too. Use it to **change `base_path`** safely (with `--to`) or to **onboard a repo** that already has worktrees lying around.
+
+```bash
+wtm wt relocate                      # gather scattered worktrees into the current base_path + adopt external ones
+wtm wt relocate --to ../.worktrees   # change base_path to ../.worktrees and move existing worktrees there
+wtm wt relocate --dry-run            # preview the plan, change nothing
+wtm wt relocate --force              # move dirty or locked worktrees too
+```
+
+**What happens:**
+1. Shows a gate screen explaining the operation, then the per-worktree plan, and asks for confirmation (text mode)
+2. For each worktree to adopt, asks which branch to record as its parent (defaults to the base branch)
+3. Moves worktrees not already at their target path; writes `meta.json` for any worktree without it
+4. Rewrites the config `base_path` when `--to` changed it
+
+Dirty or locked worktrees are **skipped** unless `--force`. A target path that is already occupied is **blocked** and never overwritten. Re-running after committing/cleaning finishes the job — relocate always reconciles toward the configured `base_path`.
+
+**Per-worktree status:** `moved`, `moved_adopted` (moved **and** adopted), `adopted` (already in place, metadata written), `noop` (managed + already in place), `skipped_dirty`, `skipped_locked`, `blocked_dest`, `error`.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--to <path>` | New `base_path` (relative to repo root); also moves existing worktrees there |
+| `--dry-run` | Preview the plan without moving, adopting, or rewriting config |
+| `--force` | Move dirty or locked worktrees too |
+| `-y, --yes` | Skip the confirmation and parent prompts |
 
 ---
 
@@ -513,7 +543,7 @@ All `add` / `rm` commands support `--output text|json`. `edit` is intrinsically 
 
 ### `wtm pr` — Pull requests
 
-Interact with GitHub pull requests from the CLI. Requires the [`gh` CLI](https://cli.github.com) installed and authenticated (`gh auth login`).
+Browse PRs and bridge them to worktrees from the CLI. Requires the [`gh` CLI](https://cli.github.com) installed and authenticated (`gh auth login`). Creating a PR is out of scope — `gh pr create` already does it well (templates, branch push, base detection).
 
 #### `wtm pr list`
 
@@ -523,16 +553,6 @@ List open pull requests. Interactive picker with actions (checkout, open in brow
 wtm pr list           # all open PRs
 wtm pr list --mine    # PRs you authored
 wtm pr list --review  # PRs where you are a requested reviewer
-```
-
-#### `wtm pr create`
-
-Create a PR for the current branch via an interactive wizard. Pushes the branch first if needed.
-
-```bash
-wtm pr create                              # full interactive
-wtm pr create --title "..." --base main    # skip wizard fields
-wtm pr create --draft                      # draft PR
 ```
 
 #### `wtm pr checkout [number]`
@@ -570,7 +590,7 @@ wtm run list --output json
 Supported commands:
 
 - `wt list`, `wt create`, `wt clean` (requires `--force`), `wt extract`, `wt sync`
-- `pr list`, `pr create`, `pr checkout`
+- `pr list`, `pr checkout`
 - `run list`, `run ps`, `run up`, `run down`, `run start`, `run stop`
 
 Example — pipe into `jq`:
@@ -595,8 +615,7 @@ All wtm files live under `<git-common-dir>/wtm/` (i.e. `.git/wtm/` for a normal 
 ├── run.toml                          # jobs + profiles (next section)
 ├── schemas/                          # JSON schemas for editor auto-complete
 └── worktrees/<encoded-branch>/
-    ├── meta.json                     # per-worktree metadata
-    └── context.md                    # per-worktree notes
+    └── meta.json                     # per-worktree metadata
 ```
 
 You can edit any file by hand if you want — they're plain TOML, validated at load time. The discoverable path is `wtm config show` / `wtm config edit` and the `wtm run import` flow.
@@ -632,19 +651,6 @@ on_create = [
   "pnpm install",
   { cmd = "pnpm install", cwd = "apps/api" },
 ]
-
-[github]
-auto_draft = false
-base_branch = "main"
-
-[agents]
-# Default AI agent: claude-code | cursor | none
-default = "claude-code"
-
-[integrations]
-# VS Code / Cursor Project Manager integration (coming soon)
-vscode_project_manager = false
-cursor_project_manager = false
 ```
 
 ### Hook format
@@ -779,12 +785,11 @@ Even without the editor extension, wtm itself rejects unknown keys at load time 
 
 ## Worktree metadata
 
-Each worktree created by `wtm wt create` records two files under `<git-common-dir>/wtm/worktrees/<encoded-branch>/`:
+Each worktree created by `wtm wt create` records its metadata under `<git-common-dir>/wtm/worktrees/<encoded-branch>/`:
 
 - **`meta.json`** — source branch, creation timestamp, env strategy used
-- **`context.md`** — empty file for your notes (branch context, PR links, etc.)
 
-Branch names are URL-path-escaped on disk (e.g. `feat/x` → `feat%2Fx/`) so slashes don't create nested directories. Both files live alongside `git`'s own per-worktree state, completely outside the working tree.
+Branch names are URL-path-escaped on disk (e.g. `feat/x` → `feat%2Fx/`) so slashes don't create nested directories. It lives alongside `git`'s own per-worktree state, completely outside the working tree.
 
 ---
 

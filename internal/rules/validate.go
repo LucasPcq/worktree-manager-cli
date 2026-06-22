@@ -2,6 +2,8 @@ package rules
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -11,13 +13,7 @@ func Validate(cfg domain.Config) error {
 	if err := ValidateEnvStrategy(cfg.Project.Env.Strategy); err != nil {
 		return err
 	}
-	if err := ValidateAgentType(cfg.Project.Agents.Default); err != nil {
-		return err
-	}
 	if err := ValidateShellType(cfg.Global.Shell); err != nil {
-		return err
-	}
-	if err := ValidateAgentType(domain.AgentType(cfg.Global.Agent)); err != nil {
 		return err
 	}
 	return nil
@@ -43,14 +39,18 @@ func ValidateShellType(s domain.ShellType) error {
 	}
 }
 
-// ValidateAgentType returns ErrInvalidAgentType if a is not a known value.
-func ValidateAgentType(a domain.AgentType) error {
-	switch a {
-	case domain.AgentClaudeCode, domain.AgentCursor, domain.AgentNone:
+// ValidateRelocateTarget checks the --to value for `wt relocate`. An empty
+// string means the flag was not provided (relocate then uses the current
+// base_path) and is allowed. A non-empty value must be a repo-relative path:
+// whitespace-only and absolute paths are rejected.
+func ValidateRelocateTarget(to string) error {
+	if to == "" {
 		return nil
-	default:
-		return domain.ErrInvalidAgentType
 	}
+	if strings.TrimSpace(to) == "" || filepath.IsAbs(to) {
+		return domain.ErrInvalidBasePath
+	}
+	return nil
 }
 
 // ValidateRun checks for structural errors in the run config and returns

@@ -30,14 +30,14 @@ type WorktreeStatus struct {
 // WorktreeListEntry is the JSON-serializable projection of a worktree for the
 // `wt list --output json` payload.
 type WorktreeListEntry struct {
-	Branch       string            `json:"branch"`
-	Path         string            `json:"path"`
-	IsParent     bool              `json:"is_parent"`
-	IsDirty      bool              `json:"is_dirty"`
-	CommitsAhead int               `json:"commits_ahead"`
-	CreatedAt    time.Time         `json:"created_at"`
-	PR           *WorktreeListPR   `json:"pr"`
-	Services     []string          `json:"services"`
+	Branch       string          `json:"branch"`
+	Path         string          `json:"path"`
+	IsParent     bool            `json:"is_parent"`
+	IsDirty      bool            `json:"is_dirty"`
+	CommitsAhead int             `json:"commits_ahead"`
+	CreatedAt    time.Time       `json:"created_at"`
+	PR           *WorktreeListPR `json:"pr"`
+	Services     []string        `json:"services"`
 }
 
 // WorktreeListPR is the nested PR summary embedded in WorktreeListEntry.
@@ -52,6 +52,7 @@ type GitWorktree struct {
 	Path   string
 	Branch string
 	IsMain bool
+	Locked bool
 }
 
 // CreateParams holds all inputs needed to create a new worktree.

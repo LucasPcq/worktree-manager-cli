@@ -1,6 +1,6 @@
 ---
 name: using-wtm
-description: Use this skill whenever the user wants to create, list, switch, focus, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or list, create, or check out GitHub pull requests — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
+description: Use this skill whenever the user wants to create, list, switch, focus, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or list or check out GitHub pull requests — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
 ---
 
 # Using wtm
@@ -12,7 +12,7 @@ wtm is a CLI that manages **git worktrees**, **per-worktree dev jobs** (long-run
 1. **Always pass arguments.** wtm commands without an argument often drop into an interactive picker, which you can't navigate. Pick the branch, PR number, profile, or service name from a prior `list` call first.
 2. **Always add `--output json`** on data commands. The JSON is pretty-printed on stdout with `snake_case` fields. Human text and warnings stay on stderr; ignore stderr unless exit code is non-zero.
 3. **Trust exit codes.** `0` on success, non-zero on failure. Beyond the generic `1`, wtm returns **granular codes** (see the Exit codes table) so you can branch precisely. Error detail is plain text on stderr — surface it to the user on failure.
-4. **Skip confirmations with the right flag.** `wt clean` needs `--force` (bypasses safety checks); `pr create` needs `--yes` (auto-pushes an unpushed branch and skips prompts); `run up` uses `--exclusive`. JSON mode is always non-interactive.
+4. **Skip confirmations with the right flag.** `wt clean` needs `--force` (bypasses safety checks); `run up` uses `--exclusive`. JSON mode is always non-interactive.
 5. **Operations are idempotent — safe to retry.** `wt create --if-not-exists` no-ops if the worktree exists; `wt clean` no-ops if it's already gone; `run up`/`run down`/`run stop` are safe to re-run.
 6. **Every command supports `--help`.** Run `wtm <cmd> --help` if you need flags beyond the reference below.
 
@@ -26,7 +26,6 @@ wtm is a CLI that manages **git worktrees**, **per-worktree dev jobs** (long-run
 | `10` | worktree (or its path) already exists |
 | `11` | branch not found |
 | `12` | config not found — repo not initialized (`wtm init`) |
-| `13` | a pull request already exists for the branch |
 | `14` | service/job not declared in `run.toml` |
 | `15` | `wt extract`: selected changes conflict with the target worktree |
 
@@ -52,6 +51,7 @@ Run these before taking action so you have names to pass as arguments:
   - **On conflict** (a selected file was also changed in the target): default **`--on-conflict abort`** changes nothing and exits **`15`**, naming the conflicting files on stderr. **`--on-conflict resolve`** instead applies the changes into the target with git **conflict markers** (`<<<<<<<`) on the conflicting files — like a rebase — keeps the source intact, exits `0`, and lists the marked files in `conflicts[]`. The user then resolves the markers in the target and discards the same files in the source; or discards in the target to undo.
   - No uncommitted changes → exits `0` with empty `files[]`. Untracked-file name collisions in the target cannot be merged → always abort (exit `15`).
 - **`wtm wt sync --output json`** — rebase **every** worktree onto its recorded parent (`source_branch`) in cascade. It fetches + fast-forwards the base branch, then for each branch (parents before children): fetches + fast-forwards that branch from its own `origin/<branch>` (so commits merged into the remote elsewhere are pulled in), then rebases it onto its refreshed parent. A chain `main → feat → dev1/dev2` is updated in one shot. The cascade is **local** — pushing is separate. Per-branch `status` in the JSON: `synced` (rebased), `up_to_date`, `skipped_dirty` (uncommitted changes — its descendants become `skipped_ancestor`), `skipped_ancestor`, `diverged` (local **and** `origin/<branch>` carry commits the other lacks, by patch — a genuine conflict left untouched for manual reconcile; descendants skipped. A branch rebased locally in a prior run but not yet pushed is **not** diverged — its remote commits are already integrated, so it comes back as `up_to_date` and pushable), `conflict` (rebase auto-aborted, working tree left clean — needs manual resolution; descendants skipped), `error`, `unknown_parent` (no recorded parent). Each step also reports `old_tip`, `new_tip`, `onto_tip`, `commits_replayed`, `push_pending` (the branch is ahead of `origin/<branch>` and eligible for force-push — true for `synced` **and** for `up_to_date` branches still unpushed from an earlier run), and `pushed`. Exits non-zero if any `conflict`/`error`. Flags: `--dry-run` (preview only — stays fully offline, no fetch/rebase/push), `--base <branch>` (override base), `--push` (force-push every `push_pending` branch with `--force-with-lease` — **the only way to push in `--output json`/non-interactive mode**, since the grouped push confirmation can't prompt), `--no-push` (never push), `-y`/`--yes` (skip the pre-sync confirmation in text mode). Without `--push`/`--no-push` in JSON mode, nothing is pushed.
+- **`wtm wt relocate --output json`** — reconcile every worktree with the configured `base_path`: worktrees not under it are **moved** (`git worktree move`), and worktrees created outside wtm are **adopted** (a `meta.json` recording their parent is written so `wt sync` and `.env` sync work for them). Pass **`--to <path>`** to change `base_path` to a new directory and move existing worktrees there — the config `base_path` is rewritten afterwards (`--to` must be a non-empty path **relative** to the repo root; an absolute or blank value is rejected before anything runs). Per-worktree `status` in the JSON: `moved`, `moved_adopted` (moved **and** adopted), `adopted` (already in place, metadata written), `noop` (managed + already in place), `skipped_dirty` / `skipped_locked` (not moved — re-run with `--force`), `blocked_dest` (target path already occupied — never overwritten), `error`. The result also reports `base_path` and `base_path_updated`. Exits non-zero if any `error`/`blocked_dest`. Adopted worktrees get `base_branch` as their recorded parent in non-interactive/JSON mode (the per-worktree parent picker only runs in interactive text mode). Flags: `--to <path>` (new base_path + move), `--dry-run` (preview only — no move/adopt/config write), `--force` (move dirty or locked worktrees too), `-y`/`--yes` (skip the confirmation + parent prompts in text mode).
 - **`wtm wt go <branch>`** and **`wtm wt switch <branch>`** — navigate to a worktree (and start services, for `switch`). These **require the user's shell integration** to `cd`, so an LLM can't drive them directly. Prefer `wt list` + tell the user which branch to run `switch` on.
 - **`wtm wt focus <branch>`** — mark a worktree as the active one in the state file. Pass the branch explicitly.
 
@@ -94,8 +94,8 @@ Profiles are named groups of jobs (run in declared order). The same TOML can hos
 Backed by the `gh` CLI — the user must have `gh auth login` set up.
 
 - **`wtm pr list --output json`** — open PRs. Filters: `--mine`, `--review`.
-- **`wtm pr create --title "..." --base <branch> --yes --output json`** — creates a PR for the current branch. Add `--draft` for draft PRs. Pass `--title` AND `--base` AND `--draft` (or omit `--draft`) to skip the wizard entirely. Use **`--yes`** (implied by `--output json`) to auto-push an unpushed branch and skip prompts. If a PR already exists, it prints the existing PR JSON and exits `13`.
 - **`wtm pr checkout <number> --output json`** — fetch the PR's branch and create a worktree for it. Optional: `--env-from`. Fork PRs are out of scope by design — fall back to `gh pr checkout <number>`.
+- **Creating a PR is out of scope** — use `gh pr create` directly (it already handles templates, branch push, and base detection).
 
 ## Conventions and invariants
 
@@ -110,7 +110,6 @@ On non-zero exit, read stderr. Common cases:
 
 - exit `12` (`config not found`) → the repo isn't initialized. Run `wtm init --non-interactive` with flags (see below), or tell the user to run the interactive `wtm init`.
 - exit `11` (`branch not found`) / `worktree not found` → the name is wrong; re-list.
-- exit `13` (`PR already exists`) → the existing PR JSON was printed on stdout; use it instead of creating a new one.
 - exit `14` (`job not found`) → the job isn't declared in `run.toml`; check `run list`.
 - exit `15` (`wt extract` conflict) → the selected changes clash with the target worktree; nothing was changed. Retry with `--on-conflict resolve` to apply conflict markers for the user to resolve, or pick another `--to` target.
 - `gh: …` → the `gh` CLI isn't authenticated; tell the user to run `gh auth login`.
@@ -121,5 +120,5 @@ On non-zero exit, read stderr. Common cases:
 
 - A command requires shell integration (`wt go`, `wt switch` without a shell wrapper installed).
 - A destructive action (`wt clean`) wasn't explicitly authorized by the user — do **not** add `--force` on your own initiative.
-- `wtm init` is needed — you can bootstrap it non-interactively: `wtm init --non-interactive [--agent claude-code] [--shell zsh] [--base-path ../.trees] [--base-branch main] [--env-strategy example|main|parent] [--install-command "..."] [--skip-env] [--skip-hooks] [--skip-services]`. Unset values fall back to auto-detection then sensible defaults; the `--skip-*` flags leave a section out (written commented). `--non-interactive` fails fast if the base branch can't be detected. To reconfigure a section *after* init, use `wtm init --only <section>` (see Config commands). Only escalate to the user if you can't supply a required value.
+- `wtm init` is needed — you can bootstrap it non-interactively: `wtm init --non-interactive [--shell zsh] [--base-path ../.trees] [--base-branch main] [--env-strategy example|main|parent] [--install-command "..."] [--skip-env] [--skip-hooks] [--skip-services]`. Unset values fall back to auto-detection then sensible defaults; the `--skip-*` flags leave a section out (written commented). `--non-interactive` fails fast if the base branch can't be detected. To reconfigure a section *after* init, use `wtm init --only <section>` (see Config commands). Only escalate to the user if you can't supply a required value.
 - `wtm config edit` would be the natural answer — it opens `$EDITOR`. Either ask the user to run it themselves, or read with `wtm config show` and write the change directly to the path if you have a file-edit tool.

@@ -6,9 +6,8 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// InitGlobalFlags holds the raw --agent/--shell inputs for non-interactive init.
+// InitGlobalFlags holds the raw --shell input for non-interactive init.
 type InitGlobalFlags struct {
-	Agent string
 	Shell string
 }
 
@@ -28,17 +27,9 @@ type InitProjectFlags struct {
 }
 
 // BuildGlobalAnswers resolves global config from flags, falling back to the
-// constant defaults. Returns ErrInvalidAgentType / ErrInvalidShellType when a
-// provided value is not a known enum member.
+// constant defaults. Returns ErrInvalidShellType when a provided value is not a
+// known enum member.
 func BuildGlobalAnswers(flags InitGlobalFlags) (domain.InitGlobalAnswers, error) {
-	agent := domain.DefaultAgent
-	if flags.Agent != "" {
-		agent = domain.AgentType(flags.Agent)
-	}
-	if err := ValidateAgentType(agent); err != nil {
-		return domain.InitGlobalAnswers{}, err
-	}
-
 	shell := domain.DefaultShell
 	if flags.Shell != "" {
 		shell = domain.ShellType(flags.Shell)
@@ -47,14 +38,14 @@ func BuildGlobalAnswers(flags InitGlobalFlags) (domain.InitGlobalAnswers, error)
 		return domain.InitGlobalAnswers{}, err
 	}
 
-	return domain.InitGlobalAnswers{Agent: agent, Shell: shell}, nil
+	return domain.InitGlobalAnswers{Shell: shell}, nil
 }
 
 // BuildProjectAnswers resolves project config from flags and auto-detection,
 // mirroring the wizard defaults: flags win, then detection, then constants.
 // Conditional multi-selects (env files, package scripts, docker compose,
 // monorepo packages) take every detected value, matching the wizard's
-// pre-selection. The project agent inherits the global default.
+// pre-selection.
 func BuildProjectAnswers(flags InitProjectFlags, detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
 	basePath := flags.BasePath
 	if basePath == "" {

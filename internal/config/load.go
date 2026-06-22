@@ -80,16 +80,6 @@ func loadProjectConfig(path string) (domain.ProjectConfig, error) {
 			CopyFiles: raw.Env.CopyFiles,
 		},
 		Hooks: hooks,
-		Github: domain.GithubConfig{
-			AutoDraft: raw.Github.AutoDraft,
-		},
-		Agents: domain.AgentsConfig{
-			Default: domain.AgentType(raw.Agents.Default),
-		},
-		Integrations: domain.IntegrationsConfig{
-			VSCodeProjectManager: raw.Integrations.VSCodeProjectManager,
-			CursorProjectManager: raw.Integrations.CursorProjectManager,
-		},
 	}
 
 	return cfg, nil
@@ -107,16 +97,6 @@ type rawProjectConfig struct {
 		CopyFiles []string `toml:"copy_files"`
 	} `toml:"env"`
 	Hooks rawHooksConfig `toml:"hooks"`
-	Github struct {
-		AutoDraft bool `toml:"auto_draft"`
-	} `toml:"github"`
-	Agents struct {
-		Default string `toml:"default"`
-	} `toml:"agents"`
-	Integrations struct {
-		VSCodeProjectManager bool `toml:"vscode_project_manager"`
-		CursorProjectManager bool `toml:"cursor_project_manager"`
-	} `toml:"integrations"`
 }
 
 // loadGlobalConfig reads ~/.config/wtm/config.toml. Returns zero-value GlobalConfig
@@ -141,19 +121,12 @@ func loadGlobalConfig() (domain.GlobalConfig, error) {
 	return cfg, nil
 }
 
-// merge combines project and global configs. Project values take priority.
-// Global values fill in only when the project value is the zero value.
+// merge combines project and global configs into the unified Config.
 func merge(project domain.ProjectConfig, global domain.GlobalConfig) domain.Config {
-	cfg := domain.Config{
+	return domain.Config{
 		Project: project,
 		Global:  global,
 	}
-
-	if cfg.Project.Agents.Default == "" && global.Agent != "" {
-		cfg.Project.Agents.Default = domain.AgentType(global.Agent)
-	}
-
-	return cfg
 }
 
 // applyDefaults fills zero-value fields with sensible defaults.
@@ -167,13 +140,7 @@ func applyDefaults(cfg *domain.Config) {
 	if cfg.Project.Env.Strategy == "" {
 		cfg.Project.Env.Strategy = domain.DefaultEnvStrategy
 	}
-	if cfg.Project.Agents.Default == "" {
-		cfg.Project.Agents.Default = domain.DefaultAgent
-	}
 	if cfg.Global.Shell == "" {
 		cfg.Global.Shell = domain.DefaultShell
-	}
-	if cfg.Global.Agent == "" {
-		cfg.Global.Agent = domain.AgentType(domain.DefaultAgent)
 	}
 }

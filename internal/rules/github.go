@@ -5,8 +5,6 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
-	"strings"
-	"unicode"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -24,29 +22,6 @@ func ValidatePRForCheckout(pr domain.PRInfo, localBranches []string) error {
 		return fmt.Errorf("local branch %q already exists — run `wtm wt clean %s` first", pr.Branch, pr.Branch)
 	}
 	return nil
-}
-
-// BranchTitleFromName generates a human-readable PR title from a branch name.
-func BranchTitleFromName(branch string) string {
-	prefixes := []string{"feature/", "fix/", "chore/", "hotfix/", "bugfix/", "refactor/", "docs/"}
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(branch, prefix) {
-			branch = strings.TrimPrefix(branch, prefix)
-			break
-		}
-	}
-
-	issueIDPattern := regexp.MustCompile(`^[A-Z]+-\d+-`)
-	branch = issueIDPattern.ReplaceAllString(branch, "")
-	branch = strings.ReplaceAll(branch, "-", " ")
-	branch = strings.ReplaceAll(branch, "_", " ")
-	branch = strings.TrimSpace(branch)
-	if len(branch) == 0 {
-		return branch
-	}
-	runes := []rune(branch)
-	runes[0] = unicode.ToUpper(runes[0])
-	return string(runes)
 }
 
 // ExtractPRNumber parses a GitHub PR URL and returns the PR number.

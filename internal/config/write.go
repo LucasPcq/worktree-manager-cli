@@ -20,17 +20,13 @@ var ErrRunFileExists = errors.New("run file already exists")
 // Both the init wizard answers and a full ProjectConfig (for re-init) convert
 // to it, so the template emits every section's actual values.
 type projectTemplateData struct {
-	BasePath             string
-	BaseBranch           string
-	SkipEnv              bool
-	EnvStrategy          string
-	EnvCopyFiles         []string
-	SkipHooks            bool
-	OnCreate             []domain.HookCommand
-	GithubAutoDraft      bool
-	AgentDefault         string
-	VSCodeProjectManager bool
-	CursorProjectManager bool
+	BasePath     string
+	BaseBranch   string
+	SkipEnv      bool
+	EnvStrategy  string
+	EnvCopyFiles []string
+	SkipHooks    bool
+	OnCreate     []domain.HookCommand
 }
 
 // WriteProjectParams holds the inputs for writing a project config file.
@@ -40,7 +36,7 @@ type WriteProjectParams struct {
 }
 
 // WriteProject renders the project config from init wizard answers and writes it
-// to <state-dir>/config.toml. Fresh init leaves github/integrations at defaults.
+// to <state-dir>/config.toml.
 func WriteProject(params WriteProjectParams) error {
 	return renderProjectConfig(params.StateDir, answersToTemplate(params.Answers))
 }
@@ -79,11 +75,6 @@ func renderProjectConfig(stateDir string, data projectTemplateData) error {
 
 // answersToTemplate converts init wizard answers to template data.
 func answersToTemplate(a domain.InitProjectAnswers) projectTemplateData {
-	agentDefault := ""
-	if a.AgentOverride {
-		agentDefault = string(a.Agent)
-	}
-
 	return projectTemplateData{
 		BasePath:     a.BasePath,
 		BaseBranch:   a.BaseBranch,
@@ -92,7 +83,6 @@ func answersToTemplate(a domain.InitProjectAnswers) projectTemplateData {
 		EnvCopyFiles: a.EnvCopyFiles,
 		SkipHooks:    a.SkipHooks,
 		OnCreate:     a.OnCreate,
-		AgentDefault: agentDefault,
 	}
 }
 
@@ -101,17 +91,13 @@ func answersToTemplate(a domain.InitProjectAnswers) projectTemplateData {
 // stays valid.
 func configToTemplate(c domain.ProjectConfig) projectTemplateData {
 	return projectTemplateData{
-		BasePath:             c.Worktrees.BasePath,
-		BaseBranch:           c.Worktrees.BaseBranch,
-		SkipEnv:              c.Env.Strategy == "",
-		EnvStrategy:          string(c.Env.Strategy),
-		EnvCopyFiles:         c.Env.CopyFiles,
-		SkipHooks:            false,
-		OnCreate:             c.Hooks.OnCreate,
-		GithubAutoDraft:      c.Github.AutoDraft,
-		AgentDefault:         string(c.Agents.Default),
-		VSCodeProjectManager: c.Integrations.VSCodeProjectManager,
-		CursorProjectManager: c.Integrations.CursorProjectManager,
+		BasePath:     c.Worktrees.BasePath,
+		BaseBranch:   c.Worktrees.BaseBranch,
+		SkipEnv:      c.Env.Strategy == "",
+		EnvStrategy:  string(c.Env.Strategy),
+		EnvCopyFiles: c.Env.CopyFiles,
+		SkipHooks:    false,
+		OnCreate:     c.Hooks.OnCreate,
 	}
 }
 
@@ -211,7 +197,7 @@ func WriteGlobal(answers domain.InitGlobalAnswers) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	content := fmt.Sprintf("#:schema ./schemas/global.schema.json\n\nshell = %q\nagent = %q\n", answers.Shell, answers.Agent)
+	content := fmt.Sprintf("#:schema ./schemas/global.schema.json\n\nshell = %q\n", answers.Shell)
 
 	path := filepath.Join(dir, domain.GlobalConfigFile)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -228,7 +214,7 @@ func WriteGlobalTo(path string, answers domain.InitGlobalAnswers) error {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 
-	content := fmt.Sprintf("#:schema ./schemas/global.schema.json\n\nshell = %q\nagent = %q\n", answers.Shell, answers.Agent)
+	content := fmt.Sprintf("#:schema ./schemas/global.schema.json\n\nshell = %q\n", answers.Shell)
 
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)

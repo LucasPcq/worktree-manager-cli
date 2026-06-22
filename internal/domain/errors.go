@@ -21,9 +21,6 @@ var (
 	// ErrInvalidShellType is returned when shell has an unknown value.
 	ErrInvalidShellType = errors.New("invalid shell type: must be zsh, bash, or fish")
 
-	// ErrInvalidAgentType is returned when agent has an unknown value.
-	ErrInvalidAgentType = errors.New("invalid agent type: must be claude-code, cursor, or none")
-
 	// ErrUserAborted is returned when the user cancels an interactive prompt.
 	ErrUserAborted = errors.New("user aborted")
 
@@ -41,6 +38,10 @@ var (
 	// ErrWorktreePathExists is returned when the target worktree directory already exists.
 	ErrWorktreePathExists = errors.New("worktree path already exists")
 
+	// ErrInvalidBasePath is returned when --to is not a usable repo-relative path
+	// (blank/whitespace-only or absolute).
+	ErrInvalidBasePath = errors.New("invalid base path: must be a non-empty path relative to the repo root")
+
 	// ErrCannotCleanParent is returned when trying to clean the parent worktree.
 	ErrCannotCleanParent = errors.New("cannot clean the parent worktree")
 
@@ -49,9 +50,6 @@ var (
 
 	// ErrGHNotAuthenticated is returned when gh is not logged in to GitHub.
 	ErrGHNotAuthenticated = errors.New("not logged in to GitHub — run 'gh auth login'")
-
-	// ErrPRExists is returned when a pull request already exists for the branch.
-	ErrPRExists = errors.New("pull request already exists")
 
 	// ErrJobNotFound is returned when a referenced job is not declared in run.toml.
 	ErrJobNotFound = errors.New("job not found")

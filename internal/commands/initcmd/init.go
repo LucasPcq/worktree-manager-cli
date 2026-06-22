@@ -27,11 +27,10 @@ func NewCmd() *cobra.Command {
 			"Pass --non-interactive (or any config flag) to bootstrap from flags + auto-detection instead.\n" +
 			"Use --only env|hooks|services to re-run init for specific sections and regenerate them cleanly\n" +
 			"(run.toml jobs are regenerated while profiles are preserved).",
-		RunE:  runInit,
+		RunE: runInit,
 	}
 
 	cmd.Flags().Bool(domain.FlagNonInteractive, false, "Bootstrap from flags + auto-detection; never prompt")
-	cmd.Flags().String(domain.FlagAgent, "", "Global AI agent: claude-code, cursor, or none")
 	cmd.Flags().String(domain.FlagShell, "", "Global shell: zsh, bash, or fish")
 	cmd.Flags().String(domain.FlagBasePath, "", "Worktree directory, relative to repo root")
 	cmd.Flags().String(domain.FlagBaseBranch, "", "Default base branch for new worktrees")
@@ -50,7 +49,7 @@ func NewCmd() *cobra.Command {
 // value flags, which switches init into the non-interactive, flag-driven path.
 func initFlagged(cmd *cobra.Command) bool {
 	for _, name := range []string{
-		domain.FlagNonInteractive, domain.FlagAgent, domain.FlagShell,
+		domain.FlagNonInteractive, domain.FlagShell,
 		domain.FlagBasePath, domain.FlagBaseBranch, domain.FlagEnvStrategy,
 		domain.FlagInstallCommand, domain.FlagSkipEnv, domain.FlagSkipHooks,
 		domain.FlagSkipServices,
@@ -131,9 +130,8 @@ func ensureGlobalConfig(cmd *cobra.Command, flagged bool) error {
 // or the interactive wizard.
 func resolveGlobalAnswers(cmd *cobra.Command, flagged bool) (domain.InitGlobalAnswers, error) {
 	if flagged {
-		agent, _ := cmd.Flags().GetString(domain.FlagAgent)
 		shell, _ := cmd.Flags().GetString(domain.FlagShell)
-		return rules.BuildGlobalAnswers(rules.InitGlobalFlags{Agent: agent, Shell: shell})
+		return rules.BuildGlobalAnswers(rules.InitGlobalFlags{Shell: shell})
 	}
 
 	output.Message(cmd.OutOrStdout(), "No global config found. Let's set one up.")

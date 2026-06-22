@@ -22,7 +22,7 @@ func EncodeBranchSegment(branch string) string {
 }
 
 // WorktreeMetaDir returns <state-dir>/worktrees/<encoded-branch>/, the
-// directory holding meta.json and context.md for one worktree.
+// directory holding meta.json for one worktree.
 func WorktreeMetaDir(stateDir, branch string) string {
 	return filepath.Join(stateDir, domain.WorktreesSubdir, EncodeBranchSegment(branch))
 }

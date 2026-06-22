@@ -18,6 +18,7 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(newCreateCmd())
 	cmd.AddCommand(newCleanCmd())
 	cmd.AddCommand(newSyncCmd())
+	cmd.AddCommand(newRelocateCmd())
 	cmd.AddCommand(newGoCmd())
 	cmd.AddCommand(newSwitchCmd())
 	cmd.AddCommand(newExtractCmd())

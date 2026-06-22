@@ -15,13 +15,11 @@ func TestWriteProjectRendersValidTOML(t *testing.T) {
 	dir := t.TempDir()
 
 	answers := domain.InitProjectAnswers{
-		BasePath:       ".trees",
-		BaseBranch:     "main",
-		EnvCopyFiles:   []string{".env", "apps/api/.env"},
-		EnvStrategy:    domain.EnvStrategyExample,
-		OnCreate:       []domain.HookCommand{{Cmd: "pnpm install"}},
-		Agent:          domain.AgentClaudeCode,
-		AgentOverride:  false,
+		BasePath:     ".trees",
+		BaseBranch:   "main",
+		EnvCopyFiles: []string{".env", "apps/api/.env"},
+		EnvStrategy:  domain.EnvStrategyExample,
+		OnCreate:     []domain.HookCommand{{Cmd: "pnpm install"}},
 	}
 
 	err := WriteProject(WriteProjectParams{
@@ -55,33 +53,6 @@ func TestWriteProjectRendersValidTOML(t *testing.T) {
 	var raw map[string]interface{}
 	if _, err := toml.Decode(content, &raw); err != nil {
 		t.Fatalf("generated file is not valid TOML: %v", err)
-	}
-}
-
-func TestWriteProjectWithAgentOverride(t *testing.T) {
-	dir := t.TempDir()
-
-	answers := domain.InitProjectAnswers{
-		BasePath:      ".trees",
-		BaseBranch:    "develop",
-		EnvStrategy:   domain.EnvStrategyMain,
-		Agent:         domain.AgentCursor,
-		AgentOverride: true,
-	}
-
-	err := WriteProject(WriteProjectParams{
-		StateDir: dir,
-		Answers:  answers,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
-	content := string(data)
-
-	if !strings.Contains(content, `default = "cursor"`) {
-		t.Error("expected agent override to be written")
 	}
 }
 
@@ -249,12 +220,6 @@ func TestWriteProjectConfigPreservesAllSections(t *testing.T) {
 		Worktrees: domain.WorktreesConfig{BasePath: "../.trees", BaseBranch: "develop"},
 		Env:       domain.EnvConfig{Strategy: domain.EnvStrategyParent, CopyFiles: []string{".env"}},
 		Hooks:     domain.HooksConfig{OnCreate: []domain.HookCommand{{Cmd: "pnpm install"}}},
-		Github:    domain.GithubConfig{AutoDraft: true},
-		Agents:    domain.AgentsConfig{Default: domain.AgentCursor},
-		Integrations: domain.IntegrationsConfig{
-			VSCodeProjectManager: true,
-			CursorProjectManager: true,
-		},
 	}
 
 	if err := WriteProjectConfig(WriteProjectConfigParams{StateDir: dir, Config: cfg}); err != nil {
@@ -266,15 +231,6 @@ func TestWriteProjectConfigPreservesAllSections(t *testing.T) {
 		t.Fatalf("loadProjectConfig: %v", err)
 	}
 
-	if got.Github.AutoDraft != true {
-		t.Error("github.auto_draft not preserved")
-	}
-	if !got.Integrations.VSCodeProjectManager || !got.Integrations.CursorProjectManager {
-		t.Errorf("integrations not preserved: %+v", got.Integrations)
-	}
-	if got.Agents.Default != domain.AgentCursor {
-		t.Errorf("agents.default not preserved: %q", got.Agents.Default)
-	}
 	if got.Env.Strategy != domain.EnvStrategyParent {
 		t.Errorf("env.strategy not preserved: %q", got.Env.Strategy)
 	}
@@ -371,7 +327,6 @@ func TestWriteGlobalTo(t *testing.T) {
 	path := filepath.Join(dir, "wtm", "config.toml")
 
 	err := WriteGlobalTo(path, domain.InitGlobalAnswers{
-		Agent: domain.AgentClaudeCode,
 		Shell: domain.ShellZsh,
 	})
 	if err != nil {
@@ -386,9 +341,6 @@ func TestWriteGlobalTo(t *testing.T) {
 	content := string(data)
 	if !strings.Contains(content, `shell = "zsh"`) {
 		t.Error("missing shell")
-	}
-	if !strings.Contains(content, `agent = "claude-code"`) {
-		t.Error("missing agent")
 	}
 
 	// Verify it parses as valid TOML
@@ -405,13 +357,11 @@ func TestWriteProjectRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
 	answers := domain.InitProjectAnswers{
-		BasePath:       ".trees",
-		BaseBranch:     "develop",
-		EnvCopyFiles:   []string{".env", "apps/web/.env"},
-		EnvStrategy:    domain.EnvStrategyParent,
-		OnCreate:       []domain.HookCommand{{Cmd: "yarn install"}},
-		Agent:          domain.AgentNone,
-		AgentOverride:  true,
+		BasePath:     ".trees",
+		BaseBranch:   "develop",
+		EnvCopyFiles: []string{".env", "apps/web/.env"},
+		EnvStrategy:  domain.EnvStrategyParent,
+		OnCreate:     []domain.HookCommand{{Cmd: "yarn install"}},
 	}
 
 	err := WriteProject(WriteProjectParams{
@@ -442,8 +392,5 @@ func TestWriteProjectRoundTrip(t *testing.T) {
 	}
 	if len(cfg.Hooks.OnCreate) != 1 || cfg.Hooks.OnCreate[0].Cmd != "yarn install" {
 		t.Errorf("round-trip on_create: got %v", cfg.Hooks.OnCreate)
-	}
-	if cfg.Agents.Default != domain.AgentNone {
-		t.Errorf("round-trip agent: got %s", cfg.Agents.Default)
 	}
 }

@@ -14,26 +14,6 @@ import (
 func RunGlobalWizard() (domain.InitGlobalAnswers, error) {
 	steps := []components.Step{
 		{
-			Name: "AI agent",
-			Model: components.NewSelectList(components.NewSelectListParams{
-				Title:       "Default AI agent",
-				Description: "wtm can scaffold agent integration files in each new worktree. Pick the agent you use, or None to skip that.",
-				Items: []components.SelectItem{
-					{Label: "Claude Code", Value: string(domain.AgentClaudeCode)},
-					{Label: "Cursor", Value: string(domain.AgentCursor)},
-					{Label: "None", Value: string(domain.AgentNone)},
-				},
-			}),
-			Summary: func(model any) string {
-				sl, ok := model.(components.SelectListModel)
-				if !ok {
-					return ""
-				}
-				return sl.Value()
-			},
-			Callout: true,
-		},
-		{
 			Name: "Shell",
 			Model: components.NewSelectList(components.NewSelectListParams{
 				Title:       "Shell",
@@ -69,18 +49,12 @@ func RunGlobalWizard() (domain.InitGlobalAnswers, error) {
 		return domain.InitGlobalAnswers{}, domain.ErrUserAborted
 	}
 
-	agentStep, ok := final.Steps()[0].Model.(components.SelectListModel)
-	if !ok {
-		return domain.InitGlobalAnswers{}, domain.ErrUserAborted
-	}
-
-	shellStep, ok := final.Steps()[1].Model.(components.SelectListModel)
+	shellStep, ok := final.Steps()[0].Model.(components.SelectListModel)
 	if !ok {
 		return domain.InitGlobalAnswers{}, domain.ErrUserAborted
 	}
 
 	return domain.InitGlobalAnswers{
-		Agent: domain.AgentType(agentStep.Value()),
 		Shell: domain.ShellType(shellStep.Value()),
 	}, nil
 }

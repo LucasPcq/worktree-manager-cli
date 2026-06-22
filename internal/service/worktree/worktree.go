@@ -113,10 +113,5 @@ func writeMetadata(metaDir string, metadata domain.WorktreeMetadata) error {
 		return fmt.Errorf("write %s: %w", metaPath, err)
 	}
 
-	contextPath := filepath.Join(metaDir, domain.ContextFileName)
-	if err := os.WriteFile(contextPath, nil, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", contextPath, err)
-	}
-
 	return nil
 }

@@ -29,4 +29,3 @@ func PackageManager(projectDir string) domain.PackageManager {
 
 	return domain.PkgManagerNone
 }
-
