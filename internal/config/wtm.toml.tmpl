@@ -51,12 +51,3 @@ on_create = [
 
 [github]
 auto_draft = {{ .GithubAutoDraft }}
-
-[agents]
-# Default AI agent: claude-code | cursor | none
-{{ if .AgentDefault -}}
-default = "{{ .AgentDefault }}"
-{{- else -}}
-# Inherits from global config (~/.config/wtm/config.toml)
-# default = "claude-code"
-{{- end }}

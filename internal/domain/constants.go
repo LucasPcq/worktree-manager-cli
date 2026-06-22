@@ -52,9 +52,6 @@ const (
 	// DefaultEnvStrategy is the default .env provisioning strategy.
 	DefaultEnvStrategy = EnvStrategyExample
 
-	// DefaultAgent is the default AI agent.
-	DefaultAgent = AgentClaudeCode
-
 	// DefaultShell is the default shell for integration.
 	DefaultShell = ShellZsh
 
@@ -115,7 +112,6 @@ const (
 	// init flags (non-interactive bootstrap).
 	FlagIfNotExists    = "if-not-exists"
 	FlagNonInteractive = "non-interactive"
-	FlagAgent          = "agent"
 	FlagShell          = "shell"
 	FlagBasePath       = "base-path"
 	FlagBaseBranch     = "base-branch"

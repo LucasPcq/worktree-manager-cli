@@ -13,13 +13,7 @@ func Validate(cfg domain.Config) error {
 	if err := ValidateEnvStrategy(cfg.Project.Env.Strategy); err != nil {
 		return err
 	}
-	if err := ValidateAgentType(cfg.Project.Agents.Default); err != nil {
-		return err
-	}
 	if err := ValidateShellType(cfg.Global.Shell); err != nil {
-		return err
-	}
-	if err := ValidateAgentType(domain.AgentType(cfg.Global.Agent)); err != nil {
 		return err
 	}
 	return nil
@@ -42,16 +36,6 @@ func ValidateShellType(s domain.ShellType) error {
 		return nil
 	default:
 		return domain.ErrInvalidShellType
-	}
-}
-
-// ValidateAgentType returns ErrInvalidAgentType if a is not a known value.
-func ValidateAgentType(a domain.AgentType) error {
-	switch a {
-	case domain.AgentClaudeCode, domain.AgentCursor, domain.AgentNone:
-		return nil
-	default:
-		return domain.ErrInvalidAgentType
 	}
 }
 

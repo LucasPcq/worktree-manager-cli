@@ -70,17 +70,6 @@
           "description": "If true, `wtm pr create` defaults to a draft PR (the user can override with --draft=false)."
         }
       }
-    },
-    "agents": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "default": {
-          "type": "string",
-          "enum": ["claude-code", "cursor", "none"],
-          "description": "AI agent integration generated for the project (skill assets, etc.)."
-        }
-      }
     }
   }
 }

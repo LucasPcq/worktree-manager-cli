@@ -9,22 +9,12 @@ const (
 	ShellFish ShellType = "fish"
 )
 
-// AgentType represents a supported AI agent.
-type AgentType string
-
-const (
-	AgentClaudeCode AgentType = "claude-code"
-	AgentCursor     AgentType = "cursor"
-	AgentNone       AgentType = "none"
-)
-
 // ProjectConfig maps to .wtm.toml (project-level configuration).
 type ProjectConfig struct {
-	Worktrees    WorktreesConfig    `toml:"worktrees"`
-	Env          EnvConfig          `toml:"env"`
-	Hooks        HooksConfig        `toml:"hooks"`
-	Github       GithubConfig       `toml:"github"`
-	Agents       AgentsConfig       `toml:"agents"`
+	Worktrees WorktreesConfig `toml:"worktrees"`
+	Env       EnvConfig       `toml:"env"`
+	Hooks     HooksConfig     `toml:"hooks"`
+	Github    GithubConfig    `toml:"github"`
 }
 
 // WorktreesConfig controls worktree creation defaults.
@@ -49,15 +39,9 @@ type GithubConfig struct {
 	AutoDraft bool `toml:"auto_draft"`
 }
 
-// AgentsConfig controls the default AI agent.
-type AgentsConfig struct {
-	Default AgentType `toml:"default"`
-}
-
 // GlobalConfig maps to ~/.config/wtm/config.toml (user-level configuration).
 type GlobalConfig struct {
 	Shell ShellType `toml:"shell"`
-	Agent AgentType `toml:"agent"`
 }
 
 // Config is the merged, validated configuration used by the service layer.

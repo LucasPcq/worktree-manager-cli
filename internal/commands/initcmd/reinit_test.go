@@ -73,7 +73,6 @@ func fullSeededConfig() domain.ProjectConfig {
 		Env:       domain.EnvConfig{Strategy: domain.EnvStrategyParent, CopyFiles: []string{".env"}},
 		Hooks:     domain.HooksConfig{OnCreate: []domain.HookCommand{{Cmd: "pnpm install"}}},
 		Github:    domain.GithubConfig{AutoDraft: true},
-		Agents:    domain.AgentsConfig{Default: domain.AgentCursor},
 	}
 }
 
@@ -113,9 +112,6 @@ func TestApplyConfigReinitOnlyRewritesRequestedSection(t *testing.T) {
 	}
 	if !got.Github.AutoDraft {
 		t.Error("github.auto_draft not preserved")
-	}
-	if got.Agents.Default != domain.AgentCursor {
-		t.Errorf("agents.default not preserved: %q", got.Agents.Default)
 	}
 	if len(got.Hooks.OnCreate) != 1 || got.Hooks.OnCreate[0].Cmd != "pnpm install" {
 		t.Errorf("hooks not preserved: %+v", got.Hooks.OnCreate)

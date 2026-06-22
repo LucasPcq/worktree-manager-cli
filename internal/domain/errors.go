@@ -21,9 +21,6 @@ var (
 	// ErrInvalidShellType is returned when shell has an unknown value.
 	ErrInvalidShellType = errors.New("invalid shell type: must be zsh, bash, or fish")
 
-	// ErrInvalidAgentType is returned when agent has an unknown value.
-	ErrInvalidAgentType = errors.New("invalid agent type: must be claude-code, cursor, or none")
-
 	// ErrUserAborted is returned when the user cancels an interactive prompt.
 	ErrUserAborted = errors.New("user aborted")
 

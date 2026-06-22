@@ -36,7 +36,6 @@ type InitDetectionResult struct {
 
 // InitGlobalAnswers holds the wizard answers for global config setup.
 type InitGlobalAnswers struct {
-	Agent AgentType
 	Shell ShellType
 }
 
@@ -50,8 +49,6 @@ type InitProjectAnswers struct {
 	EnvCopyFiles           []string
 	EnvStrategy            EnvStrategy
 	OnCreate               []HookCommand
-	Agent                  AgentType
-	AgentOverride          bool
 	DockerComposeFiles     []string
 	DockerComposeCmd       string
 	SelectedPackageScripts []PackageScript

@@ -1,6 +1,6 @@
 # wtm — Worktree Manager
 
-Orchestrate git worktrees, AI agents, and team dev workflows from the terminal.
+Orchestrate git worktrees and team dev workflows from the terminal.
 
 `wtm` manages the lifecycle of git worktrees: creation, environment provisioning, hook execution, navigation, and cleanup. It replaces manual `git worktree` commands with a streamlined workflow designed for teams working on multiple branches simultaneously.
 
@@ -88,7 +88,7 @@ wtm init
 ```
 
 On first run, creates two files:
-- **Global config** (`~/.config/wtm/config.toml`) — shell type, default AI agent
+- **Global config** (`~/.config/wtm/config.toml`) — shell type
 - **Project config** (`<git-common-dir>/wtm/config.toml`) — worktree settings, env strategy, hooks
 
 Both files live outside the working tree, so nothing is ever committed to your repo. The project config is scoped to your local clone (it lives inside `.git/`), invisible to teammates and to `git status`.
@@ -666,11 +666,6 @@ on_create = [
 
 [github]
 auto_draft = false
-base_branch = "main"
-
-[agents]
-# Default AI agent: claude-code | cursor | none
-default = "claude-code"
 ```
 
 ### Hook format
