@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.16.0 — `wt relocate` : rassembler les worktrees + grand nettoyage de surface inutilisée
+
+### New features
+
+- **`wtm wt relocate`** — réorganise les worktrees pour qu'ils vivent tous sous `base_path`. Déplace les worktrees éparpillés (créés ailleurs) vers l'emplacement configuré et **adopte** les worktrees externes existants dans la gestion wtm. Plan/preview des déplacements avant exécution, wizard interactif, et pilotable sans TTY via `--to`, `--force`, `--output json` (statuts par worktree : `moved`, `moved_adopted`, `adopted`, `skipped`, …).
+
+### Breaking changes
+
+- **`wtm pr create` retiré** — la création de PR revient à `gh pr create`, qui gère déjà templates, push de branche et détection de la base. C'était un simple wrapper qui ne touchait jamais au modèle worktree. `pr list` et `pr checkout` (les vrais ponts PR↔worktree) sont inchangés.
+- **Décodage strict de la config** — les sections/clés désormais supprimées font échouer le chargement : `[agents]`, `[integrations]` et `[github]` dans le `config.toml` projet, ainsi que `agent` dans le config global (`~/.config/wtm/config.toml`). Retirer ces lignes ou relancer `wtm init`.
+
+### Improvements
+
+- **Nettoyage de surface inutilisée** — retrait du scaffolding `project_manager` (intégration VS Code/Cursor jamais livrée), de la config « agent par défaut » jamais consommée (clé `agent`, flag `--agent`, étape du wizard d'`init`, schéma), de la machinerie morte `context.md` / `Detail()` (vue détail jamais branchée), et de la config `[github] auto_draft` (orpheline après le retrait de `pr create`).
+
 ## v0.15.0 — `wt sync` : rebase en cascade de toute la chaîne de worktrees
 
 ### New features
