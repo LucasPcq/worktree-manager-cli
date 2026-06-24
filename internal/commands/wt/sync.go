@@ -14,7 +14,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// newSyncCmd creates the wtm wt sync subcommand.
+// newSyncCmd creates the wtm sync subcommand.
 func newSyncCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdSync,

@@ -3,15 +3,15 @@ package rules
 import "github.com/LucasPcq/wtm/internal/domain"
 
 const bashZshTemplate = `wtm() {
-  if [ "$1" = "wt" ] && [ "$2" = "go" ]; then
+  if [ "$1" = "go" ]; then
     local dir
-    dir="$(command wtm resolve "${@:3}")"
+    dir="$(command wtm resolve "${@:2}")"
     if [ -n "$dir" ]; then
       cd "$dir" || return 1
     fi
-  elif [ "$1" = "wt" ] && [ "$2" = "switch" ]; then
+  elif [ "$1" = "switch" ]; then
     local dir flags=() branch_args=()
-    shift 2
+    shift 1
     while [ $# -gt 0 ]; do
       case "$1" in
         --exclusive|--parallel|--profile|--profile=*) flags+=("$1"); [ "$1" = "--profile" ] && { shift; flags+=("$1"); } ;;
@@ -53,15 +53,15 @@ const bashZshTemplate = `wtm() {
 `
 
 const fishTemplate = `function wtm
-  if test "$argv[1]" = "wt" -a "$argv[2]" = "go"
-    set dir (command wtm resolve $argv[3..])
+  if test "$argv[1]" = "go"
+    set dir (command wtm resolve $argv[2..])
     if test -n "$dir"
       cd "$dir"
     end
-  else if test "$argv[1]" = "wt" -a "$argv[2]" = "switch"
+  else if test "$argv[1]" = "switch"
     set -l branch_args
     set -l flags
-    for arg in $argv[3..]
+    for arg in $argv[2..]
       switch $arg
         case '--exclusive' '--parallel' '--profile' '--profile=*'
           set flags $flags $arg

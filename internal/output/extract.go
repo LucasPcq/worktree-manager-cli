@@ -9,7 +9,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
-// WriteExtractJSON writes the JSON payload for `wt extract`.
+// WriteExtractJSON writes the JSON payload for `extract`.
 func WriteExtractJSON(w io.Writer, result domain.ExtractResult) error {
 	return encodeJSON(w, result)
 }

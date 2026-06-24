@@ -29,7 +29,9 @@ func init() {
 		&cobra.Group{ID: domain.CmdGroupSetup, Title: "Setup:"},
 	)
 
-	rootCmd.AddCommand(wt.NewCmd())
+	for _, cmd := range wt.NewCmds() {
+		rootCmd.AddCommand(cmd)
+	}
 	rootCmd.AddCommand(run.NewCmd())
 	rootCmd.AddCommand(pr.NewCmd())
 
@@ -53,7 +55,7 @@ var version = domain.Version
 
 var rootCmd = &cobra.Command{
 	Use:           domain.AppName,
-	Short:         "Worktree Manager — orchestrate git worktrees, AI agents, and team workflows",
+	Short:         "Orchestrate git worktrees and team dev workflows from the terminal",
 	Version:       version,
 	RunE:          rootRunE,
 	SilenceErrors: true,

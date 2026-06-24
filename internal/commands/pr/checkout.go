@@ -159,7 +159,7 @@ func checkoutPR(cmd *cobra.Command, result shared.ConfigResult, params checkoutP
 
 	output.Blank(cmd.OutOrStdout())
 	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Checked out PR #%d (%s) at %s", p.Number, p.Branch, createResult.Path))
-	output.InfoLine(cmd.OutOrStdout(), "cd", fmt.Sprintf("wtm wt go %s", p.Branch))
+	output.InfoLine(cmd.OutOrStdout(), "cd", fmt.Sprintf("wtm go %s", p.Branch))
 	output.Blank(cmd.OutOrStdout())
 	return nil
 }

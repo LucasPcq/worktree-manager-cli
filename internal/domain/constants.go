@@ -102,7 +102,7 @@ const (
 	FlagFiles      = "files"
 	FlagOnConflict = "on-conflict"
 
-	// On-conflict modes for `wt extract`.
+	// On-conflict modes for `extract`.
 	OnConflictAbort   = "abort"
 	OnConflictResolve = "resolve"
 
@@ -138,7 +138,7 @@ const (
 	SectionServices  = "services"
 	SectionWorktrees = "worktrees"
 
-	// wt sync flags — cascade rebase of worktrees onto their recorded parent.
+	// sync flags — cascade rebase of worktrees onto their recorded parent.
 	FlagDryRun = "dry-run"
 	FlagPush   = "push"
 	FlagNoPush = "no-push"
@@ -195,7 +195,6 @@ const (
 
 	// CLI command names — used in Use: declarations and exec.Command(bin, …) call sites.
 	// Centralised here so a rename is a single-file change with no silent breakage.
-	CmdWt       = "wt"
 	CmdRun      = "run"
 	CmdPr       = "pr"
 	CmdGo       = "go"

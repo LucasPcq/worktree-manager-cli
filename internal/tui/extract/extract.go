@@ -1,4 +1,4 @@
-// Package extract renders the interactive selection flow for `wtm wt extract`:
+// Package extract renders the interactive selection flow for `wtm extract`:
 // a single wizard whose steps are the file multi-select and the target worktree
 // picker, so the breadcrumb, step summaries, and back navigation all work.
 package extract

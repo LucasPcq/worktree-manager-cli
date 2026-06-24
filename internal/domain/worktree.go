@@ -28,7 +28,7 @@ type WorktreeStatus struct {
 }
 
 // WorktreeListEntry is the JSON-serializable projection of a worktree for the
-// `wt list --output json` payload.
+// `list --output json` payload.
 type WorktreeListEntry struct {
 	Branch       string          `json:"branch"`
 	Path         string          `json:"path"`

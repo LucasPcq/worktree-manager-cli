@@ -7,12 +7,12 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 )
 
-// newSwitchCmd creates the wtm wt switch subcommand.
+// newSwitchCmd creates the wtm switch subcommand.
 func newSwitchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdSwitch + " [branch]",
 		Short: "Navigate to a worktree and start its services",
-		Long:  "Combines `wt go` and `svc up` in one command.\nRequires shell integration to change your working directory.",
+		Long:  "Combines `go` and `svc up` in one command.\nRequires shell integration to change your working directory.",
 		RunE:  runSwitch,
 	}
 

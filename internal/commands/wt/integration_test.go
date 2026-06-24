@@ -7,18 +7,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/testutil/gittest"
 )
 
 func runWtCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
-	cmd := NewCmd()
+	root := &cobra.Command{Use: domain.AppName}
+	root.AddGroup(&cobra.Group{ID: domain.CmdGroupCore, Title: "Core Commands:"})
+	for _, c := range NewCmds() {
+		root.AddCommand(c)
+	}
 	var outBuf, errBuf bytes.Buffer
-	cmd.SetOut(&outBuf)
-	cmd.SetErr(&errBuf)
-	cmd.SetArgs(args)
-	err = cmd.Execute()
+	root.SetOut(&outBuf)
+	root.SetErr(&errBuf)
+	root.SetArgs(args)
+	err = root.Execute()
 	return outBuf.String(), errBuf.String(), err
 }
 

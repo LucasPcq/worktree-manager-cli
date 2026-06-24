@@ -1,4 +1,4 @@
-// Package relocate renders the interactive wizard for `wt relocate`: a parent
+// Package relocate renders the interactive wizard for `wtm relocate`: a parent
 // picker per adopted worktree followed by a final recap + apply confirmation.
 package relocate
 
@@ -82,7 +82,7 @@ func parentStep(params parentStepParams) components.Step {
 		Name: "Parent for " + params.Branch,
 		Model: components.NewSelectList(components.NewSelectListParams{
 			Title:       "Parent for " + params.Branch,
-			Description: "Recorded as the worktree's parent so `wt sync` can rebase it.",
+			Description: "Recorded as the worktree's parent so `wtm sync` can rebase it.",
 			Items:       items,
 		}),
 		Summary: components.SelectSummary,

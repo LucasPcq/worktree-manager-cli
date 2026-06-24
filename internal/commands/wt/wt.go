@@ -6,22 +6,23 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// NewCmd creates the wtm wt command group.
-func NewCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     domain.CmdWt,
-		Short:   "Manage worktrees",
-		GroupID: domain.CmdGroupCore,
+// NewCmds returns the worktree subcommands, each assigned to the Core Commands
+// help group, ready to be registered directly on the root command.
+func NewCmds() []*cobra.Command {
+	cmds := []*cobra.Command{
+		newListCmd(),
+		newCreateCmd(),
+		newCleanCmd(),
+		newSyncCmd(),
+		newRelocateCmd(),
+		newGoCmd(),
+		newSwitchCmd(),
+		newExtractCmd(),
 	}
 
-	cmd.AddCommand(newListCmd())
-	cmd.AddCommand(newCreateCmd())
-	cmd.AddCommand(newCleanCmd())
-	cmd.AddCommand(newSyncCmd())
-	cmd.AddCommand(newRelocateCmd())
-	cmd.AddCommand(newGoCmd())
-	cmd.AddCommand(newSwitchCmd())
-	cmd.AddCommand(newExtractCmd())
+	for _, cmd := range cmds {
+		cmd.GroupID = domain.CmdGroupCore
+	}
 
-	return cmd
+	return cmds
 }

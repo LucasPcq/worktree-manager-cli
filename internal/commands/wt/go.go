@@ -7,7 +7,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 )
 
-// newGoCmd creates the wtm wt go subcommand (fallback when shell wrapper is not configured).
+// newGoCmd creates the wtm go subcommand (fallback when shell wrapper is not configured).
 func newGoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   domain.CmdGo + " [branch]",

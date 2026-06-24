@@ -15,14 +15,14 @@ import (
 	relocatetui "github.com/LucasPcq/wtm/internal/tui/relocate"
 )
 
-// newRelocateCmd creates the wtm wt relocate subcommand.
+// newRelocateCmd creates the wtm relocate subcommand.
 func newRelocateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdRelocate,
 		Short: "Move worktrees to align with base_path and adopt external ones",
 		Long: "Reconcile every worktree with the configured base_path. Worktrees not under it are\n" +
 			"moved (git worktree move) and worktrees created outside wtm are adopted (their parent\n" +
-			"recorded so `wt sync` works). Pass --to to change base_path and move existing worktrees\n" +
+			"recorded so `wtm sync` works). Pass --to to change base_path and move existing worktrees\n" +
 			"to the new location. Dirty or locked worktrees are skipped unless --force; an occupied\n" +
 			"target path is never overwritten.",
 		Args: cobra.NoArgs,
