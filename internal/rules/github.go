@@ -2,14 +2,10 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
-	"strconv"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
-
-var prNumberPattern = regexp.MustCompile(`/pull/(\d+)$`)
 
 // ValidatePRForCheckout returns an error if the PR cannot be checked out
 // locally: fork PRs are intentionally out of scope (see README — wtm manages
@@ -22,13 +18,4 @@ func ValidatePRForCheckout(pr domain.PRInfo, localBranches []string) error {
 		return fmt.Errorf("local branch %q already exists — run `wtm clean %s` first", pr.Branch, pr.Branch)
 	}
 	return nil
-}
-
-// ExtractPRNumber parses a GitHub PR URL and returns the PR number.
-func ExtractPRNumber(url string) (int, error) {
-	m := prNumberPattern.FindStringSubmatch(url)
-	if len(m) < 2 {
-		return 0, fmt.Errorf("no PR number found")
-	}
-	return strconv.Atoi(m[1])
 }

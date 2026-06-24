@@ -156,11 +156,10 @@ const (
 	// consumer can't stream, so the fetch is opt-in and blocking there.
 	FlagWithPRs = "with-prs"
 
-	// GitHub PR JSON field sets passed to `gh pr list --json`. The full set
-	// includes the heavy `body` field (full PR description); the light set omits
-	// it for worktree pickers that only render PR badges (number + branch + url).
-	GHPRFieldsFull  = "number,title,author,headRefName,baseRefName,isDraft,createdAt,url,body,isCrossRepository"
-	GHPRFieldsLight = "number,title,author,headRefName,baseRefName,isDraft,createdAt,url,isCrossRepository"
+	// GHPRFields is the JSON field set passed to `gh pr list/view --json`. It
+	// holds exactly what wtm consumes: PR identity, head/base branches, url, and
+	// the fork flag (isCrossRepository).
+	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository"
 
 	// Output format values for FlagOutput.
 	OutputText = "text"

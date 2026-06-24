@@ -28,14 +28,3 @@ func TestValidatePRForCheckout_BranchExists(t *testing.T) {
 		t.Error("expected error for existing branch, got nil")
 	}
 }
-
-func TestExtractPRNumber(t *testing.T) {
-	n, err := ExtractPRNumber("https://github.com/owner/repo/pull/42")
-	if err != nil || n != 42 {
-		t.Errorf("expected 42, got %d, err %v", n, err)
-	}
-	_, err = ExtractPRNumber("https://github.com/owner/repo/issues/1")
-	if err == nil {
-		t.Error("expected error for non-PR URL")
-	}
-}

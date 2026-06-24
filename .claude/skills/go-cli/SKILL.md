@@ -283,12 +283,15 @@ All reusable TUI primitives live in `internal/tui/components/`:
 Each screen lives in its own package under `internal/tui/`:
 ```
 internal/tui/
-  components/    ← shared primitives (wizard, selectlist, multiselect, confirm)
-  new/           ← wt create wizard
-  pr/            ← pr create wizard, env picker
-  run/           ← run list picker, run ps picker
-  init/          ← global + project init wizards
-  clean/         ← worktree picker + deletion confirm
+  components/     ← shared primitives (wizard, selectlist, multiselect, confirm)
+  newwt/          ← create wizard
+  checkout/       ← checkout wizard (PR picker → parent → env)
+  runpicker/      ← run list / ps pickers
+  runwizard/      ← run job / profile wizards
+  inittui/        ← global + project init wizards
+  clean/          ← deletion confirm
+  extract/        ← extract wizard
+  relocate/       ← relocate wizard
   worktreepicker/ ← shared worktree-selection picker
 ```
 
