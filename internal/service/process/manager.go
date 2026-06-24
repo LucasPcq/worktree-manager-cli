@@ -47,6 +47,13 @@ const (
 // enough that the user doesn't notice a hang.
 const stopGracePeriod = 5 * time.Second
 
+// detachedDrainGracePeriod bounds how long waitDetached waits for the PTY
+// drain goroutine to reach natural EOF after the launcher exits, before
+// force-closing the master to unblock it. The happy path hits EOF within
+// milliseconds; this backstop only bites if a descendant keeps the slave
+// open, so the daemon can never hang on a misbehaving launcher.
+const detachedDrainGracePeriod = 2 * time.Second
+
 // ManagedJob holds the state of a running job.
 type ManagedJob struct {
 	Name    string
@@ -360,8 +367,18 @@ func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 
 	err := job.Cmd.Wait()
 
-	// Closing the PTY unblocks the drain goroutine in case Copy is still
-	// reading; on normal exit it returns on its own.
+	// The launcher has exited; let io.Copy drain the PTY to its natural EOF so we
+	// never truncate buffered output. Closing the master PTY before the drain
+	// goroutine finishes is what dropped streamed output on slow CI runners
+	// (LUC-84): on a fast machine io.Copy had already read everything, on a slow
+	// one Close() interrupted the read mid-buffer. Once the launcher and its
+	// descendants release the slave, the master read returns EOF (Darwin) or EIO
+	// (Linux) and io.Copy returns on its own. The force-close is a liveness
+	// backstop in case a descendant keeps the slave open.
+	select {
+	case <-drained:
+	case <-time.After(detachedDrainGracePeriod):
+	}
 	_ = job.PTY.Close()
 	<-drained
 
