@@ -159,8 +159,8 @@ const (
 	// GitHub PR JSON field sets passed to `gh pr list --json`. The full set
 	// includes the heavy `body` field (full PR description); the light set omits
 	// it for worktree pickers that only render PR badges (number + branch + url).
-	GHPRFieldsFull  = "number,title,author,headRefName,isDraft,createdAt,url,body,isCrossRepository"
-	GHPRFieldsLight = "number,title,author,headRefName,isDraft,createdAt,url,isCrossRepository"
+	GHPRFieldsFull  = "number,title,author,headRefName,baseRefName,isDraft,createdAt,url,body,isCrossRepository"
+	GHPRFieldsLight = "number,title,author,headRefName,baseRefName,isDraft,createdAt,url,isCrossRepository"
 
 	// Output format values for FlagOutput.
 	OutputText = "text"
@@ -196,7 +196,6 @@ const (
 	// CLI command names — used in Use: declarations and exec.Command(bin, …) call sites.
 	// Centralised here so a rename is a single-file change with no silent breakage.
 	CmdRun      = "run"
-	CmdPr       = "pr"
 	CmdGo       = "go"
 	CmdCreate   = "create"
 	CmdClean    = "clean"

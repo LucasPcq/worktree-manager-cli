@@ -74,18 +74,19 @@ type ghReview struct {
 
 func convertGHPR(g ghPR) domain.PRInfo {
 	return domain.PRInfo{
-		Number:    g.Number,
-		Title:     g.Title,
-		Body:      g.Body,
-		Author:    g.Author.Login,
-		Branch:    g.HeadRefName,
-		State:     "open",
-		Draft:     g.IsDraft,
-		CreatedAt: g.CreatedAt,
-		URL:       g.URL,
-		IsFork:    g.IsCrossRepository,
-		CIStatus:  deriveCIStatus(g.StatusCheckRollup),
-		Reviews:   deduplicateReviews(g.Reviews),
+		Number:     g.Number,
+		Title:      g.Title,
+		Body:       g.Body,
+		Author:     g.Author.Login,
+		Branch:     g.HeadRefName,
+		BaseBranch: g.BaseRefName,
+		State:      "open",
+		Draft:      g.IsDraft,
+		CreatedAt:  g.CreatedAt,
+		URL:        g.URL,
+		IsFork:     g.IsCrossRepository,
+		CIStatus:   deriveCIStatus(g.StatusCheckRollup),
+		Reviews:    deduplicateReviews(g.Reviews),
 	}
 }
 

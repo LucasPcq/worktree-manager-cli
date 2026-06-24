@@ -49,8 +49,7 @@ type ListPRsParams struct {
 	ProjectDir string
 	Filter     domain.PRFilter
 	// Lightweight drops the heavy `body` field from the fetch. Use it for
-	// worktree pickers that only render PR badges; leave false when the body is
-	// needed (e.g. `pr list` → View details).
+	// pickers that only render PR rows; leave false when the body is needed.
 	Lightweight bool
 }
 
@@ -109,7 +108,7 @@ func GetPRDetail(params GetPRDetailParams) (domain.PRInfo, error) {
 	}
 
 	data, err := runGH(params.ProjectDir, "pr", "view", strconv.Itoa(params.Number),
-		"--json", "number,title,author,headRefName,isDraft,createdAt,url,body,isCrossRepository,statusCheckRollup,reviews",
+		"--json", "number,title,author,headRefName,baseRefName,isDraft,createdAt,url,body,isCrossRepository,statusCheckRollup,reviews",
 	)
 	if err != nil {
 		return domain.PRInfo{}, fmt.Errorf("get PR: %w", err)

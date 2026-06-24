@@ -20,9 +20,14 @@ func LoadPRsGraceful(projectDir string) []domain.PRInfo {
 // field set (no body) since its only consumers are worktree pickers that render
 // PR badges.
 func LoadPRs(projectDir string) ([]domain.PRInfo, domain.GHConnection) {
+	return LoadPRsFiltered(projectDir, domain.PRFilterAll)
+}
+
+// LoadPRsFiltered is LoadPRs with an explicit filter (all, mine, review-requested).
+func LoadPRsFiltered(projectDir string, filter domain.PRFilter) ([]domain.PRInfo, domain.GHConnection) {
 	prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
 		ProjectDir:  projectDir,
-		Filter:      domain.PRFilterAll,
+		Filter:      filter,
 		Lightweight: true,
 	})
 	if err == nil {

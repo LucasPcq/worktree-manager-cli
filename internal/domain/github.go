@@ -4,18 +4,19 @@ import "time"
 
 // PRInfo holds information about a GitHub pull request.
 type PRInfo struct {
-	Number    int          `json:"number"`
-	Title     string       `json:"title"`
-	Body      string       `json:"body"`
-	Author    string       `json:"author"`
-	Branch    string       `json:"branch"`
-	State     string       `json:"state"`
-	Draft     bool         `json:"draft"`
-	CreatedAt time.Time    `json:"created_at"`
-	URL       string       `json:"url"`
-	CIStatus  CIStatus     `json:"ci_status"`
-	Reviews   []ReviewInfo `json:"reviews"`
-	IsFork    bool         `json:"is_fork"` // true when head.repo != base.repo
+	Number     int          `json:"number"`
+	Title      string       `json:"title"`
+	Body       string       `json:"body"`
+	Author     string       `json:"author"`
+	Branch     string       `json:"branch"`
+	BaseBranch string       `json:"base_branch"` // branch the PR will be merged into
+	State      string       `json:"state"`
+	Draft      bool         `json:"draft"`
+	CreatedAt  time.Time    `json:"created_at"`
+	URL        string       `json:"url"`
+	CIStatus   CIStatus     `json:"ci_status"`
+	Reviews    []ReviewInfo `json:"reviews"`
+	IsFork     bool         `json:"is_fork"` // true when head.repo != base.repo
 }
 
 // CIStatus represents the aggregate CI check status.

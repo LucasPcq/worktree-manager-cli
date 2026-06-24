@@ -57,10 +57,16 @@ type GitWorktree struct {
 
 // CreateParams holds all inputs needed to create a new worktree.
 type CreateParams struct {
-	ProjectDir      string
-	StateDir        string
-	Branch          string
-	FromBranch      string
+	ProjectDir string
+	StateDir   string
+	Branch     string
+	// FromBranch is the git start-point the worktree is created from.
+	FromBranch string
+	// SourceBranch is the parent recorded in metadata and used as the rebase
+	// target by `wtm sync`. When empty, it defaults to FromBranch. It diverges
+	// from FromBranch for PR checkouts, where the worktree content is the PR head
+	// but the parent is the PR base branch.
+	SourceBranch    string
 	Config          Config
 	EnvFromOverride string
 	IfNotExists     bool
