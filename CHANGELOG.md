@@ -6,6 +6,10 @@
 
 - **Suppression du groupe `wt`** — les 8 commandes worktree sont promues au top-level sous `Core Commands:`. `wtm wt list` devient `wtm list`, et de même pour `create`, `clean`, `sync`, `relocate`, `go`, `switch`, `extract`. Aucun alias `wt` n'est conservé : mettez à jour vos scripts et alias. Régénérez l'intégration shell (`eval "$(wtm shell-init)"`) — le wrapper intercepte désormais `wtm go`/`wtm switch` (et non plus `wtm wt go`/`wtm wt switch`). Les groupes `run` et `pr` sont inchangés.
 
+### Improvements
+
+- **PTY drainé jusqu'à l'EOF naturel avant fermeture** dans les jobs détachés — évite une troncature de sortie en fin de process (LUC-84).
+
 ## v0.16.0 — `wt relocate` : rassembler les worktrees + grand nettoyage de surface inutilisée
 
 ### New features
