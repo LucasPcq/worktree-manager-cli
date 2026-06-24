@@ -19,3 +19,32 @@ func ValidatePRForCheckout(pr domain.PRInfo, localBranches []string) error {
 	}
 	return nil
 }
+
+// PRFilterParams selects which open PRs to list. Review takes precedence over
+// Mine when both are set.
+type PRFilterParams struct {
+	Review bool
+	Mine   bool
+}
+
+// PRFilterFor maps the --review / --mine flags to a PR list filter.
+func PRFilterFor(params PRFilterParams) domain.PRFilter {
+	switch {
+	case params.Review:
+		return domain.PRFilterReviewRequested
+	case params.Mine:
+		return domain.PRFilterMine
+	default:
+		return domain.PRFilterAll
+	}
+}
+
+// FirstNonEmpty returns the first non-empty string in values, or "" if none.
+func FirstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}

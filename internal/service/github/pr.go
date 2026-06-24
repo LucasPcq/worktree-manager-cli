@@ -93,7 +93,7 @@ type GetPRDetailParams struct {
 	Number     int
 }
 
-// GetPRDetail fetches a PR with its CI checks and reviews via gh CLI.
+// GetPRDetail fetches a single PR's identity and head/base branches via gh CLI.
 func GetPRDetail(params GetPRDetailParams) (domain.PRInfo, error) {
 	if err := ensureAuth(); err != nil {
 		return domain.PRInfo{}, err

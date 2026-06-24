@@ -44,10 +44,10 @@ func TestBuildPRItems_LinkedAndForkDisabled(t *testing.T) {
 	if items[0].Disabled || len(items[0].Badges) != 0 {
 		t.Errorf("PR #1 should be selectable with no badge, got %+v", items[0])
 	}
-	if !items[1].Disabled || items[1].Badges[0].Text != "linked" {
+	if !items[1].Disabled || items[1].Badges[0].Text != domain.BadgeTextLinked {
 		t.Errorf("PR #2 should be disabled with 'linked' badge, got %+v", items[1])
 	}
-	if !items[2].Disabled || items[2].Badges[0].Text != "fork" {
+	if !items[2].Disabled || items[2].Badges[0].Text != domain.BadgeTextFork {
 		t.Errorf("PR #3 should be disabled with 'fork' badge, got %+v", items[2])
 	}
 }

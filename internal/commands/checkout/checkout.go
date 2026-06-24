@@ -131,7 +131,9 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 	}
 
 	dir := result.ProjectDir
-	filter := prFilterFromFlags(cmd)
+	review, _ := cmd.Flags().GetBool(domain.FlagReview)
+	mine, _ := cmd.Flags().GetBool(domain.FlagMine)
+	filter := rules.PRFilterFor(rules.PRFilterParams{Review: review, Mine: mine})
 
 	// Top padding between the prompt and the wizard (the by-number path gets this
 	// from its spinner instead).
@@ -160,8 +162,8 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 		return err
 	}
 
-	parent := firstNonEmpty(opts.fromOverride, res.FromBranch, p.BaseBranch)
-	env := firstNonEmpty(opts.envOverride, res.EnvFromOverride)
+	parent := rules.FirstNonEmpty(opts.fromOverride, res.FromBranch, p.BaseBranch)
+	env := rules.FirstNonEmpty(opts.envOverride, res.EnvFromOverride)
 
 	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode})
 }
@@ -265,29 +267,6 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 	output.InfoLine(cmd.OutOrStdout(), "cd", fmt.Sprintf("wtm go %s", p.Branch))
 	output.Blank(cmd.OutOrStdout())
 	return nil
-}
-
-func prFilterFromFlags(cmd *cobra.Command) domain.PRFilter {
-	review, _ := cmd.Flags().GetBool(domain.FlagReview)
-	mine, _ := cmd.Flags().GetBool(domain.FlagMine)
-
-	switch {
-	case review:
-		return domain.PRFilterReviewRequested
-	case mine:
-		return domain.PRFilterMine
-	default:
-		return domain.PRFilterAll
-	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func worktreeBranches(projectDir string) []string {

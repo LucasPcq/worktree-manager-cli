@@ -246,7 +246,7 @@ func envStep(strategy domain.EnvStrategy) components.Step {
 				return ""
 			}
 			if sl.Value() == "" {
-				return "config default"
+				return domain.SummaryConfigDefault
 			}
 			return sl.Value()
 		},
@@ -287,10 +287,10 @@ func buildPRItems(prs []domain.PRInfo, worktreeBranches []string) []components.S
 		switch {
 		case linked[p.Branch]:
 			item.Disabled = true
-			item.Badges = []components.Badge{{Text: "linked", Variant: components.BadgeNeutral}}
+			item.Badges = []components.Badge{{Text: domain.BadgeTextLinked, Variant: components.BadgeNeutral}}
 		case p.IsFork:
 			item.Disabled = true
-			item.Badges = []components.Badge{{Text: "fork", Variant: components.BadgeWarning}}
+			item.Badges = []components.Badge{{Text: domain.BadgeTextFork, Variant: components.BadgeWarning}}
 		}
 		items = append(items, item)
 	}

@@ -161,6 +161,15 @@ const (
 	// the fork flag (isCrossRepository).
 	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository"
 
+	// Checkout wizard badge texts: a PR whose branch already has a local
+	// worktree ("linked") or that comes from a fork ("fork") is disabled.
+	BadgeTextLinked = "linked"
+	BadgeTextFork   = "fork"
+
+	// SummaryConfigDefault is the env-step summary shown when no explicit env
+	// strategy is chosen and the project config default applies.
+	SummaryConfigDefault = "config default"
+
 	// Output format values for FlagOutput.
 	OutputText = "text"
 	OutputJSON = "json"
