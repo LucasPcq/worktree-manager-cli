@@ -1,6 +1,6 @@
 ---
 name: using-wtm
-description: Use this skill whenever the user wants to create, list, switch, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or list or check out GitHub pull requests — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
+description: Use this skill whenever the user wants to create, list, switch, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or check out a GitHub pull request into a worktree — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
 ---
 
 # Using wtm
@@ -36,7 +36,7 @@ Run these before taking action so you have names to pass as arguments:
 | Goal | Command |
 |---|---|
 | All worktrees (branch, path, PR, services, dirty?) | `wtm list --output json` |
-| All open PRs (number, title, branch, state, draft, url) | `wtm pr list --output json` |
+| All open PRs (number, title, branch, state, draft, url) | `gh pr list --json number,title,headRefName,state,isDraft,url` |
 | Declared jobs + profiles | `wtm run list --output json` |
 | Jobs running right now (name, kind, status, pid, workdir) | `wtm run ps --output json` |
 | Resolved project config (TOML on stdout) | `wtm config show` |
@@ -88,12 +88,12 @@ Profiles are named groups of jobs (run in declared order). The same TOML can hos
 - **`wtm config edit`** — opens `$EDITOR` on the config file. Interactive — **never invoke from an agent**. If the user wants to change a setting, run `wtm config show` to read the current state, then ask the user to run `wtm config edit` (or do the edit through a `Write`/`Edit` on the printed path if you have those tools and the user authorized the change).
 - **`wtm init --only <section> --non-interactive --yes [flags]`** — regenerate a single config section after init, without an editor (agent-drivable). Sections: `worktrees` (rewrites `base_branch`, via `--base-branch`), `env` (via `--env-strategy`; copy_files re-detected), `hooks` (via `--install-command`; rebuilt from detection — for arbitrary `on_create` entries edit the file directly), `services` (re-detects docker/scripts; **run.toml jobs regenerated, profiles preserved**). Combine sections with `--only env,services`. Untouched config sections keep their current values. Without `--non-interactive` it opens a pre-filled wizard (don't invoke that form from an agent).
 
-## Pull request commands (`wtm pr`)
+## Pull request checkout (`wtm checkout`)
 
 Backed by the `gh` CLI — the user must have `gh auth login` set up.
 
-- **`wtm pr list --output json`** — open PRs. Filters: `--mine`, `--review`.
-- **`wtm pr checkout <number> --output json`** — fetch the PR's branch and create a worktree for it. Optional: `--env-from`. Fork PRs are out of scope by design — fall back to `gh pr checkout <number>`.
+- **`wtm checkout <number> --output json`** — fetch the PR's branch and create a worktree for it. The worktree content is the PR head; the recorded parent (rebase target for `wtm sync`) defaults to the PR's base branch. Optional: `--from <branch>` (override the parent), `--env-from`, `--mine`/`--review` (filter the interactive picker). Fork PRs are out of scope by design — fall back to `gh pr checkout <number>`.
+- **Always pass the PR number** — without it the command opens an interactive picker you can't drive. To list open PRs, use `gh pr list --json number,title,headRefName`.
 - **Creating a PR is out of scope** — use `gh pr create` directly (it already handles templates, branch push, and base detection).
 
 ## Conventions and invariants

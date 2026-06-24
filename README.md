@@ -541,34 +541,25 @@ All `add` / `rm` commands support `--output text|json`. `edit` is intrinsically 
 
 ---
 
-### `wtm pr` — Pull requests
+### `wtm checkout [number]` — Pull request → worktree
 
-Browse PRs and bridge them to worktrees from the CLI. Requires the [`gh` CLI](https://cli.github.com) installed and authenticated (`gh auth login`). Creating a PR is out of scope — `gh pr create` already does it well (templates, branch push, base detection).
-
-#### `wtm pr list`
-
-List open pull requests. Interactive picker with actions (checkout, open in browser, view details).
+Create a worktree from an existing pull request and run `on_create` hooks. Perfect for reviewing a teammate's PR with the full environment set up. Requires the [`gh` CLI](https://cli.github.com) installed and authenticated (`gh auth login`). Creating a PR is out of scope — `gh pr create` already does it well (templates, branch push, base detection).
 
 ```bash
-wtm pr list           # all open PRs
-wtm pr list --mine    # PRs you authored
-wtm pr list --review  # PRs where you are a requested reviewer
-```
-
-#### `wtm pr checkout [number]`
-
-Create a worktree from an existing pull request and run `on_create` hooks. Perfect for reviewing a teammate's PR with the full environment set up.
-
-```bash
-wtm pr checkout 42                 # checkout PR #42
-wtm pr checkout                    # interactive picker of open PRs
-wtm pr checkout 42 --env-from main # override env strategy
+wtm checkout 42                 # checkout PR #42 into a worktree
+wtm checkout                    # interactive picker of open PRs
+wtm checkout --mine             # picker, only PRs you authored
+wtm checkout --review           # picker, only PRs awaiting your review
+wtm checkout 42 --env-from main # override env strategy
+wtm checkout 42 --from develop  # override the parent (sync target)
 ```
 
 Behavior:
-- Runs `git fetch origin <pr-branch>`, then creates a worktree on that branch
+- The worktree content is the **PR head branch**; `git fetch origin <pr-branch>` runs first
+- The recorded **parent** (rebase target for `wtm sync`) defaults to the PR's **base branch** — override with `--from`, or pick it interactively (base pre-selected)
 - Applies the configured env strategy (interactive wizard if `--env-from` not provided)
 - Runs `on_create` hooks exactly like `wtm create`
+- In the interactive picker, PRs already linked to a local worktree are shown as `linked` and can't be re-selected — use `wtm go <branch>` to enter them
 - Refuses if a local branch with the same name already exists — run `wtm clean <branch>` first
 
 **Forks (by design)** — wtm doesn't check out fork PRs. A fork's branch lives on the contributor's repo (not `origin`) and a fork worktree couldn't push back, which breaks wtm's "develop here" model. To review a fork PR, use `gh pr checkout <number>`.
@@ -583,21 +574,21 @@ Every data-returning command supports `--output json` for scripting and LLM agen
 
 ```bash
 wtm list --output json
-wtm pr list --output json
+wtm checkout 42 --output json
 wtm run list --output json
 ```
 
 Supported commands:
 
 - `list`, `create`, `clean` (requires `--force`), `extract`, `sync`
-- `pr list`, `pr checkout`
+- `checkout`
 - `run list`, `run ps`, `run up`, `run down`, `run start`, `run stop`
 
 Example — pipe into `jq`:
 
 ```bash
 wtm list --output json | jq '.[] | select(.is_dirty).branch'
-wtm pr list --output json | jq '.[].number'
+wtm checkout 42 --output json | jq '.path'
 wtm run ps --output json | jq '.[] | select(.status=="running").name'
 ```
 

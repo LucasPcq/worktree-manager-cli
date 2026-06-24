@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.18.0 — `wtm checkout` au top-level (suppression du groupe `pr`)
+
+### Breaking changes
+
+- **Suppression du groupe `pr`** — `wtm pr checkout` devient `wtm checkout` (promu sous `Core Commands:`). `wtm pr list` est retiré : la liste des PRs vit déjà dans les pickers de worktrees (`wtm list --with-prs`) et dans le nouveau wizard de `checkout`. Mettez à jour vos scripts et alias. La sortie `--output json` de `checkout` reste `{number, branch, path}` (inchangée vs `pr checkout`).
+
+### New features
+
+- **`wtm checkout [number]`** — crée un worktree depuis une pull request. Sans argument : wizard interactif multi-étapes **PR → branche parente → stratégie env** qui s'affiche instantanément et streame les PRs ouvertes en arrière-plan (PRs déjà checkout ou issues d'un fork désactivées). Avec un numéro : checkout direct. Flags `--review` / `--mine` (filtre des PRs), `--from <branche>` (parent de sync, défaut = base de la PR), `--env-from example|main|parent` (override de la stratégie env). Chaque étape du wizard est sautée si elle est déjà résolue par un flag.
+
+### Improvements
+
+- **Nettoyage de la tuyauterie PR inutilisée** — retrait de l'affichage PR dédié (`output/pr.go`), des champs jamais consommés (CI status, reviews) et fusion des field-sets `gh pr` en une seule constante. Le fetch GitHub ne récupère plus que ce que `checkout` utilise réellement.
+
 ## v0.17.0 — commandes worktree au top-level (suppression du groupe `wt`)
 
 ### Breaking changes

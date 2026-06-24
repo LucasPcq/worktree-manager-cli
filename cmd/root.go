@@ -9,10 +9,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/commands/agents"
+	"github.com/LucasPcq/wtm/internal/commands/checkout"
 	"github.com/LucasPcq/wtm/internal/commands/configcmd"
 	"github.com/LucasPcq/wtm/internal/commands/daemon"
 	"github.com/LucasPcq/wtm/internal/commands/initcmd"
-	"github.com/LucasPcq/wtm/internal/commands/pr"
 	"github.com/LucasPcq/wtm/internal/commands/resolve"
 	"github.com/LucasPcq/wtm/internal/commands/run"
 	"github.com/LucasPcq/wtm/internal/commands/schema"
@@ -33,7 +33,10 @@ func init() {
 		rootCmd.AddCommand(cmd)
 	}
 	rootCmd.AddCommand(run.NewCmd())
-	rootCmd.AddCommand(pr.NewCmd())
+
+	checkoutCmd := checkout.NewCmd()
+	checkoutCmd.GroupID = domain.CmdGroupCore
+	rootCmd.AddCommand(checkoutCmd)
 
 	initCmd := initcmd.NewCmd()
 	initCmd.GroupID = domain.CmdGroupSetup

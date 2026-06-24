@@ -2,14 +2,10 @@ package rules
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
-	"strconv"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
-
-var prNumberPattern = regexp.MustCompile(`/pull/(\d+)$`)
 
 // ValidatePRForCheckout returns an error if the PR cannot be checked out
 // locally: fork PRs are intentionally out of scope (see README — wtm manages
@@ -24,11 +20,31 @@ func ValidatePRForCheckout(pr domain.PRInfo, localBranches []string) error {
 	return nil
 }
 
-// ExtractPRNumber parses a GitHub PR URL and returns the PR number.
-func ExtractPRNumber(url string) (int, error) {
-	m := prNumberPattern.FindStringSubmatch(url)
-	if len(m) < 2 {
-		return 0, fmt.Errorf("no PR number found")
+// PRFilterParams selects which open PRs to list. Review takes precedence over
+// Mine when both are set.
+type PRFilterParams struct {
+	Review bool
+	Mine   bool
+}
+
+// PRFilterFor maps the --review / --mine flags to a PR list filter.
+func PRFilterFor(params PRFilterParams) domain.PRFilter {
+	switch {
+	case params.Review:
+		return domain.PRFilterReviewRequested
+	case params.Mine:
+		return domain.PRFilterMine
+	default:
+		return domain.PRFilterAll
 	}
-	return strconv.Atoi(m[1])
+}
+
+// FirstNonEmpty returns the first non-empty string in values, or "" if none.
+func FirstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

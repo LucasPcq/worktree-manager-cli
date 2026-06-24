@@ -64,8 +64,13 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		}
 	}
 
+	sourceBranch := params.SourceBranch
+	if sourceBranch == "" {
+		sourceBranch = params.FromBranch
+	}
+
 	metadata := domain.WorktreeMetadata{
-		SourceBranch: params.FromBranch,
+		SourceBranch: sourceBranch,
 		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
 		EnvStrategy:  strategy,
 	}

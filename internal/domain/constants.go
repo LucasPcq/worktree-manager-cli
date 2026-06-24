@@ -156,11 +156,19 @@ const (
 	// consumer can't stream, so the fetch is opt-in and blocking there.
 	FlagWithPRs = "with-prs"
 
-	// GitHub PR JSON field sets passed to `gh pr list --json`. The full set
-	// includes the heavy `body` field (full PR description); the light set omits
-	// it for worktree pickers that only render PR badges (number + branch + url).
-	GHPRFieldsFull  = "number,title,author,headRefName,isDraft,createdAt,url,body,isCrossRepository"
-	GHPRFieldsLight = "number,title,author,headRefName,isDraft,createdAt,url,isCrossRepository"
+	// GHPRFields is the JSON field set passed to `gh pr list/view --json`. It
+	// holds exactly what wtm consumes: PR identity, head/base branches, url, and
+	// the fork flag (isCrossRepository).
+	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository"
+
+	// Checkout wizard badge texts: a PR whose branch already has a local
+	// worktree ("linked") or that comes from a fork ("fork") is disabled.
+	BadgeTextLinked = "linked"
+	BadgeTextFork   = "fork"
+
+	// SummaryConfigDefault is the env-step summary shown when no explicit env
+	// strategy is chosen and the project config default applies.
+	SummaryConfigDefault = "config default"
 
 	// Output format values for FlagOutput.
 	OutputText = "text"
@@ -196,7 +204,6 @@ const (
 	// CLI command names — used in Use: declarations and exec.Command(bin, …) call sites.
 	// Centralised here so a rename is a single-file change with no silent breakage.
 	CmdRun      = "run"
-	CmdPr       = "pr"
 	CmdGo       = "go"
 	CmdCreate   = "create"
 	CmdClean    = "clean"

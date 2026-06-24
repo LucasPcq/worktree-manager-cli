@@ -79,6 +79,20 @@ func (m *SelectListModel) SetBadges(byValue map[string][]Badge) {
 	}
 }
 
+// SetItems replaces the list items, resetting cursor, scroll, and filter while
+// preserving the configured width/height. Used to populate a list whose items
+// arrive asynchronously (e.g. PRs streamed into the checkout picker). It is to
+// items what SetBadges is to badges.
+func (m *SelectListModel) SetItems(items []SelectItem) {
+	m.items = items
+	m.cursor = 0
+	m.offset = 0
+	m.filter = ""
+	m.filtering = false
+	m.refilter()
+	m.snapToSelectable()
+}
+
 // Init satisfies tea.Model.
 func (m SelectListModel) Init() tea.Cmd { return nil }
 

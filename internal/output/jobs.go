@@ -24,7 +24,7 @@ type ProfileActionResult struct {
 	Message string `json:"message,omitempty"` // error detail when Status == "error"
 }
 
-// PRCheckoutJSON is the payload emitted by `pr checkout --output json`.
+// PRCheckoutJSON is the payload emitted by `checkout --output json`.
 type PRCheckoutJSON struct {
 	Number int    `json:"number"`
 	Branch string `json:"branch"`
@@ -49,7 +49,7 @@ func WriteProfileResultJSON(w io.Writer, result ProfileActionResult) error {
 	return encodeJSON(w, result)
 }
 
-// WritePRCheckoutJSON writes the payload for `pr checkout`.
+// WritePRCheckoutJSON writes the payload for `wtm checkout`.
 func WritePRCheckoutJSON(w io.Writer, payload PRCheckoutJSON) error {
 	return encodeJSON(w, payload)
 }
