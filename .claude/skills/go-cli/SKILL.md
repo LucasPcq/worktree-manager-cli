@@ -73,7 +73,6 @@ must be declared as constants in `internal/domain/constants.go`.
 const (
   // CLI command names — used in Use: and exec.Command(bin, ...) call sites
   CmdRun      = "run"
-  CmdWt       = "wt"
   CmdUp       = "up"
   CmdDown     = "down"
   CmdStart    = "start"

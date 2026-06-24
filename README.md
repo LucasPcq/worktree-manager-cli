@@ -59,11 +59,11 @@ cd your-repo
 wtm init
 
 # Use individual commands:
-wtm wt list                        # list all worktrees
-wtm wt create feature/my-feature   # create a worktree
-wtm wt switch feature/my-feature   # navigate + start services
-wtm wt extract --to refactor       # move uncommitted changes to another worktree
-wtm wt clean feature/my-feature    # clean up when done
+wtm list                        # list all worktrees
+wtm create feature/my-feature   # create a worktree
+wtm switch feature/my-feature   # navigate + start services
+wtm extract --to refactor       # move uncommitted changes to another worktree
+wtm clean feature/my-feature    # clean up when done
 ```
 
 ## Teach your LLM to use wtm
@@ -169,21 +169,21 @@ echo 'wtm shell-init | source'  >> ~/.config/fish/config.fish  # fish
 
 ---
 
-### `wtm wt` — Worktree management
+### `wtm` — Worktree management
 
-#### `wtm wt create [branch]`
+#### `wtm create [branch]`
 
 Create a new git worktree with environment provisioning and hooks.
 
 ```bash
 # Fully interactive — prompts for branch name, source branch, and env strategy
-wtm wt create
+wtm create
 
 # Specify branch name, pick source branch interactively
-wtm wt create feature/auth
+wtm create feature/auth
 
 # Direct — specify everything, no interaction
-wtm wt create feature/auth --from main --env-from parent
+wtm create feature/auth --from main --env-from parent
 ```
 
 **What happens:**
@@ -198,12 +198,12 @@ wtm wt create feature/auth --from main --env-from parent
 | `--from <branch>` | Source branch (skips interactive picker) |
 | `--env-from <strategy>` | Override env strategy: `example`, `main`, or `parent` |
 
-#### `wtm wt list`
+#### `wtm list`
 
 List all worktrees with their git status.
 
 ```bash
-wtm wt list
+wtm list
 ```
 
 Output:
@@ -215,31 +215,31 @@ Output:
 
 In an interactive terminal, shows a picker with actions: go, start profile, stop profile, view logs, clean.
 
-#### `wtm wt go [branch]`
+#### `wtm go [branch]`
 
 Navigate to a worktree directory. Requires shell integration.
 
 ```bash
-wtm wt go feature/auth     # navigate to a specific worktree
-wtm wt go                  # interactive picker
-wtm wt go auth             # substring match
+wtm go feature/auth     # navigate to a specific worktree
+wtm go                  # interactive picker
+wtm go auth             # substring match
 ```
 
-Without shell integration, `wtm wt go` cannot change your working directory. The shell wrapper intercepts `wtm wt go` and performs the `cd` in your current shell.
+Without shell integration, `wtm go` cannot change your working directory. The shell wrapper intercepts `wtm go` and performs the `cd` in your current shell.
 
-#### `wtm wt switch [branch]`
+#### `wtm switch [branch]`
 
-Navigate to a worktree **and** start its services in one command. Combines `wt go` + `run up`.
+Navigate to a worktree **and** start its services in one command. Combines `go` + `run up`.
 
 ```bash
-wtm wt switch feature/auth               # go + start default profile
-wtm wt switch feature/auth --exclusive    # go + stop others + start
-wtm wt switch feature/auth --parallel     # go + start without stopping others
-wtm wt switch feature/auth --profile api  # go + start specific profile
-wtm wt switch                             # interactive picker + start
+wtm switch feature/auth               # go + start default profile
+wtm switch feature/auth --exclusive    # go + stop others + start
+wtm switch feature/auth --parallel     # go + start without stopping others
+wtm switch feature/auth --profile api  # go + start specific profile
+wtm switch                             # interactive picker + start
 ```
 
-Requires shell integration (same as `wt go`).
+Requires shell integration (same as `go`).
 
 **Flags:**
 | Flag | Description |
@@ -248,14 +248,14 @@ Requires shell integration (same as `wt go`).
 | `--parallel` | Start without stopping other worktrees |
 | `--profile <name>` | Service profile to start (default: default profile) |
 
-#### `wtm wt clean [branch]`
+#### `wtm clean [branch]`
 
 Remove a worktree and its local branch. The remote branch is never touched.
 
 ```bash
-wtm wt clean                        # interactive picker with safety checks
-wtm wt clean feature/auth           # direct
-wtm wt clean feature/auth --force   # skip all safety checks
+wtm clean                        # interactive picker with safety checks
+wtm clean feature/auth           # direct
+wtm clean feature/auth --force   # skip all safety checks
 ```
 
 **Safety checks:** uncommitted changes, unpushed commits, open pull request.
@@ -265,15 +265,15 @@ wtm wt clean feature/auth --force   # skip all safety checks
 |---|---|
 | `--force` | Bypass all safety checks and delete immediately |
 
-#### `wtm wt extract`
+#### `wtm extract`
 
 Move a subset of the **current worktree's uncommitted changes** to another worktree — to split an oversized PR or peel off unrelated work for easier review and parallel development. Without flags it runs an interactive wizard: pick files → target → move/copy.
 
 ```bash
-wtm wt extract                                              # interactive: pick files, target, mode
-wtm wt extract --files src/api.go,src/db.go --to refactor  # move files to an existing worktree
-wtm wt extract --files src/api.go --to spike --from main   # create 'spike' from main, move into it
-wtm wt extract --files notes.md --to docs --keep           # copy instead of move (keep in source)
+wtm extract                                              # interactive: pick files, target, mode
+wtm extract --files src/api.go,src/db.go --to refactor  # move files to an existing worktree
+wtm extract --files src/api.go --to spike --from main   # create 'spike' from main, move into it
+wtm extract --files notes.md --to docs --keep           # copy instead of move (keep in source)
 ```
 
 **Move vs copy:** files are **moved** by default (removed from the source once they land); `--keep` copies them instead.
@@ -291,16 +291,16 @@ wtm wt extract --files notes.md --to docs --keep           # copy instead of mov
 | `--keep` | Copy instead of move (keep the changes in the source) |
 | `--on-conflict <abort\|resolve>` | On conflict: abort (default) or write conflict markers in the target |
 
-#### `wtm wt sync`
+#### `wtm sync`
 
 Rebase **every** managed worktree onto its recorded parent (its `source_branch`), in cascade. Keeps a whole stack of branches up to date in one command — `main → feature → spike` all get replayed onto a fresh base.
 
 ```bash
-wtm wt sync              # rebase the whole cascade, then ask before pushing
-wtm wt sync --dry-run    # preview the plan, fully offline (no fetch/rebase/push)
-wtm wt sync --push       # rebase + force-push (with lease) without prompting
-wtm wt sync --no-push    # rebase locally only, never push
-wtm wt sync --base develop  # sync from a base branch other than the configured one
+wtm sync              # rebase the whole cascade, then ask before pushing
+wtm sync --dry-run    # preview the plan, fully offline (no fetch/rebase/push)
+wtm sync --push       # rebase + force-push (with lease) without prompting
+wtm sync --no-push    # rebase locally only, never push
+wtm sync --base develop  # sync from a base branch other than the configured one
 ```
 
 **What happens:**
@@ -324,15 +324,15 @@ The cascade is **fully local** — pushing is a separate, explicitly confirmed s
 
 ---
 
-#### `wtm wt relocate`
+#### `wtm relocate`
 
-Reconcile every worktree with the configured `base_path`. Worktrees scattered elsewhere are **moved** into it (`git worktree move`), and worktrees you created by hand (outside wtm) are **adopted** — wtm writes their metadata (recording a parent branch) so `wt sync` and `.env` sync work for them too. Use it to **change `base_path`** safely (with `--to`) or to **onboard a repo** that already has worktrees lying around.
+Reconcile every worktree with the configured `base_path`. Worktrees scattered elsewhere are **moved** into it (`git worktree move`), and worktrees you created by hand (outside wtm) are **adopted** — wtm writes their metadata (recording a parent branch) so `sync` and `.env` sync work for them too. Use it to **change `base_path`** safely (with `--to`) or to **onboard a repo** that already has worktrees lying around.
 
 ```bash
-wtm wt relocate                      # gather scattered worktrees into the current base_path + adopt external ones
-wtm wt relocate --to ../.worktrees   # change base_path to ../.worktrees and move existing worktrees there
-wtm wt relocate --dry-run            # preview the plan, change nothing
-wtm wt relocate --force              # move dirty or locked worktrees too
+wtm relocate                      # gather scattered worktrees into the current base_path + adopt external ones
+wtm relocate --to ../.worktrees   # change base_path to ../.worktrees and move existing worktrees there
+wtm relocate --dry-run            # preview the plan, change nothing
+wtm relocate --force              # move dirty or locked worktrees too
 ```
 
 **What happens:**
@@ -568,8 +568,8 @@ wtm pr checkout 42 --env-from main # override env strategy
 Behavior:
 - Runs `git fetch origin <pr-branch>`, then creates a worktree on that branch
 - Applies the configured env strategy (interactive wizard if `--env-from` not provided)
-- Runs `on_create` hooks exactly like `wtm wt create`
-- Refuses if a local branch with the same name already exists — run `wtm wt clean <branch>` first
+- Runs `on_create` hooks exactly like `wtm create`
+- Refuses if a local branch with the same name already exists — run `wtm clean <branch>` first
 
 **Forks (by design)** — wtm doesn't check out fork PRs. A fork's branch lives on the contributor's repo (not `origin`) and a fork worktree couldn't push back, which breaks wtm's "develop here" model. To review a fork PR, use `gh pr checkout <number>`.
 
@@ -582,21 +582,21 @@ Every data-returning command supports `--output json` for scripting and LLM agen
 **The payload *is* the schema** — the shape mirrors the command's Go domain type and stays stable. To discover the exact fields of any command, just run it with the flag:
 
 ```bash
-wtm wt list --output json
+wtm list --output json
 wtm pr list --output json
 wtm run list --output json
 ```
 
 Supported commands:
 
-- `wt list`, `wt create`, `wt clean` (requires `--force`), `wt extract`, `wt sync`
+- `list`, `create`, `clean` (requires `--force`), `extract`, `sync`
 - `pr list`, `pr checkout`
 - `run list`, `run ps`, `run up`, `run down`, `run start`, `run stop`
 
 Example — pipe into `jq`:
 
 ```bash
-wtm wt list --output json | jq '.[] | select(.is_dirty).branch'
+wtm list --output json | jq '.[] | select(.is_dirty).branch'
 wtm pr list --output json | jq '.[].number'
 wtm run ps --output json | jq '.[] | select(.status=="running").name'
 ```
@@ -785,7 +785,7 @@ Even without the editor extension, wtm itself rejects unknown keys at load time 
 
 ## Worktree metadata
 
-Each worktree created by `wtm wt create` records its metadata under `<git-common-dir>/wtm/worktrees/<encoded-branch>/`:
+Each worktree created by `wtm create` records its metadata under `<git-common-dir>/wtm/worktrees/<encoded-branch>/`:
 
 - **`meta.json`** — source branch, creation timestamp, env strategy used
 

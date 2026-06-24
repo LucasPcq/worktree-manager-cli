@@ -39,7 +39,7 @@ func ValidateShellType(s domain.ShellType) error {
 	}
 }
 
-// ValidateRelocateTarget checks the --to value for `wt relocate`. An empty
+// ValidateRelocateTarget checks the --to value for `relocate`. An empty
 // string means the flag was not provided (relocate then uses the current
 // base_path) and is allowed. A non-empty value must be a repo-relative path:
 // whitespace-only and absolute paths are rejected.

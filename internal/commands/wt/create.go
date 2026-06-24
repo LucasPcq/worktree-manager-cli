@@ -16,7 +16,7 @@ import (
 	newpicker "github.com/LucasPcq/wtm/internal/tui/newwt"
 )
 
-// newCreateCmd creates the wtm wt create subcommand.
+// newCreateCmd creates the wtm create subcommand.
 func newCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdCreate + " [branch]",

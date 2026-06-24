@@ -18,7 +18,7 @@ import (
 	cleanui "github.com/LucasPcq/wtm/internal/tui/clean"
 )
 
-// newCleanCmd creates the wtm wt clean subcommand.
+// newCleanCmd creates the wtm clean subcommand.
 func newCleanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdClean + " [branch]",

@@ -18,7 +18,7 @@ import (
 	newpicker "github.com/LucasPcq/wtm/internal/tui/newwt"
 )
 
-// newExtractCmd creates the wtm wt extract subcommand.
+// newExtractCmd creates the wtm extract subcommand.
 func newExtractCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdExtract,

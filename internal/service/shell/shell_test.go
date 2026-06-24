@@ -21,11 +21,11 @@ func TestGenerateShellInitZsh(t *testing.T) {
 	if !strings.Contains(out, `cd "$dir"`) {
 		t.Error("expected cd command")
 	}
-	if !strings.Contains(out, `"$1" = "wt"`) {
-		t.Error("expected wt subcommand interception")
-	}
-	if !strings.Contains(out, `"$2" = "go"`) {
+	if !strings.Contains(out, `"$1" = "go"`) {
 		t.Error("expected go subcommand interception")
+	}
+	if !strings.Contains(out, `"$1" = "switch"`) {
+		t.Error("expected switch subcommand interception")
 	}
 	if !strings.Contains(out, domain.EnvGoFile) {
 		t.Error("expected WTM_GO_FILE bridge for cd-after-command (clean redirect)")
@@ -49,8 +49,8 @@ func TestGenerateShellInitFish(t *testing.T) {
 	if !strings.Contains(out, "command wtm resolve") {
 		t.Error("expected resolve call")
 	}
-	if !strings.Contains(out, `"$argv[1]" = "wt"`) {
-		t.Error("expected wt subcommand interception")
+	if !strings.Contains(out, `"$argv[1]" = "go"`) {
+		t.Error("expected go subcommand interception")
 	}
 }
 

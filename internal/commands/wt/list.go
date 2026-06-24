@@ -21,7 +21,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
 
-// newListCmd creates the wtm wt list subcommand.
+// newListCmd creates the wtm list subcommand.
 func newListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdList,
@@ -395,7 +395,7 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		return cmd.Run()
 
 	case lsActionClean:
-		cmd := exec.Command(bin, domain.CmdWt, domain.CmdClean, selected.Branch)
+		cmd := exec.Command(bin, domain.CmdClean, selected.Branch)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

@@ -19,7 +19,7 @@ func ValidatePRForCheckout(pr domain.PRInfo, localBranches []string) error {
 		return fmt.Errorf("PR #%d is from a fork — wtm doesn't check out fork PRs by design; use `gh pr checkout %d`", pr.Number, pr.Number)
 	}
 	if slices.Contains(localBranches, pr.Branch) {
-		return fmt.Errorf("local branch %q already exists — run `wtm wt clean %s` first", pr.Branch, pr.Branch)
+		return fmt.Errorf("local branch %q already exists — run `wtm clean %s` first", pr.Branch, pr.Branch)
 	}
 	return nil
 }

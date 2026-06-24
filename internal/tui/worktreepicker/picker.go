@@ -1,5 +1,5 @@
 // Package worktreepicker renders a rich worktree selector with the same
-// styling (breadcrumb, badges, spacing) as the interactive `wt list` wizard.
+// styling (breadcrumb, badges, spacing) as the interactive `list` wizard.
 package worktreepicker
 
 import (
@@ -159,7 +159,7 @@ type BuildBadgesParams struct {
 }
 
 // BuildBadges returns the styled badges for a worktree row (parent, PR,
-// services, dirty/clean) used by both `wt list` and the switch picker. While
+// services, dirty/clean) used by both `list` and the switch picker. While
 // PRs are still loading, PRs is empty and no PR badge is shown — the picker
 // surfaces a loading status line instead.
 func BuildBadges(params BuildBadgesParams) []components.Badge {

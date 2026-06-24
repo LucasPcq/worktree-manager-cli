@@ -206,7 +206,7 @@ func matchRunningServices(worktreePath string, services []domain.JobInfo) []stri
 	return names
 }
 
-// WriteWorktreeCreateJSON writes the JSON payload for `wt create`.
+// WriteWorktreeCreateJSON writes the JSON payload for `create`.
 func WriteWorktreeCreateJSON(w io.Writer, v any) error {
 	return encodeJSON(w, v)
 }
@@ -218,7 +218,7 @@ type WriteWorktreeCleanJSONParams struct {
 	AlreadyAbsent bool   `json:"already_absent"`
 }
 
-// WriteWorktreeCleanJSON writes the JSON payload for `wt clean`.
+// WriteWorktreeCleanJSON writes the JSON payload for `clean`.
 func WriteWorktreeCleanJSON(w io.Writer, params WriteWorktreeCleanJSONParams) error {
 	return encodeJSON(w, params)
 }
