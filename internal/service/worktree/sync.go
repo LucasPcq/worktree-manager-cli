@@ -13,6 +13,9 @@ type SyncParams struct {
 	Config     domain.Config
 	BaseBranch string
 	DryRun     bool
+	// SelectedBranches restricts the cascade to the named worktrees (topological
+	// order is preserved). An empty slice means every managed worktree.
+	SelectedBranches []string
 }
 
 // PlanSync builds the ordered cascade plan without touching any branch. Used to
@@ -22,10 +25,15 @@ func PlanSync(params SyncParams) (domain.SyncPlan, error) {
 	if err != nil {
 		return domain.SyncPlan{}, err
 	}
-	return rules.BuildSyncPlan(rules.BuildSyncPlanParams{
+	plan, err := rules.BuildSyncPlan(rules.BuildSyncPlanParams{
 		Nodes:      nodes,
 		BaseBranch: params.BaseBranch,
 	})
+	if err != nil {
+		return domain.SyncPlan{}, err
+	}
+	plan.Steps = rules.FilterSyncSteps(plan.Steps, params.SelectedBranches)
+	return plan, nil
 }
 
 // Sync runs the cascade: it fetches and fast-forwards the base, then rebases
@@ -43,6 +51,7 @@ func Sync(params SyncParams) (domain.SyncResult, error) {
 	if err != nil {
 		return domain.SyncResult{}, err
 	}
+	plan.Steps = rules.FilterSyncSteps(plan.Steps, params.SelectedBranches)
 
 	mainPath := mainWorktreePath(nodes, params.ProjectDir)
 	oldTips := captureTips(captureTipsParams{
@@ -192,13 +201,18 @@ type updateBaseParams struct {
 }
 
 // updateBase fetches origin and fast-forwards the local base branch. A diverged
-// base (no fast-forward) or missing remote is non-fatal: the cascade then
-// rebases onto the local base as-is.
+// base (no fast-forward), missing remote, or a dirty main worktree is non-fatal:
+// the cascade then rebases onto the local base as-is. The dirty guard mirrors the
+// per-worktree behaviour — the base is only advanced when its worktree is clean.
 func updateBase(params updateBaseParams) (string, bool) {
 	currentTip, _ := infra.Tip(infra.TipParams{
 		WorktreePath: params.MainPath,
 		Ref:          params.BaseBranch,
 	})
+
+	if dirty, err := infra.IsDirty(infra.IsDirtyParams{WorktreePath: params.MainPath}); err != nil || dirty {
+		return currentTip, false
+	}
 
 	if fetchErr := infra.FetchBranch(infra.FetchBranchParams{
 		ProjectDir: params.MainPath,

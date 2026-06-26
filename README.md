@@ -293,29 +293,41 @@ wtm extract --files notes.md --to docs --keep           # copy instead of move (
 
 #### `wtm sync`
 
-Rebase **every** managed worktree onto its recorded parent (its `source_branch`), in cascade. Keeps a whole stack of branches up to date in one command — `main → feature → spike` all get replayed onto a fresh base.
+Rebase **selected** managed worktrees onto their recorded parent (its `source_branch`), in cascade. Target one branch, several, or the whole stack — `main → feature → spike` all get replayed onto a fresh base in one command.
 
 ```bash
-wtm sync              # rebase the whole cascade, then ask before pushing
-wtm sync --dry-run    # preview the plan, fully offline (no fetch/rebase/push)
-wtm sync --push       # rebase + force-push (with lease) without prompting
-wtm sync --no-push    # rebase locally only, never push
-wtm sync --base develop  # sync from a base branch other than the configured one
+wtm sync                 # pick worktrees interactively (multi-select)
+wtm sync feature         # sync just one worktree onto its (refreshed) parent
+wtm sync feature spike   # sync several specific worktrees
+wtm sync --all           # rebase the whole cascade, then ask before pushing
+wtm sync --all --dry-run # preview the plan, fully offline (no fetch/rebase/push)
+wtm sync feature --push  # rebase + force-push (with lease) without prompting
+wtm sync feature --no-push   # rebase locally only, never push
+wtm sync --all --base develop  # sync from a base branch other than the configured one
 ```
 
+**Choosing what to sync:**
+- No arguments → an interactive **multi-select picker** of worktrees (nothing pre-checked).
+- One or more branch names → exactly those worktrees (a name also matches by unambiguous substring; an unknown name exits `11`).
+- `--all` → every managed worktree (cannot be combined with branch arguments).
+- Selecting the **base/main worktree** just fetches + fast-forwards the base (no rebase).
+
+> In non-interactive mode (`--output json`), there is no picker — you must pass branch names or `--all`, otherwise the command exits with a usage error.
+
 **What happens:**
-1. Fetches and fast-forwards the base branch
-2. Walks the worktrees in topological order (parents before children)
+1. Fetches and fast-forwards the base branch (skipped if the main worktree is dirty)
+2. Walks the selected worktrees in topological order (parents before children)
 3. For each branch: fetches + fast-forwards it from its own `origin/<branch>`, then rebases it onto its refreshed parent (`git rebase --onto`, replaying only that branch's own commits)
 4. Shows a per-branch recap, then (unless `--no-push`) asks once before force-pushing the rebased branches with `--force-with-lease`
 
-The cascade is **fully local** — pushing is a separate, explicitly confirmed step. On a conflict the rebase is **auto-aborted** (the working tree is left clean) and that branch's descendants are skipped; the command exits non-zero so you can resolve it manually and re-run.
+The cascade is **fully local** — pushing is a separate, explicitly confirmed step. On a conflict the rebase is **auto-aborted** (the working tree is left clean) and that branch's selected descendants are skipped; the command exits non-zero so you can resolve it manually and re-run.
 
 **Per-branch status:** `synced` (rebased), `up_to_date`, `skipped_dirty` (uncommitted changes), `skipped_ancestor` (a parent was skipped or failed), `diverged` (local **and** remote both moved — left untouched for manual reconcile), `conflict` (rebase aborted), `error`, `unknown_parent`.
 
 **Flags:**
 | Flag | Description |
 |---|---|
+| `--all` | Sync every managed worktree (cannot be combined with branch arguments) |
 | `--dry-run` | Preview the cascade without fetching, rebasing, or pushing |
 | `-y, --yes` | Skip the pre-sync confirmation |
 | `--push` | Force-push (with lease) rebased branches without prompting |
@@ -580,7 +592,7 @@ wtm run list --output json
 
 Supported commands:
 
-- `list`, `create`, `clean` (requires `--force`), `extract`, `sync`
+- `list`, `create`, `clean` (requires `--force`), `extract`, `sync` (requires branch names or `--all`)
 - `checkout`
 - `run list`, `run ps`, `run up`, `run down`, `run start`, `run stop`
 

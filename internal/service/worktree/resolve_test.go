@@ -127,6 +127,57 @@ func containsStr(s string, substr string) bool {
 	return false
 }
 
+func TestMatchSyncBranchExact(t *testing.T) {
+	worktrees := []domain.GitWorktree{
+		{Branch: "main", IsMain: true},
+		{Branch: "feature/auth"},
+		{Branch: "feature/auth-v2"},
+	}
+
+	branch, err := matchSyncBranch(worktrees, "feature/auth")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if branch != "feature/auth" {
+		t.Fatalf("expected feature/auth, got %s", branch)
+	}
+}
+
+func TestMatchSyncBranchSubstringUnique(t *testing.T) {
+	worktrees := []domain.GitWorktree{
+		{Branch: "main", IsMain: true},
+		{Branch: "feature/login"},
+	}
+
+	branch, err := matchSyncBranch(worktrees, "login")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if branch != "feature/login" {
+		t.Fatalf("expected feature/login, got %s", branch)
+	}
+}
+
+func TestMatchSyncBranchAmbiguous(t *testing.T) {
+	worktrees := []domain.GitWorktree{
+		{Branch: "feature/auth"},
+		{Branch: "feature/auth-v2"},
+	}
+
+	if _, err := matchSyncBranch(worktrees, "auth"); err == nil {
+		t.Fatal("expected an ambiguity error")
+	}
+}
+
+func TestMatchSyncBranchNotFound(t *testing.T) {
+	worktrees := []domain.GitWorktree{{Branch: "main", IsMain: true}}
+
+	_, err := matchSyncBranch(worktrees, "nope")
+	if !errors.Is(err, domain.ErrBranchNotFound) {
+		t.Fatalf("expected ErrBranchNotFound, got %v", err)
+	}
+}
+
 func TestResolveNotFoundError(t *testing.T) {
 	// This tests the actual Resolve function would return ErrWorktreeNotFound
 	// but we can't easily test it without a git repo, so we verify the error type

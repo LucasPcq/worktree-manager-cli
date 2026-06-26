@@ -69,6 +69,30 @@ func BuildSyncPlan(params BuildSyncPlanParams) (domain.SyncPlan, error) {
 	return domain.SyncPlan{BaseBranch: params.BaseBranch, Steps: ordered}, nil
 }
 
+// FilterSyncSteps keeps only the steps whose branch is in selected, preserving
+// the topological order of the input. An empty (or nil) selection is treated as
+// "no filter" and returns the steps unchanged, so callers can pass nil to mean
+// "every worktree". A branch in selected with no matching step (e.g. the base or
+// an unknown branch) is simply ignored.
+func FilterSyncSteps(steps []domain.SyncStep, selected []string) []domain.SyncStep {
+	if len(selected) == 0 {
+		return steps
+	}
+
+	wanted := make(map[string]struct{}, len(selected))
+	for _, branch := range selected {
+		wanted[branch] = struct{}{}
+	}
+
+	filtered := make([]domain.SyncStep, 0, len(steps))
+	for _, step := range steps {
+		if _, ok := wanted[step.Branch]; ok {
+			filtered = append(filtered, step)
+		}
+	}
+	return filtered
+}
+
 type parentDepthParams struct {
 	Branch  string
 	Managed map[string]domain.WorktreeNode

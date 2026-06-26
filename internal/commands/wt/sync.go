@@ -1,6 +1,7 @@
 package wt
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -12,21 +13,26 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/detect"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
+	"github.com/LucasPcq/wtm/internal/tui/syncpicker"
 )
 
 // newSyncCmd creates the wtm sync subcommand.
 func newSyncCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdSync,
-		Short: "Rebase every worktree onto its parent, in cascade",
-		Long: "Fetch and fast-forward the base branch, then rebase each managed worktree onto its\n" +
-			"parent in topological order (parents before children). The cascade is local; on a\n" +
-			"conflict the branch is left clean (rebase aborted) and its descendants are skipped.\n" +
-			"After a successful cascade, optionally force-push (with lease) the rebased branches.",
-		Args: cobra.NoArgs,
+		Use:   domain.CmdSync + " [branch...]",
+		Short: "Rebase selected worktrees onto their parent, in cascade",
+		Long: "Rebase one or more managed worktrees onto their parent. Pass branch names to target\n" +
+			"specific worktrees, --all to sync every worktree, or no arguments to pick interactively.\n" +
+			"The base branch is fetched and fast-forwarded first, then each selected worktree is\n" +
+			"rebased onto its parent in topological order (parents before children). The cascade is\n" +
+			"local; on a conflict the branch is left clean (rebase aborted) and its selected\n" +
+			"descendants are skipped. After a successful cascade, optionally force-push (with lease)\n" +
+			"the rebased branches.",
+		Args: cobra.ArbitraryArgs,
 		RunE: runSync,
 	}
 
+	cmd.Flags().Bool(domain.FlagAll, false, "Sync every managed worktree")
 	cmd.Flags().Bool(domain.FlagDryRun, false, "Preview the cascade without rebasing or pushing")
 	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the pre-sync confirmation")
 	cmd.Flags().Bool(domain.FlagPush, false, "Force-push (with lease) rebased branches without prompting")
@@ -37,7 +43,8 @@ func newSyncCmd() *cobra.Command {
 	return cmd
 }
 
-func runSync(cmd *cobra.Command, _ []string) error {
+func runSync(cmd *cobra.Command, args []string) error {
+	all, _ := cmd.Flags().GetBool(domain.FlagAll)
 	dryRun, _ := cmd.Flags().GetBool(domain.FlagDryRun)
 	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	push, _ := cmd.Flags().GetBool(domain.FlagPush)
@@ -47,6 +54,9 @@ func runSync(cmd *cobra.Command, _ []string) error {
 
 	if push && noPush {
 		return fmt.Errorf("--%s and --%s are mutually exclusive", domain.FlagPush, domain.FlagNoPush)
+	}
+	if all && len(args) > 0 {
+		return fmt.Errorf("--%s cannot be combined with branch arguments", domain.FlagAll)
 	}
 
 	dir, err := os.Getwd()
@@ -59,12 +69,29 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	baseBranch := resolveBase(baseOverride, cfg)
+	interactive := format != domain.OutputJSON
+
+	selected, err := resolveSyncSelection(resolveSyncSelectionParams{
+		Args:        args,
+		All:         all,
+		Interactive: interactive,
+		Cfg:         cfg,
+	})
+	if errors.Is(err, domain.ErrUserAborted) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
 	syncParams := worktree.SyncParams{
-		ProjectDir: cfg.ProjectDir,
-		StateDir:   cfg.StateDir,
-		Config:     cfg.Config,
-		BaseBranch: resolveBase(baseOverride, cfg),
-		DryRun:     dryRun,
+		ProjectDir:       cfg.ProjectDir,
+		StateDir:         cfg.StateDir,
+		Config:           cfg.Config,
+		BaseBranch:       baseBranch,
+		DryRun:           dryRun,
+		SelectedBranches: selected,
 	}
 
 	plan, err := worktree.PlanSync(syncParams)
@@ -72,13 +99,11 @@ func runSync(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	interactive := format != domain.OutputJSON
-
-	if len(plan.Steps) == 0 {
+	if len(plan.Steps) == 0 && !syncIncludesBase(selected, baseBranch) {
 		return renderEmptyPlan(cmd, syncParams.BaseBranch, interactive)
 	}
 
-	if interactive {
+	if interactive && len(plan.Steps) > 0 {
 		output.FormatSyncPlan(cmd.ErrOrStderr(), plan)
 		if !dryRun && !yes && !confirmSync(len(plan.Steps)) {
 			output.Message(cmd.ErrOrStderr(), "Aborted.")
@@ -136,6 +161,61 @@ func resolveBase(override string, cfg shared.ConfigResult) string {
 		return cfg.Config.Project.Worktrees.BaseBranch
 	}
 	return detect.BaseBranch(cfg.ProjectDir)
+}
+
+type resolveSyncSelectionParams struct {
+	Args        []string
+	All         bool
+	Interactive bool
+	Cfg         shared.ConfigResult
+}
+
+// resolveSyncSelection turns the CLI inputs into the list of branches to sync.
+// A nil result means "every worktree" (the --all case). Positional args are
+// resolved to concrete branches; with no args, an interactive run opens the
+// multi-select picker and a non-interactive run is a usage error.
+func resolveSyncSelection(params resolveSyncSelectionParams) ([]string, error) {
+	if params.All {
+		return nil, nil
+	}
+
+	if len(params.Args) > 0 {
+		return worktree.ResolveSyncBranches(worktree.ResolveSyncBranchesParams{
+			ProjectDir: params.Cfg.ProjectDir,
+			Queries:    params.Args,
+		})
+	}
+
+	if !params.Interactive {
+		return nil, fmt.Errorf("specify one or more worktrees, or pass --%s (no interactive picker in --%s %s mode)",
+			domain.FlagAll, domain.FlagOutput, domain.OutputJSON)
+	}
+
+	statuses, err := worktree.List(domain.ListParams{
+		ProjectDir: params.Cfg.ProjectDir,
+		StateDir:   params.Cfg.StateDir,
+		Config:     params.Cfg.Config,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return syncpicker.Run(syncpicker.RunParams{Statuses: statuses})
+}
+
+// syncIncludesBase reports whether the selection asks to refresh the base branch.
+// The --all case (nil selection) always does; an explicit selection does when it
+// names the base. It lets the command run a base-only refresh with no rebase steps.
+func syncIncludesBase(selected []string, baseBranch string) bool {
+	if selected == nil {
+		return true
+	}
+	for _, branch := range selected {
+		if branch == baseBranch {
+			return true
+		}
+	}
+	return false
 }
 
 func renderEmptyPlan(cmd *cobra.Command, base string, interactive bool) error {
