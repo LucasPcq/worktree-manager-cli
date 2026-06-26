@@ -108,6 +108,40 @@ func TestBuildSyncPlanUnknownParent(t *testing.T) {
 	}
 }
 
+func TestFilterSyncStepsPreservesOrder(t *testing.T) {
+	steps := []domain.SyncStep{
+		{Branch: "feat", SourceBranch: "main"},
+		{Branch: "mid", SourceBranch: "feat"},
+		{Branch: "deep", SourceBranch: "mid"},
+	}
+
+	filtered := FilterSyncSteps(steps, []string{"deep", "feat"})
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 steps, got %d: %+v", len(filtered), filtered)
+	}
+	if filtered[0].Branch != "feat" || filtered[1].Branch != "deep" {
+		t.Fatalf("expected topological order feat then deep, got %+v", filtered)
+	}
+}
+
+func TestFilterSyncStepsEmptySelectionReturnsAll(t *testing.T) {
+	steps := []domain.SyncStep{{Branch: "feat"}, {Branch: "mid"}}
+	if got := FilterSyncSteps(steps, nil); len(got) != 2 {
+		t.Fatalf("nil selection must return all steps, got %+v", got)
+	}
+	if got := FilterSyncSteps(steps, []string{}); len(got) != 2 {
+		t.Fatalf("empty selection must return all steps, got %+v", got)
+	}
+}
+
+func TestFilterSyncStepsIgnoresUnknownBranches(t *testing.T) {
+	steps := []domain.SyncStep{{Branch: "feat"}}
+	filtered := FilterSyncSteps(steps, []string{"main", "nope"})
+	if len(filtered) != 0 {
+		t.Fatalf("expected no steps for branches without a matching step, got %+v", filtered)
+	}
+}
+
 func TestBuildSyncPlanDeepBeforeShallow(t *testing.T) {
 	plan, err := BuildSyncPlan(BuildSyncPlanParams{
 		BaseBranch: "main",

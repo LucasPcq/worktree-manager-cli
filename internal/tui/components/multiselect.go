@@ -114,6 +114,9 @@ func (m MultiSelectModel) Update(msg tea.Msg) (MultiSelectModel, tea.Cmd) {
 			m.items[m.cursor].Selected = !m.items[m.cursor].Selected
 		}
 		m.refreshValidation()
+	case "a":
+		m.toggleAll()
+		m.refreshValidation()
 	case "enter":
 		if m.validate != nil {
 			if err := m.validate(m.Values()); err != nil {
@@ -128,6 +131,21 @@ func (m MultiSelectModel) Update(msg tea.Msg) (MultiSelectModel, tea.Cmd) {
 
 	m.clampOffset()
 	return m, nil
+}
+
+// toggleAll selects every item, or clears the selection when all are already
+// selected, so a single key flips between "all" and "none".
+func (m *MultiSelectModel) toggleAll() {
+	allSelected := true
+	for _, item := range m.items {
+		if !item.Selected {
+			allSelected = false
+			break
+		}
+	}
+	for i := range m.items {
+		m.items[i].Selected = !allSelected
+	}
 }
 
 // refreshValidation re-runs validate against the current selection so the
