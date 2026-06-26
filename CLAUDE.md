@@ -133,6 +133,14 @@ internal/
 - `output/` and `tui/` have zero decision logic — only rendering
 - `styles/` is the only package allowed to instantiate `lipgloss.Style`
 
+**Vertical spacing (top/bottom padding):** centralized in one place. Each command
+frames its human output **exactly once** with `output.Frame` (or the
+`output.FrameStart`/`output.FrameEnd` pair for streaming/split-stream); helpers and
+formatters return **raw** bodies (no outer blank lines). JSON (`--output json`) and
+machine output (shell-eval: `resolve` success, `shell-init`) are never framed.
+Route on `rules.IsHumanFormat(format)`. See the `go-cli` skill (Output section) for
+the full convention.
+
 ## 10. Validate before commit
 
 Run the **`build-validator`** subagent at the end of every development session

@@ -92,8 +92,8 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Added job %q", newJob.Name))
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Added job %q", newJob.Name))
+	})
 	return nil
 }

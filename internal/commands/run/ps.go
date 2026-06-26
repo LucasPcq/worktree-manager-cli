@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 	runpicker "github.com/LucasPcq/wtm/internal/tui/runpicker"
 )
 
@@ -34,19 +35,24 @@ func runPs(cmd *cobra.Command, _ []string) error {
 		return output.WriteRunningJobsJSON(cmd.OutOrStdout(), shared.LoadJobsGraceful())
 	}
 
-	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), "Loading jobs…")
-	jobs := shared.LoadJobsGraceful()
-	stopSpinner()
+	var jobs []domain.JobInfo
+	_ = components.RunLoading(components.LoadingParams{
+		Message: "Loading jobs…",
+		Animate: true,
+		Work:    func() error { jobs = shared.LoadJobsGraceful(); return nil },
+	})
 
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprint(cmd.OutOrStdout(), output.FormatRunningJobs(jobs))
+		output.Frame(cmd.OutOrStdout(), func() {
+			fmt.Fprint(cmd.OutOrStdout(), output.FormatRunningJobs(jobs))
+		})
 		return nil
 	}
 
 	if len(jobs) == 0 {
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), "No jobs running.")
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "No jobs running.")
+		})
 		return nil
 	}
 

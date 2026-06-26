@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // newStopCmd creates the wtm run stop subcommand.
@@ -54,25 +55,27 @@ func runStop(cmd *cobra.Command, args []string) error {
 		if format == domain.OutputJSON {
 			return output.WriteJobResultsJSON(cmd.OutOrStdout(), nil)
 		}
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), "No jobs running.")
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "No jobs running.")
+		})
 		return nil
 	}
 
 	client := process.NewClient(socketPath)
-	var stopSpinner func()
-	if format != domain.OutputJSON {
-		stopSpinner = shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s…", args[0]))
-	}
-	resp, err := client.Send(process.Request{
-		Action:  process.ActionStop,
-		Name:    args[0],
-		WorkDir: dir,
+	var resp process.Response
+	err = components.RunLoading(components.LoadingParams{
+		Message: fmt.Sprintf("Stopping %s…", args[0]),
+		Animate: rules.IsHumanFormat(format),
+		Work: func() error {
+			var e error
+			resp, e = client.Send(process.Request{
+				Action:  process.ActionStop,
+				Name:    args[0],
+				WorkDir: dir,
+			})
+			return e
+		},
 	})
-	if stopSpinner != nil {
-		stopSpinner()
-	}
 	if err != nil {
 		return fmt.Errorf("stop %s: %w", args[0], err)
 	}
@@ -87,8 +90,8 @@ func runStop(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", args[0]))
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", args[0]))
+	})
 	return nil
 }

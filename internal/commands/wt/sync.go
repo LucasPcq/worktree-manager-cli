@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/detect"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -70,7 +71,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	baseBranch := resolveBase(baseOverride, cfg)
-	interactive := format != domain.OutputJSON
+	interactive := rules.IsHumanFormat(format)
 
 	selected, err := resolveSyncSelection(resolveSyncSelectionParams{
 		Args:        args,
@@ -104,27 +105,30 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	if interactive && len(plan.Steps) > 0 {
+		output.FrameStart(cmd.ErrOrStderr())
 		output.FormatSyncPlan(cmd.ErrOrStderr(), plan)
 		if !dryRun && !yes && !confirmSync(len(plan.Steps)) {
 			output.Message(cmd.ErrOrStderr(), "Aborted.")
+			output.FrameEnd(cmd.ErrOrStderr())
 			return nil
 		}
 	}
 
-	var stop func()
-	if interactive {
-		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Rebasing worktrees…")
-	}
-	syncResult, err := worktree.Sync(syncParams)
-	if stop != nil {
-		stop()
-	}
+	var syncResult domain.SyncResult
+	err = components.RunLoading(components.LoadingParams{
+		Message: "Rebasing worktrees…",
+		Animate: interactive,
+		Work:    func() error { var e error; syncResult, e = worktree.Sync(syncParams); return e },
+	})
 	if err != nil {
 		return err
 	}
 
 	// Recap first (text mode): the user sees what happened BEFORE being asked to push.
+	// The blank separates the plan/spinner section (stderr) from the recap (stdout);
+	// it replaces the spinner's former self-padding.
 	if interactive {
+		output.Blank(cmd.OutOrStdout())
 		output.FormatSyncResult(cmd.OutOrStdout(), syncResult)
 	}
 
@@ -142,7 +146,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	if interactive {
 		output.FormatSyncPushSummary(cmd.OutOrStdout(), syncResult.Steps)
-		output.Blank(cmd.OutOrStdout())
+		output.FrameEnd(cmd.OutOrStdout())
 	} else if err := output.WriteSyncResultJSON(cmd.OutOrStdout(), syncResult); err != nil {
 		return err
 	}
@@ -222,9 +226,9 @@ func renderEmptyPlan(cmd *cobra.Command, base string, interactive bool) error {
 	if !interactive {
 		return output.WriteSyncResultJSON(cmd.OutOrStdout(), domain.SyncResult{BaseBranch: base})
 	}
-	output.Blank(cmd.OutOrStdout())
-	output.Message(cmd.OutOrStdout(), "No worktrees to sync.")
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Message(cmd.OutOrStdout(), "No worktrees to sync.")
+	})
 	return nil
 }
 

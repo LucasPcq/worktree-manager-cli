@@ -72,7 +72,9 @@ func runInstall(cmd *cobra.Command, _ []string) error {
 		if format == domain.OutputJSON {
 			return writeAgentsJSON(cmd.OutOrStdout(), nil)
 		}
-		output.Message(cmd.OutOrStdout(), "No destinations selected.")
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "No destinations selected.")
+		})
 		return nil
 	}
 
@@ -206,18 +208,18 @@ func writeAgentsJSON(w io.Writer, results []agentInstallResult) error {
 }
 
 func printAgentResults(w io.Writer, results []agentInstallResult) {
-	output.Blank(w)
-	for _, r := range results {
-		switch r.Action {
-		case agentActionCreated:
-			output.Success(w, fmt.Sprintf("Created %s", r.Path))
-		case agentActionSkipped:
-			if r.Reason != "" {
-				output.Warning(w, fmt.Sprintf("Skipped %s — %s", r.Path, r.Reason))
-			} else {
-				output.Warning(w, fmt.Sprintf("Skipped %s", r.Path))
+	output.Frame(w, func() {
+		for _, r := range results {
+			switch r.Action {
+			case agentActionCreated:
+				output.Success(w, fmt.Sprintf("Created %s", r.Path))
+			case agentActionSkipped:
+				if r.Reason != "" {
+					output.Warning(w, fmt.Sprintf("Skipped %s — %s", r.Path, r.Reason))
+				} else {
+					output.Warning(w, fmt.Sprintf("Skipped %s", r.Path))
+				}
 			}
 		}
-	}
-	output.Blank(w)
+	})
 }

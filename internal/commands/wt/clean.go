@@ -16,6 +16,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	cleanui "github.com/LucasPcq/wtm/internal/tui/clean"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // newCleanCmd creates the wtm clean subcommand.
@@ -71,19 +72,22 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return doClean(cmd, cleanParams, format)
 	}
 
-	stopCheck := shared.StartSpinner(cmd.ErrOrStderr(), "Checking worktree…")
-	check, err := worktree.Check(cleanParams)
-	stopCheck()
+	var check domain.CleanCheckResult
+	err = components.RunLoading(components.LoadingParams{
+		Message: "Checking worktree…",
+		Animate: rules.IsHumanFormat(format),
+		Work:    func() error { var e error; check, e = worktree.Check(cleanParams); return e },
+	})
 	if errors.Is(err, domain.ErrWorktreeNotFound) {
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", branch))
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", branch))
+		})
 		return nil
 	}
 	if errors.Is(err, domain.ErrCannotCleanParent) {
-		output.Blank(cmd.ErrOrStderr())
-		output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
-		output.Blank(cmd.ErrOrStderr())
+		output.Frame(cmd.ErrOrStderr(), func() {
+			output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+		})
 		return nil
 	}
 	if err != nil {
@@ -92,9 +96,9 @@ func runClean(cmd *cobra.Command, args []string) error {
 
 	confirmResult, err := cleanui.RunConfirm(check)
 	if errors.Is(err, domain.ErrUserAborted) {
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), "Aborted.")
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "Aborted.")
+		})
 		return nil
 	}
 	if err != nil {
@@ -127,14 +131,11 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 
 	stopWorktreeServices(cmd, params.ProjectDir, params.Branch)
 
-	var stop func()
-	if format != domain.OutputJSON {
-		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Cleaning worktree…")
-	}
-	err := worktree.Clean(params)
-	if stop != nil {
-		stop()
-	}
+	err := components.RunLoading(components.LoadingParams{
+		Message: "Cleaning worktree…",
+		Animate: rules.IsHumanFormat(format),
+		Work:    func() error { return worktree.Clean(params) },
+	})
 	if errors.Is(err, domain.ErrWorktreeNotFound) {
 		// Idempotent: cleaning an absent worktree is a no-op success so agents
 		// can safely retry.
@@ -144,15 +145,15 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 				AlreadyAbsent: true,
 			})
 		}
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", params.Branch))
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", params.Branch))
+		})
 		return nil
 	}
 	if errors.Is(err, domain.ErrCannotCleanParent) {
-		output.Blank(cmd.ErrOrStderr())
-		output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
-		output.Blank(cmd.ErrOrStderr())
+		output.Frame(cmd.ErrOrStderr(), func() {
+			output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+		})
 		return nil
 	}
 	if err != nil {
@@ -170,9 +171,9 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 		})
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Cleaned worktree and branch %s", params.Branch))
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Cleaned worktree and branch %s", params.Branch))
+	})
 	return nil
 }
 

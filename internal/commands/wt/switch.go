@@ -24,10 +24,10 @@ func newSwitchCmd() *cobra.Command {
 }
 
 func runSwitch(cmd *cobra.Command, _ []string) error {
-	output.Blank(cmd.ErrOrStderr())
-	output.Warning(cmd.ErrOrStderr(), "wtm switch requires shell integration to change your working directory.")
-	output.Blank(cmd.ErrOrStderr())
-	output.Message(cmd.ErrOrStderr(), domain.MsgShellInitHint)
-	output.Blank(cmd.ErrOrStderr())
+	output.Frame(cmd.ErrOrStderr(), func() {
+		output.Warning(cmd.ErrOrStderr(), "wtm switch requires shell integration to change your working directory.")
+		output.Blank(cmd.ErrOrStderr())
+		output.Message(cmd.ErrOrStderr(), domain.MsgShellInitHint)
+	})
 	return nil
 }

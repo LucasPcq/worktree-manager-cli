@@ -88,9 +88,9 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 			Warning:     reinitWarning(sections),
 		}))
 		if errors.Is(err, components.ErrAborted) || (err == nil && !confirmed) {
-			output.Blank(cmd.OutOrStdout())
-			output.Message(cmd.OutOrStdout(), "Cancelled.")
-			output.Blank(cmd.OutOrStdout())
+			output.Frame(cmd.OutOrStdout(), func() {
+				output.Message(cmd.OutOrStdout(), "Cancelled.")
+			})
 			return nil
 		}
 		if err != nil {
@@ -98,7 +98,7 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 		}
 	}
 
-	output.Blank(cmd.OutOrStdout())
+	output.FrameStart(cmd.OutOrStdout())
 
 	if contains(sections, domain.SectionServices) {
 		if err := applyServicesReinit(cmd, stateDir, answers, detection.PackageManager); err != nil {
@@ -111,7 +111,7 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 		}
 	}
 
-	output.Blank(cmd.OutOrStdout())
+	output.FrameEnd(cmd.OutOrStdout())
 	return nil
 }
 

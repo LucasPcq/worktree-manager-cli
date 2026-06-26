@@ -22,8 +22,11 @@ type ConfirmResult struct {
 func RunConfirm(check domain.CleanCheckResult) (ConfirmResult, error) {
 	w := os.Stderr
 
+	output.FrameStart(w)
 	printWarnings(w, check)
-
+	if rules.HasWarnings(check) {
+		output.Blank(w)
+	}
 	output.Announce(w, "Will delete:", []output.AnnounceItem{
 		{Label: "worktree", Value: check.WorktreePath},
 		{Label: "branch  ", Value: check.Branch},

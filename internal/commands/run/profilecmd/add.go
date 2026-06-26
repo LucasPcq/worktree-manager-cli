@@ -91,8 +91,8 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Added profile %q", newProfile.Name))
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Added profile %q", newProfile.Name))
+	})
 	return nil
 }

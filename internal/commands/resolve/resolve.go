@@ -14,6 +14,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
 
@@ -45,9 +46,9 @@ func runResolve(cmd *cobra.Command, args []string) error {
 		Query:      query,
 	})
 	if errors.Is(err, domain.ErrWorktreeNotFound) {
-		output.Blank(cmd.ErrOrStderr())
-		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("No worktree found matching %q", query))
-		output.Blank(cmd.ErrOrStderr())
+		output.Frame(cmd.ErrOrStderr(), func() {
+			output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("No worktree found matching %q", query))
+		})
 		return nil
 	}
 	if err != nil {
@@ -88,25 +89,29 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 		wg       sync.WaitGroup
 	)
 
-	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Loading worktrees…")
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		statuses, listErr = worktree.List(domain.ListParams{
-			ProjectDir: cfgResult.ProjectDir,
-			StateDir:   cfgResult.StateDir,
-			Config:     cfgResult.Config,
-		})
-	}()
-	go func() {
-		defer wg.Done()
-		services = shared.LoadJobsGraceful()
-	}()
-	wg.Wait()
-	stop()
-
-	if listErr != nil {
-		return domain.WorktreeStatus{}, fmt.Errorf("list worktrees: %w", listErr)
+	loadErr := components.RunLoading(components.LoadingParams{
+		Message: "Loading worktrees…",
+		Animate: true,
+		Work: func() error {
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				statuses, listErr = worktree.List(domain.ListParams{
+					ProjectDir: cfgResult.ProjectDir,
+					StateDir:   cfgResult.StateDir,
+					Config:     cfgResult.Config,
+				})
+			}()
+			go func() {
+				defer wg.Done()
+				services = shared.LoadJobsGraceful()
+			}()
+			wg.Wait()
+			return listErr
+		},
+	})
+	if loadErr != nil {
+		return domain.WorktreeStatus{}, fmt.Errorf("list worktrees: %w", loadErr)
 	}
 
 	filtered := rules.FilterStatusesByMatches(statuses, matches)

@@ -19,6 +19,7 @@ import (
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	checkoutwizard "github.com/LucasPcq/wtm/internal/tui/checkout"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // NewCmd creates the wtm checkout command.
@@ -57,7 +58,7 @@ func runCheckout(cmd *cobra.Command, args []string) error {
 
 	opts := checkoutOptions{
 		jsonMode:     format == domain.OutputJSON,
-		interactive:  format != domain.OutputJSON && term.IsTerminal(int(os.Stdin.Fd())),
+		interactive:  rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd())),
 		fromOverride: fromOverride,
 		envOverride:  envOverride,
 	}
@@ -81,18 +82,22 @@ type checkoutOptions struct {
 	envOverride  string
 }
 
-// checkoutByNumber handles `wtm checkout <number>`. The "Fetching PR…" spinner
-// gives both network feedback and the top padding before any wizard step.
+// checkoutByNumber handles `wtm checkout <number>`. The loading box owns its own
+// spacing; the persistent top padding comes from the framed result.
 func checkoutByNumber(cmd *cobra.Command, result shared.ConfigResult, number int, opts checkoutOptions) error {
-	stop := func() {}
-	if !opts.jsonMode {
-		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Fetching PR…")
-	}
-	p, err := ghservice.GetPRDetail(ghservice.GetPRDetailParams{
-		ProjectDir: result.ProjectDir,
-		Number:     number,
+	var p domain.PRInfo
+	err := components.RunLoading(components.LoadingParams{
+		Message: "Fetching PR…",
+		Animate: !opts.jsonMode,
+		Work: func() error {
+			var e error
+			p, e = ghservice.GetPRDetail(ghservice.GetPRDetailParams{
+				ProjectDir: result.ProjectDir,
+				Number:     number,
+			})
+			return e
+		},
 	})
-	stop()
 	if err != nil {
 		return fmt.Errorf("fetch PR: %w", err)
 	}
@@ -134,10 +139,6 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 	review, _ := cmd.Flags().GetBool(domain.FlagReview)
 	mine, _ := cmd.Flags().GetBool(domain.FlagMine)
 	filter := rules.PRFilterFor(rules.PRFilterParams{Review: review, Mine: mine})
-
-	// Top padding between the prompt and the wizard (the by-number path gets this
-	// from its spinner instead).
-	output.Blank(cmd.OutOrStdout())
 
 	res, err := checkoutwizard.RunWizard(checkoutwizard.WizardParams{
 		PRLoader:         func() ([]domain.PRInfo, domain.GHConnection) { return shared.LoadPRsFiltered(dir, filter) },
@@ -225,15 +226,16 @@ type createFromPRParams struct {
 func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createFromPRParams) error {
 	p := params.pr
 
-	stopFetch := func() {}
-	if !params.jsonMode {
-		stopFetch = shared.StartSpinner(cmd.ErrOrStderr(), "Fetching branch from origin…")
-	}
-	fetchErr := infra.FetchBranch(infra.FetchBranchParams{
-		ProjectDir: result.ProjectDir,
-		Branch:     p.Branch,
+	fetchErr := components.RunLoading(components.LoadingParams{
+		Message: "Fetching branch from origin…",
+		Animate: !params.jsonMode,
+		Work: func() error {
+			return infra.FetchBranch(infra.FetchBranchParams{
+				ProjectDir: result.ProjectDir,
+				Branch:     p.Branch,
+			})
+		},
 	})
-	stopFetch()
 	if fetchErr != nil {
 		return fetchErr
 	}
@@ -262,10 +264,10 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 		})
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Checked out PR #%d (%s) at %s", p.Number, p.Branch, createResult.Path))
-	output.InfoLine(cmd.OutOrStdout(), "cd", fmt.Sprintf("wtm go %s", p.Branch))
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Checked out PR #%d (%s) at %s", p.Number, p.Branch, createResult.Path))
+		output.InfoLine(cmd.OutOrStdout(), "cd", fmt.Sprintf("wtm go %s", p.Branch))
+	})
 	return nil
 }
 

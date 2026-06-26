@@ -15,6 +15,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/schemas"
 	"github.com/LucasPcq/wtm/internal/service/detect"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 	initwizard "github.com/LucasPcq/wtm/internal/tui/inittui"
 )
 
@@ -87,10 +88,10 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	}
 
 	if detect.ProjectConfigExists(stateDir) {
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), fmt.Sprintf("%s already exists.", filepath.Join(stateDir, domain.ConfigFileName)))
-		output.Message(cmd.OutOrStdout(), "Reconfigure a section with `wtm init --only env|hooks|services|worktrees`, or edit by hand with `wtm config edit`.")
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf("%s already exists.", filepath.Join(stateDir, domain.ConfigFileName)))
+			output.Message(cmd.OutOrStdout(), "Reconfigure a section with `wtm init --only env|hooks|services|worktrees`, or edit by hand with `wtm config edit`.")
+		})
 		return nil
 	}
 
@@ -117,11 +118,11 @@ func ensureGlobalConfig(cmd *cobra.Command, flagged bool) error {
 		return err
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), "Global config saved.")
-	output.Blank(cmd.OutOrStdout())
-	output.Message(cmd.OutOrStdout(), domain.MsgShellInitHint)
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), "Global config saved.")
+		output.Blank(cmd.OutOrStdout())
+		output.Message(cmd.OutOrStdout(), domain.MsgShellInitHint)
+	})
 
 	return nil
 }
@@ -186,9 +187,12 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool)
 		output.Intro(cmd.OutOrStdout(), "No wtm config found for this repo. Let's initialize it.")
 	}
 
-	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Detecting project settings…")
-	detection := detect.ProjectEnvironment(dir)
-	stop()
+	var detection domain.InitDetectionResult
+	_ = components.RunLoading(components.LoadingParams{
+		Message: "Detecting project settings…",
+		Animate: !flagged,
+		Work:    func() error { detection = detect.ProjectEnvironment(dir); return nil },
+	})
 
 	answers, err := resolveProjectAnswers(cmd, flagged, detection)
 	if errors.Is(err, domain.ErrUserAborted) {
