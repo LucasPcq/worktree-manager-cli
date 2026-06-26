@@ -19,6 +19,7 @@ import (
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	checkoutwizard "github.com/LucasPcq/wtm/internal/tui/checkout"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // NewCmd creates the wtm checkout command.
@@ -81,19 +82,22 @@ type checkoutOptions struct {
 	envOverride  string
 }
 
-// checkoutByNumber handles `wtm checkout <number>`. The frame's leading blank
-// provides the top padding before the "Fetching PR…" spinner and any wizard step.
+// checkoutByNumber handles `wtm checkout <number>`. The loading box owns its own
+// spacing; the persistent top padding comes from the framed result.
 func checkoutByNumber(cmd *cobra.Command, result shared.ConfigResult, number int, opts checkoutOptions) error {
-	stop := func() {}
-	if !opts.jsonMode {
-		output.FrameStart(cmd.ErrOrStderr())
-		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Fetching PR…")
-	}
-	p, err := ghservice.GetPRDetail(ghservice.GetPRDetailParams{
-		ProjectDir: result.ProjectDir,
-		Number:     number,
+	var p domain.PRInfo
+	err := components.RunLoading(components.LoadingParams{
+		Message: "Fetching PR…",
+		Animate: !opts.jsonMode,
+		Work: func() error {
+			var e error
+			p, e = ghservice.GetPRDetail(ghservice.GetPRDetailParams{
+				ProjectDir: result.ProjectDir,
+				Number:     number,
+			})
+			return e
+		},
 	})
-	stop()
 	if err != nil {
 		return fmt.Errorf("fetch PR: %w", err)
 	}
@@ -222,15 +226,16 @@ type createFromPRParams struct {
 func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createFromPRParams) error {
 	p := params.pr
 
-	stopFetch := func() {}
-	if !params.jsonMode {
-		stopFetch = shared.StartSpinner(cmd.ErrOrStderr(), "Fetching branch from origin…")
-	}
-	fetchErr := infra.FetchBranch(infra.FetchBranchParams{
-		ProjectDir: result.ProjectDir,
-		Branch:     p.Branch,
+	fetchErr := components.RunLoading(components.LoadingParams{
+		Message: "Fetching branch from origin…",
+		Animate: !params.jsonMode,
+		Work: func() error {
+			return infra.FetchBranch(infra.FetchBranchParams{
+				ProjectDir: result.ProjectDir,
+				Branch:     p.Branch,
+			})
+		},
 	})
-	stopFetch()
 	if fetchErr != nil {
 		return fetchErr
 	}

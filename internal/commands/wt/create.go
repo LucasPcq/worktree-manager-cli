@@ -14,6 +14,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 	newpicker "github.com/LucasPcq/wtm/internal/tui/newwt"
 )
 
@@ -92,23 +93,25 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	// silent path (git worktree add + env copy) on the human-facing run.
 	hasHooks := len(result.Config.Project.Hooks.OnCreate) > 0
 	showSpinner := rules.IsHumanFormat(format) && !hasHooks
-	var stop func()
-	if showSpinner {
-		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Creating worktree…")
-	}
 
-	createResult, err := worktree.Create(domain.CreateParams{
-		ProjectDir:      result.ProjectDir,
-		StateDir:        result.StateDir,
-		Branch:          branch,
-		FromBranch:      fromBranch,
-		Config:          result.Config,
-		EnvFromOverride: envOverride,
-		IfNotExists:     ifNotExists,
+	var createResult domain.CreateResult
+	err = components.RunLoading(components.LoadingParams{
+		Message: "Creating worktree…",
+		Animate: showSpinner,
+		Work: func() error {
+			var e error
+			createResult, e = worktree.Create(domain.CreateParams{
+				ProjectDir:      result.ProjectDir,
+				StateDir:        result.StateDir,
+				Branch:          branch,
+				FromBranch:      fromBranch,
+				Config:          result.Config,
+				EnvFromOverride: envOverride,
+				IfNotExists:     ifNotExists,
+			})
+			return e
+		},
 	})
-	if stop != nil {
-		stop()
-	}
 	if err != nil {
 		return err
 	}

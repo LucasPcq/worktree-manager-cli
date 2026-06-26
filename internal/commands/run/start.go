@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // newStartCmd creates the wtm run start subcommand.
@@ -51,18 +52,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	socketPath := process.SocketPath()
-	var stopDaemonSpinner func()
-	if format != domain.OutputJSON {
-		stopDaemonSpinner = shared.StartSpinner(cmd.ErrOrStderr(), "Connecting to daemon…")
-	}
-	if err := process.EnsureDaemon(socketPath); err != nil {
-		if stopDaemonSpinner != nil {
-			stopDaemonSpinner()
-		}
+	if err := components.RunLoading(components.LoadingParams{
+		Message: "Connecting to daemon…",
+		Animate: rules.IsHumanFormat(format),
+		Work:    func() error { return process.EnsureDaemon(socketPath) },
+	}); err != nil {
 		return fmt.Errorf("ensure daemon: %w", err)
-	}
-	if stopDaemonSpinner != nil {
-		stopDaemonSpinner()
 	}
 
 	client := process.NewClient(socketPath)
@@ -99,15 +94,21 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s…", job.Name))
-	resp, err := client.Send(process.Request{
-		Action:  process.ActionStart,
-		Job:     &job,
-		WorkDir: dir,
-	})
-	stopSpinner()
-	if err != nil {
-		return fmt.Errorf("start %s: %w", job.Name, err)
+	var resp process.Response
+	if startErr := components.RunLoading(components.LoadingParams{
+		Message: fmt.Sprintf("Starting %s…", job.Name),
+		Animate: rules.IsHumanFormat(format),
+		Work: func() error {
+			var e error
+			resp, e = client.Send(process.Request{
+				Action:  process.ActionStart,
+				Job:     &job,
+				WorkDir: dir,
+			})
+			return e
+		},
+	}); startErr != nil {
+		return fmt.Errorf("start %s: %w", job.Name, startErr)
 	}
 	if resp.Status == process.StatusError {
 		return fmt.Errorf("%s", resp.Message)

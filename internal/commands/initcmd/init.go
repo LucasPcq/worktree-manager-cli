@@ -15,6 +15,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/schemas"
 	"github.com/LucasPcq/wtm/internal/service/detect"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 	initwizard "github.com/LucasPcq/wtm/internal/tui/inittui"
 )
 
@@ -186,9 +187,12 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool)
 		output.Intro(cmd.OutOrStdout(), "No wtm config found for this repo. Let's initialize it.")
 	}
 
-	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Detecting project settings…")
-	detection := detect.ProjectEnvironment(dir)
-	stop()
+	var detection domain.InitDetectionResult
+	_ = components.RunLoading(components.LoadingParams{
+		Message: "Detecting project settings…",
+		Animate: !flagged,
+		Work:    func() error { detection = detect.ProjectEnvironment(dir); return nil },
+	})
 
 	answers, err := resolveProjectAnswers(cmd, flagged, detection)
 	if errors.Is(err, domain.ErrUserAborted) {

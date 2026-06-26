@@ -10,11 +10,11 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/styles"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // newLogsCmd creates the wtm run logs subcommand.
@@ -30,12 +30,13 @@ func newLogsCmd() *cobra.Command {
 
 func runLogs(cmd *cobra.Command, args []string) error {
 	socketPath := process.SocketPath()
-	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), "Connecting to daemon…")
-	if err := process.EnsureDaemon(socketPath); err != nil {
-		stopSpinner()
+	if err := components.RunLoading(components.LoadingParams{
+		Message: "Connecting to daemon…",
+		Animate: true,
+		Work:    func() error { return process.EnsureDaemon(socketPath) },
+	}); err != nil {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
-	stopSpinner()
 
 	dir, _ := os.Getwd()
 

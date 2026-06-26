@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // newDownCmd creates the wtm run down subcommand.
@@ -77,13 +78,20 @@ func runDown(cmd *cobra.Command, args []string) error {
 			output.FrameStart(cmd.OutOrStdout())
 		}
 		for _, job := range jobs {
-			stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s…", job.Name))
-			resp, sendErr := client.Send(process.Request{
-				Action:  process.ActionStop,
-				Name:    job.Name,
-				WorkDir: dir,
+			var resp process.Response
+			sendErr := components.RunLoading(components.LoadingParams{
+				Message: fmt.Sprintf("Stopping %s…", job.Name),
+				Animate: rules.IsHumanFormat(format),
+				Work: func() error {
+					var e error
+					resp, e = client.Send(process.Request{
+						Action:  process.ActionStop,
+						Name:    job.Name,
+						WorkDir: dir,
+					})
+					return e
+				},
 			})
-			stopSpinner()
 			if sendErr != nil {
 				results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: sendErr.Error()})
 				if format != domain.OutputJSON {
@@ -119,11 +127,18 @@ func runDown(cmd *cobra.Command, args []string) error {
 		req.WorkDir = dir
 	}
 
-	stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), "Stopping jobs…")
-	resp, err := client.Send(req)
-	stopSpinner()
-	if err != nil {
-		return fmt.Errorf("stop all jobs: %w", err)
+	var resp process.Response
+	stopErr := components.RunLoading(components.LoadingParams{
+		Message: "Stopping jobs…",
+		Animate: rules.IsHumanFormat(format),
+		Work: func() error {
+			var e error
+			resp, e = client.Send(req)
+			return e
+		},
+	})
+	if stopErr != nil {
+		return fmt.Errorf("stop all jobs: %w", stopErr)
 	}
 	if resp.Status == process.StatusError {
 		return fmt.Errorf("stop all: %s", resp.Message)

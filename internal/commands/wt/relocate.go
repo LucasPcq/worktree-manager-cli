@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 	relocatetui "github.com/LucasPcq/wtm/internal/tui/relocate"
 )
 
@@ -108,14 +109,12 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 		params.Parents = res.Parents
 	}
 
-	var stop func()
-	if interactive {
-		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Relocating worktrees…")
-	}
-	result, err := worktree.Relocate(params)
-	if stop != nil {
-		stop()
-	}
+	var result domain.RelocateResult
+	err = components.RunLoading(components.LoadingParams{
+		Message: "Relocating worktrees…",
+		Animate: interactive,
+		Work:    func() error { var e error; result, e = worktree.Relocate(params); return e },
+	})
 	if err != nil {
 		return err
 	}

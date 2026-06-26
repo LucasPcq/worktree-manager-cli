@@ -3,16 +3,13 @@ package shared
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
-	"github.com/LucasPcq/wtm/internal/output"
 )
 
 // ConfigResult holds the loaded config along with the resolved paths every
@@ -69,34 +66,4 @@ func LoadConfig(cmd *cobra.Command, dir string) (ConfigResult, error) {
 // AddOutputFlag registers the standard --output flag on cmd.
 func AddOutputFlag(cmd *cobra.Command) {
 	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
-}
-
-// StartSpinner displays a spinner with a message and returns a stop function.
-// The spinner does not pad itself: the command's frame (output.Frame /
-// FrameStart) owns the leading blank line, so every spinner call site must sit
-// under an opened frame on the human-output branch.
-func StartSpinner(w io.Writer, message string) func() {
-	done := make(chan struct{})
-	stopped := make(chan struct{})
-	go func() {
-		frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-		i := 0
-		for {
-			select {
-			case <-done:
-				clearLen := len(message) + len(output.Indent) + 4
-				fmt.Fprintf(w, "\r%-*s\r", clearLen, "")
-				close(stopped)
-				return
-			default:
-				fmt.Fprintf(w, "\r%s%s %s", output.Indent, frames[i%len(frames)], message)
-				i++
-				time.Sleep(80 * time.Millisecond)
-			}
-		}
-	}()
-	return func() {
-		close(done)
-		<-stopped
-	}
 }

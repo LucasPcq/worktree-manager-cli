@@ -61,30 +61,29 @@ func runList(cmd *cobra.Command, _ []string) error {
 		wg       sync.WaitGroup
 	)
 
-	var stop func()
-	if rules.IsHumanFormat(format) {
-		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Loading worktrees…")
-	}
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		statuses, listErr = worktree.List(domain.ListParams{
-			ProjectDir: result.ProjectDir,
-			StateDir:   result.StateDir,
-			Config:     result.Config,
-		})
-	}()
-	go func() {
-		defer wg.Done()
-		services = shared.LoadJobsGraceful()
-	}()
-	wg.Wait()
-	if stop != nil {
-		stop()
-	}
-
-	if listErr != nil {
-		return fmt.Errorf("list worktrees: %w", listErr)
+	err = components.RunLoading(components.LoadingParams{
+		Message: "Loading worktrees…",
+		Animate: rules.IsHumanFormat(format),
+		Work: func() error {
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				statuses, listErr = worktree.List(domain.ListParams{
+					ProjectDir: result.ProjectDir,
+					StateDir:   result.StateDir,
+					Config:     result.Config,
+				})
+			}()
+			go func() {
+				defer wg.Done()
+				services = shared.LoadJobsGraceful()
+			}()
+			wg.Wait()
+			return listErr
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("list worktrees: %w", err)
 	}
 
 	// Non-interactive (JSON or piped text) behaves identically across formats:

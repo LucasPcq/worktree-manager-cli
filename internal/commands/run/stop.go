@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // newStopCmd creates the wtm run stop subcommand.
@@ -61,18 +62,20 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 
 	client := process.NewClient(socketPath)
-	var stopSpinner func()
-	if rules.IsHumanFormat(format) {
-		stopSpinner = shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s…", args[0]))
-	}
-	resp, err := client.Send(process.Request{
-		Action:  process.ActionStop,
-		Name:    args[0],
-		WorkDir: dir,
+	var resp process.Response
+	err = components.RunLoading(components.LoadingParams{
+		Message: fmt.Sprintf("Stopping %s…", args[0]),
+		Animate: rules.IsHumanFormat(format),
+		Work: func() error {
+			var e error
+			resp, e = client.Send(process.Request{
+				Action:  process.ActionStop,
+				Name:    args[0],
+				WorkDir: dir,
+			})
+			return e
+		},
 	})
-	if stopSpinner != nil {
-		stopSpinner()
-	}
 	if err != nil {
 		return fmt.Errorf("stop %s: %w", args[0], err)
 	}

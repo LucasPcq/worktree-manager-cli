@@ -114,14 +114,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	var stop func()
-	if interactive {
-		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Rebasing worktrees…")
-	}
-	syncResult, err := worktree.Sync(syncParams)
-	if stop != nil {
-		stop()
-	}
+	var syncResult domain.SyncResult
+	err = components.RunLoading(components.LoadingParams{
+		Message: "Rebasing worktrees…",
+		Animate: interactive,
+		Work:    func() error { var e error; syncResult, e = worktree.Sync(syncParams); return e },
+	})
 	if err != nil {
 		return err
 	}

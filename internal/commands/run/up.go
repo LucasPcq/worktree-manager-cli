@@ -72,18 +72,12 @@ func runUp(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	socketPath := process.SocketPath()
-	var stopDaemonSpinner func()
-	if format != domain.OutputJSON {
-		stopDaemonSpinner = shared.StartSpinner(cmd.ErrOrStderr(), "Connecting to daemon…")
-	}
-	if err := process.EnsureDaemon(socketPath); err != nil {
-		if stopDaemonSpinner != nil {
-			stopDaemonSpinner()
-		}
+	if err := components.RunLoading(components.LoadingParams{
+		Message: "Connecting to daemon…",
+		Animate: rules.IsHumanFormat(format),
+		Work:    func() error { return process.EnsureDaemon(socketPath) },
+	}); err != nil {
 		return fmt.Errorf("ensure daemon: %w", err)
-	}
-	if stopDaemonSpinner != nil {
-		stopDaemonSpinner()
 	}
 
 	client := process.NewClient(socketPath)
@@ -116,13 +110,20 @@ func runUp(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Starting %s…", job.Name))
-		resp, sendErr := client.Send(process.Request{
-			Action:  process.ActionStart,
-			Job:     &job,
-			WorkDir: dir,
+		var resp process.Response
+		sendErr := components.RunLoading(components.LoadingParams{
+			Message: fmt.Sprintf("Starting %s…", job.Name),
+			Animate: rules.IsHumanFormat(format),
+			Work: func() error {
+				var e error
+				resp, e = client.Send(process.Request{
+					Action:  process.ActionStart,
+					Job:     &job,
+					WorkDir: dir,
+				})
+				return e
+			},
 		})
-		stopSpinner()
 		if sendErr != nil {
 			results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: sendErr.Error()})
 			if format != domain.OutputJSON {
