@@ -137,6 +137,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 				results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
 				started = append(started, job)
 				if format != domain.OutputJSON {
+					output.Blank(cmd.OutOrStdout())
 					output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s already running", job.Name))
 				}
 				continue
@@ -150,6 +151,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
 		started = append(started, job)
 		if format != domain.OutputJSON {
+			output.Blank(cmd.OutOrStdout())
 			output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", job.Name))
 		}
 	}

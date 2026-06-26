@@ -39,14 +39,16 @@ func runPs(cmd *cobra.Command, _ []string) error {
 	stopSpinner()
 
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprint(cmd.OutOrStdout(), output.FormatRunningJobs(jobs))
+		output.Frame(cmd.OutOrStdout(), func() {
+			fmt.Fprint(cmd.OutOrStdout(), output.FormatRunningJobs(jobs))
+		})
 		return nil
 	}
 
 	if len(jobs) == 0 {
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), "No jobs running.")
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "No jobs running.")
+		})
 		return nil
 	}
 

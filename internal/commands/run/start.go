@@ -73,7 +73,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		var onOutput func([]byte)
 		if format != domain.OutputJSON {
 			out := cmd.OutOrStdout()
-			output.Blank(out)
+			output.FrameStart(out)
 			output.Loading(out, fmt.Sprintf("Running task %s", job.Name))
 			onOutput = func(chunk []byte) { _, _ = out.Write(chunk) }
 		}
@@ -95,7 +95,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 			})
 		}
 		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s done", job.Name))
-		output.Blank(cmd.OutOrStdout())
+		output.FrameEnd(cmd.OutOrStdout())
 		return nil
 	}
 
@@ -120,8 +120,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", job.Name))
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", job.Name))
+	})
 	return nil
 }

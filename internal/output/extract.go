@@ -16,13 +16,14 @@ func WriteExtractJSON(w io.Writer, result domain.ExtractResult) error {
 
 // PrintExtractResult renders the human-facing summary of an extraction: a
 // headline, the moved files with colored status tags, and the target worktree.
+// It emits a raw body with no outer blank lines; the caller's frame owns the
+// outer vertical padding.
 func PrintExtractResult(w io.Writer, result domain.ExtractResult) {
 	verb := "Moved"
 	if result.Kept {
 		verb = "Copied"
 	}
 
-	Blank(w)
 	Success(w, fmt.Sprintf("%s %s to %s", verb, pluralizeFiles(len(result.Files)), styles.Bold.Render(result.TargetBranch)))
 	Blank(w)
 	for _, f := range result.Files {
@@ -31,7 +32,6 @@ func PrintExtractResult(w io.Writer, result domain.ExtractResult) {
 	Blank(w)
 	InfoLine(w, "source", result.SourceBranch+" · "+sourceState(result.Kept))
 	InfoLine(w, "worktree", result.TargetPath)
-	Blank(w)
 }
 
 // sourceState describes what happened to the source worktree after a clean
@@ -44,9 +44,10 @@ func sourceState(kept bool) string {
 }
 
 // PrintExtractConflicts renders the rebase-style summary when changes were
-// applied to the target with conflict markers, with both next-step paths.
+// applied to the target with conflict markers, with both next-step paths. It
+// emits a raw body with no outer blank lines; the caller's frame owns the outer
+// vertical padding.
 func PrintExtractConflicts(w io.Writer, result domain.ExtractResult) {
-	Blank(w)
 	Warning(w, fmt.Sprintf("Applied to %s with conflicts", styles.Bold.Render(result.TargetBranch)))
 	Blank(w)
 	SectionTitle(w, "Conflicts to resolve in "+result.TargetBranch)
@@ -63,7 +64,6 @@ func PrintExtractConflicts(w io.Writer, result domain.ExtractResult) {
 	Message(w, fmt.Sprintf("• Undo: discard the applied changes in %s — %s stays untouched.", result.TargetBranch, result.SourceBranch))
 	Blank(w)
 	InfoLine(w, "worktree", result.TargetPath)
-	Blank(w)
 }
 
 // extractTag renders the aligned, colored status tag for a file, reusing the

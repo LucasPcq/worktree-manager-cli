@@ -72,8 +72,10 @@ func AddOutputFlag(cmd *cobra.Command) {
 }
 
 // StartSpinner displays a spinner with a message and returns a stop function.
+// The spinner does not pad itself: the command's frame (output.Frame /
+// FrameStart) owns the leading blank line, so every spinner call site must sit
+// under an opened frame on the human-output branch.
 func StartSpinner(w io.Writer, message string) func() {
-	fmt.Fprintln(w)
 	done := make(chan struct{})
 	stopped := make(chan struct{})
 	go func() {

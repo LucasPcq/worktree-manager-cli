@@ -34,19 +34,23 @@ func runShow(cmd *cobra.Command, _ []string) error {
 	path := filepath.Join(stateDir, domain.ConfigFileName)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("No config at %s. Run `wtm init` first.", path))
+		output.Frame(cmd.ErrOrStderr(), func() {
+			output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("No config at %s. Run `wtm init` first.", path))
+		})
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.InfoLine(cmd.OutOrStdout(), "path", path)
-	output.Blank(cmd.OutOrStdout())
-	if _, err := cmd.OutOrStdout().Write(data); err != nil {
-		return err
+	var writeErr error
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.InfoLine(cmd.OutOrStdout(), "path", path)
+		output.Blank(cmd.OutOrStdout())
+		_, writeErr = cmd.OutOrStdout().Write(data)
+	})
+	if writeErr != nil {
+		return writeErr
 	}
-	output.Blank(cmd.OutOrStdout())
 	return nil
 }

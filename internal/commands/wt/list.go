@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,6 +16,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -47,7 +49,7 @@ func runList(cmd *cobra.Command, _ []string) error {
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	withPRs, _ := cmd.Flags().GetBool(domain.FlagWithPRs)
-	interactive := format != domain.OutputJSON && term.IsTerminal(int(os.Stdin.Fd()))
+	interactive := rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd()))
 
 	// Load worktree statuses and running services (both fast/local) in parallel.
 	// PRs (the slow gh call) are deferred: streamed into the picker interactively,
@@ -59,7 +61,10 @@ func runList(cmd *cobra.Command, _ []string) error {
 		wg       sync.WaitGroup
 	)
 
-	stop := shared.StartSpinner(cmd.ErrOrStderr(), "Loading worktrees…")
+	var stop func()
+	if rules.IsHumanFormat(format) {
+		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Loading worktrees…")
+	}
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
@@ -74,7 +79,9 @@ func runList(cmd *cobra.Command, _ []string) error {
 		services = shared.LoadJobsGraceful()
 	}()
 	wg.Wait()
-	stop()
+	if stop != nil {
+		stop()
+	}
 
 	if listErr != nil {
 		return fmt.Errorf("list worktrees: %w", listErr)
@@ -94,17 +101,21 @@ func runList(cmd *cobra.Command, _ []string) error {
 				Services: services,
 			})
 		}
-		fmt.Fprint(cmd.OutOrStdout(), output.FormatWorktreeList(output.FormatWorktreeListParams{
-			Statuses:     statuses,
-			ActiveBranch: "",
-			PRInfos:      prs,
-			Services:     services,
-		}))
+		output.Frame(cmd.OutOrStdout(), func() {
+			fmt.Fprintln(cmd.OutOrStdout(), strings.TrimRight(output.FormatWorktreeList(output.FormatWorktreeListParams{
+				Statuses:     statuses,
+				ActiveBranch: "",
+				PRInfos:      prs,
+				Services:     services,
+			}), "\n"))
+		})
 		return nil
 	}
 
 	if len(statuses) == 0 {
-		output.Message(cmd.OutOrStdout(), "No worktrees found.")
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "No worktrees found.")
+		})
 		return nil
 	}
 

@@ -18,7 +18,8 @@ func relTarget(basePath, toPath string) string {
 
 // FormatRelocatePlan prints the planned actions grouped by category (to apply,
 // skipped, blocked) with blank lines between groups, then a note when the user
-// will be asked to choose adoption parents.
+// will be asked to choose adoption parents. It emits a raw body with no leading
+// blank line; the caller's frame owns the outer vertical padding.
 func FormatRelocatePlan(w io.Writer, plan domain.RelocatePlan) {
 	var apply, skipped, blocked []domain.RelocateStep
 	adoptions, noops := 0, 0
@@ -38,7 +39,6 @@ func FormatRelocatePlan(w io.Writer, plan domain.RelocatePlan) {
 		}
 	}
 
-	Blank(w)
 	fmt.Fprintln(w, styles.RenderIntro(styles.IntroParams{
 		Width: 80,
 		Title: "Relocate worktrees",
@@ -126,7 +126,8 @@ func planSkipLine(step domain.RelocateStep) string {
 // (success or "with issues") with a one-line tally, the detail of what was
 // actually applied (with parents), then condensed skipped/blocked lines. It is
 // deliberately distinct from FormatRelocatePlan so the end state doesn't read
-// like a repeat of the opening preview.
+// like a repeat of the opening preview. It emits a raw body with no trailing
+// blank line; the caller's frame owns the outer vertical padding.
 func FormatRelocateResult(w io.Writer, result domain.RelocateResult) {
 	var done, errored []domain.RelocateStepResult
 	var skipped, blocked []string
@@ -177,7 +178,6 @@ func FormatRelocateResult(w io.Writer, result domain.RelocateResult) {
 		Blank(w)
 		Success(w, fmt.Sprintf("config base_path updated to %q", result.BasePath))
 	}
-	Blank(w)
 }
 
 type relocateTallyParams struct {

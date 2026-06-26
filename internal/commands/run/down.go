@@ -42,9 +42,9 @@ func runDown(cmd *cobra.Command, args []string) error {
 		if format == domain.OutputJSON {
 			return output.WriteJobResultsJSON(cmd.OutOrStdout(), nil)
 		}
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), "No jobs running.")
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "No jobs running.")
+		})
 		return nil
 	}
 
@@ -73,6 +73,9 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 		jobs := rules.ProfileJobs(runCfg, profile)
 		results := make([]output.JobActionResult, 0, len(jobs))
+		if rules.IsHumanFormat(format) {
+			output.FrameStart(cmd.OutOrStdout())
+		}
 		for _, job := range jobs {
 			stopSpinner := shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s…", job.Name))
 			resp, sendErr := client.Send(process.Request{
@@ -103,7 +106,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 		if format == domain.OutputJSON {
 			return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
 		}
-		output.Blank(cmd.OutOrStdout())
+		output.FrameEnd(cmd.OutOrStdout())
 		return nil
 	}
 
@@ -135,20 +138,22 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(resp.Jobs) == 0 {
-		if all {
-			output.Message(cmd.OutOrStdout(), "No jobs running.")
-		} else {
-			output.Message(cmd.OutOrStdout(), "No jobs running in this worktree.")
-		}
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			if all {
+				output.Message(cmd.OutOrStdout(), "No jobs running.")
+			} else {
+				output.Message(cmd.OutOrStdout(), "No jobs running in this worktree.")
+			}
+		})
 		return nil
 	}
+	output.FrameStart(cmd.OutOrStdout())
 	for i, job := range resp.Jobs {
 		if i > 0 {
 			output.Blank(cmd.OutOrStdout())
 		}
 		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", job.Name))
 	}
-	output.Blank(cmd.OutOrStdout())
+	output.FrameEnd(cmd.OutOrStdout())
 	return nil
 }

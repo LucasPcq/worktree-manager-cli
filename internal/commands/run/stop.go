@@ -54,15 +54,15 @@ func runStop(cmd *cobra.Command, args []string) error {
 		if format == domain.OutputJSON {
 			return output.WriteJobResultsJSON(cmd.OutOrStdout(), nil)
 		}
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), "No jobs running.")
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "No jobs running.")
+		})
 		return nil
 	}
 
 	client := process.NewClient(socketPath)
 	var stopSpinner func()
-	if format != domain.OutputJSON {
+	if rules.IsHumanFormat(format) {
 		stopSpinner = shared.StartSpinner(cmd.ErrOrStderr(), fmt.Sprintf("Stopping %s…", args[0]))
 	}
 	resp, err := client.Send(process.Request{
@@ -87,8 +87,8 @@ func runStop(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", args[0]))
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", args[0]))
+	})
 	return nil
 }

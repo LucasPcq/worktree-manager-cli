@@ -90,8 +90,8 @@ func runRmByName(params rmByNameParams) error {
 		})
 	}
 
-	output.Blank(params.Cmd.OutOrStdout())
-	output.Success(params.Cmd.OutOrStdout(), fmt.Sprintf("Removed profile %q", params.Name))
-	output.Blank(params.Cmd.OutOrStdout())
+	output.Frame(params.Cmd.OutOrStdout(), func() {
+		output.Success(params.Cmd.OutOrStdout(), fmt.Sprintf("Removed profile %q", params.Name))
+	})
 	return nil
 }

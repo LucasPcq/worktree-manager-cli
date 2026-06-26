@@ -180,10 +180,12 @@ func FormatRunConfig(cfg domain.RunConfig) string {
 	return b.String()
 }
 
-// FormatRunningJobs renders a table of running (or recently running) jobs.
+// FormatRunningJobs renders a table of running (or recently running) jobs. It
+// returns a raw body with no outer blank lines; the caller's frame owns the
+// outer vertical padding.
 func FormatRunningJobs(jobs []domain.JobInfo) string {
 	if len(jobs) == 0 {
-		return "\n" + Indent + "No jobs running.\n\n"
+		return Indent + "No jobs running.\n"
 	}
 
 	nameW, kindW, statusW, pidW := len("NAME"), len("KIND"), len("STATUS"), len("PID")

@@ -87,10 +87,10 @@ func runInit(cmd *cobra.Command, _ []string) error {
 	}
 
 	if detect.ProjectConfigExists(stateDir) {
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), fmt.Sprintf("%s already exists.", filepath.Join(stateDir, domain.ConfigFileName)))
-		output.Message(cmd.OutOrStdout(), "Reconfigure a section with `wtm init --only env|hooks|services|worktrees`, or edit by hand with `wtm config edit`.")
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf("%s already exists.", filepath.Join(stateDir, domain.ConfigFileName)))
+			output.Message(cmd.OutOrStdout(), "Reconfigure a section with `wtm init --only env|hooks|services|worktrees`, or edit by hand with `wtm config edit`.")
+		})
 		return nil
 	}
 
@@ -117,11 +117,11 @@ func ensureGlobalConfig(cmd *cobra.Command, flagged bool) error {
 		return err
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), "Global config saved.")
-	output.Blank(cmd.OutOrStdout())
-	output.Message(cmd.OutOrStdout(), domain.MsgShellInitHint)
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), "Global config saved.")
+		output.Blank(cmd.OutOrStdout())
+		output.Message(cmd.OutOrStdout(), domain.MsgShellInitHint)
+	})
 
 	return nil
 }

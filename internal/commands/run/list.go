@@ -50,12 +50,16 @@ func runList(cmd *cobra.Command, _ []string) error {
 	}
 
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprint(cmd.OutOrStdout(), output.FormatRunConfig(runCfg))
+		output.Frame(cmd.OutOrStdout(), func() {
+			fmt.Fprint(cmd.OutOrStdout(), output.FormatRunConfig(runCfg))
+		})
 		return nil
 	}
 
 	if len(runCfg.Jobs) == 0 && len(runCfg.Profiles) == 0 {
-		output.Message(cmd.OutOrStdout(), "No jobs or profiles defined in run.toml.")
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "No jobs or profiles defined in run.toml.")
+		})
 		return nil
 	}
 

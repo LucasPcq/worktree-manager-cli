@@ -246,6 +246,10 @@ func (m WizardModel) View() string {
 
 	var b strings.Builder
 
+	// Leading blank: the wizard owns its own top padding (one blank line between
+	// the prompt and the breadcrumb), matching standaloneModel and the framed
+	// non-TUI command output.
+	b.WriteString("\n")
 	b.WriteString(m.renderBreadcrumb())
 	b.WriteString("\n\n")
 

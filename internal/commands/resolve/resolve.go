@@ -45,9 +45,9 @@ func runResolve(cmd *cobra.Command, args []string) error {
 		Query:      query,
 	})
 	if errors.Is(err, domain.ErrWorktreeNotFound) {
-		output.Blank(cmd.ErrOrStderr())
-		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("No worktree found matching %q", query))
-		output.Blank(cmd.ErrOrStderr())
+		output.Frame(cmd.ErrOrStderr(), func() {
+			output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("No worktree found matching %q", query))
+		})
 		return nil
 	}
 	if err != nil {

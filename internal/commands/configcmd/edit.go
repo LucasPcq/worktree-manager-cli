@@ -39,7 +39,9 @@ func runEdit(cmd *cobra.Command, _ []string) error {
 
 	path := filepath.Join(stateDir, domain.ConfigFileName)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("No config at %s. Run `wtm init` first.", path))
+		output.Frame(cmd.ErrOrStderr(), func() {
+			output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("No config at %s. Run `wtm init` first.", path))
+		})
 		return nil
 	}
 
@@ -58,15 +60,17 @@ func runEdit(cmd *cobra.Command, _ []string) error {
 
 	if _, err := config.Load(config.LoadParams{StateDir: stateDir}); err != nil {
 		if errors.Is(err, domain.ErrConfigNotFound) {
-			output.Warning(cmd.ErrOrStderr(), "Config file is missing after edit.")
+			output.Frame(cmd.ErrOrStderr(), func() {
+				output.Warning(cmd.ErrOrStderr(), "Config file is missing after edit.")
+			})
 			return nil
 		}
 		output.Error(cmd.ErrOrStderr(), fmt.Sprintf("Config no longer valid: %v", err))
 		return err
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), "Config saved and validated.")
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), "Config saved and validated.")
+	})
 	return nil
 }

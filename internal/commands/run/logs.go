@@ -127,9 +127,9 @@ func multiplexAllJobs(socketPath string, dir string) error {
 	}
 
 	if len(running) == 0 {
-		output.Blank(os.Stdout)
-		output.Message(os.Stdout, "No running jobs in this worktree.")
-		output.Blank(os.Stdout)
+		output.Frame(os.Stdout, func() {
+			output.Message(os.Stdout, "No running jobs in this worktree.")
+		})
 		return nil
 	}
 

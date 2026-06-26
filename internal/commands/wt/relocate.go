@@ -74,7 +74,7 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	interactive := format != domain.OutputJSON
+	interactive := rules.IsHumanFormat(format)
 
 	if !rules.PlanHasWork(plan) {
 		return renderEmptyRelocate(cmd, interactive)
@@ -89,15 +89,20 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 		})
 	}
 
+	if interactive {
+		output.FrameStart(cmd.ErrOrStderr())
+	}
+
 	if interactive && !yes {
 		output.FormatRelocatePlan(cmd.ErrOrStderr(), plan)
-		output.Blank(cmd.ErrOrStderr())
+		// No separator blank here: the wizard owns its leading blank.
 		res, werr := runRelocateWizard(cfg, plan, params.BaseBranch)
 		if werr != nil {
 			return werr
 		}
 		if !res.Confirmed {
 			output.Message(cmd.ErrOrStderr(), "Aborted.")
+			output.FrameEnd(cmd.ErrOrStderr())
 			return nil
 		}
 		params.Parents = res.Parents
@@ -116,7 +121,11 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 	}
 
 	if interactive {
+		// The blank separates the plan/spinner section (stderr) from the result
+		// (stdout); it replaces the spinner's former self-padding.
+		output.Blank(cmd.OutOrStdout())
 		output.FormatRelocateResult(cmd.OutOrStdout(), result)
+		output.FrameEnd(cmd.OutOrStdout())
 	} else if jsonErr := output.WriteRelocateResultJSON(cmd.OutOrStdout(), result); jsonErr != nil {
 		return jsonErr
 	}
@@ -154,10 +163,11 @@ type renderDryRunParams struct {
 // result (the service performs no writes when DryRun is set).
 func renderRelocateDryRun(p renderDryRunParams) error {
 	if p.Interactive {
+		output.FrameStart(p.Cmd.ErrOrStderr())
 		output.FormatRelocatePlan(p.Cmd.ErrOrStderr(), p.Plan)
 		output.Blank(p.Cmd.ErrOrStderr())
 		output.Message(p.Cmd.ErrOrStderr(), "Dry run — no changes made.")
-		output.Blank(p.Cmd.ErrOrStderr())
+		output.FrameEnd(p.Cmd.ErrOrStderr())
 		return nil
 	}
 	result, err := worktree.Relocate(p.Params)
@@ -178,8 +188,8 @@ func renderEmptyRelocate(cmd *cobra.Command, interactive bool) error {
 	if !interactive {
 		return output.WriteRelocateResultJSON(cmd.OutOrStdout(), domain.RelocateResult{})
 	}
-	output.Blank(cmd.OutOrStdout())
-	output.Message(cmd.OutOrStdout(), "All worktrees are already aligned with base_path.")
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Message(cmd.OutOrStdout(), "All worktrees are already aligned with base_path.")
+	})
 	return nil
 }

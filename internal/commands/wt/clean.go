@@ -75,15 +75,15 @@ func runClean(cmd *cobra.Command, args []string) error {
 	check, err := worktree.Check(cleanParams)
 	stopCheck()
 	if errors.Is(err, domain.ErrWorktreeNotFound) {
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", branch))
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", branch))
+		})
 		return nil
 	}
 	if errors.Is(err, domain.ErrCannotCleanParent) {
-		output.Blank(cmd.ErrOrStderr())
-		output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
-		output.Blank(cmd.ErrOrStderr())
+		output.Frame(cmd.ErrOrStderr(), func() {
+			output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+		})
 		return nil
 	}
 	if err != nil {
@@ -92,9 +92,9 @@ func runClean(cmd *cobra.Command, args []string) error {
 
 	confirmResult, err := cleanui.RunConfirm(check)
 	if errors.Is(err, domain.ErrUserAborted) {
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), "Aborted.")
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "Aborted.")
+		})
 		return nil
 	}
 	if err != nil {
@@ -144,15 +144,15 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 				AlreadyAbsent: true,
 			})
 		}
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", params.Branch))
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", params.Branch))
+		})
 		return nil
 	}
 	if errors.Is(err, domain.ErrCannotCleanParent) {
-		output.Blank(cmd.ErrOrStderr())
-		output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
-		output.Blank(cmd.ErrOrStderr())
+		output.Frame(cmd.ErrOrStderr(), func() {
+			output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+		})
 		return nil
 	}
 	if err != nil {
@@ -170,9 +170,9 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 		})
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Cleaned worktree and branch %s", params.Branch))
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Cleaned worktree and branch %s", params.Branch))
+	})
 	return nil
 }
 
