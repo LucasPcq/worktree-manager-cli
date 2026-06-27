@@ -284,11 +284,18 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	// flight on the same connection.
 	var streamDone chan struct{}
 	if streamer != nil {
-		_, ch, _, subErr := job.output.Subscribe()
+		history, ch, _, subErr := job.output.Subscribe()
 		if subErr == nil {
 			streamDone = make(chan struct{})
 			go func() {
 				defer close(streamDone)
+				// Replay output produced before this goroutine attached — a fast task
+				// can write and exit before the subscription, leaving its first chunk
+				// only in history. Subscribe snapshots history and registers the
+				// channel under one lock, so history and ch never overlap or gap.
+				if len(history) > 0 {
+					_, _ = streamer.Write(history)
+				}
 				for chunk := range ch {
 					_, _ = streamer.Write(chunk)
 				}

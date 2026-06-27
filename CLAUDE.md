@@ -16,6 +16,12 @@ interactive-vs-non-interactive behavior), update this skill in the same session 
 stays aligned with the released CLI. Skip purely internal refactors and TUI-only
 changes that don't affect how an agent invokes wtm.
 
+**README:** `README.md` documents the human-facing command reference. Whenever a
+command or flag is **added, modified, or removed**, update `README.md` in the same
+session — add/rename/remove the relevant `#### wtm <command>` section, its usage
+examples, and its flags table, and keep them in command-registration order. This is
+mandatory for every command-surface change, alongside the agent skill above.
+
 Use the fff MCP tools for all file search operations instead of default tools.
 
 ---

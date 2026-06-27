@@ -278,6 +278,26 @@ All reusable TUI primitives live in `internal/tui/components/`:
 - `ConfirmModel` — yes/no dialog
 - `RunStandaloneSelect(model)` / `RunStandaloneConfirm(model)` — one-shot wrappers
 
+### Multi-step form → always use `WizardModel`, never chained standalone pickers
+
+A flow with **2+ sequential decisions** (e.g. pick worktree → pick new parent) MUST be a
+single `components.WizardModel`, exposed via a `RunWizard` in the screen package. The wizard
+gives a **breadcrumb** (`Step 1/2`) and **back-navigation** (`Esc` steps back on step 2+,
+cancels on step 1). Chaining several `RunStandaloneSelect`/`RunStandaloneConfirm` calls is a
+bug: no breadcrumb, and `Esc` quits the whole flow instead of going back.
+
+- Build `[]components.Step{}`; a step whose options depend on a previous answer uses
+  `Build: func(prev []components.Step) any` to rebuild its model from `prev[i].Model.(...).Value()`.
+- Run with `tea.NewProgram(wiz, tea.WithOutput(os.Stderr)).Run()`, then read
+  `final.(components.WizardModel)`: `Aborted()` → `domain.ErrUserAborted`; otherwise pull values
+  from `final.Steps()[i].Model.(components.SelectListModel).Value()`.
+- Use `NewWizardWithParams` for async first steps (data loaded after the wizard starts).
+- Reference implementations: `internal/tui/relocate/wizard.go`, `internal/tui/checkout/wizard.go`,
+  `internal/tui/reparent/picker.go`.
+
+Standalone wrappers (`RunStandaloneSelect`/`RunStandaloneConfirm`) are only for a **single**
+one-shot decision (e.g. the `clean` deletion confirm).
+
 ### Screen-specific TUI
 
 Each screen lives in its own package under `internal/tui/`:

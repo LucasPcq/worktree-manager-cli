@@ -14,6 +14,7 @@ func NewCmds() []*cobra.Command {
 		newCreateCmd(),
 		newCleanCmd(),
 		newSyncCmd(),
+		newReparentCmd(),
 		newRelocateCmd(),
 		newGoCmd(),
 		newSwitchCmd(),
