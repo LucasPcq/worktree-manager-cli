@@ -12,7 +12,9 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 	newpicker "github.com/LucasPcq/wtm/internal/tui/newwt"
 )
 
@@ -90,24 +92,26 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	// on_create hooks stream their own output, so only show a spinner for the
 	// silent path (git worktree add + env copy) on the human-facing run.
 	hasHooks := len(result.Config.Project.Hooks.OnCreate) > 0
-	showSpinner := format != domain.OutputJSON && !hasHooks
-	var stop func()
-	if showSpinner {
-		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Creating worktree…")
-	}
+	showSpinner := rules.IsHumanFormat(format) && !hasHooks
 
-	createResult, err := worktree.Create(domain.CreateParams{
-		ProjectDir:      result.ProjectDir,
-		StateDir:        result.StateDir,
-		Branch:          branch,
-		FromBranch:      fromBranch,
-		Config:          result.Config,
-		EnvFromOverride: envOverride,
-		IfNotExists:     ifNotExists,
+	var createResult domain.CreateResult
+	err = components.RunLoading(components.LoadingParams{
+		Message: "Creating worktree…",
+		Animate: showSpinner,
+		Work: func() error {
+			var e error
+			createResult, e = worktree.Create(domain.CreateParams{
+				ProjectDir:      result.ProjectDir,
+				StateDir:        result.StateDir,
+				Branch:          branch,
+				FromBranch:      fromBranch,
+				Config:          result.Config,
+				EnvFromOverride: envOverride,
+				IfNotExists:     ifNotExists,
+			})
+			return e
+		},
 	})
-	if stop != nil {
-		stop()
-	}
 	if err != nil {
 		return err
 	}
@@ -116,13 +120,13 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return output.WriteWorktreeCreateJSON(cmd.OutOrStdout(), createResult)
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	if createResult.AlreadyExists {
-		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already exists at %s", branch, createResult.Path))
-	} else {
-		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created worktree %s at %s", branch, createResult.Path))
-	}
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		if createResult.AlreadyExists {
+			output.Success(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already exists at %s", branch, createResult.Path))
+		} else {
+			output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created worktree %s at %s", branch, createResult.Path))
+		}
+	})
 
 	return nil
 }

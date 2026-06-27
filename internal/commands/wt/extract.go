@@ -74,9 +74,9 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 		if format == domain.OutputJSON {
 			return output.WriteExtractJSON(cmd.OutOrStdout(), domain.ExtractResult{Files: []domain.ExtractFile{}})
 		}
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), domain.ErrNoChangesToExtract.Error())
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), domain.ErrNoChangesToExtract.Error())
+		})
 		return nil
 	}
 
@@ -100,10 +100,10 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 		selected:   selected,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
-		if format != domain.OutputJSON {
-			output.Blank(cmd.OutOrStdout())
-			output.Message(cmd.OutOrStdout(), "Cancelled — nothing was changed.")
-			output.Blank(cmd.OutOrStdout())
+		if rules.IsHumanFormat(format) {
+			output.Frame(cmd.OutOrStdout(), func() {
+				output.Message(cmd.OutOrStdout(), "Cancelled — nothing was changed.")
+			})
 		}
 		return nil
 	}
@@ -128,10 +128,14 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 		return output.WriteExtractJSON(cmd.OutOrStdout(), result)
 	}
 	if len(result.Conflicts) > 0 {
-		output.PrintExtractConflicts(cmd.OutOrStdout(), result)
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.PrintExtractConflicts(cmd.OutOrStdout(), result)
+		})
 		return nil
 	}
-	output.PrintExtractResult(cmd.OutOrStdout(), result)
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.PrintExtractResult(cmd.OutOrStdout(), result)
+	})
 	return nil
 }
 

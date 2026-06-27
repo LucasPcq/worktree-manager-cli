@@ -39,6 +39,14 @@ func LoadPRsFiltered(projectDir string, filter domain.PRFilter) ([]domain.PRInfo
 	return nil, domain.GHConnectionOK
 }
 
+// LoadPRsAllStatesGraceful fetches PRs across all states (open/merged/closed)
+// for the project, returning nil on any error. Used by `wtm tree --with-prs` to
+// surface merged/closed PRs as clean candidates.
+func LoadPRsAllStatesGraceful(projectDir string) []domain.PRInfo {
+	prs, _ := ghservice.ListPRsAllStates(projectDir)
+	return prs
+}
+
 // LoadJobsGraceful fetches the daemon's running jobs, returning nil when the daemon is not running.
 func LoadJobsGraceful() []domain.JobInfo {
 	socketPath := process.SocketPath()

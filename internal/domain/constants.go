@@ -102,6 +102,11 @@ const (
 	FlagFiles      = "files"
 	FlagOnConflict = "on-conflict"
 
+	// FlagReparentChildren opts in (non-interactively) to reparenting the orphaned
+	// children of a cleaned worktree onto its grandparent. In interactive mode the
+	// command proposes this with a recap and an explicit confirmation instead.
+	FlagReparentChildren = "reparent-children"
+
 	// On-conflict modes for `extract`.
 	OnConflictAbort   = "abort"
 	OnConflictResolve = "resolve"
@@ -161,6 +166,18 @@ const (
 	// the fork flag (isCrossRepository).
 	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository"
 
+	// GHPRFieldsWithState is the field set for the all-states PR listing used by
+	// `wtm tree --with-prs`, which must surface merged/closed PRs (clean
+	// candidates) — so it includes the PR state.
+	GHPRFieldsWithState = "number,headRefName,url,state"
+
+	// PR states, normalised to lowercase. PRInfo.State always holds one of these,
+	// and output routes rendering on them. Centralised so a typo can't silently
+	// degrade merged/closed display.
+	PRStateOpen   = "open"
+	PRStateMerged = "merged"
+	PRStateClosed = "closed"
+
 	// Checkout wizard badge texts: a PR whose branch already has a local
 	// worktree ("linked") or that comes from a fork ("fork") is disabled.
 	BadgeTextLinked = "linked"
@@ -173,6 +190,9 @@ const (
 	// Output format values for FlagOutput.
 	OutputText = "text"
 	OutputJSON = "json"
+	// OutputMermaid renders a Mermaid flowchart (wtm tree only) — a diagram that
+	// can be pasted into a PR or Notion as a shareable discussion artifact.
+	OutputMermaid = "mermaid"
 
 	// RunFileName is the run config file name (inside <state-dir>/).
 	RunFileName = "run.toml"
@@ -226,6 +246,14 @@ const (
 	CmdExtract  = "extract"
 	CmdSync     = "sync"
 	CmdRelocate = "relocate"
+	CmdReparent = "reparent"
+	CmdTree     = "tree"
+
+	// MinWizardListHeight is the minimum number of rows reserved for a wizard
+	// step's scrollable list. Completed-step summaries are bounded so they never
+	// shrink the list below this, keeping the breadcrumb (which names the worktree
+	// being acted on) on screen even after many steps. See LUC-85.
+	MinWizardListHeight = 3
 
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"

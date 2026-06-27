@@ -215,6 +215,38 @@ Output:
 
 In an interactive terminal, shows a picker with actions: go, start profile, stop profile, view logs, clean.
 
+#### `wtm tree`
+
+Show the **forest** of worktrees — parents above their children — for a stacked-branch workflow. Where `list` is a flat inventory, `tree` makes the `parent → child` structure (the recorded `source_branch`) visible so you can decide the orchestration: what to rebase first, what blocks what.
+
+```bash
+wtm tree                      # coloured ASCII forest
+wtm tree --with-prs           # also fetch PR numbers + merged/closed markers
+wtm tree --output json        # structured tree for agents/scripting
+wtm tree --output mermaid     # flowchart to paste into a PR or Notion
+```
+
+Output:
+```
+  main
+  ├─ feat-auth          PR #123  ↑3
+  │  ├─ feat-auth-ui    ↑1  ⚠ needs sync
+  │  └─ feat-auth-api   ● dirty
+  └─ feat-billing       ↑5
+  dev                   (no worktree)
+  └─ spike-cache        ↑2
+```
+
+Per-node annotations: `↑N` commits ahead of the base, `● dirty` (uncommitted changes), and `⚠ needs sync` — the key signal — when the parent has moved past the child and the child must be rebased. A parent branch with no worktree (e.g. `dev`) appears as a greyed **virtual root**. With `--with-prs`, `PR #N` is shown (merged/closed PRs are marked as clean candidates). A broken `source_branch` cycle is rendered without failing and flagged `⚠ cycle`.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--with-prs` | Include GitHub PR info (open/merged/closed; fetched eagerly) |
+| `--output <format>` | `text` (default), `json`, or `mermaid` |
+
+`↑N` (commits ahead) is measured against the configured base branch (`worktrees.base_branch`, same as `wtm list`).
+
 #### `wtm go [branch]`
 
 Navigate to a worktree directory. Requires shell integration.
@@ -260,10 +292,13 @@ wtm clean feature/auth --force   # skip all safety checks
 
 **Safety checks:** uncommitted changes, unpushed commits, open pull request.
 
+**Orphaned children:** if the worktree you clean is the **parent** of others (their `source_branch` points at it), removing it would leave them dangling. In interactive mode wtm shows a recap of the proposed reparenting (`dev/b: dev/a → feat`) and asks before moving the children onto the **grandparent** (the cleaned worktree's own parent, or the base branch as fallback). In non-interactive mode nothing is reparented unless you pass `--reparent-children` — otherwise the orphaned children are reported and left untouched.
+
 **Flags:**
 | Flag | Description |
 |---|---|
 | `--force` | Bypass all safety checks and delete immediately |
+| `--reparent-children` | Reparent orphaned child worktrees onto the grandparent without prompting |
 
 #### `wtm extract`
 
@@ -293,34 +328,69 @@ wtm extract --files notes.md --to docs --keep           # copy instead of move (
 
 #### `wtm sync`
 
-Rebase **every** managed worktree onto its recorded parent (its `source_branch`), in cascade. Keeps a whole stack of branches up to date in one command — `main → feature → spike` all get replayed onto a fresh base.
+Rebase **selected** managed worktrees onto their recorded parent (its `source_branch`), in cascade. Target one branch, several, or the whole stack — `main → feature → spike` all get replayed onto a fresh base in one command.
 
 ```bash
-wtm sync              # rebase the whole cascade, then ask before pushing
-wtm sync --dry-run    # preview the plan, fully offline (no fetch/rebase/push)
-wtm sync --push       # rebase + force-push (with lease) without prompting
-wtm sync --no-push    # rebase locally only, never push
-wtm sync --base develop  # sync from a base branch other than the configured one
+wtm sync                 # pick worktrees interactively (multi-select)
+wtm sync feature         # sync just one worktree onto its (refreshed) parent
+wtm sync feature spike   # sync several specific worktrees
+wtm sync --all           # rebase the whole cascade, then ask before pushing
+wtm sync --all --dry-run # preview the plan, fully offline (no fetch/rebase/push)
+wtm sync feature --push  # rebase + force-push (with lease) without prompting
+wtm sync feature --no-push   # rebase locally only, never push
+wtm sync --all --base develop  # sync from a base branch other than the configured one
 ```
 
+**Choosing what to sync:**
+- No arguments → an interactive **multi-select picker** of worktrees (nothing pre-checked).
+- One or more branch names → exactly those worktrees (a name also matches by unambiguous substring; an unknown name exits `11`).
+- `--all` → every managed worktree (cannot be combined with branch arguments).
+- Selecting the **base/main worktree** just fetches + fast-forwards the base (no rebase).
+
+> In non-interactive mode (`--output json`), there is no picker — you must pass branch names or `--all`, otherwise the command exits with a usage error.
+
 **What happens:**
-1. Fetches and fast-forwards the base branch
-2. Walks the worktrees in topological order (parents before children)
+1. Fetches and fast-forwards the base branch (skipped if the main worktree is dirty)
+2. Walks the selected worktrees in topological order (parents before children)
 3. For each branch: fetches + fast-forwards it from its own `origin/<branch>`, then rebases it onto its refreshed parent (`git rebase --onto`, replaying only that branch's own commits)
 4. Shows a per-branch recap, then (unless `--no-push`) asks once before force-pushing the rebased branches with `--force-with-lease`
 
-The cascade is **fully local** — pushing is a separate, explicitly confirmed step. On a conflict the rebase is **auto-aborted** (the working tree is left clean) and that branch's descendants are skipped; the command exits non-zero so you can resolve it manually and re-run.
+The cascade is **fully local** — pushing is a separate, explicitly confirmed step. On a conflict the rebase is **auto-aborted** (the working tree is left clean) and that branch's selected descendants are skipped; the command exits non-zero so you can resolve it manually and re-run.
 
 **Per-branch status:** `synced` (rebased), `up_to_date`, `skipped_dirty` (uncommitted changes), `skipped_ancestor` (a parent was skipped or failed), `diverged` (local **and** remote both moved — left untouched for manual reconcile), `conflict` (rebase aborted), `error`, `unknown_parent`.
 
 **Flags:**
 | Flag | Description |
 |---|---|
+| `--all` | Sync every managed worktree (cannot be combined with branch arguments) |
 | `--dry-run` | Preview the cascade without fetching, rebasing, or pushing |
 | `-y, --yes` | Skip the pre-sync confirmation |
 | `--push` | Force-push (with lease) rebased branches without prompting |
 | `--no-push` | Rebase locally only; never push |
 | `--base <branch>` | Base branch to sync from (defaults to config or detected base) |
+
+---
+
+#### `wtm reparent [branch]`
+
+Change the recorded **parent** of a worktree — the branch `wtm sync` rebases it onto (its `source_branch`). Only the metadata is updated; the rebase happens on the next `wtm sync`. Handy for **stacked branches**: when a middle branch is merged (e.g. `feat → dev/a → dev/b`, with `dev/a` merged into `feat`), reparent `dev/b` onto `feat` so the cascade keeps working.
+
+```bash
+wtm reparent                       # pick the worktree, then the new parent, interactively
+wtm reparent dev/b --to feat       # reparent dev/b onto feat directly
+```
+
+**What happens:**
+1. Resolves the worktree (argument or interactive picker) and the new parent (`--to` or interactive picker)
+2. Validates: the new parent must exist locally, a worktree can't be its own parent, and the resulting parent chain must stay acyclic
+3. Rewrites the worktree's `source_branch` — run `wtm sync <branch>` afterwards to actually rebase
+
+> In non-interactive mode (`--output json`) there is no picker — you must pass the branch and `--to`, otherwise the command exits with a usage error.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--to <branch>` | New parent branch to rebase onto |
 
 ---
 
@@ -580,7 +650,7 @@ wtm run list --output json
 
 Supported commands:
 
-- `list`, `create`, `clean` (requires `--force`), `extract`, `sync`
+- `list`, `create`, `clean` (requires `--force`), `extract`, `sync` (requires branch names or `--all`)
 - `checkout`
 - `run list`, `run ps`, `run up`, `run down`, `run start`, `run stop`
 

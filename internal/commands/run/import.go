@@ -105,7 +105,11 @@ func writeAndReport(cmd *cobra.Command, stateDir string, cfg domain.RunConfig, m
 	if format == domain.OutputJSON {
 		return output.WriteImportResultJSON(cmd.OutOrStdout(), ir)
 	}
-	return output.WriteImportResultText(cmd.OutOrStdout(), ir)
+	var writeErr error
+	output.Frame(cmd.OutOrStdout(), func() {
+		writeErr = output.WriteImportResultText(cmd.OutOrStdout(), ir)
+	})
+	return writeErr
 }
 
 func readImportSource(args []string) ([]byte, error) {

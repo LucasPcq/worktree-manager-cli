@@ -278,6 +278,26 @@ All reusable TUI primitives live in `internal/tui/components/`:
 - `ConfirmModel` — yes/no dialog
 - `RunStandaloneSelect(model)` / `RunStandaloneConfirm(model)` — one-shot wrappers
 
+### Multi-step form → always use `WizardModel`, never chained standalone pickers
+
+A flow with **2+ sequential decisions** (e.g. pick worktree → pick new parent) MUST be a
+single `components.WizardModel`, exposed via a `RunWizard` in the screen package. The wizard
+gives a **breadcrumb** (`Step 1/2`) and **back-navigation** (`Esc` steps back on step 2+,
+cancels on step 1). Chaining several `RunStandaloneSelect`/`RunStandaloneConfirm` calls is a
+bug: no breadcrumb, and `Esc` quits the whole flow instead of going back.
+
+- Build `[]components.Step{}`; a step whose options depend on a previous answer uses
+  `Build: func(prev []components.Step) any` to rebuild its model from `prev[i].Model.(...).Value()`.
+- Run with `tea.NewProgram(wiz, tea.WithOutput(os.Stderr)).Run()`, then read
+  `final.(components.WizardModel)`: `Aborted()` → `domain.ErrUserAborted`; otherwise pull values
+  from `final.Steps()[i].Model.(components.SelectListModel).Value()`.
+- Use `NewWizardWithParams` for async first steps (data loaded after the wizard starts).
+- Reference implementations: `internal/tui/relocate/wizard.go`, `internal/tui/checkout/wizard.go`,
+  `internal/tui/reparent/picker.go`.
+
+Standalone wrappers (`RunStandaloneSelect`/`RunStandaloneConfirm`) are only for a **single**
+one-shot decision (e.g. the `clean` deletion confirm).
+
 ### Screen-specific TUI
 
 Each screen lives in its own package under `internal/tui/`:
@@ -327,17 +347,50 @@ Never write a literal `"  "` for padding — always use the constant.
 `internal/output/block.go` provides shared helpers for structured terminal output:
 
 ```go
-output.Blank(w)                    // empty line
+output.Blank(w)                    // empty line — use ONLY as an inter-section separator
 output.Success(w, "Done")          // ✓ Done
 output.Warning(w, "Be careful")    // ! Be careful
 output.Error(w, "Failed")          // ✗ Failed
 output.Message(w, "Info")          // plain indented line
 output.SectionTitle(w, "TITLE")    // bold title
 output.InfoLine(w, "key", "value") // key  value
-output.Announce(w, "Title", items) // padded block: blank + title + key-values + blank
+output.Announce(w, "Title", items) // raw block: title + key-values (no outer blanks)
 ```
 
 JSON output uses `encodeJSON(w, v)` (pretty-printed, no HTML escaping).
+
+### Vertical spacing — the frame (LUC-87)
+
+Vertical top/bottom padding is centralized. Each command frames its human output
+**exactly once**; helpers and table formatters return **raw** bodies with no outer
+blank lines. The left padding stays in the primitives (`Indent`); the frame owns
+only the top/bottom.
+
+```go
+// Simple buffered output — one leading + one trailing blank line:
+output.Frame(w, func() {
+    output.Success(w, "Created worktree feature-x")
+})
+
+// Streaming / split-stream (plan on stderr, result on stdout) — explicit pair:
+output.FrameStart(cmd.ErrOrStderr())
+output.FormatSyncPlan(cmd.ErrOrStderr(), plan)   // raw
+// … spinner, work …
+output.FormatSyncResult(cmd.OutOrStdout(), result) // raw
+output.FrameEnd(cmd.OutOrStdout())
+```
+
+Rules:
+- **Human output is framed once** via `Frame` (closure) or `FrameStart`/`FrameEnd`
+  (streaming). Route on `rules.IsHumanFormat(format)`.
+- **JSON and machine output are never framed** — `--output json` and shell-eval
+  paths (`resolve` success, `shell-init`) stay strictly flush.
+- **Helpers/formatters return raw bodies** — no leading/trailing `output.Blank`.
+  `output.Blank` is allowed only as a genuine *inter-section* separator inside a body.
+- **No stacked blanks** (`\n\n\n`+). Spinners do not self-pad — the frame owns the
+  leading blank, so open the frame before starting a spinner.
+- **TUI views own their single top/bottom blank** (`WizardModel`/`standaloneModel`
+  both open with one leading `\n`); don't add a manual blank before launching a wizard.
 
 ---
 

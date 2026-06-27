@@ -115,11 +115,11 @@ func runRmByName(params rmByNameParams) error {
 		})
 	}
 
-	output.Blank(params.Cmd.OutOrStdout())
-	output.Success(params.Cmd.OutOrStdout(), fmt.Sprintf("Removed job %q", params.Name))
-	if len(refProfiles) > 0 {
-		output.Message(params.Cmd.OutOrStdout(), fmt.Sprintf("Stripped from profile(s): %s", strings.Join(refProfiles, ", ")))
-	}
-	output.Blank(params.Cmd.OutOrStdout())
+	output.Frame(params.Cmd.OutOrStdout(), func() {
+		output.Success(params.Cmd.OutOrStdout(), fmt.Sprintf("Removed job %q", params.Name))
+		if len(refProfiles) > 0 {
+			output.Message(params.Cmd.OutOrStdout(), fmt.Sprintf("Stripped from profile(s): %s", strings.Join(refProfiles, ", ")))
+		}
+	})
 	return nil
 }

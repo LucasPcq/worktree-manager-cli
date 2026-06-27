@@ -213,14 +213,40 @@ func WriteWorktreeCreateJSON(w io.Writer, v any) error {
 
 // WriteWorktreeCleanJSONParams holds inputs for the clean payload.
 type WriteWorktreeCleanJSONParams struct {
-	Branch        string `json:"branch"`
-	Path          string `json:"path"`
-	AlreadyAbsent bool   `json:"already_absent"`
+	Branch        string                  `json:"branch"`
+	Path          string                  `json:"path"`
+	AlreadyAbsent bool                    `json:"already_absent"`
+	Reparented    []domain.ReparentResult `json:"reparented,omitempty"`
+	// OrphanedChildren lists children left dangling because reparenting was not
+	// authorized (no --reparent-children in non-interactive mode).
+	OrphanedChildren []domain.ReparentResult `json:"orphaned_children,omitempty"`
 }
 
 // WriteWorktreeCleanJSON writes the JSON payload for `clean`.
 func WriteWorktreeCleanJSON(w io.Writer, params WriteWorktreeCleanJSONParams) error {
 	return encodeJSON(w, params)
+}
+
+// WriteReparentJSON writes the JSON payload for `reparent`.
+func WriteReparentJSON(w io.Writer, result domain.ReparentResult) error {
+	return encodeJSON(w, result)
+}
+
+// FormatReparentProposal renders the proposed reparenting of a cleaned worktree's
+// orphaned children onto the grandparent: a leading blank separator (from the
+// preceding "Will delete" recap) followed by an announce block listing each
+// child's old → new parent. Raw body — the command's frame owns the outer padding.
+func FormatReparentProposal(w io.Writer, plan domain.CleanReparentPlan) {
+	Blank(w)
+
+	items := make([]AnnounceItem, 0, len(plan.Children))
+	for _, child := range plan.Children {
+		items = append(items, AnnounceItem{
+			Label: child.Branch,
+			Value: fmt.Sprintf("%s → %s", child.OldParent, child.NewParent),
+		})
+	}
+	Announce(w, fmt.Sprintf("Reparent orphaned children onto %s:", plan.Grandparent), items)
 }
 
 // encodeJSON writes v as indented JSON to w.

@@ -22,14 +22,24 @@ func ParentBranch(params ParentBranchParams) string {
 }
 
 func loadSourceBranch(stateDir, branch string) string {
-	metaPath := filepath.Join(rules.WorktreeMetaDir(stateDir, branch), domain.MetaFileName)
-	data, err := os.ReadFile(metaPath)
+	meta, err := loadMetadata(stateDir, branch)
 	if err != nil {
 		return ""
 	}
-	var meta domain.WorktreeMetadata
-	if json.Unmarshal(data, &meta) != nil {
-		return ""
-	}
 	return meta.SourceBranch
+}
+
+// loadMetadata reads the full meta.json for a worktree, so callers can update one
+// field while preserving the rest (CreatedAt, EnvStrategy).
+func loadMetadata(stateDir, branch string) (domain.WorktreeMetadata, error) {
+	metaPath := filepath.Join(rules.WorktreeMetaDir(stateDir, branch), domain.MetaFileName)
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		return domain.WorktreeMetadata{}, err
+	}
+	var meta domain.WorktreeMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return domain.WorktreeMetadata{}, err
+	}
+	return meta, nil
 }

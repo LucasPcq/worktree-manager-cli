@@ -48,7 +48,9 @@ func runList(cmd *cobra.Command, _ []string) error {
 	}
 
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprint(cmd.OutOrStdout(), output.FormatRunConfig(domain.RunConfig{Profiles: cfg.Profiles}))
+		output.Frame(cmd.OutOrStdout(), func() {
+			fmt.Fprint(cmd.OutOrStdout(), output.FormatRunConfig(domain.RunConfig{Profiles: cfg.Profiles}))
+		})
 		return nil
 	}
 

@@ -11,9 +11,11 @@ import (
 func NewCmds() []*cobra.Command {
 	cmds := []*cobra.Command{
 		newListCmd(),
+		newTreeCmd(),
 		newCreateCmd(),
 		newCleanCmd(),
 		newSyncCmd(),
+		newReparentCmd(),
 		newRelocateCmd(),
 		newGoCmd(),
 		newSwitchCmd(),

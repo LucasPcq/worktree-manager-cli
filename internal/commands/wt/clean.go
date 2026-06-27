@@ -16,6 +16,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	cleanui "github.com/LucasPcq/wtm/internal/tui/clean"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // newCleanCmd creates the wtm clean subcommand.
@@ -29,6 +30,7 @@ func newCleanCmd() *cobra.Command {
 	}
 
 	cmd.Flags().Bool(domain.FlagForce, false, "Bypass all safety checks")
+	cmd.Flags().Bool(domain.FlagReparentChildren, false, "Reparent orphaned child worktrees onto the grandparent (no prompt)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -36,6 +38,7 @@ func newCleanCmd() *cobra.Command {
 
 func runClean(cmd *cobra.Command, args []string) error {
 	force, _ := cmd.Flags().GetBool(domain.FlagForce)
+	reparentFlag, _ := cmd.Flags().GetBool(domain.FlagReparentChildren)
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	if format == domain.OutputJSON && !force {
@@ -60,49 +63,103 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	interactive := rules.IsHumanFormat(format)
 	cleanParams := domain.CleanParams{
 		ProjectDir: result.ProjectDir,
+		StateDir:   result.StateDir,
 		Branch:     branch,
 		Force:      force,
+		BaseBranch: resolveBase("", result),
 		Config:     result.Config,
 	}
 
-	if force {
-		return doClean(cmd, cleanParams, format)
+	reparentPlan := worktree.PlanCleanReparent(cleanParams)
+
+	if !force {
+		var check domain.CleanCheckResult
+		err = components.RunLoading(components.LoadingParams{
+			Message: "Checking worktree…",
+			Animate: interactive,
+			Work:    func() error { var e error; check, e = worktree.Check(cleanParams); return e },
+		})
+		if errors.Is(err, domain.ErrWorktreeNotFound) {
+			output.Frame(cmd.OutOrStdout(), func() {
+				output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", branch))
+			})
+			return nil
+		}
+		if errors.Is(err, domain.ErrCannotCleanParent) {
+			output.Frame(cmd.ErrOrStderr(), func() {
+				output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+			})
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		// Open the confirm-section frame here so framing stays in the command
+		// layer; RunConfirm renders only its raw body. The result section's own
+		// output.Frame (in doClean) supplies the trailing blank.
+		output.FrameStart(cmd.ErrOrStderr())
+		confirmResult, err := cleanui.RunConfirm(check)
+		if errors.Is(err, domain.ErrUserAborted) {
+			output.Frame(cmd.OutOrStdout(), func() {
+				output.Message(cmd.OutOrStdout(), "Aborted.")
+			})
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		cleanParams.Force = confirmResult.Force
 	}
 
-	stopCheck := shared.StartSpinner(cmd.ErrOrStderr(), "Checking worktree…")
-	check, err := worktree.Check(cleanParams)
-	stopCheck()
-	if errors.Is(err, domain.ErrWorktreeNotFound) {
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", branch))
-		output.Blank(cmd.OutOrStdout())
+	applyReparent, aborted := decideReparent(cmd, reparentPlan, reparentFlag, interactive)
+	if aborted {
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "Aborted.")
+		})
 		return nil
 	}
-	if errors.Is(err, domain.ErrCannotCleanParent) {
-		output.Blank(cmd.ErrOrStderr())
-		output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
-		output.Blank(cmd.ErrOrStderr())
-		return nil
+	return doClean(cmd, cleanParams, format, reparentPlan, applyReparent)
+}
+
+// decideReparent resolves whether the cleaned worktree's orphaned children should
+// be reparented onto the grandparent. With no children it is a no-op. The flag is
+// the explicit permission in non-interactive mode; otherwise the user is asked
+// with a recap of exactly what would change. A second return value reports an Esc
+// on the proposal, which aborts the whole clean (nothing is deleted).
+func decideReparent(cmd *cobra.Command, plan domain.CleanReparentPlan, flag bool, interactive bool) (apply bool, abort bool) {
+	if len(plan.Children) == 0 {
+		return false, false
 	}
+	if flag {
+		return true, false
+	}
+	if !interactive {
+		return false, false
+	}
+	return confirmReparent(cmd, plan)
+}
+
+// confirmReparent shows the proposed reparenting (a bold section, separated from
+// the "Will delete" recap by a blank line) and asks. Yes → reparent; No → delete
+// but leave the children orphaned; Esc → abort the whole clean.
+func confirmReparent(cmd *cobra.Command, plan domain.CleanReparentPlan) (apply bool, abort bool) {
+	output.FormatReparentProposal(cmd.ErrOrStderr(), plan)
+
+	cm := components.NewConfirm(components.NewConfirmParams{
+		Title:      fmt.Sprintf("Reparent %d child worktree(s) onto %s?", len(plan.Children), plan.Grandparent),
+		DefaultYes: true,
+	})
+	confirmed, err := components.RunStandaloneConfirm(cm)
 	if err != nil {
-		return err
+		// Esc (or a program failure) aborts the whole operation rather than
+		// silently deleting the parent and orphaning its children.
+		return false, true
 	}
-
-	confirmResult, err := cleanui.RunConfirm(check)
-	if errors.Is(err, domain.ErrUserAborted) {
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), "Aborted.")
-		output.Blank(cmd.OutOrStdout())
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	cleanParams.Force = confirmResult.Force
-	return doClean(cmd, cleanParams, format)
+	return confirmed, false
 }
 
 func resolveBranchArg(args []string, projectDir string) (string, error) {
@@ -112,7 +169,7 @@ func resolveBranchArg(args []string, projectDir string) (string, error) {
 	return cleanui.RunWorktreePicker(projectDir)
 }
 
-func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error {
+func doClean(cmd *cobra.Command, params domain.CleanParams, format string, reparentPlan domain.CleanReparentPlan, applyReparent bool) error {
 	wtPath := ""
 	if wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
 		ProjectDir: params.ProjectDir,
@@ -127,14 +184,11 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 
 	stopWorktreeServices(cmd, params.ProjectDir, params.Branch)
 
-	var stop func()
-	if format != domain.OutputJSON {
-		stop = shared.StartSpinner(cmd.ErrOrStderr(), "Cleaning worktree…")
-	}
-	err := worktree.Clean(params)
-	if stop != nil {
-		stop()
-	}
+	err := components.RunLoading(components.LoadingParams{
+		Message: "Cleaning worktree…",
+		Animate: rules.IsHumanFormat(format),
+		Work:    func() error { return worktree.Clean(params) },
+	})
 	if errors.Is(err, domain.ErrWorktreeNotFound) {
 		// Idempotent: cleaning an absent worktree is a no-op success so agents
 		// can safely retry.
@@ -144,15 +198,15 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 				AlreadyAbsent: true,
 			})
 		}
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", params.Branch))
-		output.Blank(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already absent — nothing to clean", params.Branch))
+		})
 		return nil
 	}
 	if errors.Is(err, domain.ErrCannotCleanParent) {
-		output.Blank(cmd.ErrOrStderr())
-		output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
-		output.Blank(cmd.ErrOrStderr())
+		output.Frame(cmd.ErrOrStderr(), func() {
+			output.Warning(cmd.ErrOrStderr(), "Cannot clean the parent worktree.")
+		})
 		return nil
 	}
 	if err != nil {
@@ -163,17 +217,48 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string) error
 		redirectToBase(params.ProjectDir)
 	}
 
+	reparented, reparentErr := applyChildReparent(params.StateDir, reparentPlan, applyReparent)
+	if reparentErr != nil {
+		return reparentErr
+	}
+
 	if format == domain.OutputJSON {
 		return output.WriteWorktreeCleanJSON(cmd.OutOrStdout(), output.WriteWorktreeCleanJSONParams{
-			Branch: params.Branch,
-			Path:   wtPath,
+			Branch:           params.Branch,
+			Path:             wtPath,
+			Reparented:       reparented,
+			OrphanedChildren: orphanedChildren(reparentPlan, applyReparent),
 		})
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Cleaned worktree and branch %s", params.Branch))
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Cleaned worktree and branch %s", params.Branch))
+		for _, child := range reparented {
+			output.Success(cmd.OutOrStdout(), fmt.Sprintf("Reparented %s onto %s", child.Branch, child.NewParent))
+		}
+		for _, child := range orphanedChildren(reparentPlan, applyReparent) {
+			output.Warning(cmd.OutOrStdout(), fmt.Sprintf("%s still points at the removed parent %s — reparent it with `wtm reparent`", child.Branch, child.OldParent))
+		}
+	})
 	return nil
+}
+
+// applyChildReparent reparents the orphaned children when authorized, otherwise
+// returns nil so the caller can report them as still-orphaned.
+func applyChildReparent(stateDir string, plan domain.CleanReparentPlan, apply bool) ([]domain.ReparentResult, error) {
+	if !apply || len(plan.Children) == 0 {
+		return nil, nil
+	}
+	return worktree.ApplyReparentChildren(worktree.ApplyReparentChildrenParams{Plan: plan, StateDir: stateDir})
+}
+
+// orphanedChildren returns the children left dangling because reparenting was not
+// authorized.
+func orphanedChildren(plan domain.CleanReparentPlan, apply bool) []domain.ReparentResult {
+	if apply || len(plan.Children) == 0 {
+		return nil
+	}
+	return plan.Children
 }
 
 // redirectToBase asks the shell wrapper to cd into the base repo, avoiding a

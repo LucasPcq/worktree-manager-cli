@@ -16,6 +16,12 @@ interactive-vs-non-interactive behavior), update this skill in the same session 
 stays aligned with the released CLI. Skip purely internal refactors and TUI-only
 changes that don't affect how an agent invokes wtm.
 
+**README:** `README.md` documents the human-facing command reference. Whenever a
+command or flag is **added, modified, or removed**, update `README.md` in the same
+session — add/rename/remove the relevant `#### wtm <command>` section, its usage
+examples, and its flags table, and keep them in command-registration order. This is
+mandatory for every command-surface change, alongside the agent skill above.
+
 Use the fff MCP tools for all file search operations instead of default tools.
 
 ---
@@ -132,6 +138,14 @@ internal/
 - `service/` has zero imports of `cobra`, `bubbletea`, `lipgloss`
 - `output/` and `tui/` have zero decision logic — only rendering
 - `styles/` is the only package allowed to instantiate `lipgloss.Style`
+
+**Vertical spacing (top/bottom padding):** centralized in one place. Each command
+frames its human output **exactly once** with `output.Frame` (or the
+`output.FrameStart`/`output.FrameEnd` pair for streaming/split-stream); helpers and
+formatters return **raw** bodies (no outer blank lines). JSON (`--output json`) and
+machine output (shell-eval: `resolve` success, `shell-init`) are never framed.
+Route on `rules.IsHumanFormat(format)`. See the `go-cli` skill (Output section) for
+the full convention.
 
 ## 10. Validate before commit
 

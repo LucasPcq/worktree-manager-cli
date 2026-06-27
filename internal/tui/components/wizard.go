@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -97,10 +98,7 @@ func NewWizardWithParams(params WizardParams) WizardModel {
 	m.onMsg = params.OnMsg
 	m.loading = params.Loading
 	m.loadingText = params.LoadingText
-	sp := spinner.New()
-	sp.Spinner = spinner.MiniDot
-	sp.Style = styles.Muted
-	m.spinner = sp
+	m.spinner = newMutedSpinner()
 	return m
 }
 
@@ -239,21 +237,63 @@ func (m WizardModel) updateStep(step *Step, msg tea.Msg) (advanced bool, back bo
 }
 
 // View renders the breadcrumb, completed step summaries, and the current step.
+// It is assembled as head + list + tail so the same fragments can be measured by
+// chromeHeight to size the list — keeping the whole render within the terminal
+// height (and thus the breadcrumb on screen). See LUC-85.
 func (m WizardModel) View() string {
 	if len(m.steps) == 0 || m.done || m.aborted {
 		return ""
 	}
+	return m.renderHead() + m.viewStep(m.current) + m.renderTail()
+}
 
+// renderHead renders everything above the current step's list: the leading
+// blank, breadcrumb, status banner, the (bounded) completed-step summaries, and
+// the step description.
+func (m WizardModel) renderHead() string {
 	var b strings.Builder
+	b.WriteString(m.renderTop())
+	if summaries := m.renderSummaries(m.maxSummaryLines()); summaries != "" {
+		b.WriteString(summaries)
+		b.WriteString("\n")
+	}
+	if m.current > 0 {
+		b.WriteString("\n")
+	}
+	if desc := m.renderDescription(); desc != "" {
+		b.WriteString(desc)
+		b.WriteString("\n\n")
+	}
+	return b.String()
+}
 
+// renderTail renders everything below the current step's list (the help bar).
+func (m WizardModel) renderTail() string {
+	return "\n\n" + m.renderHelpBar() + "\n"
+}
+
+// renderTop renders the leading blank, breadcrumb, and optional status banner.
+// The wizard owns its own top padding (one blank line between the prompt and the
+// breadcrumb), matching standaloneModel and the framed non-TUI command output.
+func (m WizardModel) renderTop() string {
+	var b strings.Builder
+	b.WriteString("\n")
 	b.WriteString(m.renderBreadcrumb())
 	b.WriteString("\n\n")
-
 	if status := m.renderStatusBanner(); status != "" {
 		b.WriteString(status)
 		b.WriteString("\n\n")
 	}
+	return b.String()
+}
 
+// renderSummaries renders the "✓ <step>: <summary>" lines for completed visible
+// steps. When they would exceed maxLines, only the most recent are shown and a
+// muted "… (N earlier steps)" line stands in for the rest, so the block stays
+// bounded and never pushes the breadcrumb off-screen. maxLines <= 0 means
+// unbounded.
+func (m WizardModel) renderSummaries(maxLines int) string {
+	var lines []string
 	for i := 0; i < m.current; i++ {
 		if m.skipped[i] {
 			continue
@@ -263,34 +303,81 @@ func (m WizardModel) View() string {
 			summary = m.steps[i].Summary(m.steps[i].Model)
 		}
 		line := fmt.Sprintf("  ✓ %s: %s", m.steps[i].Name, summary)
-		b.WriteString(styles.SummaryLine.Render(line))
-		b.WriteString("\n")
+		lines = append(lines, styles.SummaryLine.Render(line))
 	}
+	if len(lines) == 0 {
+		return ""
+	}
+	if maxLines > 0 && len(lines) > maxLines {
+		lines = collapseSummaries(lines, maxLines)
+	}
+	return strings.Join(lines, "\n")
+}
 
+// collapseSummaries keeps the most recent lines and prefixes a muted collapse
+// line standing in for the hidden older ones, fitting the result into maxLines.
+func collapseSummaries(lines []string, maxLines int) []string {
+	keep := maxLines - 1
+	if keep < 0 {
+		keep = 0
+	}
+	hidden := len(lines) - keep
+	collapse := styles.Muted.Render(fmt.Sprintf("  ✓ … (%d earlier steps)", hidden))
+	return append([]string{collapse}, lines[len(lines)-keep:]...)
+}
+
+// renderDescription renders the current step's description (callout or muted),
+// without the trailing blank lines the head adds around it.
+func (m WizardModel) renderDescription() string {
+	step := m.steps[m.current]
+	desc := m.stepDescription(step)
+	if desc == "" {
+		return ""
+	}
+	if step.Callout {
+		return styles.RenderIntro(styles.IntroParams{
+			Width: m.width,
+			Body:  desc,
+			Note:  step.CalloutNote,
+		})
+	}
+	return styles.Muted.Render(indentLines(desc))
+}
+
+// chromeHeight is the number of newlines around the current step's list (head +
+// tail). The list renders R rows as R-1 newlines with no trailing newline, so
+// the full render occupies chromeHeight + R rows; propagateSize sizes the list to
+// R = height - chromeHeight, keeping the whole render — breadcrumb included — on
+// screen.
+func (m WizardModel) chromeHeight() int {
+	return strings.Count(m.renderHead(), "\n") + strings.Count(m.renderTail(), "\n")
+}
+
+// baseChromeHeight is chromeHeight excluding the completed-step summaries: the
+// fixed overhead the summaries must leave room for. Used to budget how many
+// summary lines can be shown above the list.
+func (m WizardModel) baseChromeHeight() int {
+	var b strings.Builder
+	b.WriteString(m.renderTop())
 	if m.current > 0 {
 		b.WriteString("\n")
 	}
-
-	step := m.steps[m.current]
-	if desc := m.stepDescription(step); desc != "" {
-		if step.Callout {
-			b.WriteString(styles.RenderIntro(styles.IntroParams{
-				Width: m.width,
-				Body:  desc,
-				Note:  step.CalloutNote,
-			}))
-		} else {
-			b.WriteString(styles.Muted.Render(indentLines(desc)))
-		}
+	if desc := m.renderDescription(); desc != "" {
+		b.WriteString(desc)
 		b.WriteString("\n\n")
 	}
-	b.WriteString(m.viewStep(m.current))
+	return strings.Count(b.String(), "\n") + strings.Count(m.renderTail(), "\n")
+}
 
-	b.WriteString("\n\n")
-	b.WriteString(m.renderHelpBar())
-	b.WriteString("\n")
-
-	return b.String()
+// maxSummaryLines is how many summary lines fit above the list while still
+// reserving MinWizardListHeight rows for the list itself. Each summary line adds
+// exactly one newline to the head, so the budget is height - base - minList.
+func (m WizardModel) maxSummaryLines() int {
+	avail := m.height - m.baseChromeHeight() - domain.MinWizardListHeight
+	if avail < 1 {
+		return 1
+	}
+	return avail
 }
 
 // renderStatusBanner renders the async status box: an animated spinner while
@@ -298,7 +385,7 @@ func (m WizardModel) View() string {
 // the loading state visually becomes the resulting notice.
 func (m WizardModel) renderStatusBanner() string {
 	if m.loading {
-		return styles.StatusBox.Render(m.spinner.View() + " " + styles.Muted.Render(m.loadingText))
+		return renderLoadingBox(m.spinner.View(), m.loadingText)
 	}
 	if m.banner.Title != "" {
 		rows := append([]string{styles.CalloutTitle.Render(m.banner.Title)}, m.banner.Lines...)
@@ -346,7 +433,7 @@ func (m WizardModel) renderHelpBar() string {
 	case SelectListModel:
 		help += " • / filter"
 	case MultiSelectModel:
-		help += " • space toggle"
+		help += " • space toggle • a all"
 	case ReorderListModel:
 		help += " • shift+↑/↓ move"
 	}
@@ -362,7 +449,7 @@ func (m *WizardModel) propagateSize(stepIdx int) {
 	if stepIdx >= len(m.steps) {
 		return
 	}
-	h := max(1, m.height-10)
+	h := max(1, m.height-m.chromeHeight())
 	switch child := m.steps[stepIdx].Model.(type) {
 	case SelectListModel:
 		child.width = m.width

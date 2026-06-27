@@ -259,6 +259,52 @@ func TestSyncCascadeCleanRebase(t *testing.T) {
 	}
 }
 
+// TestSyncSelectedBranchOnly verifies that targeting a single worktree rebases
+// only it (onto a refreshed base) and leaves the sibling untouched.
+func TestSyncSelectedBranchOnly(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	stateDir := filepath.Join(dir, ".git", "wtm")
+	trees := t.TempDir()
+
+	featPath := filepath.Join(trees, "feat")
+	otherPath := filepath.Join(trees, "other")
+
+	git(t, dir, "worktree", "add", "-b", "feat", featPath, "main")
+	commitFile(t, featPath, "feat.txt", "feat work")
+	git(t, dir, "worktree", "add", "-b", "other", otherPath, "main")
+	commitFile(t, otherPath, "other.txt", "other work")
+
+	// main diverges after both branches were created.
+	commitFile(t, dir, "main.txt", "main moved")
+
+	writeMeta(t, stateDir, "feat", "main")
+	writeMeta(t, stateDir, "other", "main")
+
+	result, err := Sync(SyncParams{
+		ProjectDir:       dir,
+		StateDir:         stateDir,
+		BaseBranch:       "main",
+		SelectedBranches: []string{"feat"},
+	})
+	if err != nil {
+		t.Fatalf("Sync error: %v", err)
+	}
+
+	if len(result.Steps) != 1 || result.Steps[0].Branch != "feat" {
+		t.Fatalf("expected a single feat step, got %+v", result.Steps)
+	}
+	if result.Steps[0].Status != domain.SyncStatusSynced {
+		t.Fatalf("feat status = %q, want synced", result.Steps[0].Status)
+	}
+
+	if !isAncestor(t, dir, "main", "feat") {
+		t.Fatal("feat should have been rebased onto the refreshed main")
+	}
+	if isAncestor(t, dir, "main", "other") {
+		t.Fatal("other must NOT be rebased — it was not selected")
+	}
+}
+
 // TestSyncSkipsDirtyAndDescendants verifies a dirty worktree is skipped along
 // with its descendants, while independent branches still sync.
 func TestSyncSkipsDirtyAndDescendants(t *testing.T) {

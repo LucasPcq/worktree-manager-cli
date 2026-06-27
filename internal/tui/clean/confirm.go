@@ -18,12 +18,15 @@ type ConfirmResult struct {
 }
 
 // RunConfirm displays warnings from pre-deletion checks and asks for confirmation.
-// Returns ErrUserAborted if the user declines.
+// Returns ErrUserAborted if the user declines. It renders a raw body on stderr;
+// the command owns the surrounding frame.
 func RunConfirm(check domain.CleanCheckResult) (ConfirmResult, error) {
 	w := os.Stderr
 
 	printWarnings(w, check)
-
+	if rules.HasWarnings(check) {
+		output.Blank(w)
+	}
 	output.Announce(w, "Will delete:", []output.AnnounceItem{
 		{Label: "worktree", Value: check.WorktreePath},
 		{Label: "branch  ", Value: check.Branch},

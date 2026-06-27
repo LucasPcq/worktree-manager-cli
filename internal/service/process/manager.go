@@ -47,11 +47,12 @@ const (
 // enough that the user doesn't notice a hang.
 const stopGracePeriod = 5 * time.Second
 
-// detachedDrainGracePeriod bounds how long waitDetached waits for the PTY
-// drain goroutine to reach natural EOF after the launcher exits, before
-// force-closing the master to unblock it. The happy path hits EOF within
-// milliseconds; this backstop only bites if a descendant keeps the slave
-// open, so the daemon can never hang on a misbehaving launcher.
+// detachedDrainGracePeriod bounds how long the PTY drain goroutine is awaited
+// to reach natural EOF after the process exits, before force-closing the master
+// to unblock it. It backstops both waitDetached (detached launchers) and runTask
+// (foreground tasks). The happy path hits EOF within milliseconds; this only
+// bites if a descendant keeps the slave open, so the daemon can never hang on a
+// misbehaving launcher.
 const detachedDrainGracePeriod = 2 * time.Second
 
 // ManagedJob holds the state of a running job.
@@ -276,19 +277,31 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	key := jobKey(job.Name, job.WorkDir)
 
 	job.output = newOutputHub(outputHistoryBytes)
-	go m.drainToHub(job)
 
 	// streamDone is closed once the streaming goroutine has drained every
 	// buffered chunk. We wait on it before returning so the caller (the daemon)
 	// never emits its terminal response while StatusOutput chunks are still in
 	// flight on the same connection.
+	//
+	// Subscribe BEFORE starting drainToHub: a fast task (echo + exit) can
+	// otherwise have its output drained and the hub closed before we attach,
+	// making Subscribe fail with "job output closed" so the streaming goroutine
+	// is never spawned and the streamed output is silently dropped. On a
+	// freshly created, still-open hub Subscribe cannot fail, and h.sub is
+	// registered before drainToHub's first Write so every chunk flows live.
 	var streamDone chan struct{}
 	if streamer != nil {
-		_, ch, _, subErr := job.output.Subscribe()
+		history, ch, _, subErr := job.output.Subscribe()
 		if subErr == nil {
 			streamDone = make(chan struct{})
 			go func() {
 				defer close(streamDone)
+				// Replay any history snapshotted at Subscribe time before ranging
+				// the live channel — defensive, since we now subscribe before any
+				// write, so history is normally empty on this path.
+				if len(history) > 0 {
+					_, _ = streamer.Write(history)
+				}
 				for chunk := range ch {
 					_, _ = streamer.Write(chunk)
 				}
@@ -296,12 +309,34 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 		}
 	}
 
-	waitErr := job.Cmd.Wait()
-	_ = job.PTY.Close()
+	// drained closes once drainToHub has copied the PTY to its natural EOF and
+	// closed the hub. We wait on it before tearing anything down so a fast
+	// task's final output isn't truncated — the same race waitDetached guards
+	// against (LUC-84): on a fast machine io.Copy has already read everything,
+	// on a slow CI runner closing the master PTY interrupts the read mid-buffer
+	// and the streamed output is silently dropped.
+	drained := make(chan struct{})
+	go func() {
+		m.drainToHub(job)
+		close(drained)
+	}()
 
-	// Snapshot the captured output BEFORE closing the hub — on failure we
-	// want to embed it in the error so the CLI can surface "why it failed"
-	// without the user having to run `run logs` (the job will be gone).
+	waitErr := job.Cmd.Wait()
+
+	// Once the task releases the slave, the master read returns EOF (Darwin) or
+	// EIO (Linux) and io.Copy returns on its own; the force-close after the
+	// grace period is only a liveness backstop in case a descendant keeps the
+	// slave open.
+	select {
+	case <-drained:
+	case <-time.After(detachedDrainGracePeriod):
+	}
+	_ = job.PTY.Close()
+	<-drained
+
+	// drainToHub has now closed the hub, but the history ring buffer still
+	// holds the output — snapshot it for the error path so the CLI can surface
+	// "why it failed" without the user having to run `run logs`.
 	var captured string
 	if waitErr != nil {
 		job.output.mu.Lock()
@@ -309,9 +344,8 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 		job.output.mu.Unlock()
 	}
 
-	// Closing the hub closes the subscriber channel, which lets the streaming
+	// Closing the hub closed the subscriber channel, which lets the streaming
 	// goroutine drain and exit; wait for it so all chunks reach the client.
-	job.output.close()
 	if streamDone != nil {
 		<-streamDone
 	}

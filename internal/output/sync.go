@@ -10,9 +10,9 @@ import (
 )
 
 // FormatSyncPlan prints the ordered cascade preview: which branch is rebased
-// onto which parent, in execution order.
+// onto which parent, in execution order. It emits a raw body with no outer blank
+// lines; the caller's frame owns the outer vertical padding.
 func FormatSyncPlan(w io.Writer, plan domain.SyncPlan) {
-	Blank(w)
 	SectionTitle(w, fmt.Sprintf("Sync plan (base: %s)", plan.BaseBranch))
 	if len(plan.Steps) == 0 {
 		Message(w, styles.Muted.Render("No worktrees to sync."))
@@ -33,10 +33,9 @@ func FormatSyncPlan(w io.Writer, plan domain.SyncPlan) {
 // being asked to push. The push summary is a separate block
 // (see FormatSyncPushSummary).
 //
-// No leading blank: in interactive text mode the recap is always preceded by the
-// "Rebasing…" spinner, whose own leading blank line (shared.StartSpinner) already
-// provides the separating space. No trailing blank either: the next block (or
-// prompt) owns its leading space.
+// Raw body: no outer blank lines. The command's frame (FrameStart/FrameEnd) owns
+// the top/bottom padding; the inter-section blank between the base line and the
+// per-branch lines is kept as a genuine separator.
 func FormatSyncResult(w io.Writer, result domain.SyncResult) {
 	if result.BaseUpdated {
 		InfoLine(w, "Base", fmt.Sprintf("%s  %s → %s  %s",
@@ -50,8 +49,14 @@ func FormatSyncResult(w io.Writer, result domain.SyncResult) {
 			styles.Muted.Render(result.BaseOldTip),
 			styles.Muted.Render("(already up to date / no fast-forward)")))
 	}
-	Blank(w)
 
+	// The blank separates the base line from the per-branch lines; with no steps
+	// (a base-only refresh) it would stack against the push summary's leading
+	// blank, so it is only emitted when there is something to separate.
+	if len(result.Steps) == 0 {
+		return
+	}
+	Blank(w)
 	for _, step := range result.Steps {
 		printStep(w, step)
 	}
