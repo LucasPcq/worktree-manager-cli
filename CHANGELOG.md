@@ -1,10 +1,26 @@
 # Changelog
 
-## v0.19.0 — `wtm tree` : visualiser l'arbre des worktrees
+## v0.19.0 — Workflow de branches empilées : visualiser, reparenter, sync ciblé
+
+### Breaking changes
+
+- **`wtm sync` ne cascade plus tout par défaut en mode non-interactif** — `sync` rebase désormais un **sous-ensemble** choisi de worktrees : passez des noms de branches, utilisez le **picker multi-select** (sans argument, en TTY), ou `--all` pour toute la cascade. La base est toujours rafraîchie en premier (sauf worktree principal dirty) ; sélectionner la base se contente d'un fetch + fast-forward. **En mode `--output json`, `sync` ne sélectionne plus toutes les branches par défaut** — des noms de branches ou `--all` sont maintenant requis. Un argument de branche inconnu sort en code `11` (LUC-86).
 
 ### New features
 
 - **`wtm tree`** — affiche la **forêt** des worktrees (liens `parent → enfant` issus du `source_branch`), pensée pour les workflows de branches empilées. Arbre ASCII coloré avec connecteurs (`├─ └─`), annotations par nœud : `↑N` (commits d'avance), `● dirty`, et surtout **`⚠ needs sync`** — le signal d'orchestration clé, levé quand le parent a avancé et que l'enfant doit être rebasé. Un parent sans worktree (ex. `dev`) apparaît en **racine virtuelle** grisée `(no worktree)` ; un cycle de `source_branch` est rendu sans planter et annoté `⚠ cycle`. Flags : `--with-prs` (numéros de PR + marquage mergée/fermée, fetch réseau opt-in comme `wtm list`) et `--output text|json|mermaid` — `json` pour les agents/scripts, `mermaid` pour un `flowchart TD` collable en PR/Notion (LUC-82).
+- **`wtm reparent <branch> --to <parent>`** — change le parent enregistré (`source_branch`) d'un worktree après sa création (métadonnée seulement ; le rebase se fait au prochain `wtm sync`). Utile pour les branches empilées une fois qu'une branche intermédiaire est mergée. Wizard multi-étapes (breadcrumb + back-nav) affichant le parent actuel ; pilotable par arguments directs et `--output json`. La validation cycle / self-parent réutilise le check topologique de `sync` (LUC-88).
+- **`wtm clean` reparente les orphelins** — `clean` détecte désormais les enfants orphelins et propose de les reparenter sur le grand-parent : récap interactif + confirmation (`Esc` annule tout le `clean`), ou l'opt-in `--reparent-children` en mode non-interactif (LUC-88).
+
+### Bug fixes
+
+- **Breadcrumb du wizard `relocate` toujours visible** — sur des listes longues ou après plusieurs étapes, le breadcrumb (qui nomme le worktree concerné) ne scrolle plus hors écran. `View()` est découpé en fragments mesurables (head / list / tail) pour dimensionner la liste sur le chrome réel, et les résumés d'étapes terminées sont bornés (les plus anciens se replient en une ligne discrète `… (N earlier steps)`). Le correctif vit dans le composant wizard partagé, donc `reparent` et les autres wizards en profitent aussi (LUC-85).
+- **Sortie de task rejouée au streamer (flaky CI)** — une task rapide pouvait écrire son premier chunk de sortie dans l'historique avant que la goroutine de streaming ne s'abonne, laissant la sortie streamée vide. L'historique est désormais rejoué avant de boucler sur le canal live, sous un seul verrou — plus de gap ni de chevauchement.
+
+### Improvements
+
+- **Espacement vertical harmonisé derrière `output.Frame` (LUC-87)** — chaque commande encadre sa sortie humaine **exactement une fois** (`output.Frame` ou `FrameStart`/`FrameEnd`) ; les helpers et formatters de tables renvoient des corps **bruts** sans lignes vides externes. JSON (`--output json`) et sortie machine (`resolve`, `shell-init`) restent strictement à ras. Le routage se fait sur `rules.IsHumanFormat`.
+- **Spinners unifiés en boîte `RunLoading`** — `shared.StartSpinner` (spinner braille brut, sans padding, écrivant du garbage `\r` dans les pipes) est remplacé par `components.RunLoading` : un loader bordé avec StatusBox + MiniDot identique au chargement du wizard. ~19 sites migrés (`clean`, `create`, `list`, `sync`, `relocate`, `checkout`, `init`, `resolve`, `run/*`) ; en non-TTY / JSON, le travail s'exécute directement sans boîte.
 
 ## v0.18.0 — `wtm checkout` au top-level (suppression du groupe `pr`)
 
