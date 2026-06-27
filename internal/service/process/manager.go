@@ -308,14 +308,34 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 		}
 	}
 
-	go m.drainToHub(job)
+	// drained closes once drainToHub has copied the PTY to its natural EOF and
+	// closed the hub. We wait on it before tearing anything down so a fast
+	// task's final output isn't truncated — the same race waitDetached guards
+	// against (LUC-84): on a fast machine io.Copy has already read everything,
+	// on a slow CI runner closing the master PTY interrupts the read mid-buffer
+	// and the streamed output is silently dropped.
+	drained := make(chan struct{})
+	go func() {
+		m.drainToHub(job)
+		close(drained)
+	}()
 
 	waitErr := job.Cmd.Wait()
-	_ = job.PTY.Close()
 
-	// Snapshot the captured output BEFORE closing the hub — on failure we
-	// want to embed it in the error so the CLI can surface "why it failed"
-	// without the user having to run `run logs` (the job will be gone).
+	// Once the task releases the slave, the master read returns EOF (Darwin) or
+	// EIO (Linux) and io.Copy returns on its own; the force-close after the
+	// grace period is only a liveness backstop in case a descendant keeps the
+	// slave open.
+	select {
+	case <-drained:
+	case <-time.After(detachedDrainGracePeriod):
+	}
+	_ = job.PTY.Close()
+	<-drained
+
+	// drainToHub has now closed the hub, but the history ring buffer still
+	// holds the output — snapshot it for the error path so the CLI can surface
+	// "why it failed" without the user having to run `run logs`.
 	var captured string
 	if waitErr != nil {
 		job.output.mu.Lock()
@@ -323,9 +343,8 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 		job.output.mu.Unlock()
 	}
 
-	// Closing the hub closes the subscriber channel, which lets the streaming
+	// Closing the hub closed the subscriber channel, which lets the streaming
 	// goroutine drain and exit; wait for it so all chunks reach the client.
-	job.output.close()
 	if streamDone != nil {
 		<-streamDone
 	}
