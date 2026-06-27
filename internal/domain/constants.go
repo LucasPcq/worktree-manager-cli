@@ -233,6 +233,12 @@ const (
 	CmdRelocate = "relocate"
 	CmdReparent = "reparent"
 
+	// MinWizardListHeight is the minimum number of rows reserved for a wizard
+	// step's scrollable list. Completed-step summaries are bounded so they never
+	// shrink the list below this, keeping the breadcrumb (which names the worktree
+	// being acted on) on screen even after many steps. See LUC-85.
+	MinWizardListHeight = 3
+
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"
 
