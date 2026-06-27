@@ -276,12 +276,18 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	key := jobKey(job.Name, job.WorkDir)
 
 	job.output = newOutputHub(outputHistoryBytes)
-	go m.drainToHub(job)
 
 	// streamDone is closed once the streaming goroutine has drained every
 	// buffered chunk. We wait on it before returning so the caller (the daemon)
 	// never emits its terminal response while StatusOutput chunks are still in
 	// flight on the same connection.
+	//
+	// Subscribe BEFORE starting drainToHub: a fast task (echo + exit) can
+	// otherwise have its output drained and the hub closed before we attach,
+	// making Subscribe fail with "job output closed" so the streaming goroutine
+	// is never spawned and the streamed output is silently dropped. On a
+	// freshly created, still-open hub Subscribe cannot fail, and h.sub is
+	// registered before drainToHub's first Write so every chunk flows live.
 	var streamDone chan struct{}
 	if streamer != nil {
 		history, ch, _, subErr := job.output.Subscribe()
@@ -289,10 +295,9 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 			streamDone = make(chan struct{})
 			go func() {
 				defer close(streamDone)
-				// Replay output produced before this goroutine attached — a fast task
-				// can write and exit before the subscription, leaving its first chunk
-				// only in history. Subscribe snapshots history and registers the
-				// channel under one lock, so history and ch never overlap or gap.
+				// Replay any history snapshotted at Subscribe time before ranging
+				// the live channel — defensive, since we now subscribe before any
+				// write, so history is normally empty on this path.
 				if len(history) > 0 {
 					_, _ = streamer.Write(history)
 				}
@@ -302,6 +307,8 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 			}()
 		}
 	}
+
+	go m.drainToHub(job)
 
 	waitErr := job.Cmd.Wait()
 	_ = job.PTY.Close()
