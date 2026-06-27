@@ -260,10 +260,13 @@ wtm clean feature/auth --force   # skip all safety checks
 
 **Safety checks:** uncommitted changes, unpushed commits, open pull request.
 
+**Orphaned children:** if the worktree you clean is the **parent** of others (their `source_branch` points at it), removing it would leave them dangling. In interactive mode wtm shows a recap of the proposed reparenting (`dev/b: dev/a → feat`) and asks before moving the children onto the **grandparent** (the cleaned worktree's own parent, or the base branch as fallback). In non-interactive mode nothing is reparented unless you pass `--reparent-children` — otherwise the orphaned children are reported and left untouched.
+
 **Flags:**
 | Flag | Description |
 |---|---|
 | `--force` | Bypass all safety checks and delete immediately |
+| `--reparent-children` | Reparent orphaned child worktrees onto the grandparent without prompting |
 
 #### `wtm extract`
 
@@ -333,6 +336,29 @@ The cascade is **fully local** — pushing is a separate, explicitly confirmed s
 | `--push` | Force-push (with lease) rebased branches without prompting |
 | `--no-push` | Rebase locally only; never push |
 | `--base <branch>` | Base branch to sync from (defaults to config or detected base) |
+
+---
+
+#### `wtm reparent [branch]`
+
+Change the recorded **parent** of a worktree — the branch `wtm sync` rebases it onto (its `source_branch`). Only the metadata is updated; the rebase happens on the next `wtm sync`. Handy for **stacked branches**: when a middle branch is merged (e.g. `feat → dev/a → dev/b`, with `dev/a` merged into `feat`), reparent `dev/b` onto `feat` so the cascade keeps working.
+
+```bash
+wtm reparent                       # pick the worktree, then the new parent, interactively
+wtm reparent dev/b --to feat       # reparent dev/b onto feat directly
+```
+
+**What happens:**
+1. Resolves the worktree (argument or interactive picker) and the new parent (`--to` or interactive picker)
+2. Validates: the new parent must exist locally, a worktree can't be its own parent, and the resulting parent chain must stay acyclic
+3. Rewrites the worktree's `source_branch` — run `wtm sync <branch>` afterwards to actually rebase
+
+> In non-interactive mode (`--output json`) there is no picker — you must pass the branch and `--to`, otherwise the command exits with a usage error.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--to <branch>` | New parent branch to rebase onto |
 
 ---
 

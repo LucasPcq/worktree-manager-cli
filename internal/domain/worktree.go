@@ -83,9 +83,52 @@ type CreateResult struct {
 // CleanParams holds inputs for cleaning a worktree.
 type CleanParams struct {
 	ProjectDir string
+	StateDir   string
 	Branch     string
 	Force      bool
+	// BaseBranch is the fallback parent for orphaned children when the cleaned
+	// worktree has no recorded parent of its own.
+	BaseBranch string
 	Config     Config
+}
+
+// ReparentParams holds inputs for changing a worktree's recorded parent.
+type ReparentParams struct {
+	ProjectDir string
+	StateDir   string
+	Branch     string
+	NewParent  string
+	// BaseBranch is the dependency-tree root, used to validate the new parent
+	// graph stays acyclic.
+	BaseBranch string
+}
+
+// ReparentResult is the outcome of a single reparent: the branch whose parent
+// changed, plus the parent before and after.
+type ReparentResult struct {
+	Branch    string `json:"branch"`
+	OldParent string `json:"old_parent"`
+	NewParent string `json:"new_parent"`
+}
+
+// CleanReparentPlan lists the reparenting proposed when cleaning a worktree that
+// is the parent of others: each child would move from the cleaned branch to the
+// grandparent. It is computed before deletion so the command can show a recap.
+type CleanReparentPlan struct {
+	// Branch is the worktree about to be cleaned.
+	Branch string
+	// Grandparent is the parent the children would be reparented onto.
+	Grandparent string
+	Children    []ReparentResult
+}
+
+// CleanResult is the outcome of a clean, including any children reparented onto
+// the grandparent.
+type CleanResult struct {
+	Branch        string           `json:"branch"`
+	Path          string           `json:"path"`
+	AlreadyAbsent bool             `json:"already_absent"`
+	Reparented    []ReparentResult `json:"reparented,omitempty"`
 }
 
 // CleanCheckResult holds the pre-deletion check results.

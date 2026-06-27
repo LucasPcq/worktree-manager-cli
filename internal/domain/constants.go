@@ -102,6 +102,11 @@ const (
 	FlagFiles      = "files"
 	FlagOnConflict = "on-conflict"
 
+	// FlagReparentChildren opts in (non-interactively) to reparenting the orphaned
+	// children of a cleaned worktree onto its grandparent. In interactive mode the
+	// command proposes this with a recap and an explicit confirmation instead.
+	FlagReparentChildren = "reparent-children"
+
 	// On-conflict modes for `extract`.
 	OnConflictAbort   = "abort"
 	OnConflictResolve = "resolve"
@@ -226,6 +231,7 @@ const (
 	CmdExtract  = "extract"
 	CmdSync     = "sync"
 	CmdRelocate = "relocate"
+	CmdReparent = "reparent"
 
 	// DaemonSocketName is the Unix socket filename for the service daemon.
 	DaemonSocketName = "wtm.sock"

@@ -68,4 +68,7 @@ var (
 
 	// ErrSameWorktree is returned when the target worktree equals the source.
 	ErrSameWorktree = errors.New("target worktree must differ from the source")
+
+	// ErrReparentSelf is returned when a worktree is asked to become its own parent.
+	ErrReparentSelf = errors.New("a worktree cannot be its own parent")
 )

@@ -213,14 +213,23 @@ func WriteWorktreeCreateJSON(w io.Writer, v any) error {
 
 // WriteWorktreeCleanJSONParams holds inputs for the clean payload.
 type WriteWorktreeCleanJSONParams struct {
-	Branch        string `json:"branch"`
-	Path          string `json:"path"`
-	AlreadyAbsent bool   `json:"already_absent"`
+	Branch        string                  `json:"branch"`
+	Path          string                  `json:"path"`
+	AlreadyAbsent bool                    `json:"already_absent"`
+	Reparented    []domain.ReparentResult `json:"reparented,omitempty"`
+	// OrphanedChildren lists children left dangling because reparenting was not
+	// authorized (no --reparent-children in non-interactive mode).
+	OrphanedChildren []domain.ReparentResult `json:"orphaned_children,omitempty"`
 }
 
 // WriteWorktreeCleanJSON writes the JSON payload for `clean`.
 func WriteWorktreeCleanJSON(w io.Writer, params WriteWorktreeCleanJSONParams) error {
 	return encodeJSON(w, params)
+}
+
+// WriteReparentJSON writes the JSON payload for `reparent`.
+func WriteReparentJSON(w io.Writer, result domain.ReparentResult) error {
+	return encodeJSON(w, result)
 }
 
 // encodeJSON writes v as indented JSON to w.

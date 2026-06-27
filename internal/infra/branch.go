@@ -61,6 +61,17 @@ func branchExists(projectDir string, branch string) bool {
 	return cmd.Run() == nil
 }
 
+// LocalBranchExistsParams holds inputs for checking local branch existence.
+type LocalBranchExistsParams struct {
+	ProjectDir string
+	Branch     string
+}
+
+// LocalBranchExists reports whether a local branch with the given name exists.
+func LocalBranchExists(params LocalBranchExistsParams) bool {
+	return branchExists(params.ProjectDir, params.Branch)
+}
+
 // CurrentBranch returns the name of the currently checked-out branch.
 func CurrentBranch(projectDir string) (string, error) {
 	cmd := exec.Command("git", "branch", "--show-current")
