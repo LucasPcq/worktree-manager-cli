@@ -14,7 +14,7 @@ func TestResolveExactMatch(t *testing.T) {
 		{Path: "/trees/feature-auth-v2", Branch: "feature/auth-v2"},
 	}
 
-	result := resolveFromList(worktrees, "feature/auth")
+	result := resolveWorktree(worktrees, "feature/auth")
 
 	if result.Ambiguous {
 		t.Error("expected direct match, not ambiguous")
@@ -30,7 +30,7 @@ func TestResolveSubstringUnique(t *testing.T) {
 		{Path: "/trees/feature-login", Branch: "feature/login"},
 	}
 
-	result := resolveFromList(worktrees, "login")
+	result := resolveWorktree(worktrees, "login")
 
 	if result.Ambiguous {
 		t.Error("expected direct match for unique substring")
@@ -47,7 +47,7 @@ func TestResolveSubstringAmbiguous(t *testing.T) {
 		{Path: "/trees/feature-auth-v2", Branch: "feature/auth-v2"},
 	}
 
-	result := resolveFromList(worktrees, "auth")
+	result := resolveWorktree(worktrees, "auth")
 
 	if !result.Ambiguous {
 		t.Error("expected ambiguous result")
@@ -63,7 +63,7 @@ func TestResolveEmptyQuery(t *testing.T) {
 		{Path: "/trees/feat", Branch: "feat"},
 	}
 
-	result := resolveFromList(worktrees, "")
+	result := resolveWorktree(worktrees, "")
 
 	if !result.Ambiguous {
 		t.Error("expected ambiguous (all worktrees) for empty query")
@@ -78,53 +78,11 @@ func TestResolveNotFound(t *testing.T) {
 		{Path: "/repo", Branch: "main", IsMain: true},
 	}
 
-	result := resolveFromList(worktrees, "nonexistent")
+	result := resolveWorktree(worktrees, "nonexistent")
 
 	if result.Path != "" || result.Ambiguous {
 		t.Error("expected empty result for no match")
 	}
-}
-
-// resolveFromList is a test helper that applies the resolve logic to a pre-built list.
-func resolveFromList(worktrees []domain.GitWorktree, query string) domain.ResolveResult {
-	if query == "" {
-		return domain.ResolveResult{Ambiguous: true, Matches: worktrees}
-	}
-
-	for _, wt := range worktrees {
-		if wt.Branch == query {
-			return domain.ResolveResult{Path: wt.Path}
-		}
-	}
-
-	var matches []domain.GitWorktree
-	for _, wt := range worktrees {
-		if contains(wt.Branch, query) {
-			matches = append(matches, wt)
-		}
-	}
-
-	if len(matches) == 1 {
-		return domain.ResolveResult{Path: matches[0].Path}
-	}
-	if len(matches) > 1 {
-		return domain.ResolveResult{Ambiguous: true, Matches: matches}
-	}
-
-	return domain.ResolveResult{}
-}
-
-func contains(s string, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || containsStr(s, substr))
-}
-
-func containsStr(s string, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 func TestMatchSyncBranchExact(t *testing.T) {
@@ -175,14 +133,5 @@ func TestMatchSyncBranchNotFound(t *testing.T) {
 	_, err := matchSyncBranch(worktrees, "nope")
 	if !errors.Is(err, domain.ErrBranchNotFound) {
 		t.Fatalf("expected ErrBranchNotFound, got %v", err)
-	}
-}
-
-func TestResolveNotFoundError(t *testing.T) {
-	// This tests the actual Resolve function would return ErrWorktreeNotFound
-	// but we can't easily test it without a git repo, so we verify the error type
-	err := domain.ErrWorktreeNotFound
-	if !errors.Is(err, domain.ErrWorktreeNotFound) {
-		t.Error("expected ErrWorktreeNotFound")
 	}
 }

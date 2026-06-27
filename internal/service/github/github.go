@@ -63,7 +63,7 @@ func convertGHPR(g ghPR) domain.PRInfo {
 		Author:     g.Author.Login,
 		Branch:     g.HeadRefName,
 		BaseBranch: g.BaseRefName,
-		State:      "open",
+		State:      domain.PRStateOpen,
 		URL:        g.URL,
 		IsFork:     g.IsCrossRepository,
 	}

@@ -49,8 +49,14 @@ func FormatSyncResult(w io.Writer, result domain.SyncResult) {
 			styles.Muted.Render(result.BaseOldTip),
 			styles.Muted.Render("(already up to date / no fast-forward)")))
 	}
-	Blank(w)
 
+	// The blank separates the base line from the per-branch lines; with no steps
+	// (a base-only refresh) it would stack against the push summary's leading
+	// blank, so it is only emitted when there is something to separate.
+	if len(result.Steps) == 0 {
+		return
+	}
+	Blank(w)
 	for _, step := range result.Steps {
 		printStep(w, step)
 	}

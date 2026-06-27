@@ -5,12 +5,8 @@ package reparent
 
 import (
 	"fmt"
-	"os"
 	"sort"
 
-	tea "github.com/charmbracelet/bubbletea"
-
-	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
@@ -79,15 +75,13 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 		}))
 	}
 
-	wiz := components.NewWizard(steps)
-	finalModel, err := tea.NewProgram(wiz, tea.WithOutput(os.Stderr)).Run()
+	final, err := components.RunWizard(components.RunWizardParams{
+		Steps:    steps,
+		Stderr:   true,
+		ErrLabel: "reparent wizard",
+	})
 	if err != nil {
-		return RunResult{}, fmt.Errorf("reparent wizard: %w", err)
-	}
-
-	final, ok := finalModel.(components.WizardModel)
-	if !ok || final.Aborted() {
-		return RunResult{}, domain.ErrUserAborted
+		return RunResult{}, err
 	}
 
 	done := final.Steps()

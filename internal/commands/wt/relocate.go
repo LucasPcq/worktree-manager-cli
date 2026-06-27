@@ -90,11 +90,11 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 		})
 	}
 
-	if interactive {
-		output.FrameStart(cmd.ErrOrStderr())
-	}
-
 	if interactive && !yes {
+		// Frame top lives on stderr alongside the plan. With --yes there is no
+		// plan, so the frame opens on stdout via the result's leading blank below
+		// (mirrors sync), avoiding a blank stacked against an empty stderr section.
+		output.FrameStart(cmd.ErrOrStderr())
 		output.FormatRelocatePlan(cmd.ErrOrStderr(), plan)
 		// No separator blank here: the wizard owns its leading blank.
 		res, werr := runRelocateWizard(cfg, plan, params.BaseBranch)

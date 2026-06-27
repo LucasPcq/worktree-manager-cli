@@ -7,8 +7,43 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
+
+// RunWizardParams holds inputs for running a wizard to completion.
+type RunWizardParams struct {
+	Steps []Step
+	// Stderr renders the program to stderr instead of stdout — used by pickers
+	// reached through a shell wrapper that captures stdout.
+	Stderr bool
+	// ErrLabel prefixes a program failure (e.g. "sync picker").
+	ErrLabel string
+}
+
+// RunWizard builds and runs a wizard as a standalone tea.Program and returns the
+// completed model. A user Esc (abort) maps to domain.ErrUserAborted; a program
+// failure is wrapped with ErrLabel. It centralises the program/assertion/abort
+// boilerplate every picker would otherwise repeat.
+func RunWizard(params RunWizardParams) (WizardModel, error) {
+	wiz := NewWizard(params.Steps)
+
+	opts := []tea.ProgramOption{}
+	if params.Stderr {
+		opts = append(opts, tea.WithOutput(os.Stderr))
+	}
+
+	finalModel, err := tea.NewProgram(wiz, opts...).Run()
+	if err != nil {
+		return WizardModel{}, fmt.Errorf("%s: %w", params.ErrLabel, err)
+	}
+
+	final, ok := finalModel.(WizardModel)
+	if !ok || final.Aborted() {
+		return WizardModel{}, domain.ErrUserAborted
+	}
+	return final, nil
+}
 
 // standaloneModel wraps a child model for use as a standalone tea.Program.
 // It adds a title, description, and help bar around the child's View.

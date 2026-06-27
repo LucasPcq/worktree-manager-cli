@@ -171,6 +171,13 @@ const (
 	// candidates) — so it includes the PR state.
 	GHPRFieldsWithState = "number,headRefName,url,state"
 
+	// PR states, normalised to lowercase. PRInfo.State always holds one of these,
+	// and output routes rendering on them. Centralised so a typo can't silently
+	// degrade merged/closed display.
+	PRStateOpen   = "open"
+	PRStateMerged = "merged"
+	PRStateClosed = "closed"
+
 	// Checkout wizard badge texts: a PR whose branch already has a local
 	// worktree ("linked") or that comes from a fork ("fork") is disabled.
 	BadgeTextLinked = "linked"

@@ -98,6 +98,10 @@ func runClean(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
+		// Open the confirm-section frame here so framing stays in the command
+		// layer; RunConfirm renders only its raw body. The result section's own
+		// output.Frame (in doClean) supplies the trailing blank.
+		output.FrameStart(cmd.ErrOrStderr())
 		confirmResult, err := cleanui.RunConfirm(check)
 		if errors.Is(err, domain.ErrUserAborted) {
 			output.Frame(cmd.OutOrStdout(), func() {
@@ -143,17 +147,7 @@ func decideReparent(cmd *cobra.Command, plan domain.CleanReparentPlan, flag bool
 // the "Will delete" recap by a blank line) and asks. Yes → reparent; No → delete
 // but leave the children orphaned; Esc → abort the whole clean.
 func confirmReparent(cmd *cobra.Command, plan domain.CleanReparentPlan) (apply bool, abort bool) {
-	w := cmd.ErrOrStderr()
-	output.Blank(w)
-
-	items := make([]output.AnnounceItem, 0, len(plan.Children))
-	for _, child := range plan.Children {
-		items = append(items, output.AnnounceItem{
-			Label: child.Branch,
-			Value: fmt.Sprintf("%s → %s", child.OldParent, child.NewParent),
-		})
-	}
-	output.Announce(w, fmt.Sprintf("Reparent orphaned children onto %s:", plan.Grandparent), items)
+	output.FormatReparentProposal(cmd.ErrOrStderr(), plan)
 
 	cm := components.NewConfirm(components.NewConfirmParams{
 		Title:      fmt.Sprintf("Reparent %d child worktree(s) onto %s?", len(plan.Children), plan.Grandparent),
@@ -255,7 +249,7 @@ func applyChildReparent(stateDir string, plan domain.CleanReparentPlan, apply bo
 	if !apply || len(plan.Children) == 0 {
 		return nil, nil
 	}
-	return worktree.ApplyReparentChildren(plan, stateDir)
+	return worktree.ApplyReparentChildren(worktree.ApplyReparentChildrenParams{Plan: plan, StateDir: stateDir})
 }
 
 // orphanedChildren returns the children left dangling because reparenting was not

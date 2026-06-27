@@ -16,7 +16,7 @@ func sampleForest() domain.Forest {
 				Children: []domain.TreeNode{
 					{
 						Branch: "feat-auth",
-						Status: domain.TreeNodeStatus{CommitsAhead: 3, PR: &domain.WorktreeListPR{Number: 123, State: "open"}},
+						Status: domain.TreeNodeStatus{CommitsAhead: 3, PR: &domain.WorktreeListPR{Number: 123, State: domain.PRStateOpen}},
 						Children: []domain.TreeNode{
 							{Branch: "feat-auth-ui", Status: domain.TreeNodeStatus{CommitsAhead: 1, NeedsSync: true}},
 							{Branch: "feat-auth-api", Status: domain.TreeNodeStatus{IsDirty: true}},
@@ -102,11 +102,11 @@ func TestWriteTreeMermaid(t *testing.T) {
 }
 
 func TestFormatTreePRStates(t *testing.T) {
-	merged := formatTreePR(&domain.WorktreeListPR{Number: 9, State: "merged"})
+	merged := formatTreePR(&domain.WorktreeListPR{Number: 9, State: domain.PRStateMerged})
 	if !strings.Contains(merged, "PR #9 merged") {
 		t.Errorf("expected merged label, got %q", merged)
 	}
-	closed := formatTreePR(&domain.WorktreeListPR{Number: 8, State: "closed"})
+	closed := formatTreePR(&domain.WorktreeListPR{Number: 8, State: domain.PRStateClosed})
 	if !strings.Contains(closed, "PR #8 closed") {
 		t.Errorf("expected closed label, got %q", closed)
 	}

@@ -99,30 +99,63 @@ func styleBranch(node *domain.TreeNode) string {
 	return styles.Bold.Render(node.Branch)
 }
 
-// formatTreeAnnotations builds the trailing status string for a node, in order:
-// virtual marker, PR, commits-ahead, dirty, needs-sync, cycle.
-func formatTreeAnnotations(node *domain.TreeNode) string {
-	parts := make([]string, 0, 5)
+// treeAnnotation enumerates a node's status badges in their canonical display
+// order. nodeAnnotations is the single source of truth for which badges appear
+// and in what order; the ASCII (formatTreeAnnotations) and Mermaid (mermaidLabel)
+// renderers differ only in how they style each one, so they can't drift apart.
+type treeAnnotation int
 
+const (
+	annVirtual treeAnnotation = iota
+	annPR
+	annAhead
+	annDirty
+	annNeedsSync
+	annCycle
+)
+
+func nodeAnnotations(node *domain.TreeNode) []treeAnnotation {
+	kinds := make([]treeAnnotation, 0, 6)
 	if node.IsVirtual {
-		parts = append(parts, styles.Muted.Render("(no worktree)"))
+		kinds = append(kinds, annVirtual)
 	}
-	if pr := formatTreePR(node.Status.PR); pr != "" {
-		parts = append(parts, pr)
+	if node.Status.PR != nil {
+		kinds = append(kinds, annPR)
 	}
 	if node.Status.CommitsAhead > 0 {
-		parts = append(parts, styles.Muted.Render(fmt.Sprintf("↑%d", node.Status.CommitsAhead)))
+		kinds = append(kinds, annAhead)
 	}
 	if node.Status.IsDirty {
-		parts = append(parts, styles.Warning.Render("● dirty"))
+		kinds = append(kinds, annDirty)
 	}
 	if node.Status.NeedsSync {
-		parts = append(parts, styles.Warning.Render("⚠ needs sync"))
+		kinds = append(kinds, annNeedsSync)
 	}
 	if node.Status.InCycle {
-		parts = append(parts, styles.Warning.Render("⚠ cycle"))
+		kinds = append(kinds, annCycle)
 	}
+	return kinds
+}
 
+// formatTreeAnnotations builds the styled trailing status string for an ASCII node.
+func formatTreeAnnotations(node *domain.TreeNode) string {
+	parts := make([]string, 0, 6)
+	for _, kind := range nodeAnnotations(node) {
+		switch kind {
+		case annVirtual:
+			parts = append(parts, styles.Muted.Render("(no worktree)"))
+		case annPR:
+			parts = append(parts, formatTreePR(node.Status.PR))
+		case annAhead:
+			parts = append(parts, styles.Muted.Render(fmt.Sprintf("↑%d", node.Status.CommitsAhead)))
+		case annDirty:
+			parts = append(parts, styles.Warning.Render("● dirty"))
+		case annNeedsSync:
+			parts = append(parts, styles.Warning.Render("⚠ needs sync"))
+		case annCycle:
+			parts = append(parts, styles.Warning.Render("⚠ cycle"))
+		}
+	}
 	return strings.Join(parts, "  ")
 }
 
@@ -132,9 +165,9 @@ func formatTreePR(pr *domain.WorktreeListPR) string {
 	}
 	label := fmt.Sprintf("PR #%d", pr.Number)
 	switch pr.State {
-	case "merged":
+	case domain.PRStateMerged:
 		return styles.Muted.Render(label + " merged")
-	case "closed":
+	case domain.PRStateClosed:
 		return styles.Muted.Render(label + " closed")
 	default:
 		return styles.Success.Render(label)
@@ -190,29 +223,25 @@ func mermaidID(branch string) string {
 
 func mermaidLabel(node *domain.TreeNode) string {
 	parts := []string{strings.ReplaceAll(node.Branch, `"`, "'")}
-
-	if node.IsVirtual {
-		parts = append(parts, "(no worktree)")
-	}
-	if node.Status.PR != nil {
-		label := fmt.Sprintf("PR #%d", node.Status.PR.Number)
-		if node.Status.PR.State == "merged" || node.Status.PR.State == "closed" {
-			label += " " + node.Status.PR.State
+	for _, kind := range nodeAnnotations(node) {
+		switch kind {
+		case annVirtual:
+			parts = append(parts, "(no worktree)")
+		case annPR:
+			label := fmt.Sprintf("PR #%d", node.Status.PR.Number)
+			if node.Status.PR.State == domain.PRStateMerged || node.Status.PR.State == domain.PRStateClosed {
+				label += " " + node.Status.PR.State
+			}
+			parts = append(parts, label)
+		case annAhead:
+			parts = append(parts, fmt.Sprintf("↑%d", node.Status.CommitsAhead))
+		case annDirty:
+			parts = append(parts, "dirty")
+		case annNeedsSync:
+			parts = append(parts, "⚠ needs sync")
+		case annCycle:
+			parts = append(parts, "⚠ cycle")
 		}
-		parts = append(parts, label)
 	}
-	if node.Status.CommitsAhead > 0 {
-		parts = append(parts, fmt.Sprintf("↑%d", node.Status.CommitsAhead))
-	}
-	if node.Status.IsDirty {
-		parts = append(parts, "dirty")
-	}
-	if node.Status.NeedsSync {
-		parts = append(parts, "⚠ needs sync")
-	}
-	if node.Status.InCycle {
-		parts = append(parts, "⚠ cycle")
-	}
-
 	return strings.Join(parts, " ")
 }

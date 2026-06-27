@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -74,10 +75,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 	interactive := rules.IsHumanFormat(format)
 
 	selected, err := resolveSyncSelection(resolveSyncSelectionParams{
-		Args:        args,
-		All:         all,
-		Interactive: interactive,
-		Cfg:         cfg,
+		Args:      args,
+		All:       all,
+		CanPrompt: interactive && term.IsTerminal(int(os.Stdin.Fd())),
+		Cfg:       cfg,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
@@ -100,7 +101,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if len(plan.Steps) == 0 && !syncIncludesBase(selected, baseBranch) {
+	if len(plan.Steps) == 0 && !rules.SyncIncludesBase(rules.SyncIncludesBaseParams{Selected: selected, BaseBranch: baseBranch}) {
 		return renderEmptyPlan(cmd, syncParams.BaseBranch, interactive)
 	}
 
@@ -132,7 +133,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		output.FormatSyncResult(cmd.OutOrStdout(), syncResult)
 	}
 
-	if !dryRun && decidePush(decidePushParams{
+	if !dryRun && shouldPush(shouldPushParams{
 		Push:        push,
 		NoPush:      noPush,
 		Interactive: interactive,
@@ -151,7 +152,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if !dryRun && hasSyncFailure(syncResult.Steps) {
+	if !dryRun && rules.HasSyncFailure(syncResult.Steps) {
 		return domain.ErrAborted
 	}
 	return nil
@@ -168,16 +169,16 @@ func resolveBase(override string, cfg shared.ConfigResult) string {
 }
 
 type resolveSyncSelectionParams struct {
-	Args        []string
-	All         bool
-	Interactive bool
-	Cfg         shared.ConfigResult
+	Args      []string
+	All       bool
+	CanPrompt bool
+	Cfg       shared.ConfigResult
 }
 
 // resolveSyncSelection turns the CLI inputs into the list of branches to sync.
 // A nil result means "every worktree" (the --all case). Positional args are
-// resolved to concrete branches; with no args, an interactive run opens the
-// multi-select picker and a non-interactive run is a usage error.
+// resolved to concrete branches; with no args, the multi-select picker opens when
+// the session can prompt (human format on a TTY) and is otherwise a usage error.
 func resolveSyncSelection(params resolveSyncSelectionParams) ([]string, error) {
 	if params.All {
 		return nil, nil
@@ -190,8 +191,8 @@ func resolveSyncSelection(params resolveSyncSelectionParams) ([]string, error) {
 		})
 	}
 
-	if !params.Interactive {
-		return nil, fmt.Errorf("specify one or more worktrees, or pass --%s (no interactive picker in --%s %s mode)",
+	if !params.CanPrompt {
+		return nil, fmt.Errorf("specify one or more worktrees, or pass --%s (no interactive picker without a terminal or in --%s %s mode)",
 			domain.FlagAll, domain.FlagOutput, domain.OutputJSON)
 	}
 
@@ -205,21 +206,6 @@ func resolveSyncSelection(params resolveSyncSelectionParams) ([]string, error) {
 	}
 
 	return syncpicker.Run(syncpicker.RunParams{Statuses: statuses})
-}
-
-// syncIncludesBase reports whether the selection asks to refresh the base branch.
-// The --all case (nil selection) always does; an explicit selection does when it
-// names the base. It lets the command run a base-only refresh with no rebase steps.
-func syncIncludesBase(selected []string, baseBranch string) bool {
-	if selected == nil {
-		return true
-	}
-	for _, branch := range selected {
-		if branch == baseBranch {
-			return true
-		}
-	}
-	return false
 }
 
 func renderEmptyPlan(cmd *cobra.Command, base string, interactive bool) error {
@@ -241,28 +227,30 @@ func confirmSync(count int) bool {
 	return err == nil && confirmed
 }
 
-type decidePushParams struct {
+type shouldPushParams struct {
 	Push        bool
 	NoPush      bool
 	Interactive bool
 	Steps       []domain.SyncStepResult
 }
 
-// decidePush resolves whether to push the rebased branches. With branches to
-// push and neither --push nor --no-push, an interactive run asks once; a
-// non-interactive run only pushes when --push is set.
-func decidePush(params decidePushParams) bool {
-	ready := pushableCount(params.Steps)
-	if ready == 0 || params.NoPush {
-		return false
-	}
-	if params.Push {
+// shouldPush resolves the pure push decision (in rules) and, when interactive
+// confirmation is required, runs the TUI prompt.
+func shouldPush(params shouldPushParams) bool {
+	ready := rules.PushableCount(params.Steps)
+	switch rules.DecidePush(rules.DecidePushParams{
+		Push:          params.Push,
+		NoPush:        params.NoPush,
+		Interactive:   params.Interactive,
+		PushableCount: ready,
+	}) {
+	case rules.PushForce:
 		return true
-	}
-	if !params.Interactive {
+	case rules.PushConfirm:
+		return confirmPush(ready)
+	default:
 		return false
 	}
-	return confirmPush(ready)
 }
 
 func confirmPush(count int) bool {
@@ -275,21 +263,3 @@ func confirmPush(count int) bool {
 	return err == nil && confirmed
 }
 
-func pushableCount(steps []domain.SyncStepResult) int {
-	count := 0
-	for _, step := range steps {
-		if step.PushPending && !step.Pushed {
-			count++
-		}
-	}
-	return count
-}
-
-func hasSyncFailure(steps []domain.SyncStepResult) bool {
-	for _, step := range steps {
-		if step.Status == domain.SyncStatusConflict || step.Status == domain.SyncStatusError {
-			return true
-		}
-	}
-	return false
-}

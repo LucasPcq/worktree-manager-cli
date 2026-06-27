@@ -4,10 +4,7 @@ package syncpicker
 
 import (
 	"errors"
-	"fmt"
 	"os"
-
-	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"
@@ -46,19 +43,13 @@ func Run(params RunParams) ([]string, error) {
 		},
 	})
 
-	wiz := components.NewWizard([]components.Step{{
-		Name:  "Worktrees",
-		Model: ms,
-	}})
-
-	finalModel, err := tea.NewProgram(wiz, tea.WithOutput(os.Stderr)).Run()
+	final, err := components.RunWizard(components.RunWizardParams{
+		Steps:    []components.Step{{Name: "Worktrees", Model: ms}},
+		Stderr:   true,
+		ErrLabel: "sync picker",
+	})
 	if err != nil {
-		return nil, fmt.Errorf("sync picker: %w", err)
-	}
-
-	final, ok := finalModel.(components.WizardModel)
-	if !ok || final.Aborted() {
-		return nil, domain.ErrUserAborted
+		return nil, err
 	}
 
 	step, ok := final.Steps()[0].Model.(components.MultiSelectModel)

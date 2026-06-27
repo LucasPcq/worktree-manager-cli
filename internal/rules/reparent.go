@@ -42,11 +42,17 @@ func ValidateReparent(params ValidateReparentParams) error {
 	return nil
 }
 
-// ChildrenOf returns the managed worktrees whose recorded parent is branch.
-func ChildrenOf(nodes []domain.WorktreeNode, branch string) []domain.WorktreeNode {
+// ChildrenOfParams holds inputs for ChildrenOf.
+type ChildrenOfParams struct {
+	Nodes  []domain.WorktreeNode
+	Branch string
+}
+
+// ChildrenOf returns the managed worktrees whose recorded parent is Branch.
+func ChildrenOf(params ChildrenOfParams) []domain.WorktreeNode {
 	children := make([]domain.WorktreeNode, 0)
-	for _, node := range nodes {
-		if node.SourceBranch == branch {
+	for _, node := range params.Nodes {
+		if node.SourceBranch == params.Branch {
 			children = append(children, node)
 		}
 	}

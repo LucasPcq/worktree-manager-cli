@@ -47,11 +47,12 @@ const (
 // enough that the user doesn't notice a hang.
 const stopGracePeriod = 5 * time.Second
 
-// detachedDrainGracePeriod bounds how long waitDetached waits for the PTY
-// drain goroutine to reach natural EOF after the launcher exits, before
-// force-closing the master to unblock it. The happy path hits EOF within
-// milliseconds; this backstop only bites if a descendant keeps the slave
-// open, so the daemon can never hang on a misbehaving launcher.
+// detachedDrainGracePeriod bounds how long the PTY drain goroutine is awaited
+// to reach natural EOF after the process exits, before force-closing the master
+// to unblock it. It backstops both waitDetached (detached launchers) and runTask
+// (foreground tasks). The happy path hits EOF within milliseconds; this only
+// bites if a descendant keeps the slave open, so the daemon can never hang on a
+// misbehaving launcher.
 const detachedDrainGracePeriod = 2 * time.Second
 
 // ManagedJob holds the state of a running job.

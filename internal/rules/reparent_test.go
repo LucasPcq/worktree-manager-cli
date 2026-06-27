@@ -66,12 +66,12 @@ func TestValidateReparentRejectsUnknownBranch(t *testing.T) {
 }
 
 func TestChildrenOf(t *testing.T) {
-	children := ChildrenOf(reparentNodes(), "feat")
+	children := ChildrenOf(ChildrenOfParams{Nodes: reparentNodes(), Branch: "feat"})
 	if len(children) != 1 || children[0].Branch != "dev/a" {
 		t.Fatalf("expected [dev/a], got %+v", children)
 	}
 
-	if got := ChildrenOf(reparentNodes(), "dev/b"); len(got) != 0 {
+	if got := ChildrenOf(ChildrenOfParams{Nodes: reparentNodes(), Branch: "dev/b"}); len(got) != 0 {
 		t.Fatalf("expected no children for leaf dev/b, got %+v", got)
 	}
 }

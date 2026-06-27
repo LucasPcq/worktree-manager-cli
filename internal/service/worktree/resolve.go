@@ -70,38 +70,41 @@ func Resolve(params domain.ResolveParams) (domain.ResolveResult, error) {
 		return domain.ResolveResult{}, err
 	}
 
-	if params.Query == "" {
-		return domain.ResolveResult{
-			Ambiguous: true,
-			Matches:   worktrees,
-		}, nil
+	result := resolveWorktree(worktrees, params.Query)
+	if !result.Ambiguous && result.Path == "" {
+		return domain.ResolveResult{}, domain.ErrWorktreeNotFound
+	}
+	return result, nil
+}
+
+// resolveWorktree maps a query to a worktree against a known list. An empty query
+// lists all worktrees (Ambiguous) for the picker; an exact branch match wins;
+// otherwise a unique substring match returns its path and multiple matches are
+// Ambiguous. No match yields a zero result, which Resolve maps to
+// domain.ErrWorktreeNotFound.
+func resolveWorktree(worktrees []domain.GitWorktree, query string) domain.ResolveResult {
+	if query == "" {
+		return domain.ResolveResult{Ambiguous: true, Matches: worktrees}
 	}
 
-	// Exact match first
 	for _, wt := range worktrees {
-		if wt.Branch == params.Query {
-			return domain.ResolveResult{Path: wt.Path}, nil
+		if wt.Branch == query {
+			return domain.ResolveResult{Path: wt.Path}
 		}
 	}
 
-	// Substring match
 	var matches []domain.GitWorktree
 	for _, wt := range worktrees {
-		if strings.Contains(wt.Branch, params.Query) {
+		if strings.Contains(wt.Branch, query) {
 			matches = append(matches, wt)
 		}
 	}
 
 	if len(matches) == 1 {
-		return domain.ResolveResult{Path: matches[0].Path}, nil
+		return domain.ResolveResult{Path: matches[0].Path}
 	}
-
 	if len(matches) > 1 {
-		return domain.ResolveResult{
-			Ambiguous: true,
-			Matches:   matches,
-		}, nil
+		return domain.ResolveResult{Ambiguous: true, Matches: matches}
 	}
-
-	return domain.ResolveResult{}, domain.ErrWorktreeNotFound
+	return domain.ResolveResult{}
 }

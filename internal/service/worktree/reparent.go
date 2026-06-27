@@ -37,7 +37,11 @@ func Reparent(params domain.ReparentParams) (domain.ReparentResult, error) {
 		return domain.ReparentResult{}, err
 	}
 
-	return setSourceBranch(params.StateDir, params.Branch, params.NewParent)
+	return setSourceBranch(setSourceBranchParams{
+		StateDir:  params.StateDir,
+		Branch:    params.Branch,
+		NewParent: params.NewParent,
+	})
 }
 
 // PlanCleanReparent computes which children would be orphaned by cleaning a
@@ -54,7 +58,7 @@ func PlanCleanReparent(params domain.CleanParams) domain.CleanReparentPlan {
 		grandparent = params.BaseBranch
 	}
 
-	children := rules.ChildrenOf(nodes, params.Branch)
+	children := rules.ChildrenOf(rules.ChildrenOfParams{Nodes: nodes, Branch: params.Branch})
 	reparented := make([]domain.ReparentResult, 0, len(children))
 	for _, child := range children {
 		reparented = append(reparented, domain.ReparentResult{
@@ -71,11 +75,21 @@ func PlanCleanReparent(params domain.CleanParams) domain.CleanReparentPlan {
 	}
 }
 
+// ApplyReparentChildrenParams holds inputs for ApplyReparentChildren.
+type ApplyReparentChildrenParams struct {
+	Plan     domain.CleanReparentPlan
+	StateDir string
+}
+
 // ApplyReparentChildren rewrites each child's metadata to point at the grandparent.
-func ApplyReparentChildren(plan domain.CleanReparentPlan, stateDir string) ([]domain.ReparentResult, error) {
-	applied := make([]domain.ReparentResult, 0, len(plan.Children))
-	for _, child := range plan.Children {
-		res, err := setSourceBranch(stateDir, child.Branch, plan.Grandparent)
+func ApplyReparentChildren(params ApplyReparentChildrenParams) ([]domain.ReparentResult, error) {
+	applied := make([]domain.ReparentResult, 0, len(params.Plan.Children))
+	for _, child := range params.Plan.Children {
+		res, err := setSourceBranch(setSourceBranchParams{
+			StateDir:  params.StateDir,
+			Branch:    child.Branch,
+			NewParent: params.Plan.Grandparent,
+		})
 		if err != nil {
 			return applied, err
 		}
@@ -84,20 +98,27 @@ func ApplyReparentChildren(plan domain.CleanReparentPlan, stateDir string) ([]do
 	return applied, nil
 }
 
+// setSourceBranchParams holds inputs for setSourceBranch.
+type setSourceBranchParams struct {
+	StateDir  string
+	Branch    string
+	NewParent string
+}
+
 // setSourceBranch updates only the SourceBranch field of a worktree's metadata,
 // preserving CreatedAt and EnvStrategy.
-func setSourceBranch(stateDir, branch, newParent string) (domain.ReparentResult, error) {
-	meta, err := loadMetadata(stateDir, branch)
+func setSourceBranch(params setSourceBranchParams) (domain.ReparentResult, error) {
+	meta, err := loadMetadata(params.StateDir, params.Branch)
 	if err != nil {
-		return domain.ReparentResult{}, fmt.Errorf("read metadata for %s: %w", branch, err)
+		return domain.ReparentResult{}, fmt.Errorf("read metadata for %s: %w", params.Branch, err)
 	}
 
 	old := meta.SourceBranch
-	meta.SourceBranch = newParent
+	meta.SourceBranch = params.NewParent
 
-	if err := writeMetadata(rules.WorktreeMetaDir(stateDir, branch), meta); err != nil {
+	if err := writeMetadata(rules.WorktreeMetaDir(params.StateDir, params.Branch), meta); err != nil {
 		return domain.ReparentResult{}, err
 	}
 
-	return domain.ReparentResult{Branch: branch, OldParent: old, NewParent: newParent}, nil
+	return domain.ReparentResult{Branch: params.Branch, OldParent: old, NewParent: params.NewParent}, nil
 }
