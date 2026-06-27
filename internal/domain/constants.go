@@ -166,6 +166,11 @@ const (
 	// the fork flag (isCrossRepository).
 	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository"
 
+	// GHPRFieldsWithState is the field set for the all-states PR listing used by
+	// `wtm tree --with-prs`, which must surface merged/closed PRs (clean
+	// candidates) — so it includes the PR state.
+	GHPRFieldsWithState = "number,headRefName,url,state"
+
 	// Checkout wizard badge texts: a PR whose branch already has a local
 	// worktree ("linked") or that comes from a fork ("fork") is disabled.
 	BadgeTextLinked = "linked"
@@ -178,6 +183,9 @@ const (
 	// Output format values for FlagOutput.
 	OutputText = "text"
 	OutputJSON = "json"
+	// OutputMermaid renders a Mermaid flowchart (wtm tree only) — a diagram that
+	// can be pasted into a PR or Notion as a shareable discussion artifact.
+	OutputMermaid = "mermaid"
 
 	// RunFileName is the run config file name (inside <state-dir>/).
 	RunFileName = "run.toml"
@@ -232,6 +240,7 @@ const (
 	CmdSync     = "sync"
 	CmdRelocate = "relocate"
 	CmdReparent = "reparent"
+	CmdTree     = "tree"
 
 	// MinWizardListHeight is the minimum number of rows reserved for a wizard
 	// step's scrollable list. Completed-step summaries are bounded so they never

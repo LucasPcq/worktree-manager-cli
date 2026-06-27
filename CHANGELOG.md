@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.19.0 — `wtm tree` : visualiser l'arbre des worktrees
+
+### New features
+
+- **`wtm tree`** — affiche la **forêt** des worktrees (liens `parent → enfant` issus du `source_branch`), pensée pour les workflows de branches empilées. Arbre ASCII coloré avec connecteurs (`├─ └─`), annotations par nœud : `↑N` (commits d'avance), `● dirty`, et surtout **`⚠ needs sync`** — le signal d'orchestration clé, levé quand le parent a avancé et que l'enfant doit être rebasé. Un parent sans worktree (ex. `dev`) apparaît en **racine virtuelle** grisée `(no worktree)` ; un cycle de `source_branch` est rendu sans planter et annoté `⚠ cycle`. Flags : `--with-prs` (numéros de PR + marquage mergée/fermée, fetch réseau opt-in comme `wtm list`) et `--output text|json|mermaid` — `json` pour les agents/scripts, `mermaid` pour un `flowchart TD` collable en PR/Notion (LUC-82).
+
 ## v0.18.0 — `wtm checkout` au top-level (suppression du groupe `pr`)
 
 ### Breaking changes
