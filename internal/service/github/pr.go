@@ -3,6 +3,7 @@ package github
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -83,6 +84,49 @@ func ListPRs(params ListPRsParams) ([]domain.PRInfo, error) {
 	prs := make([]domain.PRInfo, 0, len(ghPRs))
 	for _, g := range ghPRs {
 		prs = append(prs, convertGHPR(g))
+	}
+	return prs, nil
+}
+
+// ListPRsAllStates fetches PRs across every state (open, merged, closed) so a
+// branch whose PR was merged or closed can be flagged as a clean candidate by
+// `wtm tree --with-prs`. Results are newest-first; callers match by head branch
+// and take the first hit. State is normalised to lowercase ("open"/"merged"/
+// "closed").
+func ListPRsAllStates(projectDir string) ([]domain.PRInfo, error) {
+	if err := ensureAuth(); err != nil {
+		return nil, err
+	}
+
+	data, err := runGH(projectDir, "pr", "list",
+		"--state", "all",
+		"--json", domain.GHPRFieldsWithState,
+		"--limit", "100",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list PRs: %w", err)
+	}
+
+	type statePR struct {
+		Number      int    `json:"number"`
+		HeadRefName string `json:"headRefName"`
+		URL         string `json:"url"`
+		State       string `json:"state"`
+	}
+
+	items, err := parseJSON[[]statePR](data)
+	if err != nil {
+		return nil, err
+	}
+
+	prs := make([]domain.PRInfo, 0, len(items))
+	for _, it := range items {
+		prs = append(prs, domain.PRInfo{
+			Number: it.Number,
+			Branch: it.HeadRefName,
+			URL:    it.URL,
+			State:  strings.ToLower(it.State),
+		})
 	}
 	return prs, nil
 }
