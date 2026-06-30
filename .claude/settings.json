@@ -1,0 +1,24 @@
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317",
+    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "cumulative",
+    "OTEL_METRIC_EXPORT_INTERVAL": "30000",
+    "OTEL_RESOURCE_ATTRIBUTES": "repo.name=worktree-manager-cli"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "docker compose -f ~/Documents/Dev/claude-code-otel/docker-compose.yml up -d --quiet-pull 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}
