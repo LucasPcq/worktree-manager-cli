@@ -33,7 +33,7 @@ func Run(params RunParams) ([]string, error) {
 
 	ms := components.NewMultiSelect(components.NewMultiSelectParams{
 		Title:       "Select worktrees to sync",
-		Description: "Space to toggle, a to select all, enter to confirm, esc to cancel.",
+		Description: "Space to toggle, a to select all, / to filter, enter to confirm, esc to cancel.",
 		Items:       items,
 		Validate: func(selected []string) error {
 			if len(selected) == 0 {

@@ -128,10 +128,16 @@ func (m SelectListModel) updateNormal(msg tea.KeyMsg) SelectListModel {
 			m.chosen = true
 		}
 	case "esc":
+		if m.filter != "" {
+			m.filter = ""
+			m.filtering = false
+			m.refilter()
+			m.snapToSelectable()
+			return m
+		}
 		m.aborted = true
 	case "/":
 		m.filtering = true
-		m.filter = ""
 	}
 	return m
 }
@@ -140,9 +146,6 @@ func (m SelectListModel) updateFilter(msg tea.KeyMsg) SelectListModel {
 	switch msg.String() {
 	case "esc":
 		m.filtering = false
-		m.filter = ""
-		m.refilter()
-		m.snapToSelectable()
 	case "backspace":
 		if len(m.filter) > 0 {
 			m.filter = m.filter[:len(m.filter)-1]
@@ -157,9 +160,9 @@ func (m SelectListModel) updateFilter(msg tea.KeyMsg) SelectListModel {
 			m.filtering = false
 			m.chosen = true
 		}
-	case "up", "k":
+	case "up":
 		m.moveUp()
-	case "down", "j":
+	case "down":
 		m.moveDown()
 	default:
 		if len(msg.String()) == 1 && msg.String() >= " " {
@@ -175,8 +178,11 @@ func (m SelectListModel) updateFilter(msg tea.KeyMsg) SelectListModel {
 func (m SelectListModel) View() string {
 	var b strings.Builder
 
-	if m.filtering {
+	if m.filtering || m.filter != "" {
 		b.WriteString(styles.FilterPrompt.Render("/ " + m.filter))
+		if m.filtering {
+			b.WriteString(styles.FilterCursor.Render(" "))
+		}
 		b.WriteString("\n\n")
 	}
 
@@ -403,10 +409,15 @@ func (m SelectListModel) visibleHeight() int {
 		return 0
 	}
 	overhead := 0
-	if m.filtering {
+	if m.filtering || m.filter != "" {
 		overhead = 2
 	}
 	return max(1, m.height-overhead)
+}
+
+// filterHelpHint returns the footer shown while the filter input is active.
+func (m SelectListModel) filterHelpHint() string {
+	return "  type to filter • enter select • esc back"
 }
 
 func (m *SelectListModel) clampOffset() {
