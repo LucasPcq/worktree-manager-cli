@@ -99,9 +99,9 @@ func formatTag(isParent bool, isActive bool) string {
 
 func formatDirtyStatus(dirty bool) string {
 	if dirty {
-		return styles.Warning.Render("dirty")
+		return styles.Warning.Render("⚠ dirty")
 	}
-	return styles.Success.Render("clean")
+	return styles.Success.Render("✓ clean")
 }
 
 func formatAhead(count int) string {
