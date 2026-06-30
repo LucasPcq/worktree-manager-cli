@@ -18,6 +18,16 @@ var (
 	// ListItemNormal is the default row style (no background).
 	ListItemNormal = lipgloss.NewStyle()
 
+	// ListItemTinted is the subtle full-row tint for the focused SelectList row,
+	// paired with SelectedMarker. Render plain (ANSI-free) text through it so the
+	// background fills every cell; colored badges sit outside the tinted span.
+	ListItemTinted = lipgloss.NewStyle().
+			Background(ColorRowTint).
+			Foreground(ColorSelectedFg)
+
+	// SelectedMarker renders the focused row's left border bar + chevron (▌▸).
+	SelectedMarker = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
+
 	// ListCursor renders the selection arrow.
 	ListCursor = lipgloss.NewStyle().Foreground(ColorPrimary)
 
