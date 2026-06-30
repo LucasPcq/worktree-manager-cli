@@ -49,7 +49,7 @@ func TestFormatTreeConnectorsAndAnnotations(t *testing.T) {
 		"├─ ", "└─ ", "│  ",
 		"feat-auth", "PR #123", "↑3",
 		"⚠ needs sync",
-		"● dirty",
+		"⚠ dirty",
 		"(no worktree)",
 		"↑2",
 	} {

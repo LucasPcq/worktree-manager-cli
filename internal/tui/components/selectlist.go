@@ -10,9 +10,13 @@ import (
 
 // SelectItem represents a single entry in a SelectList.
 type SelectItem struct {
-	Label     string
-	Value     string
-	Badges    []Badge
+	Label string
+	Value string
+	// Badges are left-column tags rendered as colored text, aligned to a fixed
+	// column across rows so they line up regardless of label length.
+	Badges []Badge
+	// Status, when set, is a filled status pill right-aligned to the row width.
+	Status    *Badge
 	Disabled  bool
 	Danger    bool
 	Separator bool
@@ -187,9 +191,6 @@ func (m SelectListModel) View() string {
 	}
 
 	spacer := "\n"
-	if m.hasBadges() {
-		spacer = "\n\n"
-	}
 
 	for vi := m.offset; vi < end; vi++ {
 		idx := m.filtered[vi]
@@ -199,7 +200,7 @@ func (m SelectListModel) View() string {
 		if item.Separator {
 			b.WriteString(m.renderSeparator())
 		} else {
-			b.WriteString(m.renderItem(item, selected))
+			b.WriteString(m.renderItem(itemRenderParams{item: item, selected: selected}))
 		}
 		if vi < end-1 {
 			b.WriteString(spacer)
@@ -213,50 +214,100 @@ func (m SelectListModel) View() string {
 	return b.String()
 }
 
-func (m SelectListModel) renderItem(item SelectItem, selected bool) string {
-	if selected {
-		return m.renderSelectedItem(item)
-	}
-	return m.renderNormalItem(item)
+// Row layout constants. A row is laid out as:
+//
+//	<prefix><lead><label><fill><tags><tagGap><status pill>
+//
+// The label is left-aligned; the tag + status cluster is right-aligned to the
+// row width so the status pills form a clean column and the tags hug them. The
+// prefix is the 2-cell selection marker (▌▸) or two blank spaces so labels start
+// at the same column whether or not the row is selected.
+const (
+	rowPrefixWidth = 2
+	rowLead        = 1
+	rowTagGap      = 2
+)
+
+// itemRenderParams holds the inputs for rendering a single non-separator row.
+type itemRenderParams struct {
+	item     SelectItem
+	selected bool
 }
 
-func (m SelectListModel) renderSelectedItem(item SelectItem) string {
-	left := "▸ " + item.Label
-	badgesStr := m.renderBadgesStyled(item.Badges)
-	badgesPlainLen := m.badgesPlainLen(item.Badges)
-
-	gap := m.width - PrintableWidth(left) - badgesPlainLen
-	if gap < 1 {
-		gap = 1
+func (m SelectListModel) renderItem(p itemRenderParams) string {
+	statusStr := ""
+	statusWidth := 0
+	if p.item.Status != nil {
+		statusStr = p.item.Status.RenderPill()
+		statusWidth = PrintableWidth(statusStr)
 	}
 
-	// Background on label + gap, then styled badges on top
-	padded := left + strings.Repeat(" ", gap)
-	return styles.ListItemSelected.Render(padded) + badgesStr
-}
+	blockWidth := m.width - rowPrefixWidth - statusWidth
+	if blockWidth < 1 {
+		blockWidth = 1
+	}
 
-func (m SelectListModel) renderNormalItem(item SelectItem) string {
-	label := item.Label
+	if p.selected {
+		// Plain (ANSI-free) content so the tint fills every cell; the colored
+		// status pill is appended outside the tinted span.
+		block := composeRowBlock(rowBlockParams{
+			label:      p.item.Label,
+			labelWidth: PrintableWidth(p.item.Label),
+			tags:       m.renderTagsPlain(p.item.Badges),
+			tagsWidth:  m.tagsWidth(p.item.Badges),
+			blockWidth: blockWidth,
+		})
+		return styles.SelectedMarker.Render("▌▸") + styles.ListItemTinted.Render(block) + statusStr
+	}
+
+	label := p.item.Label
 	switch {
-	case item.Disabled:
+	case p.item.Disabled:
 		label = styles.Muted.Render(label)
-	case item.Danger:
+	case p.item.Danger:
 		label = styles.DangerText.Render(label)
 	}
-
-	left := styles.Indent + label
-	badgesStr := m.renderBadgesStyled(item.Badges)
-	badgesPlainLen := m.badgesPlainLen(item.Badges)
-
-	gap := m.width - PrintableWidth(left) - badgesPlainLen
-	if gap < 1 {
-		gap = 1
-	}
-
-	return left + strings.Repeat(" ", gap) + badgesStr
+	block := composeRowBlock(rowBlockParams{
+		label:      label,
+		labelWidth: PrintableWidth(p.item.Label),
+		tags:       m.renderTagsStyled(p.item.Badges),
+		tagsWidth:  m.tagsWidth(p.item.Badges),
+		blockWidth: blockWidth,
+	})
+	return strings.Repeat(" ", rowPrefixWidth) + block + statusStr
 }
 
-func (m SelectListModel) renderBadgesStyled(badges []Badge) string {
+// rowBlockParams holds the inputs for composeRowBlock.
+type rowBlockParams struct {
+	label      string // already styled (normal) or raw (selected, wrapped in tint)
+	labelWidth int    // printable width of the raw label
+	tags       string // rendered tags (styled or plain)
+	tagsWidth  int
+	blockWidth int
+}
+
+// composeRowBlock builds the fixed-width block between the prefix and the status
+// pill: a lead space, the left-aligned label, filler, then the right-aligned tag
+// cluster followed by a gap so the cluster sits flush against the status pill.
+func composeRowBlock(p rowBlockParams) string {
+	var b strings.Builder
+	b.WriteString(strings.Repeat(" ", rowLead))
+	b.WriteString(p.label)
+
+	// Right-align the tags + trailing gap within the remaining width so they end
+	// flush against the status pill appended after the block.
+	cluster := p.tagsWidth + rowTagGap
+	fill := p.blockWidth - rowLead - p.labelWidth - cluster
+	if fill < 1 {
+		fill = 1
+	}
+	b.WriteString(strings.Repeat(" ", fill))
+	b.WriteString(p.tags)
+	b.WriteString(strings.Repeat(" ", rowTagGap))
+	return b.String()
+}
+
+func (m SelectListModel) renderTagsStyled(badges []Badge) string {
 	if len(badges) == 0 {
 		return ""
 	}
@@ -264,31 +315,24 @@ func (m SelectListModel) renderBadgesStyled(badges []Badge) string {
 	for i, badge := range badges {
 		parts[i] = badge.Render()
 	}
-	return strings.Join(parts, "  ")
+	return strings.Join(parts, strings.Repeat(" ", rowTagGap))
 }
 
-func (m SelectListModel) badgesPlainLen(badges []Badge) int {
+func (m SelectListModel) renderTagsPlain(badges []Badge) string {
 	if len(badges) == 0 {
-		return 0
+		return ""
 	}
-	total := 0
+	parts := make([]string, len(badges))
 	for i, badge := range badges {
-		// Each badge adds padding (1 left + 1 right) from the style
-		total += len(badge.Text) + 2
-		if i > 0 {
-			total += 2 // double space separator
-		}
+		parts[i] = badge.Text
 	}
-	return total
+	return strings.Join(parts, strings.Repeat(" ", rowTagGap))
 }
 
-func (m SelectListModel) hasBadges() bool {
-	for _, item := range m.items {
-		if len(item.Badges) > 0 {
-			return true
-		}
-	}
-	return false
+// tagsWidth returns the printable width of the tag column (styled and plain
+// renderings share the same visible width).
+func (m SelectListModel) tagsWidth(badges []Badge) int {
+	return PrintableWidth(m.renderTagsPlain(badges))
 }
 
 func (m SelectListModel) renderSeparator() string {

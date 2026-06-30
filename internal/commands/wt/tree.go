@@ -22,7 +22,7 @@ func newTreeCmd() *cobra.Command {
 		Short: "Show the worktree forest (parent → child)",
 		Long: "Render the forest of managed worktrees, parents above their children, with the\n" +
 			"orchestration signals that matter for a stacked-branch workflow: commits ahead\n" +
-			"(↑N), uncommitted changes (● dirty), and \"needs sync\" when a parent has moved and\n" +
+			"(↑N), uncommitted changes (⚠ dirty), and \"needs sync\" when a parent has moved and\n" +
 			"the child must be rebased. Parents with no worktree appear as greyed virtual roots.\n" +
 			"\n" +
 			"--with-prs adds PR numbers and merged/closed markers (fetched eagerly). --output\n" +

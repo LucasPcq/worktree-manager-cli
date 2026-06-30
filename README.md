@@ -208,9 +208,9 @@ wtm list
 
 Output:
 ```
-  main              (parent)  ● active  clean
-  feature-auth                           dirty   3 commits ahead
-  feature-payment                        clean   1 commit ahead
+  main              (parent)  ● active  ✓ clean
+  feature-auth                           ⚠ dirty   3 commits ahead
+  feature-payment                        ✓ clean   1 commit ahead
 ```
 
 In an interactive terminal, shows a picker with actions: go, start profile, stop profile, view logs, clean.
@@ -231,13 +231,13 @@ Output:
   main
   ├─ feat-auth          PR #123  ↑3
   │  ├─ feat-auth-ui    ↑1  ⚠ needs sync
-  │  └─ feat-auth-api   ● dirty
+  │  └─ feat-auth-api   ⚠ dirty
   └─ feat-billing       ↑5
   dev                   (no worktree)
   └─ spike-cache        ↑2
 ```
 
-Per-node annotations: `↑N` commits ahead of the base, `● dirty` (uncommitted changes), and `⚠ needs sync` — the key signal — when the parent has moved past the child and the child must be rebased. A parent branch with no worktree (e.g. `dev`) appears as a greyed **virtual root**. With `--with-prs`, `PR #N` is shown (merged/closed PRs are marked as clean candidates). A broken `source_branch` cycle is rendered without failing and flagged `⚠ cycle`.
+Per-node annotations: `↑N` commits ahead of the base, `⚠ dirty` (uncommitted changes), and `⚠ needs sync` — the key signal — when the parent has moved past the child and the child must be rebased. A parent branch with no worktree (e.g. `dev`) appears as a greyed **virtual root**. With `--with-prs`, `PR #N` is shown (merged/closed PRs are marked as clean candidates). A broken `source_branch` cycle is rendered without failing and flagged `⚠ cycle`.
 
 **Flags:**
 | Flag | Description |

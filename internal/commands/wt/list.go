@@ -169,13 +169,15 @@ func pickWorktreeAndAction(params pickParams) (domain.WorktreeStatus, string, []
 
 	wtItems := make([]components.SelectItem, 0, len(statuses))
 	for i, s := range statuses {
+		status := worktreepicker.BuildStatus(s)
 		wtItems = append(wtItems, components.SelectItem{
 			Label: s.Branch,
 			Value: strconv.Itoa(i),
-			Badges: worktreepicker.BuildBadges(worktreepicker.BuildBadgesParams{
+			Badges: worktreepicker.BuildTags(worktreepicker.BuildTagsParams{
 				Status:   s,
 				Services: params.services,
 			}),
+			Status: &status,
 		})
 	}
 
