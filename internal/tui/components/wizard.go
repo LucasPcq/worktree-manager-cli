@@ -427,13 +427,19 @@ func (m WizardModel) renderHelpBar() string {
 	if hl, ok := m.steps[m.current].Model.(HookListModel); ok {
 		return styles.HelpBar.Render(hl.helpHint())
 	}
+	if sl, ok := m.steps[m.current].Model.(SelectListModel); ok && sl.filtering {
+		return styles.HelpBar.Render(sl.filterHelpHint())
+	}
+	if ms, ok := m.steps[m.current].Model.(MultiSelectModel); ok && ms.filtering {
+		return styles.HelpBar.Render(ms.filterHelpHint())
+	}
 
 	help := "  enter confirm"
 	switch m.steps[m.current].Model.(type) {
 	case SelectListModel:
 		help = "  ↑↓ navigate • enter confirm • / filter"
 	case MultiSelectModel:
-		help = "  ↑↓ navigate • enter confirm • space toggle • a all"
+		help = "  ↑↓ navigate • enter confirm • space toggle • a all • / filter"
 	case ReorderListModel:
 		help = "  ↑↓ navigate • enter confirm • shift+↑/↓ move"
 	}
