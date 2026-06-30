@@ -27,6 +27,10 @@ var (
 	// FilterPrompt renders the "/" prefix in filter mode.
 	FilterPrompt = lipgloss.NewStyle().Foreground(ColorMuted)
 
+	// FilterCursor renders the block cursor at the end of the filter input as a
+	// reverse-video cell, so the caret (and any trailing space) stays visible.
+	FilterCursor = lipgloss.NewStyle().Reverse(true)
+
 	// Badge renders a neutral chip.
 	Badge = lipgloss.NewStyle().
 		Background(ColorMuted).

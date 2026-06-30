@@ -1,6 +1,7 @@
 package components
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -37,30 +38,36 @@ type MultiSelectItem struct {
 	Variant TagVariant
 }
 
-// MultiSelectModel is a checkbox list with space toggle and enter confirm.
+// MultiSelectModel is a checkbox list with space toggle, enter confirm, and
+// inline filtering (press "/").
 type MultiSelectModel struct {
-	items    []MultiSelectItem
-	cursor   int
-	width    int
-	height   int
-	offset   int
-	title    string
-	desc     string
-	validate func([]string) error
-	err      error
-	done     bool
-	aborted  bool
+	items     []MultiSelectItem
+	filtered  []int
+	cursor    int
+	filter    string
+	filtering bool
+	width     int
+	height    int
+	offset    int
+	title     string
+	desc      string
+	validate  func([]string) error
+	err       error
+	done      bool
+	aborted   bool
 }
 
 // NewMultiSelect creates a MultiSelectModel.
 func NewMultiSelect(params NewMultiSelectParams) MultiSelectModel {
-	return MultiSelectModel{
+	m := MultiSelectModel{
 		items:    params.Items,
 		title:    params.Title,
 		desc:     params.Description,
 		validate: params.Validate,
 		width:    80,
 	}
+	m.refilter()
+	return m
 }
 
 // NewMultiSelectParams holds inputs for NewMultiSelect.
@@ -93,58 +100,128 @@ func (m MultiSelectModel) Values() []string {
 // Init satisfies tea.Model.
 func (m MultiSelectModel) Init() tea.Cmd { return nil }
 
-// Update handles key events.
+// Update handles key events for navigation, filtering, toggling, and selection.
 func (m MultiSelectModel) Update(msg tea.Msg) (MultiSelectModel, tea.Cmd) {
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
 	}
 
-	switch keyMsg.String() {
-	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case "down", "j":
-		if m.cursor < len(m.items)-1 {
-			m.cursor++
-		}
-	case " ":
-		if m.cursor >= 0 && m.cursor < len(m.items) {
-			m.items[m.cursor].Selected = !m.items[m.cursor].Selected
-		}
-		m.refreshValidation()
-	case "a":
-		m.toggleAll()
-		m.refreshValidation()
-	case "enter":
-		if m.validate != nil {
-			if err := m.validate(m.Values()); err != nil {
-				m.err = err
-				return m, nil
-			}
-		}
-		m.done = true
-	case "esc":
-		m.aborted = true
+	if m.filtering {
+		m = m.updateFilter(keyMsg)
+	} else {
+		m = m.updateNormal(keyMsg)
 	}
 
 	m.clampOffset()
 	return m, nil
 }
 
-// toggleAll selects every item, or clears the selection when all are already
-// selected, so a single key flips between "all" and "none".
+func (m MultiSelectModel) updateNormal(msg tea.KeyMsg) MultiSelectModel {
+	switch msg.String() {
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "down", "j":
+		if m.cursor < len(m.filtered)-1 {
+			m.cursor++
+		}
+	case " ":
+		m.toggleCursor()
+		m.refreshValidation()
+	case "a":
+		m.toggleAll()
+		m.refreshValidation()
+	case "/":
+		m.filtering = true
+	case "enter":
+		if m.validate != nil {
+			if err := m.validate(m.Values()); err != nil {
+				m.err = err
+				return m
+			}
+		}
+		m.done = true
+	case "esc":
+		if m.filter != "" {
+			m.filter = ""
+			m.filtering = false
+			m.refilter()
+			return m
+		}
+		m.aborted = true
+	}
+	return m
+}
+
+func (m MultiSelectModel) updateFilter(msg tea.KeyMsg) MultiSelectModel {
+	switch msg.String() {
+	case "esc", "enter":
+		m.filtering = false
+	case "backspace":
+		if len(m.filter) > 0 {
+			m.filter = m.filter[:len(m.filter)-1]
+		}
+		if m.filter == "" {
+			m.filtering = false
+		}
+		m.refilter()
+	case "up":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "down":
+		if m.cursor < len(m.filtered)-1 {
+			m.cursor++
+		}
+	default:
+		if len(msg.String()) == 1 && msg.String() >= " " {
+			m.filter += msg.String()
+			m.refilter()
+		}
+	}
+	return m
+}
+
+// toggleCursor flips the selection of the item under the cursor.
+func (m *MultiSelectModel) toggleCursor() {
+	if m.cursor < 0 || m.cursor >= len(m.filtered) {
+		return
+	}
+	idx := m.filtered[m.cursor]
+	m.items[idx].Selected = !m.items[idx].Selected
+}
+
+// toggleAll selects every filtered item, or clears them when all are already
+// selected, so a single key flips the current (filtered) view between "all" and
+// "none". Items hidden by the active filter keep their selection.
 func (m *MultiSelectModel) toggleAll() {
 	allSelected := true
-	for _, item := range m.items {
-		if !item.Selected {
+	for _, idx := range m.filtered {
+		if !m.items[idx].Selected {
 			allSelected = false
 			break
 		}
 	}
-	for i := range m.items {
-		m.items[i].Selected = !allSelected
+	for _, idx := range m.filtered {
+		m.items[idx].Selected = !allSelected
+	}
+}
+
+// refilter recomputes the visible index set from the current filter, matching
+// the item Label by case-insensitive substring, and clamps the cursor.
+func (m *MultiSelectModel) refilter() {
+	m.filtered = m.filtered[:0]
+	lower := strings.ToLower(m.filter)
+	for i, item := range m.items {
+		if m.filter != "" && !strings.Contains(strings.ToLower(item.Label), lower) {
+			continue
+		}
+		m.filtered = append(m.filtered, i)
+	}
+	if m.cursor >= len(m.filtered) {
+		m.cursor = max(0, len(m.filtered)-1)
 	}
 }
 
@@ -161,7 +238,7 @@ func (m *MultiSelectModel) refreshValidation() {
 	}
 }
 
-// View renders the checkbox list.
+// View renders the checkbox list, including the filter prompt when filtering.
 func (m MultiSelectModel) View() string {
 	if len(m.items) == 0 {
 		return styles.Muted.Render("  No items")
@@ -169,19 +246,35 @@ func (m MultiSelectModel) View() string {
 
 	var b strings.Builder
 
+	if m.filtering || m.filter != "" {
+		b.WriteString(styles.FilterPrompt.Render("/ " + m.filter))
+		if m.filtering {
+			b.WriteString(styles.FilterCursor.Render(" "))
+		}
+		if n := len(m.Values()); n > 0 {
+			b.WriteString(styles.Muted.Render(fmt.Sprintf("  (%d selected)", n)))
+		}
+		b.WriteString("\n\n")
+	}
+
+	if len(m.filtered) == 0 {
+		b.WriteString(styles.Muted.Render("  No matches"))
+		return b.String()
+	}
+
 	visibleHeight := m.visibleHeight()
 	if visibleHeight <= 0 {
-		visibleHeight = len(m.items)
+		visibleHeight = len(m.filtered)
 	}
 
 	end := m.offset + visibleHeight
-	if end > len(m.items) {
-		end = len(m.items)
+	if end > len(m.filtered) {
+		end = len(m.filtered)
 	}
 
-	for i := m.offset; i < end; i++ {
-		item := m.items[i]
-		selected := i == m.cursor
+	for vi := m.offset; vi < end; vi++ {
+		item := m.items[m.filtered[vi]]
+		selected := vi == m.cursor
 
 		check := "[ ]"
 		if item.Selected {
@@ -200,7 +293,7 @@ func (m MultiSelectModel) View() string {
 			b.WriteString(styles.ListItemNormal.Render(line))
 		}
 
-		if i < end-1 {
+		if vi < end-1 {
 			b.WriteString("\n")
 		}
 	}
@@ -257,7 +350,16 @@ func (m MultiSelectModel) visibleHeight() int {
 	if m.height <= 0 {
 		return 0
 	}
-	return max(1, m.height)
+	overhead := 0
+	if m.filtering || m.filter != "" {
+		overhead = 2
+	}
+	return max(1, m.height-overhead)
+}
+
+// filterHelpHint returns the footer shown while the filter input is active.
+func (m MultiSelectModel) filterHelpHint() string {
+	return "  type to filter • enter apply • esc back"
 }
 
 func (m *MultiSelectModel) clampOffset() {

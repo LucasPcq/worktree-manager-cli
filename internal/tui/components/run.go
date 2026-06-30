@@ -201,6 +201,12 @@ func (m standaloneModel) View() string {
 
 	out += "\n\n"
 
+	if sl, ok := m.child.(SelectListModel); ok && sl.filtering {
+		out += styles.HelpBar.Render(sl.filterHelpHint())
+		out += "\n"
+		return out
+	}
+
 	help := "  enter confirm"
 	if _, ok := m.child.(SelectListModel); ok {
 		help += " • / filter"
