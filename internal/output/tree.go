@@ -149,7 +149,7 @@ func formatTreeAnnotations(node *domain.TreeNode) string {
 		case annAhead:
 			parts = append(parts, styles.Muted.Render(fmt.Sprintf("↑%d", node.Status.CommitsAhead)))
 		case annDirty:
-			parts = append(parts, styles.Warning.Render("● dirty"))
+			parts = append(parts, styles.Warning.Render("⚠ dirty"))
 		case annNeedsSync:
 			parts = append(parts, styles.Warning.Render("⚠ needs sync"))
 		case annCycle:
@@ -236,7 +236,7 @@ func mermaidLabel(node *domain.TreeNode) string {
 		case annAhead:
 			parts = append(parts, fmt.Sprintf("↑%d", node.Status.CommitsAhead))
 		case annDirty:
-			parts = append(parts, "dirty")
+			parts = append(parts, "⚠ dirty")
 		case annNeedsSync:
 			parts = append(parts, "⚠ needs sync")
 		case annCycle:

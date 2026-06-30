@@ -437,11 +437,11 @@ func (m WizardModel) renderHelpBar() string {
 	help := "  enter confirm"
 	switch m.steps[m.current].Model.(type) {
 	case SelectListModel:
-		help += " • / filter"
+		help = "  ↑↓ navigate • enter confirm • / filter"
 	case MultiSelectModel:
-		help += " • space toggle • a all • / filter"
+		help = "  ↑↓ navigate • enter confirm • space toggle • a all • / filter"
 	case ReorderListModel:
-		help += " • shift+↑/↓ move"
+		help = "  ↑↓ navigate • enter confirm • shift+↑/↓ move"
 	}
 	if m.visiblePosition() > 1 {
 		help += " • esc back"

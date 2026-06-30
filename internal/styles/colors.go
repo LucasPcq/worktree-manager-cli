@@ -27,4 +27,9 @@ var (
 
 	// ColorSelectedFg is the foreground for the highlighted row in a list.
 	ColorSelectedFg = lipgloss.AdaptiveColor{Light: "#001D6C", Dark: "#FFFFFF"}
+
+	// ColorRowTint is the subtle background tint of the focused SelectList row,
+	// paired with a colored left border + chevron. Lighter than ColorSelectedBg
+	// so it marks the selection without overpowering the text.
+	ColorRowTint = lipgloss.AdaptiveColor{Light: "#E8EFFB", Dark: "#252D3D"}
 )
