@@ -266,11 +266,13 @@ const (
 	// <state-dir>/worktrees/<branch>/.
 	MetaFileName = "meta.json"
 
-	// CmdGroupCore is the Cobra group ID for core commands.
-	CmdGroupCore = "core"
-
-	// CmdGroupSetup is the Cobra group ID for setup commands.
-	CmdGroupSetup = "setup"
+	// Cobra group IDs — one per section of the root --help output.
+	CmdGroupWorktrees = "worktrees"
+	CmdGroupNavigate  = "navigate"
+	CmdGroupStack     = "stack"
+	CmdGroupJobs      = "jobs"
+	CmdGroupGitHub    = "github"
+	CmdGroupSetup     = "setup"
 
 	// CLI command names — used in Use: declarations and exec.Command(bin, …) call sites.
 	// Centralised here so a rename is a single-file change with no silent breakage.

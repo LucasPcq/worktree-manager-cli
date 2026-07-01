@@ -6,26 +6,25 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// NewCmds returns the worktree subcommands, each assigned to the Core Commands
-// help group, ready to be registered directly on the root command.
+// NewCmds returns the worktree subcommands, each assigned to its root --help
+// group, ready to be registered directly on the root command.
 func NewCmds() []*cobra.Command {
-	cmds := []*cobra.Command{
-		newListCmd(),
-		newTreeCmd(),
-		newCreateCmd(),
-		newCleanCmd(),
-		newPruneCmd(),
-		newSyncCmd(),
-		newReparentCmd(),
-		newRelocateCmd(),
-		newGoCmd(),
-		newSwitchCmd(),
-		newExtractCmd(),
+	grouped := func(cmd *cobra.Command, group string) *cobra.Command {
+		cmd.GroupID = group
+		return cmd
 	}
 
-	for _, cmd := range cmds {
-		cmd.GroupID = domain.CmdGroupCore
+	return []*cobra.Command{
+		grouped(newListCmd(), domain.CmdGroupWorktrees),
+		grouped(newTreeCmd(), domain.CmdGroupWorktrees),
+		grouped(newCreateCmd(), domain.CmdGroupWorktrees),
+		grouped(newCleanCmd(), domain.CmdGroupWorktrees),
+		grouped(newPruneCmd(), domain.CmdGroupWorktrees),
+		grouped(newExtractCmd(), domain.CmdGroupWorktrees),
+		grouped(newRelocateCmd(), domain.CmdGroupWorktrees),
+		grouped(newGoCmd(), domain.CmdGroupNavigate),
+		grouped(newSwitchCmd(), domain.CmdGroupNavigate),
+		grouped(newSyncCmd(), domain.CmdGroupStack),
+		grouped(newReparentCmd(), domain.CmdGroupStack),
 	}
-
-	return cmds
 }

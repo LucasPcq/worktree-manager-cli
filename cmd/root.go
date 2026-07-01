@@ -25,7 +25,11 @@ import (
 
 func init() {
 	rootCmd.AddGroup(
-		&cobra.Group{ID: domain.CmdGroupCore, Title: "Core Commands:"},
+		&cobra.Group{ID: domain.CmdGroupWorktrees, Title: "Worktrees:"},
+		&cobra.Group{ID: domain.CmdGroupNavigate, Title: "Navigate:"},
+		&cobra.Group{ID: domain.CmdGroupStack, Title: "Stacked branches:"},
+		&cobra.Group{ID: domain.CmdGroupJobs, Title: "Dev jobs:"},
+		&cobra.Group{ID: domain.CmdGroupGitHub, Title: "GitHub:"},
 		&cobra.Group{ID: domain.CmdGroupSetup, Title: "Setup:"},
 	)
 
@@ -34,23 +38,34 @@ func init() {
 	}
 	rootCmd.AddCommand(run.NewCmd())
 
+	resolveCmd := resolve.NewCmd()
+	resolveCmd.GroupID = domain.CmdGroupNavigate
+	rootCmd.AddCommand(resolveCmd)
+
 	checkoutCmd := checkout.NewCmd()
-	checkoutCmd.GroupID = domain.CmdGroupCore
+	checkoutCmd.GroupID = domain.CmdGroupGitHub
 	rootCmd.AddCommand(checkoutCmd)
 
 	initCmd := initcmd.NewCmd()
 	initCmd.GroupID = domain.CmdGroupSetup
 	rootCmd.AddCommand(initCmd)
 
-	rootCmd.AddCommand(configcmd.NewCmd())
-
 	shellInitCmd := shell.NewCmd()
 	shellInitCmd.GroupID = domain.CmdGroupSetup
 	rootCmd.AddCommand(shellInitCmd)
 
-	rootCmd.AddCommand(schema.NewCmd())
-	rootCmd.AddCommand(agents.NewCmd())
-	rootCmd.AddCommand(resolve.NewCmd())
+	configCmd := configcmd.NewCmd()
+	configCmd.GroupID = domain.CmdGroupSetup
+	rootCmd.AddCommand(configCmd)
+
+	agentsCmd := agents.NewCmd()
+	agentsCmd.GroupID = domain.CmdGroupSetup
+	rootCmd.AddCommand(agentsCmd)
+
+	schemaCmd := schema.NewCmd()
+	schemaCmd.GroupID = domain.CmdGroupSetup
+	rootCmd.AddCommand(schemaCmd)
+
 	rootCmd.AddCommand(daemon.NewCmd())
 }
 
@@ -91,6 +106,12 @@ func init() {
 			}
 		}
 	})
+}
+
+// Root returns the fully assembled root command. It exists so tooling (e.g. the
+// docs generator under tools/gendocs) can walk the command tree without invoking it.
+func Root() *cobra.Command {
+	return rootCmd
 }
 
 // Execute runs the root command and exits with the appropriate code.
