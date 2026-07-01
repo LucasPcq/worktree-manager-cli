@@ -37,7 +37,9 @@ func ListLocalBranches(params ListBranchesParams) ([]string, error) {
 
 // ListRemoteBranches returns the short names of origin's remote-tracking
 // branches (e.g. "origin/feature"), sorted alphabetically. The symbolic
-// "origin/HEAD" pointer is excluded since it is not a real branch.
+// "origin/HEAD" pointer is excluded since it is not a real branch: git shortens
+// "refs/remotes/origin/HEAD" to the bare remote name "origin" (never to
+// "origin/HEAD"), and no real remote branch shortens to that, so it is dropped.
 func ListRemoteBranches(params ListBranchesParams) ([]string, error) {
 	cmd := exec.Command("git", "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin")
 	cmd.Dir = params.ProjectDir
@@ -46,10 +48,12 @@ func ListRemoteBranches(params ListBranchesParams) ([]string, error) {
 		return nil, fmt.Errorf("git for-each-ref: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 
+	remoteName := strings.TrimSuffix(domain.RemoteBranchPrefix, "/")
+
 	var branches []string
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || trimmed == "origin/HEAD" {
+		if trimmed == "" || trimmed == remoteName {
 			continue
 		}
 		branches = append(branches, trimmed)

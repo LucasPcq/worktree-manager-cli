@@ -103,7 +103,10 @@ func RunWizard(params WizardParams) (WizardResult, error) {
 	})
 
 	wiz := components.NewWizardWithParams(components.WizardParams{
-		Steps: steps,
+		Steps:       steps,
+		InitCmd:     branchrefresh.Cmd(params.ProjectDir),
+		Loading:     true,
+		LoadingText: domain.LoadingBranchesText,
 		OnMsg: func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
 			return branchrefresh.Handle(branchrefresh.HandleParams{
 				Wizard:     w,

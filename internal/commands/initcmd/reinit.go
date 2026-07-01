@@ -70,7 +70,7 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 		if err != nil {
 			return err
 		}
-		wizardAnswers, err := initwizard.RunSectionWizard(sections, detection, prefill)
+		wizardAnswers, err := initwizard.RunSectionWizard(dir, sections, detection, prefill)
 		if errors.Is(err, domain.ErrUserAborted) {
 			return nil
 		}

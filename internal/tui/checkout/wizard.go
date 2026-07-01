@@ -126,7 +126,7 @@ func runPicker(params WizardParams) (WizardResult, error) {
 	refresh := refreshHandler(params.ProjectDir, holder)
 	wiz := components.NewWizardWithParams(components.WizardParams{
 		Steps:       steps,
-		InitCmd:     worktreepicker.PRLoadCmd(params.PRLoader),
+		InitCmd:     tea.Batch(worktreepicker.PRLoadCmd(params.PRLoader), branchrefresh.Cmd(params.ProjectDir)),
 		Loading:     true,
 		LoadingText: worktreepicker.LoadingPRsText,
 		OnMsg: func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {

@@ -417,6 +417,13 @@ func createTargetInteractive(params resolveTargetParams) (extractTarget, error) 
 	if !maybeFastForwardSource(params.cfg.ProjectDir, wiz.FromBranch) {
 		return extractTarget{}, domain.ErrUserAborted
 	}
+	if !shared.ConfirmEnvParentFallback(shared.EnvFallbackParams{
+		ProjectDir: params.cfg.ProjectDir,
+		Source:     wiz.FromBranch,
+		Config:     params.cfg.Config,
+	}) {
+		return extractTarget{}, domain.ErrUserAborted
+	}
 
 	return createTarget(createTargetParams{cfg: params.cfg, branch: wiz.BranchName, fromBranch: wiz.FromBranch})
 }

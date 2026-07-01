@@ -22,6 +22,11 @@ type RunWizardParams struct {
 	// OnMsg, when set, intercepts every message before the current step (e.g. to
 	// wire an in-place refresh). The wizard is then built with async support.
 	OnMsg WizardMsgHandler
+	// InitCmd runs once on start (e.g. a background branch fetch); Loading/LoadingText
+	// show the shared loading callout while it runs.
+	InitCmd     tea.Cmd
+	Loading     bool
+	LoadingText string
 }
 
 // RunWizard builds and runs a wizard as a standalone tea.Program and returns the
@@ -29,7 +34,13 @@ type RunWizardParams struct {
 // failure is wrapped with ErrLabel. It centralises the program/assertion/abort
 // boilerplate every picker would otherwise repeat.
 func RunWizard(params RunWizardParams) (WizardModel, error) {
-	wiz := NewWizardWithParams(WizardParams{Steps: params.Steps, OnMsg: params.OnMsg})
+	wiz := NewWizardWithParams(WizardParams{
+		Steps:       params.Steps,
+		OnMsg:       params.OnMsg,
+		InitCmd:     params.InitCmd,
+		Loading:     params.Loading,
+		LoadingText: params.LoadingText,
+	})
 
 	opts := []tea.ProgramOption{}
 	if params.Stderr {

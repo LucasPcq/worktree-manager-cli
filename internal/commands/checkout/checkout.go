@@ -122,7 +122,7 @@ func checkoutByNumber(cmd *cobra.Command, result shared.ConfigResult, number int
 		return err
 	}
 
-	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode})
+	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode, interactive: opts.interactive})
 }
 
 // checkoutInteractive handles `wtm checkout` with no number: it renders the
@@ -170,7 +170,7 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 	parent := rules.FirstNonEmpty(opts.fromOverride, res.FromBranch, p.BaseBranch)
 	env := rules.FirstNonEmpty(opts.envOverride, res.EnvFromOverride)
 
-	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode})
+	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode, interactive: opts.interactive})
 }
 
 // resolveParams holds inputs for resolving parent/env for a known PR.
@@ -222,14 +222,24 @@ func resolveParentAndEnv(params resolveParams) (parent, env string, aborted bool
 
 // createFromPRParams holds inputs for the final worktree creation step.
 type createFromPRParams struct {
-	pr       domain.PRInfo
-	parent   string
-	env      string
-	jsonMode bool
+	pr          domain.PRInfo
+	parent      string
+	env         string
+	jsonMode    bool
+	interactive bool
 }
 
 func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createFromPRParams) error {
 	p := params.pr
+
+	if params.interactive && !shared.ConfirmEnvParentFallback(shared.EnvFallbackParams{
+		ProjectDir:  result.ProjectDir,
+		Source:      params.parent,
+		Config:      result.Config,
+		EnvOverride: params.env,
+	}) {
+		return nil
+	}
 
 	fetchErr := components.RunLoading(components.LoadingParams{
 		Message: "Fetching branch from origin…",

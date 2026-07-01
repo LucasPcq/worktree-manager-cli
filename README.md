@@ -202,10 +202,17 @@ wtm create feature/auth --from origin/develop
 | `--env-from <strategy>` | Override env strategy: `example`, `main`, or `parent` |
 
 > **Branch divergence badges:** in the source-branch picker (and every other branch
-> picker — checkout, reparent, relocate), a local branch that has drifted from its
-> `origin/` counterpart is tagged with how far it is ahead/behind (`↓5`, `↑2`,
-> `↑2 ↓5`), so you don't unknowingly branch off a stale `main`. The counts reflect
-> your last fetch; press `r` to re-fetch `origin` and refresh them in place.
+> picker — checkout, reparent, relocate, init), a local branch that has drifted from
+> its `origin/` counterpart is tagged with how far it is ahead/behind (`↓5`, `↑2`,
+> `↑2 ↓5`), so you don't unknowingly branch off a stale `main`. On open, wtm fetches
+> `origin` in the background (the "Fetching branches…" callout, non-blocking) and the
+> badges refresh themselves; press `r` to fetch again on demand. Offline, the picker
+> stays usable with the last-known counts.
+>
+> **Env provisioning heads-up:** with the `parent` env strategy, `.env` is copied from
+> the source branch's worktree. If that branch has no local worktree, wtm would
+> silently fall back to the main worktree — so it asks first (create, extract, and
+> checkout) before provisioning, rather than copying from an unexpected place.
 >
 > **Fast-forward a stale source:** if the source branch you pick is strictly behind
 > its `origin/` counterpart (`↓N`), wtm offers to fast-forward it to origin before

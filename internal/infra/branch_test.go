@@ -67,6 +67,11 @@ func TestListRemoteBranches(t *testing.T) {
 	if found["origin/HEAD"] {
 		t.Error("origin/HEAD must be excluded from remote branches")
 	}
+	// git shortens refs/remotes/origin/HEAD to the bare "origin"; it must not leak
+	// in as a selectable branch.
+	if found["origin"] {
+		t.Error("the origin/HEAD pointer (shortened to \"origin\") must be excluded")
+	}
 }
 
 func TestBranchOrRemoteExists(t *testing.T) {

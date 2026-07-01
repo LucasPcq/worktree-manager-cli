@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/tui/branchrefresh"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
@@ -68,11 +69,12 @@ type SectionPrefill struct {
 // The wizard is organised by concept. Each optional section (env, hooks,
 // services) is introduced by a "gate" step that explains what the section does
 // and offers Configure / Skip; its sub-steps auto-skip when the gate is skipped.
-func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
+func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
+	holder := &detection.Branches
 
 	s.add(stepBasePath, basePathStep())
-	s.add(stepBaseBranch, baseBranchStep(detection))
+	s.add(stepBaseBranch, baseBranchStep(holder, detection.BaseBranch, "New worktrees branch off this base by default — usually your main development branch."))
 
 	s.add(stepEnvGate, envGate(detection))
 	addEnvSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepEnvGate)), nil)
@@ -83,7 +85,7 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 	s.add(stepServicesGate, servicesGate(detection))
 	addServicesSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepServicesGate)), nil)
 
-	final, err := runWizard(s.steps)
+	final, err := runWizard(runWizardParams{steps: s.steps, projectDir: projectDir, holder: holder})
 	if err != nil {
 		return domain.InitProjectAnswers{}, err
 	}
@@ -94,12 +96,13 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 // without gates or core steps. Used by `wtm init --only <section>`. Returns a
 // nil-ish answers set with no steps when nothing is configurable (e.g. services
 // requested but none detected); callers handle the empty case.
-func RunSectionWizard(sections []string, detection domain.InitDetectionResult, prefill *SectionPrefill) (domain.InitProjectAnswers, error) {
+func RunSectionWizard(projectDir string, sections []string, detection domain.InitDetectionResult, prefill *SectionPrefill) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
+	holder := &detection.Branches
 	for _, section := range sections {
 		switch section {
 		case domain.SectionWorktrees:
-			addWorktreesSteps(s, detection, prefill)
+			addWorktreesSteps(s, holder, detection, prefill)
 		case domain.SectionEnv:
 			addEnvSteps(s, detection, nil, prefill)
 		case domain.SectionHooks:
@@ -113,17 +116,47 @@ func RunSectionWizard(sections []string, detection domain.InitDetectionResult, p
 		return domain.InitProjectAnswers{}, nil
 	}
 
-	final, err := runWizard(s.steps)
+	// Only wire the background branch refresh when a base-branch step is present.
+	params := runWizardParams{steps: s.steps, projectDir: projectDir}
+	if s.at(stepBaseBranch) >= 0 {
+		params.holder = holder
+	}
+
+	final, err := runWizard(params)
 	if err != nil {
 		return domain.InitProjectAnswers{}, err
 	}
 	return extractProjectAnswers(final, detection, s.idx), nil
 }
 
+// runWizardParams holds inputs for runWizard. When holder is non-nil the wizard
+// fetches origin in the background on open and wires the `r` refresh, keeping the
+// base-branch divergence badges up to date.
+type runWizardParams struct {
+	steps      []components.Step
+	projectDir string
+	holder     *[]domain.BranchCandidate
+}
+
 // runWizard runs the bubbletea program for the given steps and returns the
 // final model, mapping abort/quit to ErrUserAborted.
-func runWizard(steps []components.Step) (components.WizardModel, error) {
-	wiz := components.NewWizard(steps)
+func runWizard(params runWizardParams) (components.WizardModel, error) {
+	wp := components.WizardParams{Steps: params.steps}
+	if params.holder != nil {
+		wp.InitCmd = branchrefresh.Cmd(params.projectDir)
+		wp.Loading = true
+		wp.LoadingText = domain.LoadingBranchesText
+		wp.OnMsg = func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+			return branchrefresh.Handle(branchrefresh.HandleParams{
+				Wizard:     w,
+				Msg:        msg,
+				ProjectDir: params.projectDir,
+				Holder:     params.holder,
+			})
+		}
+	}
+
+	wiz := components.NewWizardWithParams(wp)
 	finalModel, err := tea.NewProgram(wiz).Run()
 	if err != nil {
 		return components.WizardModel{}, fmt.Errorf("wizard: %w", err)
@@ -150,16 +183,24 @@ func basePathStep() components.Step {
 	}
 }
 
-func baseBranchStep(detection domain.InitDetectionResult) components.Step {
-	return components.Step{
-		Name: "Base branch",
-		Model: components.NewSelectList(components.NewSelectListParams{
+// baseBranchStep builds the base-branch picker step. It reads candidates from the
+// shared holder via Build so a background origin fetch (CanRefresh / the `r` key)
+// updates the divergence badges in place.
+func baseBranchStep(holder *[]domain.BranchCandidate, pinned, description string) components.Step {
+	build := func() any {
+		return components.NewSelectList(components.NewSelectListParams{
 			Title:       "Base branch",
-			Description: "New worktrees branch off this base by default — usually your main development branch.",
-			Items:       baseBranchItems(detection.Branches, detection.BaseBranch),
-		}),
-		Summary: selectListSummary,
-		Callout: true,
+			Description: description,
+			Items:       baseBranchItems(*holder, pinned),
+		})
+	}
+	return components.Step{
+		Name:       "Base branch",
+		Model:      build(),
+		Build:      func([]components.Step) any { return build() },
+		CanRefresh: true,
+		Summary:    selectListSummary,
+		Callout:    true,
 	}
 }
 
@@ -176,21 +217,12 @@ func baseBranchItems(branches []domain.BranchCandidate, detected string) []compo
 // addWorktreesSteps adds the editable worktrees step (base branch only) for a
 // targeted re-init. base_path is intentionally not editable here — changing it
 // would orphan existing worktrees (tracked separately).
-func addWorktreesSteps(s *stepSet, detection domain.InitDetectionResult, prefill *SectionPrefill) {
+func addWorktreesSteps(s *stepSet, holder *[]domain.BranchCandidate, detection domain.InitDetectionResult, prefill *SectionPrefill) {
 	pinned := detection.BaseBranch
 	if prefill != nil && prefill.BaseBranch != "" {
 		pinned = prefill.BaseBranch
 	}
-	s.add(stepBaseBranch, components.Step{
-		Name: "Base branch",
-		Model: components.NewSelectList(components.NewSelectListParams{
-			Title:       "Base branch",
-			Description: "Default branch new worktrees are created from. Changing it only affects future worktrees.",
-			Items:       baseBranchItems(detection.Branches, pinned),
-		}),
-		Summary: selectListSummary,
-		Callout: true,
-	})
+	s.add(stepBaseBranch, baseBranchStep(holder, pinned, "Default branch new worktrees are created from. Changing it only affects future worktrees."))
 }
 
 func envGate(detection domain.InitDetectionResult) components.Step {

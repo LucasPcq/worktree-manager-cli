@@ -80,6 +80,14 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		if !maybeFastForwardSource(result.ProjectDir, fromBranch) {
 			return nil
 		}
+		if !shared.ConfirmEnvParentFallback(shared.EnvFallbackParams{
+			ProjectDir:  result.ProjectDir,
+			Source:      fromBranch,
+			Config:      result.Config,
+			EnvOverride: envOverride,
+		}) {
+			return nil
+		}
 	} else {
 		candidates, listErr := branchCandidates(result.ProjectDir)
 		if listErr != nil {

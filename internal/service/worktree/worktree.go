@@ -119,6 +119,27 @@ func parentWorktreePath(projectDir, parentBranch string) string {
 	return wt.Path
 }
 
+// EnvFallbackParams holds inputs for EnvParentFallsBackToMain.
+type EnvFallbackParams struct {
+	ProjectDir  string
+	Source      string
+	Config      domain.Config
+	EnvOverride string
+}
+
+// EnvParentFallsBackToMain reports whether provisioning the new worktree's .env
+// will silently fall back to the main worktree: the resolved strategy is "parent"
+// but the source branch has no local worktree to copy from. Lets a command warn
+// before creating.
+func EnvParentFallsBackToMain(params EnvFallbackParams) bool {
+	strategy := rules.ResolveEnvStrategy(params.Config.Project.Env.Strategy, params.EnvOverride)
+	return rules.ParentEnvFallsBackToMain(rules.ParentEnvFallbackParams{
+		Strategy:          strategy,
+		HasCopyFiles:      len(params.Config.Project.Env.CopyFiles) > 0,
+		SourceHasWorktree: parentWorktreePath(params.ProjectDir, params.Source) != "",
+	})
+}
+
 func writeMetadata(metaDir string, metadata domain.WorktreeMetadata) error {
 	if err := os.MkdirAll(metaDir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", metaDir, err)
