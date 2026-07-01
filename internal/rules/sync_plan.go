@@ -45,9 +45,10 @@ func BuildSyncPlan(params BuildSyncPlanParams) (domain.SyncPlan, error) {
 
 		steps = append(steps, indexedStep{
 			step: domain.SyncStep{
-				Branch:       node.Branch,
-				Path:         node.Path,
-				SourceBranch: node.SourceBranch,
+				Branch:           node.Branch,
+				Path:             node.Path,
+				SourceBranch:     node.SourceBranch,
+				RebaseInProgress: node.RebaseInProgress,
 			},
 			depth: depth,
 			order: i,

@@ -59,12 +59,13 @@ func buildStatus(gitWorktree domain.GitWorktree, baseBranch, stateDir string) do
 	}
 
 	return domain.WorktreeStatus{
-		Branch:       gitWorktree.Branch,
-		Path:         gitWorktree.Path,
-		IsParent:     gitWorktree.IsMain,
-		IsDirty:      dirty,
-		CommitsAhead: ahead,
-		CreatedAt:    worktreeCreatedAt(stateDir, gitWorktree.Branch, gitWorktree.Path),
+		Branch:           gitWorktree.Branch,
+		Path:             gitWorktree.Path,
+		IsParent:         gitWorktree.IsMain,
+		IsDirty:          dirty,
+		RebaseInProgress: gitWorktree.RebaseInProgress,
+		CommitsAhead:     ahead,
+		CreatedAt:        worktreeCreatedAt(stateDir, gitWorktree.Branch, gitWorktree.Path),
 	}
 }
 

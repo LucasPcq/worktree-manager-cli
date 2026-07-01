@@ -6,6 +6,9 @@ package domain
 type TreeNodeStatus struct {
 	CommitsAhead int             `json:"commits_ahead"`
 	IsDirty      bool            `json:"is_dirty"`
+	// RebaseInProgress is true when the worktree has a rebase paused mid-way (e.g.
+	// left by `wtm sync --keep-conflict`) — resolve it with git rebase --continue/--abort.
+	RebaseInProgress bool `json:"rebase_in_progress"`
 	// NeedsSync is true when the node's parent has advanced past the node, i.e.
 	// the parent tip is not an ancestor of the node's branch — the key signal for
 	// orchestrating a cascade rebase.

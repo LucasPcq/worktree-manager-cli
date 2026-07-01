@@ -144,9 +144,10 @@ const (
 	SectionWorktrees = "worktrees"
 
 	// sync flags — cascade rebase of worktrees onto their recorded parent.
-	FlagDryRun = "dry-run"
-	FlagPush   = "push"
-	FlagNoPush = "no-push"
+	FlagDryRun       = "dry-run"
+	FlagPush         = "push"
+	FlagNoPush       = "no-push"
+	FlagKeepConflict = "keep-conflict"
 
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches

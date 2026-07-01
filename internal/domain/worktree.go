@@ -25,19 +25,24 @@ type WorktreeStatus struct {
 	IsDirty      bool
 	CommitsAhead int
 	CreatedAt    time.Time
+	// RebaseInProgress is true when the worktree has a rebase paused mid-way (e.g.
+	// left by `wtm sync --keep-conflict`). Its branch is recovered from the paused
+	// rebase; the worktree is also dirty, but this is the more precise signal.
+	RebaseInProgress bool
 }
 
 // WorktreeListEntry is the JSON-serializable projection of a worktree for the
 // `list --output json` payload.
 type WorktreeListEntry struct {
-	Branch       string          `json:"branch"`
-	Path         string          `json:"path"`
-	IsParent     bool            `json:"is_parent"`
-	IsDirty      bool            `json:"is_dirty"`
-	CommitsAhead int             `json:"commits_ahead"`
-	CreatedAt    time.Time       `json:"created_at"`
-	PR           *WorktreeListPR `json:"pr"`
-	Services     []string        `json:"services"`
+	Branch           string          `json:"branch"`
+	Path             string          `json:"path"`
+	IsParent         bool            `json:"is_parent"`
+	IsDirty          bool            `json:"is_dirty"`
+	RebaseInProgress bool            `json:"rebase_in_progress"`
+	CommitsAhead     int             `json:"commits_ahead"`
+	CreatedAt        time.Time       `json:"created_at"`
+	PR               *WorktreeListPR `json:"pr"`
+	Services         []string        `json:"services"`
 }
 
 // WorktreeListPR is the nested PR summary embedded in WorktreeListEntry.
@@ -53,6 +58,10 @@ type GitWorktree struct {
 	Branch string
 	IsMain bool
 	Locked bool
+	// RebaseInProgress is true when the worktree has a rebase stopped mid-way
+	// (e.g. left in progress by `wtm sync --keep-conflict`). Its HEAD is detached,
+	// so Branch is recovered from the in-progress rebase's original branch.
+	RebaseInProgress bool
 }
 
 // CreateParams holds all inputs needed to create a new worktree.
