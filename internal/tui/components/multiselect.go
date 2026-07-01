@@ -1,7 +1,6 @@
 package components
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -212,14 +211,11 @@ func (m *MultiSelectModel) toggleAll() {
 // refilter recomputes the visible index set from the current filter, matching
 // the item Label by case-insensitive substring, and clamps the cursor.
 func (m *MultiSelectModel) refilter() {
-	m.filtered = m.filtered[:0]
-	lower := strings.ToLower(m.filter)
-	for i, item := range m.items {
-		if m.filter != "" && !strings.Contains(strings.ToLower(item.Label), lower) {
-			continue
-		}
-		m.filtered = append(m.filtered, i)
-	}
+	m.filtered = filterVisible(filterMatchParams{
+		query: m.filter,
+		count: len(m.items),
+		label: func(i int) string { return m.items[i].Label },
+	})
 	if m.cursor >= len(m.filtered) {
 		m.cursor = max(0, len(m.filtered)-1)
 	}
@@ -246,16 +242,11 @@ func (m MultiSelectModel) View() string {
 
 	var b strings.Builder
 
-	if m.filtering || m.filter != "" {
-		b.WriteString(styles.FilterPrompt.Render("/ " + m.filter))
-		if m.filtering {
-			b.WriteString(styles.FilterCursor.Render(" "))
-		}
-		if n := len(m.Values()); n > 0 {
-			b.WriteString(styles.Muted.Render(fmt.Sprintf("  (%d selected)", n)))
-		}
-		b.WriteString("\n\n")
-	}
+	b.WriteString(renderFilterPrompt(filterPromptParams{
+		query:         m.filter,
+		active:        m.filtering,
+		selectedCount: len(m.Values()),
+	}))
 
 	if len(m.filtered) == 0 {
 		b.WriteString(styles.Muted.Render("  No matches"))
@@ -350,11 +341,7 @@ func (m MultiSelectModel) visibleHeight() int {
 	if m.height <= 0 {
 		return 0
 	}
-	overhead := 0
-	if m.filtering || m.filter != "" {
-		overhead = 2
-	}
-	return max(1, m.height-overhead)
+	return max(1, m.height-filterOverhead(m.filtering, m.filter))
 }
 
 // filterHelpHint returns the footer shown while the filter input is active.

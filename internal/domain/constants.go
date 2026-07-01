@@ -192,6 +192,11 @@ const (
 	BadgeGlyphAhead  = "↑"
 	BadgeGlyphBehind = "↓"
 
+	// Status pill glyphs: the leading symbol of a worktree row's right-aligned
+	// dirty/clean status pill.
+	BadgeGlyphDirty = "⚠"
+	BadgeGlyphClean = "✓"
+
 	// KeyRefresh is the picker key that re-fetches origin and recomputes the
 	// branch divergence badges.
 	KeyRefresh = "r"

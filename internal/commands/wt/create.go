@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -55,6 +54,9 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	interactive := rules.IsHumanFormat(format)
+
 	fromBranch := fromFlag
 	envOverride := envFromFlag
 
@@ -77,10 +79,10 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		if envFromFlag == "" {
 			envOverride = wizResult.EnvFromOverride
 		}
-		if !maybeFastForwardSource(result.ProjectDir, fromBranch) {
+		if interactive && !maybeFastForwardSource(result.ProjectDir, fromBranch) {
 			return nil
 		}
-		if !shared.ConfirmEnvParentFallback(shared.EnvFallbackParams{
+		if interactive && !shared.ConfirmEnvParentFallback(shared.EnvFallbackParams{
 			ProjectDir:  result.ProjectDir,
 			Source:      fromBranch,
 			Config:      result.Config,
@@ -89,16 +91,10 @@ func runCreate(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 	} else {
-		candidates, listErr := branchCandidates(result.ProjectDir)
-		if listErr != nil {
-			return listErr
-		}
-		if !branchCandidateExists(candidates, fromFlag) {
+		if !rules.BranchCandidateExists(branchCandidates(result.ProjectDir), fromFlag) {
 			return fmt.Errorf("%w: %s", domain.ErrBranchNotFound, fromFlag)
 		}
 	}
-
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	// on_create hooks stream their own output, so only show a spinner for the
 	// silent path (git worktree add + env copy) on the human-facing run.
@@ -149,14 +145,9 @@ type createWizardParams struct {
 }
 
 func runCreateWizard(params createWizardParams) (newpicker.WizardResult, error) {
-	candidates, err := branchCandidates(params.ProjectDir)
-	if err != nil {
-		return newpicker.WizardResult{}, err
-	}
-
 	return newpicker.RunWizard(newpicker.WizardParams{
 		ProjectDir:     params.ProjectDir,
-		Branches:       candidates,
+		Branches:       branchCandidates(params.ProjectDir),
 		DefaultBranch:  params.Config.Project.Worktrees.BaseBranch,
 		ConfigStrategy: params.Config.Project.Env.Strategy,
 		IncludeBranch:  params.IncludeBranch,
@@ -171,7 +162,7 @@ func runCreateWizard(params createWizardParams) (newpicker.WizardResult, error) 
 // the user cancels creation (a failed fast-forward, or declining the diverged
 // warning) — there is no silent fallback to a stale base.
 func maybeFastForwardSource(projectDir, source string) bool {
-	if strings.HasPrefix(source, domain.RemoteBranchPrefix) {
+	if rules.IsRemoteBranch(source) {
 		return true
 	}
 	state, ab := branch.Divergence(branch.BranchParams{ProjectDir: projectDir, Branch: source})
@@ -235,17 +226,6 @@ func confirmProceedStale(source string, behind int, cause error) bool {
 // branchCandidates lists the local and remote-tracking branches offered as
 // worktree start-points, with remotes whose name already exists locally dropped
 // and each local branch tagged with its divergence from origin.
-func branchCandidates(projectDir string) ([]domain.BranchCandidate, error) {
-	return branch.Candidates(branch.ListParams{ProjectDir: projectDir}), nil
-}
-
-// branchCandidateExists reports whether ref matches a known start-point (a local
-// branch or a remote-tracking ref like origin/x).
-func branchCandidateExists(candidates []domain.BranchCandidate, ref string) bool {
-	for _, c := range candidates {
-		if c.Name == ref {
-			return true
-		}
-	}
-	return false
+func branchCandidates(projectDir string) []domain.BranchCandidate {
+	return branch.Candidates(branch.ListParams{ProjectDir: projectDir})
 }

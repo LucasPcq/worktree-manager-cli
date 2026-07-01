@@ -137,15 +137,11 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 // runRelocateWizard resolves the candidate parent branches and drives the
 // interactive parent pickers + final apply confirmation.
 func runRelocateWizard(cfg shared.ConfigResult, plan domain.RelocatePlan, baseBranch string) (relocatetui.RunResult, error) {
-	candidates, err := branchCandidates(cfg.ProjectDir)
-	if err != nil {
-		return relocatetui.RunResult{}, err
-	}
 	return relocatetui.RunWizard(relocatetui.RunParams{
 		ProjectDir: cfg.ProjectDir,
 		Plan:       plan,
 		Adoptions:  rules.PlanAdoptions(plan),
-		Branches:   candidates,
+		Branches:   branchCandidates(cfg.ProjectDir),
 		BaseBranch: baseBranch,
 	})
 }

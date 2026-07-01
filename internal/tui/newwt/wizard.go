@@ -107,14 +107,7 @@ func RunWizard(params WizardParams) (WizardResult, error) {
 		InitCmd:     branchrefresh.Cmd(params.ProjectDir),
 		Loading:     true,
 		LoadingText: domain.LoadingBranchesText,
-		OnMsg: func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
-			return branchrefresh.Handle(branchrefresh.HandleParams{
-				Wizard:     w,
-				Msg:        msg,
-				ProjectDir: params.ProjectDir,
-				Holder:     holder,
-			})
-		},
+		OnMsg:       branchrefresh.Handler(params.ProjectDir, holder),
 	})
 	p := tea.NewProgram(wiz)
 

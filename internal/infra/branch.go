@@ -212,7 +212,7 @@ type UpdateLocalBranchToRemoteParams struct {
 // is checked out in a worktree, so callers must only use it for branches that are
 // not checked out (and after verifying the move is a fast-forward).
 func UpdateLocalBranchToRemote(params UpdateLocalBranchToRemoteParams) error {
-	cmd := exec.Command("git", "branch", "-f", params.Branch, "origin/"+params.Branch)
+	cmd := exec.Command("git", "branch", "-f", params.Branch, domain.RemoteBranchPrefix+params.Branch)
 	cmd.Dir = params.ProjectDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {

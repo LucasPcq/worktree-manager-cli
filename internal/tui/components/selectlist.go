@@ -182,13 +182,7 @@ func (m SelectListModel) updateFilter(msg tea.KeyMsg) SelectListModel {
 func (m SelectListModel) View() string {
 	var b strings.Builder
 
-	if m.filtering || m.filter != "" {
-		b.WriteString(styles.FilterPrompt.Render("/ " + m.filter))
-		if m.filtering {
-			b.WriteString(styles.FilterCursor.Render(" "))
-		}
-		b.WriteString("\n\n")
-	}
+	b.WriteString(renderFilterPrompt(filterPromptParams{query: m.filter, active: m.filtering}))
 
 	visibleHeight := m.visibleHeight()
 	if visibleHeight <= 0 {
@@ -354,17 +348,12 @@ func (m SelectListModel) renderSeparator() string {
 }
 
 func (m *SelectListModel) refilter() {
-	m.filtered = m.filtered[:0]
-	lower := strings.ToLower(m.filter)
-	for i, item := range m.items {
-		if m.filter != "" && item.Separator {
-			continue
-		}
-		if m.filter != "" && !strings.Contains(strings.ToLower(item.Label), lower) {
-			continue
-		}
-		m.filtered = append(m.filtered, i)
-	}
+	m.filtered = filterVisible(filterMatchParams{
+		query:    m.filter,
+		count:    len(m.items),
+		label:    func(i int) string { return m.items[i].Label },
+		eligible: func(i int) bool { return !m.items[i].Separator },
+	})
 	if m.cursor >= len(m.filtered) {
 		m.cursor = max(0, len(m.filtered)-1)
 	}
@@ -412,11 +401,7 @@ func (m SelectListModel) visibleHeight() int {
 	if m.height <= 0 {
 		return 0
 	}
-	overhead := 0
-	if m.filtering || m.filter != "" {
-		overhead = 2
-	}
-	return max(1, m.height-overhead)
+	return max(1, m.height-filterOverhead(m.filtering, m.filter))
 }
 
 // filterHelpHint returns the footer shown while the filter input is active.

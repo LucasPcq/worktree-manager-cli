@@ -35,6 +35,20 @@ type HandleParams struct {
 	Holder *[]domain.BranchCandidate
 }
 
+// Handler returns a wizard message handler that wires the refresh key/message for
+// a picker whose branch steps read from holder. Pickers that also handle async
+// messages chain it first — it returns handled=false for messages it does not own.
+func Handler(projectDir string, holder *[]domain.BranchCandidate) components.WizardMsgHandler {
+	return func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+		return Handle(HandleParams{
+			Wizard:     w,
+			Msg:        msg,
+			ProjectDir: projectDir,
+			Holder:     holder,
+		})
+	}
+}
+
 // Handle processes the refresh key and the RefreshedMsg for a branch picker.
 // Call it first from a picker's OnMsg: it returns handled=false for messages it
 // does not own (the refresh key on a non-branch/filtering step, or any unrelated

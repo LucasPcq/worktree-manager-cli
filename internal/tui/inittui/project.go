@@ -74,7 +74,11 @@ func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (
 	holder := &detection.Branches
 
 	s.add(stepBasePath, basePathStep())
-	s.add(stepBaseBranch, baseBranchStep(holder, detection.BaseBranch, "New worktrees branch off this base by default — usually your main development branch."))
+	s.add(stepBaseBranch, baseBranchStep(baseBranchStepParams{
+		Holder:      holder,
+		Pinned:      detection.BaseBranch,
+		Description: "New worktrees branch off this base by default — usually your main development branch.",
+	}))
 
 	s.add(stepEnvGate, envGate(detection))
 	addEnvSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepEnvGate)), nil)
@@ -146,14 +150,7 @@ func runWizard(params runWizardParams) (components.WizardModel, error) {
 		wp.InitCmd = branchrefresh.Cmd(params.projectDir)
 		wp.Loading = true
 		wp.LoadingText = domain.LoadingBranchesText
-		wp.OnMsg = func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
-			return branchrefresh.Handle(branchrefresh.HandleParams{
-				Wizard:     w,
-				Msg:        msg,
-				ProjectDir: params.projectDir,
-				Holder:     params.holder,
-			})
-		}
+		wp.OnMsg = branchrefresh.Handler(params.projectDir, params.holder)
 	}
 
 	wiz := components.NewWizardWithParams(wp)
@@ -183,15 +180,22 @@ func basePathStep() components.Step {
 	}
 }
 
+// baseBranchStepParams holds inputs for baseBranchStep.
+type baseBranchStepParams struct {
+	Holder      *[]domain.BranchCandidate
+	Pinned      string
+	Description string
+}
+
 // baseBranchStep builds the base-branch picker step. It reads candidates from the
 // shared holder via Build so a background origin fetch (CanRefresh / the `r` key)
 // updates the divergence badges in place.
-func baseBranchStep(holder *[]domain.BranchCandidate, pinned, description string) components.Step {
+func baseBranchStep(params baseBranchStepParams) components.Step {
 	build := func() any {
 		return components.NewSelectList(components.NewSelectListParams{
 			Title:       "Base branch",
-			Description: description,
-			Items:       baseBranchItems(*holder, pinned),
+			Description: params.Description,
+			Items:       baseBranchItems(*params.Holder, params.Pinned),
 		})
 	}
 	return components.Step{
@@ -222,7 +226,11 @@ func addWorktreesSteps(s *stepSet, holder *[]domain.BranchCandidate, detection d
 	if prefill != nil && prefill.BaseBranch != "" {
 		pinned = prefill.BaseBranch
 	}
-	s.add(stepBaseBranch, baseBranchStep(holder, pinned, "Default branch new worktrees are created from. Changing it only affects future worktrees."))
+	s.add(stepBaseBranch, baseBranchStep(baseBranchStepParams{
+		Holder:      holder,
+		Pinned:      pinned,
+		Description: "Default branch new worktrees are created from. Changing it only affects future worktrees.",
+	}))
 }
 
 func envGate(detection domain.InitDetectionResult) components.Step {

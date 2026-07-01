@@ -6,6 +6,23 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
+func TestBranchCandidateExists(t *testing.T) {
+	candidates := []domain.BranchCandidate{
+		{Name: "main"},
+		{Name: "origin/feature", IsRemote: true},
+	}
+
+	if !BranchCandidateExists(candidates, "main") {
+		t.Error("expected local branch to be accepted")
+	}
+	if !BranchCandidateExists(candidates, "origin/feature") {
+		t.Error("expected remote ref to be accepted")
+	}
+	if BranchCandidateExists(candidates, "nope") {
+		t.Error("unknown ref must be rejected")
+	}
+}
+
 func TestClassifyDivergence(t *testing.T) {
 	cases := []struct {
 		name   string

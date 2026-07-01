@@ -262,7 +262,7 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 		ProjectDir:      result.ProjectDir,
 		StateDir:        result.StateDir,
 		Branch:          p.Branch,
-		FromBranch:      "origin/" + p.Branch,
+		FromBranch:      domain.RemoteBranchPrefix + p.Branch,
 		SourceBranch:    params.parent,
 		Config:          result.Config,
 		EnvFromOverride: params.env,

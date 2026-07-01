@@ -32,7 +32,7 @@ func Candidates(params ListParams) []domain.BranchCandidate {
 	return rules.MergeBranchCandidates(rules.MergeBranchCandidatesParams{
 		Local:      local,
 		Remote:     remote,
-		Divergence: divergence(params.ProjectDir, local, remote),
+		Divergence: divergence(divergenceParams{ProjectDir: params.ProjectDir, Local: local, Remote: remote}),
 	})
 }
 
@@ -107,21 +107,28 @@ func FastForwardToOrigin(params BranchParams) error {
 	return infra.FastForwardBranch(infra.FastForwardParams{WorktreePath: wt.Path, Onto: domain.RemoteBranchPrefix + params.Branch})
 }
 
+// divergenceParams holds inputs for divergence.
+type divergenceParams struct {
+	ProjectDir string
+	Local      []string
+	Remote     []string
+}
+
 // divergence computes ahead/behind only for local branches that have a same-name
 // origin counterpart, bounding the number of git calls to the overlap.
-func divergence(projectDir string, local, remote []string) map[string]domain.AheadBehind {
-	remoteSet := make(map[string]struct{}, len(remote))
-	for _, r := range remote {
+func divergence(params divergenceParams) map[string]domain.AheadBehind {
+	remoteSet := make(map[string]struct{}, len(params.Remote))
+	for _, r := range params.Remote {
 		remoteSet[strings.TrimPrefix(r, domain.RemoteBranchPrefix)] = struct{}{}
 	}
 
-	result := make(map[string]domain.AheadBehind, len(local))
-	for _, b := range local {
+	result := make(map[string]domain.AheadBehind, len(params.Local))
+	for _, b := range params.Local {
 		if _, ok := remoteSet[b]; !ok {
 			continue
 		}
 		ab, err := infra.AheadBehind(infra.AheadBehindParams{
-			ProjectDir: projectDir,
+			ProjectDir: params.ProjectDir,
 			Local:      b,
 			Remote:     domain.RemoteBranchPrefix + b,
 		})

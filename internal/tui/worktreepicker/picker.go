@@ -192,9 +192,9 @@ func BuildTags(params BuildTagsParams) []components.Badge {
 // open) and is not refreshed when PRs stream in.
 func BuildStatus(s domain.WorktreeStatus) components.Badge {
 	if s.IsDirty {
-		return components.Badge{Text: "dirty", Variant: components.BadgeWarning, Glyph: "⚠"}
+		return components.Badge{Text: "dirty", Variant: components.BadgeWarning, Glyph: domain.BadgeGlyphDirty}
 	}
-	return components.Badge{Text: "clean", Variant: components.BadgeSuccess, Glyph: "✓"}
+	return components.Badge{Text: "clean", Variant: components.BadgeSuccess, Glyph: domain.BadgeGlyphClean}
 }
 
 // BadgesByValueParams holds the inputs for BadgesByValue.

@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"sort"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/service/branch"
@@ -85,14 +83,7 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 		InitCmd:     branchrefresh.Cmd(params.ProjectDir),
 		Loading:     true,
 		LoadingText: domain.LoadingBranchesText,
-		OnMsg: func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
-			return branchrefresh.Handle(branchrefresh.HandleParams{
-				Wizard:     w,
-				Msg:        msg,
-				ProjectDir: params.ProjectDir,
-				Holder:     holder,
-			})
-		},
+		OnMsg:       branchrefresh.Handler(params.ProjectDir, holder),
 	})
 	if err != nil {
 		return RunResult{}, err

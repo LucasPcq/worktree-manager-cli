@@ -75,7 +75,7 @@ func runPreselected(params WizardParams) (WizardResult, error) {
 
 	wiz := components.NewWizardWithParams(components.WizardParams{
 		Steps: steps,
-		OnMsg: refreshHandler(params.ProjectDir, holder),
+		OnMsg: branchrefresh.Handler(params.ProjectDir, holder),
 	})
 	final, err := runProgram(wiz)
 	if err != nil {
@@ -85,19 +85,6 @@ func runPreselected(params WizardParams) (WizardResult, error) {
 	res := extractStepValues(final.Steps())
 	res.PR = *params.Preselected
 	return res, nil
-}
-
-// refreshHandler returns a wizard message handler that wires the branch refresh
-// key/message; pickers that also handle async messages chain it first.
-func refreshHandler(projectDir string, holder *[]domain.BranchCandidate) components.WizardMsgHandler {
-	return func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
-		return branchrefresh.Handle(branchrefresh.HandleParams{
-			Wizard:     w,
-			Msg:        msg,
-			ProjectDir: projectDir,
-			Holder:     holder,
-		})
-	}
 }
 
 // runPicker runs the async wizard: a PR-selection step that streams PRs in,
@@ -123,7 +110,7 @@ func runPicker(params WizardParams) (WizardResult, error) {
 		steps = append(steps, envStep(params.ConfigStrategy))
 	}
 
-	refresh := refreshHandler(params.ProjectDir, holder)
+	refresh := branchrefresh.Handler(params.ProjectDir, holder)
 	wiz := components.NewWizardWithParams(components.WizardParams{
 		Steps:       steps,
 		InitCmd:     tea.Batch(worktreepicker.PRLoadCmd(params.PRLoader), branchrefresh.Cmd(params.ProjectDir)),

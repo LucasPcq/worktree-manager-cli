@@ -10,23 +10,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/testutil/gittest"
 )
 
-func TestBranchCandidateExists(t *testing.T) {
-	candidates := []domain.BranchCandidate{
-		{Name: "main"},
-		{Name: "origin/feature", IsRemote: true},
-	}
-
-	if !branchCandidateExists(candidates, "main") {
-		t.Error("expected local branch to be accepted")
-	}
-	if !branchCandidateExists(candidates, "origin/feature") {
-		t.Error("expected remote ref to be accepted")
-	}
-	if branchCandidateExists(candidates, "nope") {
-		t.Error("unknown ref must be rejected")
-	}
-}
-
 func TestWtCreateFromRemoteBranch(t *testing.T) {
 	dir := gittest.InitRepo(t)
 	stateDir := filepath.Join(dir, ".git", "wtm")

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -20,6 +21,20 @@ func ClassifyDivergence(ahead, behind int) domain.DivergenceState {
 		return domain.DivergenceAhead
 	}
 	return domain.DivergenceUpToDate
+}
+
+// IsRemoteBranch reports whether name is an origin remote-tracking ref
+// ("origin/feature") rather than a bare local branch name.
+func IsRemoteBranch(name string) bool {
+	return strings.HasPrefix(name, domain.RemoteBranchPrefix)
+}
+
+// BranchCandidateExists reports whether ref matches a known start-point (a local
+// branch or a remote-tracking ref like origin/x) in candidates.
+func BranchCandidateExists(candidates []domain.BranchCandidate, ref string) bool {
+	return slices.ContainsFunc(candidates, func(c domain.BranchCandidate) bool {
+		return c.Name == ref
+	})
 }
 
 // ShouldOfferFastForward reports whether a source branch in the given divergence
