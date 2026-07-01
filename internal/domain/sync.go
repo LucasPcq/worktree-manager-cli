@@ -8,6 +8,10 @@ type WorktreeNode struct {
 	Path         string
 	SourceBranch string
 	IsMain       bool
+	// RebaseInProgress is true when the worktree has a rebase stopped mid-way
+	// (e.g. left by `wtm sync --keep-conflict`); it cannot be rebased again until
+	// resolved.
+	RebaseInProgress bool
 }
 
 // SyncStep is a single rebase to perform: rebase Branch onto SourceBranch.
@@ -15,6 +19,9 @@ type SyncStep struct {
 	Branch       string
 	Path         string
 	SourceBranch string
+	// RebaseInProgress mirrors WorktreeNode.RebaseInProgress: the worktree already
+	// has a rebase paused mid-way and must be resolved before it can sync.
+	RebaseInProgress bool
 }
 
 // SyncPlan is the ordered list of rebases for a cascade. Steps are sorted
@@ -41,8 +48,14 @@ const (
 	// moved (no fast-forward possible), so the branch was left untouched for the
 	// user to reconcile manually. Its descendants are skipped.
 	SyncStatusDiverged SyncStepStatus = "diverged"
-	// SyncStatusConflict means the rebase hit a conflict and was aborted (clean state).
+	// SyncStatusConflict means the rebase hit a conflict. By default the rebase is
+	// aborted (clean state); under keep-conflict it is left in progress in the
+	// worktree for manual resolution (see SyncStepResult.KeptInProgress).
 	SyncStatusConflict SyncStepStatus = "conflict"
+	// SyncStatusRebaseInProgress means the worktree already has a rebase paused
+	// mid-way (e.g. left by a prior keep-conflict run); it is skipped until the user
+	// resolves it (git rebase --continue/--abort). Its descendants are skipped too.
+	SyncStatusRebaseInProgress SyncStepStatus = "rebase_in_progress"
 	// SyncStatusError means the rebase failed for a non-conflict reason.
 	SyncStatusError SyncStepStatus = "error"
 	// SyncStatusUnknownParent means no parent could be determined (missing metadata).
@@ -54,6 +67,7 @@ const (
 type SyncStepResult struct {
 	Branch          string         `json:"branch"`
 	SourceBranch    string         `json:"source_branch"`
+	Path            string         `json:"path,omitempty"`
 	Status          SyncStepStatus `json:"status"`
 	OldTip          string         `json:"old_tip"`
 	NewTip          string         `json:"new_tip"`
@@ -62,9 +76,16 @@ type SyncStepResult struct {
 	// PushPending is true when the branch has local commits that origin/<branch>
 	// lacks (ahead of, or rewritten relative to, its remote) and is eligible for
 	// a force-with-lease push. Set for synced and up_to_date branches.
-	PushPending bool   `json:"push_pending"`
-	Pushed      bool   `json:"pushed"`
-	Detail      string `json:"detail,omitempty"`
+	PushPending bool `json:"push_pending"`
+	Pushed      bool `json:"pushed"`
+	// ConflictFiles lists the unmerged paths captured when a rebase conflicts. It
+	// is populated in both modes (captured before a default abort, or while the
+	// rebase is left in progress under keep-conflict).
+	ConflictFiles []string `json:"conflict_files,omitempty"`
+	// KeptInProgress is true when a conflicting rebase was intentionally left in
+	// progress in the worktree (keep-conflict) rather than aborted.
+	KeptInProgress bool   `json:"kept_in_progress,omitempty"`
+	Detail         string `json:"detail,omitempty"`
 }
 
 // SyncResult is the outcome of a full cascade sync.

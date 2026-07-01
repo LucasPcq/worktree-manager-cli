@@ -55,7 +55,7 @@ func buildRows(statuses []domain.WorktreeStatus, activeBranch string, prs []doma
 			tag:      formatTag(s.IsParent, s.Branch == activeBranch),
 			pr:       formatPRTag(s.Branch, prs),
 			services: formatServicesTag(s.Path, svcs),
-			status:   formatDirtyStatus(s.IsDirty),
+			status:   formatWorktreeState(s),
 			ahead:    formatAhead(s.CommitsAhead),
 		}
 		rows = append(rows, r)
@@ -97,8 +97,14 @@ func formatTag(isParent bool, isActive bool) string {
 	return tags
 }
 
-func formatDirtyStatus(dirty bool) string {
-	if dirty {
+// formatWorktreeState renders the status column. A paused rebase takes
+// precedence over the generic dirty flag (a mid-rebase tree is always dirty, but
+// "rebasing" is the actionable signal).
+func formatWorktreeState(s domain.WorktreeStatus) string {
+	if s.RebaseInProgress {
+		return styles.Warning.Render("⚠ rebasing")
+	}
+	if s.IsDirty {
 		return styles.Warning.Render("⚠ dirty")
 	}
 	return styles.Success.Render("✓ clean")
@@ -176,12 +182,13 @@ func WriteWorktreeListJSON(w io.Writer, params WriteWorktreeListJSONParams) erro
 		entries = append(entries, domain.WorktreeListEntry{
 			Branch:       s.Branch,
 			Path:         s.Path,
-			IsParent:     s.IsParent,
-			IsDirty:      s.IsDirty,
-			CommitsAhead: s.CommitsAhead,
-			CreatedAt:    s.CreatedAt,
-			PR:           matchPR(s.Branch, params.PRInfos),
-			Services:     matchRunningServices(s.Path, params.Services),
+			IsParent:         s.IsParent,
+			IsDirty:          s.IsDirty,
+			RebaseInProgress: s.RebaseInProgress,
+			CommitsAhead:     s.CommitsAhead,
+			CreatedAt:        s.CreatedAt,
+			PR:               matchPR(s.Branch, params.PRInfos),
+			Services:         matchRunningServices(s.Path, params.Services),
 		})
 	}
 	return encodeJSON(w, entries)

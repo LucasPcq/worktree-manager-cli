@@ -240,6 +240,8 @@ Output:
   feature-payment                        ✓ clean   1 commit ahead
 ```
 
+A worktree with a rebase paused mid-way (e.g. left by `wtm sync --keep-conflict`) shows `⚠ rebasing` instead of `⚠ dirty`, and carries `rebase_in_progress: true` in `--output json`.
+
 In an interactive terminal, shows a picker with actions: go, start profile, stop profile, view logs, clean.
 
 #### `wtm tree`
@@ -264,7 +266,7 @@ Output:
   └─ spike-cache        ↑2
 ```
 
-Per-node annotations: `↑N` commits ahead of the base, `⚠ dirty` (uncommitted changes), and `⚠ needs sync` — the key signal — when the parent has moved past the child and the child must be rebased. A parent branch with no worktree (e.g. `dev`) appears as a greyed **virtual root**. With `--with-prs`, `PR #N` is shown (merged/closed PRs are marked as clean candidates). A broken `source_branch` cycle is rendered without failing and flagged `⚠ cycle`.
+Per-node annotations: `↑N` commits ahead of the base, `⚠ rebasing` (a rebase paused mid-way — e.g. left by `wtm sync --keep-conflict`), `⚠ dirty` (uncommitted changes), and `⚠ needs sync` — the key signal — when the parent has moved past the child and the child must be rebased. A parent branch with no worktree (e.g. `dev`) appears as a greyed **virtual root**. With `--with-prs`, `PR #N` is shown (merged/closed PRs are marked as clean candidates). A broken `source_branch` cycle is rendered without failing and flagged `⚠ cycle`.
 
 **Flags:**
 | Flag | Description |
@@ -365,6 +367,7 @@ wtm sync --all           # rebase the whole cascade, then ask before pushing
 wtm sync --all --dry-run # preview the plan, fully offline (no fetch/rebase/push)
 wtm sync feature --push  # rebase + force-push (with lease) without prompting
 wtm sync feature --no-push   # rebase locally only, never push
+wtm sync feature --keep-conflict  # on conflict, leave the rebase in progress to resolve in place
 wtm sync --all --base develop  # sync from a base branch other than the configured one
 ```
 
@@ -382,9 +385,11 @@ wtm sync --all --base develop  # sync from a base branch other than the configur
 3. For each branch: fetches + fast-forwards it from its own `origin/<branch>`, then rebases it onto its refreshed parent (`git rebase --onto`, replaying only that branch's own commits)
 4. Shows a per-branch recap, then (unless `--no-push`) asks once before force-pushing the rebased branches with `--force-with-lease`
 
-The cascade is **fully local** — pushing is a separate, explicitly confirmed step. On a conflict the rebase is **auto-aborted** (the working tree is left clean) and that branch's selected descendants are skipped; the command exits non-zero so you can resolve it manually and re-run.
+The cascade is **fully local** — pushing is a separate, explicitly confirmed step. On a conflict the rebase is **auto-aborted** (the working tree is left clean) and that branch's selected descendants are skipped; the command exits non-zero so you can resolve it manually and re-run. Either way the recap now names the **conflicting files** so you know what to fix.
 
-**Per-branch status:** `synced` (rebased), `up_to_date`, `skipped_dirty` (uncommitted changes), `skipped_ancestor` (a parent was skipped or failed), `diverged` (local **and** remote both moved — left untouched for manual reconcile), `conflict` (rebase aborted), `error`, `unknown_parent`.
+**Keeping conflicts in progress (`--keep-conflict`):** pass this flag (or pick it on the interactive picker's second screen) to leave a conflicting rebase **in progress** in its worktree instead of aborting — so you can resolve it and `git rebase --continue` right there, without retyping `git rebase <parent>`. Descendants are still skipped, but **independent** branches keep syncing, so several worktrees may be left mid-rebase. The recap lists each paused worktree's path, conflicting files, and resume commands. A worktree left mid-rebase is recognized on the next `wtm sync`/`tree`/`list` (its branch is recovered from the paused rebase) and reported as `rebase_in_progress` until you finish or abort it.
+
+**Per-branch status:** `synced` (rebased), `up_to_date`, `skipped_dirty` (uncommitted changes), `skipped_ancestor` (a parent was skipped or failed), `diverged` (local **and** remote both moved — left untouched for manual reconcile), `conflict` (rebase aborted, or left in progress under `--keep-conflict`), `rebase_in_progress` (a prior rebase is still paused in the worktree — finish it with `git rebase --continue`/`--abort`), `error`, `unknown_parent`.
 
 **Flags:**
 | Flag | Description |
@@ -394,6 +399,7 @@ The cascade is **fully local** — pushing is a separate, explicitly confirmed s
 | `-y, --yes` | Skip the pre-sync confirmation |
 | `--push` | Force-push (with lease) rebased branches without prompting |
 | `--no-push` | Rebase locally only; never push |
+| `--keep-conflict` | Leave a conflicting rebase in progress in its worktree (for manual resolution) instead of aborting |
 | `--base <branch>` | Base branch to sync from (defaults to config or detected base) |
 
 ---

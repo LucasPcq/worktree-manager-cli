@@ -187,10 +187,15 @@ func BuildTags(params BuildTagsParams) []components.Badge {
 }
 
 // BuildStatus returns the right-aligned status pill for a worktree row: a filled
-// chip with a leading glyph so dirty/clean scans at a glance. It is computed once
-// at construction (the working tree state does not change while the picker is
-// open) and is not refreshed when PRs stream in.
+// chip with a leading glyph so the state scans at a glance. A paused rebase takes
+// precedence over the generic dirty flag (a mid-rebase tree is always dirty, but
+// "rebasing" is the actionable signal). It is computed once at construction (the
+// working tree state does not change while the picker is open) and is not
+// refreshed when PRs stream in.
 func BuildStatus(s domain.WorktreeStatus) components.Badge {
+	if s.RebaseInProgress {
+		return components.Badge{Text: "rebasing", Variant: components.BadgeWarning, Glyph: domain.BadgeGlyphDirty}
+	}
 	if s.IsDirty {
 		return components.Badge{Text: "dirty", Variant: components.BadgeWarning, Glyph: domain.BadgeGlyphDirty}
 	}

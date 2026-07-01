@@ -27,6 +27,13 @@ func Tip(params TipParams) (string, error) {
 type RebaseResult struct {
 	Conflicted bool
 	Output     string
+	// Files lists the unmerged paths captured when the rebase conflicts. It is
+	// populated in both the abort and keep-in-progress paths (captured while the
+	// rebase is stopped, before any abort).
+	Files []string
+	// Kept is true when a conflicting rebase was left in progress (KeepConflict)
+	// instead of being aborted.
+	Kept bool
 }
 
 // RebaseOntoParams holds inputs for a transplanting rebase.
@@ -35,15 +42,20 @@ type RebaseOntoParams struct {
 	NewBase      string
 	Upstream     string
 	Branch       string
+	// KeepConflict leaves a conflicting rebase in progress in the worktree
+	// (for manual resolution) instead of aborting it.
+	KeepConflict bool
 }
 
 // RebaseOnto runs `git rebase --onto <NewBase> <Upstream> <Branch>`, replaying
 // only the commits unique to Branch (Upstream..Branch) onto NewBase. This avoids
 // re-applying the parent's already-moved commits.
 //
-// On a conflict the rebase is aborted so the worktree is left clean, and the
-// result reports Conflicted=true with a nil error. A non-conflict failure
-// returns an error (after a best-effort abort).
+// On a conflict the unmerged files are captured. By default the rebase is then
+// aborted so the worktree is left clean; with KeepConflict it is left in
+// progress for manual resolution. Either way the result reports Conflicted=true
+// with a nil error. A non-conflict failure returns an error (after a best-effort
+// abort).
 func RebaseOnto(params RebaseOntoParams) (RebaseResult, error) {
 	cmd := exec.Command("git", "-C", params.WorktreePath,
 		"rebase", "--onto", params.NewBase, params.Upstream, params.Branch)
@@ -53,12 +65,34 @@ func RebaseOnto(params RebaseOntoParams) (RebaseResult, error) {
 	}
 
 	output := strings.TrimSpace(string(out))
-	abortRebase(params.WorktreePath)
 
 	if strings.Contains(output, "CONFLICT") {
-		return RebaseResult{Conflicted: true, Output: output}, nil
+		files := ConflictedFiles(params.WorktreePath)
+		if params.KeepConflict {
+			return RebaseResult{Conflicted: true, Output: output, Files: files, Kept: true}, nil
+		}
+		abortRebase(params.WorktreePath)
+		return RebaseResult{Conflicted: true, Output: output, Files: files}, nil
 	}
+
+	abortRebase(params.WorktreePath)
 	return RebaseResult{Output: output}, fmt.Errorf("git rebase: %s", output)
+}
+
+// ConflictedFiles returns the unmerged paths in a worktree, i.e. the files with
+// conflict markers during a stopped rebase/merge (`git diff --name-only
+// --diff-filter=U`). A clean tree or any error yields nil.
+func ConflictedFiles(worktreePath string) []string {
+	cmd := exec.Command("git", "-C", worktreePath, "diff", "--name-only", "--diff-filter=U")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "\n")
 }
 
 // abortRebase best-effort aborts an in-progress rebase. A "no rebase in

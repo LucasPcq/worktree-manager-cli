@@ -60,6 +60,7 @@ func FormatSyncResult(w io.Writer, result domain.SyncResult) {
 	for _, step := range result.Steps {
 		printStep(w, step)
 	}
+	printConflictFooter(w, result.Steps)
 }
 
 // FormatSyncPushSummary prints the trailing summary of which branches were
@@ -83,10 +84,18 @@ func printStep(w io.Writer, step domain.SyncStepResult) {
 		Warning(w, fmt.Sprintf("%s skipped — ancestor %s was not synced", step.Branch, step.SourceBranch))
 	case domain.SyncStatusDiverged:
 		Warning(w, fmt.Sprintf("%s skipped — diverged from origin/%s (reconcile manually); descendants skipped", step.Branch, step.Branch))
+	case domain.SyncStatusRebaseInProgress:
+		Warning(w, fmt.Sprintf("%s skipped — rebase already in progress; finish it with git rebase --continue (or --abort); descendants skipped", step.Branch))
 	case domain.SyncStatusUnknownParent:
 		Warning(w, fmt.Sprintf("%s skipped — no recorded parent branch", step.Branch))
 	case domain.SyncStatusConflict:
-		Danger(w, fmt.Sprintf("%s conflict on %s — rebase aborted (working tree clean); descendants skipped", step.Branch, step.SourceBranch))
+		if step.KeptInProgress {
+			Danger(w, fmt.Sprintf("%s conflict on %s — left in progress (%s); descendants skipped",
+				step.Branch, step.SourceBranch, conflictCount(step.ConflictFiles)))
+		} else {
+			Danger(w, fmt.Sprintf("%s conflict on %s — aborted, tree clean (%s); descendants skipped",
+				step.Branch, step.SourceBranch, conflictCountAndFiles(step.ConflictFiles)))
+		}
 	case domain.SyncStatusError:
 		Error(w, fmt.Sprintf("%s failed — %s", step.Branch, step.Detail))
 	}
@@ -130,6 +139,64 @@ func printPushSummary(w io.Writer, steps []domain.SyncStepResult) {
 	if len(pushed) == 0 && len(ready) == 0 {
 		Message(w, styles.Muted.Render("Everything is in sync with origin — nothing to push."))
 	}
+}
+
+// maxConflictFilesShown caps how many conflicting paths are listed inline before
+// the rest are collapsed into a "…+N more" suffix.
+const maxConflictFilesShown = 5
+
+// printConflictFooter lists the branches whose conflicting rebase was left in
+// progress, with the worktree path and the commands to resume. It renders
+// nothing in the default (auto-abort) mode. Raw body: the caller's frame owns the
+// outer padding.
+func printConflictFooter(w io.Writer, steps []domain.SyncStepResult) {
+	kept := make([]domain.SyncStepResult, 0)
+	for _, step := range steps {
+		if step.KeptInProgress {
+			kept = append(kept, step)
+		}
+	}
+	if len(kept) == 0 {
+		return
+	}
+
+	Blank(w)
+	Message(w, styles.Bold.Render("Conflicts left in progress — resolve, then continue the rebase:"))
+	for _, step := range kept {
+		Blank(w)
+		InfoLine(w, step.Branch, styles.Muted.Render(step.Path))
+		if len(step.ConflictFiles) > 0 {
+			Message(w, "   "+styles.Muted.Render("conflicting: "+conflictFileList(step.ConflictFiles)))
+		}
+		Message(w, "   "+styles.Muted.Render("→ resolve, then: git rebase --continue    (abort: git rebase --abort)"))
+	}
+}
+
+// conflictCount renders the bare file count, e.g. "2 files" or "1 file".
+func conflictCount(files []string) string {
+	if len(files) == 1 {
+		return "1 file"
+	}
+	return fmt.Sprintf("%d files", len(files))
+}
+
+// conflictCountAndFiles renders the count followed by the (capped) file list,
+// e.g. "2 files: a.go, b.go".
+func conflictCountAndFiles(files []string) string {
+	if len(files) == 0 {
+		return "0 files"
+	}
+	return conflictCount(files) + ": " + conflictFileList(files)
+}
+
+// conflictFileList joins the conflicting paths, capping the list at
+// maxConflictFilesShown and collapsing the remainder into "…+N more".
+func conflictFileList(files []string) string {
+	if len(files) <= maxConflictFilesShown {
+		return strings.Join(files, ", ")
+	}
+	return strings.Join(files[:maxConflictFilesShown], ", ") +
+		fmt.Sprintf(", …+%d more", len(files)-maxConflictFilesShown)
 }
 
 // WriteSyncResultJSON writes the sync result as pretty-printed JSON.
