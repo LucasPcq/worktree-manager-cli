@@ -149,6 +149,29 @@ const (
 	FlagNoPush       = "no-push"
 	FlagKeepConflict = "keep-conflict"
 
+	// prune flags — batch removal of finished worktrees.
+	FlagMerged  = "merged"
+	FlagClosed  = "closed"
+	FlagGone    = "gone"
+	FlagNoFetch = "no-fetch"
+
+	// FlagValidate makes `config show` validate the config instead of printing it.
+	FlagValidate = "validate"
+
+	// Prune candidate reasons — the category that made a worktree prunable,
+	// emitted in the prune result (JSON + text recap).
+	PruneReasonMerged   = "merged"
+	PruneReasonPRMerged = "pr_merged"
+	PruneReasonPRClosed = "pr_closed"
+	PruneReasonGone     = "gone"
+
+	// Prune skip reasons — why a matching worktree was not removed. The current
+	// worktree is not among them: prune removes it (like clean) and redirects the
+	// shell to the base repo afterwards.
+	PruneSkipBase  = "base_branch"
+	PruneSkipMain  = "main_worktree"
+	PruneSkipDirty = "dirty"
+
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches
 	// one of these keywords exactly, as a prefix ("<kw>:"), or as a suffix (":<kw>").
@@ -165,7 +188,7 @@ const (
 	// GHPRFields is the JSON field set passed to `gh pr list/view --json`. It
 	// holds exactly what wtm consumes: PR identity, head/base branches, url, and
 	// the fork flag (isCrossRepository).
-	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository"
+	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository,isDraft"
 
 	// GHPRFieldsWithState is the field set for the all-states PR listing used by
 	// `wtm tree --with-prs`, which must surface merged/closed PRs (clean
@@ -276,6 +299,7 @@ const (
 	CmdRelocate = "relocate"
 	CmdReparent = "reparent"
 	CmdTree     = "tree"
+	CmdPrune    = "prune"
 
 	// MinWizardListHeight is the minimum number of rows reserved for a wizard
 	// step's scrollable list. Completed-step summaries are bounded so they never

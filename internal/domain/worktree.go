@@ -166,7 +166,10 @@ type ResolveParams struct {
 
 // ResolveResult indicates whether the resolution is direct or needs a picker.
 type ResolveResult struct {
-	Path      string
+	Path string
+	// Branch is the worktree branch backing Path. Set on a direct (non-ambiguous)
+	// resolution so `resolve --output json` can report {path, branch}.
+	Branch    string
 	Ambiguous bool
 	Matches   []GitWorktree
 }

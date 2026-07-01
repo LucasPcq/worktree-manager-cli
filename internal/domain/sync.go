@@ -95,4 +95,8 @@ type SyncResult struct {
 	BaseOldTip  string           `json:"base_old_tip"`
 	BaseNewTip  string           `json:"base_new_tip"`
 	Steps       []SyncStepResult `json:"steps"`
+	// SelectedBranches lists the branches the run was asked to sync: the explicit
+	// args, or every managed worktree when --all was used. It makes the JSON
+	// output self-describing for agents (which branches this cascade covered).
+	SelectedBranches []string `json:"selected_branches"`
 }

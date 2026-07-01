@@ -9,7 +9,8 @@ type PRInfo struct {
 	BaseBranch string `json:"base_branch"` // branch the PR will be merged into
 	State      string `json:"state"`
 	URL        string `json:"url"`
-	IsFork     bool   `json:"is_fork"` // true when head.repo != base.repo
+	IsFork     bool   `json:"is_fork"`  // true when head.repo != base.repo
+	Draft      bool   `json:"is_draft"` // true when the PR is a draft
 }
 
 // PRFilter determines which PRs to list.

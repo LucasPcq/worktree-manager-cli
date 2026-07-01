@@ -66,9 +66,10 @@ func Sync(params SyncParams) (domain.SyncResult, error) {
 	})
 
 	result := domain.SyncResult{
-		BaseBranch: params.BaseBranch,
-		BaseOldTip: oldTips[params.BaseBranch],
-		BaseNewTip: oldTips[params.BaseBranch],
+		BaseBranch:       params.BaseBranch,
+		BaseOldTip:       oldTips[params.BaseBranch],
+		BaseNewTip:       oldTips[params.BaseBranch],
+		SelectedBranches: stepBranches(plan.Steps),
 	}
 
 	if !params.DryRun {
@@ -96,6 +97,17 @@ func Sync(params SyncParams) (domain.SyncResult, error) {
 	}
 
 	return result, nil
+}
+
+// stepBranches lists the branches covered by a cascade's steps — the explicit
+// selection or, for --all, every managed worktree. Always non-nil so the JSON
+// field marshals as [] rather than null.
+func stepBranches(steps []domain.SyncStep) []string {
+	branches := make([]string, 0, len(steps))
+	for _, step := range steps {
+		branches = append(branches, step.Branch)
+	}
+	return branches
 }
 
 // PushSyncedParams holds inputs for pushing the successfully-rebased branches.

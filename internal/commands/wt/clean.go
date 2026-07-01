@@ -30,6 +30,7 @@ func newCleanCmd() *cobra.Command {
 	}
 
 	cmd.Flags().Bool(domain.FlagForce, false, "Bypass all safety checks")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation prompt but keep safety checks (refuses dirty/unpushed/open-PR worktrees)")
 	cmd.Flags().Bool(domain.FlagReparentChildren, false, "Reparent orphaned child worktrees onto the grandparent (no prompt)")
 	shared.AddOutputFlag(cmd)
 
@@ -38,11 +39,12 @@ func newCleanCmd() *cobra.Command {
 
 func runClean(cmd *cobra.Command, args []string) error {
 	force, _ := cmd.Flags().GetBool(domain.FlagForce)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	reparentFlag, _ := cmd.Flags().GetBool(domain.FlagReparentChildren)
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
-	if format == domain.OutputJSON && !force {
-		return fmt.Errorf("--output json requires --force (confirmations cannot run in JSON mode)")
+	if format == domain.OutputJSON && !force && !yes {
+		return fmt.Errorf("--output json requires --yes or --force (confirmations cannot run in JSON mode)")
 	}
 
 	dir, err := os.Getwd()
@@ -75,7 +77,13 @@ func runClean(cmd *cobra.Command, args []string) error {
 
 	reparentPlan := worktree.PlanCleanReparent(cleanParams)
 
-	if !force {
+	if yes && !force {
+		if err := ensureSafeToClean(cleanParams, interactive); err != nil {
+			return err
+		}
+	}
+
+	if !force && !yes {
 		var check domain.CleanCheckResult
 		err = components.RunLoading(components.LoadingParams{
 			Message: "Checking worktree…",
@@ -160,6 +168,42 @@ func confirmReparent(cmd *cobra.Command, plan domain.CleanReparentPlan) (apply b
 		return false, true
 	}
 	return confirmed, false
+}
+
+// ensureSafeToClean runs the pre-deletion check for the `--yes` path (skip the
+// prompt but keep safety) and refuses when the worktree is dirty, has unpushed
+// commits, or has an open PR — directing the user to `--force` to override. A
+// worktree that is absent or is the parent is left to doClean, which handles both
+// idempotently.
+func ensureSafeToClean(params domain.CleanParams, interactive bool) error {
+	var check domain.CleanCheckResult
+	err := components.RunLoading(components.LoadingParams{
+		Message: "Checking worktree…",
+		Animate: interactive,
+		Work:    func() error { var e error; check, e = worktree.Check(params); return e },
+	})
+	if err != nil {
+		// Absent / parent / other errors are handled by doClean; don't block here.
+		return nil
+	}
+	if reason, unsafe := cleanUnsafeReason(check); unsafe {
+		return fmt.Errorf("worktree %s %s; pass --force to remove it anyway", params.Branch, reason)
+	}
+	return nil
+}
+
+// cleanUnsafeReason reports why a worktree is unsafe to remove without --force.
+func cleanUnsafeReason(check domain.CleanCheckResult) (string, bool) {
+	if check.IsDirty {
+		return "has uncommitted changes", true
+	}
+	if check.UnpushedCommits > 0 {
+		return fmt.Sprintf("has %d unpushed commit(s)", check.UnpushedCommits), true
+	}
+	if check.HasOpenPR {
+		return "has an open pull request", true
+	}
+	return "", false
 }
 
 func resolveBranchArg(args []string, projectDir string) (string, error) {

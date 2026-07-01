@@ -138,8 +138,17 @@ flags above. `wtm config edit` remains available for hand edits.
 Print the resolved `config.toml` and its on-disk path.
 
 ```bash
-wtm config show
+wtm config show                    # path + raw TOML
+wtm config show --output json      # structured config as JSON (missing config → {})
+wtm config show --validate         # load + validate; report ok or the first error
+wtm config show --validate --output json   # {"valid": true} or {"valid": false, "error": "…"}
 ```
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--output <text\|json>` | Emit the structured config as JSON instead of raw TOML |
+| `--validate` | Validate the merged config and report the outcome instead of printing it |
 
 #### `wtm config edit`
 
@@ -166,6 +175,24 @@ echo 'eval "$(wtm shell-init)"' >> ~/.zshrc   # zsh
 echo 'eval "$(wtm shell-init)"' >> ~/.bashrc  # bash
 echo 'wtm shell-init | source'  >> ~/.config/fish/config.fish  # fish
 ```
+
+---
+
+### `wtm resolve [branch]`
+
+Resolve a branch (or an unambiguous substring) to its worktree path. This backs the `wtm go` shell wrapper, but is also useful directly in scripts.
+
+```bash
+wtm resolve feature/auth                 # prints the worktree path
+wtm resolve feature/auth --output json   # {"path": "…", "branch": "feature/auth"}
+```
+
+Text output is the bare path (never framed), so it pipes cleanly. In JSON mode an ambiguous query is an error rather than a picker — narrow the query to a single worktree.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--output <text\|json>` | Emit `{path, branch}` as JSON instead of the bare path |
 
 ---
 
@@ -316,18 +343,64 @@ Remove a worktree and its local branch. The remote branch is never touched.
 ```bash
 wtm clean                        # interactive picker with safety checks
 wtm clean feature/auth           # direct
+wtm clean feature/auth --yes     # skip the prompt, keep safety checks
 wtm clean feature/auth --force   # skip all safety checks
 ```
 
 **Safety checks:** uncommitted changes, unpushed commits, open pull request.
+
+**`--yes` vs `--force`:** `--yes` skips the confirmation prompt but keeps the safety checks — a dirty, unpushed, or open-PR worktree is refused with a message telling you to pass `--force`. `--force` bypasses the checks entirely. Non-interactive `--output json` runs require one of the two.
 
 **Orphaned children:** if the worktree you clean is the **parent** of others (their `source_branch` points at it), removing it would leave them dangling. In interactive mode wtm shows a recap of the proposed reparenting (`dev/b: dev/a → feat`) and asks before moving the children onto the **grandparent** (the cleaned worktree's own parent, or the base branch as fallback). In non-interactive mode nothing is reparented unless you pass `--reparent-children` — otherwise the orphaned children are reported and left untouched.
 
 **Flags:**
 | Flag | Description |
 |---|---|
+| `--yes` / `-y` | Skip the confirmation prompt but keep safety checks (refuses dirty/unpushed/open-PR) |
 | `--force` | Bypass all safety checks and delete immediately |
 | `--reparent-children` | Reparent orphaned child worktrees onto the grandparent without prompting |
+
+#### `wtm prune`
+
+Batch-remove finished worktrees in one pass — the multi-worktree counterpart of `clean`. **By default it considers every finished worktree** (merged, closed-PR, or gone); the reason flags **restrict** to specific categories. Review the list, prune them, and any surviving children are reparented onto their grandparent (like `clean --reparent-children`).
+
+```bash
+wtm prune                                   # everything done (merged + closed + gone), interactive review
+wtm prune --dry-run                         # preview only, remove nothing
+wtm prune --gone                            # restrict to worktrees whose remote branch was deleted
+wtm prune --merged --closed                 # restrict to merged branches and closed PRs
+wtm prune --yes --output json               # non-interactive, machine-readable
+```
+
+**Reason filters** (default = all three; passing any **narrows** to just those):
+| Filter | Restricts to worktrees whose… |
+|---|---|
+| `--merged` | branch is merged into the base (no commits ahead). Does **not** catch squash-merges — `--gone`/`--closed` do. |
+| `--closed` | PR is merged or closed (needs the `gh` CLI). |
+| `--gone` | upstream branch was **deleted on the remote**. |
+
+Because the default set includes `--gone`, a bare `wtm prune` runs `git fetch --prune` first to detect deleted remote branches — pass `--no-fetch` to skip that and use already-fetched state.
+
+**Safety:** the main worktree and the base branch are always protected (reported as skipped). The worktree you're currently in **can** be pruned — like `clean`, wtm redirects your shell back to the base repo afterwards (needs shell integration).
+
+**Interactive flow (TTY):**
+1. A **multi-select** of the matches (clean ones pre-checked, **dirty** ones tagged and left unchecked).
+2. A **prune confirmation** recapping the removals — `Yes, prune` / `No, cancel`, plus a **`Yes, force prune`** option that only appears when you've checked a dirty worktree.
+3. If any pruned worktree has surviving children, a **dedicated reparent confirmation** (like `clean`): the proposed `child → grandparent` moves are shown, then `Yes` reparents them, `No` leaves them orphaned (reported so you can `wtm reparent` later), and `Esc` aborts the whole prune.
+
+Nothing is removed until you confirm. `--yes` skips the prompts (required with `--output json`); non-interactively, surviving children are **left orphaned unless you pass `--reparent-children`** (same rule as `clean`). Dirty worktrees are only included with `--force`.
+
+**Flags:**
+| Flag | Description |
+|---|---|
+| `--merged` | Restrict to worktrees merged into the base |
+| `--closed` | Restrict to worktrees whose PR is merged/closed (needs `gh`) |
+| `--gone` | Restrict to worktrees whose remote branch was deleted |
+| `--no-fetch` | Skip the `git fetch --prune` that gone-detection performs; use already-fetched state |
+| `--force` | Also remove dirty worktrees |
+| `--reparent-children` | Reparent orphaned children onto the grandparent without prompting (non-interactive) |
+| `--yes` / `-y` | Skip the confirmation/selection prompt (keeps every match) |
+| `--dry-run` | Preview what would be pruned without removing anything |
 
 #### `wtm extract`
 
@@ -665,6 +738,7 @@ Behavior:
 - Runs `on_create` hooks exactly like `wtm create`
 - In the interactive picker, PRs already linked to a local worktree are shown as `linked` and can't be re-selected — use `wtm go <branch>` to enter them
 - Refuses if a local branch with the same name already exists — run `wtm clean <branch>` first
+- `--output json` returns the created worktree plus PR context: `number`, `branch`, `path`, `author`, `is_draft`, `url`
 
 **Forks (by design)** — wtm doesn't check out fork PRs. A fork's branch lives on the contributor's repo (not `origin`) and a fork worktree couldn't push back, which breaks wtm's "develop here" model. To review a fork PR, use `gh pr checkout <number>`.
 
@@ -684,8 +758,8 @@ wtm run list --output json
 
 Supported commands:
 
-- `list`, `create`, `clean` (requires `--force`), `extract`, `sync` (requires branch names or `--all`)
-- `checkout`
+- `list`, `create`, `clean` (requires `--yes` or `--force`), `prune` (requires `--yes` or `--dry-run`), `extract`, `sync` (requires branch names or `--all`; result includes `selected_branches`)
+- `checkout` (includes `author`, `is_draft`, `url`), `resolve` (`{path, branch}`), `config show`
 - `run list`, `run ps`, `run up`, `run down`, `run start`, `run stop`
 
 Example — pipe into `jq`:
