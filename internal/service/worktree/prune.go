@@ -39,11 +39,16 @@ func PlanPrune(params domain.PruneParams, prs []domain.PRInfo) (domain.PrunePlan
 		gone = computeGone(params.ProjectDir, statuses)
 	}
 
+	// Unpushed commits make a candidate unsafe to remove (like clean), so probe
+	// every listed worktree — the guard applies regardless of the active filter.
+	unpushed := computeUnpushed(params.ProjectDir, statuses)
+
 	return rules.ClassifyPrune(rules.ClassifyPruneParams{
 		Statuses:   statuses,
 		Nodes:      nodes,
 		PRStates:   prStates(prs),
 		Gone:       gone,
+		Unpushed:   unpushed,
 		Merged:     params.Merged,
 		Closed:     params.Closed,
 		GoneFilter: params.Gone,
@@ -130,6 +135,35 @@ func computeGone(projectDir string, statuses []domain.WorktreeStatus) map[string
 			}
 			mu.Lock()
 			result[branch] = true
+			mu.Unlock()
+		}(st.Branch)
+	}
+	wg.Wait()
+
+	return result
+}
+
+// computeUnpushed probes, concurrently, how many local commits each worktree's
+// branch has that are not on its remote. Bounded by statusWorkers. Branches with
+// no remote tracking ref report 0 (nothing to lose on the remote).
+func computeUnpushed(projectDir string, statuses []domain.WorktreeStatus) map[string]int {
+	result := make(map[string]int, len(statuses))
+	var mu sync.Mutex
+
+	sem := make(chan struct{}, statusWorkers)
+	var wg sync.WaitGroup
+	for _, st := range statuses {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(branch string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			n, _ := infra.UnpushedCommits(infra.UnpushedCommitsParams{ProjectDir: projectDir, Branch: branch})
+			if n == 0 {
+				return
+			}
+			mu.Lock()
+			result[branch] = n
 			mu.Unlock()
 		}(st.Branch)
 	}

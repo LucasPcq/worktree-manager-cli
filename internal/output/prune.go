@@ -109,6 +109,10 @@ func pruneReasonLabel(reason string) string {
 		return "main worktree"
 	case domain.PruneSkipDirty:
 		return "dirty — pass --force"
+	case domain.PruneSkipUnpushed:
+		return "unpushed commits — pass --force"
+	case domain.PruneSkipOpenPR:
+		return "open PR — pass --force"
 	default:
 		return reason
 	}

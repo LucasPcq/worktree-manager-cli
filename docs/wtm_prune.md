@@ -14,11 +14,12 @@ gone-detection runs `git fetch --prune` first so deleted remote branches are see
 (pass --no-fetch to skip). --merged does not catch squash-merges (the branch keeps
 distinct commits); --gone or --closed do.
 
-On a TTY, matches are shown for review (dirty ones unchecked), then a prune
+On a TTY, matches are shown for review (unsafe ones unchecked), then a prune
 confirmation, then — like clean — a dedicated confirmation to reparent surviving
 children onto their grandparent (or leave them orphaned). The main worktree and base
 branch are always protected; the current worktree is removed and the shell
-redirected to the base repo. Dirty worktrees need --force. Use --yes to skip the
+redirected to the base repo. Like clean, worktrees that are dirty, have unpushed
+commits, or have an open PR are unsafe and need --force. Use --yes to skip the
 prompts (required with --output json); non-interactively, children are left orphaned
 unless --reparent-children is passed. --dry-run previews without changing anything.
 
@@ -31,7 +32,7 @@ wtm prune [flags]
 ```
       --closed              Restrict to worktrees whose PR is merged or closed (needs gh)
       --dry-run             Preview what would be pruned without removing anything
-      --force               Also remove dirty worktrees
+      --force               Also remove unsafe worktrees (dirty, unpushed commits, or open PR)
       --gone                Restrict to worktrees whose upstream branch was deleted on the remote
   -h, --help                help for prune
       --merged              Restrict to worktrees whose branch is merged into the base (no commits ahead)

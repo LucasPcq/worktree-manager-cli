@@ -29,7 +29,7 @@ self-documenting:
 3. **Trust exit codes.** `0` = success. Beyond generic `1`, wtm returns granular codes
    (table below) so you can branch precisely. On failure, surface the stderr text.
 4. **JSON mode is non-interactive**, so anything that would prompt needs an explicit flag:
-   `clean`/`prune` need `--yes` (keep safety checks) or `--force` (also remove dirty);
+   `clean`/`prune` need `--yes` (keep safety checks) or `--force` (also remove unsafe);
    `sync` needs branch args or `--all` (and `--push` to push). Check `--help` when unsure.
 5. **Operations are idempotent — safe to retry.** `create --if-not-exists` no-ops on an
    existing worktree; `clean` no-ops on an absent one; `run up`/`down`/`stop` re-run cleanly.
@@ -73,7 +73,10 @@ flagged; everything else is what the name implies.
 - `wtm clean <branch>` / `wtm prune [filters]` — remove one / batch-remove finished
   worktrees. **In JSON mode surviving children are left orphaned unless you pass
   `--reparent-children`** (they reparent onto the grandparent). `prune` with no filter
-  considers every finished worktree (merged + closed + gone).
+  considers every finished worktree (merged + closed + gone). Both **refuse unsafe
+  worktrees** — dirty, unpushed commits, or an open PR — unless you pass `--force`;
+  in JSON/`--yes` mode those are reported under `skipped` (reason `dirty`/`unpushed`/
+  `open_pr`) instead of being removed, so committed work is never silently lost.
 - `wtm extract --files <a,b> --to <branch>` — move part of the current worktree's
   uncommitted changes onto another branch (split an oversized PR). On conflict it changes
   nothing and exits `15`; retry with `--on-conflict resolve` to apply git conflict markers.

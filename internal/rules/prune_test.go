@@ -121,6 +121,62 @@ func TestClassifyPruneDirtySkipUnlessForce(t *testing.T) {
 	}
 }
 
+func TestClassifyPruneUnpushedSkipUnlessForce(t *testing.T) {
+	// A gone branch with local commits not on the remote is unsafe: without force
+	// it is skipped (guarding against silent loss of committed work); with force it
+	// is selected but tagged so the confirm step can re-gate it.
+	build := func(force bool) domain.PrunePlan {
+		return ClassifyPrune(ClassifyPruneParams{
+			Statuses:   []domain.WorktreeStatus{status("gone", func(s *domain.WorktreeStatus) { s.CommitsAhead = 2 })},
+			Nodes:      []domain.WorktreeNode{node("gone", "main")},
+			Gone:       map[string]bool{"gone": true},
+			Unpushed:   map[string]int{"gone": 2},
+			GoneFilter: true,
+			BaseBranch: "main",
+			Force:      force,
+		})
+	}
+
+	skip := build(false)
+	if skippedBranches(skip)["gone"] != domain.PruneSkipUnpushed {
+		t.Errorf("without force, unpushed gone branch should be skipped as unpushed, got %+v", skip)
+	}
+	if len(skip.Selected) != 0 {
+		t.Errorf("without force, unpushed branch should not be selected")
+	}
+
+	forced := build(true)
+	if len(forced.Selected) != 1 || forced.Selected[0].UnsafeReason != domain.PruneSkipUnpushed {
+		t.Errorf("with force, unpushed branch should be selected and tagged unpushed, got %+v", forced.Selected)
+	}
+}
+
+func TestClassifyPruneOpenPRSkipUnlessForce(t *testing.T) {
+	// A gone branch that still has an open PR is unsafe without force (mirrors
+	// clean refusing to remove a worktree with an open PR).
+	build := func(force bool) domain.PrunePlan {
+		return ClassifyPrune(ClassifyPruneParams{
+			Statuses:   []domain.WorktreeStatus{status("gone", func(s *domain.WorktreeStatus) { s.CommitsAhead = 0 })},
+			Nodes:      []domain.WorktreeNode{node("gone", "main")},
+			Gone:       map[string]bool{"gone": true},
+			PRStates:   map[string]string{"gone": domain.PRStateOpen},
+			GoneFilter: true,
+			BaseBranch: "main",
+			Force:      force,
+		})
+	}
+
+	skip := build(false)
+	if skippedBranches(skip)["gone"] != domain.PruneSkipOpenPR {
+		t.Errorf("without force, open-PR branch should be skipped as open_pr, got %+v", skip)
+	}
+
+	forced := build(true)
+	if len(forced.Selected) != 1 || forced.Selected[0].UnsafeReason != domain.PruneSkipOpenPR {
+		t.Errorf("with force, open-PR branch should be selected and tagged open_pr, got %+v", forced.Selected)
+	}
+}
+
 func TestClassifyPruneProtections(t *testing.T) {
 	// The base branch is protected; the current worktree is NOT (prune removes it
 	// like clean), so a merged non-base worktree is selected.
@@ -184,28 +240,39 @@ func TestFinalizePrunePlanReparentsDeselectedChild(t *testing.T) {
 	}
 }
 
-func TestFinalizePrunePlanDropsDirtyWithoutForce(t *testing.T) {
+func TestFinalizePrunePlanDropsUnsafeWithoutForce(t *testing.T) {
+	// Each unsafe candidate is dropped to Skipped with the reason that made it
+	// unsafe (dirty / unpushed / open PR), unless the user confirms with force.
 	full := domain.PrunePlan{
 		Selected: []domain.PruneCandidate{
 			{Branch: "clean-wt", SourceBranch: "main", Reason: domain.PruneReasonMerged},
-			{Branch: "dirty-wt", SourceBranch: "main", Reason: domain.PruneReasonMerged, IsDirty: true},
+			{Branch: "dirty-wt", SourceBranch: "main", Reason: domain.PruneReasonMerged, IsDirty: true, UnsafeReason: domain.PruneSkipDirty},
+			{Branch: "unpushed-wt", SourceBranch: "main", Reason: domain.PruneReasonGone, UnsafeReason: domain.PruneSkipUnpushed},
+			{Branch: "openpr-wt", SourceBranch: "main", Reason: domain.PruneReasonGone, UnsafeReason: domain.PruneSkipOpenPR},
 		},
 	}
-	chosen := []string{"clean-wt", "dirty-wt"}
+	chosen := []string{"clean-wt", "dirty-wt", "unpushed-wt", "openpr-wt"}
 
-	// Without force: dirty is dropped to skipped.
+	// Without force: every unsafe candidate is dropped to skipped with its reason.
 	noForce := FinalizePrunePlan(FinalizePrunePlanParams{Plan: full, Chosen: chosen, BaseBranch: "main", Force: false})
 	if len(noForce.Selected) != 1 || noForce.Selected[0].Branch != "clean-wt" {
 		t.Errorf("without force, only clean-wt should be selected, got %+v", noForce.Selected)
 	}
-	if len(noForce.Skipped) != 1 || noForce.Skipped[0].Reason != domain.PruneSkipDirty {
+	skipped := skippedBranches(noForce)
+	if skipped["dirty-wt"] != domain.PruneSkipDirty {
 		t.Errorf("dirty-wt should be skipped as dirty, got %+v", noForce.Skipped)
 	}
+	if skipped["unpushed-wt"] != domain.PruneSkipUnpushed {
+		t.Errorf("unpushed-wt should be skipped as unpushed, got %+v", noForce.Skipped)
+	}
+	if skipped["openpr-wt"] != domain.PruneSkipOpenPR {
+		t.Errorf("openpr-wt should be skipped as open_pr, got %+v", noForce.Skipped)
+	}
 
-	// With force: dirty is kept.
+	// With force: all unsafe candidates are kept.
 	forced := FinalizePrunePlan(FinalizePrunePlanParams{Plan: full, Chosen: chosen, BaseBranch: "main", Force: true})
-	if len(forced.Selected) != 2 {
-		t.Errorf("with force, both should be selected, got %+v", forced.Selected)
+	if len(forced.Selected) != 4 {
+		t.Errorf("with force, all four should be selected, got %+v", forced.Selected)
 	}
 }
 

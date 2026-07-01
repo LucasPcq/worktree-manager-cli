@@ -167,10 +167,13 @@ const (
 
 	// Prune skip reasons — why a matching worktree was not removed. The current
 	// worktree is not among them: prune removes it (like clean) and redirects the
-	// shell to the base repo afterwards.
-	PruneSkipBase  = "base_branch"
-	PruneSkipMain  = "main_worktree"
-	PruneSkipDirty = "dirty"
+	// shell to the base repo afterwards. Dirty/Unpushed/OpenPR mirror clean's
+	// unsafe-to-remove checks: they skip unless --force is passed.
+	PruneSkipBase     = "base_branch"
+	PruneSkipMain     = "main_worktree"
+	PruneSkipDirty    = "dirty"
+	PruneSkipUnpushed = "unpushed"
+	PruneSkipOpenPR   = "open_pr"
 
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches
@@ -273,6 +276,15 @@ const (
 	CmdGroupJobs      = "jobs"
 	CmdGroupGitHub    = "github"
 	CmdGroupSetup     = "setup"
+
+	// Cobra group titles — the section headers rendered in the root --help output,
+	// registered alongside their IDs so a rename touches one place.
+	CmdGroupWorktreesTitle = "Worktrees:"
+	CmdGroupNavigateTitle  = "Navigate:"
+	CmdGroupStackTitle     = "Stacked branches:"
+	CmdGroupJobsTitle      = "Dev jobs:"
+	CmdGroupGitHubTitle    = "GitHub:"
+	CmdGroupSetupTitle     = "Setup:"
 
 	// CLI command names — used in Use: declarations and exec.Command(bin, …) call sites.
 	// Centralised here so a rename is a single-file change with no silent breakage.

@@ -1,6 +1,7 @@
 // Package prune renders the interactive flow for `wtm prune`: a multi-select of
 // the worktrees that matched the prune filters, followed by a confirmation that
-// surfaces a force option when a dirty worktree is checked (mirroring clean).
+// surfaces a force option when an unsafe worktree (dirty, unpushed commits, or an
+// open PR) is checked (mirroring clean).
 package prune
 
 import (
@@ -22,13 +23,13 @@ const (
 )
 
 // RunResult is the picker outcome: the checked branches and whether the user
-// confirmed with force (allowing dirty worktrees to be removed).
+// confirmed with force (allowing unsafe worktrees to be removed).
 type RunResult struct {
 	Branches []string
 	Force    bool
 }
 
-// Run shows the candidate multi-select (dirty ones tagged and left unchecked)
+// Run shows the candidate multi-select (unsafe ones tagged and left unchecked)
 // then a confirmation screen. Returns domain.ErrUserAborted on Esc or "No".
 func Run(plan domain.PrunePlan) (RunResult, error) {
 	// The picker may be reached through a shell wrapper that captures stdout, so
@@ -41,7 +42,7 @@ func Run(plan domain.PrunePlan) (RunResult, error) {
 		items = append(items, components.MultiSelectItem{
 			Label:    c.Branch,
 			Value:    c.Branch,
-			Selected: !c.IsDirty, // dirty worktrees are opt-in
+			Selected: c.UnsafeReason == "", // unsafe worktrees are opt-in
 			Tag:      tag,
 			Variant:  variant,
 		})
@@ -89,17 +90,17 @@ func Run(plan domain.PrunePlan) (RunResult, error) {
 }
 
 // confirmStep builds the confirmation choice. It recaps the count and the
-// reparenting that will follow, and offers a danger "force" option only when a
-// dirty worktree is currently checked.
+// reparenting that will follow, and offers a danger "force" option only when an
+// unsafe worktree (dirty, unpushed, or open PR) is currently checked.
 func confirmStep(prev []components.Step, plan domain.PrunePlan) components.SelectListModel {
 	selected := selectedBranches(prev)
 	desc := confirmDescription(selected)
 
 	items := []components.SelectItem{{Label: "Yes, prune", Value: confirmYes}}
-	if anyDirtySelected(selected, plan) {
+	if anyUnsafeSelected(selected, plan) {
 		items = append(items,
 			components.SelectItem{Separator: true},
-			components.SelectItem{Label: "Yes, force prune (bypass dirty checks)", Value: confirmForce, Danger: true},
+			components.SelectItem{Label: "Yes, force prune (bypass safety checks)", Value: confirmForce, Danger: true},
 		)
 	}
 	items = append(items,
@@ -124,11 +125,12 @@ func confirmDescription(selected []string) string {
 	return fmt.Sprintf("Will prune %d worktree(s): %s", len(selected), strings.Join(selected, ", "))
 }
 
-// anyDirtySelected reports whether a currently-checked candidate is dirty.
-func anyDirtySelected(selected []string, plan domain.PrunePlan) bool {
+// anyUnsafeSelected reports whether a currently-checked candidate is unsafe to
+// remove without force (dirty, unpushed commits, or an open PR).
+func anyUnsafeSelected(selected []string, plan domain.PrunePlan) bool {
 	chosen := toSet(selected)
 	for _, c := range plan.Selected {
-		if c.IsDirty && chosen[c.Branch] {
+		if c.UnsafeReason != "" && chosen[c.Branch] {
 			return true
 		}
 	}
@@ -155,11 +157,17 @@ func selectedBranches(prev []components.Step) []string {
 	return ms.Values()
 }
 
-// candidateTag maps a candidate to a short colored tag: dirty candidates read as
-// danger, everything else shows its prune reason in a muted/warning tone.
+// candidateTag maps a candidate to a short colored tag: unsafe candidates (dirty,
+// unpushed, open PR) read as danger, everything else shows its prune reason in a
+// muted/warning tone.
 func candidateTag(c domain.PruneCandidate) (string, components.TagVariant) {
-	if c.IsDirty {
+	switch c.UnsafeReason {
+	case domain.PruneSkipDirty:
 		return "dirty", components.TagDanger
+	case domain.PruneSkipUnpushed:
+		return "unpushed", components.TagDanger
+	case domain.PruneSkipOpenPR:
+		return "open PR", components.TagDanger
 	}
 	switch c.Reason {
 	case domain.PruneReasonGone:

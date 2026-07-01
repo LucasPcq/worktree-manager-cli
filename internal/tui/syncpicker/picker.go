@@ -67,9 +67,9 @@ func Run(params RunParams) (RunResult, error) {
 			{Name: "Worktrees", Model: ms},
 			{
 				Name:  "On conflict",
-				Model: conflictModeStep(nil, params.DefaultKeepConflict),
+				Model: conflictModeStep(conflictModeStepParams{DefaultKeep: params.DefaultKeepConflict}),
 				Build: func(prev []components.Step) any {
-					return conflictModeStep(prev, params.DefaultKeepConflict)
+					return conflictModeStep(conflictModeStepParams{Prev: prev, DefaultKeep: params.DefaultKeepConflict})
 				},
 			},
 		},
@@ -96,13 +96,19 @@ func Run(params RunParams) (RunResult, error) {
 	}, nil
 }
 
+// conflictModeStepParams holds inputs for conflictModeStep.
+type conflictModeStepParams struct {
+	Prev        []components.Step
+	DefaultKeep bool
+}
+
 // conflictModeStep builds the conflict-handling choice. The description echoes the
 // worktrees selected in the prior step so the decision is made in context; the
-// "keep" option leads (and is highlighted, being the danger row) when defaultKeep
+// "keep" option leads (and is highlighted, being the danger row) when DefaultKeep
 // is set so a prior --keep-conflict is pre-selected.
-func conflictModeStep(prev []components.Step, defaultKeep bool) components.SelectListModel {
+func conflictModeStep(params conflictModeStepParams) components.SelectListModel {
 	desc := "Choose what happens when a rebase hits a conflict."
-	if selected := selectedBranches(prev); len(selected) > 0 {
+	if selected := selectedBranches(params.Prev); len(selected) > 0 {
 		desc = "About to sync: " + strings.Join(selected, ", ") + "\n\n" + desc
 	}
 
@@ -117,7 +123,7 @@ func conflictModeStep(prev []components.Step, defaultKeep bool) components.Selec
 	}
 
 	items := []components.SelectItem{normalItem, keepItem}
-	if defaultKeep {
+	if params.DefaultKeep {
 		items = []components.SelectItem{keepItem, normalItem}
 	}
 

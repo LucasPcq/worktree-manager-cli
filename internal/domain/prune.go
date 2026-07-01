@@ -3,10 +3,15 @@ package domain
 // PruneCandidate is a worktree selected for removal by `wtm prune`, tagged with
 // the first filter reason that matched it (one of the PruneReason* constants).
 type PruneCandidate struct {
-	Branch       string `json:"branch"`
-	Path         string `json:"path"`
-	Reason       string `json:"reason"`
-	IsDirty      bool   `json:"is_dirty"`
+	Branch  string `json:"branch"`
+	Path    string `json:"path"`
+	Reason  string `json:"reason"`
+	IsDirty bool   `json:"is_dirty"`
+	// UnsafeReason is set (to a PruneSkip* constant: dirty/unpushed/open_pr) when
+	// the candidate is only in the selection because --force overrode a safety
+	// check. Empty means the candidate is safe to remove. Consumed by the picker
+	// (opt-in display) and FinalizePrunePlan (drop unless the user confirms force).
+	UnsafeReason string `json:"unsafe_reason,omitempty"`
 	SourceBranch string `json:"source_branch,omitempty"`
 }
 

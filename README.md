@@ -90,7 +90,7 @@ A few ideas explain how the commands fit together:
   one-shot **tasks** (migrations, seeds) declared in `run.toml` and grouped into
   **profiles**, run per-worktree by a background daemon. The flow is still stabilizing —
   `wtm go` is the recommended way to enter a worktree today. See [`run`](docs/wtm_run.md)
-  and [Run config](#run-config).
+  and [Run config](#run-config--runtoml).
 
 ## Commands
 

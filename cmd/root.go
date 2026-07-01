@@ -25,12 +25,12 @@ import (
 
 func init() {
 	rootCmd.AddGroup(
-		&cobra.Group{ID: domain.CmdGroupWorktrees, Title: "Worktrees:"},
-		&cobra.Group{ID: domain.CmdGroupNavigate, Title: "Navigate:"},
-		&cobra.Group{ID: domain.CmdGroupStack, Title: "Stacked branches:"},
-		&cobra.Group{ID: domain.CmdGroupJobs, Title: "Dev jobs:"},
-		&cobra.Group{ID: domain.CmdGroupGitHub, Title: "GitHub:"},
-		&cobra.Group{ID: domain.CmdGroupSetup, Title: "Setup:"},
+		&cobra.Group{ID: domain.CmdGroupWorktrees, Title: domain.CmdGroupWorktreesTitle},
+		&cobra.Group{ID: domain.CmdGroupNavigate, Title: domain.CmdGroupNavigateTitle},
+		&cobra.Group{ID: domain.CmdGroupStack, Title: domain.CmdGroupStackTitle},
+		&cobra.Group{ID: domain.CmdGroupJobs, Title: domain.CmdGroupJobsTitle},
+		&cobra.Group{ID: domain.CmdGroupGitHub, Title: domain.CmdGroupGitHubTitle},
+		&cobra.Group{ID: domain.CmdGroupSetup, Title: domain.CmdGroupSetupTitle},
 	)
 
 	for _, cmd := range wt.NewCmds() {

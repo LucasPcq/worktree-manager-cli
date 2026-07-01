@@ -1,10 +1,26 @@
 package worktree
 
 import (
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/testutil/gittest"
 )
+
+// branchExists reports whether a local branch is still present in the repo.
+func branchExists(t *testing.T, dir, branch string) bool {
+	t.Helper()
+	cmd := exec.Command("git", "branch", "--list", branch)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git branch --list %s: %s: %v", branch, out, err)
+	}
+	return strings.TrimSpace(string(out)) != ""
+}
 
 func TestApplyReparentsMovesEachToItsParent(t *testing.T) {
 	stateDir := t.TempDir()
@@ -32,6 +48,56 @@ func TestApplyReparentsMovesEachToItsParent(t *testing.T) {
 	c, _ := loadMetadata(stateDir, "dev/c")
 	if c.SourceBranch != "feat" {
 		t.Errorf("dev/c parent = %q, want feat", c.SourceBranch)
+	}
+}
+
+func TestPruneRemovesWorktreesReparentsAndIsIdempotent(t *testing.T) {
+	// Exercise the real (non-dry-run) destructive path: Clean removes each selected
+	// worktree + its branch, surviving children reparent onto the grandparent, and
+	// a second run over the same plan is a no-op success (absent worktrees tolerated).
+	source := gittest.InitRepo(t)
+	stateDir := t.TempDir()
+
+	featPath := filepath.Join(t.TempDir(), "feat")
+	childPath := filepath.Join(t.TempDir(), "child")
+	gitRun(t, source, "worktree", "add", "-q", "-b", "feat", featPath, "HEAD")
+	gitRun(t, source, "worktree", "add", "-q", "-b", "child", childPath, "HEAD")
+	seedMeta(t, stateDir, "child", domain.WorktreeMetadata{SourceBranch: "feat", CreatedAt: "x"})
+
+	params := domain.PruneParams{ProjectDir: source, StateDir: stateDir, BaseBranch: "main"}
+	plan := domain.PrunePlan{
+		Selected:  []domain.PruneCandidate{{Branch: "feat", Path: featPath, Reason: domain.PruneReasonMerged}},
+		Reparents: []domain.ReparentResult{{Branch: "child", OldParent: "feat", NewParent: "main"}},
+	}
+
+	result, err := Prune(params, plan)
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	if len(result.Pruned) != 1 || result.Pruned[0].Branch != "feat" {
+		t.Errorf("expected feat pruned, got %+v", result.Pruned)
+	}
+	if len(result.Reparented) != 1 || result.Reparented[0].NewParent != "main" {
+		t.Errorf("expected child reparented onto main, got %+v", result.Reparented)
+	}
+
+	if fileExists(featPath, "") {
+		t.Errorf("feat worktree directory should be removed")
+	}
+	if branchExists(t, source, "feat") {
+		t.Errorf("feat branch should be deleted")
+	}
+	if branchExists(t, source, "child") == false {
+		t.Errorf("child branch should survive")
+	}
+	if meta, _ := loadMetadata(stateDir, "child"); meta.SourceBranch != "main" {
+		t.Errorf("child parent = %q, want main", meta.SourceBranch)
+	}
+
+	// Idempotent: the worktree is already gone, so a re-run tolerates the absence
+	// and succeeds without error.
+	if _, err := Prune(params, plan); err != nil {
+		t.Fatalf("second Prune should be idempotent, got %v", err)
 	}
 }
 
