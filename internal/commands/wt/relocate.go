@@ -8,7 +8,6 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
@@ -138,14 +137,15 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 // runRelocateWizard resolves the candidate parent branches and drives the
 // interactive parent pickers + final apply confirmation.
 func runRelocateWizard(cfg shared.ConfigResult, plan domain.RelocatePlan, baseBranch string) (relocatetui.RunResult, error) {
-	branches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: cfg.ProjectDir})
+	candidates, err := branchCandidates(cfg.ProjectDir)
 	if err != nil {
-		return relocatetui.RunResult{}, fmt.Errorf("list branches: %w", err)
+		return relocatetui.RunResult{}, err
 	}
 	return relocatetui.RunWizard(relocatetui.RunParams{
+		ProjectDir: cfg.ProjectDir,
 		Plan:       plan,
 		Adoptions:  rules.PlanAdoptions(plan),
-		Branches:   branches,
+		Branches:   candidates,
 		BaseBranch: baseBranch,
 	})
 }

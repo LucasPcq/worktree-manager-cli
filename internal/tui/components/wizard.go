@@ -34,6 +34,10 @@ type Step struct {
 	// CalloutNote is an optional secondary line shown in the callout (e.g.
 	// "Detected: …"). Only used when Callout is true.
 	CalloutNote string
+	// CanRefresh marks a SelectList step the user can refresh in place with the
+	// refresh key (e.g. re-fetch branches). It gates the key interception and adds
+	// an "r refresh" hint to the help bar for this step only.
+	CanRefresh bool
 }
 
 // WizardMsgHandler intercepts a message before it reaches the current step.
@@ -104,6 +108,52 @@ func NewWizardWithParams(params WizardParams) WizardModel {
 
 // SetLoading toggles the async loading state (stops the spinner when false).
 func (m *WizardModel) SetLoading(loading bool) { m.loading = loading }
+
+// StartLoading enters the loading state with the given text and returns the
+// spinner tick command so the spinner animates even when the wizard did not start
+// loading at Init (e.g. an in-flight refresh triggered by a key press).
+func (m *WizardModel) StartLoading(text string) tea.Cmd {
+	m.loading = true
+	m.loadingText = text
+	return m.spinner.Tick
+}
+
+// Loading reports whether the wizard is currently showing the loading spinner.
+func (m WizardModel) Loading() bool { return m.loading }
+
+// CurrentStepModel returns the current step's child model (nil if out of range),
+// letting a message handler inspect it (e.g. to skip refresh while filtering).
+func (m WizardModel) CurrentStepModel() any {
+	if m.current < 0 || m.current >= len(m.steps) {
+		return nil
+	}
+	return m.steps[m.current].Model
+}
+
+// CurrentStepCanRefresh reports whether the current step opted into in-place
+// refresh via Step.CanRefresh.
+func (m WizardModel) CurrentStepCanRefresh() bool {
+	if m.current < 0 || m.current >= len(m.steps) {
+		return false
+	}
+	return m.steps[m.current].CanRefresh
+}
+
+// RebuildCurrentStep re-runs the current step's Build hook (if any) against the
+// completed prior steps, re-deriving its model. Used to refresh a step in place
+// after its data source changed (e.g. branch candidates were re-fetched). Unlike
+// buildStep it also rebuilds the first step, which advance never reaches.
+func (m *WizardModel) RebuildCurrentStep() {
+	if m.current < 0 || m.current >= len(m.steps) {
+		return
+	}
+	step := &m.steps[m.current]
+	if step.Build == nil {
+		return
+	}
+	step.Model = step.Build(m.steps[:m.current])
+	m.propagateSize(m.current)
+}
 
 // SetBanner sets the status banner shown under the breadcrumb once loading has
 // finished (e.g. a "GitHub CLI not connected" hint). An empty Title hides it.
@@ -438,6 +488,9 @@ func (m WizardModel) renderHelpBar() string {
 	switch m.steps[m.current].Model.(type) {
 	case SelectListModel:
 		help = "  ↑↓ navigate • enter confirm • / filter"
+		if m.steps[m.current].CanRefresh {
+			help += " • r refresh"
+		}
 	case MultiSelectModel:
 		help = "  ↑↓ navigate • enter confirm • space toggle • a all • / filter"
 	case ReorderListModel:
