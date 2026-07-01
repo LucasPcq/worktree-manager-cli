@@ -3,18 +3,19 @@ package newwt
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/tui/branchrefresh"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // WizardParams holds inputs for the interactive new worktree wizard.
 type WizardParams struct {
-	Branches       []string
+	ProjectDir     string
+	Branches       []domain.BranchCandidate
 	DefaultBranch  string
 	ConfigStrategy domain.EnvStrategy
 	IncludeBranch  bool
@@ -56,16 +57,20 @@ func RunWizard(params WizardParams) (WizardResult, error) {
 		})
 	}
 
-	branchItems := buildBranchItems(params.Branches, params.DefaultBranch)
-	sourceList := components.NewSelectList(components.NewSelectListParams{
-		Title:       "Source branch",
-		Description: "Branch to base the new worktree on",
-		Items:       branchItems,
-	})
+	holder := &params.Branches
+	sourceList := func() any {
+		return components.NewSelectList(components.NewSelectListParams{
+			Title:       "Source branch",
+			Description: "Branch to base the new worktree on",
+			Items:       buildBranchItems(*holder, params.DefaultBranch),
+		})
+	}
 
 	steps = append(steps, components.Step{
-		Name:  "Source branch",
-		Model: sourceList,
+		Name:       "Source branch",
+		Model:      sourceList(),
+		Build:      func([]components.Step) any { return sourceList() },
+		CanRefresh: true,
 		Summary: func(model any) string {
 			if child, ok := model.(components.SelectListModel); ok {
 				return child.Value()
@@ -97,7 +102,13 @@ func RunWizard(params WizardParams) (WizardResult, error) {
 		},
 	})
 
-	wiz := components.NewWizard(steps)
+	wiz := components.NewWizardWithParams(components.WizardParams{
+		Steps:       steps,
+		InitCmd:     branchrefresh.Cmd(params.ProjectDir),
+		Loading:     true,
+		LoadingText: domain.LoadingBranchesText,
+		OnMsg:       branchrefresh.Handler(params.ProjectDir, holder),
+	})
 	p := tea.NewProgram(wiz)
 
 	finalModel, err := p.Run()
@@ -134,36 +145,19 @@ func extractResult(steps []components.Step, includeBranch bool) WizardResult {
 	return result
 }
 
-func buildBranchItems(branches []string, defaultBranch string) []components.SelectItem {
-	var rest []string
-	hasDefault := false
+func buildBranchItems(branches []domain.BranchCandidate, defaultBranch string) []components.SelectItem {
+	pinned := ""
 	for _, b := range branches {
-		if b == defaultBranch {
-			hasDefault = true
-			continue
+		if b.Name == defaultBranch {
+			pinned = defaultBranch
+			break
 		}
-		rest = append(rest, b)
 	}
-
-	sort.Strings(rest)
-
-	items := make([]components.SelectItem, 0, len(branches))
-
-	if hasDefault {
-		items = append(items, components.SelectItem{
-			Label: defaultBranch + " (default)",
-			Value: defaultBranch,
-		})
-	}
-
-	for _, b := range rest {
-		items = append(items, components.SelectItem{
-			Label: b,
-			Value: b,
-		})
-	}
-
-	return items
+	return components.BranchItems(components.BranchItemsParams{
+		Candidates:   branches,
+		Pinned:       pinned,
+		PinnedSuffix: " (default)",
+	})
 }
 
 func buildEnvItems(strategy domain.EnvStrategy) []components.SelectItem {

@@ -4,15 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/branch"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	newpicker "github.com/LucasPcq/wtm/internal/tui/newwt"
@@ -55,6 +54,9 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	interactive := rules.IsHumanFormat(format)
+
 	fromBranch := fromFlag
 	envOverride := envFromFlag
 
@@ -77,17 +79,22 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		if envFromFlag == "" {
 			envOverride = wizResult.EnvFromOverride
 		}
-	} else {
-		branches, listErr := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: result.ProjectDir})
-		if listErr != nil {
-			return fmt.Errorf("list branches: %w", listErr)
+		if interactive && !maybeFastForwardSource(result.ProjectDir, fromBranch) {
+			return nil
 		}
-		if !slices.Contains(branches, fromFlag) {
+		if interactive && !shared.ConfirmEnvParentFallback(shared.EnvFallbackParams{
+			ProjectDir:  result.ProjectDir,
+			Source:      fromBranch,
+			Config:      result.Config,
+			EnvOverride: envOverride,
+		}) {
+			return nil
+		}
+	} else {
+		if !rules.BranchCandidateExists(branchCandidates(result.ProjectDir), fromFlag) {
 			return fmt.Errorf("%w: %s", domain.ErrBranchNotFound, fromFlag)
 		}
 	}
-
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	// on_create hooks stream their own output, so only show a spinner for the
 	// silent path (git worktree add + env copy) on the human-facing run.
@@ -138,15 +145,87 @@ type createWizardParams struct {
 }
 
 func runCreateWizard(params createWizardParams) (newpicker.WizardResult, error) {
-	branches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: params.ProjectDir})
-	if err != nil {
-		return newpicker.WizardResult{}, fmt.Errorf("list branches: %w", err)
-	}
-
 	return newpicker.RunWizard(newpicker.WizardParams{
-		Branches:       branches,
+		ProjectDir:     params.ProjectDir,
+		Branches:       branchCandidates(params.ProjectDir),
 		DefaultBranch:  params.Config.Project.Worktrees.BaseBranch,
 		ConfigStrategy: params.Config.Project.Env.Strategy,
 		IncludeBranch:  params.IncludeBranch,
 	})
+}
+
+// maybeFastForwardSource reconciles a source branch that has drifted from origin
+// before the worktree is created. A behind-only branch is offered a fast-forward
+// (so the worktree starts up to date while the source stays local); a diverged
+// branch — which cannot be fast-forwarded — is used as-is after an explicit
+// heads-up about the reconciliation it will need later. It returns false only when
+// the user cancels creation (a failed fast-forward, or declining the diverged
+// warning) — there is no silent fallback to a stale base.
+func maybeFastForwardSource(projectDir, source string) bool {
+	if rules.IsRemoteBranch(source) {
+		return true
+	}
+	state, ab := branch.Divergence(branch.BranchParams{ProjectDir: projectDir, Branch: source})
+	if rules.ShouldOfferFastForward(state) {
+		return fastForwardStaleSource(projectDir, source, ab.Behind)
+	}
+	if state == domain.DivergenceDiverged {
+		return confirmDivergedProceed(source, ab)
+	}
+	return true
+}
+
+// fastForwardStaleSource prompts for and applies a fast-forward of a behind-only
+// source branch. Returns false only if the fast-forward fails and the user then
+// declines to create from the stale local branch.
+func fastForwardStaleSource(projectDir, source string, behind int) bool {
+	if !confirmFastForward(source, behind) {
+		return true
+	}
+
+	ffErr := components.RunLoading(components.LoadingParams{
+		Message: fmt.Sprintf("Updating %s from origin…", source),
+		Animate: true,
+		Work: func() error {
+			return branch.FastForwardToOrigin(branch.BranchParams{ProjectDir: projectDir, Branch: source})
+		},
+	})
+	if ffErr == nil {
+		return true
+	}
+	return confirmProceedStale(source, behind, ffErr)
+}
+
+func confirmDivergedProceed(source string, ab domain.AheadBehind) bool {
+	confirmed, _ := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
+		Title:      fmt.Sprintf("%s has diverged from origin (%d ahead, %d behind) — create the worktree from it anyway?", source, ab.Ahead, ab.Behind),
+		Warning:    "It can't be fast-forwarded. The worktree starts from your local branch, missing commits that are on origin — you may have to rebase or resolve conflicts later.",
+		DefaultYes: true,
+	}))
+	return confirmed
+}
+
+func confirmFastForward(source string, behind int) bool {
+	confirmed, _ := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
+		Title:       fmt.Sprintf("%s is %d commit(s) behind origin — fast-forward it before creating?", source, behind),
+		Description: "Updates your local branch to origin so the new worktree starts up to date. Skipped if its worktree has uncommitted changes.",
+		DefaultYes:  true,
+	}))
+	return confirmed
+}
+
+func confirmProceedStale(source string, behind int, cause error) bool {
+	confirmed, _ := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
+		Title:      fmt.Sprintf("Create the worktree from local %s anyway? (behind origin by %d)", source, behind),
+		Warning:    fmt.Sprintf("Couldn't fast-forward: %v", cause),
+		DefaultYes: false,
+	}))
+	return confirmed
+}
+
+// branchCandidates lists the local and remote-tracking branches offered as
+// worktree start-points, with remotes whose name already exists locally dropped
+// and each local branch tagged with its divergence from origin.
+func branchCandidates(projectDir string) []domain.BranchCandidate {
+	return branch.Candidates(branch.ListParams{ProjectDir: projectDir})
 }

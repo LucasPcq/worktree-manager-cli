@@ -183,6 +183,33 @@ const (
 	BadgeTextLinked = "linked"
 	BadgeTextFork   = "fork"
 
+	// BadgeTextRemote tags a remote-tracking branch (origin/*) offered as a
+	// worktree start-point or parent in a branch picker.
+	BadgeTextRemote = "remote"
+
+	// Divergence badge glyphs: a local branch ahead of / behind its origin
+	// counterpart is labelled with these in a branch picker (e.g. "↑2 ↓5").
+	BadgeGlyphAhead  = "↑"
+	BadgeGlyphBehind = "↓"
+
+	// Status pill glyphs: the leading symbol of a worktree row's right-aligned
+	// dirty/clean status pill.
+	BadgeGlyphDirty = "⚠"
+	BadgeGlyphClean = "✓"
+
+	// KeyRefresh is the picker key that re-fetches origin and recomputes the
+	// branch divergence badges.
+	KeyRefresh = "r"
+
+	// RemoteBranchPrefix is the short-name prefix of origin remote-tracking refs
+	// ("origin/feature"). Used to strip/build remote refs and to detect whether a
+	// picked start-point is remote.
+	RemoteBranchPrefix = "origin/"
+
+	// LoadingBranchesText labels the spinner shown while a branch picker fetches
+	// origin to refresh its divergence badges.
+	LoadingBranchesText = "Fetching branches…"
+
 	// SummaryConfigDefault is the env-step summary shown when no explicit env
 	// strategy is chosen and the project config default applies.
 	SummaryConfigDefault = "config default"

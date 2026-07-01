@@ -53,7 +53,12 @@ func TestBuildPRItems_LinkedAndForkDisabled(t *testing.T) {
 }
 
 func TestBuildBranchItems_BaseFirst(t *testing.T) {
-	items := buildBranchItems([]string{"zeta", "alpha", "main"}, "main")
+	// Candidates arrive pre-sorted from rules.MergeBranchCandidates; buildBranchItems
+	// only pins the base first and preserves the remaining order.
+	candidates := []domain.BranchCandidate{
+		{Name: "alpha"}, {Name: "main"}, {Name: "zeta"},
+	}
+	items := buildBranchItems(candidates, "main")
 
 	if len(items) != 3 {
 		t.Fatalf("expected 3 items, got %d", len(items))
@@ -62,6 +67,24 @@ func TestBuildBranchItems_BaseFirst(t *testing.T) {
 		t.Errorf("base branch should be first, got %q", items[0].Value)
 	}
 	if items[1].Value != "alpha" || items[2].Value != "zeta" {
-		t.Errorf("rest should be sorted, got %q then %q", items[1].Value, items[2].Value)
+		t.Errorf("rest should keep sorted order, got %q then %q", items[1].Value, items[2].Value)
+	}
+}
+
+func TestBuildBranchItems_RemoteAfterSeparator(t *testing.T) {
+	candidates := []domain.BranchCandidate{
+		{Name: "main"},
+		{Name: "origin/release", IsRemote: true},
+	}
+	items := buildBranchItems(candidates, "main")
+
+	if len(items) != 3 {
+		t.Fatalf("expected base + separator + remote, got %d: %+v", len(items), items)
+	}
+	if !items[1].Separator {
+		t.Errorf("expected a separator before remotes, got %+v", items[1])
+	}
+	if items[2].Value != "origin/release" || len(items[2].Badges) == 0 || items[2].Badges[0].Text != domain.BadgeTextRemote {
+		t.Errorf("expected remote item with remote badge, got %+v", items[2])
 	}
 }

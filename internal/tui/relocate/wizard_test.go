@@ -8,6 +8,14 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
+func localCandidates(names ...string) *[]domain.BranchCandidate {
+	out := make([]domain.BranchCandidate, 0, len(names))
+	for _, n := range names {
+		out = append(out, domain.BranchCandidate{Name: n})
+	}
+	return &out
+}
+
 func TestBuildRecapGroupsAndResolvesParents(t *testing.T) {
 	plan := domain.RelocatePlan{
 		BasePath: "../.trees",
@@ -43,8 +51,8 @@ func TestExtractParentsMapsPickersByIndex(t *testing.T) {
 		{Branch: "legacy"},
 	}
 	steps := []components.Step{
-		parentStep(parentStepParams{Branch: "hotfix", BaseBranch: "main", Branches: []string{"main", "feature/api"}}),
-		parentStep(parentStepParams{Branch: "legacy", BaseBranch: "main", Branches: []string{"main"}}),
+		parentStep(parentStepParams{Branch: "hotfix", BaseBranch: "main", Holder: localCandidates("main", "feature/api")}),
+		parentStep(parentStepParams{Branch: "legacy", BaseBranch: "main", Holder: localCandidates("main")}),
 	}
 
 	parents := extractParents(steps, adoptions)
@@ -62,7 +70,7 @@ func TestParentStepExcludesOwnBranch(t *testing.T) {
 	step := parentStep(parentStepParams{
 		Branch:     "feature/api",
 		BaseBranch: "main",
-		Branches:   []string{"main", "feature/api", "other"},
+		Holder:     localCandidates("main", "feature/api", "other"),
 	})
 	sl, ok := step.Model.(components.SelectListModel)
 	if !ok {

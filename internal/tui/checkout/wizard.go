@@ -4,12 +4,12 @@ package checkout
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/tui/branchrefresh"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
@@ -22,6 +22,8 @@ const (
 
 // WizardParams holds inputs for the checkout wizard.
 type WizardParams struct {
+	// ProjectDir is the repo root, used to re-fetch branches on refresh.
+	ProjectDir string
 	// PRLoader fetches open PRs asynchronously. When set (no Preselected), the
 	// wizard renders instantly and streams the list in with a loading callout.
 	PRLoader worktreepicker.PRLoaderFunc
@@ -29,8 +31,8 @@ type WizardParams struct {
 	Preselected *domain.PRInfo
 	// WorktreeBranches lists branches already checked out — their PRs are disabled.
 	WorktreeBranches []string
-	// LocalBranches are the parent-branch options.
-	LocalBranches  []string
+	// ParentBranches are the parent-branch options (local + remote-tracking).
+	ParentBranches []domain.BranchCandidate
 	ConfigStrategy domain.EnvStrategy
 	// IncludeParent / IncludeEnv add the corresponding step. Set to false when the
 	// value is already fixed by a flag (--from / --env-from).
@@ -57,9 +59,11 @@ func RunWizard(params WizardParams) (WizardResult, error) {
 
 // runPreselected runs the sync parent+env wizard for a known PR.
 func runPreselected(params WizardParams) (WizardResult, error) {
+	holder := &params.ParentBranches
+
 	var steps []components.Step
 	if params.IncludeParent {
-		steps = append(steps, parentStep(params.LocalBranches, params.Preselected.BaseBranch))
+		steps = append(steps, parentStep(holder, params.Preselected.BaseBranch))
 	}
 	if params.IncludeEnv {
 		steps = append(steps, envStep(params.ConfigStrategy))
@@ -69,7 +73,11 @@ func runPreselected(params WizardParams) (WizardResult, error) {
 		return WizardResult{PR: *params.Preselected}, nil
 	}
 
-	final, err := runProgram(components.NewWizard(steps))
+	wiz := components.NewWizardWithParams(components.WizardParams{
+		Steps: steps,
+		OnMsg: branchrefresh.Handler(params.ProjectDir, holder),
+	})
+	final, err := runProgram(wiz)
 	if err != nil {
 		return WizardResult{}, err
 	}
@@ -83,16 +91,18 @@ func runPreselected(params WizardParams) (WizardResult, error) {
 // followed by the parent (rebuilt from the chosen PR) and env steps.
 func runPicker(params WizardParams) (WizardResult, error) {
 	var loadedPRs []domain.PRInfo
+	holder := &params.ParentBranches
 
 	steps := []components.Step{prStep(params)}
 	if params.IncludeParent {
 		steps = append(steps, components.Step{
-			Name:    stepParent,
-			Summary: selectValueSummary,
-			Model:   components.NewSelectList(components.NewSelectListParams{Title: stepParent}),
+			Name:       stepParent,
+			Summary:    selectValueSummary,
+			Model:      components.NewSelectList(components.NewSelectListParams{Title: stepParent}),
+			CanRefresh: true,
 			Build: func(prev []components.Step) any {
 				base := baseBranchForSelection(prev, loadedPRs)
-				return parentList(params.LocalBranches, base)
+				return parentList(*holder, base)
 			},
 		})
 	}
@@ -100,12 +110,16 @@ func runPicker(params WizardParams) (WizardResult, error) {
 		steps = append(steps, envStep(params.ConfigStrategy))
 	}
 
+	refresh := branchrefresh.Handler(params.ProjectDir, holder)
 	wiz := components.NewWizardWithParams(components.WizardParams{
 		Steps:       steps,
-		InitCmd:     worktreepicker.PRLoadCmd(params.PRLoader),
+		InitCmd:     tea.Batch(worktreepicker.PRLoadCmd(params.PRLoader), branchrefresh.Cmd(params.ProjectDir)),
 		Loading:     true,
 		LoadingText: worktreepicker.LoadingPRsText,
 		OnMsg: func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+			if cmd, handled := refresh(w, msg); handled {
+				return cmd, true
+			}
 			loaded, ok := msg.(worktreepicker.PRsLoadedMsg)
 			if !ok {
 				return nil, false
@@ -204,19 +218,21 @@ func prStep(params WizardParams) components.Step {
 	}
 }
 
-func parentStep(localBranches []string, base string) components.Step {
+func parentStep(holder *[]domain.BranchCandidate, base string) components.Step {
 	return components.Step{
-		Name:    stepParent,
-		Summary: selectValueSummary,
-		Model:   parentList(localBranches, base),
+		Name:       stepParent,
+		Summary:    selectValueSummary,
+		Model:      parentList(*holder, base),
+		Build:      func([]components.Step) any { return parentList(*holder, base) },
+		CanRefresh: true,
 	}
 }
 
-func parentList(localBranches []string, base string) components.SelectListModel {
+func parentList(branches []domain.BranchCandidate, base string) components.SelectListModel {
 	return components.NewSelectList(components.NewSelectListParams{
 		Title:       stepParent,
 		Description: "Branch this PR is rebased onto by `wtm sync` (defaults to the PR base)",
-		Items:       buildBranchItems(localBranches, base),
+		Items:       buildBranchItems(branches, base),
 	})
 }
 
@@ -297,25 +313,15 @@ func buildPRItems(prs []domain.PRInfo, worktreeBranches []string) []components.S
 	return items
 }
 
-// buildBranchItems lists local branches with the PR base branch pinned first as
-// the pre-selected default.
-func buildBranchItems(branches []string, base string) []components.SelectItem {
-	items := make([]components.SelectItem, 0, len(branches)+1)
-	items = append(items, components.SelectItem{Label: base + " (base)", Value: base})
-
-	rest := make([]string, 0, len(branches))
-	for _, b := range branches {
-		if b == base {
-			continue
-		}
-		rest = append(rest, b)
-	}
-	sort.Strings(rest)
-
-	for _, b := range rest {
-		items = append(items, components.SelectItem{Label: b, Value: b})
-	}
-	return items
+// buildBranchItems lists candidate parent branches with the PR base branch
+// pinned first as the pre-selected default and remote-tracking branches grouped
+// after a separator.
+func buildBranchItems(branches []domain.BranchCandidate, base string) []components.SelectItem {
+	return components.BranchItems(components.BranchItemsParams{
+		Candidates:   branches,
+		Pinned:       base,
+		PinnedSuffix: " (base)",
+	})
 }
 
 func buildEnvItems(strategy domain.EnvStrategy) []components.SelectItem {

@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/tui/branchrefresh"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
@@ -68,11 +69,16 @@ type SectionPrefill struct {
 // The wizard is organised by concept. Each optional section (env, hooks,
 // services) is introduced by a "gate" step that explains what the section does
 // and offers Configure / Skip; its sub-steps auto-skip when the gate is skipped.
-func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
+func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
+	holder := &detection.Branches
 
 	s.add(stepBasePath, basePathStep())
-	s.add(stepBaseBranch, baseBranchStep(detection))
+	s.add(stepBaseBranch, baseBranchStep(baseBranchStepParams{
+		Holder:      holder,
+		Pinned:      detection.BaseBranch,
+		Description: "New worktrees branch off this base by default — usually your main development branch.",
+	}))
 
 	s.add(stepEnvGate, envGate(detection))
 	addEnvSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepEnvGate)), nil)
@@ -83,7 +89,7 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 	s.add(stepServicesGate, servicesGate(detection))
 	addServicesSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepServicesGate)), nil)
 
-	final, err := runWizard(s.steps)
+	final, err := runWizard(runWizardParams{steps: s.steps, projectDir: projectDir, holder: holder})
 	if err != nil {
 		return domain.InitProjectAnswers{}, err
 	}
@@ -94,12 +100,13 @@ func RunProjectWizard(detection domain.InitDetectionResult) (domain.InitProjectA
 // without gates or core steps. Used by `wtm init --only <section>`. Returns a
 // nil-ish answers set with no steps when nothing is configurable (e.g. services
 // requested but none detected); callers handle the empty case.
-func RunSectionWizard(sections []string, detection domain.InitDetectionResult, prefill *SectionPrefill) (domain.InitProjectAnswers, error) {
+func RunSectionWizard(projectDir string, sections []string, detection domain.InitDetectionResult, prefill *SectionPrefill) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
+	holder := &detection.Branches
 	for _, section := range sections {
 		switch section {
 		case domain.SectionWorktrees:
-			addWorktreesSteps(s, detection, prefill)
+			addWorktreesSteps(s, holder, detection, prefill)
 		case domain.SectionEnv:
 			addEnvSteps(s, detection, nil, prefill)
 		case domain.SectionHooks:
@@ -113,17 +120,40 @@ func RunSectionWizard(sections []string, detection domain.InitDetectionResult, p
 		return domain.InitProjectAnswers{}, nil
 	}
 
-	final, err := runWizard(s.steps)
+	// Only wire the background branch refresh when a base-branch step is present.
+	params := runWizardParams{steps: s.steps, projectDir: projectDir}
+	if s.at(stepBaseBranch) >= 0 {
+		params.holder = holder
+	}
+
+	final, err := runWizard(params)
 	if err != nil {
 		return domain.InitProjectAnswers{}, err
 	}
 	return extractProjectAnswers(final, detection, s.idx), nil
 }
 
+// runWizardParams holds inputs for runWizard. When holder is non-nil the wizard
+// fetches origin in the background on open and wires the `r` refresh, keeping the
+// base-branch divergence badges up to date.
+type runWizardParams struct {
+	steps      []components.Step
+	projectDir string
+	holder     *[]domain.BranchCandidate
+}
+
 // runWizard runs the bubbletea program for the given steps and returns the
 // final model, mapping abort/quit to ErrUserAborted.
-func runWizard(steps []components.Step) (components.WizardModel, error) {
-	wiz := components.NewWizard(steps)
+func runWizard(params runWizardParams) (components.WizardModel, error) {
+	wp := components.WizardParams{Steps: params.steps}
+	if params.holder != nil {
+		wp.InitCmd = branchrefresh.Cmd(params.projectDir)
+		wp.Loading = true
+		wp.LoadingText = domain.LoadingBranchesText
+		wp.OnMsg = branchrefresh.Handler(params.projectDir, params.holder)
+	}
+
+	wiz := components.NewWizardWithParams(wp)
 	finalModel, err := tea.NewProgram(wiz).Run()
 	if err != nil {
 		return components.WizardModel{}, fmt.Errorf("wizard: %w", err)
@@ -150,38 +180,57 @@ func basePathStep() components.Step {
 	}
 }
 
-func baseBranchStep(detection domain.InitDetectionResult) components.Step {
-	return components.Step{
-		Name: "Base branch",
-		Model: components.NewTextInput(components.NewTextInputParams{
+// baseBranchStepParams holds inputs for baseBranchStep.
+type baseBranchStepParams struct {
+	Holder      *[]domain.BranchCandidate
+	Pinned      string
+	Description string
+}
+
+// baseBranchStep builds the base-branch picker step. It reads candidates from the
+// shared holder via Build so a background origin fetch (CanRefresh / the `r` key)
+// updates the divergence badges in place.
+func baseBranchStep(params baseBranchStepParams) components.Step {
+	build := func() any {
+		return components.NewSelectList(components.NewSelectListParams{
 			Title:       "Base branch",
-			Description: "New worktrees branch off this base by default — usually your main development branch.",
-			Placeholder: detection.BaseBranch,
-		}),
-		Summary: textInputSummary,
-		Callout: true,
+			Description: params.Description,
+			Items:       baseBranchItems(*params.Holder, params.Pinned),
+		})
 	}
+	return components.Step{
+		Name:       "Base branch",
+		Model:      build(),
+		Build:      func([]components.Step) any { return build() },
+		CanRefresh: true,
+		Summary:    selectListSummary,
+		Callout:    true,
+	}
+}
+
+// baseBranchItems builds the base-branch picker rows with the detected default
+// pinned first and remote-tracking branches grouped after a separator.
+func baseBranchItems(branches []domain.BranchCandidate, detected string) []components.SelectItem {
+	return components.BranchItems(components.BranchItemsParams{
+		Candidates:   branches,
+		Pinned:       detected,
+		PinnedSuffix: " (detected)",
+	})
 }
 
 // addWorktreesSteps adds the editable worktrees step (base branch only) for a
 // targeted re-init. base_path is intentionally not editable here — changing it
 // would orphan existing worktrees (tracked separately).
-func addWorktreesSteps(s *stepSet, detection domain.InitDetectionResult, prefill *SectionPrefill) {
-	def := ""
-	if prefill != nil {
-		def = prefill.BaseBranch
+func addWorktreesSteps(s *stepSet, holder *[]domain.BranchCandidate, detection domain.InitDetectionResult, prefill *SectionPrefill) {
+	pinned := detection.BaseBranch
+	if prefill != nil && prefill.BaseBranch != "" {
+		pinned = prefill.BaseBranch
 	}
-	s.add(stepBaseBranch, components.Step{
-		Name: "Base branch",
-		Model: components.NewTextInput(components.NewTextInputParams{
-			Title:       "Base branch",
-			Description: "Default branch new worktrees are created from. Changing it only affects future worktrees.",
-			Placeholder: detection.BaseBranch,
-			Default:     def,
-		}),
-		Summary: textInputSummary,
-		Callout: true,
-	})
+	s.add(stepBaseBranch, baseBranchStep(baseBranchStepParams{
+		Holder:      holder,
+		Pinned:      pinned,
+		Description: "Default branch new worktrees are created from. Changing it only affects future worktrees.",
+	}))
 }
 
 func envGate(detection domain.InitDetectionResult) components.Step {
@@ -189,10 +238,9 @@ func envGate(detection domain.InitDetectionResult) components.Step {
 		Name: "Environment files",
 		Description: "Each new worktree is a clean checkout — your local .env files aren't carried over. " +
 			"wtm can copy them in automatically so the worktree runs without redoing your local setup.",
-		Detected:         detectedEnv(detection),
-		ConfigureLabel:   "Configure .env copying",
-		SkipLabel:        "Skip — I'll handle .env myself",
-		DefaultConfigure: len(detection.EnvFiles) > 0,
+		Detected:       detectedEnv(detection),
+		ConfigureLabel: "Configure .env copying",
+		SkipLabel:      "Skip — I'll handle .env myself",
 	})
 }
 
@@ -243,10 +291,9 @@ func hooksGate(detection domain.InitDetectionResult) components.Step {
 		Name: "Post-create hooks",
 		Description: "Run commands automatically right after a worktree is created — typically installing " +
 			"dependencies — so it's ready to use immediately instead of needing manual steps.",
-		Detected:         detectedHooks(detection),
-		ConfigureLabel:   "Configure setup commands",
-		SkipLabel:        "Skip — no automatic commands",
-		DefaultConfigure: detection.InstallCommand != "",
+		Detected:       detectedHooks(detection),
+		ConfigureLabel: "Configure setup commands",
+		SkipLabel:      "Skip — no automatic commands",
 	})
 }
 
@@ -279,10 +326,9 @@ func servicesGate(detection domain.InitDetectionResult) components.Step {
 		Name: "Services & tasks",
 		Description: "Let wtm run your dev stack per worktree — long-running services (databases, dev servers) " +
 			"and one-off tasks — so you start/stop everything with `wtm run` instead of juggling terminals.",
-		Detected:         detectedServices(detection),
-		ConfigureLabel:   "Configure services & tasks",
-		SkipLabel:        "Skip — no service management",
-		DefaultConfigure: len(detection.DockerComposeFiles) > 0 || len(detection.PackageScripts) > 0,
+		Detected:       detectedServices(detection),
+		ConfigureLabel: "Configure services & tasks",
+		SkipLabel:      "Skip — no service management",
 	})
 }
 
@@ -361,7 +407,7 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 	}
 
 	if i := at(stepBaseBranch); i >= 0 {
-		if m, ok := steps[i].Model.(components.TextInputModel); ok {
+		if m, ok := steps[i].Model.(components.SelectListModel); ok {
 			answers.BaseBranch = m.Value()
 		}
 	}
@@ -467,25 +513,22 @@ func hookListSummary(model any) string {
 
 // sectionGateParams holds the inputs for a section gate step.
 type sectionGateParams struct {
-	Name             string
-	Description      string
-	Detected         string
-	ConfigureLabel   string
-	SkipLabel        string
-	DefaultConfigure bool
+	Name           string
+	Description    string
+	Detected       string
+	ConfigureLabel string
+	SkipLabel      string
 }
 
-// sectionGate builds the intro/gate step for an optional section. The recommended
-// option (driven by detection) is listed first so it is highlighted by default.
-// The explanation is rendered as a callout above the Configure/Skip choice.
+// sectionGate builds the intro/gate step for an optional section. Configure is
+// always listed first (and thus highlighted by default) so the Configure/Skip
+// order stays identical across every gate. The explanation is rendered as a
+// callout above the choice.
 func sectionGate(p sectionGateParams) components.Step {
 	configure := components.SelectItem{Label: p.ConfigureLabel, Value: domain.WizardChoiceConfigure}
 	skip := components.SelectItem{Label: p.SkipLabel, Value: domain.WizardChoiceSkip}
 
-	items := []components.SelectItem{skip, configure}
-	if p.DefaultConfigure {
-		items = []components.SelectItem{configure, skip}
-	}
+	items := []components.SelectItem{configure, skip}
 
 	note := ""
 	if p.Detected != "" {

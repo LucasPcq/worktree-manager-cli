@@ -16,6 +16,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/branch"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	checkoutwizard "github.com/LucasPcq/wtm/internal/tui/checkout"
@@ -109,18 +110,19 @@ func checkoutByNumber(cmd *cobra.Command, result shared.ConfigResult, number int
 	if err := rules.ValidatePRForCheckout(p, localBranches); err != nil {
 		return err
 	}
+	parentBranches := parentBranchCandidates(result.ProjectDir)
 
 	parent, env, aborted, err := resolveParentAndEnv(resolveParams{
-		result:        result,
-		pr:            p,
-		localBranches: localBranches,
-		opts:          opts,
+		result:         result,
+		pr:             p,
+		parentBranches: parentBranches,
+		opts:           opts,
 	})
 	if err != nil || aborted {
 		return err
 	}
 
-	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode})
+	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode, interactive: opts.interactive})
 }
 
 // checkoutInteractive handles `wtm checkout` with no number: it renders the
@@ -134,6 +136,7 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 	if err != nil {
 		return fmt.Errorf("list local branches: %w", err)
 	}
+	parentBranches := parentBranchCandidates(result.ProjectDir)
 
 	dir := result.ProjectDir
 	review, _ := cmd.Flags().GetBool(domain.FlagReview)
@@ -141,9 +144,10 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 	filter := rules.PRFilterFor(rules.PRFilterParams{Review: review, Mine: mine})
 
 	res, err := checkoutwizard.RunWizard(checkoutwizard.WizardParams{
+		ProjectDir:       dir,
 		PRLoader:         func() ([]domain.PRInfo, domain.GHConnection) { return shared.LoadPRsFiltered(dir, filter) },
 		WorktreeBranches: worktreeBranches(dir),
-		LocalBranches:    localBranches,
+		ParentBranches:   parentBranches,
 		ConfigStrategy:   result.Config.Project.Env.Strategy,
 		IncludeParent:    opts.fromOverride == "",
 		IncludeEnv:       opts.envOverride == "",
@@ -166,15 +170,15 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 	parent := rules.FirstNonEmpty(opts.fromOverride, res.FromBranch, p.BaseBranch)
 	env := rules.FirstNonEmpty(opts.envOverride, res.EnvFromOverride)
 
-	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode})
+	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode, interactive: opts.interactive})
 }
 
 // resolveParams holds inputs for resolving parent/env for a known PR.
 type resolveParams struct {
-	result        shared.ConfigResult
-	pr            domain.PRInfo
-	localBranches []string
-	opts          checkoutOptions
+	result         shared.ConfigResult
+	pr             domain.PRInfo
+	parentBranches []domain.BranchCandidate
+	opts           checkoutOptions
 }
 
 // resolveParentAndEnv determines the parent branch and env strategy for a known
@@ -189,8 +193,9 @@ func resolveParentAndEnv(params resolveParams) (parent, env string, aborted bool
 	if params.opts.interactive && (needParent || needEnv) {
 		pr := params.pr
 		res, runErr := checkoutwizard.RunWizard(checkoutwizard.WizardParams{
+			ProjectDir:     params.result.ProjectDir,
 			Preselected:    &pr,
-			LocalBranches:  params.localBranches,
+			ParentBranches: params.parentBranches,
 			ConfigStrategy: params.result.Config.Project.Env.Strategy,
 			IncludeParent:  needParent,
 			IncludeEnv:     needEnv,
@@ -217,14 +222,24 @@ func resolveParentAndEnv(params resolveParams) (parent, env string, aborted bool
 
 // createFromPRParams holds inputs for the final worktree creation step.
 type createFromPRParams struct {
-	pr       domain.PRInfo
-	parent   string
-	env      string
-	jsonMode bool
+	pr          domain.PRInfo
+	parent      string
+	env         string
+	jsonMode    bool
+	interactive bool
 }
 
 func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createFromPRParams) error {
 	p := params.pr
+
+	if params.interactive && !shared.ConfirmEnvParentFallback(shared.EnvFallbackParams{
+		ProjectDir:  result.ProjectDir,
+		Source:      params.parent,
+		Config:      result.Config,
+		EnvOverride: params.env,
+	}) {
+		return nil
+	}
 
 	fetchErr := components.RunLoading(components.LoadingParams{
 		Message: "Fetching branch from origin…",
@@ -247,7 +262,7 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 		ProjectDir:      result.ProjectDir,
 		StateDir:        result.StateDir,
 		Branch:          p.Branch,
-		FromBranch:      "origin/" + p.Branch,
+		FromBranch:      domain.RemoteBranchPrefix + p.Branch,
 		SourceBranch:    params.parent,
 		Config:          result.Config,
 		EnvFromOverride: params.env,
@@ -281,4 +296,11 @@ func worktreeBranches(projectDir string) []string {
 		branches = append(branches, wt.Branch)
 	}
 	return branches
+}
+
+// parentBranchCandidates lists the local and origin remote-tracking branches,
+// tagged with their divergence, as the parent-branch options for the checkout
+// wizard. Best effort: a listing failure yields an empty set rather than an error.
+func parentBranchCandidates(projectDir string) []domain.BranchCandidate {
+	return branch.Candidates(branch.ListParams{ProjectDir: projectDir})
 }

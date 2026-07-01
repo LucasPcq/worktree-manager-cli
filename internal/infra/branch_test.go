@@ -35,6 +35,61 @@ func TestListLocalBranches(t *testing.T) {
 	}
 }
 
+// createRemoteRef fakes an origin remote-tracking branch by writing the ref
+// directly, avoiding the need for a real remote in tests.
+func createRemoteRef(t *testing.T, dir, name string) {
+	t.Helper()
+	cmd := exec.Command("git", "update-ref", "refs/remotes/origin/"+name, "HEAD")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git update-ref %s: %s: %v", name, out, err)
+	}
+}
+
+func TestListRemoteBranches(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	createRemoteRef(t, dir, "feature/api")
+	createRemoteRef(t, dir, "release")
+	createRemoteRef(t, dir, "HEAD") // the symbolic pointer must be excluded
+
+	branches, err := ListRemoteBranches(ListBranchesParams{ProjectDir: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	found := map[string]bool{}
+	for _, b := range branches {
+		found[b] = true
+	}
+	if !found["origin/feature/api"] || !found["origin/release"] {
+		t.Errorf("missing expected remote branches, got %v", branches)
+	}
+	if found["origin/HEAD"] {
+		t.Error("origin/HEAD must be excluded from remote branches")
+	}
+	// git shortens refs/remotes/origin/HEAD to the bare "origin"; it must not leak
+	// in as a selectable branch.
+	if found["origin"] {
+		t.Error("the origin/HEAD pointer (shortened to \"origin\") must be excluded")
+	}
+}
+
+func TestBranchOrRemoteExists(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	gittest.CreateBranch(t, dir, "local-feat")
+	createRemoteRef(t, dir, "remote-feat")
+
+	if !BranchOrRemoteExists(BranchOrRemoteExistsParams{ProjectDir: dir, Ref: "local-feat"}) {
+		t.Error("expected local branch to be found")
+	}
+	if !BranchOrRemoteExists(BranchOrRemoteExistsParams{ProjectDir: dir, Ref: "origin/remote-feat"}) {
+		t.Error("expected origin remote-tracking branch to be found")
+	}
+	if BranchOrRemoteExists(BranchOrRemoteExistsParams{ProjectDir: dir, Ref: "origin/nope"}) {
+		t.Error("nonexistent ref must not be found")
+	}
+}
+
 func TestCurrentBranch(t *testing.T) {
 	dir := gittest.InitRepo(t)
 
@@ -112,6 +167,80 @@ func TestCommitsAhead_NoneAhead(t *testing.T) {
 	if count != 0 {
 		t.Errorf("expected 0 commits ahead, got %d", count)
 	}
+}
+
+func TestAheadBehind(t *testing.T) {
+	dir := gittest.InitRepo(t)
+
+	branch, err := CurrentBranch(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Pin origin/<branch> at the current commit, then add two local commits:
+	// the local branch is now 2 ahead and 0 behind its origin counterpart.
+	createRemoteRef(t, dir, branch)
+	for i := 0; i < 2; i++ {
+		commit := exec.Command("git", "commit", "--allow-empty", "-m", "ahead")
+		commit.Dir = dir
+		if out, err := commit.CombinedOutput(); err != nil {
+			t.Fatalf("git commit: %s: %v", out, err)
+		}
+	}
+
+	got, err := AheadBehind(AheadBehindParams{
+		ProjectDir: dir,
+		Local:      branch,
+		Remote:     "origin/" + branch,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Ahead != 2 || got.Behind != 0 {
+		t.Errorf("expected ahead 2 / behind 0, got %+v", got)
+	}
+}
+
+func TestUpdateLocalBranchToRemote(t *testing.T) {
+	dir := gittest.InitRepo(t)
+
+	// local "feat" at the base commit, not checked out (HEAD stays on main).
+	runGit(t, dir, "branch", "feat")
+
+	// origin/feat = base + 1 commit, so feat is behind by 1.
+	runGit(t, dir, "checkout", "-b", "tmp")
+	runGit(t, dir, "commit", "--allow-empty", "-m", "remote-only")
+	runGit(t, dir, "update-ref", "refs/remotes/origin/feat", "HEAD")
+	runGit(t, dir, "checkout", "-")
+	runGit(t, dir, "branch", "-D", "tmp")
+
+	if err := UpdateLocalBranchToRemote(UpdateLocalBranchToRemoteParams{ProjectDir: dir, Branch: "feat"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got, want := revParse(t, dir, "feat"), revParse(t, dir, "origin/feat"); got != want {
+		t.Errorf("feat = %s, want origin/feat = %s", got, want)
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %s: %v", args, out, err)
+	}
+}
+
+func revParse(t *testing.T, dir, ref string) string {
+	t.Helper()
+	cmd := exec.Command("git", "rev-parse", ref)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git rev-parse %s: %v", ref, err)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func TestDeleteLocalBranch(t *testing.T) {

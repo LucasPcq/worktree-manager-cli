@@ -87,14 +87,16 @@ func Run(params RunParams) (domain.WorktreeStatus, error) {
 	loading := params.PRLoader != nil
 	items := make([]components.SelectItem, 0, len(params.Statuses))
 	for i, s := range params.Statuses {
+		status := BuildStatus(s)
 		items = append(items, components.SelectItem{
 			Label: s.Branch,
 			Value: strconv.Itoa(i),
-			Badges: BuildBadges(BuildBadgesParams{
+			Badges: BuildTags(BuildTagsParams{
 				Status:   s,
 				PRs:      params.PRs,
 				Services: params.Services,
 			}),
+			Status: &status,
 		})
 	}
 
@@ -151,41 +153,48 @@ func Run(params RunParams) (domain.WorktreeStatus, error) {
 	return params.Statuses[idx], nil
 }
 
-// BuildBadgesParams holds the inputs for BuildBadges.
-type BuildBadgesParams struct {
+// BuildTagsParams holds the inputs for BuildTags.
+type BuildTagsParams struct {
 	Status   domain.WorktreeStatus
 	PRs      []domain.PRInfo
 	Services []domain.JobInfo
 }
 
-// BuildBadges returns the styled badges for a worktree row (parent, PR,
-// services, dirty/clean) used by both `list` and the switch picker. While
-// PRs are still loading, PRs is empty and no PR badge is shown — the picker
-// surfaces a loading status line instead.
-func BuildBadges(params BuildBadgesParams) []components.Badge {
+// BuildTags returns the left-column tags for a worktree row (parent, PR,
+// services) as colored text, used by both `list` and the switch picker. While
+// PRs are still loading, PRs is empty and no PR tag is shown — the picker
+// surfaces a loading status line instead. The dirty/clean state is a separate
+// right-aligned status pill (see BuildStatus).
+func BuildTags(params BuildTagsParams) []components.Badge {
 	s := params.Status
-	var badges []components.Badge
+	var tags []components.Badge
 	if s.IsParent {
-		badges = append(badges, components.Badge{Text: "parent", Variant: components.BadgeNeutral})
+		tags = append(tags, components.Badge{Text: "parent", Variant: components.BadgeAccent})
 	}
 	for _, pr := range params.PRs {
 		if pr.Branch == s.Branch {
-			badges = append(badges, components.Badge{Text: fmt.Sprintf("PR #%d", pr.Number), Variant: components.BadgeSuccess})
+			tags = append(tags, components.Badge{Text: fmt.Sprintf("PR #%d", pr.Number), Variant: components.BadgeSuccess})
 			break
 		}
 	}
 	for _, svc := range params.Services {
 		if svc.WorkDir == s.Path && svc.Status == domain.JobStatusRunning {
-			badges = append(badges, components.Badge{Text: "services", Variant: components.BadgeSuccess})
+			tags = append(tags, components.Badge{Text: "services", Variant: components.BadgeSuccess})
 			break
 		}
 	}
+	return tags
+}
+
+// BuildStatus returns the right-aligned status pill for a worktree row: a filled
+// chip with a leading glyph so dirty/clean scans at a glance. It is computed once
+// at construction (the working tree state does not change while the picker is
+// open) and is not refreshed when PRs stream in.
+func BuildStatus(s domain.WorktreeStatus) components.Badge {
 	if s.IsDirty {
-		badges = append(badges, components.Badge{Text: "dirty", Variant: components.BadgeWarning})
-	} else {
-		badges = append(badges, components.Badge{Text: "clean", Variant: components.BadgeNeutral})
+		return components.Badge{Text: "dirty", Variant: components.BadgeWarning, Glyph: domain.BadgeGlyphDirty}
 	}
-	return badges
+	return components.Badge{Text: "clean", Variant: components.BadgeSuccess, Glyph: domain.BadgeGlyphClean}
 }
 
 // BadgesByValueParams holds the inputs for BadgesByValue.
@@ -195,13 +204,14 @@ type BadgesByValueParams struct {
 	Services []domain.JobInfo
 }
 
-// BadgesByValue builds the badge sets for a slice of worktree statuses keyed by
-// the SelectItem.Value (the status index as a string), so a message handler can
-// refresh rows by value once PRs arrive.
+// BadgesByValue builds the left-column tag sets for a slice of worktree statuses
+// keyed by the SelectItem.Value (the status index as a string), so a message
+// handler can refresh the tag column by value once PRs arrive. The status pill
+// is set once at construction and preserved across the refresh.
 func BadgesByValue(params BadgesByValueParams) map[string][]components.Badge {
 	out := make(map[string][]components.Badge, len(params.Statuses))
 	for i, s := range params.Statuses {
-		out[strconv.Itoa(i)] = BuildBadges(BuildBadgesParams{
+		out[strconv.Itoa(i)] = BuildTags(BuildTagsParams{
 			Status:   s,
 			PRs:      params.PRs,
 			Services: params.Services,
