@@ -10,7 +10,8 @@ import (
 
 // Reparent changes the recorded parent (source_branch) of a worktree. It only
 // rewrites metadata — the actual rebase happens on the next `wtm sync`. The new
-// parent must exist locally and must keep the parent graph acyclic.
+// parent must exist as a local branch or an origin remote-tracking branch
+// (origin/x), and must keep the parent graph acyclic.
 func Reparent(params domain.ReparentParams) (domain.ReparentResult, error) {
 	nodes, err := buildNodes(params.ProjectDir, params.StateDir)
 	if err != nil {
@@ -21,9 +22,9 @@ func Reparent(params domain.ReparentParams) (domain.ReparentResult, error) {
 		return domain.ReparentResult{}, fmt.Errorf("%w: %s", domain.ErrWorktreeNotFound, params.Branch)
 	}
 
-	if !infra.LocalBranchExists(infra.LocalBranchExistsParams{
+	if !infra.BranchOrRemoteExists(infra.BranchOrRemoteExistsParams{
 		ProjectDir: params.ProjectDir,
-		Branch:     params.NewParent,
+		Ref:        params.NewParent,
 	}) {
 		return domain.ReparentResult{}, fmt.Errorf("%w: %s", domain.ErrBranchNotFound, params.NewParent)
 	}

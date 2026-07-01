@@ -16,6 +16,7 @@ func ProjectEnvironment(dir string) domain.InitDetectionResult {
 	}
 	return domain.InitDetectionResult{
 		BaseBranch:         BaseBranch(dir),
+		Branches:           Branches(dir),
 		EnvFiles:           EnvFiles(dir),
 		PackageManager:     pm,
 		InstallCommand:     rules.InstallCommand(pm),

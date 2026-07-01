@@ -149,7 +149,7 @@ func resolveGlobalAnswers(cmd *cobra.Command, flagged bool) (domain.InitGlobalAn
 
 // resolveProjectAnswers builds the project config either from flags + detection
 // (non-interactive) or the interactive wizard.
-func resolveProjectAnswers(cmd *cobra.Command, flagged bool, detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
+func resolveProjectAnswers(cmd *cobra.Command, projectDir string, flagged bool, detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
 	if flagged {
 		nonInteractive, _ := cmd.Flags().GetBool(domain.FlagNonInteractive)
 		basePath, _ := cmd.Flags().GetString(domain.FlagBasePath)
@@ -171,7 +171,7 @@ func resolveProjectAnswers(cmd *cobra.Command, flagged bool, detection domain.In
 		}, detection)
 	}
 
-	answers, err := initwizard.RunProjectWizard(detection)
+	answers, err := initwizard.RunProjectWizard(projectDir, detection)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserAborted) {
 			return domain.InitProjectAnswers{}, err
@@ -194,7 +194,7 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool)
 		Work:    func() error { detection = detect.ProjectEnvironment(dir); return nil },
 	})
 
-	answers, err := resolveProjectAnswers(cmd, flagged, detection)
+	answers, err := resolveProjectAnswers(cmd, dir, flagged, detection)
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
 	}

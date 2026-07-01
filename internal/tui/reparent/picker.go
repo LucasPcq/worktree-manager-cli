@@ -7,7 +7,12 @@ import (
 	"fmt"
 	"sort"
 
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/service/branch"
+	"github.com/LucasPcq/wtm/internal/tui/branchrefresh"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
@@ -41,10 +46,8 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 	if err != nil {
 		return RunResult{}, err
 	}
-	branches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: params.ProjectDir})
-	if err != nil {
-		return RunResult{}, fmt.Errorf("list branches: %w", err)
-	}
+	holder := &[]domain.BranchCandidate{}
+	*holder = branch.Candidates(branch.ListParams{ProjectDir: params.ProjectDir})
 
 	steps := make([]components.Step, 0, 2)
 	worktreeStep := -1
@@ -68,7 +71,7 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 	if params.NewParent == "" {
 		parentStepIdx = len(steps)
 		steps = append(steps, parentStep(parentStepParams{
-			Branches:        branches,
+			Holder:          holder,
 			PresetExclude:   params.Branch,
 			WorktreeStepIdx: worktreeStep,
 			CurrentParents:  params.CurrentParents,
@@ -76,9 +79,20 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 	}
 
 	final, err := components.RunWizard(components.RunWizardParams{
-		Steps:    steps,
-		Stderr:   true,
-		ErrLabel: "reparent wizard",
+		Steps:       steps,
+		Stderr:      true,
+		ErrLabel:    "reparent wizard",
+		InitCmd:     branchrefresh.Cmd(params.ProjectDir),
+		Loading:     true,
+		LoadingText: domain.LoadingBranchesText,
+		OnMsg: func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+			return branchrefresh.Handle(branchrefresh.HandleParams{
+				Wizard:     w,
+				Msg:        msg,
+				ProjectDir: params.ProjectDir,
+				Holder:     holder,
+			})
+		},
 	})
 	if err != nil {
 		return RunResult{}, err
@@ -96,7 +110,7 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 }
 
 type parentStepParams struct {
-	Branches        []string
+	Holder          *[]domain.BranchCandidate
 	PresetExclude   string
 	WorktreeStepIdx int
 	CurrentParents  map[string]string
@@ -111,15 +125,16 @@ func parentStep(params parentStepParams) components.Step {
 		return components.NewSelectList(components.NewSelectListParams{
 			Title:       "Select new parent branch",
 			Description: parentStepDescription(params.CurrentParents[exclude]),
-			Items:       parentItems(params.Branches, exclude),
+			Items:       parentItems(*params.Holder, exclude),
 		})
 	}
 
 	return components.Step{
-		Name:    "Select new parent",
-		Model:   build(nil), // placeholder; rebuilt from the chosen worktree
-		Build:   build,
-		Summary: components.SelectSummary,
+		Name:       "Select new parent",
+		Model:      build(nil), // placeholder; rebuilt from the chosen worktree
+		Build:      build,
+		CanRefresh: true,
+		Summary:    components.SelectSummary,
 	}
 }
 
@@ -134,15 +149,11 @@ func parentStepDescription(currentParent string) string {
 	return fmt.Sprintf("Currently rebased onto %s — pick the new parent (applied on the next sync)", currentParent)
 }
 
-func parentItems(branches []string, exclude string) []components.SelectItem {
-	items := make([]components.SelectItem, 0, len(branches))
-	for _, branch := range branches {
-		if branch == exclude {
-			continue
-		}
-		items = append(items, components.SelectItem{Label: branch, Value: branch})
-	}
-	return items
+func parentItems(branches []domain.BranchCandidate, exclude string) []components.SelectItem {
+	return components.BranchItems(components.BranchItemsParams{
+		Candidates: branches,
+		Exclude:    exclude,
+	})
 }
 
 func listWorktreeItems(projectDir string) ([]components.SelectItem, error) {
