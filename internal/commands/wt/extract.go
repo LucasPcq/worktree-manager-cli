@@ -398,19 +398,24 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 // createTargetInteractive runs the new-worktree wizard with the source's parent
 // branch pre-selected, then creates the worktree.
 func createTargetInteractive(params resolveTargetParams) (extractTarget, error) {
-	branches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: params.cfg.ProjectDir})
+	candidates, err := branchCandidates(params.cfg.ProjectDir)
 	if err != nil {
-		return extractTarget{}, fmt.Errorf("list branches: %w", err)
+		return extractTarget{}, err
 	}
 
 	wiz, err := newpicker.RunWizard(newpicker.WizardParams{
-		Branches:       branches,
+		ProjectDir:     params.cfg.ProjectDir,
+		Branches:       candidates,
 		DefaultBranch:  defaultParent(defaultParentParams{cfg: params.cfg, sourceBranch: params.sourceBranch}),
 		ConfigStrategy: params.cfg.Config.Project.Env.Strategy,
 		IncludeBranch:  true,
 	})
 	if err != nil {
 		return extractTarget{}, err
+	}
+
+	if !maybeFastForwardSource(params.cfg.ProjectDir, wiz.FromBranch) {
+		return extractTarget{}, domain.ErrUserAborted
 	}
 
 	return createTarget(createTargetParams{cfg: params.cfg, branch: wiz.BranchName, fromBranch: wiz.FromBranch})

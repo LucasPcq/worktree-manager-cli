@@ -19,6 +19,9 @@ type RunWizardParams struct {
 	Stderr bool
 	// ErrLabel prefixes a program failure (e.g. "sync picker").
 	ErrLabel string
+	// OnMsg, when set, intercepts every message before the current step (e.g. to
+	// wire an in-place refresh). The wizard is then built with async support.
+	OnMsg WizardMsgHandler
 }
 
 // RunWizard builds and runs a wizard as a standalone tea.Program and returns the
@@ -26,7 +29,7 @@ type RunWizardParams struct {
 // failure is wrapped with ErrLabel. It centralises the program/assertion/abort
 // boilerplate every picker would otherwise repeat.
 func RunWizard(params RunWizardParams) (WizardModel, error) {
-	wiz := NewWizard(params.Steps)
+	wiz := NewWizardWithParams(WizardParams{Steps: params.Steps, OnMsg: params.OnMsg})
 
 	opts := []tea.ProgramOption{}
 	if params.Stderr {

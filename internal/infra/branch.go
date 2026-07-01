@@ -4,7 +4,10 @@ package infra
 import (
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
+
+	"github.com/LucasPcq/wtm/internal/domain"
 )
 
 // ListBranchesParams holds inputs for listing local branches.
@@ -27,6 +30,29 @@ func ListLocalBranches(params ListBranchesParams) ([]string, error) {
 		if trimmed != "" {
 			branches = append(branches, trimmed)
 		}
+	}
+
+	return branches, nil
+}
+
+// ListRemoteBranches returns the short names of origin's remote-tracking
+// branches (e.g. "origin/feature"), sorted alphabetically. The symbolic
+// "origin/HEAD" pointer is excluded since it is not a real branch.
+func ListRemoteBranches(params ListBranchesParams) ([]string, error) {
+	cmd := exec.Command("git", "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin")
+	cmd.Dir = params.ProjectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("git for-each-ref: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+
+	var branches []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || trimmed == "origin/HEAD" {
+			continue
+		}
+		branches = append(branches, trimmed)
 	}
 
 	return branches, nil
@@ -72,6 +98,24 @@ func LocalBranchExists(params LocalBranchExistsParams) bool {
 	return branchExists(params.ProjectDir, params.Branch)
 }
 
+// BranchOrRemoteExistsParams holds inputs for checking a worktree parent ref.
+type BranchOrRemoteExistsParams struct {
+	ProjectDir string
+	Ref        string
+}
+
+// BranchOrRemoteExists reports whether ref resolves to a local branch
+// (refs/heads/<ref>) or an origin remote-tracking branch (refs/remotes/<ref>,
+// e.g. "origin/feature"). Used to validate a worktree parent that may be remote.
+func BranchOrRemoteExists(params BranchOrRemoteExistsParams) bool {
+	if branchExists(params.ProjectDir, params.Ref) {
+		return true
+	}
+	cmd := exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/remotes/"+params.Ref)
+	cmd.Dir = params.ProjectDir
+	return cmd.Run() == nil
+}
+
 // CurrentBranch returns the name of the currently checked-out branch.
 func CurrentBranch(projectDir string) (string, error) {
 	cmd := exec.Command("git", "branch", "--show-current")
@@ -113,6 +157,78 @@ func FetchBranch(params FetchBranchParams) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git fetch origin %s: %s", params.Branch, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// AheadBehindParams holds inputs for computing a local branch's divergence.
+type AheadBehindParams struct {
+	ProjectDir string
+	Local      string
+	Remote     string
+}
+
+// AheadBehind returns how many commits Local is ahead of and behind Remote,
+// computed in a single pass via `git rev-list --left-right --count
+// <local>...<remote>`. The left count is ahead (local-only commits), the right
+// count is behind (remote-only commits).
+func AheadBehind(params AheadBehindParams) (domain.AheadBehind, error) {
+	cmd := exec.Command("git", "rev-list", "--left-right", "--count", params.Local+"..."+params.Remote)
+	cmd.Dir = params.ProjectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return domain.AheadBehind{}, fmt.Errorf("git rev-list: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+
+	fields := strings.Fields(strings.TrimSpace(string(out)))
+	if len(fields) != 2 {
+		return domain.AheadBehind{}, fmt.Errorf("git rev-list: unexpected output %q", strings.TrimSpace(string(out)))
+	}
+
+	ahead, err := strconv.Atoi(fields[0])
+	if err != nil {
+		return domain.AheadBehind{}, fmt.Errorf("git rev-list: parse ahead %q: %w", fields[0], err)
+	}
+	behind, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return domain.AheadBehind{}, fmt.Errorf("git rev-list: parse behind %q: %w", fields[1], err)
+	}
+
+	return domain.AheadBehind{Ahead: ahead, Behind: behind}, nil
+}
+
+// UpdateLocalBranchToRemoteParams holds inputs for advancing a local branch ref.
+type UpdateLocalBranchToRemoteParams struct {
+	ProjectDir string
+	Branch     string
+}
+
+// UpdateLocalBranchToRemote advances a local branch ref to its origin counterpart
+// via `git branch -f <branch> origin/<branch>`. git refuses this when the branch
+// is checked out in a worktree, so callers must only use it for branches that are
+// not checked out (and after verifying the move is a fast-forward).
+func UpdateLocalBranchToRemote(params UpdateLocalBranchToRemoteParams) error {
+	cmd := exec.Command("git", "branch", "-f", params.Branch, "origin/"+params.Branch)
+	cmd.Dir = params.ProjectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git branch -f %s: %s", params.Branch, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// FetchParams holds inputs for fetching all branches from origin.
+type FetchParams struct {
+	ProjectDir string
+}
+
+// Fetch runs `git fetch origin` to refresh every origin remote-tracking ref.
+func Fetch(params FetchParams) error {
+	cmd := exec.Command("git", "fetch", "origin")
+	cmd.Dir = params.ProjectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git fetch origin: %s", strings.TrimSpace(string(out)))
 	}
 	return nil
 }

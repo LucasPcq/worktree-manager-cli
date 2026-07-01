@@ -3,6 +3,7 @@ package wt
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -72,6 +73,25 @@ func TestReparentUpdatesMetadata(t *testing.T) {
 
 	if got := readSourceBranch(t, stateDir, "dev-b"); got != "feat" {
 		t.Errorf("dev-b parent = %q, want feat", got)
+	}
+}
+
+func TestReparentAcceptsRemoteParent(t *testing.T) {
+	dir, stateDir := setupStack(t)
+
+	// Fake an origin remote-tracking branch (no real remote needed).
+	cmd := exec.Command("git", "update-ref", "refs/remotes/origin/staging", "HEAD")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git update-ref: %s: %v", out, err)
+	}
+
+	if _, _, err := runWtCmd(t, domain.CmdReparent, "dev-b", "--to", "origin/staging", "--output", domain.OutputJSON); err != nil {
+		t.Fatalf("reparent onto remote parent: %v", err)
+	}
+
+	if got := readSourceBranch(t, stateDir, "dev-b"); got != "origin/staging" {
+		t.Errorf("dev-b parent = %q, want origin/staging", got)
 	}
 }
 

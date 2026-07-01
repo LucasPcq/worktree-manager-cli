@@ -51,22 +51,22 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		return domain.CreateResult{}, fmt.Errorf("find main worktree: %w", err)
 	}
 
+	sourceBranch := params.SourceBranch
+	if sourceBranch == "" {
+		sourceBranch = params.FromBranch
+	}
+
 	if len(params.Config.Project.Env.CopyFiles) > 0 {
 		copyErr := env.CopyEnvFiles(env.CopyEnvFilesParams{
 			Strategy:           strategy,
 			CopyFiles:          params.Config.Project.Env.CopyFiles,
 			TargetDir:          worktreePath,
 			MainWorktreePath:   mainPath,
-			ParentWorktreePath: params.ProjectDir,
+			ParentWorktreePath: parentWorktreePath(params.ProjectDir, sourceBranch),
 		})
 		if copyErr != nil {
 			return domain.CreateResult{}, fmt.Errorf("copy env files: %w", copyErr)
 		}
-	}
-
-	sourceBranch := params.SourceBranch
-	if sourceBranch == "" {
-		sourceBranch = params.FromBranch
 	}
 
 	metadata := domain.WorktreeMetadata{
@@ -101,6 +101,22 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		Path:     worktreePath,
 		Metadata: metadata,
 	}, nil
+}
+
+// parentWorktreePath resolves the on-disk worktree of the parent branch, used by
+// the env "parent" strategy to copy .env from the worktree the new one was
+// branched off. Returns "" when the parent has no local worktree (e.g. a remote
+// start-point like origin/x), letting env provisioning fall back to the main
+// worktree instead of copying from the wrong directory.
+func parentWorktreePath(projectDir, parentBranch string) string {
+	wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
+		ProjectDir: projectDir,
+		Branch:     parentBranch,
+	})
+	if err != nil {
+		return ""
+	}
+	return wt.Path
 }
 
 func writeMetadata(metaDir string, metadata domain.WorktreeMetadata) error {

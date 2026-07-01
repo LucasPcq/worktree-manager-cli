@@ -11,14 +11,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/tui/branchrefresh"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // RunParams holds the inputs for the relocate wizard.
 type RunParams struct {
+	ProjectDir string
 	Plan       domain.RelocatePlan
-	Adoptions  []domain.RelocateStep // worktrees needing a parent (rules.PlanAdoptions)
-	Branches   []string              // candidate parent branches (resolved by the command)
+	Adoptions  []domain.RelocateStep    // worktrees needing a parent (rules.PlanAdoptions)
+	Branches   []domain.BranchCandidate // candidate parent branches (resolved by the command)
 	BaseBranch string
 }
 
@@ -33,17 +35,29 @@ type RunResult struct {
 // the chosen parents and whether the user confirmed. An abort (Esc on the first
 // step) or a "No" on the final step yields Confirmed=false.
 func RunWizard(params RunParams) (RunResult, error) {
+	holder := &params.Branches
+
 	steps := make([]components.Step, 0, len(params.Adoptions)+1)
 	for _, adoption := range params.Adoptions {
 		steps = append(steps, parentStep(parentStepParams{
 			Branch:     adoption.Branch,
 			BaseBranch: params.BaseBranch,
-			Branches:   params.Branches,
+			Holder:     holder,
 		}))
 	}
 	steps = append(steps, applyStep(params))
 
-	wiz := components.NewWizard(steps)
+	wiz := components.NewWizardWithParams(components.WizardParams{
+		Steps: steps,
+		OnMsg: func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+			return branchrefresh.Handle(branchrefresh.HandleParams{
+				Wizard:     w,
+				Msg:        msg,
+				ProjectDir: params.ProjectDir,
+				Holder:     holder,
+			})
+		},
+	})
 	finalModel, err := tea.NewProgram(wiz, tea.WithOutput(os.Stderr)).Run()
 	if err != nil {
 		return RunResult{}, fmt.Errorf("relocate wizard: %w", err)
@@ -64,28 +78,29 @@ func RunWizard(params RunParams) (RunResult, error) {
 type parentStepParams struct {
 	Branch     string
 	BaseBranch string
-	Branches   []string
+	Holder     *[]domain.BranchCandidate
 }
 
 func parentStep(params parentStepParams) components.Step {
-	items := []components.SelectItem{
-		{Label: params.BaseBranch + "  (default)", Value: params.BaseBranch},
-	}
-	for _, b := range params.Branches {
-		if b == params.BaseBranch || b == params.Branch {
-			continue
-		}
-		items = append(items, components.SelectItem{Label: b, Value: b})
+	build := func() any {
+		return components.NewSelectList(components.NewSelectListParams{
+			Title:       "Parent for " + params.Branch,
+			Description: "Recorded as the worktree's parent so `wtm sync` can rebase it.",
+			Items: components.BranchItems(components.BranchItemsParams{
+				Candidates:   *params.Holder,
+				Pinned:       params.BaseBranch,
+				PinnedSuffix: "  (default)",
+				Exclude:      params.Branch,
+			}),
+		})
 	}
 
 	return components.Step{
-		Name: "Parent for " + params.Branch,
-		Model: components.NewSelectList(components.NewSelectListParams{
-			Title:       "Parent for " + params.Branch,
-			Description: "Recorded as the worktree's parent so `wtm sync` can rebase it.",
-			Items:       items,
-		}),
-		Summary: components.SelectSummary,
+		Name:       "Parent for " + params.Branch,
+		Model:      build(),
+		Build:      func([]components.Step) any { return build() },
+		CanRefresh: true,
+		Summary:    components.SelectSummary,
 	}
 }
 

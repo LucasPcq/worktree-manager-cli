@@ -184,6 +184,9 @@ wtm create feature/auth
 
 # Direct — specify everything, no interaction
 wtm create feature/auth --from main --env-from parent
+
+# Branch off a remote-tracking branch you haven't checked out locally
+wtm create feature/auth --from origin/develop
 ```
 
 **What happens:**
@@ -195,8 +198,25 @@ wtm create feature/auth --from main --env-from parent
 **Flags:**
 | Flag | Description |
 |---|---|
-| `--from <branch>` | Source branch (skips interactive picker) |
+| `--from <branch>` | Source branch (skips interactive picker). Accepts a local branch or a remote-tracking ref like `origin/develop` |
 | `--env-from <strategy>` | Override env strategy: `example`, `main`, or `parent` |
+
+> **Branch divergence badges:** in the source-branch picker (and every other branch
+> picker — checkout, reparent, relocate), a local branch that has drifted from its
+> `origin/` counterpart is tagged with how far it is ahead/behind (`↓5`, `↑2`,
+> `↑2 ↓5`), so you don't unknowingly branch off a stale `main`. The counts reflect
+> your last fetch; press `r` to re-fetch `origin` and refresh them in place.
+>
+> **Fast-forward a stale source:** if the source branch you pick is strictly behind
+> its `origin/` counterpart (`↓N`), wtm offers to fast-forward it to origin before
+> creating the worktree, so the new worktree starts from an up-to-date base while the
+> source stays a local branch (keeping the env strategy, parent metadata, and `wtm
+> sync` coherent). The fast-forward is skipped if that branch's worktree has
+> uncommitted changes — wtm then asks whether to create from the local branch anyway
+> (default no) rather than silently starting from a stale base. Diverged branches
+> (`↑N ↓M`) can't be fast-forwarded: wtm shows an explicit heads-up (they'll need a
+> rebase/merge and may hit conflicts later) and, if you confirm, creates from the
+> local branch as-is so your local commits are preserved.
 
 #### `wtm list`
 
@@ -378,11 +398,12 @@ Change the recorded **parent** of a worktree — the branch `wtm sync` rebases i
 ```bash
 wtm reparent                       # pick the worktree, then the new parent, interactively
 wtm reparent dev/b --to feat       # reparent dev/b onto feat directly
+wtm reparent dev/b --to origin/develop  # rebase onto a remote integration branch
 ```
 
 **What happens:**
 1. Resolves the worktree (argument or interactive picker) and the new parent (`--to` or interactive picker)
-2. Validates: the new parent must exist locally, a worktree can't be its own parent, and the resulting parent chain must stay acyclic
+2. Validates: the new parent must exist as a local branch or a remote-tracking ref (`origin/x`), a worktree can't be its own parent, and the resulting parent chain must stay acyclic
 3. Rewrites the worktree's `source_branch` — run `wtm sync <branch>` afterwards to actually rebase
 
 > In non-interactive mode (`--output json`) there is no picker — you must pass the branch and `--to`, otherwise the command exits with a usage error.
@@ -390,7 +411,7 @@ wtm reparent dev/b --to feat       # reparent dev/b onto feat directly
 **Flags:**
 | Flag | Description |
 |---|---|
-| `--to <branch>` | New parent branch to rebase onto |
+| `--to <branch>` | New parent branch to rebase onto. Accepts a local branch or a remote-tracking ref like `origin/develop` |
 
 ---
 

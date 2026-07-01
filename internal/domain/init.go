@@ -25,6 +25,7 @@ type PackageScript struct {
 // InitDetectionResult holds all auto-detected values for repo init.
 type InitDetectionResult struct {
 	BaseBranch         string
+	Branches           []BranchCandidate
 	EnvFiles           []string
 	PackageManager     PackageManager
 	InstallCommand     string

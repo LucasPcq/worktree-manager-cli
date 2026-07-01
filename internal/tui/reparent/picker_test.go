@@ -3,7 +3,17 @@ package reparent
 import (
 	"strings"
 	"testing"
+
+	"github.com/LucasPcq/wtm/internal/domain"
 )
+
+func localCandidates(names ...string) []domain.BranchCandidate {
+	out := make([]domain.BranchCandidate, 0, len(names))
+	for _, n := range names {
+		out = append(out, domain.BranchCandidate{Name: n})
+	}
+	return out
+}
 
 func TestParentStepDescriptionShowsCurrentParent(t *testing.T) {
 	desc := parentStepDescription("dev/a")
@@ -22,7 +32,7 @@ func TestParentStepDescriptionHandlesNoParent(t *testing.T) {
 }
 
 func TestParentItemsExcludesChosenWorktree(t *testing.T) {
-	branches := []string{"main", "feat", "dev-a", "dev-b"}
+	branches := localCandidates("main", "feat", "dev-a", "dev-b")
 
 	items := parentItems(branches, "dev-b")
 
@@ -37,7 +47,7 @@ func TestParentItemsExcludesChosenWorktree(t *testing.T) {
 }
 
 func TestParentItemsKeepsAllWhenNoExclusion(t *testing.T) {
-	branches := []string{"main", "feat"}
+	branches := localCandidates("main", "feat")
 
 	if items := parentItems(branches, ""); len(items) != 2 {
 		t.Fatalf("expected 2 candidates, got %d", len(items))

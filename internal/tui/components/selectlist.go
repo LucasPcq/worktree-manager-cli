@@ -97,6 +97,10 @@ func (m *SelectListModel) SetItems(items []SelectItem) {
 	m.snapToSelectable()
 }
 
+// Filtering reports whether the list is in inline-filter mode, so a wizard can
+// avoid intercepting typed keys (e.g. the refresh key) as commands.
+func (m SelectListModel) Filtering() bool { return m.filtering }
+
 // Init satisfies tea.Model.
 func (m SelectListModel) Init() tea.Cmd { return nil }
 

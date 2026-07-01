@@ -32,7 +32,8 @@ var (
 	// ErrNotGitRepo is returned when the current directory is not a git repository.
 	ErrNotGitRepo = errors.New("not a git repository")
 
-	// ErrBranchNotFound is returned when a specified source branch does not exist locally.
+	// ErrBranchNotFound is returned when a specified source or parent branch does
+	// not exist as a local branch or an origin remote-tracking branch.
 	ErrBranchNotFound = errors.New("branch not found")
 
 	// ErrWorktreePathExists is returned when the target worktree directory already exists.

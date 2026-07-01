@@ -23,8 +23,8 @@ func newReparentCmd() *cobra.Command {
 		Short: "Change the parent a worktree is rebased onto",
 		Long: "Change the recorded parent (source branch) of a worktree. Only the metadata is\n" +
 			"updated — the rebase happens on the next `wtm sync`. Pass the worktree and --to <parent>,\n" +
-			"or run with no arguments to pick interactively. The new parent must exist locally and the\n" +
-			"resulting parent chain must stay acyclic.",
+			"or run with no arguments to pick interactively. The new parent must exist as a local or\n" +
+			"origin remote-tracking branch (origin/x), and the resulting parent chain must stay acyclic.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: runReparent,
 	}
