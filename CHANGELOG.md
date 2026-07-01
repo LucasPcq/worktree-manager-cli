@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.21.0 — `wtm prune`, `sync --keep-conflict` & parité JSON
+
+### New features
+
+- **`wtm prune [filters]`** — supprime en un passage les worktrees dont le travail est terminé, en reparentant les enfants survivants sur leur grand-parent (comme `clean --reparent-children`). Sans filtre, prune considère tout worktree fini ; les filtres restreignent par catégorie : `--merged` (aucun commit d'avance sur la base — ne capture pas les squash-merges), `--closed` (PR mergée/fermée, nécessite `gh`), `--gone` (branche distante supprimée, lance `git fetch --prune` d'abord sauf `--no-fetch`). Sur TTY : les matches sont présentés pour revue (les worktrees **unsafe** décochés), puis une confirmation de prune, puis — comme `clean` — une confirmation dédiée pour reparenter les enfants. Le worktree principal et la branche de base sont toujours protégés ; le worktree courant est supprimé et le shell redirigé vers le dépôt de base. **Comme `clean`, un worktree dirty, avec commits non-pushés, ou avec une PR ouverte est unsafe et nécessite `--force`** — en mode `--yes`/`--output json` ces worktrees sont reportés sous `skipped` (raison `dirty`/`unpushed`/`open_pr`) plutôt que supprimés, pour ne jamais perdre de travail commité silencieusement. `--dry-run` prévisualise sans rien changer ; `--yes` saute les prompts (requis avec `--output json`) ; non-interactivement les enfants restent orphelins sauf `--reparent-children`.
+- **`wtm sync --keep-conflict`** — laisse un rebase en conflit **en cours dans son worktree** pour résolution manuelle, au lieu de l'abandonner. Les fichiers en conflit sont capturés avant tout abandon, la branche d'un worktree en plein rebase est correctement récupérée, et un second `sync` détecte le rebase en cours (nouveau statut `rebase_in_progress`) pour bloquer ses descendants sans re-tenter. La sortie JSON gagne `conflict_files`, `kept_in_progress` et `path` (#32).
+
+### Improvements
+
+- **Parité `--output json` sur l'ensemble des commandes** — les commandes qui ne l'exposaient pas encore émettent désormais un payload JSON stable et agent-friendly (slices normalisées en `[]` plutôt que `null`, jamais encadré par le framing humain), pour piloter wtm depuis un agent/script de façon homogène.
+- **`--help` groupé, docs générées & README allégé** — l'aide racine range les commandes en sections (`Worktrees:`, `Navigate:`, `Stacked branches:`, `Dev jobs:`, `GitHub:`, `Setup:`). La référence complète des commandes sous `docs/` est désormais **générée** depuis l'arbre Cobra par `tools/gendocs` (`make docs`), le README redevient un guide concis (concepts + tableau d'aperçu groupé pointant vers `docs/`), et la skill agent `using-wtm` est resserrée tout en documentant `prune` et `sync --keep-conflict`.
+
 ## v0.20.0 — Pickers de branches : divergence, branches distantes & filtrage
 
 ### New features
