@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.20.0 — Pickers de branches : divergence, branches distantes & filtrage
+
+### New features
+
+- **Brancher depuis une branche distante** — `wtm create --from origin/x` crée un worktree à partir d'une branche remote-tracking que vous n'avez pas checkout localement, et `wtm reparent --to origin/x` reparente sur une branche d'intégration distante. Les pickers de branches (create, checkout, reparent, relocate, init) listent désormais les locales **et** les distantes d'`origin` (groupées après un séparateur, taguées `remote`), avec les distantes dont le nom existe déjà en local masquées au profit de la locale. La validation `reparent` accepte une branche locale **ou** un ref `origin/x` (LUC-98).
+- **Badges de divergence dans les pickers de branches** — une branche locale qui a dérivé de sa contrepartie `origin/` est taguée avec son avance/retard (`↓5`, `↑2`, `↑2 ↓5`), pour ne pas brancher sur une base périmée sans le savoir. À l'ouverture, wtm fetch `origin` en arrière-plan (callout `Fetching branches…` non-bloquant) et les badges se rafraîchissent ; la touche **`r`** relance un fetch à la demande. Hors-ligne, le picker reste utilisable avec les derniers compteurs connus (LUC-98).
+- **Fast-forward d'une source périmée avant création** — si la branche source choisie est strictement en retard sur `origin/` (`↓N`), wtm propose de la fast-forward vers origin avant de créer le worktree (la source reste une branche locale, préservant stratégie env, métadonnée parent et cohérence `wtm sync`). Le fast-forward est sauté si le worktree de cette branche a des changements non commités — wtm demande alors s'il faut créer depuis la branche locale telle quelle (défaut non). Une branche **divergée** (`↑N ↓M`) ne peut pas être fast-forwardée : wtm affiche un heads-up explicite et, sur confirmation, crée depuis la locale en préservant les commits locaux (LUC-98).
+- **Filtre inline sur les listes multi-sélection** — dans le picker interactif de `wtm sync` (et `extract`, wizard `init`), `/` entre en mode filtre : la liste se réduit en live aux worktrees dont le nom contient le terme (sous-chaîne, insensible à la casse). `a` coche/décoche tous les worktrees **filtrés**, les cases cochées sont conservées d'un filtre à l'autre, `échap` efface le filtre s'il est actif sinon annule. Le filtrage vit dans le composant `MultiSelect` partagé (LUC-95).
+
+### Improvements
+
+- **Harmonisation & redesign des listes de worktree (LUC-97)** — espacement de ligne désormais uniforme, avec ou sans badge. Les badges deviennent du **texte coloré compact** aligné en colonne (au lieu de chips volumineux) ; la ligne sélectionnée porte un fond teinté + un marqueur de bord gauche `▌▸` ; le statut est une **pastille droite alignée** avec glyphe (`✓ clean`, `⚠ dirty`) qui scanne d'un coup d'œil. Les exemples `wtm list` / `wtm tree` du README reflètent les nouveaux glyphes.
+- **Transparence de la stratégie env `parent`** — avant de créer un worktree (create, extract, checkout), si la stratégie `parent` allait silencieusement copier le `.env` depuis le worktree **principal** parce que la branche source n'a pas de worktree local, wtm le signale et demande confirmation au lieu de copier depuis un emplacement inattendu (LUC-98).
+- **Nettoyage de conformité interne** — extraction des helpers de filtre partagés (`SelectList`/`MultiSelect`), factory `branchrefresh.Handler` unique pour les 5 pickers de branches, fonctions pures déplacées dans `rules/` (`BranchCandidateExists`, `IsRemoteBranch`), et centralisation des constantes (`RemoteBranchPrefix`, glyphes de statut) — aucun changement de comportement.
+
 ## v0.19.0 — Workflow de branches empilées : visualiser, reparenter, sync ciblé
 
 ### Breaking changes
