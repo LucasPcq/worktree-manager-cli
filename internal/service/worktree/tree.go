@@ -54,10 +54,11 @@ func BuildTree(params BuildTreeParams) (domain.Forest, error) {
 			IsMain:       n.IsMain,
 			CreatedAt:    st.CreatedAt,
 			Status: domain.TreeNodeStatus{
-				CommitsAhead: st.CommitsAhead,
-				IsDirty:      st.IsDirty,
-				NeedsSync:    needsSync[n.Branch],
-				PR:           matchTreePR(n.Branch, params.PRs),
+				CommitsAhead:     st.CommitsAhead,
+				IsDirty:          st.IsDirty,
+				RebaseInProgress: st.RebaseInProgress,
+				NeedsSync:        needsSync[n.Branch],
+				PR:               matchTreePR(n.Branch, params.PRs),
 			},
 		})
 	}

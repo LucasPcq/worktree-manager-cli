@@ -2,7 +2,9 @@ package infra
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -49,7 +51,55 @@ func ListWorktrees(params ListWorktreesParams) ([]domain.GitWorktree, error) {
 		worktrees = append(worktrees, current)
 	}
 
+	// A worktree with a rebase stopped mid-way (e.g. left in progress by
+	// `wtm sync --keep-conflict`) has a detached HEAD, so `git worktree list` emits
+	// no branch line. Recover the branch being rebased so the worktree still maps to
+	// its branch for sync/tree/list (an empty branch would otherwise be read as an
+	// invalid node and, chained through source-branch metadata, misreported as a cycle).
+	for i := range worktrees {
+		if worktrees[i].Branch != "" {
+			continue
+		}
+		if branch, ok := rebaseInProgressBranch(worktrees[i].Path); ok {
+			worktrees[i].Branch = branch
+			worktrees[i].RebaseInProgress = true
+		}
+	}
+
 	return worktrees, nil
+}
+
+// rebaseInProgressBranch returns the original branch of a rebase stopped mid-way
+// in the worktree, read from the rebase state's head-name (interactive/merge
+// rebase writes rebase-merge, the am-based rebase writes rebase-apply). It returns
+// ok=false when no rebase is in progress.
+func rebaseInProgressBranch(worktreePath string) (string, bool) {
+	for _, stateDir := range []string{"rebase-merge", "rebase-apply"} {
+		pathOut, err := exec.Command("git", "-C", worktreePath,
+			"rev-parse", "--git-path", stateDir+"/head-name").Output()
+		if err != nil {
+			continue
+		}
+		headName := strings.TrimSpace(string(pathOut))
+		if headName == "" {
+			continue
+		}
+		// `git rev-parse --git-path` returns an absolute path for a linked worktree
+		// but a path relative to the worktree (e.g. `.git/rebase-merge/head-name`)
+		// for the main worktree. os.ReadFile resolves relative paths against the
+		// process cwd, not the worktree, so anchor it explicitly.
+		if !filepath.IsAbs(headName) {
+			headName = filepath.Join(worktreePath, headName)
+		}
+		content, err := os.ReadFile(headName)
+		if err != nil {
+			continue
+		}
+		if branch := strings.TrimPrefix(strings.TrimSpace(string(content)), "refs/heads/"); branch != "" {
+			return branch, true
+		}
+	}
+	return "", false
 }
 
 // FindMainWorktreeParams holds inputs for finding the main worktree path.

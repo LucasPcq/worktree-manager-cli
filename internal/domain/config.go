@@ -11,26 +11,26 @@ const (
 
 // ProjectConfig maps to .wtm.toml (project-level configuration).
 type ProjectConfig struct {
-	Worktrees WorktreesConfig `toml:"worktrees"`
-	Env       EnvConfig       `toml:"env"`
-	Hooks     HooksConfig     `toml:"hooks"`
+	Worktrees WorktreesConfig `toml:"worktrees" json:"worktrees"`
+	Env       EnvConfig       `toml:"env" json:"env"`
+	Hooks     HooksConfig     `toml:"hooks" json:"hooks"`
 }
 
 // WorktreesConfig controls worktree creation defaults.
 type WorktreesConfig struct {
-	BasePath   string `toml:"base_path"`
-	BaseBranch string `toml:"base_branch"`
+	BasePath   string `toml:"base_path" json:"base_path"`
+	BaseBranch string `toml:"base_branch" json:"base_branch"`
 }
 
 // EnvConfig controls .env file provisioning.
 type EnvConfig struct {
-	Strategy  EnvStrategy `toml:"strategy"`
-	CopyFiles []string    `toml:"copy_files"`
+	Strategy  EnvStrategy `toml:"strategy" json:"strategy"`
+	CopyFiles []string    `toml:"copy_files" json:"copy_files"`
 }
 
 // HooksConfig defines lifecycle hooks as lists of commands.
 type HooksConfig struct {
-	OnCreate []HookCommand `toml:"on_create"`
+	OnCreate []HookCommand `toml:"on_create" json:"on_create"`
 }
 
 // GlobalConfig maps to ~/.config/wtm/config.toml (user-level configuration).

@@ -99,6 +99,32 @@ func ApplyReparentChildren(params ApplyReparentChildrenParams) ([]domain.Reparen
 	return applied, nil
 }
 
+// ApplyReparentsParams holds inputs for ApplyReparents.
+type ApplyReparentsParams struct {
+	Reparents []domain.ReparentResult
+	StateDir  string
+}
+
+// ApplyReparents rewrites each listed child's metadata to point at its NewParent.
+// Unlike ApplyReparentChildren (a single grandparent), it applies a flat list of
+// moves that may target different parents — used by prune, which reparents the
+// children of several removed worktrees in one pass.
+func ApplyReparents(params ApplyReparentsParams) ([]domain.ReparentResult, error) {
+	applied := make([]domain.ReparentResult, 0, len(params.Reparents))
+	for _, r := range params.Reparents {
+		res, err := setSourceBranch(setSourceBranchParams{
+			StateDir:  params.StateDir,
+			Branch:    r.Branch,
+			NewParent: r.NewParent,
+		})
+		if err != nil {
+			return applied, err
+		}
+		applied = append(applied, res)
+	}
+	return applied, nil
+}
+
 // setSourceBranchParams holds inputs for setSourceBranch.
 type setSourceBranchParams struct {
 	StateDir  string

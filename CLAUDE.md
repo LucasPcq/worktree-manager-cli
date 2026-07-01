@@ -16,11 +16,16 @@ interactive-vs-non-interactive behavior), update this skill in the same session 
 stays aligned with the released CLI. Skip purely internal refactors and TUI-only
 changes that don't affect how an agent invokes wtm.
 
-**README:** `README.md` documents the human-facing command reference. Whenever a
-command or flag is **added, modified, or removed**, update `README.md` in the same
-session — add/rename/remove the relevant `#### wtm <command>` section, its usage
-examples, and its flags table, and keep them in command-registration order. This is
-mandatory for every command-surface change, alongside the agent skill above.
+**Docs & README:** the full command reference under `docs/` is **generated** from the
+Cobra command tree by `tools/gendocs` — never hand-edit it. `README.md` is a lean guide
+(concepts + a grouped command-overview table linking into `docs/`), not a flag reference.
+Whenever a command or flag is **added, modified, or removed**:
+1. run `make docs` to regenerate `docs/` (also runs automatically before `make release`);
+2. if a command was added/renamed/removed, update the `README.md` overview table
+   (grouped by the same sections as the root `--help`) and, if relevant, the Concepts or
+   Configuration sections.
+Do **not** re-add per-command flag tables to the README — `wtm <cmd> --help` and `docs/`
+are the source of truth. This is mandatory alongside the agent skill above.
 
 Use the fff MCP tools for all file search operations instead of default tools.
 

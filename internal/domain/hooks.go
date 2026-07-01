@@ -10,9 +10,9 @@ const (
 
 // HookCommand represents a hook entry — either a simple command string or a {cmd, cwd} object.
 type HookCommand struct {
-	Cmd             string `toml:"cmd"`
-	Cwd             string `toml:"cwd"`
-	ContinueOnError bool   `toml:"continue_on_error"`
+	Cmd             string `toml:"cmd" json:"cmd"`
+	Cwd             string `toml:"cwd" json:"cwd"`
+	ContinueOnError bool   `toml:"continue_on_error" json:"continue_on_error"`
 }
 
 // EnvStrategy determines how .env files are provisioned in new worktrees.

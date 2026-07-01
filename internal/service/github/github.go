@@ -50,6 +50,7 @@ type ghPR struct {
 	BaseRefName       string   `json:"baseRefName"`
 	URL               string   `json:"url"`
 	IsCrossRepository bool     `json:"isCrossRepository"`
+	IsDraft           bool     `json:"isDraft"`
 }
 
 type ghAuthor struct {
@@ -66,6 +67,7 @@ func convertGHPR(g ghPR) domain.PRInfo {
 		State:      domain.PRStateOpen,
 		URL:        g.URL,
 		IsFork:     g.IsCrossRepository,
+		Draft:      g.IsDraft,
 	}
 }
 

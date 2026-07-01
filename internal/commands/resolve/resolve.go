@@ -18,14 +18,16 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
 
-// NewCmd creates the wtm resolve command (internal, used by shell wrapper).
+// NewCmd creates the wtm resolve command. Its bare-path stdout is what the shell
+// wrapper (`wtm go`) consumes; `--output json` emits {path, branch} for scripts.
 func NewCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:    "resolve [branch]",
-		Short:  "Resolve a branch to its worktree path",
-		Hidden: true,
-		RunE:   runResolve,
+	cmd := &cobra.Command{
+		Use:   "resolve [branch]",
+		Short: "Resolve a branch to its worktree path",
+		RunE:  runResolve,
 	}
+	shared.AddOutputFlag(cmd)
+	return cmd
 }
 
 func runResolve(cmd *cobra.Command, args []string) error {
@@ -40,12 +42,16 @@ func runResolve(cmd *cobra.Command, args []string) error {
 	}
 
 	query := strings.Join(args, " ")
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	result, err := worktree.Resolve(domain.ResolveParams{
 		ProjectDir: root,
 		Query:      query,
 	})
 	if errors.Is(err, domain.ErrWorktreeNotFound) {
+		if format == domain.OutputJSON {
+			return err
+		}
 		output.Frame(cmd.ErrOrStderr(), func() {
 			output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("No worktree found matching %q", query))
 		})
@@ -56,8 +62,13 @@ func runResolve(cmd *cobra.Command, args []string) error {
 	}
 
 	if !result.Ambiguous {
-		fmt.Fprintln(cmd.OutOrStdout(), result.Path)
-		return nil
+		return emitResolved(cmd, format, result.Path, result.Branch)
+	}
+
+	// A picker needs a TTY, which JSON mode cannot assume; ask the caller to
+	// narrow the query instead of silently guessing.
+	if format == domain.OutputJSON {
+		return fmt.Errorf("%q is ambiguous: narrow the query to a single worktree", query)
 	}
 
 	selected, pickErr := pickAmbiguousWorktree(cmd, root, result.Matches)
@@ -68,7 +79,16 @@ func runResolve(cmd *cobra.Command, args []string) error {
 		return pickErr
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), selected.Path)
+	return emitResolved(cmd, format, selected.Path, selected.Branch)
+}
+
+// emitResolved writes the resolved worktree as bare-path text (what the shell
+// wrapper reads) or as {path, branch} JSON.
+func emitResolved(cmd *cobra.Command, format string, path string, branch string) error {
+	if format == domain.OutputJSON {
+		return output.WriteResolveJSON(cmd.OutOrStdout(), output.ResolveJSON{Path: path, Branch: branch})
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), path)
 	return nil
 }
 

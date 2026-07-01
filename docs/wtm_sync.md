@@ -1,0 +1,37 @@
+## wtm sync
+
+Rebase selected worktrees onto their parent, in cascade
+
+### Synopsis
+
+Rebase one or more managed worktrees onto their parent. Pass branch names to target
+specific worktrees, --all to sync every worktree, or no arguments to pick interactively.
+The base branch is fetched and fast-forwarded first, then each selected worktree is
+rebased onto its parent in topological order (parents before children). The cascade is
+local; on a conflict the branch is left clean (rebase aborted) and its selected
+descendants are skipped. Pass --keep-conflict to leave a conflicting rebase in progress
+in its worktree for manual resolution instead of aborting. After a successful cascade,
+optionally force-push (with lease) the rebased branches.
+
+```
+wtm sync [branch...] [flags]
+```
+
+### Options
+
+```
+      --all             Sync every managed worktree
+      --base string     Base branch to sync from (defaults to config or detected base)
+      --dry-run         Preview the cascade without rebasing or pushing
+  -h, --help            help for sync
+      --keep-conflict   Leave a conflicting rebase in progress in its worktree instead of aborting
+      --no-push         Rebase locally only; never push
+      --output string   Output format: text or json (default "text")
+      --push            Force-push (with lease) rebased branches without prompting
+  -y, --yes             Skip the pre-sync confirmation
+```
+
+### SEE ALSO
+
+* [wtm](wtm.md)	 - Orchestrate git worktrees and team dev workflows from the terminal
+

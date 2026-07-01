@@ -325,7 +325,8 @@ func servicesGate(detection domain.InitDetectionResult) components.Step {
 	return sectionGate(sectionGateParams{
 		Name: "Services & tasks",
 		Description: "Let wtm run your dev stack per worktree — long-running services (databases, dev servers) " +
-			"and one-off tasks — so you start/stop everything with `wtm run` instead of juggling terminals.",
+			"and one-off tasks — so you start/stop everything with `wtm run` instead of juggling terminals. " +
+			"Note: `wtm run` is still experimental and the workflow is stabilizing; you can skip this and add it later.",
 		Detected:       detectedServices(detection),
 		ConfigureLabel: "Configure services & tasks",
 		SkipLabel:      "Skip — no service management",

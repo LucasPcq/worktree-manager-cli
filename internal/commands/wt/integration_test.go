@@ -16,7 +16,11 @@ import (
 func runWtCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	root := &cobra.Command{Use: domain.AppName}
-	root.AddGroup(&cobra.Group{ID: domain.CmdGroupCore, Title: "Core Commands:"})
+	root.AddGroup(
+		&cobra.Group{ID: domain.CmdGroupWorktrees, Title: domain.CmdGroupWorktreesTitle},
+		&cobra.Group{ID: domain.CmdGroupNavigate, Title: domain.CmdGroupNavigateTitle},
+		&cobra.Group{ID: domain.CmdGroupStack, Title: domain.CmdGroupStackTitle},
+	)
 	for _, c := range NewCmds() {
 		root.AddCommand(c)
 	}

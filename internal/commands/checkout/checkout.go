@@ -276,6 +276,9 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 			Number: p.Number,
 			Branch: p.Branch,
 			Path:   createResult.Path,
+			Author: p.Author,
+			URL:    p.URL,
+			Draft:  p.Draft,
 		})
 	}
 

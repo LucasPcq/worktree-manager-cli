@@ -89,7 +89,7 @@ func resolveWorktree(worktrees []domain.GitWorktree, query string) domain.Resolv
 
 	for _, wt := range worktrees {
 		if wt.Branch == query {
-			return domain.ResolveResult{Path: wt.Path}
+			return domain.ResolveResult{Path: wt.Path, Branch: wt.Branch}
 		}
 	}
 
@@ -101,7 +101,7 @@ func resolveWorktree(worktrees []domain.GitWorktree, query string) domain.Resolv
 	}
 
 	if len(matches) == 1 {
-		return domain.ResolveResult{Path: matches[0].Path}
+		return domain.ResolveResult{Path: matches[0].Path, Branch: matches[0].Branch}
 	}
 	if len(matches) > 1 {
 		return domain.ResolveResult{Ambiguous: true, Matches: matches}

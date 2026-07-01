@@ -213,7 +213,13 @@ Two env-var overrides exist for tests / CI:
 1. Create `internal/commands/<name>.go` with unexported constructor
 2. Use `domain.CmdXxx` for the `Use:` field (add constant if new)
 3. Register in the parent group's `NewXxxCmd()` function
-4. Follow the `runStart` pattern: getwd → loadConfig → delegate → format output
+4. Set the command's `GroupID` to the right root `--help` section
+   (`domain.CmdGroup*` — Worktrees / Navigate / Stack / Jobs / GitHub / Setup). An
+   unset `GroupID` renders under a stray "Additional Commands" heading.
+5. Follow the `runStart` pattern: getwd → loadConfig → delegate → format output
+6. Regenerate the reference and update the guide: `make docs` (writes `docs/`, never
+   hand-edited) and add the command to the `README.md` overview table. See CLAUDE.md
+   "Docs & README".
 
 ### Shared flag helpers
 
@@ -464,5 +470,6 @@ Before calling `build-validator`, verify manually:
 - [ ] All async service calls in TUI wrapped as `tea.Cmd`
 - [ ] `addOutputFlag(cmd)` used instead of manual flag registration
 - [ ] `styles.Indent` used instead of literal `"  "` for padding
+- [ ] New/renamed/removed command has a `GroupID`, and `make docs` + README overview were updated
 
 Then run **`build-validator`**.

@@ -1,0 +1,36 @@
+## wtm
+
+Orchestrate git worktrees and team dev workflows from the terminal
+
+```
+wtm [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for wtm
+```
+
+### SEE ALSO
+
+* [wtm agents](wtm_agents.md)	 - Manage LLM agent integrations for wtm
+* [wtm checkout](wtm_checkout.md)	 - Create a worktree from an existing pull request
+* [wtm clean](wtm_clean.md)	 - Remove a worktree and its local branch
+* [wtm config](wtm_config.md)	 - Inspect or edit the project wtm config
+* [wtm create](wtm_create.md)	 - Create a new worktree
+* [wtm extract](wtm_extract.md)	 - Move uncommitted changes to another worktree
+* [wtm go](wtm_go.md)	 - Switch to a worktree
+* [wtm init](wtm_init.md)	 - Initialize wtm configuration
+* [wtm list](wtm_list.md)	 - List all worktrees
+* [wtm prune](wtm_prune.md)	 - Remove finished worktrees (merged, closed PR, gone, or old) in one pass
+* [wtm relocate](wtm_relocate.md)	 - Move worktrees to align with base_path and adopt external ones
+* [wtm reparent](wtm_reparent.md)	 - Change the parent a worktree is rebased onto
+* [wtm resolve](wtm_resolve.md)	 - Resolve a branch to its worktree path
+* [wtm run](wtm_run.md)	 - Manage dev jobs (services + tasks)
+* [wtm schema](wtm_schema.md)	 - Inspect or extract bundled JSON Schemas
+* [wtm shell-init](wtm_shell-init.md)	 - Generate shell integration function
+* [wtm switch](wtm_switch.md)	 - Navigate to a worktree and start its services
+* [wtm sync](wtm_sync.md)	 - Rebase selected worktrees onto their parent, in cascade
+* [wtm tree](wtm_tree.md)	 - Show the worktree forest (parent → child)
+

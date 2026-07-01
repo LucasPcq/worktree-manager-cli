@@ -64,6 +64,18 @@ func TestBadgesByValue(t *testing.T) {
 	}
 }
 
+func TestBuildStatus_RebasingPrecedesDirty(t *testing.T) {
+	if pill := BuildStatus(domain.WorktreeStatus{IsDirty: true, RebaseInProgress: true}); pill.Text != "rebasing" {
+		t.Fatalf("status pill = %q, want rebasing (should win over dirty)", pill.Text)
+	}
+	if pill := BuildStatus(domain.WorktreeStatus{IsDirty: true}); pill.Text != "dirty" {
+		t.Fatalf("status pill = %q, want dirty", pill.Text)
+	}
+	if pill := BuildStatus(domain.WorktreeStatus{}); pill.Text != "clean" {
+		t.Fatalf("status pill = %q, want clean", pill.Text)
+	}
+}
+
 func hasPRBadge(badges []components.Badge) bool {
 	for _, b := range badges {
 		if strings.HasPrefix(b.Text, "PR #") {

@@ -13,6 +13,11 @@ type SyncParams struct {
 	Config     domain.Config
 	BaseBranch string
 	DryRun     bool
+	// KeepConflict leaves a conflicting rebase in progress in its worktree (for
+	// manual resolution) instead of aborting it. Descendants are still skipped;
+	// independent branches keep syncing, so several worktrees may be left
+	// mid-rebase.
+	KeepConflict bool
 	// SelectedBranches restricts the cascade to the named worktrees (topological
 	// order is preserved). An empty slice means every managed worktree.
 	SelectedBranches []string
@@ -61,9 +66,10 @@ func Sync(params SyncParams) (domain.SyncResult, error) {
 	})
 
 	result := domain.SyncResult{
-		BaseBranch: params.BaseBranch,
-		BaseOldTip: oldTips[params.BaseBranch],
-		BaseNewTip: oldTips[params.BaseBranch],
+		BaseBranch:       params.BaseBranch,
+		BaseOldTip:       oldTips[params.BaseBranch],
+		BaseNewTip:       oldTips[params.BaseBranch],
+		SelectedBranches: stepBranches(plan.Steps),
 	}
 
 	if !params.DryRun {
@@ -78,10 +84,11 @@ func Sync(params SyncParams) (domain.SyncResult, error) {
 	skipped := make(map[string]bool)
 	for _, step := range plan.Steps {
 		stepResult, blocks := evaluateStep(stepEval{
-			Step:    step,
-			OldTips: oldTips,
-			Skipped: skipped,
-			DryRun:  params.DryRun,
+			Step:         step,
+			OldTips:      oldTips,
+			Skipped:      skipped,
+			DryRun:       params.DryRun,
+			KeepConflict: params.KeepConflict,
 		})
 		if blocks {
 			skipped[step.Branch] = true
@@ -90,6 +97,17 @@ func Sync(params SyncParams) (domain.SyncResult, error) {
 	}
 
 	return result, nil
+}
+
+// stepBranches lists the branches covered by a cascade's steps — the explicit
+// selection or, for --all, every managed worktree. Always non-nil so the JSON
+// field marshals as [] rather than null.
+func stepBranches(steps []domain.SyncStep) []string {
+	branches := make([]string, 0, len(steps))
+	for _, step := range steps {
+		branches = append(branches, step.Branch)
+	}
+	return branches
 }
 
 // PushSyncedParams holds inputs for pushing the successfully-rebased branches.
@@ -146,10 +164,11 @@ func buildNodes(projectDir, stateDir string) ([]domain.WorktreeNode, error) {
 			source = loadSourceBranch(stateDir, w.Branch)
 		}
 		nodes = append(nodes, domain.WorktreeNode{
-			Branch:       w.Branch,
-			Path:         w.Path,
-			SourceBranch: source,
-			IsMain:       w.IsMain,
+			Branch:           w.Branch,
+			Path:             w.Path,
+			SourceBranch:     source,
+			IsMain:           w.IsMain,
+			RebaseInProgress: w.RebaseInProgress,
 		})
 	}
 
@@ -291,10 +310,11 @@ func integrateRemote(step domain.SyncStep) integrateOutcome {
 }
 
 type stepEval struct {
-	Step    domain.SyncStep
-	OldTips map[string]string
-	Skipped map[string]bool
-	DryRun  bool
+	Step         domain.SyncStep
+	OldTips      map[string]string
+	Skipped      map[string]bool
+	DryRun       bool
+	KeepConflict bool
 }
 
 // evaluateStep computes the outcome of one cascade step. The second return value
@@ -303,6 +323,7 @@ func evaluateStep(e stepEval) (domain.SyncStepResult, bool) {
 	result := domain.SyncStepResult{
 		Branch:       e.Step.Branch,
 		SourceBranch: e.Step.SourceBranch,
+		Path:         e.Step.Path,
 		OldTip:       e.OldTips[e.Step.Branch],
 		NewTip:       e.OldTips[e.Step.Branch],
 	}
@@ -316,6 +337,15 @@ func evaluateStep(e stepEval) (domain.SyncStepResult, bool) {
 	if e.Skipped[e.Step.SourceBranch] {
 		result.Status = domain.SyncStatusSkippedAncestor
 		result.Detail = "ancestor " + e.Step.SourceBranch + " was not synced"
+		return result, true
+	}
+
+	// A worktree with a rebase already paused mid-way (e.g. a prior keep-conflict
+	// run) cannot be rebased again until it is resolved. Report it distinctly rather
+	// than as a generic "uncommitted changes" skip.
+	if e.Step.RebaseInProgress {
+		result.Status = domain.SyncStatusRebaseInProgress
+		result.Detail = "rebase already in progress — finish it with git rebase --continue (or --abort)"
 		return result, true
 	}
 
@@ -400,6 +430,7 @@ func evaluateStep(e stepEval) (domain.SyncStepResult, bool) {
 		NewBase:      e.Step.SourceBranch,
 		Upstream:     upstream,
 		Branch:       e.Step.Branch,
+		KeepConflict: e.KeepConflict,
 	})
 	if err != nil {
 		result.Status = domain.SyncStatusError
@@ -408,7 +439,13 @@ func evaluateStep(e stepEval) (domain.SyncStepResult, bool) {
 	}
 	if rebaseResult.Conflicted {
 		result.Status = domain.SyncStatusConflict
-		result.Detail = "rebase conflict (aborted, working tree clean)"
+		result.ConflictFiles = rebaseResult.Files
+		result.KeptInProgress = rebaseResult.Kept
+		if rebaseResult.Kept {
+			result.Detail = "rebase conflict (left in progress)"
+		} else {
+			result.Detail = "rebase conflict (aborted, working tree clean)"
+		}
 		return result, true
 	}
 

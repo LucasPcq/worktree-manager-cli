@@ -29,6 +29,9 @@ type PRCheckoutJSON struct {
 	Number int    `json:"number"`
 	Branch string `json:"branch"`
 	Path   string `json:"path"`
+	Author string `json:"author"`
+	URL    string `json:"url"`
+	Draft  bool   `json:"is_draft"`
 }
 
 // WriteJobResultsJSON writes the JSON array describing each job outcome.

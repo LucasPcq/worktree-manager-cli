@@ -15,7 +15,7 @@ func NewCmd() *cobra.Command {
 		Use:     domain.CmdRun,
 		Short:   "Manage dev jobs (services + tasks)",
 		Long:    "Run commands and profiles declared in <git-common-dir>/wtm/run.toml — long-running services and one-shot tasks.",
-		GroupID: domain.CmdGroupCore,
+		GroupID: domain.CmdGroupJobs,
 	}
 
 	cmd.AddCommand(newListCmd())

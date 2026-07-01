@@ -109,6 +109,7 @@ const (
 	annVirtual treeAnnotation = iota
 	annPR
 	annAhead
+	annRebasing
 	annDirty
 	annNeedsSync
 	annCycle
@@ -125,7 +126,9 @@ func nodeAnnotations(node *domain.TreeNode) []treeAnnotation {
 	if node.Status.CommitsAhead > 0 {
 		kinds = append(kinds, annAhead)
 	}
-	if node.Status.IsDirty {
+	if node.Status.RebaseInProgress {
+		kinds = append(kinds, annRebasing)
+	} else if node.Status.IsDirty {
 		kinds = append(kinds, annDirty)
 	}
 	if node.Status.NeedsSync {
@@ -148,6 +151,8 @@ func formatTreeAnnotations(node *domain.TreeNode) string {
 			parts = append(parts, formatTreePR(node.Status.PR))
 		case annAhead:
 			parts = append(parts, styles.Muted.Render(fmt.Sprintf("↑%d", node.Status.CommitsAhead)))
+		case annRebasing:
+			parts = append(parts, styles.Warning.Render("⚠ rebasing"))
 		case annDirty:
 			parts = append(parts, styles.Warning.Render("⚠ dirty"))
 		case annNeedsSync:
@@ -235,6 +240,8 @@ func mermaidLabel(node *domain.TreeNode) string {
 			parts = append(parts, label)
 		case annAhead:
 			parts = append(parts, fmt.Sprintf("↑%d", node.Status.CommitsAhead))
+		case annRebasing:
+			parts = append(parts, "⚠ rebasing")
 		case annDirty:
 			parts = append(parts, "⚠ dirty")
 		case annNeedsSync:

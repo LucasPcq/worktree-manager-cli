@@ -1,7 +1,7 @@
 BINARY   := wtm
 BUILD_DIR := bin
 
-.PHONY: build test vet lint tidy release install clean
+.PHONY: build test vet lint tidy docs release install clean
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) .
@@ -18,7 +18,10 @@ lint:
 tidy:
 	go mod tidy
 
-release:
+docs:
+	go run ./tools/gendocs
+
+release: docs
 	goreleaser release --snapshot --clean
 
 install:
