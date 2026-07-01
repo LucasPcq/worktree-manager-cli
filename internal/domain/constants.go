@@ -282,7 +282,7 @@ const (
 	CmdGroupWorktreesTitle = "Worktrees:"
 	CmdGroupNavigateTitle  = "Navigate:"
 	CmdGroupStackTitle     = "Stacked branches:"
-	CmdGroupJobsTitle      = "Dev jobs:"
+	CmdGroupJobsTitle      = "Dev jobs (experimental):"
 	CmdGroupGitHubTitle    = "GitHub:"
 	CmdGroupSetupTitle     = "Setup:"
 
