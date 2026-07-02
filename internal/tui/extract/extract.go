@@ -37,9 +37,13 @@ type RunParams struct {
 	// Preselected marks files already chosen on a previous pass so they stay
 	// checked when the wizard is re-entered.
 	Preselected []string
-	// StartAtTarget re-enters the wizard on the Target step (with Files already
-	// answered), used when the user backs out of the new-worktree sub-flow.
-	StartAtTarget bool
+	// Reenter re-enters the wizard on its last step (with the earlier answers kept),
+	// used when the user backs out of the new-worktree sub-flow: backing out of that
+	// sub-flow lands on the step it was launched from, not two steps earlier.
+	Reenter bool
+	// PreselectKeep pre-selects the "copy" mode on re-entry so the prior choice is
+	// not lost.
+	PreselectKeep bool
 }
 
 // RunResult holds the wizard answers. Only the fields for the requested steps
@@ -85,14 +89,16 @@ func Run(params RunParams) (RunResult, error) {
 		modeStepIdx = len(steps)
 		steps = append(steps, components.Step{
 			Name:    "Mode",
-			Model:   newModeSelect(params.SourceBranch),
+			Model:   newModeSelect(newModeSelectParams{SourceBranch: params.SourceBranch, PreselectKeep: params.PreselectKeep}),
 			Summary: modeSummary,
 		})
 	}
 
+	// Re-entry (after backing out of the new-worktree sub-flow) lands on the last
+	// step — the one the sub-flow was launched from — with the earlier answers kept.
 	start := 0
-	if params.StartAtTarget && targetStepIdx > 0 {
-		start = targetStepIdx
+	if params.Reenter && len(steps) > 0 {
+		start = len(steps) - 1
 	}
 	wiz := components.NewWizardAtStep(steps, start)
 	finalModel, err := tea.NewProgram(wiz).Run()
@@ -185,14 +191,25 @@ func newTargetSelect(worktrees []domain.WorktreeStatus, sourceBranch string) com
 	})
 }
 
-func newModeSelect(sourceBranch string) components.SelectListModel {
+// newModeSelectParams holds inputs for newModeSelect.
+type newModeSelectParams struct {
+	SourceBranch  string
+	PreselectKeep bool
+}
+
+func newModeSelect(params newModeSelectParams) components.SelectListModel {
+	move := components.SelectItem{Label: "Move — remove the files from " + params.SourceBranch, Value: modeMove}
+	keep := components.SelectItem{Label: "Copy — keep the files in " + params.SourceBranch, Value: modeKeep}
+
+	items := []components.SelectItem{move, keep}
+	if params.PreselectKeep {
+		items = []components.SelectItem{keep, move}
+	}
+
 	return components.NewSelectList(components.NewSelectListParams{
 		Title:       "Mode",
 		Description: "Move removes the files from the source; copy keeps them.",
-		Items: []components.SelectItem{
-			{Label: "Move — remove the files from " + sourceBranch, Value: modeMove},
-			{Label: "Copy — keep the files in " + sourceBranch, Value: modeKeep},
-		},
+		Items:       items,
 	})
 }
 

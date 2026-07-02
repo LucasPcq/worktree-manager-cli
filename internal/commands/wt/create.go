@@ -66,6 +66,8 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		wizResult, wizErr := runCreateWizard(createWizardParams{
 			ProjectDir:    result.ProjectDir,
 			Config:        result.Config,
+			EnvFromFlag:   envFromFlag,
+			Interactive:   interactive,
 			IncludeBranch: branch == "",
 		})
 		if errors.Is(wizErr, domain.ErrUserAborted) {
@@ -81,15 +83,9 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		if envFromFlag == "" {
 			envOverride = wizResult.EnvFromOverride
 		}
-		if interactive && !maybeFastForwardSource(result.ProjectDir, fromBranch) {
-			return nil
-		}
-		if interactive && !shared.ConfirmEnvParentFallback(shared.EnvFallbackParams{
-			ProjectDir:  result.ProjectDir,
-			Source:      fromBranch,
-			Config:      result.Config,
-			EnvOverride: envOverride,
-		}) {
+		// The source-reconciliation and env-fallback confirmations run inside the
+		// wizard now; only the accepted fast-forward is executed here.
+		if wizResult.FastForwardSource && !executeFastForwardSource(result.ProjectDir, fromBranch) {
 			return nil
 		}
 	} else {
@@ -150,56 +146,90 @@ func runCreate(cmd *cobra.Command, args []string) error {
 type createWizardParams struct {
 	ProjectDir    string
 	Config        domain.Config
+	EnvFromFlag   string
+	Interactive   bool
 	IncludeBranch bool
 }
 
 func runCreateWizard(params createWizardParams) (newpicker.WizardResult, error) {
-	return newpicker.RunWizard(newpicker.WizardParams{
+	wizParams := newpicker.WizardParams{
 		ProjectDir:     params.ProjectDir,
 		Branches:       branchCandidates(params.ProjectDir),
 		DefaultBranch:  params.Config.Project.Worktrees.BaseBranch,
 		ConfigStrategy: params.Config.Project.Env.Strategy,
 		IncludeBranch:  params.IncludeBranch,
-	})
+	}
+	// The reconciliation and env-fallback confirmations only make sense on the
+	// human-facing run; non-interactive callers never reach the wizard, but guard
+	// anyway so the steps stay out of any scripted path.
+	if params.Interactive {
+		wizParams.SourceUpdate = func(source string) newpicker.SourceUpdatePrompt {
+			return sourceUpdatePrompt(params.ProjectDir, source)
+		}
+		wizParams.EnvFallback = func(source, envStepValue string) (bool, components.NewConfirmParams) {
+			override := params.EnvFromFlag
+			if override == "" {
+				override = envStepValue
+			}
+			return envFallbackPrompt(params.ProjectDir, params.Config, source, override)
+		}
+	}
+	return newpicker.RunWizard(wizParams)
 }
 
-// maybeFastForwardSource reconciles a source branch that has drifted from origin
-// before the worktree is created. A behind-only branch is offered a fast-forward
-// (so the worktree starts up to date while the source stays local); a diverged
-// branch — which cannot be fast-forwarded — is used as-is after an explicit
-// heads-up about the reconciliation it will need later. It returns false only when
-// the user cancels creation (a failed fast-forward, or declining the diverged
-// warning) — there is no silent fallback to a stale base.
-// fastForwardSourceIfBehind fast-forwards a behind-only source branch to origin
-// without prompting — the non-interactive counterpart of maybeFastForwardSource,
-// used on the --from path with --ff set. A diverged/dirty/remote source is left
-// as-is (best effort), so any error is intentionally ignored.
-func fastForwardSourceIfBehind(projectDir, source string) {
-	_ = branch.FastForwardIfBehind(branch.BranchParams{ProjectDir: projectDir, Branch: source})
-}
-
-func maybeFastForwardSource(projectDir, source string) bool {
+// sourceUpdatePrompt classifies a source branch's divergence from origin into the
+// reconciliation confirmation the wizard (and the standalone --from path) shows: a
+// fast-forward offer for a behind-only branch (declining proceeds as-is) or a
+// heads-up for a diverged branch (declining cancels). A remote or up-to-date
+// source needs no confirmation. Shared so both paths phrase it identically.
+func sourceUpdatePrompt(projectDir, source string) newpicker.SourceUpdatePrompt {
 	if rules.IsRemoteBranch(source) {
-		return true
+		return newpicker.SourceUpdatePrompt{}
 	}
 	state, ab := branch.Divergence(branch.BranchParams{ProjectDir: projectDir, Branch: source})
 	if rules.ShouldOfferFastForward(state) {
-		return fastForwardStaleSource(projectDir, source, ab.Behind)
+		return newpicker.SourceUpdatePrompt{
+			Show: true,
+			Params: components.NewConfirmParams{
+				Title:       fmt.Sprintf(domain.SourceFastForwardPrompt, source, ab.Behind),
+				Description: domain.SourceFastForwardDescription,
+				DefaultYes:  true,
+			},
+		}
 	}
 	if state == domain.DivergenceDiverged {
-		return confirmDivergedProceed(source, ab)
+		return newpicker.SourceUpdatePrompt{
+			Show: true,
+			Params: components.NewConfirmParams{
+				Title:      fmt.Sprintf(domain.SourceDivergedPrompt, source, ab.Ahead, ab.Behind),
+				Warning:    domain.SourceDivergedWarning,
+				DefaultYes: true,
+			},
+			AbortOnDecline: true,
+		}
 	}
-	return true
+	return newpicker.SourceUpdatePrompt{}
 }
 
-// fastForwardStaleSource prompts for and applies a fast-forward of a behind-only
-// source branch. Returns false only if the fast-forward fails and the user then
-// declines to create from the stale local branch.
-func fastForwardStaleSource(projectDir, source string, behind int) bool {
-	if !confirmFastForward(source, behind) {
-		return true
+// envFallbackPrompt decides the "env source" confirmation: whether the parent env
+// strategy will fall back to copying .env from main, and the prompt to show.
+func envFallbackPrompt(projectDir string, config domain.Config, source, override string) (bool, components.NewConfirmParams) {
+	if !shared.EnvParentFallbackApplies(shared.EnvFallbackParams{
+		ProjectDir:  projectDir,
+		Source:      source,
+		Config:      config,
+		EnvOverride: override,
+	}) {
+		return false, components.NewConfirmParams{}
 	}
+	return true, shared.EnvParentFallbackConfirm(source)
+}
 
+// executeFastForwardSource fast-forwards an accepted behind-only source branch.
+// The fast-forward failing is a runtime outcome, so its recovery prompt ("create
+// from the stale branch anyway?") is a legitimate post-execution standalone.
+// Returns false only when that recovery is declined.
+func executeFastForwardSource(projectDir, source string) bool {
 	ffErr := components.RunLoading(components.LoadingParams{
 		Message: fmt.Sprintf("Updating %s from origin…", source),
 		Animate: true,
@@ -210,34 +240,40 @@ func fastForwardStaleSource(projectDir, source string, behind int) bool {
 	if ffErr == nil {
 		return true
 	}
-	return confirmProceedStale(source, behind, ffErr)
-}
-
-func confirmDivergedProceed(source string, ab domain.AheadBehind) bool {
+	_, ab := branch.Divergence(branch.BranchParams{ProjectDir: projectDir, Branch: source})
 	confirmed, _ := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
-		Title:      fmt.Sprintf("%s has diverged from origin (%d ahead, %d behind) — create the worktree from it anyway?", source, ab.Ahead, ab.Behind),
-		Warning:    "It can't be fast-forwarded. The worktree starts from your local branch, missing commits that are on origin — you may have to rebase or resolve conflicts later.",
-		DefaultYes: true,
-	}))
-	return confirmed
-}
-
-func confirmFastForward(source string, behind int) bool {
-	confirmed, _ := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
-		Title:       fmt.Sprintf("%s is %d commit(s) behind origin — fast-forward it before creating?", source, behind),
-		Description: "Updates your local branch to origin so the new worktree starts up to date. Skipped if its worktree has uncommitted changes.",
-		DefaultYes:  true,
-	}))
-	return confirmed
-}
-
-func confirmProceedStale(source string, behind int, cause error) bool {
-	confirmed, _ := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
-		Title:      fmt.Sprintf("Create the worktree from local %s anyway? (behind origin by %d)", source, behind),
-		Warning:    fmt.Sprintf("Couldn't fast-forward: %v", cause),
+		Title:      fmt.Sprintf(domain.SourceProceedStalePrompt, source, ab.Behind),
+		Warning:    fmt.Sprintf(domain.SourceProceedStaleWarning, ffErr),
 		DefaultYes: false,
 	}))
 	return confirmed
+}
+
+// fastForwardSourceIfBehind fast-forwards a behind-only source branch to origin
+// without prompting — the non-interactive counterpart used on the --from path with
+// --ff set. A diverged/dirty/remote source is left as-is (best effort), so any
+// error is intentionally ignored.
+func fastForwardSourceIfBehind(projectDir, source string) {
+	_ = branch.FastForwardIfBehind(branch.BranchParams{ProjectDir: projectDir, Branch: source})
+}
+
+// maybeFastForwardSource reconciles a source branch passed via --from, where there
+// is no wizard to host the confirmation — a single standalone prompt is the whole
+// interaction (Esc cancels, which is correct). Returns false only when the user
+// cancels creation (declining the diverged warning, or a failed fast-forward).
+func maybeFastForwardSource(projectDir, source string) bool {
+	prompt := sourceUpdatePrompt(projectDir, source)
+	if !prompt.Show {
+		return true
+	}
+	confirmed, _ := components.RunStandaloneConfirm(components.NewConfirm(prompt.Params))
+	if prompt.AbortOnDecline {
+		return confirmed
+	}
+	if !confirmed {
+		return true
+	}
+	return executeFastForwardSource(projectDir, source)
 }
 
 // branchCandidates lists the local and remote-tracking branches offered as

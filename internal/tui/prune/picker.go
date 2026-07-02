@@ -22,16 +22,44 @@ const (
 	confirmNo    = "no"
 )
 
-// RunResult is the picker outcome: the checked branches and whether the user
-// confirmed with force (allowing unsafe worktrees to be removed).
+// Step names, used for construction and value extraction.
+const (
+	stepWorktrees = "Worktrees"
+	stepConfirm   = "Confirm"
+	stepReparent  = "Reparent children"
+)
+
+// ReparentPreviewFunc computes, for the current selection and force choice, the
+// children a prune would orphan and could reparent onto their grandparent.
+// Injected by the command layer so the picker stays free of prune business logic.
+type ReparentPreviewFunc func(chosen []string, force bool) []domain.ReparentResult
+
+// RunParams holds the inputs for the prune picker.
+type RunParams struct {
+	Plan domain.PrunePlan
+	// ReparentPreview derives the reparent moves shown in the final confirmation
+	// step from the live selection; nil disables the step.
+	ReparentPreview ReparentPreviewFunc
+}
+
+// RunResult is the picker outcome: the checked branches, whether the user
+// confirmed with force (allowing unsafe worktrees to be removed), and — when the
+// reparent step applied — whether surviving children should be reparented.
 type RunResult struct {
 	Branches []string
 	Force    bool
+	// ReparentAsked is true when the reparent step was shown; ReparentChildren
+	// then holds the user's answer (reparent vs leave orphaned).
+	ReparentAsked    bool
+	ReparentChildren bool
 }
 
-// Run shows the candidate multi-select (unsafe ones tagged and left unchecked)
-// then a confirmation screen. Returns domain.ErrUserAborted on Esc or "No".
-func Run(plan domain.PrunePlan) (RunResult, error) {
+// Run shows the candidate multi-select (unsafe ones tagged and left unchecked),
+// a confirmation screen, then — when children would be orphaned — a reparent
+// confirmation, all in one wizard. Returns domain.ErrUserAborted on Esc at the
+// first step or the explicit "No, cancel".
+func Run(params RunParams) (RunResult, error) {
+	plan := params.Plan
 	// The picker may be reached through a shell wrapper that captures stdout, so
 	// force lipgloss to detect color against stderr (the TTY).
 	styles.UseRendererOn(os.Stderr)
@@ -54,15 +82,20 @@ func Run(plan domain.PrunePlan) (RunResult, error) {
 		Items:       items,
 	})
 
-	final, err := components.RunWizard(components.RunWizardParams{
-		Steps: []components.Step{
-			{Name: "Worktrees", Model: ms},
-			{
-				Name:  "Confirm",
-				Model: confirmStep(nil, plan),
-				Build: func(prev []components.Step) any { return confirmStep(prev, plan) },
-			},
+	steps := []components.Step{
+		{Name: stepWorktrees, Model: ms},
+		{
+			Name:  stepConfirm,
+			Model: confirmStep(nil, plan),
+			Build: func(prev []components.Step) any { return confirmStep(prev, plan) },
 		},
+	}
+	if params.ReparentPreview != nil {
+		steps = append(steps, reparentStep(params.ReparentPreview))
+	}
+
+	final, err := components.RunWizard(components.RunWizardParams{
+		Steps:    steps,
 		Stderr:   true,
 		ErrLabel: "prune picker",
 	})
@@ -70,12 +103,12 @@ func Run(plan domain.PrunePlan) (RunResult, error) {
 		return RunResult{}, err
 	}
 
-	steps := final.Steps()
-	msModel, ok := steps[0].Model.(components.MultiSelectModel)
+	finalSteps := final.Steps()
+	msModel, ok := finalSteps[0].Model.(components.MultiSelectModel)
 	if !ok {
 		return RunResult{}, errors.New("unexpected model type")
 	}
-	confirm, ok := steps[1].Model.(components.SelectListModel)
+	confirm, ok := finalSteps[1].Model.(components.SelectListModel)
 	if !ok {
 		return RunResult{}, errors.New("unexpected model type")
 	}
@@ -83,10 +116,67 @@ func Run(plan domain.PrunePlan) (RunResult, error) {
 	if confirm.Value() == confirmNo {
 		return RunResult{}, domain.ErrUserAborted
 	}
-	return RunResult{
+	result := RunResult{
 		Branches: msModel.Values(),
 		Force:    confirm.Value() == confirmForce,
-	}, nil
+	}
+	if len(finalSteps) > 2 && !final.Skipped(2) {
+		if rc, ok := finalSteps[2].Model.(components.ConfirmModel); ok {
+			result.ReparentAsked = true
+			result.ReparentChildren = rc.Confirmed()
+		}
+	}
+	return result, nil
+}
+
+// reparentStep builds the conditional reparent confirmation: it derives the
+// orphaned children from the live selection and force choice, and is skipped when
+// the prune was cancelled or leaves no children to reparent. Hosted in the wizard
+// so Esc returns to the confirm step instead of aborting the whole prune.
+func reparentStep(preview ReparentPreviewFunc) components.Step {
+	return components.ConfirmStep(components.ConfirmStepParams{
+		Name:     stepReparent,
+		YesLabel: "reparent",
+		NoLabel:  "leave orphaned",
+		Decide: func(prev []components.Step) (bool, components.NewConfirmParams) {
+			if confirmChoice(prev) == confirmNo {
+				return false, components.NewConfirmParams{}
+			}
+			moves := preview(selectedBranches(prev), confirmChoice(prev) == confirmForce)
+			if len(moves) == 0 {
+				return false, components.NewConfirmParams{}
+			}
+			return true, components.NewConfirmParams{
+				Title:       fmt.Sprintf(domain.PruneReparentPrompt, len(moves)),
+				Description: reparentProposalText(moves),
+				DefaultYes:  true,
+			}
+		},
+	})
+}
+
+// confirmChoice reads the value chosen on the confirm step.
+func confirmChoice(prev []components.Step) string {
+	for _, s := range prev {
+		if s.Name != stepConfirm {
+			continue
+		}
+		if sl, ok := s.Model.(components.SelectListModel); ok {
+			return sl.Value()
+		}
+	}
+	return ""
+}
+
+// reparentProposalText lists the children a prune would orphan as the reparent
+// confirmation's description (the wizard applies its own muted style).
+func reparentProposalText(moves []domain.ReparentResult) string {
+	lines := make([]string, 0, len(moves)+1)
+	lines = append(lines, domain.PruneReparentIntro)
+	for _, m := range moves {
+		lines = append(lines, fmt.Sprintf("  %s: %s → %s", m.Branch, m.OldParent, m.NewParent))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // confirmStep builds the confirmation choice. It recaps the count and the

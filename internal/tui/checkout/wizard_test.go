@@ -71,6 +71,39 @@ func TestBuildBranchItems_BaseFirst(t *testing.T) {
 	}
 }
 
+func TestResolveSourcePrecedence(t *testing.T) {
+	pr := &domain.PRInfo{BaseBranch: "base"}
+
+	cases := []struct {
+		name         string
+		fromOverride string
+		preselected  *domain.PRInfo
+		want         string
+	}{
+		{"flag override wins", "flagbr", pr, "flagbr"},
+		{"falls back to PR base", "", pr, "base"},
+		{"empty when nothing", "", nil, ""},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// No parent step in prev, so the flag/PR-base fallbacks are exercised.
+			if got := resolveSource(nil, c.fromOverride, c.preselected); got != c.want {
+				t.Fatalf("resolveSource() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestResolveEnvPrecedence(t *testing.T) {
+	if got := resolveEnv(nil, "override"); got != "override" {
+		t.Errorf("resolveEnv with override = %q, want %q", got, "override")
+	}
+	if got := resolveEnv(nil, ""); got != "" {
+		t.Errorf("resolveEnv without override = %q, want empty", got)
+	}
+}
+
 func TestBuildBranchItems_RemoteAfterSeparator(t *testing.T) {
 	candidates := []domain.BranchCandidate{
 		{Name: "main"},

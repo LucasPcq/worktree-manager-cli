@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	stepPR     = "Pull request"
-	stepParent = "Parent branch"
-	stepEnv    = "Env strategy"
+	stepPR          = "Pull request"
+	stepParent      = "Parent branch"
+	stepEnv         = "Env strategy"
+	stepEnvFallback = "Env source"
 )
 
 // WizardParams holds inputs for the checkout wizard.
@@ -38,6 +39,15 @@ type WizardParams struct {
 	// value is already fixed by a flag (--from / --env-from).
 	IncludeParent bool
 	IncludeEnv    bool
+	// FromOverride / EnvOverride are the --from / --env-from flag values, used to
+	// resolve the effective source and env for the env-fallback confirmation when
+	// their step is not shown.
+	FromOverride string
+	EnvOverride  string
+	// EnvFallback, when set, adds a conditional confirmation after the env step:
+	// given the resolved source and env override it decides whether the "parent"
+	// strategy falls back to copying .env from main. Injected by the command layer.
+	EnvFallback func(source, envOverride string) (show bool, params components.NewConfirmParams)
 }
 
 // WizardResult holds the answers from the checkout wizard. FromBranch and
@@ -73,6 +83,10 @@ func runPreselected(params WizardParams) (WizardResult, error) {
 		return WizardResult{PR: *params.Preselected}, nil
 	}
 
+	if params.EnvFallback != nil {
+		steps = append(steps, envFallbackStep(params))
+	}
+
 	wiz := components.NewWizardWithParams(components.WizardParams{
 		Steps: steps,
 		OnMsg: branchrefresh.Handler(params.ProjectDir, holder),
@@ -80,6 +94,9 @@ func runPreselected(params WizardParams) (WizardResult, error) {
 	final, err := runProgram(wiz)
 	if err != nil {
 		return WizardResult{}, err
+	}
+	if envFallbackDeclined(final) {
+		return WizardResult{}, domain.ErrUserAborted
 	}
 
 	res := extractStepValues(final.Steps())
@@ -108,6 +125,9 @@ func runPicker(params WizardParams) (WizardResult, error) {
 	}
 	if params.IncludeEnv {
 		steps = append(steps, envStep(params.ConfigStrategy))
+	}
+	if params.EnvFallback != nil {
+		steps = append(steps, envFallbackStep(params))
 	}
 
 	refresh := branchrefresh.Handler(params.ProjectDir, holder)
@@ -143,6 +163,9 @@ func runPicker(params WizardParams) (WizardResult, error) {
 	final, err := runProgram(wiz)
 	if err != nil {
 		return WizardResult{}, err
+	}
+	if envFallbackDeclined(final) {
+		return WizardResult{}, domain.ErrUserAborted
 	}
 
 	res := extractStepValues(final.Steps())
@@ -246,6 +269,64 @@ func baseBranchForSelection(prev []components.Step, prs []domain.PRInfo) string 
 		return pr.BaseBranch
 	}
 	return ""
+}
+
+// envFallbackStep builds the conditional "env source" confirmation, hosted inside
+// the wizard so Esc goes back to the env step instead of aborting the checkout.
+func envFallbackStep(params WizardParams) components.Step {
+	return components.ConfirmStep(components.ConfirmStepParams{
+		Name: stepEnvFallback,
+		Decide: func(prev []components.Step) (bool, components.NewConfirmParams) {
+			source := resolveSource(prev, params.FromOverride, params.Preselected)
+			env := resolveEnv(prev, params.EnvOverride)
+			return params.EnvFallback(source, env)
+		},
+	})
+}
+
+// resolveSource resolves the effective parent/source branch for the env-fallback
+// check: the --from override, else the chosen parent step, else the preselected
+// PR's base branch.
+func resolveSource(prev []components.Step, fromOverride string, preselected *domain.PRInfo) string {
+	if fromOverride != "" {
+		return fromOverride
+	}
+	if sl, ok := stepModel(prev, stepParent); ok && sl.Value() != "" {
+		return sl.Value()
+	}
+	if preselected != nil {
+		return preselected.BaseBranch
+	}
+	return ""
+}
+
+// resolveEnv resolves the effective env override: the --env-from override, else
+// the chosen env step.
+func resolveEnv(prev []components.Step, envOverride string) string {
+	if envOverride != "" {
+		return envOverride
+	}
+	if sl, ok := stepModel(prev, stepEnv); ok {
+		return sl.Value()
+	}
+	return ""
+}
+
+// envFallbackDeclined reports whether the env-fallback step ran and the user
+// declined it — treated by the caller as a clean abort.
+func envFallbackDeclined(final components.WizardModel) bool {
+	steps := final.Steps()
+	for i := range steps {
+		if steps[i].Name != stepEnvFallback {
+			continue
+		}
+		if final.Skipped(i) {
+			return false
+		}
+		c, ok := steps[i].Model.(components.ConfirmModel)
+		return ok && !c.Confirmed()
+	}
+	return false
 }
 
 func envStep(strategy domain.EnvStrategy) components.Step {

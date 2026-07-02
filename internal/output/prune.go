@@ -40,19 +40,6 @@ func FormatPrunePlan(w io.Writer, plan domain.PrunePlan) {
 	}
 }
 
-// FormatPruneReparentProposal renders the proposed reparenting of pruned
-// worktrees' orphaned children onto their grandparent, mirroring clean's
-// FormatReparentProposal (a leading blank separator + an announce block of
-// branch → old → new rows). Raw body — the caller's frame owns the padding.
-func FormatPruneReparentProposal(w io.Writer, moves []domain.ReparentResult) {
-	Blank(w)
-	items := make([]AnnounceItem, 0, len(moves))
-	for _, m := range moves {
-		items = append(items, AnnounceItem{Label: m.Branch, Value: fmt.Sprintf("%s → %s", m.OldParent, m.NewParent)})
-	}
-	Announce(w, "Reparent orphaned children onto their grandparent:", items)
-}
-
 // FormatPruneResult renders the outcome of an executed prune: a success line per
 // removed worktree, the reparenting applied, any children left orphaned, and
 // skipped-with-reason warnings. Raw body — the command's frame owns the padding.

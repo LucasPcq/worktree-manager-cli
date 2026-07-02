@@ -294,15 +294,58 @@ bug: no breadcrumb, and `Esc` quits the whole flow instead of going back.
 
 - Build `[]components.Step{}`; a step whose options depend on a previous answer uses
   `Build: func(prev []components.Step) any` to rebuild its model from `prev[i].Model.(...).Value()`.
-- Run with `tea.NewProgram(wiz, tea.WithOutput(os.Stderr)).Run()`, then read
-  `final.(components.WizardModel)`: `Aborted()` → `domain.ErrUserAborted`; otherwise pull values
-  from `final.Steps()[i].Model.(components.SelectListModel).Value()`.
-- Use `NewWizardWithParams` for async first steps (data loaded after the wizard starts).
+- Prefer the runner `components.RunWizard(components.RunWizardParams{Steps, Stderr: true, ErrLabel,
+  OnMsg, InitCmd, Loading, LoadingText})` — it centralises the program/assertion/abort boilerplate.
+  It maps `Esc` at step 1 to `domain.ErrUserAborted`; otherwise pull values from
+  `final.Steps()[i].Model.(components.SelectListModel).Value()`.
 - Reference implementations: `internal/tui/relocate/wizard.go`, `internal/tui/checkout/wizard.go`,
-  `internal/tui/reparent/picker.go`.
+  `internal/tui/clean/wizard.go`, `internal/tui/syncpicker/picker.go`.
 
 Standalone wrappers (`RunStandaloneSelect`/`RunStandaloneConfirm`) are only for a **single**
-one-shot decision (e.g. the `clean` deletion confirm).
+one-shot decision where there is no prior step to go back to (e.g. `run up`'s profile picker).
+
+### Confirmations belong INSIDE the wizard, never as a trailing standalone
+
+A confirmation that follows a wizard (fast-forward source, env fallback, reparent children, a
+plan preview) is a **step of that wizard**, not a `RunStandaloneConfirm` after it — otherwise
+`Esc` on it aborts the whole flow instead of stepping back (the LUC-115 defect).
+
+- Use `components.ConfirmStep(components.ConfirmStepParams{Name, Decide, YesLabel, NoLabel})`.
+  `Decide func(prev []Step) (apply bool, params NewConfirmParams)` runs on entry: it derives the
+  wording from earlier answers **and** reports whether the confirm is relevant. `apply == false`
+  auto-skips the step (hidden from the breadcrumb) — so conditional confirms (only when the source
+  diverged, only when children would be orphaned) are expressed declaratively.
+- After the wizard, read the answer with `final.Skipped(i)` + `Model.(ConfirmModel).Confirmed()`.
+  A declined **hard** confirm (proceeding is unsafe) → return `domain.ErrUserAborted`; a declined
+  **soft** confirm (an optional action) → just skip the action. Distinguish the two yourself
+  (e.g. a `AbortOnDecline` flag on the injected prompt), see `internal/tui/newwt/wizard.go`.
+- Business data shown in the confirm arrives via an **injected closure** from the command layer
+  (the TUI never imports `service`/`output`), e.g. `shared.EnvFallbackDecider`, sync's `PlanPreview`.
+- Non-interactive paths (`--yes`, `--from`, `--output json`) must bypass the wizard entirely and
+  keep their prior behaviour.
+
+### Async data in a wizard: `InitCmd` (at start) vs `OnEnter` (per step)
+
+Never block the render doing slow I/O in a `Build` hook. Two async entry points, by when the data
+is known:
+
+- **`InitCmd` + `Loading`/`LoadingText` + `OnMsg`** — one-shot load at wizard start, for data an
+  early step needs that does **not** depend on a later answer (e.g. `checkout` streams open PRs
+  into step 1). Set them via `RunWizardParams`.
+- **`Step.OnEnter func(prev []Step) tea.Cmd`** — fires each time the wizard *advances* into the
+  step (not on back-navigation), for slow work **derived from a prior answer**: a network call or
+  git work proportional to the selection. Pair it with an `OnMsg` handler:
+  1. `OnEnter` returns a `tea.Cmd` emitting a request message (carrying the prior-step values).
+  2. `OnMsg` on that message: `cmd := w.StartLoading("…")`; return `tea.Batch(cmd, workCmd())` — the
+     work runs off the UI goroutine so the spinner (shared loading callout) animates.
+  3. `OnMsg` on the result message: `w.UpdateStepModel(idx, func(any) any { return realModel })` then
+     `w.SetLoading(false)`.
+  Guard against a premature commit while loading: an empty `SelectList` makes `Enter` a no-op
+  (`clean`'s delete step); a `ConfirmModel` needs an explicit `if w.Loading() && key=="enter"` swallow
+  in `OnMsg` (`sync`'s confirm step). Refs: `internal/tui/clean/wizard.go` (async safety check),
+  `internal/tui/syncpicker/picker.go` (async plan preview).
+- Keep `Build` (synchronous) for **fast, local** derivation — reserve `OnEnter` for genuinely slow
+  work; over-using it is needless complexity.
 
 ### Screen-specific TUI
 

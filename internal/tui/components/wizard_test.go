@@ -72,6 +72,32 @@ func TestWizardGoBackHopsOverAutoSkipped(t *testing.T) {
 	}
 }
 
+func TestWizardFiresOnEnterWhenAdvancing(t *testing.T) {
+	entered := 0
+	steps := []Step{
+		{Name: "a", Model: NewTextInput(NewTextInputParams{Title: "a"})},
+		{
+			Name:    "b",
+			Model:   NewTextInput(NewTextInputParams{Title: "b"}),
+			OnEnter: func([]Step) tea.Cmd { entered++; return nil },
+		},
+	}
+	m := NewWizard(steps)
+
+	m = updateWizard(m, key(tea.KeyEnter)) // confirm step a → advance into b
+	if entered != 1 {
+		t.Fatalf("OnEnter should fire once when advancing into step b, got %d", entered)
+	}
+
+	m = updateWizard(m, key(tea.KeyEsc)) // back to a (a has no OnEnter)
+	if m.current != 0 {
+		t.Fatalf("expected to be on step a after back, got %d", m.current)
+	}
+	if entered != 1 {
+		t.Errorf("OnEnter should not fire on back navigation, got %d", entered)
+	}
+}
+
 func TestWizardVisibleCounterExcludesSkipped(t *testing.T) {
 	skip := true
 	m := newAutoSkipWizard(&skip)

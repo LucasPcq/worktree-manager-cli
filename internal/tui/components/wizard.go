@@ -38,6 +38,12 @@ type Step struct {
 	// refresh key (e.g. re-fetch branches). It gates the key interception and adds
 	// an "r refresh" hint to the help bar for this step only.
 	CanRefresh bool
+	// OnEnter, when set, returns a command fired each time the wizard advances into
+	// this step (not on back navigation, where the step keeps its prior state). Use
+	// it to kick off a per-step async load — pair it with a message handler that
+	// updates the step model and toggles the loading spinner. prev is the completed
+	// prior steps, so the command can depend on an earlier answer.
+	OnEnter func(prev []Step) tea.Cmd
 }
 
 // WizardMsgHandler intercepts a message before it reaches the current step.
@@ -556,7 +562,11 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	m.propagateSize(m.current)
-	return m, m.initStep(m.current)
+	cmds := []tea.Cmd{m.initStep(m.current)}
+	if onEnter := m.steps[m.current].OnEnter; onEnter != nil {
+		cmds = append(cmds, onEnter(m.steps[:m.current]))
+	}
+	return m, tea.Batch(cmds...)
 }
 
 // buildStep rebuilds a step's model from prior steps when a Build hook is set.

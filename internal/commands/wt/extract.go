@@ -15,6 +15,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/branch"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 	extracttui "github.com/LucasPcq/wtm/internal/tui/extract"
 	newpicker "github.com/LucasPcq/wtm/internal/tui/newwt"
 )
@@ -237,7 +238,8 @@ func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTa
 	needMode := !p.cmd.Flags().Changed(domain.FlagKeep) && isInteractive()
 
 	preselected := filesFlag
-	startAtTarget := false
+	reenter := false
+	preselectKeep := false
 
 	for {
 		wizard, err := runWizard(runWizardParams{
@@ -248,7 +250,8 @@ func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTa
 			needTarget:    needTarget,
 			needMode:      needMode,
 			preselected:   preselected,
-			startAtTarget: startAtTarget,
+			reenter:       reenter,
+			preselectKeep: preselectKeep,
 		})
 		if err != nil {
 			return nil, extractTarget{}, false, err
@@ -276,8 +279,10 @@ func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTa
 			choice:       wizard.Target,
 		})
 		if needTarget && errors.Is(err, domain.ErrUserAborted) {
-			// Backed out of the new-worktree sub-flow: re-enter at the Target step.
-			startAtTarget = true
+			// Backed out of the new-worktree sub-flow: re-enter on the last step it
+			// was launched from, keeping the file selection and mode choice.
+			reenter = true
+			preselectKeep = keep
 			continue
 		}
 		if err != nil {
@@ -295,7 +300,8 @@ type runWizardParams struct {
 	needTarget    bool
 	needMode      bool
 	preselected   []string
-	startAtTarget bool
+	reenter       bool
+	preselectKeep bool
 }
 
 // runWizard runs the unified file+target+mode selection wizard, skipping any
@@ -326,7 +332,8 @@ func runWizard(params runWizardParams) (extracttui.RunResult, error) {
 		NeedTarget:    params.needTarget,
 		NeedMode:      params.needMode,
 		Preselected:   params.preselected,
-		StartAtTarget: params.startAtTarget,
+		Reenter:       params.reenter,
+		PreselectKeep: params.preselectKeep,
 	})
 }
 
@@ -406,7 +413,10 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 }
 
 // createTargetInteractive runs the new-worktree wizard with the source's parent
-// branch pre-selected, then creates the worktree.
+// branch pre-selected, then creates the worktree. The source-reconciliation and
+// env-fallback confirmations are hosted as steps of that wizard (breadcrumb +
+// back) rather than orphaned prompts after it — declining them backs out to the
+// extract Target step. Only the accepted fast-forward is executed here.
 func createTargetInteractive(params resolveTargetParams) (extractTarget, error) {
 	wiz, err := newpicker.RunWizard(newpicker.WizardParams{
 		ProjectDir:     params.cfg.ProjectDir,
@@ -414,19 +424,20 @@ func createTargetInteractive(params resolveTargetParams) (extractTarget, error) 
 		DefaultBranch:  defaultParent(defaultParentParams{cfg: params.cfg, sourceBranch: params.sourceBranch}),
 		ConfigStrategy: params.cfg.Config.Project.Env.Strategy,
 		IncludeBranch:  true,
+		SourceUpdate: func(source string) newpicker.SourceUpdatePrompt {
+			return sourceUpdatePrompt(params.cfg.ProjectDir, source)
+		},
+		EnvFallback: func(source, _ string) (bool, components.NewConfirmParams) {
+			// extract creates the target with the config-default env strategy, so
+			// gauge the fallback against that, ignoring the wizard's env step.
+			return envFallbackPrompt(params.cfg.ProjectDir, params.cfg.Config, source, "")
+		},
 	})
 	if err != nil {
 		return extractTarget{}, err
 	}
 
-	if !maybeFastForwardSource(params.cfg.ProjectDir, wiz.FromBranch) {
-		return extractTarget{}, domain.ErrUserAborted
-	}
-	if !shared.ConfirmEnvParentFallback(shared.EnvFallbackParams{
-		ProjectDir: params.cfg.ProjectDir,
-		Source:     wiz.FromBranch,
-		Config:     params.cfg.Config,
-	}) {
+	if wiz.FastForwardSource && !executeFastForwardSource(params.cfg.ProjectDir, wiz.FromBranch) {
 		return extractTarget{}, domain.ErrUserAborted
 	}
 

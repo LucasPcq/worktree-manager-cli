@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -96,21 +98,20 @@ func Run(params RunParams) (RunResult, error) {
 
 	showConfirm := !params.SkipConfirm && params.PlanPreview != nil
 	var previewErr error
+	confirmIdx := len(steps)
 	if showConfirm {
+		// The plan preview walks every selected worktree's history, so it can take a
+		// moment on a large tree. Compute it asynchronously when the step is entered
+		// (OnEnter) behind the loading spinner, rather than blocking the render in a
+		// Build hook. The placeholder confirm's Enter is guarded while loading so the
+		// user cannot accept a plan they have not seen yet.
 		steps = append(steps, components.Step{
 			Name:  "Confirm",
-			Model: components.NewConfirm(components.NewConfirmParams{DefaultYes: true}),
-			Build: func(prev []components.Step) any {
-				text, count, err := params.PlanPreview(PlanPreviewParams{Branches: selectedBranches(prev)})
-				if err != nil {
-					previewErr = err
-					text = "Failed to build sync plan: " + err.Error()
-				}
-				return confirmStep(confirmStepParams{
-					PlanText:     text,
-					Count:        count,
-					KeepConflict: keepConflictFromPrev(prev),
-				})
+			Model: planPlaceholder(),
+			OnEnter: func(prev []components.Step) tea.Cmd {
+				branches := selectedBranches(prev)
+				keep := keepConflictFromPrev(prev)
+				return func() tea.Msg { return planRequestMsg{branches: branches, keepConflict: keep} }
 			},
 		})
 	}
@@ -119,6 +120,34 @@ func Run(params RunParams) (RunResult, error) {
 		Steps:    steps,
 		Stderr:   true,
 		ErrLabel: "sync picker",
+		OnMsg: func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+			switch m := msg.(type) {
+			case planRequestMsg:
+				// Clear the plan left from a previous selection so the spinner isn't
+				// shown over a stale preview while the new plan computes.
+				w.UpdateStepModel(confirmIdx, func(any) any { return planPlaceholder() })
+				loadCmd := w.StartLoading(domain.SyncPlanComputing)
+				return tea.Batch(loadCmd, runPlanCmd(m, params.PlanPreview)), true
+			case planDoneMsg:
+				previewErr = m.err
+				text := m.text
+				if m.err != nil {
+					text = "Failed to build sync plan: " + m.err.Error()
+				}
+				w.UpdateStepModel(confirmIdx, func(any) any {
+					return confirmStep(confirmStepParams{PlanText: text, Count: m.count, KeepConflict: m.keepConflict})
+				})
+				w.SetLoading(false)
+				return nil, true
+			}
+			// Block a premature Enter while the plan is still computing.
+			if w.Loading() {
+				if key, ok := msg.(tea.KeyMsg); ok && key.String() == "enter" {
+					return nil, true
+				}
+			}
+			return nil, false
+		},
 	})
 	if err != nil {
 		return RunResult{}, err
@@ -150,6 +179,39 @@ func Run(params RunParams) (RunResult, error) {
 		result.Confirmed = confirmModel.Confirmed()
 	}
 	return result, nil
+}
+
+// planRequestMsg asks the message handler to compute the sync plan for the
+// current selection; planDoneMsg carries the rendered plan back.
+type (
+	planRequestMsg struct {
+		branches     []string
+		keepConflict bool
+	}
+	planDoneMsg struct {
+		text         string
+		count        int
+		keepConflict bool
+		err          error
+	}
+)
+
+// planPlaceholder is the confirm step shown while the plan preview computes: its
+// Enter is guarded by the loading check in OnMsg, and it carries no stale plan.
+func planPlaceholder() components.ConfirmModel {
+	return components.NewConfirm(components.NewConfirmParams{
+		DefaultYes:  true,
+		Description: domain.SyncPlanComputing,
+	})
+}
+
+// runPlanCmd computes the plan preview off the UI goroutine so the spinner
+// animates while it runs.
+func runPlanCmd(req planRequestMsg, preview func(PlanPreviewParams) (string, int, error)) tea.Cmd {
+	return func() tea.Msg {
+		text, count, err := preview(PlanPreviewParams{Branches: req.branches})
+		return planDoneMsg{text: text, count: count, keepConflict: req.keepConflict, err: err}
+	}
 }
 
 // conflictModeStepParams holds inputs for conflictModeStep.
