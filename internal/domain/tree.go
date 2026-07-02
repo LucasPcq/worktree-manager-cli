@@ -4,8 +4,8 @@ package domain
 // All fields are computed locally except PR, which is populated only when PR info
 // was fetched (wtm tree --with-prs).
 type TreeNodeStatus struct {
-	CommitsAhead int             `json:"commits_ahead"`
-	IsDirty      bool            `json:"is_dirty"`
+	CommitsAhead int  `json:"commits_ahead"`
+	IsDirty      bool `json:"is_dirty"`
 	// RebaseInProgress is true when the worktree has a rebase paused mid-way (e.g.
 	// left by `wtm sync --keep-conflict`) — resolve it with git rebase --continue/--abort.
 	RebaseInProgress bool `json:"rebase_in_progress"`
