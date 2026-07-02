@@ -7,9 +7,10 @@ type ConfirmStepParams struct {
 	Name string
 	// Decide runs each time the wizard enters this step. It inspects the
 	// already-completed prior steps and returns whether the confirmation is
-	// needed plus the prompt to show. When apply is false the step is
-	// auto-skipped — hidden from the breadcrumb and reported via Skipped(i).
-	Decide func(prev []Step) (apply bool, params NewConfirmParams)
+	// needed, the reason to show when it is not (rendered as "⊘ <Name> — <reason>"
+	// in the summaries), and the prompt to show when it is. When apply is false the
+	// step is auto-skipped.
+	Decide func(prev []Step) (apply bool, skipReason string, params NewConfirmParams)
 	// YesLabel and NoLabel label the choice in the completed-step summary.
 	// They default to "yes"/"no".
 	YesLabel string
@@ -32,20 +33,23 @@ func ConfirmStep(p ConfirmStepParams) Step {
 		no = "no"
 	}
 
-	// Cached across Build → AutoSkip within a single advance() pass: buildStep
-	// runs Build (setting applies) immediately before AutoSkip is evaluated.
+	// Cached across Build → AutoSkip/SkipReason within a single advance() pass:
+	// buildStep runs Build (setting applies/reason) immediately before AutoSkip.
 	applies := true
+	reason := ""
 	build := func(prev []Step) any {
-		apply, params := p.Decide(prev)
+		apply, skipReason, params := p.Decide(prev)
 		applies = apply
+		reason = skipReason
 		return NewConfirm(params)
 	}
 
 	return Step{
-		Name:     p.Name,
-		Model:    NewConfirm(NewConfirmParams{}),
-		Build:    build,
-		AutoSkip: func(WizardModel) bool { return !applies },
-		Summary:  ConfirmSummary(yes, no),
+		Name:       p.Name,
+		Model:      NewConfirm(NewConfirmParams{}),
+		Build:      build,
+		AutoSkip:   func(WizardModel) bool { return !applies },
+		SkipReason: func() string { return reason },
+		Summary:    ConfirmSummary(yes, no),
 	}
 }

@@ -15,18 +15,24 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// Confirm choices for the second step.
+// Confirm-step action choices (the constant "No, cancel" row uses
+// domain.WizardCancelValue).
 const (
 	confirmYes   = "yes"
 	confirmForce = "force"
-	confirmNo    = "no"
+)
+
+// Reparent-step choices.
+const (
+	reparentYes = "reparent"
+	reparentNo  = "orphan"
 )
 
 // Step names, used for construction and value extraction.
 const (
 	stepWorktrees = "Worktrees"
-	stepConfirm   = "Confirm"
 	stepReparent  = "Reparent children"
+	stepConfirm   = "Confirm"
 )
 
 // ReparentPreviewFunc computes, for the current selection and force choice, the
@@ -78,21 +84,20 @@ func Run(params RunParams) (RunResult, error) {
 
 	ms := components.NewMultiSelect(components.NewMultiSelectParams{
 		Title:       "Select worktrees to prune",
-		Description: "Space to toggle, a to select all, / to filter, enter to continue, esc to cancel.",
+		Description: domain.MultiSelectHint,
 		Items:       items,
 	})
 
+	// Order: multi-select → reparent (optional select) → confirm recap (last).
+	// The reparent decision precedes the recap so the recap is reliably the final,
+	// unconditional action point.
 	steps := []components.Step{
 		{Name: stepWorktrees, Model: ms},
-		{
-			Name:  stepConfirm,
-			Model: confirmStep(nil, plan),
-			Build: func(prev []components.Step) any { return confirmStep(prev, plan) },
-		},
 	}
 	if params.ReparentPreview != nil {
 		steps = append(steps, reparentStep(params.ReparentPreview))
 	}
+	steps = append(steps, confirmStep(plan, params.ReparentPreview))
 
 	final, err := components.RunWizard(components.RunWizardParams{
 		Steps:    steps,
@@ -108,57 +113,64 @@ func Run(params RunParams) (RunResult, error) {
 	if !ok {
 		return RunResult{}, errors.New("unexpected model type")
 	}
-	confirm, ok := finalSteps[1].Model.(components.SelectListModel)
-	if !ok {
-		return RunResult{}, errors.New("unexpected model type")
-	}
 
-	if confirm.Value() == confirmNo {
+	if stepSelectValue(finalSteps, stepConfirm) == domain.WizardCancelValue {
 		return RunResult{}, domain.ErrUserAborted
 	}
 	result := RunResult{
 		Branches: msModel.Values(),
-		Force:    confirm.Value() == confirmForce,
+		Force:    stepSelectValue(finalSteps, stepConfirm) == confirmForce,
 	}
-	if len(finalSteps) > 2 && !final.Skipped(2) {
-		if rc, ok := finalSteps[2].Model.(components.ConfirmModel); ok {
-			result.ReparentAsked = true
-			result.ReparentChildren = rc.Confirmed()
-		}
+	if idx := stepIndex(finalSteps, stepReparent); idx >= 0 && !final.Skipped(idx) {
+		result.ReparentAsked = true
+		result.ReparentChildren = stepSelectValue(finalSteps, stepReparent) == reparentYes
 	}
 	return result, nil
 }
 
-// reparentStep builds the conditional reparent confirmation: it derives the
-// orphaned children from the live selection and force choice, and is skipped when
-// the prune was cancelled or leaves no children to reparent. Hosted in the wizard
-// so Esc returns to the confirm step instead of aborting the whole prune.
+// reparentStep builds the conditional reparent decision as a select: it derives
+// the orphaned children from the live selection and is skipped (with a reason)
+// when the prune leaves no children to reparent. It precedes the confirm recap so
+// every option merely advances — Esc returns to the multi-select, never aborting.
+// The preview assumes force so it lists the maximal set of children; the actual
+// reparent plan is recomputed by the command layer from the confirmed force value.
 func reparentStep(preview ReparentPreviewFunc) components.Step {
-	return components.ConfirmStep(components.ConfirmStepParams{
-		Name:     stepReparent,
-		YesLabel: "reparent",
-		NoLabel:  "leave orphaned",
-		Decide: func(prev []components.Step) (bool, components.NewConfirmParams) {
-			if confirmChoice(prev) == confirmNo {
-				return false, components.NewConfirmParams{}
-			}
-			moves := preview(selectedBranches(prev), confirmChoice(prev) == confirmForce)
+	return components.ChoiceStep(components.ChoiceStepParams{
+		Name:    stepReparent,
+		Summary: reparentSummary,
+		Decide: func(prev []components.Step) (bool, string, components.NewSelectListParams) {
+			moves := preview(selectedBranches(prev), true)
 			if len(moves) == 0 {
-				return false, components.NewConfirmParams{}
+				return false, "no children to reparent", components.NewSelectListParams{}
 			}
-			return true, components.NewConfirmParams{
-				Title:       fmt.Sprintf(domain.PruneReparentPrompt, len(moves)),
+			return true, "", components.NewSelectListParams{
 				Description: reparentProposalText(moves),
-				DefaultYes:  true,
+				Items: []components.SelectItem{
+					{Label: fmt.Sprintf("Reparent onto grandparent (%d)", len(moves)), Value: reparentYes},
+					{Separator: true},
+					{Label: "Leave orphaned", Value: reparentNo},
+				},
 			}
 		},
 	})
 }
 
-// confirmChoice reads the value chosen on the confirm step.
-func confirmChoice(prev []components.Step) string {
-	for _, s := range prev {
-		if s.Name != stepConfirm {
+// reparentSummary labels the reparent choice in the completed-step summaries.
+func reparentSummary(model any) string {
+	sl, ok := model.(components.SelectListModel)
+	if !ok {
+		return ""
+	}
+	if sl.Value() == reparentYes {
+		return "reparent onto grandparent"
+	}
+	return "leave orphaned"
+}
+
+// stepSelectValue reads the chosen value of the named SelectList step.
+func stepSelectValue(steps []components.Step, name string) string {
+	for _, s := range steps {
+		if s.Name != name {
 			continue
 		}
 		if sl, ok := s.Model.(components.SelectListModel); ok {
@@ -168,41 +180,69 @@ func confirmChoice(prev []components.Step) string {
 	return ""
 }
 
-// reparentProposalText lists the children a prune would orphan as the reparent
-// confirmation's description (the wizard applies its own muted style).
+// stepIndex returns the position of the named step, or -1 when absent.
+func stepIndex(steps []components.Step, name string) int {
+	for i, s := range steps {
+		if s.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// reparentProposalText lists the children a prune would orphan and where each
+// would be reparented, as the reparent step's description.
 func reparentProposalText(moves []domain.ReparentResult) string {
 	lines := make([]string, 0, len(moves)+1)
 	lines = append(lines, domain.PruneReparentIntro)
 	for _, m := range moves {
-		lines = append(lines, fmt.Sprintf("  %s: %s → %s", m.Branch, m.OldParent, m.NewParent))
+		lines = append(lines, fmt.Sprintf("  • %s will rebase onto %s instead of %s", m.Branch, m.NewParent, m.OldParent))
 	}
 	return strings.Join(lines, "\n")
 }
 
-// confirmStep builds the confirmation choice. It recaps the count and the
-// reparenting that will follow, and offers a danger "force" option only when an
-// unsafe worktree (dirty, unpushed, or open PR) is currently checked.
-func confirmStep(prev []components.Step, plan domain.PrunePlan) components.SelectListModel {
-	selected := selectedBranches(prev)
-	desc := confirmDescription(selected)
-
-	items := []components.SelectItem{{Label: "Yes, prune", Value: confirmYes}}
-	if anyUnsafeSelected(selected, plan) {
-		items = append(items,
-			components.SelectItem{Separator: true},
-			components.SelectItem{Label: "Yes, force prune (bypass safety checks)", Value: confirmForce, Danger: true},
-		)
-	}
-	items = append(items,
-		components.SelectItem{Separator: true},
-		components.SelectItem{Label: "No, cancel", Value: confirmNo},
-	)
-
-	return components.NewSelectList(components.NewSelectListParams{
-		Title:       "Proceed with prune?",
-		Description: desc,
-		Items:       items,
+// confirmStep builds the final recap step. It recaps what will be pruned, the
+// reparent decision made earlier, and offers a danger "force" option only when an
+// unsafe worktree (dirty, unpushed, or open PR) is currently checked, followed by
+// the constant "No, cancel" row.
+func confirmStep(plan domain.PrunePlan, preview ReparentPreviewFunc) components.Step {
+	return components.RecapStep(components.RecapStepParams{
+		Name: stepConfirm,
+		Build: func(prev []components.Step) components.RecapContent {
+			selected := selectedBranches(prev)
+			desc := confirmDescription(selected)
+			if line := reparentRecapLine(prev, preview, selected); line != "" {
+				desc += "\n\n" + line
+			}
+			actions := []components.SelectItem{{Label: "Yes, prune", Value: confirmYes}}
+			if anyUnsafeSelected(selected, plan) {
+				actions = append(actions,
+					components.SelectItem{Separator: true},
+					components.SelectItem{Label: "Yes, force prune (bypass safety checks)", Value: confirmForce, Danger: true},
+				)
+			}
+			return components.RecapContent{
+				Description: desc,
+				Actions:     actions,
+			}
+		},
 	})
+}
+
+// reparentRecapLine summarizes the reparent decision (made on the earlier step)
+// for the recap, or "" when there are no children to reparent.
+func reparentRecapLine(prev []components.Step, preview ReparentPreviewFunc, selected []string) string {
+	if preview == nil {
+		return ""
+	}
+	moves := preview(selected, true)
+	if len(moves) == 0 {
+		return ""
+	}
+	if stepSelectValue(prev, stepReparent) == reparentYes {
+		return fmt.Sprintf("Then reparent %d child worktree(s) onto their grandparent.", len(moves))
+	}
+	return fmt.Sprintf("Then leave %d child worktree(s) orphaned.", len(moves))
 }
 
 // confirmDescription recaps the worktrees the confirmed prune will remove. The

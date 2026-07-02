@@ -13,12 +13,12 @@ func newConfirmStepWizard() WizardModel {
 		{Name: "Name", Model: NewTextInput(NewTextInputParams{Title: "Name"}), Summary: TextSummary},
 		ConfirmStep(ConfirmStepParams{
 			Name: "Confirm",
-			Decide: func(prev []Step) (bool, NewConfirmParams) {
+			Decide: func(prev []Step) (bool, string, NewConfirmParams) {
 				name := TextSummary(prev[0].Model)
 				if name == "" {
-					return false, NewConfirmParams{}
+					return false, "no name entered", NewConfirmParams{}
 				}
-				return true, NewConfirmParams{Title: "Delete " + name + "?", DefaultYes: true}
+				return true, "", NewConfirmParams{Title: "Delete " + name + "?", DefaultYes: true}
 			},
 		}),
 	}

@@ -59,6 +59,12 @@ const (
 	modeKeep = "keep"
 )
 
+// Step name and action value for the final recap.
+const (
+	stepConfirm    = "Confirm"
+	extractConfirm = "extract"
+)
+
 // Run shows the extraction wizard and returns the selected files and target.
 // Returns domain.ErrUserAborted when the user cancels at the first step.
 func Run(params RunParams) (RunResult, error) {
@@ -94,11 +100,25 @@ func Run(params RunParams) (RunResult, error) {
 		})
 	}
 
+	// Final recap: recaps the selections and offers "Yes, extract" then the constant
+	// "No, cancel" — the single cancellation point.
+	steps = append(steps, components.RecapStep(components.RecapStepParams{
+		Name: stepConfirm,
+		Build: func(prev []components.Step) components.RecapContent {
+			return components.RecapContent{
+				Description: buildExtractRecap(prev),
+				Actions:     []components.SelectItem{{Label: "Yes, extract", Value: extractConfirm}},
+			}
+		},
+	}))
+
 	// Re-entry (after backing out of the new-worktree sub-flow) lands on the last
-	// step — the one the sub-flow was launched from — with the earlier answers kept.
+	// interactive step — before the recap — with the earlier answers kept. It must
+	// not land on the recap itself, whose Build only runs when the wizard advances
+	// into it.
 	start := 0
-	if params.Reenter && len(steps) > 0 {
-		start = len(steps) - 1
+	if params.Reenter && len(steps) > 1 {
+		start = len(steps) - 2
 	}
 	wiz := components.NewWizardAtStep(steps, start)
 	finalModel, err := tea.NewProgram(wiz).Run()
@@ -109,6 +129,12 @@ func Run(params RunParams) (RunResult, error) {
 	final, ok := finalModel.(components.WizardModel)
 	if !ok || final.Aborted() {
 		return RunResult{}, domain.ErrUserAborted
+	}
+
+	if sl, ok := stepModelByName(final.Steps(), stepConfirm).(components.SelectListModel); ok {
+		if sl.Value() == domain.WizardCancelValue {
+			return RunResult{}, domain.ErrUserAborted
+		}
 	}
 
 	var result RunResult
@@ -136,6 +162,31 @@ func Run(params RunParams) (RunResult, error) {
 	return result, nil
 }
 
+// buildExtractRecap recaps whichever of the file/target/mode steps are present.
+func buildExtractRecap(prev []components.Step) string {
+	var lines []string
+	if ms, ok := stepModelByName(prev, "Files").(components.MultiSelectModel); ok {
+		lines = append(lines, "Files:   "+strings.Join(ms.Values(), ", "))
+	}
+	if sl, ok := stepModelByName(prev, "Target worktree").(components.SelectListModel); ok {
+		lines = append(lines, "Target:  "+targetSummary(sl))
+	}
+	if sl, ok := stepModelByName(prev, "Mode").(components.SelectListModel); ok {
+		lines = append(lines, "Mode:    "+modeSummary(sl))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// stepModelByName returns the model of the named step, or nil when absent.
+func stepModelByName(steps []components.Step, name string) any {
+	for _, s := range steps {
+		if s.Name == name {
+			return s.Model
+		}
+	}
+	return nil
+}
+
 func newFileSelect(files []domain.ExtractFile, preselected []string) components.MultiSelectModel {
 	chosen := make(map[string]struct{}, len(preselected))
 	for _, p := range preselected {
@@ -156,7 +207,7 @@ func newFileSelect(files []domain.ExtractFile, preselected []string) components.
 
 	return components.NewMultiSelect(components.NewMultiSelectParams{
 		Title:       "Select files to extract",
-		Description: "Space to toggle, enter to confirm.",
+		Description: domain.MultiSelectHint,
 		Items:       items,
 		Validate: func(vals []string) error {
 			if len(vals) == 0 {

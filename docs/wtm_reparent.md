@@ -19,6 +19,7 @@ wtm reparent [branch] [flags]
   -h, --help            help for reparent
       --output string   Output format: text or json (default "text")
       --to string       New parent branch to rebase onto
+  -y, --yes             Reparent straight from the flags without the interactive wizard (needs the worktree and --to)
 ```
 
 ### SEE ALSO

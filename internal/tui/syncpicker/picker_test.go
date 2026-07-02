@@ -1,8 +1,10 @@
 package syncpicker
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
@@ -27,41 +29,60 @@ func TestSyncCounter(t *testing.T) {
 	}
 }
 
-func TestKeepConflictFromPrev(t *testing.T) {
-	keepStep := components.Step{Model: conflictModeStep(conflictModeStepParams{DefaultKeep: true})}
-	normalStep := components.Step{Model: conflictModeStep(conflictModeStepParams{DefaultKeep: false})}
-	placeholder := components.Step{Model: nil}
+func TestResolveBranches(t *testing.T) {
+	// No multi-select step → fall back to the preselected branches (args / --all).
+	if got := resolveBranches(nil, []string{"a", "b"}); len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("resolveBranches(nil, preselected) = %v, want the preselected list", got)
+	}
+
+	// A multi-select step → its checked values take precedence.
+	ms := components.NewMultiSelect(components.NewMultiSelectParams{
+		Items: []components.MultiSelectItem{{Value: "x", Selected: true}},
+	})
+	steps := []components.Step{{Name: stepWorktrees, Model: ms}}
+	if got := resolveBranches(steps, []string{"fallback"}); len(got) != 1 || got[0] != "x" {
+		t.Errorf("resolveBranches(withSelect, _) = %v, want [x]", got)
+	}
+}
+
+func TestResolveKeep(t *testing.T) {
+	keepStep := components.Step{Name: stepConflict, Model: conflictModeStep(conflictModeStepParams{DefaultKeep: true})}
+	normalStep := components.Step{Name: stepConflict, Model: conflictModeStep(conflictModeStepParams{DefaultKeep: false})}
 
 	tests := []struct {
-		name string
-		prev []components.Step
-		want bool
+		name     string
+		steps    []components.Step
+		fallback bool
+		want     bool
 	}{
-		{name: "keep selected", prev: []components.Step{placeholder, keepStep}, want: true},
-		{name: "normal selected", prev: []components.Step{placeholder, normalStep}, want: false},
-		{name: "missing conflict step", prev: []components.Step{placeholder}, want: false},
-		{name: "wrong model type", prev: []components.Step{placeholder, placeholder}, want: false},
+		{name: "keep selected", steps: []components.Step{keepStep}, want: true},
+		{name: "normal selected", steps: []components.Step{normalStep}, want: false},
+		{name: "step absent falls back to flag", steps: nil, fallback: true, want: true},
+		{name: "step absent, no flag", steps: nil, fallback: false, want: false},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := keepConflictFromPrev(tc.prev); got != tc.want {
-				t.Fatalf("keepConflictFromPrev() = %v, want %v", got, tc.want)
+			if got := resolveKeep(tc.steps, tc.fallback); got != tc.want {
+				t.Fatalf("resolveKeep() = %v, want %v", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestConfirmStep_KeepConflictShowsWarning(t *testing.T) {
-	warned := confirmStep(confirmStepParams{PlanText: "Sync plan", Count: 2, KeepConflict: true})
-	if warned.View() == "" {
-		t.Fatal("expected a rendered confirm view")
-	}
+func TestConfirmDescription_KeepConflictFoldsWarning(t *testing.T) {
+	kept := confirmDescription(confirmStepParams{PlanText: "Sync plan", Count: 2, KeepConflict: true})
+	clean := confirmDescription(confirmStepParams{PlanText: "Sync plan", Count: 2, KeepConflict: false})
 
-	// The danger warning only shows when conflicts are kept in progress.
-	kept := confirmStep(confirmStepParams{PlanText: "Sync plan", Count: 2, KeepConflict: true}).View()
-	clean := confirmStep(confirmStepParams{PlanText: "Sync plan", Count: 2, KeepConflict: false}).View()
-	if len(kept) <= len(clean) {
-		t.Errorf("keep-conflict view should include a warning banner (longer), got kept=%d clean=%d", len(kept), len(clean))
+	// The danger warning is folded into the recap description as a ⚠ line only when
+	// conflicts are kept in progress.
+	if !strings.Contains(kept, domain.SyncKeepConflictWarning) {
+		t.Errorf("keep-conflict recap should fold in the warning, got:\n%s", kept)
+	}
+	if strings.Contains(clean, domain.SyncKeepConflictWarning) {
+		t.Errorf("clean recap should not include the keep-conflict warning, got:\n%s", clean)
+	}
+	if !strings.Contains(kept, "Sync plan") {
+		t.Errorf("recap should include the plan text, got:\n%s", kept)
 	}
 }

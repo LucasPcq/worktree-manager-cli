@@ -91,6 +91,9 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 			Confirm:    confirm,
 		})
 		if errors.Is(err, domain.ErrUserAborted) {
+			output.Frame(cmd.OutOrStdout(), func() {
+				output.Message(cmd.OutOrStdout(), "Aborted.")
+			})
 			return nil
 		}
 		if err != nil {

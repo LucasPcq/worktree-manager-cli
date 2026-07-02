@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -31,6 +32,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().Bool(domain.FlagFF, false, "Fast-forward the source branch to origin before creating (non-interactive; skipped when it has diverged)")
 	cmd.Flags().String(domain.FlagEnvFrom, "", "Override env strategy (example, main, parent)")
 	cmd.Flags().Bool(domain.FlagIfNotExists, false, "Succeed silently if the worktree already exists (idempotent)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Create straight from the flags without the interactive wizard (source defaults to the base branch)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -45,6 +47,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	ffFlag, _ := cmd.Flags().GetBool(domain.FlagFF)
 	envFromFlag, _ := cmd.Flags().GetString(domain.FlagEnvFrom)
 	ifNotExists, _ := cmd.Flags().GetBool(domain.FlagIfNotExists)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 
 	dir, err := os.Getwd()
 	if err != nil {
@@ -57,20 +60,35 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	interactive := rules.IsHumanFormat(format)
+	// The wizard needs a TTY and is skipped by --yes; a human-format run without a
+	// terminal (piped/scripted) also falls back to the non-interactive path.
+	interactive := rules.IsHumanFormat(format) && !yes && term.IsTerminal(int(os.Stdin.Fd()))
 
 	fromBranch := fromFlag
 	envOverride := envFromFlag
 
-	if fromFlag == "" {
+	// Validate an explicit --from up front, so both the interactive wizard and the
+	// non-interactive path report a missing branch the same way.
+	if fromFlag != "" && !rules.BranchCandidateExists(branchCandidates(result.ProjectDir), fromFlag) {
+		return fmt.Errorf("%w: %s", domain.ErrBranchNotFound, fromFlag)
+	}
+
+	if interactive {
+		// Every interactive run goes through the wizard — including --from / --env-from,
+		// which just skip the steps they fix. The source-update select and the final
+		// recap are always present, so the create never fires without a confirmation.
 		wizResult, wizErr := runCreateWizard(createWizardParams{
 			ProjectDir:    result.ProjectDir,
 			Config:        result.Config,
 			EnvFromFlag:   envFromFlag,
-			Interactive:   interactive,
 			IncludeBranch: branch == "",
+			BranchName:    branch,
+			Source:        fromFlag,
 		})
 		if errors.Is(wizErr, domain.ErrUserAborted) {
+			output.Frame(cmd.OutOrStdout(), func() {
+				output.Message(cmd.OutOrStdout(), "Aborted.")
+			})
 			return nil
 		}
 		if wizErr != nil {
@@ -83,20 +101,28 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		if envFromFlag == "" {
 			envOverride = wizResult.EnvFromOverride
 		}
-		// The source-reconciliation and env-fallback confirmations run inside the
-		// wizard now; only the accepted fast-forward is executed here.
+		// Only the accepted fast-forward is executed here (its recovery prompt is a
+		// legitimate post-execution standalone).
 		if wizResult.FastForwardSource && !executeFastForwardSource(result.ProjectDir, fromBranch) {
 			return nil
 		}
 	} else {
-		if !rules.BranchCandidateExists(branchCandidates(result.ProjectDir), fromFlag) {
-			return fmt.Errorf("%w: %s", domain.ErrBranchNotFound, fromFlag)
+		// Non-interactive (--yes / --output json): create straight from the flags.
+		// The source defaults to the configured base branch when --from is omitted,
+		// mirroring the picker's default; --ff fast-forwards it first.
+		if fromBranch == "" {
+			fromBranch = result.Config.Project.Worktrees.BaseBranch
 		}
-		if interactive {
-			if !maybeFastForwardSource(result.ProjectDir, fromBranch) {
-				return nil
-			}
-		} else if ffFlag {
+		if fromBranch == "" {
+			return fmt.Errorf("no source branch: pass --%s (no base branch configured)", domain.FlagFrom)
+		}
+		if !rules.BranchCandidateExists(branchCandidates(result.ProjectDir), fromBranch) {
+			return fmt.Errorf("%w: %s", domain.ErrBranchNotFound, fromBranch)
+		}
+		if branch == "" {
+			return fmt.Errorf("branch name is required without the interactive wizard (pass it as an argument)")
+		}
+		if ffFlag {
 			fastForwardSourceIfBehind(result.ProjectDir, fromBranch)
 		}
 	}
@@ -147,34 +173,35 @@ type createWizardParams struct {
 	ProjectDir    string
 	Config        domain.Config
 	EnvFromFlag   string
-	Interactive   bool
 	IncludeBranch bool
+	// BranchName is the branch given as a positional arg (shown in the recap).
+	BranchName string
+	// Source (--from), when set, fixes the source branch and skips its picker.
+	Source string
 }
 
 func runCreateWizard(params createWizardParams) (newpicker.WizardResult, error) {
-	wizParams := newpicker.WizardParams{
+	return newpicker.RunWizard(newpicker.WizardParams{
 		ProjectDir:     params.ProjectDir,
 		Branches:       branchCandidates(params.ProjectDir),
 		DefaultBranch:  params.Config.Project.Worktrees.BaseBranch,
 		ConfigStrategy: params.Config.Project.Env.Strategy,
 		IncludeBranch:  params.IncludeBranch,
-	}
-	// The reconciliation and env-fallback confirmations only make sense on the
-	// human-facing run; non-interactive callers never reach the wizard, but guard
-	// anyway so the steps stay out of any scripted path.
-	if params.Interactive {
-		wizParams.SourceUpdate = func(source string) newpicker.SourceUpdatePrompt {
+		BranchName:     params.BranchName,
+		Source:         params.Source,
+		IncludeEnv:     params.EnvFromFlag == "",
+		EnvOverride:    params.EnvFromFlag,
+		SourceUpdate: func(source string) newpicker.SourceUpdatePrompt {
 			return sourceUpdatePrompt(params.ProjectDir, source)
-		}
-		wizParams.EnvFallback = func(source, envStepValue string) (bool, components.NewConfirmParams) {
+		},
+		EnvFallback: func(source, envStepValue string) (bool, components.NewConfirmParams) {
 			override := params.EnvFromFlag
 			if override == "" {
 				override = envStepValue
 			}
 			return envFallbackPrompt(params.ProjectDir, params.Config, source, override)
-		}
-	}
-	return newpicker.RunWizard(wizParams)
+		},
+	})
 }
 
 // sourceUpdatePrompt classifies a source branch's divergence from origin into the
@@ -184,7 +211,7 @@ func runCreateWizard(params createWizardParams) (newpicker.WizardResult, error) 
 // source needs no confirmation. Shared so both paths phrase it identically.
 func sourceUpdatePrompt(projectDir, source string) newpicker.SourceUpdatePrompt {
 	if rules.IsRemoteBranch(source) {
-		return newpicker.SourceUpdatePrompt{}
+		return newpicker.SourceUpdatePrompt{SkipReason: "source is a remote branch"}
 	}
 	state, ab := branch.Divergence(branch.BranchParams{ProjectDir: projectDir, Branch: source})
 	if rules.ShouldOfferFastForward(state) {
@@ -206,9 +233,10 @@ func sourceUpdatePrompt(projectDir, source string) newpicker.SourceUpdatePrompt 
 				DefaultYes: true,
 			},
 			AbortOnDecline: true,
+			SkipReason:     "source diverged from origin — see recap",
 		}
 	}
-	return newpicker.SourceUpdatePrompt{}
+	return newpicker.SourceUpdatePrompt{SkipReason: "source already up to date"}
 }
 
 // envFallbackPrompt decides the "env source" confirmation: whether the parent env

@@ -442,4 +442,26 @@ const (
 	// CleanReparentIntro precedes the list of children a clean would otherwise
 	// orphan, shown in the reparent confirmation.
 	CleanReparentIntro = "These children would otherwise be left orphaned:"
+
+	// WizardCancelLabel is the constant final option on every wizard recap step —
+	// the single explicit cancellation point (alongside Esc on the first step).
+	// Kept identical across commands so "No, cancel" always reads and sits the same.
+	WizardCancelLabel = "No, cancel"
+	// WizardCancelValue is the sentinel carried by the WizardCancelLabel row; the
+	// command layer maps a chosen WizardCancelValue to ErrUserAborted.
+	WizardCancelValue = "__wtm_wizard_cancel__"
+	// WizardRecapTitle heads the final recap step, marking it visually as the
+	// synthesis and action point.
+	WizardRecapTitle = "Review & confirm"
+
+	// MultiSelectHint is the shared footer hint for multi-select wizard steps, kept
+	// identical across commands (sync, prune, extract) so the controls always read
+	// the same.
+	MultiSelectHint = "Space to toggle, a to select all, / to filter, enter to confirm, esc to cancel."
+
+	// PinnedSuffixDefault, PinnedSuffixBase, and PinnedSuffixDetected label the
+	// pinned first row of a branch picker, sharing one leading-space convention.
+	PinnedSuffixDefault  = " (default)"
+	PinnedSuffixBase     = " (base)"
+	PinnedSuffixDetected = " (detected)"
 )

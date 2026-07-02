@@ -5,6 +5,7 @@ package checkout
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -15,11 +16,14 @@ import (
 )
 
 const (
-	stepPR          = "Pull request"
-	stepParent      = "Parent branch"
-	stepEnv         = "Env strategy"
-	stepEnvFallback = "Env source"
+	stepPR      = "Pull request"
+	stepParent  = "Parent branch"
+	stepEnv     = "Env strategy"
+	stepConfirm = "Confirm"
 )
+
+// checkoutConfirm is the recap's action value.
+const checkoutConfirm = "checkout"
 
 // WizardParams holds inputs for the checkout wizard.
 type WizardParams struct {
@@ -80,12 +84,15 @@ func runPreselected(params WizardParams) (WizardResult, error) {
 	}
 
 	if len(steps) == 0 {
+		// Everything is fixed by flags — nothing to review, so no wizard (and no
+		// recap): this is effectively a non-interactive checkout.
 		return WizardResult{PR: *params.Preselected}, nil
 	}
 
-	if params.EnvFallback != nil {
-		steps = append(steps, envFallbackStep(params))
-	}
+	preselected := *params.Preselected
+	steps = append(steps, recapStep(params, func([]components.Step) string {
+		return prDisplay(preselected)
+	}))
 
 	wiz := components.NewWizardWithParams(components.WizardParams{
 		Steps: steps,
@@ -95,7 +102,7 @@ func runPreselected(params WizardParams) (WizardResult, error) {
 	if err != nil {
 		return WizardResult{}, err
 	}
-	if envFallbackDeclined(final) {
+	if stepConfirmValue(final.Steps()) == domain.WizardCancelValue {
 		return WizardResult{}, domain.ErrUserAborted
 	}
 
@@ -126,9 +133,17 @@ func runPicker(params WizardParams) (WizardResult, error) {
 	if params.IncludeEnv {
 		steps = append(steps, envStep(params.ConfigStrategy))
 	}
-	if params.EnvFallback != nil {
-		steps = append(steps, envFallbackStep(params))
-	}
+	steps = append(steps, recapStep(params, func(prev []components.Step) string {
+		sl, ok := stepModel(prev, stepPR)
+		if !ok {
+			return ""
+		}
+		num, _ := strconv.Atoi(sl.Value())
+		if pr, found := findPR(loadedPRs, num); found {
+			return prDisplay(pr)
+		}
+		return ""
+	}))
 
 	refresh := branchrefresh.Handler(params.ProjectDir, holder)
 	wiz := components.NewWizardWithParams(components.WizardParams{
@@ -164,7 +179,7 @@ func runPicker(params WizardParams) (WizardResult, error) {
 	if err != nil {
 		return WizardResult{}, err
 	}
-	if envFallbackDeclined(final) {
+	if stepConfirmValue(final.Steps()) == domain.WizardCancelValue {
 		return WizardResult{}, domain.ErrUserAborted
 	}
 
@@ -271,17 +286,60 @@ func baseBranchForSelection(prev []components.Step, prs []domain.PRInfo) string 
 	return ""
 }
 
-// envFallbackStep builds the conditional "env source" confirmation, hosted inside
-// the wizard so Esc goes back to the env step instead of aborting the checkout.
-func envFallbackStep(params WizardParams) components.Step {
-	return components.ConfirmStep(components.ConfirmStepParams{
-		Name: stepEnvFallback,
-		Decide: func(prev []components.Step) (bool, components.NewConfirmParams) {
-			source := resolveSource(prev, params.FromOverride, params.Preselected)
-			env := resolveEnv(prev, params.EnvOverride)
-			return params.EnvFallback(source, env)
+// recapStep builds the final, unconditional recap for checkout: it recaps the PR,
+// parent, and env, folds the env fallback into a ⚠ line, and offers
+// "Yes, checkout" then the constant "No, cancel". prLabel resolves the chosen PR's
+// display text (fixed for a preselected PR, or looked up from the picked number).
+func recapStep(params WizardParams, prLabel func(prev []components.Step) string) components.Step {
+	return components.RecapStep(components.RecapStepParams{
+		Name: stepConfirm,
+		Build: func(prev []components.Step) components.RecapContent {
+			return components.RecapContent{
+				Description: buildCheckoutRecap(prev, params, prLabel),
+				Actions: []components.SelectItem{
+					{Label: "Yes, checkout", Value: checkoutConfirm},
+				},
+			}
 		},
 	})
+}
+
+// buildCheckoutRecap recaps the selections with a ⚠ line for the env fallback.
+func buildCheckoutRecap(prev []components.Step, params WizardParams, prLabel func(prev []components.Step) string) string {
+	var lines []string
+	if pr := prLabel(prev); pr != "" {
+		lines = append(lines, "PR:      "+pr)
+	}
+	source := resolveSource(prev, params.FromOverride, params.Preselected)
+	if source != "" {
+		lines = append(lines, "Parent:  "+source)
+	}
+	env := resolveEnv(prev, params.EnvOverride)
+	envLabel := env
+	if envLabel == "" {
+		envLabel = domain.SummaryConfigDefault
+	}
+	lines = append(lines, "Env:     "+envLabel)
+
+	if params.EnvFallback != nil {
+		if show, p := params.EnvFallback(source, env); show && p.Warning != "" {
+			lines = append(lines, "", "⚠ "+p.Warning)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// prDisplay renders a PR as "#<number> <title>" for the recap.
+func prDisplay(pr domain.PRInfo) string {
+	return fmt.Sprintf("#%d %s", pr.Number, pr.Title)
+}
+
+// stepConfirmValue reads the value chosen on the recap step.
+func stepConfirmValue(steps []components.Step) string {
+	if sl, ok := stepModel(steps, stepConfirm); ok {
+		return sl.Value()
+	}
+	return ""
 }
 
 // resolveSource resolves the effective parent/source branch for the env-fallback
@@ -310,23 +368,6 @@ func resolveEnv(prev []components.Step, envOverride string) string {
 		return sl.Value()
 	}
 	return ""
-}
-
-// envFallbackDeclined reports whether the env-fallback step ran and the user
-// declined it — treated by the caller as a clean abort.
-func envFallbackDeclined(final components.WizardModel) bool {
-	steps := final.Steps()
-	for i := range steps {
-		if steps[i].Name != stepEnvFallback {
-			continue
-		}
-		if final.Skipped(i) {
-			return false
-		}
-		c, ok := steps[i].Model.(components.ConfirmModel)
-		return ok && !c.Confirmed()
-	}
-	return false
 }
 
 func envStep(strategy domain.EnvStrategy) components.Step {
@@ -401,7 +442,7 @@ func buildBranchItems(branches []domain.BranchCandidate, base string) []componen
 	return components.BranchItems(components.BranchItemsParams{
 		Candidates:   branches,
 		Pinned:       base,
-		PinnedSuffix: " (base)",
+		PinnedSuffix: domain.PinnedSuffixBase,
 	})
 }
 

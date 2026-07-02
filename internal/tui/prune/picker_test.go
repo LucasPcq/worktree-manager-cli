@@ -8,12 +8,11 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// prevWithConfirm builds the prior steps a reparent step sees: a worktrees
-// multi-select and the confirm step (which defaults to "Yes, prune").
-func prevWithConfirm() []components.Step {
+// prevWorktrees builds the prior steps a reparent step sees: just the worktrees
+// multi-select (reparent now precedes the confirm recap).
+func prevWorktrees() []components.Step {
 	return []components.Step{
 		{Name: stepWorktrees, Model: components.NewMultiSelect(components.NewMultiSelectParams{})},
-		{Name: stepConfirm, Model: confirmStep(nil, domain.PrunePlan{})},
 	}
 }
 
@@ -22,18 +21,21 @@ func TestReparentStepAppliesWhenChildrenExist(t *testing.T) {
 		return []domain.ReparentResult{{Branch: "child", OldParent: "p", NewParent: "gp"}}
 	}
 	step := reparentStep(preview)
-	step.Build(prevWithConfirm()) // confirm defaults to "yes" → not cancelled
+	step.Build(prevWorktrees())
 	if step.AutoSkip(components.WizardModel{}) {
-		t.Error("reparent step should apply when children exist and prune is confirmed")
+		t.Error("reparent step should apply when children exist")
 	}
 }
 
 func TestReparentStepSkipsWithoutChildren(t *testing.T) {
 	preview := func(chosen []string, force bool) []domain.ReparentResult { return nil }
 	step := reparentStep(preview)
-	step.Build(prevWithConfirm())
+	step.Build(prevWorktrees())
 	if !step.AutoSkip(components.WizardModel{}) {
 		t.Error("reparent step should be skipped when there are no children to reparent")
+	}
+	if step.SkipReason() == "" {
+		t.Error("expected a skip reason when there are no children")
 	}
 }
 
@@ -41,7 +43,7 @@ func TestReparentProposalTextListsMoves(t *testing.T) {
 	text := reparentProposalText([]domain.ReparentResult{
 		{Branch: "child", OldParent: "old", NewParent: "new"},
 	})
-	if !strings.Contains(text, "child") || !strings.Contains(text, "old → new") {
+	if !strings.Contains(text, "child") || !strings.Contains(text, "new") || !strings.Contains(text, "old") {
 		t.Errorf("proposal text missing move details: %q", text)
 	}
 }

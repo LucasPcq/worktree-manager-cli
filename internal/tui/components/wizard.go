@@ -25,8 +25,18 @@ type Step struct {
 	// AutoSkip, when set and returning true on entry, skips this step
 	// automatically and advances. Use it for steps that are irrelevant given an
 	// earlier answer (e.g. a sub-step whose section gate was set to "skip").
-	// Skipped steps are hidden from the breadcrumb and reported via Skipped(i).
+	// A skipped step is hidden from the breadcrumb; it is reported via Skipped(i)
+	// and, when SkipReason yields a non-empty string, listed in the summaries.
 	AutoSkip func(w WizardModel) bool
+	// SkipReason, when set, is read right after AutoSkip returns true and returns
+	// the human reason the step was skipped. A non-empty reason is shown in the
+	// completed-step summaries as "⊘ <Name> — <reason>"; an empty reason keeps the
+	// skipped step hidden (compat with init section gates).
+	SkipReason func() string
+	// Recap marks the final synthesis step: its description is rendered with a
+	// distinct "Review & confirm" header (see styles.RenderRecap) so it reads as
+	// the action point rather than another prompt.
+	Recap bool
 	// Callout renders this step's description as an emphasized intro callout
 	// (bold title + accent bar) instead of plain muted text. Use it for section
 	// gates that explain what a section does.
@@ -54,9 +64,10 @@ type WizardMsgHandler func(w *WizardModel, msg tea.Msg) (tea.Cmd, bool)
 
 // WizardModel manages a multi-step form with breadcrumb and back navigation.
 type WizardModel struct {
-	steps   []Step
-	skipped []bool
-	current int
+	steps         []Step
+	skipped       []bool
+	skippedReason []string
+	current       int
 	width   int
 	height  int
 	done    bool
@@ -82,9 +93,10 @@ type WizardBanner struct {
 // NewWizard creates a wizard with the given steps.
 func NewWizard(steps []Step) WizardModel {
 	return WizardModel{
-		steps:   steps,
-		skipped: make([]bool, len(steps)),
-		width:   80,
+		steps:         steps,
+		skipped:       make([]bool, len(steps)),
+		skippedReason: make([]string, len(steps)),
+		width:         80,
 	}
 }
 
@@ -209,6 +221,14 @@ func (m WizardModel) Skipped(i int) bool {
 func (m WizardModel) Init() tea.Cmd {
 	if len(m.steps) == 0 {
 		return tea.Quit
+	}
+	// Run the initial step's Build so a step whose content derives from presets (a
+	// recap that is itself the first step, e.g. `create <branch> --from --env-from`)
+	// is populated. advance() builds every later step on entry; without this the
+	// very first step would keep its placeholder. Prior-step models are already set
+	// (construction or NewWizardAtStep), so Build sees completed inputs.
+	if build := m.steps[m.current].Build; build != nil {
+		m.steps[m.current].Model = build(m.steps[:m.current])
 	}
 	m.propagateSize(m.current)
 	cmds := []tea.Cmd{m.initStep(m.current)}
@@ -352,6 +372,10 @@ func (m WizardModel) renderSummaries(maxLines int) string {
 	var lines []string
 	for i := 0; i < m.current; i++ {
 		if m.skipped[i] {
+			if reason := m.skippedReason[i]; reason != "" {
+				line := fmt.Sprintf("  ⊘ %s — %s", m.steps[i].Name, reason)
+				lines = append(lines, styles.SummaryLineSkipped.Render(line))
+			}
 			continue
 		}
 		summary := ""
@@ -389,6 +413,13 @@ func (m WizardModel) renderDescription() string {
 	desc := m.stepDescription(step)
 	if desc == "" {
 		return ""
+	}
+	if step.Recap {
+		return styles.RenderRecap(styles.IntroParams{
+			Width: m.width,
+			Title: domain.WizardRecapTitle,
+			Body:  desc,
+		})
 	}
 	if step.Callout {
 		return styles.RenderIntro(styles.IntroParams{
@@ -457,26 +488,20 @@ func (m WizardModel) renderBreadcrumb() string {
 	return counter + sep + name
 }
 
-// visibleCount returns the number of steps not skipped (the effective length).
+// visibleCount is the breadcrumb denominator: the fixed total number of steps.
+// It stays constant across the whole flow so the counter reads honestly — an
+// auto-skipped step makes the position jump (e.g. 3/5 → 5/5) rather than shrinking
+// the total. The final recap step is unconditional, so the last step is reliably
+// n/n.
 func (m WizardModel) visibleCount() int {
-	n := 0
-	for i := range m.steps {
-		if !m.skipped[i] {
-			n++
-		}
-	}
-	return n
+	return len(m.steps)
 }
 
-// visiblePosition returns the 1-based index of the current step among visible steps.
+// visiblePosition is the 1-based index of the current step. Because skipped steps
+// are hopped over in advance(), this jumps past them, matching the fixed
+// denominator from visibleCount.
 func (m WizardModel) visiblePosition() int {
-	n := 0
-	for i := 0; i <= m.current && i < len(m.steps); i++ {
-		if !m.skipped[i] {
-			n++
-		}
-	}
-	return n
+	return m.current + 1
 }
 
 func (m WizardModel) renderHelpBar() string {
@@ -552,6 +577,9 @@ func (m WizardModel) advance() (tea.Model, tea.Cmd) {
 		m.buildStep(m.current)
 		if m.steps[m.current].AutoSkip != nil && m.steps[m.current].AutoSkip(m) {
 			m.skipped[m.current] = true
+			if sr := m.steps[m.current].SkipReason; sr != nil {
+				m.skippedReason[m.current] = sr()
+			}
 			m.current++
 			continue
 		}
@@ -596,6 +624,7 @@ func (m WizardModel) goBack() (tea.Model, tea.Cmd) {
 	// re-evaluates AutoSkip against the (possibly changed) gate answer.
 	for i := prev; i < m.current; i++ {
 		m.skipped[i] = false
+		m.skippedReason[i] = ""
 	}
 	m.current = prev
 	m.resetStep(m.current)

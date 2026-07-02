@@ -90,6 +90,11 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 		available:    available,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
+		if rules.IsHumanFormat(format) {
+			output.Frame(cmd.OutOrStdout(), func() {
+				output.Message(cmd.OutOrStdout(), "Aborted.")
+			})
+		}
 		return nil
 	}
 	if err != nil {

@@ -304,25 +304,51 @@ bug: no breadcrumb, and `Esc` quits the whole flow instead of going back.
 Standalone wrappers (`RunStandaloneSelect`/`RunStandaloneConfirm`) are only for a **single**
 one-shot decision where there is no prior step to go back to (e.g. `run up`'s profile picker).
 
-### Confirmations belong INSIDE the wizard, never as a trailing standalone
+### Wizard shape for worktree-mutation commands: `[inputs] → [ChoiceStep…] → RecapStep`
 
-A confirmation that follows a wizard (fast-forward source, env fallback, reparent children, a
-plan preview) is a **step of that wizard**, not a `RunStandaloneConfirm` after it — otherwise
-`Esc` on it aborts the whole flow instead of stepping back (the LUC-115 defect).
+Confirmations belong INSIDE the wizard, never as a trailing standalone (`Esc` on a standalone
+aborts the whole flow instead of stepping back — the LUC-115 defect). LUC-116 further harmonised
+every mutation wizard onto one shape: input/picker steps, then any optional-decision **selects**,
+then a single **recap** as the last step. The rules:
 
-- Use `components.ConfirmStep(components.ConfirmStepParams{Name, Decide, YesLabel, NoLabel})`.
-  `Decide func(prev []Step) (apply bool, params NewConfirmParams)` runs on entry: it derives the
-  wording from earlier answers **and** reports whether the confirm is relevant. `apply == false`
-  auto-skips the step (hidden from the breadcrumb) — so conditional confirms (only when the source
-  diverged, only when children would be orphaned) are expressed declaratively.
-- After the wizard, read the answer with `final.Skipped(i)` + `Model.(ConfirmModel).Confirmed()`.
-  A declined **hard** confirm (proceeding is unsafe) → return `domain.ErrUserAborted`; a declined
-  **soft** confirm (an optional action) → just skip the action. Distinguish the two yourself
-  (e.g. a `AbortOnDecline` flag on the injected prompt), see `internal/tui/newwt/wizard.go`.
-- Business data shown in the confirm arrives via an **injected closure** from the command layer
-  (the TUI never imports `service`/`output`), e.g. `shared.EnvFallbackDecider`, sync's `PlanPreview`.
-- Non-interactive paths (`--yes`, `--from`, `--output json`) must bypass the wizard entirely and
-  keep their prior behaviour.
+- **Optional decision → `components.ChoiceStep`** (a select, never a Yes/No). Every option merely
+  advances; `Esc` goes back; it never cancels the operation. `Decide func(prev []Step) (apply bool,
+  skipReason string, params NewSelectListParams)` runs on entry: `apply == false` auto-skips with a
+  reason shown in the summaries as `⊘ <Name> — <reason>`. Use for fast-forward-vs-keep, reparent-vs-
+  leave-orphaned, push-vs-keep-local, on-conflict.
+- **Final gate → `components.RecapStep`** (always last, unconditional). `Build func(prev []Step)
+  RecapContent` returns the recap description (selections + `⚠` warning lines) and the command's
+  action option(s); RecapStep appends the constant `domain.WizardCancelLabel` ("No, cancel") row
+  carrying `domain.WizardCancelValue`. It renders a distinct "Review & confirm" header (`Step.Recap`).
+  Read the outcome via the step's `SelectListModel.Value()`: `== domain.WizardCancelValue` →
+  `domain.ErrUserAborted`, else it is the chosen action.
+- **Blocking warnings are NOT gate steps** — fold a diverged source / env fallback / keep-conflict
+  into a `⚠` line in the RecapStep description. The single cancellation point is "No, cancel"
+  (plus `Esc` on step 1). Don't reintroduce an `AbortOnDecline` gate.
+- A `ChoiceStep`/`RecapStep` **cannot be the wizard's first step** (the wizard never builds or
+  auto-skips index 0). When a conditional select would otherwise be first (e.g. `clean --branch`
+  with no picker), compute it synchronously and add a concrete step only when it applies — see
+  `internal/tui/clean/wizard.go` (`reparentConcreteStep`).
+- For an **async** recap (safety check, plan preview), keep a hand-built `SelectListModel` step with
+  `Recap: true` and swap its model in via `OnMsg`/`UpdateStepModel` (RecapStep's `Build` is sync).
+  See `internal/tui/clean/wizard.go` (delete) and `internal/tui/syncpicker/picker.go` (plan).
+- `ConfirmStep`/`ConfirmModel` stay only for genuine one-shot standalone Yes/No prompts outside a
+  wizard (e.g. extract's conflict-marker `ConfirmResolve`). `ConfirmStep.Decide` also returns a
+  `skipReason` for parity.
+- Business data shown in a step arrives via an **injected closure** from the command layer (the TUI
+  never imports `service`/`output`), e.g. `shared.EnvFallbackDecider`, sync's `PlanPreview`.
+- The breadcrumb denominator is **fixed** (`len(steps)`); an auto-skipped step makes the position
+  **jump** (3/5 → 5/5), so the recap reliably reads `n/n`.
+- **One wizard for every interactive entry path.** A command with several entry forms (a picker,
+  positional args, `--all`) routes them all through the *same* wizard, skipping the steps a form
+  already fixes (e.g. `sync <branches>`/`--all` skip the multi-select but keep the on-conflict
+  choice and the recap). Don't leave one path on a standalone confirm while another gets the
+  wizard — see `internal/tui/syncpicker/picker.go` + `internal/commands/wt/sync.go`
+  (`resolveSyncSelection`). A genuinely post-execution decision that reacts to a runtime outcome
+  (sync's push after the rebase, a failed fast-forward, an extract conflict) legitimately stays a
+  standalone prompt after the run — it can't be decided upfront.
+- Non-interactive paths (`--yes`, `--from`, `--output json`, no TTY) must bypass the wizard entirely
+  and keep their prior behaviour.
 
 ### Async data in a wizard: `InitCmd` (at start) vs `OnEnter` (per step)
 

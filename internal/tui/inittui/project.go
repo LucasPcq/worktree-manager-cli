@@ -151,11 +151,7 @@ func RunSectionWizard(params SectionWizardParams) (domain.InitProjectAnswers, er
 
 	steps := s.steps
 	if params.Confirm != nil {
-		steps = append(steps, components.Step{
-			Name:    "Confirm",
-			Model:   components.NewConfirm(*params.Confirm),
-			Summary: components.ConfirmSummary("yes", "no"),
-		})
+		steps = append(steps, reinitConfirmStep(*params.Confirm))
 	}
 
 	// Only wire the background branch refresh when a base-branch step is present.
@@ -170,11 +166,48 @@ func RunSectionWizard(params SectionWizardParams) (domain.InitProjectAnswers, er
 	}
 	if params.Confirm != nil {
 		finalSteps := final.Steps()
-		if c, ok := finalSteps[len(finalSteps)-1].Model.(components.ConfirmModel); ok && !c.Confirmed() {
+		if sl, ok := finalSteps[len(finalSteps)-1].Model.(components.SelectListModel); ok && sl.Value() == domain.WizardCancelValue {
 			return domain.InitProjectAnswers{}, domain.ErrUserAborted
 		}
 	}
 	return extractProjectAnswers(final, params.Detection, s.idx), nil
+}
+
+// reinitConfirmValue is the recap step's action value for a targeted re-init.
+const reinitConfirmValue = "reinit"
+
+// reinitConfirmStep builds the final recap for `wtm init --only`: it restates the
+// values chosen on the section steps (so the user sees exactly what will change),
+// folds the warning into a ⚠ line, and offers "Yes, re-initialize" then the
+// constant "No, cancel". It is always the last step (section steps precede it), so
+// Build always runs on entry.
+func reinitConfirmStep(p components.NewConfirmParams) components.Step {
+	return components.RecapStep(components.RecapStepParams{
+		Name: "Confirm",
+		Build: func(prev []components.Step) components.RecapContent {
+			var lines []string
+			if p.Description != "" {
+				lines = append(lines, p.Description, "")
+			}
+			for _, s := range prev {
+				if s.Summary == nil {
+					continue
+				}
+				if v := s.Summary(s.Model); v != "" {
+					lines = append(lines, "• "+s.Name+": "+v)
+				}
+			}
+			if p.Warning != "" {
+				lines = append(lines, "", "⚠ "+p.Warning)
+			}
+			return components.RecapContent{
+				Description: strings.Join(lines, "\n"),
+				Actions: []components.SelectItem{
+					{Label: "Yes, re-initialize", Value: reinitConfirmValue},
+				},
+			}
+		},
+	})
 }
 
 // runWizardParams holds inputs for runWizard. When holder is non-nil the wizard
@@ -258,7 +291,7 @@ func baseBranchItems(branches []domain.BranchCandidate, detected string) []compo
 	return components.BranchItems(components.BranchItemsParams{
 		Candidates:   branches,
 		Pinned:       detected,
-		PinnedSuffix: " (detected)",
+		PinnedSuffix: domain.PinnedSuffixDetected,
 	})
 }
 

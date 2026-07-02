@@ -13,18 +13,24 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// Delete-step choices.
+// Delete-step action choices (the constant "No, cancel" row uses
+// domain.WizardCancelValue).
 const (
 	deleteYes   = "yes"
 	deleteForce = "force"
-	deleteNo    = "no"
+)
+
+// Reparent-step choices.
+const (
+	reparentYes = "reparent"
+	reparentNo  = "orphan"
 )
 
 // Step names, used for construction and value extraction.
 const (
 	stepPicker   = "Worktree"
-	stepDelete   = "Delete"
 	stepReparent = "Reparent children"
+	stepDelete   = "Delete"
 )
 
 // CheckFunc runs the pre-deletion safety check for a branch. It swallows errors
@@ -79,6 +85,9 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 	hasPicker := params.PreselectedBranch == ""
 	var steps []components.Step
 
+	// Order: [picker] → [reparent select] → delete recap (last). The reparent
+	// decision precedes the recap so the recap is reliably the final, unconditional
+	// action point.
 	if hasPicker {
 		items, err := pickableItems(params.ProjectDir)
 		if err != nil {
@@ -93,6 +102,16 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 			}),
 			Summary: components.SelectSummary,
 		})
+		// Reparent is conditional on the picked branch, so it is a ChoiceStep that
+		// auto-skips (with a reason) when the branch has no orphaned children.
+		steps = append(steps, reparentStep(params.ReparentPreview))
+	} else if params.ReparentPreview != nil {
+		// Branch is known up front: compute children synchronously and add a concrete
+		// reparent step only when there are any. A ChoiceStep cannot be the first
+		// step (the wizard never builds or auto-skips step 0), so this path avoids it.
+		if plan := params.ReparentPreview(params.PreselectedBranch); len(plan.Children) > 0 {
+			steps = append(steps, reparentConcreteStep(plan))
+		}
 	}
 
 	deleteIdx := len(steps)
@@ -102,6 +121,7 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 		steps = append(steps, components.Step{
 			Name:    stepDelete,
 			Model:   deletePlaceholder(),
+			Recap:   true,
 			Summary: components.SelectSummary,
 			OnEnter: func(prev []components.Step) tea.Cmd {
 				branch := pickerValue(prev)
@@ -113,17 +133,20 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 		if params.PreCheck != nil {
 			check = *params.PreCheck
 		}
+		branch := params.PreselectedBranch
 		steps = append(steps, components.Step{
 			Name:    stepDelete,
-			Model:   deleteStep(check),
+			Model:   deleteStep(check, ""),
+			Recap:   true,
 			Summary: components.SelectSummary,
+			// Rebuilt on entry so the recap reflects the reparent choice made just
+			// before it (when the branch has children; otherwise delete is step 0 and
+			// Build does not run, which is fine — there is no reparent line then).
+			Build: func(prev []components.Step) any {
+				return deleteStep(check, reparentRecapLine(prev, params.ReparentPreview, branch))
+			},
 		})
 	}
-
-	steps = append(steps, reparentStep(reparentStepParams{
-		Preview:     params.ReparentPreview,
-		Preselected: params.PreselectedBranch,
-	}))
 
 	final, err := components.RunWizard(components.RunWizardParams{
 		Steps:    steps,
@@ -139,7 +162,8 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 				return tea.Batch(loadCmd, runCheckCmd(m.branch, params.Check)), true
 			case checkDoneMsg:
 				result := m.check
-				w.UpdateStepModel(deleteIdx, func(any) any { return deleteStep(result) })
+				line := reparentRecapLine(w.Steps(), params.ReparentPreview, pickerValue(w.Steps()))
+				w.UpdateStepModel(deleteIdx, func(any) any { return deleteStep(result, line) })
 				w.SetLoading(false)
 				return nil, true
 			}
@@ -155,7 +179,7 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 	if !ok {
 		return RunResult{}, fmt.Errorf("unexpected model type")
 	}
-	if deleteSel.Value() == deleteNo {
+	if deleteSel.Value() == domain.WizardCancelValue {
 		return RunResult{}, domain.ErrUserAborted
 	}
 
@@ -167,12 +191,9 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 		result.Branch = pickerValue(finalSteps)
 	}
 
-	reparentIdx := len(finalSteps) - 1
-	if !final.Skipped(reparentIdx) {
-		if rc, ok := finalSteps[reparentIdx].Model.(components.ConfirmModel); ok {
-			result.ReparentAsked = true
-			result.ReparentChildren = rc.Confirmed()
-		}
+	if idx := stepIndex(finalSteps, stepReparent); idx >= 0 && !final.Skipped(idx) {
+		result.ReparentAsked = true
+		result.ReparentChildren = stepValue(finalSteps, stepReparent) == reparentYes
 	}
 	return result, nil
 }
@@ -189,10 +210,10 @@ func deletePlaceholder() components.SelectListModel {
 	return components.NewSelectList(components.NewSelectListParams{Title: "Proceed with deletion?"})
 }
 
-// deleteStep builds the delete confirmation, recapping what will be removed and
-// offering a danger "force" option only when the worktree is unsafe (dirty,
-// unpushed commits, or an open PR).
-func deleteStep(check domain.CleanCheckResult) components.SelectListModel {
+// deleteStep builds the delete confirmation, recapping what will be removed (and
+// the reparent decision made earlier) and offering a danger "force" option only
+// when the worktree is unsafe (dirty, unpushed commits, or an open PR).
+func deleteStep(check domain.CleanCheckResult, reparentLine string) components.SelectListModel {
 	items := []components.SelectItem{{Label: "Yes, delete", Value: deleteYes}}
 	if rules.HasWarnings(check) {
 		items = append(items,
@@ -202,18 +223,19 @@ func deleteStep(check domain.CleanCheckResult) components.SelectListModel {
 	}
 	items = append(items,
 		components.SelectItem{Separator: true},
-		components.SelectItem{Label: "No, cancel", Value: deleteNo},
+		components.SelectItem{Label: domain.WizardCancelLabel, Value: domain.WizardCancelValue},
 	)
 
 	return components.NewSelectList(components.NewSelectListParams{
 		Title:       "Proceed with deletion?",
-		Description: deleteDescription(check),
+		Description: deleteDescription(check, reparentLine),
 		Items:       items,
 	})
 }
 
-// deleteDescription recaps the warnings and what the delete will remove.
-func deleteDescription(check domain.CleanCheckResult) string {
+// deleteDescription recaps the warnings, what the delete will remove, and the
+// reparent decision (when there are children).
+func deleteDescription(check domain.CleanCheckResult, reparentLine string) string {
 	var lines []string
 	if check.IsDirty {
 		lines = append(lines, "Worktree has uncommitted changes")
@@ -232,49 +254,85 @@ func deleteDescription(check domain.CleanCheckResult) string {
 		"  worktree  "+check.WorktreePath,
 		"  branch    "+check.Branch,
 	)
+	if reparentLine != "" {
+		lines = append(lines, "", reparentLine)
+	}
 	return strings.Join(lines, "\n")
 }
 
-// reparentStepParams holds inputs for reparentStep.
-type reparentStepParams struct {
-	Preview     ReparentPreviewFunc
-	Preselected string
+// reparentRecapLine summarizes the reparent decision (made on the earlier step)
+// for the delete recap, or "" when the branch has no orphaned children.
+func reparentRecapLine(steps []components.Step, preview ReparentPreviewFunc, branch string) string {
+	if preview == nil || branch == "" {
+		return ""
+	}
+	plan := preview(branch)
+	if len(plan.Children) == 0 {
+		return ""
+	}
+	if stepValue(steps, stepReparent) == reparentYes {
+		return fmt.Sprintf("Then reparent %d child worktree(s) onto %s.", len(plan.Children), plan.Grandparent)
+	}
+	return fmt.Sprintf("Then leave %d child worktree(s) orphaned.", len(plan.Children))
 }
 
-// reparentStep builds the conditional reparent confirmation. It derives the
-// orphaned children from the chosen branch and is skipped when the delete was
-// cancelled or there are no children. Hosted in the wizard so Esc returns to the
-// delete step instead of aborting the clean.
-func reparentStep(params reparentStepParams) components.Step {
-	return components.ConfirmStep(components.ConfirmStepParams{
-		Name:     stepReparent,
-		YesLabel: "reparent",
-		NoLabel:  "leave orphaned",
-		Decide: func(prev []components.Step) (bool, components.NewConfirmParams) {
-			if deleteChoice(prev) == deleteNo {
-				return false, components.NewConfirmParams{}
-			}
-			plan := params.Preview(branchFromPrev(prev, params.Preselected))
+// reparentStep builds the conditional reparent decision as a select for the
+// picker path: it derives the orphaned children from the picked branch and is
+// skipped (with a reason) when there are none. It precedes the delete recap so
+// every option merely advances — Esc returns to the picker, never aborting.
+func reparentStep(preview ReparentPreviewFunc) components.Step {
+	return components.ChoiceStep(components.ChoiceStepParams{
+		Name:    stepReparent,
+		Summary: reparentSummary,
+		Decide: func(prev []components.Step) (bool, string, components.NewSelectListParams) {
+			plan := preview(branchFromPrev(prev, ""))
 			if len(plan.Children) == 0 {
-				return false, components.NewConfirmParams{}
+				return false, "no orphaned children", components.NewSelectListParams{}
 			}
-			return true, components.NewConfirmParams{
-				Title:       fmt.Sprintf(domain.CleanReparentPrompt, len(plan.Children), plan.Grandparent),
-				Description: reparentProposalText(plan),
-				DefaultYes:  true,
-			}
+			return true, "", reparentSelectParams(plan)
 		},
 	})
+}
+
+// reparentConcreteStep builds an always-shown reparent select for the preselected
+// path, where the branch (and thus its orphaned children) is known up front. It
+// avoids ChoiceStep because it may be the wizard's first step.
+func reparentConcreteStep(plan domain.CleanReparentPlan) components.Step {
+	return components.Step{
+		Name:    stepReparent,
+		Model:   components.NewSelectList(reparentSelectParams(plan)),
+		Summary: reparentSummary,
+	}
+}
+
+// reparentSelectParams builds the shared reparent SelectList (reparent onto the
+// grandparent vs leave orphaned), recapping the moves in the description.
+func reparentSelectParams(plan domain.CleanReparentPlan) components.NewSelectListParams {
+	return components.NewSelectListParams{
+		Description: reparentProposalText(plan),
+		Items: []components.SelectItem{
+			{Label: fmt.Sprintf("Reparent onto %s (%d)", plan.Grandparent, len(plan.Children)), Value: reparentYes},
+			{Separator: true},
+			{Label: "Leave orphaned", Value: reparentNo},
+		},
+	}
+}
+
+// reparentSummary labels the reparent choice in the completed-step summaries.
+func reparentSummary(model any) string {
+	sl, ok := model.(components.SelectListModel)
+	if !ok {
+		return ""
+	}
+	if sl.Value() == reparentYes {
+		return "reparent"
+	}
+	return "leave orphaned"
 }
 
 // pickerValue reads the branch chosen on the picker step.
 func pickerValue(steps []components.Step) string {
 	return stepValue(steps, stepPicker)
-}
-
-// deleteChoice reads the value chosen on the delete step.
-func deleteChoice(steps []components.Step) string {
-	return stepValue(steps, stepDelete)
 }
 
 // branchFromPrev resolves the branch being cleaned: the picker choice, else the
@@ -284,6 +342,16 @@ func branchFromPrev(steps []components.Step, preselected string) string {
 		return v
 	}
 	return preselected
+}
+
+// stepIndex returns the position of the named step, or -1 when absent.
+func stepIndex(steps []components.Step, name string) int {
+	for i, s := range steps {
+		if s.Name == name {
+			return i
+		}
+	}
+	return -1
 }
 
 func stepValue(steps []components.Step, name string) string {
@@ -304,7 +372,7 @@ func reparentProposalText(plan domain.CleanReparentPlan) string {
 	lines := make([]string, 0, len(plan.Children)+1)
 	lines = append(lines, domain.CleanReparentIntro)
 	for _, c := range plan.Children {
-		lines = append(lines, fmt.Sprintf("  %s: %s → %s", c.Branch, c.OldParent, c.NewParent))
+		lines = append(lines, fmt.Sprintf("  • %s will rebase onto %s instead of %s", c.Branch, c.NewParent, c.OldParent))
 	}
 	return strings.Join(lines, "\n")
 }
