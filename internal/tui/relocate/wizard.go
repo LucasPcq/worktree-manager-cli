@@ -1,12 +1,12 @@
-// Package relocate renders the interactive wizard for `wtm relocate`: a parent
-// picker per adopted worktree followed by a final recap + apply confirmation.
+// Package relocate renders the interactive wizard for `wtm relocate`: an opt-in
+// base_path edit, a parent picker per adopted worktree, and a final recap + apply
+// confirmation — all in a single wizard so the breadcrumb, step summaries, and back
+// navigation work across the whole flow.
 package relocate
 
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -18,29 +18,63 @@ import (
 // relocateApply is the recap step's action value.
 const relocateApply = "apply"
 
+// Step names and base_path gate values.
+const (
+	stepBasePathGate  = "Base path"
+	stepBasePathValue = "New base_path"
+	stepApply         = "Apply"
+	basePathKeep      = "keep"
+	basePathChange    = "change"
+)
+
 // RunParams holds the inputs for the relocate wizard.
 type RunParams struct {
 	ProjectDir string
-	Plan       domain.RelocatePlan
 	Adoptions  []domain.RelocateStep    // worktrees needing a parent (rules.PlanAdoptions)
 	Branches   []domain.BranchCandidate // candidate parent branches (resolved by the command)
 	BaseBranch string
+	// CurrentBasePath is the base_path in effect, pre-filled in the edit step and
+	// returned unchanged when the user keeps it.
+	CurrentBasePath string
+	// EditBasePath includes the keep/change gate and value steps. False (e.g. when
+	// --to already fixed base_path) drops them; the wizard then only picks parents.
+	EditBasePath bool
+	// HasWork reports whether the current base_path already has worktrees to move or
+	// adopt. When false and the user keeps base_path (nothing changes), the recap is
+	// auto-skipped so the wizard never asks to confirm a no-op.
+	HasWork bool
+	// ValidateBasePath validates a typed base_path. Provided by the command so the
+	// TUI holds no decision logic (it forwards the rules validator).
+	ValidateBasePath func(string) error
+	// RecapText renders the recap body for the chosen base_path and adoption parents.
+	// Provided by the command so the TUI holds no plan/format logic.
+	RecapText func(basePath string, parents map[string]string) string
 }
 
-// RunResult is the outcome of the wizard.
+// RunResult is the outcome of the wizard. Aborted (Esc or "No, cancel") and
+// Confirmed ("Yes, apply") are mutually exclusive; both false means the recap was
+// auto-skipped because nothing would change — the command treats that as "nothing to
+// do", not an abort.
 type RunResult struct {
+	Aborted   bool
 	Confirmed bool
+	BasePath  string
 	Parents   map[string]string
 }
 
-// RunWizard drives the relocate confirmation flow: one parent picker per adopted
-// worktree, then a final "Apply" step recapping the resolved actions. It returns
-// the chosen parents and whether the user confirmed. An abort (Esc on the first
-// step) or a "No" on the final step yields Confirmed=false.
+// RunWizard drives the relocate flow: an opt-in base_path edit (a keep/change gate
+// then a value step, auto-skipped when kept), one parent picker per adopted worktree,
+// then a final "Apply" recap. It returns the chosen base_path, the adoption parents,
+// and whether the user confirmed. An abort (Esc on the first step) or a "No" on the
+// final step yields Confirmed=false.
 func RunWizard(params RunParams) (RunResult, error) {
 	holder := &params.Branches
 
-	steps := make([]components.Step, 0, len(params.Adoptions)+1)
+	steps := make([]components.Step, 0, len(params.Adoptions)+3)
+	if params.EditBasePath {
+		steps = append(steps, basePathGateStep(params.CurrentBasePath))
+		steps = append(steps, basePathValueStep(params))
+	}
 	for _, adoption := range params.Adoptions {
 		steps = append(steps, parentStep(parentStepParams{
 			Branch:     adoption.Branch,
@@ -48,30 +82,156 @@ func RunWizard(params RunParams) (RunResult, error) {
 			Holder:     holder,
 		}))
 	}
-	steps = append(steps, applyStep(params))
+	steps = append(steps, recapStep(params))
 
-	wiz := components.NewWizardWithParams(components.WizardParams{
-		Steps:       steps,
-		InitCmd:     branchrefresh.Cmd(params.ProjectDir),
-		Loading:     true,
-		LoadingText: domain.LoadingBranchesText,
-		OnMsg:       branchrefresh.Handler(params.ProjectDir, holder),
-	})
-	finalModel, err := tea.NewProgram(wiz, tea.WithOutput(os.Stderr)).Run()
+	// The background branch refresh only feeds the parent pickers; skip it (and its
+	// spinner) when there is nothing to adopt.
+	wp := components.WizardParams{Steps: steps}
+	if len(params.Adoptions) > 0 {
+		wp.InitCmd = branchrefresh.Cmd(params.ProjectDir)
+		wp.Loading = true
+		wp.LoadingText = domain.LoadingBranchesText
+		wp.OnMsg = branchrefresh.Handler(params.ProjectDir, holder)
+	}
+	finalModel, err := tea.NewProgram(components.NewWizardWithParams(wp), tea.WithOutput(os.Stderr)).Run()
 	if err != nil {
 		return RunResult{}, fmt.Errorf("relocate wizard: %w", err)
 	}
 
 	final, ok := finalModel.(components.WizardModel)
 	if !ok || final.Aborted() {
-		return RunResult{Confirmed: false}, nil
+		return RunResult{Aborted: true}, nil
 	}
 
 	done := final.Steps()
-	return RunResult{
-		Confirmed: lastStepConfirmed(done),
-		Parents:   extractParents(done, params.Adoptions),
-	}, nil
+	result := RunResult{
+		BasePath: resolveBasePath(done, params.CurrentBasePath),
+		Parents:  extractParents(done, params.Adoptions),
+	}
+	// The recap is always the last step. When it was auto-skipped (nothing changes),
+	// there is nothing to confirm — return neither Confirmed nor Aborted.
+	if final.Skipped(len(done) - 1) {
+		return result, nil
+	}
+	if !recapConfirmed(done) {
+		return RunResult{Aborted: true}, nil
+	}
+	result.Confirmed = true
+	return result, nil
+}
+
+// basePathGateStep asks whether to change base_path; keeping it auto-skips the value
+// step so the common "just adopt or align" run is a single Enter.
+func basePathGateStep(current string) components.Step {
+	return components.Step{
+		Name: stepBasePathGate,
+		Model: components.NewSelectList(components.NewSelectListParams{
+			Title:       "Change base_path?",
+			Description: "Worktrees live under " + current + ". Keep it, or set a new location to move them all to.",
+			Items: []components.SelectItem{
+				{Label: "Keep " + current, Value: basePathKeep},
+				{Label: "Change it", Value: basePathChange},
+			},
+		}),
+		Summary: components.SelectSummary,
+	}
+}
+
+func basePathValueStep(params RunParams) components.Step {
+	build := func() any {
+		return components.NewTextInput(components.NewTextInputParams{
+			Title:       "New base_path",
+			Description: "Relative to the repo root (e.g. ../.trees). Existing worktrees move here.",
+			Placeholder: params.CurrentBasePath,
+			Default:     params.CurrentBasePath,
+			Validate:    params.ValidateBasePath,
+		})
+	}
+	return components.Step{
+		Name:     stepBasePathValue,
+		Model:    build(),
+		Build:    func([]components.Step) any { return build() },
+		AutoSkip: func(w components.WizardModel) bool { return gateChoice(w.Steps()) != basePathChange },
+		Summary:  components.TextSummary,
+	}
+}
+
+func recapStep(params RunParams) components.Step {
+	step := components.RecapStep(components.RecapStepParams{
+		Name: stepApply,
+		Build: func(prev []components.Step) components.RecapContent {
+			basePath := resolveBasePath(prev, params.CurrentBasePath)
+			parents := extractParents(prev, params.Adoptions)
+			return components.RecapContent{
+				Description: params.RecapText(basePath, parents),
+				Actions:     []components.SelectItem{{Label: "Yes, apply", Value: relocateApply}},
+			}
+		},
+	})
+	// Skip the confirmation when nothing would change: base_path kept and no worktree
+	// to move or adopt. Never reached as the first step (the gate always precedes it
+	// when EditBasePath), so AutoSkip is evaluated.
+	step.AutoSkip = func(w components.WizardModel) bool { return !willChange(w.Steps(), params) }
+	return step
+}
+
+// willChange reports whether applying would do anything: the base_path is being set to
+// a new value, or there is already worktree work under the current base_path.
+func willChange(steps []components.Step, params RunParams) bool {
+	if gateChoice(steps) == basePathChange {
+		if v := textValue(steps, stepBasePathValue); v != "" && v != params.CurrentBasePath {
+			return true
+		}
+	}
+	return params.HasWork
+}
+
+// resolveBasePath returns the base_path the user settled on: the edited value when
+// the gate was set to "change" (and a non-empty value entered), else the current one.
+func resolveBasePath(steps []components.Step, current string) string {
+	if gateChoice(steps) != basePathChange {
+		return current
+	}
+	if v := textValue(steps, stepBasePathValue); v != "" {
+		return v
+	}
+	return current
+}
+
+func gateChoice(steps []components.Step) string {
+	for _, s := range steps {
+		if s.Name != stepBasePathGate {
+			continue
+		}
+		if sl, ok := s.Model.(components.SelectListModel); ok {
+			return sl.Value()
+		}
+	}
+	return ""
+}
+
+func textValue(steps []components.Step, name string) string {
+	for _, s := range steps {
+		if s.Name != name {
+			continue
+		}
+		if ti, ok := s.Model.(components.TextInputModel); ok {
+			return ti.Value()
+		}
+	}
+	return ""
+}
+
+func recapConfirmed(steps []components.Step) bool {
+	for _, s := range steps {
+		if s.Name != stepApply {
+			continue
+		}
+		if sl, ok := s.Model.(components.SelectListModel); ok {
+			return sl.Value() == relocateApply
+		}
+	}
+	return false
 }
 
 type parentStepParams struct {
@@ -97,105 +257,24 @@ func parentStep(params parentStepParams) components.Step {
 	})
 }
 
-func applyStep(params RunParams) components.Step {
-	step := components.Step{Name: "Apply", Recap: true, Summary: components.SelectSummary}
-	if len(params.Adoptions) == 0 {
-		// No pickers precede this step, so the wizard never calls Build (it skips
-		// index 0). Build the recap directly from the plan.
-		step.Model = newApplyRecap(params.Plan, nil)
-		return step
-	}
-	step.Build = func(prev []components.Step) any {
-		return newApplyRecap(params.Plan, extractParents(prev, params.Adoptions))
-	}
-	step.Model = newApplyRecap(params.Plan, nil)
-	return step
-}
-
-func newApplyRecap(plan domain.RelocatePlan, parents map[string]string) components.SelectListModel {
-	return components.NewSelectList(components.NewSelectListParams{
-		Description: buildRecap(plan, parents),
-		Items: []components.SelectItem{
-			{Label: "Yes, apply", Value: relocateApply},
-			{Separator: true},
-			{Label: domain.WizardCancelLabel, Value: domain.WizardCancelValue},
-		},
-	})
-}
-
-// buildRecap renders the resolved actions (with chosen parents) as a grouped,
-// plain-text block shown above the final Yes/No.
-func buildRecap(plan domain.RelocatePlan, parents map[string]string) string {
-	var apply, skipped, blocked []string
-	for _, step := range plan.Steps {
-		switch step.Status {
-		case domain.RelocateStatusMove, domain.RelocateStatusAdopt:
-			apply = append(apply, recapApplyLine(plan.BasePath, step, parents))
-		case domain.RelocateStatusSkippedDirty:
-			skipped = append(skipped, step.Branch+" — uncommitted changes")
-		case domain.RelocateStatusSkippedLocked:
-			skipped = append(skipped, step.Branch+" — locked")
-		case domain.RelocateStatusBlockedDest:
-			blocked = append(blocked, step.Branch+" — target path occupied")
-		}
-	}
-
-	var b strings.Builder
-	writeRecapGroup(&b, "To apply:", apply)
-	writeRecapGroup(&b, "Skipped:", skipped)
-	writeRecapGroup(&b, "Blocked:", blocked)
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func writeRecapGroup(b *strings.Builder, title string, lines []string) {
-	if len(lines) == 0 {
-		return
-	}
-	if b.Len() > 0 {
-		b.WriteString("\n")
-	}
-	b.WriteString(title)
-	b.WriteString("\n")
-	for _, line := range lines {
-		b.WriteString("  " + line + "\n")
-	}
-}
-
-func recapApplyLine(basePath string, step domain.RelocateStep, parents map[string]string) string {
-	if step.Status == domain.RelocateStatusAdopt {
-		return fmt.Sprintf("%s  adopt in place (parent: %s)", step.Branch, resolveParent(step, parents))
-	}
-	target := filepath.Join(basePath, filepath.Base(step.ToPath))
-	if step.Adopt {
-		return fmt.Sprintf("%s → %s (adopt, parent: %s)", step.Branch, target, resolveParent(step, parents))
-	}
-	return fmt.Sprintf("%s → %s", step.Branch, target)
-}
-
-func resolveParent(step domain.RelocateStep, parents map[string]string) string {
-	if parent, ok := parents[step.Branch]; ok && parent != "" {
-		return parent
-	}
-	return step.Parent
-}
-
 func extractParents(steps []components.Step, adoptions []domain.RelocateStep) map[string]string {
 	parents := make(map[string]string, len(adoptions))
-	for i, adoption := range adoptions {
-		if i >= len(steps) {
-			break
-		}
-		if sl, ok := steps[i].Model.(components.SelectListModel); ok {
-			parents[adoption.Branch] = sl.Value()
+	for _, adoption := range adoptions {
+		if v := parentValue(steps, "Parent for "+adoption.Branch); v != "" {
+			parents[adoption.Branch] = v
 		}
 	}
 	return parents
 }
 
-func lastStepConfirmed(steps []components.Step) bool {
-	if len(steps) == 0 {
-		return false
+func parentValue(steps []components.Step, name string) string {
+	for _, s := range steps {
+		if s.Name != name {
+			continue
+		}
+		if sl, ok := s.Model.(components.SelectListModel); ok {
+			return sl.Value()
+		}
 	}
-	sl, ok := steps[len(steps)-1].Model.(components.SelectListModel)
-	return ok && sl.Value() == relocateApply
+	return ""
 }

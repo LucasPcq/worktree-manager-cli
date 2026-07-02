@@ -188,8 +188,16 @@ func recapBody(branches []string, parent string, current map[string]string) stri
 			"Applied on the next sync.",
 		}, "\n")
 	}
+	labels := make([]string, len(branches))
+	for i, b := range branches {
+		old := current[b]
+		if old == "" {
+			old = "none"
+		}
+		labels[i] = fmt.Sprintf("%s (from %s)", b, old)
+	}
 	return strings.Join([]string{
-		fmt.Sprintf("Worktrees (%d):  %s", len(branches), strings.Join(branches, ", ")),
+		fmt.Sprintf("Worktrees (%d):  %s", len(branches), strings.Join(labels, ", ")),
 		"New parent:     " + parent,
 		"",
 		"Applied on the next sync.",
