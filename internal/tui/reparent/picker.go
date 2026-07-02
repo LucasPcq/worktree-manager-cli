@@ -186,25 +186,21 @@ type parentStepParams struct {
 }
 
 func parentStep(params parentStepParams) components.Step {
-	build := func(prev []components.Step) any {
-		exclude := params.PresetExclude
-		if params.WorktreeStepIdx >= 0 {
-			exclude = stepValue(prev, params.WorktreeStepIdx)
-		}
-		return components.NewSelectList(components.NewSelectListParams{
-			Title:       "Select new parent branch",
-			Description: parentStepDescription(params.CurrentParents[exclude]),
-			Items:       parentItems(*params.Holder, exclude),
-		})
-	}
-
-	return components.Step{
-		Name:       "Select new parent",
-		Model:      build(nil), // placeholder; rebuilt from the chosen worktree
-		Build:      build,
-		CanRefresh: true,
-		Summary:    components.SelectSummary,
-	}
+	return components.ParentStep(components.ParentStepParams{
+		Name:   "Select new parent",
+		Title:  "Select new parent branch",
+		Holder: params.Holder,
+		Resolve: func(prev []components.Step) components.ParentStepContext {
+			exclude := params.PresetExclude
+			if params.WorktreeStepIdx >= 0 {
+				exclude = stepValue(prev, params.WorktreeStepIdx)
+			}
+			return components.ParentStepContext{
+				Exclude:     exclude,
+				Description: parentStepDescription(params.CurrentParents[exclude]),
+			}
+		},
+	})
 }
 
 // parentStepDescription tells the user what the worktree is rebased onto today,
@@ -216,13 +212,6 @@ func parentStepDescription(currentParent string) string {
 		return "No parent recorded yet — pick the branch to rebase onto on the next sync"
 	}
 	return fmt.Sprintf("Currently rebased onto %s — pick the new parent (applied on the next sync)", currentParent)
-}
-
-func parentItems(branches []domain.BranchCandidate, exclude string) []components.SelectItem {
-	return components.BranchItems(components.BranchItemsParams{
-		Candidates: branches,
-		Exclude:    exclude,
-	})
 }
 
 func listWorktreeItems(projectDir string) ([]components.SelectItem, error) {

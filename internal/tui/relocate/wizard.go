@@ -81,29 +81,20 @@ type parentStepParams struct {
 }
 
 func parentStep(params parentStepParams) components.Step {
-	build := func() any {
-		return components.NewSelectList(components.NewSelectListParams{
-			Title: "Parent for " + params.Branch,
-			Description: params.Branch + " was created outside wtm, so it has no recorded parent. " +
-				"Pick the branch `wtm sync` should rebase it onto — its files stay where they are. " +
-				"The full set of moves and adoptions is recapped on the final step.",
-			Items: components.BranchItems(components.BranchItemsParams{
-				Candidates:   *params.Holder,
-				Pinned:       params.BaseBranch,
-				PinnedSuffix: domain.PinnedSuffixDefault,
-				Exclude:      params.Branch,
-			}),
-		})
-	}
-
-	return components.Step{
-		Name:       "Parent for " + params.Branch,
-		Model:      build(),
-		Build:      func([]components.Step) any { return build() },
-		CanRefresh: true,
-		Summary:    components.SelectSummary,
-		Callout:    true,
-	}
+	desc := params.Branch + " was created outside wtm, so it has no recorded parent. " +
+		"Pick the branch `wtm sync` should rebase it onto — its files stay where they are. " +
+		"The full set of moves and adoptions is recapped on the final step."
+	return components.ParentStep(components.ParentStepParams{
+		Name:         "Parent for " + params.Branch,
+		Title:        "Parent for " + params.Branch,
+		Holder:       params.Holder,
+		Pinned:       params.BaseBranch,
+		PinnedSuffix: domain.PinnedSuffixDefault,
+		Callout:      true,
+		Resolve: func([]components.Step) components.ParentStepContext {
+			return components.ParentStepContext{Exclude: params.Branch, Description: desc}
+		},
+	})
 }
 
 func applyStep(params RunParams) components.Step {
