@@ -95,8 +95,6 @@ func WritePruneResultJSON(w io.Writer, result domain.PruneResult) error {
 // pruneReasonLabel maps a prune reason/skip constant to a short human phrase.
 func pruneReasonLabel(reason string) string {
 	switch reason {
-	case domain.PruneReasonMerged:
-		return "merged"
 	case domain.PruneReasonPRMerged:
 		return "PR merged"
 	case domain.PruneReasonPRClosed:

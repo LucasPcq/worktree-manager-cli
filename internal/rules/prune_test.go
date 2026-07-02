@@ -35,22 +35,25 @@ func skippedBranches(plan domain.PrunePlan) map[string]string {
 }
 
 func TestClassifyPruneMerged(t *testing.T) {
+	// --merged matches a merged PR; a branch with no PR is never merged — the
+	// LUC-111 fix (a freshly-created worktree must not be flagged).
 	plan := ClassifyPrune(ClassifyPruneParams{
 		Statuses: []domain.WorktreeStatus{
-			status("done", func(s *domain.WorktreeStatus) { s.CommitsAhead = 0 }),
-			status("wip", func(s *domain.WorktreeStatus) { s.CommitsAhead = 3 }),
+			status("done", nil),
+			status("fresh", nil),
 		},
-		Nodes:      []domain.WorktreeNode{node("done", "main"), node("wip", "main")},
+		Nodes:      []domain.WorktreeNode{node("done", "main"), node("fresh", "main")},
+		PRStates:   map[string]string{"done": domain.PRStateMerged},
 		Merged:     true,
 		BaseBranch: "main",
 	})
 
 	sel := selectedBranches(plan)
-	if sel["done"] != domain.PruneReasonMerged {
-		t.Errorf("expected 'done' selected as merged, got %v", sel)
+	if sel["done"] != domain.PruneReasonPRMerged {
+		t.Errorf("expected 'done' selected as PR merged, got %v", sel)
 	}
-	if _, ok := sel["wip"]; ok {
-		t.Errorf("'wip' should not be selected (3 commits ahead)")
+	if _, ok := sel["fresh"]; ok {
+		t.Errorf("'fresh' (no PR) must never be flagged merged")
 	}
 }
 
@@ -67,6 +70,7 @@ func TestClassifyPrunePRState(t *testing.T) {
 			"closed-pr": domain.PRStateClosed,
 			"open-pr":   domain.PRStateOpen,
 		},
+		Merged:     true,
 		Closed:     true,
 		BaseBranch: "main",
 	})
@@ -80,6 +84,37 @@ func TestClassifyPrunePRState(t *testing.T) {
 	}
 	if _, ok := sel["open-pr"]; ok {
 		t.Errorf("open-pr should not be selected")
+	}
+}
+
+// TestClassifyPruneMergedNeedsMergedPR verifies the filters don't cross wires: a
+// closed (unmerged) PR is not matched by --merged, and a merged PR is not matched
+// by --closed.
+func TestClassifyPruneMergedNeedsMergedPR(t *testing.T) {
+	params := ClassifyPruneParams{
+		Statuses: []domain.WorktreeStatus{status("a", nil), status("b", nil)},
+		Nodes:    []domain.WorktreeNode{node("a", "main"), node("b", "main")},
+		PRStates: map[string]string{"a": domain.PRStateMerged, "b": domain.PRStateClosed},
+	}
+
+	onlyMerged := params
+	onlyMerged.Merged = true
+	sel := selectedBranches(ClassifyPrune(onlyMerged))
+	if sel["a"] != domain.PruneReasonPRMerged {
+		t.Errorf("--merged should select the merged PR, got %v", sel)
+	}
+	if _, ok := sel["b"]; ok {
+		t.Errorf("--merged must not select a closed (unmerged) PR")
+	}
+
+	onlyClosed := params
+	onlyClosed.Closed = true
+	sel = selectedBranches(ClassifyPrune(onlyClosed))
+	if sel["b"] != domain.PruneReasonPRClosed {
+		t.Errorf("--closed should select the closed PR, got %v", sel)
+	}
+	if _, ok := sel["a"]; ok {
+		t.Errorf("--closed must not select a merged PR")
 	}
 }
 
@@ -99,8 +134,9 @@ func TestClassifyPruneGone(t *testing.T) {
 func TestClassifyPruneDirtySkipUnlessForce(t *testing.T) {
 	build := func(force bool) domain.PrunePlan {
 		return ClassifyPrune(ClassifyPruneParams{
-			Statuses:   []domain.WorktreeStatus{status("dirty", func(s *domain.WorktreeStatus) { s.CommitsAhead = 0; s.IsDirty = true })},
+			Statuses:   []domain.WorktreeStatus{status("dirty", func(s *domain.WorktreeStatus) { s.IsDirty = true })},
 			Nodes:      []domain.WorktreeNode{node("dirty", "main")},
+			PRStates:   map[string]string{"dirty": domain.PRStateMerged},
 			Merged:     true,
 			BaseBranch: "main",
 			Force:      force,
@@ -116,7 +152,7 @@ func TestClassifyPruneDirtySkipUnlessForce(t *testing.T) {
 	}
 
 	forced := build(true)
-	if selectedBranches(forced)["dirty"] != domain.PruneReasonMerged {
+	if selectedBranches(forced)["dirty"] != domain.PruneReasonPRMerged {
 		t.Errorf("with force, dirty should be selected, got %+v", forced)
 	}
 }
@@ -182,10 +218,11 @@ func TestClassifyPruneProtections(t *testing.T) {
 	// like clean), so a merged non-base worktree is selected.
 	plan := ClassifyPrune(ClassifyPruneParams{
 		Statuses: []domain.WorktreeStatus{
-			status("main", func(s *domain.WorktreeStatus) { s.CommitsAhead = 0; s.IsParent = true }),
-			status("current", func(s *domain.WorktreeStatus) { s.CommitsAhead = 0 }),
+			status("main", func(s *domain.WorktreeStatus) { s.IsParent = true }),
+			status("current", nil),
 		},
 		Nodes:      []domain.WorktreeNode{{Branch: "main", IsMain: true}, node("current", "main")},
+		PRStates:   map[string]string{"main": domain.PRStateMerged, "current": domain.PRStateMerged},
 		Merged:     true,
 		BaseBranch: "main",
 	})
@@ -193,7 +230,7 @@ func TestClassifyPruneProtections(t *testing.T) {
 	if skippedBranches(plan)["main"] != domain.PruneSkipBase {
 		t.Errorf("main should be skipped as base_branch, got %v", skippedBranches(plan))
 	}
-	if selectedBranches(plan)["current"] != domain.PruneReasonMerged {
+	if selectedBranches(plan)["current"] != domain.PruneReasonPRMerged {
 		t.Errorf("current worktree should be selectable (not protected), got %+v", plan.Selected)
 	}
 }
@@ -202,8 +239,9 @@ func TestClassifyPruneSkipsMainWorktree(t *testing.T) {
 	// A main worktree whose branch differs from the configured base is still
 	// protected as the main worktree.
 	plan := ClassifyPrune(ClassifyPruneParams{
-		Statuses:   []domain.WorktreeStatus{status("trunk", func(s *domain.WorktreeStatus) { s.CommitsAhead = 0; s.IsParent = true })},
+		Statuses:   []domain.WorktreeStatus{status("trunk", func(s *domain.WorktreeStatus) { s.IsParent = true })},
 		Nodes:      []domain.WorktreeNode{{Branch: "trunk", IsMain: true}},
+		PRStates:   map[string]string{"trunk": domain.PRStateMerged},
 		Merged:     true,
 		BaseBranch: "main",
 	})
@@ -217,8 +255,8 @@ func TestFinalizePrunePlanReparentsDeselectedChild(t *testing.T) {
 	// main. The user deselects B (keeps it) — B must now reparent onto main too.
 	full := domain.PrunePlan{
 		Selected: []domain.PruneCandidate{
-			{Branch: "A", SourceBranch: "main", Reason: domain.PruneReasonMerged},
-			{Branch: "B", SourceBranch: "A", Reason: domain.PruneReasonMerged},
+			{Branch: "A", SourceBranch: "main", Reason: domain.PruneReasonPRMerged},
+			{Branch: "B", SourceBranch: "A", Reason: domain.PruneReasonPRMerged},
 		},
 		Reparents: []domain.ReparentResult{{Branch: "C", OldParent: "A", NewParent: "main"}},
 	}
@@ -245,8 +283,8 @@ func TestFinalizePrunePlanDropsUnsafeWithoutForce(t *testing.T) {
 	// unsafe (dirty / unpushed / open PR), unless the user confirms with force.
 	full := domain.PrunePlan{
 		Selected: []domain.PruneCandidate{
-			{Branch: "clean-wt", SourceBranch: "main", Reason: domain.PruneReasonMerged},
-			{Branch: "dirty-wt", SourceBranch: "main", Reason: domain.PruneReasonMerged, IsDirty: true, UnsafeReason: domain.PruneSkipDirty},
+			{Branch: "clean-wt", SourceBranch: "main", Reason: domain.PruneReasonPRMerged},
+			{Branch: "dirty-wt", SourceBranch: "main", Reason: domain.PruneReasonPRMerged, IsDirty: true, UnsafeReason: domain.PruneSkipDirty},
 			{Branch: "unpushed-wt", SourceBranch: "main", Reason: domain.PruneReasonGone, UnsafeReason: domain.PruneSkipUnpushed},
 			{Branch: "openpr-wt", SourceBranch: "main", Reason: domain.PruneReasonGone, UnsafeReason: domain.PruneSkipOpenPR},
 		},
@@ -281,10 +319,11 @@ func TestClassifyPruneReparents(t *testing.T) {
 	// that is also pruned is not reparented.
 	plan := ClassifyPrune(ClassifyPruneParams{
 		Statuses: []domain.WorktreeStatus{
-			status("feat", func(s *domain.WorktreeStatus) { s.CommitsAhead = 0 }),
-			status("child-live", func(s *domain.WorktreeStatus) { s.CommitsAhead = 2 }),
-			status("child-dead", func(s *domain.WorktreeStatus) { s.CommitsAhead = 0 }),
+			status("feat", nil),
+			status("child-live", nil),
+			status("child-dead", nil),
 		},
+		PRStates: map[string]string{"feat": domain.PRStateMerged, "child-dead": domain.PRStateMerged},
 		Nodes: []domain.WorktreeNode{
 			node("feat", "main"),
 			node("child-live", "feat"),
@@ -300,5 +339,21 @@ func TestClassifyPruneReparents(t *testing.T) {
 	r := plan.Reparents[0]
 	if r.Branch != "child-live" || r.OldParent != "feat" || r.NewParent != "main" {
 		t.Errorf("unexpected reparent: %+v", r)
+	}
+}
+
+func TestPruneGHNotice(t *testing.T) {
+	if _, _, show := PruneGHNotice(domain.GHConnectionOK); show {
+		t.Error("no notice expected when gh is reachable")
+	}
+
+	for _, conn := range []domain.GHConnection{domain.GHConnectionNotInstalled, domain.GHConnectionNotAuthenticated} {
+		title, lines, show := PruneGHNotice(conn)
+		if !show {
+			t.Errorf("conn %v: expected a notice", conn)
+		}
+		if title == "" || len(lines) == 0 {
+			t.Errorf("conn %v: expected non-empty title and lines, got %q / %v", conn, title, lines)
+		}
 	}
 }

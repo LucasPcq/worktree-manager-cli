@@ -72,11 +72,15 @@ flagged; everything else is what the name implies.
   hooks. `--from` accepts a remote ref (`origin/x`). Add `--if-not-exists` for idempotency.
 - `wtm clean <branch>` / `wtm prune [filters]` — remove one / batch-remove finished
   worktrees. **In JSON mode surviving children are left orphaned unless you pass
-  `--reparent-children`** (they reparent onto the grandparent). `prune` with no filter
-  considers every finished worktree (merged + closed + gone). Both **refuse unsafe
-  worktrees** — dirty, unpushed commits, or an open PR — unless you pass `--force`;
-  in JSON/`--yes` mode those are reported under `skipped` (reason `dirty`/`unpushed`/
-  `open_pr`) instead of being removed, so committed work is never silently lost.
+  `--reparent-children`** (they reparent onto the grandparent). `prune` decides "finished"
+  from **GitHub PR state via the `gh` CLI** (not local commits): `--merged` = PR merged,
+  `--closed` = PR closed without merging, `--gone` = remote branch deleted; no filter = all
+  three. **`--merged`/`--closed` need `gh` installed + authenticated** — without it they match
+  nothing and prune prints a notice on stderr; only `--gone` works offline. Prune `reason`
+  values in JSON are `pr_merged` / `pr_closed` / `gone` (there is no plain `merged`). Both
+  **refuse unsafe worktrees** — dirty, unpushed commits, or an open PR — unless you pass
+  `--force`; in JSON/`--yes` mode those are reported under `skipped` (reason `dirty`/
+  `unpushed`/`open_pr`) instead of being removed, so committed work is never silently lost.
 - `wtm extract --files <a,b> --to <branch>` — move part of the current worktree's
   uncommitted changes onto another branch (split an oversized PR). On conflict it changes
   nothing and exits `15`; retry with `--on-conflict resolve` to apply git conflict markers.

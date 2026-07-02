@@ -23,14 +23,17 @@ func newPruneCmd() *cobra.Command {
 		Use:   domain.CmdPrune,
 		Short: "Remove finished worktrees (merged, closed PR, gone, or old) in one pass",
 		Long: "Batch-remove worktrees whose work is done, reparenting any surviving children onto\n" +
-			"their grandparent (like `clean --reparent-children`). By default prune considers\n" +
-			"every finished worktree: merged into the base, closed/merged PR, or upstream branch\n" +
-			"gone. The reason flags restrict to specific categories — --merged (no commits ahead),\n" +
-			"--closed (PR merged/closed, needs gh), --gone (remote branch deleted).\n" +
+			"their grandparent (like `clean --reparent-children`). Whether work is \"done\" is read\n" +
+			"from GitHub via the `gh` CLI — never guessed from local commits — so squash- and\n" +
+			"rebase-merges are detected correctly. By default prune considers every finished\n" +
+			"worktree: merged PR, closed PR, or upstream branch gone. The reason flags restrict to\n" +
+			"specific categories — --merged (PR merged), --closed (PR closed unmerged), --gone\n" +
+			"(remote branch deleted).\n" +
 			"\n" +
+			"--merged and --closed require the GitHub CLI (`gh`) to be installed and authenticated;\n" +
+			"without it they match nothing and prune prints a notice — only --gone still applies.\n" +
 			"gone-detection runs `git fetch --prune` first so deleted remote branches are seen\n" +
-			"(pass --no-fetch to skip). --merged does not catch squash-merges (the branch keeps\n" +
-			"distinct commits); --gone or --closed do.\n" +
+			"(pass --no-fetch to skip).\n" +
 			"\n" +
 			"On a TTY, matches are shown for review (unsafe ones unchecked), then a prune\n" +
 			"confirmation, then — like clean — a dedicated confirmation to reparent surviving\n" +
@@ -44,8 +47,8 @@ func newPruneCmd() *cobra.Command {
 		RunE: runPrune,
 	}
 
-	cmd.Flags().Bool(domain.FlagMerged, false, "Restrict to worktrees whose branch is merged into the base (no commits ahead)")
-	cmd.Flags().Bool(domain.FlagClosed, false, "Restrict to worktrees whose PR is merged or closed (needs gh)")
+	cmd.Flags().Bool(domain.FlagMerged, false, "Restrict to worktrees whose PR was merged on GitHub (needs gh)")
+	cmd.Flags().Bool(domain.FlagClosed, false, "Restrict to worktrees whose PR was closed without merging (needs gh)")
 	cmd.Flags().Bool(domain.FlagGone, false, "Restrict to worktrees whose upstream branch was deleted on the remote")
 	cmd.Flags().Bool(domain.FlagNoFetch, false, "Skip the git fetch --prune that gone-detection performs; use already-fetched state")
 	cmd.Flags().Bool(domain.FlagForce, false, "Also remove unsafe worktrees (dirty, unpushed commits, or open PR)")
@@ -115,10 +118,11 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 		DryRun:     dryRun,
 	}
 
-	// PR states are needed to match --closed candidates and to enforce the
-	// open-PR safety guard (mirrors clean) whenever removal is not forced. With
-	// --force the guard is bypassed, so PRs are only loaded for the closed filter.
-	needPRs := closed || !force
+	// PR states are the source of truth for --merged and --closed, and also enforce
+	// the open-PR safety guard (mirrors clean) whenever removal is not forced. With
+	// --force the guard is bypassed, so PRs are only loaded for the merged/closed
+	// filters then.
+	needPRs := merged || closed || !force
 
 	// Both gone-detection (git fetch --prune) and PR-detection (gh) hit the
 	// network, so tell the user the spinner is fetching, not just scanning.
@@ -128,13 +132,14 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 	}
 
 	var plan domain.PrunePlan
+	var ghConn domain.GHConnection
 	err = components.RunLoading(components.LoadingParams{
 		Message: scanMessage,
 		Animate: interactive,
 		Work: func() error {
 			var prs []domain.PRInfo
 			if needPRs {
-				prs = shared.LoadPRsAllStatesGraceful(cfg.ProjectDir)
+				prs, ghConn = shared.LoadPRsAllStates(cfg.ProjectDir)
 			}
 			var e error
 			plan, e = worktree.PlanPrune(params, prs)
@@ -143,6 +148,15 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	// prune reads "done" from GitHub, so warn (on stderr, once — never polluting
+	// JSON stdout) when the gh CLI is unavailable: merged/closed detection is then
+	// inert and only --gone applies.
+	if needPRs {
+		if title, lines, show := rules.PruneGHNotice(ghConn); show {
+			output.Callout(cmd.ErrOrStderr(), title, lines)
+		}
 	}
 
 	if len(plan.Selected) == 0 {

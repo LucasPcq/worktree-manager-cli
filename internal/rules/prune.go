@@ -90,17 +90,19 @@ func ClassifyPrune(params ClassifyPruneParams) domain.PrunePlan {
 }
 
 // pruneMatchReason returns the category that makes a worktree prunable under the
-// active reason filters (merged/closed/gone). Merged is CommitsAhead==0 (no
-// commits the base lacks) and does not catch squash-merges — gone/closed do.
+// active reason filters. "Done" is decided from GitHub as the source of truth,
+// never from local commit topology (which can't tell a merged branch from a new
+// or stale one and misses squash/rebase merges): --merged matches a merged PR,
+// --closed a PR closed without merging, --gone a deleted upstream branch. A
+// branch with no PR (or an open one) is never merged/closed.
 func pruneMatchReason(st domain.WorktreeStatus, params ClassifyPruneParams) (string, bool) {
-	if params.Merged && st.CommitsAhead == 0 {
-		return domain.PruneReasonMerged, true
-	}
-	if params.Closed {
-		switch params.PRStates[st.Branch] {
-		case domain.PRStateMerged:
+	switch params.PRStates[st.Branch] {
+	case domain.PRStateMerged:
+		if params.Merged {
 			return domain.PruneReasonPRMerged, true
-		case domain.PRStateClosed:
+		}
+	case domain.PRStateClosed:
+		if params.Closed {
 			return domain.PruneReasonPRClosed, true
 		}
 	}
@@ -108,6 +110,21 @@ func pruneMatchReason(st domain.WorktreeStatus, params ClassifyPruneParams) (str
 		return domain.PruneReasonGone, true
 	}
 	return "", false
+}
+
+// PruneGHNotice returns the advisory to surface when prune needs GitHub PR data
+// but the gh CLI is unavailable. Because merged/closed detection is GitHub-truth,
+// without gh only --gone applies. show is false when the CLI is reachable.
+func PruneGHNotice(conn domain.GHConnection) (title string, lines []string, show bool) {
+	const dependency = "prune detects merged & closed PRs via the GitHub CLI — without it, only --gone applies."
+	switch conn {
+	case domain.GHConnectionNotInstalled:
+		return "GitHub CLI not found", []string{dependency, "Install it: https://cli.github.com"}, true
+	case domain.GHConnectionNotAuthenticated:
+		return "GitHub not connected", []string{dependency, "Connect: run `gh auth login`"}, true
+	default:
+		return "", nil, false
+	}
 }
 
 type pruneProtectParams struct {

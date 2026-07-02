@@ -47,6 +47,23 @@ func LoadPRsAllStatesGraceful(projectDir string) []domain.PRInfo {
 	return prs
 }
 
+// LoadPRsAllStates is LoadPRsAllStatesGraceful with the GitHub CLI connection
+// status preserved, so a caller (e.g. prune) can tell "gh unavailable" apart
+// from "no PRs" and alert the user. Mirrors LoadPRsFiltered's mapping.
+func LoadPRsAllStates(projectDir string) ([]domain.PRInfo, domain.GHConnection) {
+	prs, err := ghservice.ListPRsAllStates(projectDir)
+	if err == nil {
+		return prs, domain.GHConnectionOK
+	}
+	if errors.Is(err, domain.ErrGHNotInstalled) {
+		return nil, domain.GHConnectionNotInstalled
+	}
+	if errors.Is(err, domain.ErrGHNotAuthenticated) {
+		return nil, domain.GHConnectionNotAuthenticated
+	}
+	return nil, domain.GHConnectionOK
+}
+
 // LoadJobsGraceful fetches the daemon's running jobs, returning nil when the daemon is not running.
 func LoadJobsGraceful() []domain.JobInfo {
 	socketPath := process.SocketPath()

@@ -159,8 +159,9 @@ const (
 	FlagValidate = "validate"
 
 	// Prune candidate reasons — the category that made a worktree prunable,
-	// emitted in the prune result (JSON + text recap).
-	PruneReasonMerged   = "merged"
+	// emitted in the prune result (JSON + text recap). All are GitHub/remote
+	// truth: a merged PR (--merged), a PR closed without merging (--closed), or a
+	// deleted upstream branch (--gone).
 	PruneReasonPRMerged = "pr_merged"
 	PruneReasonPRClosed = "pr_closed"
 	PruneReasonGone     = "gone"

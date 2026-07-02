@@ -172,7 +172,7 @@ func candidateTag(c domain.PruneCandidate) (string, components.TagVariant) {
 	switch c.Reason {
 	case domain.PruneReasonGone:
 		return "gone", components.TagWarning
-	case domain.PruneReasonPRMerged, domain.PruneReasonMerged:
+	case domain.PruneReasonPRMerged:
 		return "merged", components.TagNeutral
 	case domain.PruneReasonPRClosed:
 		return "closed", components.TagNeutral

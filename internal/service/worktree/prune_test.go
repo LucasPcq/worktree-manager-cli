@@ -66,7 +66,7 @@ func TestPruneRemovesWorktreesReparentsAndIsIdempotent(t *testing.T) {
 
 	params := domain.PruneParams{ProjectDir: source, StateDir: stateDir, BaseBranch: "main"}
 	plan := domain.PrunePlan{
-		Selected:  []domain.PruneCandidate{{Branch: "feat", Path: featPath, Reason: domain.PruneReasonMerged}},
+		Selected:  []domain.PruneCandidate{{Branch: "feat", Path: featPath, Reason: domain.PruneReasonPRMerged}},
 		Reparents: []domain.ReparentResult{{Branch: "child", OldParent: "feat", NewParent: "main"}},
 	}
 
@@ -106,7 +106,7 @@ func TestPruneDryRunReturnsPlanWithoutTouchingMetadata(t *testing.T) {
 	seedMeta(t, stateDir, "child", domain.WorktreeMetadata{SourceBranch: "feat", CreatedAt: "x"})
 
 	plan := domain.PrunePlan{
-		Selected:  []domain.PruneCandidate{{Branch: "feat", Reason: domain.PruneReasonMerged}},
+		Selected:  []domain.PruneCandidate{{Branch: "feat", Reason: domain.PruneReasonPRMerged}},
 		Reparents: []domain.ReparentResult{{Branch: "child", OldParent: "feat", NewParent: "main"}},
 		Skipped:   []domain.PruneSkip{{Branch: "dirty", Reason: domain.PruneSkipDirty}},
 	}
@@ -132,5 +132,44 @@ func TestPruneDryRunReturnsPlanWithoutTouchingMetadata(t *testing.T) {
 	meta, _ := loadMetadata(stateDir, "child")
 	if meta.SourceBranch != "feat" {
 		t.Errorf("dry run mutated metadata: child parent = %q, want feat", meta.SourceBranch)
+	}
+}
+
+// TestPlanPruneGHBased drives the full classification path (List → ClassifyPrune)
+// with injected PR state: a worktree whose PR is merged is flagged under --merged,
+// while a freshly-created worktree with no PR is never flagged — the LUC-111 fix
+// (detection is GitHub-truth, not local commit topology).
+func TestPlanPruneGHBased(t *testing.T) {
+	source := gittest.InitRepo(t)
+	stateDir := t.TempDir()
+
+	mergedPath := filepath.Join(t.TempDir(), "feat-merged")
+	freshPath := filepath.Join(t.TempDir(), "feat-fresh")
+	gitRun(t, source, "worktree", "add", "-q", "-b", "feat-merged", mergedPath, "HEAD")
+	gitRun(t, source, "worktree", "add", "-q", "-b", "feat-fresh", freshPath, "HEAD")
+
+	params := domain.PruneParams{
+		ProjectDir: source,
+		StateDir:   stateDir,
+		Config:     domain.Config{Project: domain.ProjectConfig{Worktrees: domain.WorktreesConfig{BaseBranch: "main"}}},
+		BaseBranch: "main",
+		Merged:     true,
+	}
+	prs := []domain.PRInfo{{Branch: "feat-merged", State: domain.PRStateMerged}}
+
+	plan, err := PlanPrune(params, prs)
+	if err != nil {
+		t.Fatalf("PlanPrune: %v", err)
+	}
+
+	sel := map[string]string{}
+	for _, c := range plan.Selected {
+		sel[c.Branch] = c.Reason
+	}
+	if sel["feat-merged"] != domain.PruneReasonPRMerged {
+		t.Errorf("feat-merged should be flagged PR merged, selected=%v", sel)
+	}
+	if _, ok := sel["feat-fresh"]; ok {
+		t.Errorf("feat-fresh (no PR) must never be flagged merged")
 	}
 }
