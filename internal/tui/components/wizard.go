@@ -494,7 +494,7 @@ func (m WizardModel) renderHelpBar() string {
 	case MultiSelectModel:
 		help = "  ↑↓ navigate • enter confirm • space toggle • a all • / filter"
 	case ReorderListModel:
-		help = "  ↑↓ navigate • enter confirm • shift+↑/↓ move"
+		help = "  ↑↓ navigate • enter confirm • shift+↑/↓ reorder"
 	case ConfirmModel:
 		help = "  ↑↓ navigate • enter confirm"
 	}
