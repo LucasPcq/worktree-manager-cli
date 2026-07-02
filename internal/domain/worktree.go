@@ -29,6 +29,14 @@ type WorktreeStatus struct {
 	// left by `wtm sync --keep-conflict`). Its branch is recovered from the paused
 	// rebase; the worktree is also dirty, but this is the more precise signal.
 	RebaseInProgress bool
+	// OriginAhead/OriginBehind/OriginState describe how the worktree's branch
+	// diverges from its origin counterpart (from cached remote-tracking refs, no
+	// fetch). OriginState is DivergenceUnknown when there is no counterpart.
+	// CommitsAhead counts commits vs the base/parent branch — a different
+	// referential — so the UI labels them "base" vs "origin" to disambiguate.
+	OriginAhead  int
+	OriginBehind int
+	OriginState  DivergenceState
 }
 
 // WorktreeListEntry is the JSON-serializable projection of a worktree for the
@@ -39,16 +47,25 @@ type WorktreeListEntry struct {
 	IsParent         bool            `json:"is_parent"`
 	IsDirty          bool            `json:"is_dirty"`
 	RebaseInProgress bool            `json:"rebase_in_progress"`
-	CommitsAhead     int             `json:"commits_ahead"`
-	CreatedAt        time.Time       `json:"created_at"`
-	PR               *WorktreeListPR `json:"pr"`
-	Services         []string        `json:"services"`
+	CommitsAhead     int                 `json:"commits_ahead"`
+	CreatedAt        time.Time           `json:"created_at"`
+	Origin           *WorktreeListOrigin `json:"origin"`
+	PR               *WorktreeListPR     `json:"pr"`
+	Services         []string            `json:"services"`
 }
 
 // WorktreeListPR is the nested PR summary embedded in WorktreeListEntry.
 type WorktreeListPR struct {
 	Number int    `json:"number"`
 	URL    string `json:"url"`
+	State  string `json:"state"`
+}
+
+// WorktreeListOrigin is the nested origin-divergence summary embedded in
+// WorktreeListEntry. It is null when the branch has no origin counterpart.
+type WorktreeListOrigin struct {
+	Ahead  int    `json:"ahead"`
+	Behind int    `json:"behind"`
 	State  string `json:"state"`
 }
 

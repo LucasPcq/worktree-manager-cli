@@ -65,6 +65,22 @@ func Divergence(params BranchParams) (domain.DivergenceState, domain.AheadBehind
 	return rules.ClassifyDivergence(ab.Ahead, ab.Behind), ab
 }
 
+// FastForwardIfBehind is the non-interactive counterpart of the create wizard's
+// fast-forward prompt: it fast-forwards a behind-only source branch to origin so
+// a new worktree starts up to date. A remote start-point, an up-to-date branch,
+// or one that cannot be cleanly fast-forwarded (diverged, dirty, or fetch/FF
+// failure) is left untouched — creation then proceeds from the local branch
+// as-is, mirroring the "keep the local version" choice offered interactively.
+func FastForwardIfBehind(params BranchParams) error {
+	if rules.IsRemoteBranch(params.Branch) {
+		return nil
+	}
+	if err := FastForwardToOrigin(params); err != nil {
+		return err
+	}
+	return nil
+}
+
 // FastForwardToOrigin advances a local branch to its origin counterpart. It
 // fetches first, then refuses (without modifying anything) when the branch has
 // diverged, when its worktree has uncommitted changes, or when the fast-forward

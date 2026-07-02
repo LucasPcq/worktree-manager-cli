@@ -15,8 +15,14 @@ type TreeNodeStatus struct {
 	NeedsSync bool `json:"needs_sync"`
 	// InCycle marks a node whose recorded parent chain loops back on itself. The
 	// edge is broken in the rendered forest so the tree stays finite.
-	InCycle bool            `json:"in_cycle"`
-	PR      *WorktreeListPR `json:"pr,omitempty"`
+	InCycle bool `json:"in_cycle"`
+	// OriginAhead/OriginBehind/OriginState describe divergence from the node's
+	// origin counterpart (cached refs, no fetch). CommitsAhead counts vs the parent
+	// — a different referential — so the UI labels them "base" vs "origin".
+	OriginAhead  int             `json:"origin_ahead"`
+	OriginBehind int             `json:"origin_behind"`
+	OriginState  DivergenceState `json:"origin_state"`
+	PR           *WorktreeListPR `json:"pr,omitempty"`
 }
 
 // TreeNode is one entry in the rendered worktree forest: a managed worktree or a

@@ -44,6 +44,24 @@ func TestClassifyDivergence(t *testing.T) {
 	}
 }
 
+func TestDivergenceStateString(t *testing.T) {
+	cases := []struct {
+		state domain.DivergenceState
+		want  string
+	}{
+		{domain.DivergenceUpToDate, domain.DivergenceLabelUpToDate},
+		{domain.DivergenceBehind, domain.DivergenceLabelBehind},
+		{domain.DivergenceAhead, domain.DivergenceLabelAhead},
+		{domain.DivergenceDiverged, domain.DivergenceLabelDiverged},
+		{domain.DivergenceUnknown, ""},
+	}
+	for _, c := range cases {
+		if got := DivergenceStateString(c.state); got != c.want {
+			t.Errorf("DivergenceStateString(%v) = %q, want %q", c.state, got, c.want)
+		}
+	}
+}
+
 func TestShouldOfferFastForward(t *testing.T) {
 	cases := []struct {
 		name  string

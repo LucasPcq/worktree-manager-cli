@@ -67,9 +67,15 @@ flagged; everything else is what the name implies.
 **Worktrees**
 - `wtm list` — flat inventory. `wtm tree` — the parent→child forest; use it (not `list`)
   when hierarchy/orchestration order matters. Its `needs_sync` flag is the key signal
-  that a node's parent moved past it.
+  that a node's parent moved past it. Both expose an `origin` object
+  (`{ahead, behind, state}`, or `null` when the branch has no origin counterpart)
+  describing divergence from `origin/<branch>` — distinct from `commits_ahead`, which
+  counts commits vs the **parent/base** branch. `state` is `up-to-date`/`behind`/`ahead`/`diverged`.
 - `wtm create <branch> --from <base>` — new worktree + env provisioning + `on_create`
   hooks. `--from` accepts a remote ref (`origin/x`). Add `--if-not-exists` for idempotency.
+  Add `--ff` to fast-forward a behind-only `--from` branch to origin first (so the worktree
+  starts up to date); a diverged branch is left as-is (no prompt in JSON mode). `extract`
+  accepts the same `--ff` for the parent branch of a newly-created target.
 - `wtm clean <branch>` / `wtm prune [filters]` — remove one / batch-remove finished
   worktrees. **In JSON mode surviving children are left orphaned unless you pass
   `--reparent-children`** (they reparent onto the grandparent). `prune` decides "finished"

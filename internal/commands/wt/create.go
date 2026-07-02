@@ -28,6 +28,7 @@ func newCreateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().String(domain.FlagFrom, "", "Source branch (skips interactive picker)")
+	cmd.Flags().Bool(domain.FlagFF, false, "Fast-forward the source branch to origin before creating (non-interactive; skipped when it has diverged)")
 	cmd.Flags().String(domain.FlagEnvFrom, "", "Override env strategy (example, main, parent)")
 	cmd.Flags().Bool(domain.FlagIfNotExists, false, "Succeed silently if the worktree already exists (idempotent)")
 	shared.AddOutputFlag(cmd)
@@ -41,6 +42,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		branch = args[0]
 	}
 	fromFlag, _ := cmd.Flags().GetString(domain.FlagFrom)
+	ffFlag, _ := cmd.Flags().GetBool(domain.FlagFF)
 	envFromFlag, _ := cmd.Flags().GetString(domain.FlagEnvFrom)
 	ifNotExists, _ := cmd.Flags().GetBool(domain.FlagIfNotExists)
 
@@ -93,6 +95,13 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	} else {
 		if !rules.BranchCandidateExists(branchCandidates(result.ProjectDir), fromFlag) {
 			return fmt.Errorf("%w: %s", domain.ErrBranchNotFound, fromFlag)
+		}
+		if interactive {
+			if !maybeFastForwardSource(result.ProjectDir, fromBranch) {
+				return nil
+			}
+		} else if ffFlag {
+			fastForwardSourceIfBehind(result.ProjectDir, fromBranch)
 		}
 	}
 
@@ -161,6 +170,14 @@ func runCreateWizard(params createWizardParams) (newpicker.WizardResult, error) 
 // heads-up about the reconciliation it will need later. It returns false only when
 // the user cancels creation (a failed fast-forward, or declining the diverged
 // warning) — there is no silent fallback to a stale base.
+// fastForwardSourceIfBehind fast-forwards a behind-only source branch to origin
+// without prompting — the non-interactive counterpart of maybeFastForwardSource,
+// used on the --from path with --ff set. A diverged/dirty/remote source is left
+// as-is (best effort), so any error is intentionally ignored.
+func fastForwardSourceIfBehind(projectDir, source string) {
+	_ = branch.FastForwardIfBehind(branch.BranchParams{ProjectDir: projectDir, Branch: source})
+}
+
 func maybeFastForwardSource(projectDir, source string) bool {
 	if rules.IsRemoteBranch(source) {
 		return true

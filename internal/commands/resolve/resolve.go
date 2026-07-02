@@ -140,9 +140,12 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 	}
 
 	return worktreepicker.Run(worktreepicker.RunParams{
-		Statuses: filtered,
-		Services: services,
-		Title:    "Select a worktree",
+		Statuses:   filtered,
+		Services:   services,
+		Title:      "Select a worktree",
+		ProjectDir: cfgResult.ProjectDir,
+		StateDir:   cfgResult.StateDir,
+		Config:     cfgResult.Config,
 		PRLoader: func() ([]domain.PRInfo, domain.GHConnection) {
 			return shared.LoadPRs(cfgResult.ProjectDir)
 		},

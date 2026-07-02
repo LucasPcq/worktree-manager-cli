@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -43,8 +44,9 @@ type row struct {
 	tag      string
 	pr       string
 	services string
-	status   string
 	ahead    string
+	origin   string
+	status   string
 }
 
 func buildRows(statuses []domain.WorktreeStatus, activeBranch string, prs []domain.PRInfo, svcs []domain.JobInfo) []row {
@@ -55,8 +57,9 @@ func buildRows(statuses []domain.WorktreeStatus, activeBranch string, prs []doma
 			tag:      formatTag(s.IsParent, s.Branch == activeBranch),
 			pr:       formatPRTag(s.Branch, prs),
 			services: formatServicesTag(s.Path, svcs),
-			status:   formatWorktreeState(s),
 			ahead:    formatAhead(s.CommitsAhead),
+			origin:   formatOrigin(s),
+			status:   formatWorktreeState(s),
 		}
 		rows = append(rows, r)
 	}
@@ -110,37 +113,53 @@ func formatWorktreeState(s domain.WorktreeStatus) string {
 	return styles.Success.Render("✓ clean")
 }
 
+// formatAhead renders the commits-ahead-of-base column, labelled "base ↑N" so it
+// is not confused with the origin-divergence column. Zero renders empty.
 func formatAhead(count int) string {
 	if count == 0 {
 		return ""
 	}
-	if count == 1 {
-		return styles.Muted.Render("1 commit ahead")
-	}
-	return styles.Muted.Render(fmt.Sprintf("%d commits ahead", count))
+	return styles.Muted.Render(fmt.Sprintf("%s %s%d", domain.BadgeTextBase, domain.BadgeGlyphAhead, count))
 }
 
-func columnWidths(rows []row) [6]int {
-	var widths [6]int
+// formatOrigin renders the origin-divergence column, labelled "origin ↑a ↓b" and
+// colored by state. Up-to-date and unknown (no origin counterpart) render empty.
+func formatOrigin(s domain.WorktreeStatus) string {
+	switch s.OriginState {
+	case domain.DivergenceBehind:
+		return styles.Warning.Render(fmt.Sprintf("%s %s%d", domain.BadgeTextOrigin, domain.BadgeGlyphBehind, s.OriginBehind))
+	case domain.DivergenceAhead:
+		return styles.Muted.Render(fmt.Sprintf("%s %s%d", domain.BadgeTextOrigin, domain.BadgeGlyphAhead, s.OriginAhead))
+	case domain.DivergenceDiverged:
+		return styles.DangerText.Render(fmt.Sprintf("%s %s%d %s%d", domain.BadgeTextOrigin, domain.BadgeGlyphAhead, s.OriginAhead, domain.BadgeGlyphBehind, s.OriginBehind))
+	default:
+		return ""
+	}
+}
+
+func columnWidths(rows []row) [7]int {
+	var widths [7]int
 	for _, r := range rows {
 		widths[0] = max(widths[0], printableLen(r.branch))
 		widths[1] = max(widths[1], printableLen(r.tag))
 		widths[2] = max(widths[2], printableLen(r.pr))
 		widths[3] = max(widths[3], printableLen(r.services))
-		widths[4] = max(widths[4], printableLen(r.status))
-		widths[5] = max(widths[5], printableLen(r.ahead))
+		widths[4] = max(widths[4], printableLen(r.ahead))
+		widths[5] = max(widths[5], printableLen(r.origin))
+		widths[6] = max(widths[6], printableLen(r.status))
 	}
 	return widths
 }
 
-func formatRow(r row, widths [6]int) string {
-	return fmt.Sprintf("  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+func formatRow(r row, widths [7]int) string {
+	return fmt.Sprintf("  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 		widths[0]+ansiOverhead(r.branch), r.branch,
 		widths[1]+ansiOverhead(r.tag), r.tag,
 		widths[2]+ansiOverhead(r.pr), r.pr,
 		widths[3]+ansiOverhead(r.services), r.services,
-		widths[4]+ansiOverhead(r.status), r.status,
-		r.ahead,
+		widths[4]+ansiOverhead(r.ahead), r.ahead,
+		widths[5]+ansiOverhead(r.origin), r.origin,
+		r.status,
 	)
 }
 
@@ -180,18 +199,32 @@ func WriteWorktreeListJSON(w io.Writer, params WriteWorktreeListJSONParams) erro
 	entries := make([]domain.WorktreeListEntry, 0, len(params.Statuses))
 	for _, s := range params.Statuses {
 		entries = append(entries, domain.WorktreeListEntry{
-			Branch:       s.Branch,
-			Path:         s.Path,
+			Branch:           s.Branch,
+			Path:             s.Path,
 			IsParent:         s.IsParent,
 			IsDirty:          s.IsDirty,
 			RebaseInProgress: s.RebaseInProgress,
 			CommitsAhead:     s.CommitsAhead,
 			CreatedAt:        s.CreatedAt,
+			Origin:           matchOrigin(s),
 			PR:               matchPR(s.Branch, params.PRInfos),
 			Services:         matchRunningServices(s.Path, params.Services),
 		})
 	}
 	return encodeJSON(w, entries)
+}
+
+// matchOrigin projects a worktree's origin divergence into its JSON summary,
+// returning nil when the branch has no origin counterpart (DivergenceUnknown).
+func matchOrigin(s domain.WorktreeStatus) *domain.WorktreeListOrigin {
+	if s.OriginState == domain.DivergenceUnknown {
+		return nil
+	}
+	return &domain.WorktreeListOrigin{
+		Ahead:  s.OriginAhead,
+		Behind: s.OriginBehind,
+		State:  rules.DivergenceStateString(s.OriginState),
+	}
 }
 
 func matchPR(branch string, prs []domain.PRInfo) *domain.WorktreeListPR {
