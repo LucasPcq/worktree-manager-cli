@@ -88,9 +88,11 @@ flagged; everything else is what the name implies.
   **refuse unsafe worktrees** — dirty, unpushed commits, or an open PR — unless you pass
   `--force`; in JSON/`--yes` mode those are reported under `skipped` (reason `dirty`/
   `unpushed`/`open_pr`) instead of being removed, so committed work is never silently lost.
-- `wtm extract --files <a,b> --to <branch>` — move part of the current worktree's
-  uncommitted changes onto another branch (split an oversized PR). On conflict it changes
-  nothing and exits `15`; retry with `--on-conflict resolve` to apply git conflict markers.
+- `wtm extract <source> --files <a,b> --to <branch>` — move part of the `<source>`
+  worktree's uncommitted changes onto another branch (split an oversized PR). The source
+  worktree is the first argument: **in `--output json`/non-interactive mode it is required**
+  (there is no current-directory default and no picker — omitting it errors). On conflict it
+  changes nothing and exits `15`; retry with `--on-conflict resolve` to apply git conflict markers.
 - `wtm relocate` — realign worktrees with `base_path` and adopt externally-created ones.
 
 **Stacked branches**

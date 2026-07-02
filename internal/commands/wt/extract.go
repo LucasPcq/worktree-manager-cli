@@ -23,12 +23,16 @@ import (
 // newExtractCmd creates the wtm extract subcommand.
 func newExtractCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdExtract,
+		Use:   domain.CmdExtract + " [source]",
 		Short: "Move uncommitted changes to another worktree",
-		Long: "Move a subset of the current worktree's uncommitted changes to another worktree\n" +
-			"(new or existing) to split an oversized PR or isolate unrelated work.\n" +
+		Long: "Move a subset of a worktree's uncommitted changes to another worktree\n" +
+			"(new or existing) to split an oversized PR or isolate unrelated work.\n\n" +
+			"The source worktree is the first thing chosen: pass its branch as [source],\n" +
+			"or omit it to pick interactively from the worktrees that have changes. A source\n" +
+			"is required when there is no terminal or with --output json.\n\n" +
 			"On conflict it aborts by default, leaving the source intact; --on-conflict resolve\n" +
 			"applies conflict markers in the target so you can resolve them like a rebase.",
+		Args: cobra.MaximumNArgs(1),
 		RunE: runExtract,
 	}
 
@@ -38,12 +42,13 @@ func newExtractCmd() *cobra.Command {
 	cmd.Flags().Bool(domain.FlagFF, false, "Fast-forward the parent branch to origin before creating the target (non-interactive; skipped when it has diverged)")
 	cmd.Flags().Bool(domain.FlagKeep, false, "Copy instead of move (keep the changes in the source)")
 	cmd.Flags().String(domain.FlagOnConflict, "", "On conflict: abort (default) or resolve (write conflict markers in the target)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation recap (the selection pickers still show)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
 }
 
-func runExtract(cmd *cobra.Command, _ []string) error {
+func runExtract(cmd *cobra.Command, args []string) error {
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
@@ -54,40 +59,77 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	sourcePath, err := infra.Toplevel(dir)
-	if err != nil {
-		return err
-	}
-	sourceBranch, err := infra.CurrentBranch(sourcePath)
-	if err != nil {
-		return err
-	}
-
 	if err := validateOnConflict(cmd); err != nil {
 		return err
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	interactive := isInteractive() && rules.IsHumanFormat(format)
 
-	available, err := listExtractFiles(sourcePath)
-	if err != nil {
-		return err
+	sourceArg := ""
+	if len(args) == 1 {
+		sourceArg = args[0]
 	}
-	if len(available) == 0 {
-		if format == domain.OutputJSON {
-			return output.WriteExtractJSON(cmd.OutOrStdout(), domain.ExtractResult{Files: []domain.ExtractFile{}})
-		}
+	// The source is picked interactively only when it was not given as an argument
+	// and there is a human terminal to pick on. Otherwise it must be explicit —
+	// aligning extract with sync/prune (no cwd default).
+	needSource := sourceArg == "" && interactive
+	if sourceArg == "" && !interactive {
+		return domain.ErrExtractSourceRequired
+	}
+
+	statuses, err := worktree.List(domain.ListParams{
+		ProjectDir: cfg.ProjectDir,
+		StateDir:   cfg.StateDir,
+		Config:     cfg.Config,
+	})
+	if err != nil {
+		return fmt.Errorf("list worktrees: %w", err)
+	}
+
+	source, err := resolveSource(resolveSourceParams{
+		sourceArg:  sourceArg,
+		needSource: needSource,
+		cfg:        cfg,
+		statuses:   statuses,
+	})
+	if errors.Is(err, domain.ErrNoDirtyWorktrees) {
 		output.Frame(cmd.OutOrStdout(), func() {
-			output.Message(cmd.OutOrStdout(), domain.ErrNoChangesToExtract.Error())
+			output.Message(cmd.OutOrStdout(), domain.ErrNoDirtyWorktrees.Error())
 		})
 		return nil
 	}
+	if err != nil {
+		return err
+	}
 
-	selected, target, keep, err := resolveSelectionAndTarget(resolveParams{
-		cmd:          cmd,
-		cfg:          cfg,
-		sourceBranch: sourceBranch,
-		available:    available,
+	// Fixed source (argument): its changes are known up front, so the empty-changes
+	// case short-circuits here. A picked source loads its changes lazily instead.
+	if !needSource {
+		source.available, err = listExtractFiles(source.path)
+		if err != nil {
+			return err
+		}
+		if len(source.available) == 0 {
+			if format == domain.OutputJSON {
+				return output.WriteExtractJSON(cmd.OutOrStdout(), domain.ExtractResult{Files: []domain.ExtractFile{}})
+			}
+			output.Frame(cmd.OutOrStdout(), func() {
+				output.Message(cmd.OutOrStdout(), domain.ErrNoChangesToExtract.Error())
+			})
+			return nil
+		}
+	}
+
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
+	sel, err := resolveSelectionAndTarget(resolveParams{
+		cmd:        cmd,
+		cfg:        cfg,
+		statuses:   statuses,
+		source:     source,
+		needSource: needSource,
+		yes:        yes,
+		loadFiles:  extractFilesLoader(statuses),
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		if rules.IsHumanFormat(format) {
@@ -103,9 +145,9 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 
 	conflictMode, err := resolveConflictMode(resolveConflictModeParams{
 		cmd:        cmd,
-		sourcePath: sourcePath,
-		target:     target,
-		selected:   selected,
+		sourcePath: sel.sourcePath,
+		target:     sel.target,
+		selected:   sel.selected,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		if rules.IsHumanFormat(format) {
@@ -120,12 +162,12 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 	}
 
 	result, err := worktree.Extract(domain.ExtractParams{
-		SourcePath:   sourcePath,
-		SourceBranch: sourceBranch,
-		TargetPath:   target.path,
-		TargetBranch: target.branch,
-		Files:        selected,
-		Keep:         keep,
+		SourcePath:   sel.sourcePath,
+		SourceBranch: sel.sourceBranch,
+		TargetPath:   sel.target.path,
+		TargetBranch: sel.target.branch,
+		Files:        sel.selected,
+		Keep:         sel.keep,
 		ConflictMode: conflictMode,
 	})
 	if err != nil {
@@ -145,6 +187,84 @@ func runExtract(cmd *cobra.Command, _ []string) error {
 		output.PrintExtractResult(cmd.OutOrStdout(), result)
 	})
 	return nil
+}
+
+// extractSource holds the resolved source worktree: a fixed path/branch when an
+// argument was given, or the candidate worktrees to pick from otherwise.
+type extractSource struct {
+	path      string
+	branch    string
+	available []domain.ExtractFile
+	// dirty are the candidate source worktrees (those with changes) for the picker,
+	// set only when the source is picked interactively.
+	dirty []domain.WorktreeStatus
+}
+
+type resolveSourceParams struct {
+	sourceArg  string
+	needSource bool
+	cfg        shared.ConfigResult
+	statuses   []domain.WorktreeStatus
+}
+
+// resolveSource resolves the source worktree from the argument (exact branch
+// match, like --to), or gathers the worktrees with changes for the interactive
+// picker. Returns ErrNoDirtyWorktrees when the picker would be empty.
+func resolveSource(p resolveSourceParams) (extractSource, error) {
+	if !p.needSource {
+		wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
+			ProjectDir: p.cfg.ProjectDir,
+			Branch:     p.sourceArg,
+		})
+		if err != nil {
+			return extractSource{}, fmt.Errorf("source worktree %q: %w", p.sourceArg, err)
+		}
+		return extractSource{path: wt.Path, branch: wt.Branch}, nil
+	}
+
+	dirty := dirtyWorktrees(p.statuses)
+	if len(dirty) == 0 {
+		return extractSource{}, domain.ErrNoDirtyWorktrees
+	}
+	return extractSource{dirty: dirty}, nil
+}
+
+// extractFilesLoader builds the closure the wizard uses to lazily list a picked
+// source worktree's changes, keeping the TUI free of git/service imports.
+func extractFilesLoader(statuses []domain.WorktreeStatus) func(branch string) []domain.ExtractFile {
+	return func(branch string) []domain.ExtractFile {
+		path := worktreePathForBranch(statuses, branch)
+		if path == "" {
+			return nil
+		}
+		files, err := listExtractFiles(path)
+		if err != nil {
+			return nil
+		}
+		return files
+	}
+}
+
+// dirtyWorktrees keeps the worktrees with uncommitted changes — the only valid
+// extract sources, so the picker never dead-ends on an empty selection.
+func dirtyWorktrees(statuses []domain.WorktreeStatus) []domain.WorktreeStatus {
+	dirty := make([]domain.WorktreeStatus, 0, len(statuses))
+	for _, s := range statuses {
+		if s.IsDirty {
+			dirty = append(dirty, s)
+		}
+	}
+	return dirty
+}
+
+// worktreePathForBranch returns the worktree path backing a branch, or "".
+func worktreePathForBranch(statuses []domain.WorktreeStatus, branch string) string {
+	for _, s := range statuses {
+		if s.Branch == branch {
+			return s.Path
+		}
+	}
+	return ""
 }
 
 type resolveConflictModeParams struct {
@@ -224,17 +344,30 @@ func listExtractFiles(sourcePath string) ([]domain.ExtractFile, error) {
 }
 
 type resolveParams struct {
-	cmd          *cobra.Command
-	cfg          shared.ConfigResult
-	sourceBranch string
-	available    []domain.ExtractFile
+	cmd        *cobra.Command
+	cfg        shared.ConfigResult
+	statuses   []domain.WorktreeStatus
+	source     extractSource
+	needSource bool
+	yes        bool
+	loadFiles  func(branch string) []domain.ExtractFile
 }
 
-// resolveSelectionAndTarget resolves the files to extract and the destination
-// worktree, from flags or the interactive wizard. The "create new worktree"
-// sub-flow is embedded in the wizard (see extracttui), so one combined recap
-// covers both create and extract and there is no re-entry loop.
-func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTarget, bool, error) {
+// extractSelection is the fully-resolved plan: which source, its path, the files,
+// the target, and move-vs-copy.
+type extractSelection struct {
+	sourceBranch string
+	sourcePath   string
+	selected     []domain.ExtractFile
+	target       extractTarget
+	keep         bool
+}
+
+// resolveSelectionAndTarget resolves the source (when picked), the files to
+// extract, and the destination worktree, from flags or the interactive wizard.
+// The "create new worktree" sub-flow is embedded in the wizard (see extracttui),
+// so one combined recap covers both create and extract and there is no re-entry loop.
+func resolveSelectionAndTarget(p resolveParams) (extractSelection, error) {
 	filesFlag, _ := p.cmd.Flags().GetStringSlice(domain.FlagFiles)
 	toFlag, _ := p.cmd.Flags().GetString(domain.FlagTo)
 	keepFlag, _ := p.cmd.Flags().GetBool(domain.FlagKeep)
@@ -243,25 +376,44 @@ func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTa
 	needMode := !p.cmd.Flags().Changed(domain.FlagKeep) && isInteractive()
 
 	wizard, err := runWizard(runWizardParams{
-		cmd:          p.cmd,
-		cfg:          p.cfg,
-		available:    p.available,
-		sourceBranch: p.sourceBranch,
-		needFiles:    needFiles,
-		needTarget:   needTarget,
-		needMode:     needMode,
+		cmd:         p.cmd,
+		cfg:         p.cfg,
+		statuses:    p.statuses,
+		source:      p.source,
+		loadFiles:   p.loadFiles,
+		needSource:  p.needSource,
+		needFiles:   needFiles,
+		needTarget:  needTarget,
+		needMode:    needMode,
+		skipConfirm: p.yes,
+		filesFlag:   filesFlag,
+		toFlag:      toFlag,
+		keepFlag:    keepFlag,
 	})
 	if err != nil {
-		return nil, extractTarget{}, false, err
+		return extractSelection{}, err
+	}
+
+	// The source is fixed by the argument, or picked on the wizard's first step.
+	sourceBranch := p.source.branch
+	sourcePath := p.source.path
+	available := p.source.available
+	if p.needSource {
+		sourceBranch = wizard.SourceBranch
+		sourcePath = worktreePathForBranch(p.statuses, sourceBranch)
+		available, err = listExtractFiles(sourcePath)
+		if err != nil {
+			return extractSelection{}, err
+		}
 	}
 
 	selectedPaths := filesFlag
 	if needFiles {
 		selectedPaths = wizard.Files
 	}
-	selected, err := filterByPaths(p.available, selectedPaths)
+	selected, err := filterByPaths(available, selectedPaths)
 	if err != nil {
-		return nil, extractTarget{}, false, err
+		return extractSelection{}, err
 	}
 
 	keep := keepFlag
@@ -272,56 +424,68 @@ func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTa
 	target, err := resolveTarget(resolveTargetParams{
 		cmd:          p.cmd,
 		cfg:          p.cfg,
-		sourceBranch: p.sourceBranch,
+		sourceBranch: sourceBranch,
 		choice:       wizard.Target,
 		create:       wizard.Create,
 	})
 	if err != nil {
-		return nil, extractTarget{}, false, err
+		return extractSelection{}, err
 	}
-	return selected, target, keep, nil
+	return extractSelection{
+		sourceBranch: sourceBranch,
+		sourcePath:   sourcePath,
+		selected:     selected,
+		target:       target,
+		keep:         keep,
+	}, nil
 }
 
 type runWizardParams struct {
-	cmd          *cobra.Command
-	cfg          shared.ConfigResult
-	available    []domain.ExtractFile
-	sourceBranch string
-	needFiles    bool
-	needTarget   bool
-	needMode     bool
+	cmd        *cobra.Command
+	cfg        shared.ConfigResult
+	statuses   []domain.WorktreeStatus
+	source     extractSource
+	loadFiles  func(branch string) []domain.ExtractFile
+	needSource  bool
+	needFiles   bool
+	needTarget  bool
+	needMode    bool
+	skipConfirm bool
+	// filesFlag/toFlag/keepFlag are the flag values, forwarded to the wizard so the
+	// recap names every part of the plan even for the steps a flag skipped.
+	filesFlag []string
+	toFlag    string
+	keepFlag  bool
 }
 
-// runWizard runs the unified file+target+create+mode selection wizard, skipping
-// any step already resolved from a flag. Returns a zero result when nothing is
-// needed. When the target is picked it also supplies the embedded create sub-flow.
+// runWizard runs the unified source+file+target+create+mode selection wizard,
+// skipping any step already resolved from a flag or argument. Returns a zero
+// result when nothing is needed. When the target is picked it also supplies the
+// embedded create sub-flow.
 func runWizard(params runWizardParams) (extracttui.RunResult, error) {
-	if !params.needFiles && !params.needTarget && !params.needMode {
+	if !params.needSource && !params.needFiles && !params.needTarget && !params.needMode {
 		return extracttui.RunResult{}, nil
 	}
 
-	var statuses []domain.WorktreeStatus
 	var create newpicker.WizardParams
 	if params.needTarget {
-		var err error
-		statuses, err = worktree.List(domain.ListParams{
-			ProjectDir: params.cfg.ProjectDir,
-			StateDir:   params.cfg.StateDir,
-			Config:     params.cfg.Config,
-		})
-		if err != nil {
-			return extracttui.RunResult{}, fmt.Errorf("list worktrees: %w", err)
-		}
-		create = extractCreateParams(params.cfg, params.sourceBranch)
+		create = extractCreateParams(params.cfg, params.source.branch)
 	}
 
 	return extracttui.Run(extracttui.RunParams{
-		Files:        params.available,
-		Worktrees:    statuses,
-		SourceBranch: params.sourceBranch,
+		Files:        params.source.available,
+		Worktrees:    params.statuses,
+		SourceBranch: params.source.branch,
+		Sources:      params.source.dirty,
+		LoadFiles:    params.loadFiles,
+		NeedSource:   params.needSource,
 		NeedFiles:    params.needFiles,
 		NeedTarget:   params.needTarget,
 		NeedMode:     params.needMode,
+		SkipConfirm:  params.skipConfirm,
+		FixedFiles:   params.filesFlag,
+		FixedTarget:  params.toFlag,
+		FixedKeep:    params.keepFlag,
 		Create:       create,
 	})
 }

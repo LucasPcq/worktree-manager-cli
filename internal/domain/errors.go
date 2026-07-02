@@ -69,6 +69,15 @@ var (
 	// uncommitted changes to extract.
 	ErrNoChangesToExtract = errors.New("no uncommitted changes to extract")
 
+	// ErrNoDirtyWorktrees is returned when no managed worktree has uncommitted
+	// changes, so the interactive source picker would be empty.
+	ErrNoDirtyWorktrees = errors.New("no worktree has changes to extract")
+
+	// ErrExtractSourceRequired is returned when extract is invoked without a
+	// source worktree argument and cannot fall back to the interactive picker
+	// (no terminal, or --output json).
+	ErrExtractSourceRequired = errors.New("specify a source worktree (no interactive picker without a terminal or in --output json mode)")
+
 	// ErrNoFilesSelected is returned when the user selects no files to extract.
 	ErrNoFilesSelected = errors.New("no files selected")
 

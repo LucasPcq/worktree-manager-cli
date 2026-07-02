@@ -4,8 +4,81 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
+
+func sourceStepWith(value string) components.Step {
+	return components.Step{
+		Name:  stepSource,
+		Model: components.NewSelectList(components.NewSelectListParams{Items: []components.SelectItem{{Label: value, Value: value}}}),
+	}
+}
+
+func TestSourceBranchFromPrev(t *testing.T) {
+	if got := sourceBranchFromPrev([]components.Step{sourceStepWith("feat-a")}, "fixed"); got != "feat-a" {
+		t.Errorf("picked source should win, got %q", got)
+	}
+	if got := sourceBranchFromPrev(nil, "fixed"); got != "fixed" {
+		t.Errorf("no source step → fixed fallback, got %q", got)
+	}
+}
+
+func TestFilesModel_Empty(t *testing.T) {
+	m := filesModel("feat-a", nil)
+	if got := m.View(); !strings.Contains(got, "No items") {
+		t.Errorf("empty files model should render no items, got:\n%s", got)
+	}
+	// Enter on an empty source must be a no-op (Validate rejects an empty selection),
+	// so the user is forced back to pick another worktree rather than proceeding.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if updated.Done() {
+		t.Error("empty files model must not complete on enter")
+	}
+}
+
+func TestFilesModel_Populated(t *testing.T) {
+	m := filesModel("feat-a", []domain.ExtractFile{{Path: "a.txt", Status: domain.ExtractStatusUntracked}})
+	if !strings.Contains(m.View(), "a.txt") {
+		t.Errorf("populated files model should list the file, got:\n%s", m.View())
+	}
+}
+
+func TestBuildCombinedRecap_ShowsSource(t *testing.T) {
+	prev := []components.Step{sourceStepWith("feat-src"), targetStepWith("feat-a")}
+	rc := buildCombinedRecap(prev, RunParams{})
+	if !strings.Contains(rc.Description, "feat-src") {
+		t.Errorf("recap should name the picked source, got:\n%s", rc.Description)
+	}
+}
+
+func TestBuildCombinedRecap_FixedFlags(t *testing.T) {
+	// Every part came from a flag (no file/target/mode steps): the recap still
+	// names all of them.
+	rc := buildCombinedRecap(nil, RunParams{
+		SourceBranch: "feat-src",
+		FixedFiles:   []string{"a.txt", "b.txt"},
+		FixedTarget:  "feat-dst",
+		FixedKeep:    true,
+	})
+	for _, want := range []string{"feat-src", "a.txt", "b.txt", "feat-dst", "copy"} {
+		if !strings.Contains(rc.Description, want) {
+			t.Errorf("recap missing %q, got:\n%s", want, rc.Description)
+		}
+	}
+}
+
+func TestBuildCombinedRecap_ShowsFixedSource(t *testing.T) {
+	// When the source is given as an argument there is no source step; the recap
+	// still names it from the fixed SourceBranch.
+	prev := []components.Step{targetStepWith("feat-a")}
+	rc := buildCombinedRecap(prev, RunParams{SourceBranch: "feat-fixed"})
+	if !strings.Contains(rc.Description, "feat-fixed") {
+		t.Errorf("recap should name the fixed source, got:\n%s", rc.Description)
+	}
+}
 
 func targetStepWith(value string) components.Step {
 	return components.Step{
