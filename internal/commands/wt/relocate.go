@@ -1,6 +1,7 @@
 package wt
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -69,12 +70,26 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 		DryRun:         dryRun,
 	}
 
+	interactive := rules.IsHumanFormat(format)
+
+	// Opt-in base_path edit. Done before planning so the plan, its recap, and the
+	// empty check all reflect the chosen base_path. Skipped when --to already fixed
+	// it, when --yes/--dry-run bypass prompts, or in JSON mode.
+	if interactive && !yes && !dryRun && to == "" {
+		newBase, aborted, err := promptRelocateBasePath(params.TargetBasePath)
+		if err != nil {
+			return err
+		}
+		if aborted {
+			return renderRelocateAborted(cmd)
+		}
+		params.TargetBasePath = newBase
+	}
+
 	plan, err := worktree.PlanRelocate(params)
 	if err != nil {
 		return err
 	}
-
-	interactive := rules.IsHumanFormat(format)
 
 	if !rules.PlanHasWork(plan) {
 		return renderEmptyRelocate(cmd, interactive)
@@ -98,10 +113,7 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 			return werr
 		}
 		if !res.Confirmed {
-			output.Frame(cmd.OutOrStdout(), func() {
-				output.Message(cmd.OutOrStdout(), "Aborted.")
-			})
-			return nil
+			return renderRelocateAborted(cmd)
 		}
 		params.Parents = res.Parents
 	}
@@ -166,6 +178,30 @@ func renderRelocateDryRun(p renderDryRunParams) error {
 		return err
 	}
 	return output.WriteRelocateResultJSON(p.Cmd.OutOrStdout(), result)
+}
+
+// promptRelocateBasePath runs the opt-in base_path edit and returns the resolved
+// base_path and whether the user aborted (Esc). The rules validator is forwarded so
+// the TUI stays free of decision logic.
+func promptRelocateBasePath(current string) (basePath string, aborted bool, err error) {
+	res, err := relocatetui.PromptBasePath(relocatetui.BasePathPromptParams{
+		Current:  current,
+		Validate: func(s string) error { return rules.ValidateRelocateTarget(s) },
+	})
+	if errors.Is(err, domain.ErrUserAborted) {
+		return "", true, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return res.BasePath, false, nil
+}
+
+func renderRelocateAborted(cmd *cobra.Command) error {
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Message(cmd.OutOrStdout(), "Aborted.")
+	})
+	return nil
 }
 
 func resolveTargetBasePath(to string, cfg shared.ConfigResult) string {

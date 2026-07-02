@@ -92,6 +92,8 @@ flagged; everything else is what the name implies.
   uncommitted changes onto another branch (split an oversized PR). On conflict it changes
   nothing and exits `15`; retry with `--on-conflict resolve` to apply git conflict markers.
 - `wtm relocate` — realign worktrees with `base_path` and adopt externally-created ones.
+  `--to <path>` sets a new `base_path` non-interactively; the interactive wizard also lets
+  the user change it. You can't drive the wizard — pass `--to` (or `--yes`) in JSON mode.
 
 **Stacked branches**
 - `wtm sync <branch…>` / `wtm sync --all` — rebase the selected worktrees onto their
