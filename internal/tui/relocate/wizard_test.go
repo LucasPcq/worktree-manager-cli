@@ -1,7 +1,6 @@
 package relocate
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -16,36 +15,7 @@ func localCandidates(names ...string) *[]domain.BranchCandidate {
 	return &out
 }
 
-func TestBuildRecapGroupsAndResolvesParents(t *testing.T) {
-	plan := domain.RelocatePlan{
-		BasePath: "../.trees",
-		Steps: []domain.RelocateStep{
-			{Branch: "hotfix", ToPath: "/repo/../.trees/hotfix", Status: domain.RelocateStatusMove, Adopt: true, Parent: "main"},
-			{Branch: "legacy", ToPath: "/repo/../.trees/legacy", Status: domain.RelocateStatusAdopt, Adopt: true, Parent: "main"},
-			{Branch: "experiment", Status: domain.RelocateStatusSkippedDirty},
-			{Branch: "conflicted", Status: domain.RelocateStatusBlockedDest},
-		},
-	}
-	parents := map[string]string{"hotfix": "feature/api"} // legacy falls back to step.Parent
-
-	recap := buildRecap(plan, parents)
-
-	for _, want := range []string{
-		"To apply:",
-		"hotfix → ../.trees/hotfix (adopt, parent: feature/api)",
-		"legacy  adopt in place (parent: main)",
-		"Skipped:",
-		"experiment — uncommitted changes",
-		"Blocked:",
-		"conflicted — target path occupied",
-	} {
-		if !strings.Contains(recap, want) {
-			t.Errorf("recap missing %q in:\n%s", want, recap)
-		}
-	}
-}
-
-func TestExtractParentsMapsPickersByIndex(t *testing.T) {
+func TestExtractParentsMapsPickersByName(t *testing.T) {
 	adoptions := []domain.RelocateStep{
 		{Branch: "hotfix"},
 		{Branch: "legacy"},

@@ -207,6 +207,7 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool)
 	}
 
 	output.Blank(cmd.OutOrStdout())
+	output.Message(cmd.OutOrStdout(), domain.MsgRelocateHint)
 	output.Message(cmd.OutOrStdout(), domain.MsgRunInitHint)
 	output.Blank(cmd.OutOrStdout())
 	return nil

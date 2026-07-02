@@ -65,6 +65,58 @@ func TestValidateReparentRejectsUnknownBranch(t *testing.T) {
 	}
 }
 
+func TestValidateReparentBatchValid(t *testing.T) {
+	// Flatten the stack: both dev worktrees move onto main in one pass.
+	err := ValidateReparentBatch(ValidateReparentBatchParams{
+		Nodes:      reparentNodes(),
+		Branches:   []string{"dev/a", "dev/b"},
+		NewParent:  "main",
+		BaseBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("expected valid batch reparent, got %v", err)
+	}
+}
+
+func TestValidateReparentBatchRejectsCycle(t *testing.T) {
+	// Moving both feat and dev/a onto dev/b, while dev/b still points at dev/a,
+	// closes the loop dev/a → dev/b → dev/a. The batch must validate the combined
+	// graph in one pass and reject it.
+	err := ValidateReparentBatch(ValidateReparentBatchParams{
+		Nodes:      reparentNodes(),
+		Branches:   []string{"feat", "dev/a"},
+		NewParent:  "dev/b",
+		BaseBranch: "main",
+	})
+	if err == nil {
+		t.Fatalf("expected a cycle error across the batch, got nil")
+	}
+}
+
+func TestValidateReparentBatchRejectsSelfParent(t *testing.T) {
+	err := ValidateReparentBatch(ValidateReparentBatchParams{
+		Nodes:      reparentNodes(),
+		Branches:   []string{"dev/a", "feat"},
+		NewParent:  "feat",
+		BaseBranch: "main",
+	})
+	if !errors.Is(err, domain.ErrReparentSelf) {
+		t.Fatalf("expected ErrReparentSelf when a listed branch equals the new parent, got %v", err)
+	}
+}
+
+func TestValidateReparentBatchRejectsUnknownBranch(t *testing.T) {
+	err := ValidateReparentBatch(ValidateReparentBatchParams{
+		Nodes:      reparentNodes(),
+		Branches:   []string{"dev/a", "ghost"},
+		NewParent:  "main",
+		BaseBranch: "main",
+	})
+	if !errors.Is(err, domain.ErrWorktreeNotFound) {
+		t.Fatalf("expected ErrWorktreeNotFound for an unmanaged branch, got %v", err)
+	}
+}
+
 func TestChildrenOf(t *testing.T) {
 	children := ChildrenOf(ChildrenOfParams{Nodes: reparentNodes(), Branch: "feat"})
 	if len(children) != 1 || children[0].Branch != "dev/a" {

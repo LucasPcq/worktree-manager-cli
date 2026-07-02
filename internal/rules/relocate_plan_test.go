@@ -278,3 +278,39 @@ func TestBuildRelocatePlanExternalInPlaceDirtyStillAdopts(t *testing.T) {
 		t.Fatalf("adopt-in-place should not be blocked by dirty, got %q", step.Status)
 	}
 }
+
+func TestReprojectRelocatePlanRetargetsAndReclassifies(t *testing.T) {
+	// An aligned (noop) managed worktree and an adopt-in-place external, both under
+	// the current base_path, re-projected onto a new base_path.
+	aligned := desired("feat")
+	external := desired("ext")
+	plan := domain.RelocatePlan{
+		BasePath:   testBasePath,
+		BaseBranch: testBaseBranch,
+		Steps: []domain.RelocateStep{
+			{Branch: "feat", FromPath: aligned, ToPath: aligned, Status: domain.RelocateStatusNoop},
+			{Branch: "ext", FromPath: external, ToPath: external, Status: domain.RelocateStatusAdopt, Adopt: true, Parent: "main"},
+		},
+	}
+
+	got := rules.ReprojectRelocatePlan(rules.ReprojectRelocatePlanParams{
+		Plan:       plan,
+		ProjectDir: testProjectDir,
+		BasePath:   "../elsewhere",
+	})
+
+	if got.BasePath != "../elsewhere" {
+		t.Fatalf("base path = %q, want ../elsewhere", got.BasePath)
+	}
+	feat := stepFor(t, got, "feat")
+	if feat.Status != domain.RelocateStatusMove {
+		t.Errorf("aligned worktree should become a move under the new base_path, got %v", feat.Status)
+	}
+	if want := filepath.Join(testProjectDir, "../elsewhere", "feat"); feat.ToPath != want {
+		t.Errorf("feat target = %q, want %q", feat.ToPath, want)
+	}
+	ext := stepFor(t, got, "ext")
+	if ext.Status != domain.RelocateStatusMove || !ext.Adopt {
+		t.Errorf("external should move + stay adopted, got status=%v adopt=%v", ext.Status, ext.Adopt)
+	}
+}

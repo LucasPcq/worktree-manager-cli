@@ -63,16 +63,61 @@ func TestReparentUpdatesMetadata(t *testing.T) {
 		t.Fatalf("reparent: %v", err)
 	}
 
-	var result domain.ReparentResult
-	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
-		t.Fatalf("unmarshal reparent result: %v\n%s", err, stdout)
+	results := unmarshalReparent(t, stdout)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 reparent result, got %d: %+v", len(results), results)
 	}
-	if result.OldParent != "dev-a" || result.NewParent != "feat" {
-		t.Errorf("unexpected result: %+v", result)
+	if results[0].OldParent != "dev-a" || results[0].NewParent != "feat" {
+		t.Errorf("unexpected result: %+v", results[0])
 	}
 
 	if got := readSourceBranch(t, stateDir, "dev-b"); got != "feat" {
 		t.Errorf("dev-b parent = %q, want feat", got)
+	}
+}
+
+// unmarshalReparent decodes the `reparent` JSON payload ({"reparented":[…]}).
+func unmarshalReparent(t *testing.T, stdout string) []domain.ReparentResult {
+	t.Helper()
+	var payload struct {
+		Reparented []domain.ReparentResult `json:"reparented"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
+		t.Fatalf("unmarshal reparent result: %v\n%s", err, stdout)
+	}
+	return payload.Reparented
+}
+
+func TestReparentReparentsMultipleWorktrees(t *testing.T) {
+	_, stateDir := setupStack(t)
+
+	stdout, _, err := runWtCmd(t, domain.CmdReparent, "dev-a", "dev-b", "--to", "main", "--output", domain.OutputJSON)
+	if err != nil {
+		t.Fatalf("batch reparent: %v", err)
+	}
+
+	results := unmarshalReparent(t, stdout)
+	if len(results) != 2 {
+		t.Fatalf("expected 2 reparent results, got %d: %+v", len(results), results)
+	}
+
+	for _, branch := range []string{"dev-a", "dev-b"} {
+		if got := readSourceBranch(t, stateDir, branch); got != "main" {
+			t.Errorf("%s parent = %q, want main", branch, got)
+		}
+	}
+}
+
+func TestReparentBatchRejectsCycle(t *testing.T) {
+	_, stateDir := setupStack(t)
+
+	// feat and dev-a onto dev-b closes dev-a → dev-b → dev-a; the whole batch must
+	// be rejected and nothing written.
+	if _, _, err := runWtCmd(t, domain.CmdReparent, "feat", "dev-a", "--to", "dev-b", "--output", domain.OutputJSON); err == nil {
+		t.Fatalf("expected a cycle error for the batch")
+	}
+	if got := readSourceBranch(t, stateDir, "dev-a"); got != "feat" {
+		t.Errorf("dev-a parent = %q, want feat (unchanged after rejected batch)", got)
 	}
 }
 

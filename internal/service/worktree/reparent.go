@@ -8,41 +8,53 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-// Reparent changes the recorded parent (source_branch) of a worktree. It only
-// rewrites metadata — the actual rebase happens on the next `wtm sync`. The new
-// parent must exist as a local branch or an origin remote-tracking branch
-// (origin/x), and must keep the parent graph acyclic.
-func Reparent(params domain.ReparentParams) (domain.ReparentResult, error) {
+// ReparentBatch changes the recorded parent (source_branch) of one or more worktrees
+// to the same new parent in a single pass. It only rewrites metadata — the actual
+// rebase happens on the next `wtm sync`. The new parent must exist as a local branch
+// or an origin remote-tracking branch (origin/x), and the combined change must keep
+// the parent graph acyclic. A single-element Branches is the ordinary one-worktree
+// reparent.
+func ReparentBatch(params domain.ReparentBatchParams) ([]domain.ReparentResult, error) {
 	nodes, err := buildNodes(params.ProjectDir, params.StateDir)
 	if err != nil {
-		return domain.ReparentResult{}, err
+		return nil, err
 	}
 
-	if !isManaged(params.StateDir, params.Branch) {
-		return domain.ReparentResult{}, fmt.Errorf("%w: %s", domain.ErrWorktreeNotFound, params.Branch)
+	for _, branch := range params.Branches {
+		if !isManaged(params.StateDir, branch) {
+			return nil, fmt.Errorf("%w: %s", domain.ErrWorktreeNotFound, branch)
+		}
 	}
 
 	if !infra.BranchOrRemoteExists(infra.BranchOrRemoteExistsParams{
 		ProjectDir: params.ProjectDir,
 		Ref:        params.NewParent,
 	}) {
-		return domain.ReparentResult{}, fmt.Errorf("%w: %s", domain.ErrBranchNotFound, params.NewParent)
+		return nil, fmt.Errorf("%w: %s", domain.ErrBranchNotFound, params.NewParent)
 	}
 
-	if err := rules.ValidateReparent(rules.ValidateReparentParams{
+	if err := rules.ValidateReparentBatch(rules.ValidateReparentBatchParams{
 		Nodes:      nodes,
-		Branch:     params.Branch,
+		Branches:   params.Branches,
 		NewParent:  params.NewParent,
 		BaseBranch: params.BaseBranch,
 	}); err != nil {
-		return domain.ReparentResult{}, err
+		return nil, err
 	}
 
-	return setSourceBranch(setSourceBranchParams{
-		StateDir:  params.StateDir,
-		Branch:    params.Branch,
-		NewParent: params.NewParent,
-	})
+	results := make([]domain.ReparentResult, 0, len(params.Branches))
+	for _, branch := range params.Branches {
+		res, err := setSourceBranch(setSourceBranchParams{
+			StateDir:  params.StateDir,
+			Branch:    branch,
+			NewParent: params.NewParent,
+		})
+		if err != nil {
+			return results, err
+		}
+		results = append(results, res)
+	}
+	return results, nil
 }
 
 // PlanCleanReparent computes which children would be orphaned by cleaning a

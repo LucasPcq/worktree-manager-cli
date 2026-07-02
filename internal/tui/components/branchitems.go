@@ -18,6 +18,22 @@ type BranchItemsParams struct {
 	PinnedSuffix string
 	// Exclude is a value omitted entirely (e.g. the worktree being reparented).
 	Exclude string
+	// ExcludeSet omits several values at once (e.g. every worktree selected for a
+	// batch reparent, none of which may be its own parent). Empty omits nothing.
+	ExcludeSet []string
+}
+
+// excludes reports whether a candidate name is filtered out by Exclude or ExcludeSet.
+func (p BranchItemsParams) excludes(name string) bool {
+	if name == p.Exclude {
+		return true
+	}
+	for _, e := range p.ExcludeSet {
+		if name == e {
+			return true
+		}
+	}
+	return false
 }
 
 // BranchItems builds picker rows from branch candidates with a consistent layout:
@@ -41,7 +57,7 @@ func BranchItems(params BranchItemsParams) []SelectItem {
 	}
 
 	for _, c := range params.Candidates {
-		if c.IsRemote || c.Name == params.Pinned || c.Name == params.Exclude {
+		if c.IsRemote || c.Name == params.Pinned || params.excludes(c.Name) {
 			continue
 		}
 		items = append(items, branchItem(branchItemParams{candidate: c}))
@@ -49,7 +65,7 @@ func BranchItems(params BranchItemsParams) []SelectItem {
 
 	hasRemote := false
 	for _, c := range params.Candidates {
-		if c.IsRemote && c.Name != params.Pinned && c.Name != params.Exclude {
+		if c.IsRemote && c.Name != params.Pinned && !params.excludes(c.Name) {
 			hasRemote = true
 			break
 		}
@@ -60,7 +76,7 @@ func BranchItems(params BranchItemsParams) []SelectItem {
 
 	items = append(items, SelectItem{Separator: true})
 	for _, c := range params.Candidates {
-		if !c.IsRemote || c.Name == params.Pinned || c.Name == params.Exclude {
+		if !c.IsRemote || c.Name == params.Pinned || params.excludes(c.Name) {
 			continue
 		}
 		items = append(items, branchItem(branchItemParams{candidate: c}))

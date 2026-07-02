@@ -69,41 +69,51 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 		DryRun:         dryRun,
 	}
 
+	interactive := rules.IsHumanFormat(format)
+
 	plan, err := worktree.PlanRelocate(params)
 	if err != nil {
 		return err
 	}
 
-	interactive := rules.IsHumanFormat(format)
-
-	if !rules.PlanHasWork(plan) {
-		return renderEmptyRelocate(cmd, interactive)
-	}
-
-	if dryRun {
-		return renderRelocateDryRun(renderDryRunParams{
-			Cmd:         cmd,
-			Params:      params,
-			Plan:        plan,
-			Interactive: interactive,
+	if interactive && !yes && !dryRun {
+		// A single wizard: opt-in base_path edit, one parent picker per adopted
+		// worktree, then a recap. Always reachable — relocate is the only command that
+		// changes base_path, so it opens even with zero worktrees. --to fixes base_path
+		// up front, so the edit steps are dropped then.
+		res, werr := runRelocateWizard(runRelocateWizardParams{
+			Cfg:             cfg,
+			Plan:            plan,
+			BaseBranch:      params.BaseBranch,
+			CurrentBasePath: params.TargetBasePath,
+			EditBasePath:    to == "",
+			HasWork:         relocateHasWork(relocateHasWorkParams{Plan: plan, To: to, ConfigBasePath: cfg.Config.Project.Worktrees.BasePath}),
 		})
-	}
-
-	if interactive && !yes {
-		// The plan is recapped by the wizard's own "Apply" step, so nothing is
-		// printed before it — on abort the wizard clears and only "Aborted." remains,
-		// instead of a plan preview lingering above the prompt.
-		res, werr := runRelocateWizard(cfg, plan, params.BaseBranch)
 		if werr != nil {
 			return werr
 		}
-		if !res.Confirmed {
-			output.Frame(cmd.OutOrStdout(), func() {
-				output.Message(cmd.OutOrStdout(), "Aborted.")
-			})
-			return nil
+		if res.Aborted {
+			return renderRelocateAborted(cmd)
 		}
+		if !res.Confirmed {
+			// The recap was skipped: nothing would change.
+			return renderEmptyRelocate(cmd, true)
+		}
+		params.TargetBasePath = res.BasePath
 		params.Parents = res.Parents
+	} else {
+		// Non-interactive, --yes, or --dry-run: no wizard.
+		if !rules.PlanHasWork(plan) {
+			return renderEmptyRelocate(cmd, interactive)
+		}
+		if dryRun {
+			return renderRelocateDryRun(renderDryRunParams{
+				Cmd:         cmd,
+				Params:      params,
+				Plan:        plan,
+				Interactive: interactive,
+			})
+		}
 	}
 
 	var result domain.RelocateResult
@@ -130,15 +140,67 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// runRelocateWizard resolves the candidate parent branches and drives the
-// interactive parent pickers + final apply confirmation.
-func runRelocateWizard(cfg shared.ConfigResult, plan domain.RelocatePlan, baseBranch string) (relocatetui.RunResult, error) {
+type runRelocateWizardParams struct {
+	Cfg             shared.ConfigResult
+	Plan            domain.RelocatePlan
+	BaseBranch      string
+	CurrentBasePath string
+	// EditBasePath enables the base_path keep/change steps. False when --to already
+	// fixed base_path.
+	EditBasePath bool
+	// HasWork reports whether applying would already do something at the current
+	// base_path (moves/adoptions, or a --to that changes the config base_path).
+	HasWork bool
+}
+
+type relocateHasWorkParams struct {
+	Plan           domain.RelocatePlan
+	To             string
+	ConfigBasePath string
+}
+
+// relocateHasWork reports whether a relocate would change anything up front: there are
+// worktrees to move/adopt, or --to sets a base_path different from the config's.
+func relocateHasWork(params relocateHasWorkParams) bool {
+	if rules.PlanHasWork(params.Plan) {
+		return true
+	}
+	return params.To != "" && params.To != params.ConfigBasePath
+}
+
+// runRelocateWizard drives the base_path edit, adoption parent pickers, and final
+// apply confirmation. The recap is rendered by a command-owned closure that
+// re-projects the plan onto the chosen base_path (pure — execution re-plans against
+// the filesystem), keeping plan and format logic out of the TUI.
+func runRelocateWizard(params runRelocateWizardParams) (relocatetui.RunResult, error) {
+	recapText := func(basePath string, parents map[string]string) string {
+		plan := params.Plan
+		previous := ""
+		if basePath != params.CurrentBasePath {
+			plan = rules.ReprojectRelocatePlan(rules.ReprojectRelocatePlanParams{
+				Plan:       params.Plan,
+				ProjectDir: params.Cfg.ProjectDir,
+				BasePath:   basePath,
+			})
+			previous = params.CurrentBasePath
+		}
+		return output.SprintRelocateRecap(output.RelocateRecapParams{
+			Plan:             plan,
+			Parents:          parents,
+			PreviousBasePath: previous,
+		})
+	}
+
 	return relocatetui.RunWizard(relocatetui.RunParams{
-		ProjectDir: cfg.ProjectDir,
-		Plan:       plan,
-		Adoptions:  rules.PlanAdoptions(plan),
-		Branches:   branchCandidates(cfg.ProjectDir),
-		BaseBranch: baseBranch,
+		ProjectDir:       params.Cfg.ProjectDir,
+		Adoptions:        rules.PlanAdoptions(params.Plan),
+		Branches:         branchCandidates(params.Cfg.ProjectDir),
+		BaseBranch:       params.BaseBranch,
+		CurrentBasePath:  params.CurrentBasePath,
+		EditBasePath:     params.EditBasePath,
+		HasWork:          params.HasWork,
+		ValidateBasePath: func(s string) error { return rules.ValidateRelocateTarget(s) },
+		RecapText:        recapText,
 	})
 }
 
@@ -166,6 +228,13 @@ func renderRelocateDryRun(p renderDryRunParams) error {
 		return err
 	}
 	return output.WriteRelocateResultJSON(p.Cmd.OutOrStdout(), result)
+}
+
+func renderRelocateAborted(cmd *cobra.Command) error {
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.Message(cmd.OutOrStdout(), "Aborted.")
+	})
+	return nil
 }
 
 func resolveTargetBasePath(to string, cfg shared.ConfigResult) string {

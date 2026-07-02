@@ -94,14 +94,17 @@ flagged; everything else is what the name implies.
   (there is no current-directory default and no picker — omitting it errors). On conflict it
   changes nothing and exits `15`; retry with `--on-conflict resolve` to apply git conflict markers.
 - `wtm relocate` — realign worktrees with `base_path` and adopt externally-created ones.
+  `--to <path>` sets a new `base_path` non-interactively; the interactive wizard also lets
+  the user change it. You can't drive the wizard — pass `--to` (or `--yes`) in JSON mode.
 
 **Stacked branches**
 - `wtm sync <branch…>` / `wtm sync --all` — rebase the selected worktrees onto their
   recorded parent, in cascade (parents before children), fetching first. A conflict aborts
   that branch's rebase (its descendants are skipped) unless `--keep-conflict` leaves it in
   progress. Local only — pass `--push` to force-push (with lease) in JSON mode.
-- `wtm reparent <branch> --to <parent>` — change the recorded parent (metadata only; the
-  rebase happens on the next `sync`). Use after a middle branch merges.
+- `wtm reparent <branch…> --to <parent>` — change the recorded parent of one or more
+  worktrees to the same new parent (metadata only; the rebase happens on the next `sync`).
+  Use after a middle branch merges. JSON: `{"reparented":[{branch,old_parent,new_parent},…]}`.
 
 **Navigate**
 - `wtm go` / `wtm switch` need the user's **shell integration** to `cd`, so you can't drive

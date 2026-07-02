@@ -282,6 +282,11 @@ const (
 	// services itself).
 	MsgRunInitHint = "Run services per worktree ? Configure them with `wtm run init` (experimental)."
 
+	// MsgRelocateHint points users at `wtm relocate` to adopt/align worktrees that
+	// existed before wtm. Printed unconditionally at the end of `wtm init` — we do
+	// not probe for pre-existing worktrees, the hint is cheap and always relevant.
+	MsgRelocateHint = "Worktrees created before wtm ? Adopt and align them with `wtm relocate`."
+
 	// SchemasDirName is the directory (inside <state-dir>/ or under the global
 	// config dir) where `wtm schema dump` writes the JSON Schema files
 	// that editors reference via the TOML `#:schema` directive.
