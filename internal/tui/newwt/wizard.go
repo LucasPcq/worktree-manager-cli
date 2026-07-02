@@ -84,15 +84,92 @@ type WizardResult struct {
 	FastForwardSource bool
 }
 
-// RunWizard displays the interactive wizard for wtm new.
-// When IncludeBranch is true, the first step prompts for a branch name.
-// Returns ErrUserAborted on Ctrl+C or Esc at the first step, or when the user
-// declines a hard confirmation (diverged source, or the env fallback).
-func RunWizard(params WizardParams) (WizardResult, error) {
+// CreateFlow is the create sub-flow (branch/source/source-update steps) ready to
+// embed in a host wizard — e.g. `wtm extract` inserts it before its own recap so
+// creating the target worktree and extracting share one combined recap. It also
+// carries the source picker's background branch-refresh wiring, which the host
+// plugs into its wizard.
+type CreateFlow struct {
+	Steps       []components.Step
+	InitCmd     tea.Cmd
+	OnMsg       components.WizardMsgHandler
+	LoadingText string
+}
+
+// CreateSteps builds the create sub-flow steps WITHOUT the final recap, so a host
+// wizard can compose them with its own steps and show one combined recap. When
+// enabled is non-nil each step auto-skips while enabled(steps) is false (e.g. the
+// extract target is an existing worktree, not "create new"). A nil enabled keeps
+// every step active (the standalone `wtm create`).
+func CreateSteps(params WizardParams, enabled func(steps []components.Step) bool) CreateFlow {
+	holder := &params.Branches
 	var steps []components.Step
 
 	if params.IncludeBranch {
-		branchInput := components.NewTextInput(components.NewTextInputParams{
+		steps = append(steps, gateStep(branchStep(), enabled))
+	}
+	if params.Source == "" {
+		steps = append(steps, gateStep(sourceStep(holder, params.DefaultBranch), enabled))
+	}
+	if params.IncludeEnv {
+		steps = append(steps, gateStep(envStep(params.ConfigStrategy), enabled))
+	}
+	// The source-update fast-forward: a ChoiceStep when the source is picked, else
+	// (fixed by --from) a concrete step added only when a fast-forward is offered —
+	// a ChoiceStep cannot be a first step. A diverged source is not a gate here; it
+	// becomes a ⚠ line in the recap.
+	if params.SourceUpdate != nil {
+		if params.Source == "" {
+			steps = append(steps, gateStep(sourceUpdateStep(params.SourceUpdate), enabled))
+		} else if p := params.SourceUpdate(params.Source); p.Show && !p.AbortOnDecline {
+			steps = append(steps, gateStep(sourceUpdateConcreteStep(p), enabled))
+		}
+	}
+
+	flow := CreateFlow{Steps: steps}
+	if params.Source == "" {
+		flow.InitCmd = branchrefresh.Cmd(params.ProjectDir)
+		flow.OnMsg = branchrefresh.Handler(params.ProjectDir, holder)
+		flow.LoadingText = domain.LoadingBranchesText
+	}
+	return flow
+}
+
+// gateStep makes a step auto-skip while enabled(steps) is false, composing with any
+// AutoSkip the step already has (so a ChoiceStep still skips on its own logic when
+// enabled). A nil enabled leaves the step untouched.
+func gateStep(step components.Step, enabled func(steps []components.Step) bool) components.Step {
+	if enabled == nil {
+		return step
+	}
+	inner := step.AutoSkip
+	step.AutoSkip = func(w components.WizardModel) bool {
+		if !enabled(w.Steps()) {
+			return true
+		}
+		return inner != nil && inner(w)
+	}
+	return step
+}
+
+// ReadCreateResult reads the create answers from a (host or standalone) wizard's
+// steps by name. It does not interpret a cancel — the host's recap owns that.
+func ReadCreateResult(steps []components.Step, params WizardParams) WizardResult {
+	result := WizardResult{
+		FromBranch:        resolveSource(steps, params),
+		EnvFromOverride:   resolveEnv(steps, params),
+		FastForwardSource: stepValueByName(steps, stepSourceUpd) == sourceFastForward,
+	}
+	if child, ok := stepModelByName(steps, stepBranchName).(components.TextInputModel); ok {
+		result.BranchName = child.Value()
+	}
+	return result
+}
+
+func branchStep() components.Step {
+	return components.Step{
+		Name: stepBranchName,
+		Model: components.NewTextInput(components.NewTextInputParams{
 			Title:       stepBranchName,
 			Description: "Name for the new worktree branch",
 			Validate: func(s string) error {
@@ -101,62 +178,51 @@ func RunWizard(params WizardParams) (WizardResult, error) {
 				}
 				return nil
 			},
-		})
-		steps = append(steps, components.Step{
-			Name:    stepBranchName,
-			Model:   branchInput,
-			Summary: components.TextSummary,
-		})
+		}),
+		Summary: components.TextSummary,
 	}
+}
 
-	holder := &params.Branches
-	if params.Source == "" {
-		sourceList := func() any {
-			return components.NewSelectList(components.NewSelectListParams{
-				Title:       stepSourceName,
-				Description: "Branch to base the new worktree on",
-				Items:       buildBranchItems(*holder, params.DefaultBranch),
-			})
-		}
-		steps = append(steps, components.Step{
-			Name:       stepSourceName,
-			Model:      sourceList(),
-			Build:      func([]components.Step) any { return sourceList() },
-			CanRefresh: true,
-			Summary:    components.SelectSummary,
+func sourceStep(holder *[]domain.BranchCandidate, defaultBranch string) components.Step {
+	sourceList := func() any {
+		return components.NewSelectList(components.NewSelectListParams{
+			Title:       stepSourceName,
+			Description: "Branch to base the new worktree on",
+			Items:       buildBranchItems(*holder, defaultBranch),
 		})
 	}
-
-	if params.IncludeEnv {
-		steps = append(steps, components.Step{
-			Name: stepEnvName,
-			Model: components.NewSelectList(components.NewSelectListParams{
-				Title:       stepEnvName,
-				Description: "How to provision .env files in the new worktree",
-				Items:       buildEnvItems(params.ConfigStrategy),
-			}),
-			Summary: envStrategySummary,
-		})
+	return components.Step{
+		Name:       stepSourceName,
+		Model:      sourceList(),
+		Build:      func([]components.Step) any { return sourceList() },
+		CanRefresh: true,
+		Summary:    components.SelectSummary,
 	}
+}
 
-	// The source-update fast-forward is an optional select (every option advances,
-	// Esc goes back). When the source is picked interactively it is a ChoiceStep
-	// (built from the picked source); when the source is fixed by --from it is
-	// computed up front and added concretely only when a fast-forward is offered —
-	// a ChoiceStep cannot be the wizard's first step. A diverged source is not a
-	// gate: it becomes a ⚠ line in the recap.
-	if params.SourceUpdate != nil {
-		if params.Source == "" {
-			steps = append(steps, sourceUpdateStep(params.SourceUpdate))
-		} else if p := params.SourceUpdate(params.Source); p.Show && !p.AbortOnDecline {
-			steps = append(steps, sourceUpdateConcreteStep(p))
-		}
+func envStep(strategy domain.EnvStrategy) components.Step {
+	return components.Step{
+		Name: stepEnvName,
+		Model: components.NewSelectList(components.NewSelectListParams{
+			Title:       stepEnvName,
+			Description: "How to provision .env files in the new worktree",
+			Items:       buildEnvItems(strategy),
+		}),
+		Summary: envStrategySummary,
 	}
+}
 
-	// The final recap: it always shows last, recaps the selections with ⚠ lines for
-	// a diverged source and the env fallback, and offers "Yes, create worktree"
-	// followed by the constant "No, cancel" — the single cancellation point.
-	steps = append(steps, components.RecapStep(components.RecapStepParams{
+// RunWizard displays the interactive wizard for wtm new.
+// When IncludeBranch is true, the first step prompts for a branch name.
+// Returns ErrUserAborted on Ctrl+C or Esc at the first step, or when the user
+// declines a hard confirmation (diverged source, or the env fallback).
+func RunWizard(params WizardParams) (WizardResult, error) {
+	flow := CreateSteps(params, nil)
+
+	// The final recap: always last, recaps the selections with ⚠ lines for a
+	// diverged source and the env fallback, and offers "Yes, create worktree" then
+	// the constant "No, cancel" — the single cancellation point.
+	steps := append(flow.Steps, components.RecapStep(components.RecapStepParams{
 		Name: stepConfirm,
 		Build: func(prev []components.Step) components.RecapContent {
 			return components.RecapContent{
@@ -168,19 +234,14 @@ func RunWizard(params WizardParams) (WizardResult, error) {
 		},
 	}))
 
-	// The background branch refresh only feeds the source picker; skip it (and its
-	// loading spinner) when --from fixed the source and there is no picker.
-	wp := components.WizardParams{Steps: steps}
-	if params.Source == "" {
-		wp.InitCmd = branchrefresh.Cmd(params.ProjectDir)
-		wp.Loading = true
-		wp.LoadingText = domain.LoadingBranchesText
-		wp.OnMsg = branchrefresh.Handler(params.ProjectDir, holder)
+	wp := components.WizardParams{
+		Steps:       steps,
+		InitCmd:     flow.InitCmd,
+		OnMsg:       flow.OnMsg,
+		LoadingText: flow.LoadingText,
+		Loading:     flow.InitCmd != nil,
 	}
-	wiz := components.NewWizardWithParams(wp)
-	p := tea.NewProgram(wiz)
-
-	finalModel, err := p.Run()
+	finalModel, err := tea.NewProgram(components.NewWizardWithParams(wp)).Run()
 	if err != nil {
 		return WizardResult{}, fmt.Errorf("wizard: %w", err)
 	}
@@ -189,7 +250,6 @@ func RunWizard(params WizardParams) (WizardResult, error) {
 	if !ok || final.Aborted() {
 		return WizardResult{}, domain.ErrUserAborted
 	}
-
 	return extractResult(final, params)
 }
 
@@ -280,15 +340,33 @@ func buildCreateRecap(prev []components.Step, params WizardParams) string {
 		branchName = textValueByName(prev, stepBranchName)
 	}
 
+	sourceLabel := source
+	if stepValueByName(prev, stepSourceUpd) == sourceFastForward {
+		sourceLabel += " (fast-forward to origin)"
+	}
+
 	var lines []string
 	if branchName != "" {
 		lines = append(lines, "Branch:  "+branchName)
 	}
 	lines = append(lines,
-		"Source:  "+source,
+		"Source:  "+sourceLabel,
 		"Env:     "+envLabel,
 	)
 
+	if warnings := CreateWarnings(prev, params); len(warnings) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, warnings...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// CreateWarnings returns the ⚠ recap lines for the create sub-flow — a diverged
+// source and the env fallback — from the same deciders the steps used. Exposed so
+// a host wizard (extract) can fold them into its combined recap.
+func CreateWarnings(steps []components.Step, params WizardParams) []string {
+	source := resolveSource(steps, params)
+	env := resolveEnv(steps, params)
 	var warnings []string
 	if params.SourceUpdate != nil {
 		if p := params.SourceUpdate(source); p.Show && p.AbortOnDecline && p.Params.Warning != "" {
@@ -300,11 +378,7 @@ func buildCreateRecap(prev []components.Step, params WizardParams) string {
 			warnings = append(warnings, "⚠ "+ep.Warning)
 		}
 	}
-	if len(warnings) > 0 {
-		lines = append(lines, "")
-		lines = append(lines, warnings...)
-	}
-	return strings.Join(lines, "\n")
+	return warnings
 }
 
 // extractResult reads the wizard answers, translating the recap's "No, cancel"
@@ -314,22 +388,7 @@ func extractResult(final components.WizardModel, params WizardParams) (WizardRes
 	if stepValueByName(steps, stepConfirm) == domain.WizardCancelValue {
 		return WizardResult{}, domain.ErrUserAborted
 	}
-
-	result := WizardResult{
-		FromBranch:      resolveSource(steps, params),
-		EnvFromOverride: resolveEnv(steps, params),
-	}
-	if child, ok := stepModelByName(steps, stepBranchName).(components.TextInputModel); ok {
-		result.BranchName = child.Value()
-	}
-
-	if idx := stepIndexByName(steps, stepSourceUpd); idx >= 0 && !final.Skipped(idx) {
-		if stepValueByName(steps, stepSourceUpd) == sourceFastForward {
-			result.FastForwardSource = true
-		}
-	}
-
-	return result, nil
+	return ReadCreateResult(steps, params), nil
 }
 
 func stepIndexByName(steps []components.Step, name string) int {

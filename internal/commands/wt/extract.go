@@ -231,9 +231,9 @@ type resolveParams struct {
 }
 
 // resolveSelectionAndTarget resolves the files to extract and the destination
-// worktree, from flags or the interactive wizard. When the target is chosen
-// interactively, it loops so that backing out of the new-worktree sub-flow
-// returns to the Target step with the file selection preserved.
+// worktree, from flags or the interactive wizard. The "create new worktree"
+// sub-flow is embedded in the wizard (see extracttui), so one combined recap
+// covers both create and extract and there is no re-entry loop.
 func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTarget, bool, error) {
 	filesFlag, _ := p.cmd.Flags().GetStringSlice(domain.FlagFiles)
 	toFlag, _ := p.cmd.Flags().GetString(domain.FlagTo)
@@ -242,81 +242,66 @@ func resolveSelectionAndTarget(p resolveParams) ([]domain.ExtractFile, extractTa
 	needTarget := toFlag == ""
 	needMode := !p.cmd.Flags().Changed(domain.FlagKeep) && isInteractive()
 
-	preselected := filesFlag
-	reenter := false
-	preselectKeep := false
-
-	for {
-		wizard, err := runWizard(runWizardParams{
-			cfg:           p.cfg,
-			available:     p.available,
-			sourceBranch:  p.sourceBranch,
-			needFiles:     needFiles,
-			needTarget:    needTarget,
-			needMode:      needMode,
-			preselected:   preselected,
-			reenter:       reenter,
-			preselectKeep: preselectKeep,
-		})
-		if err != nil {
-			return nil, extractTarget{}, false, err
-		}
-
-		selectedPaths := filesFlag
-		if needFiles {
-			selectedPaths = wizard.Files
-			preselected = wizard.Files
-		}
-		selected, err := filterByPaths(p.available, selectedPaths)
-		if err != nil {
-			return nil, extractTarget{}, false, err
-		}
-
-		keep := keepFlag
-		if needMode {
-			keep = wizard.Keep
-		}
-
-		target, err := resolveTarget(resolveTargetParams{
-			cmd:          p.cmd,
-			cfg:          p.cfg,
-			sourceBranch: p.sourceBranch,
-			choice:       wizard.Target,
-		})
-		if needTarget && errors.Is(err, domain.ErrUserAborted) {
-			// Backed out of the new-worktree sub-flow: re-enter on the last step it
-			// was launched from, keeping the file selection and mode choice.
-			reenter = true
-			preselectKeep = keep
-			continue
-		}
-		if err != nil {
-			return nil, extractTarget{}, false, err
-		}
-		return selected, target, keep, nil
+	wizard, err := runWizard(runWizardParams{
+		cmd:          p.cmd,
+		cfg:          p.cfg,
+		available:    p.available,
+		sourceBranch: p.sourceBranch,
+		needFiles:    needFiles,
+		needTarget:   needTarget,
+		needMode:     needMode,
+	})
+	if err != nil {
+		return nil, extractTarget{}, false, err
 	}
+
+	selectedPaths := filesFlag
+	if needFiles {
+		selectedPaths = wizard.Files
+	}
+	selected, err := filterByPaths(p.available, selectedPaths)
+	if err != nil {
+		return nil, extractTarget{}, false, err
+	}
+
+	keep := keepFlag
+	if needMode {
+		keep = wizard.Keep
+	}
+
+	target, err := resolveTarget(resolveTargetParams{
+		cmd:          p.cmd,
+		cfg:          p.cfg,
+		sourceBranch: p.sourceBranch,
+		choice:       wizard.Target,
+		create:       wizard.Create,
+	})
+	if err != nil {
+		return nil, extractTarget{}, false, err
+	}
+	return selected, target, keep, nil
 }
 
 type runWizardParams struct {
-	cfg           shared.ConfigResult
-	available     []domain.ExtractFile
-	sourceBranch  string
-	needFiles     bool
-	needTarget    bool
-	needMode      bool
-	preselected   []string
-	reenter       bool
-	preselectKeep bool
+	cmd          *cobra.Command
+	cfg          shared.ConfigResult
+	available    []domain.ExtractFile
+	sourceBranch string
+	needFiles    bool
+	needTarget   bool
+	needMode     bool
 }
 
-// runWizard runs the unified file+target+mode selection wizard, skipping any
-// step already resolved from a flag. Returns a zero result when nothing is needed.
+// runWizard runs the unified file+target+create+mode selection wizard, skipping
+// any step already resolved from a flag. Returns a zero result when nothing is
+// needed. When the target is picked it also supplies the embedded create sub-flow.
 func runWizard(params runWizardParams) (extracttui.RunResult, error) {
 	if !params.needFiles && !params.needTarget && !params.needMode {
 		return extracttui.RunResult{}, nil
 	}
 
 	var statuses []domain.WorktreeStatus
+	var create newpicker.WizardParams
 	if params.needTarget {
 		var err error
 		statuses, err = worktree.List(domain.ListParams{
@@ -327,19 +312,45 @@ func runWizard(params runWizardParams) (extracttui.RunResult, error) {
 		if err != nil {
 			return extracttui.RunResult{}, fmt.Errorf("list worktrees: %w", err)
 		}
+		create = extractCreateParams(params.cfg, params.sourceBranch)
 	}
 
 	return extracttui.Run(extracttui.RunParams{
-		Files:         params.available,
-		Worktrees:     statuses,
-		SourceBranch:  params.sourceBranch,
-		NeedFiles:     params.needFiles,
-		NeedTarget:    params.needTarget,
-		NeedMode:      params.needMode,
-		Preselected:   params.preselected,
-		Reenter:       params.reenter,
-		PreselectKeep: params.preselectKeep,
+		Files:        params.available,
+		Worktrees:    statuses,
+		SourceBranch: params.sourceBranch,
+		NeedFiles:    params.needFiles,
+		NeedTarget:   params.needTarget,
+		NeedMode:     params.needMode,
+		Create:       create,
 	})
+}
+
+// extractCreateParams builds the create sub-flow config embedded in the extract
+// wizard: the source is picked (not fixed), the branch is asked, and env is left
+// at the config default. The deciders guard against an empty source — the create
+// steps are auto-skipped (and their source is "") when the target is an existing
+// worktree.
+func extractCreateParams(cfg shared.ConfigResult, sourceBranch string) newpicker.WizardParams {
+	return newpicker.WizardParams{
+		ProjectDir:     cfg.ProjectDir,
+		Branches:       branchCandidates(cfg.ProjectDir),
+		DefaultBranch:  defaultParent(defaultParentParams{cfg: cfg, sourceBranch: sourceBranch}),
+		ConfigStrategy: cfg.Config.Project.Env.Strategy,
+		IncludeBranch:  true,
+		SourceUpdate: func(source string) newpicker.SourceUpdatePrompt {
+			if source == "" {
+				return newpicker.SourceUpdatePrompt{}
+			}
+			return sourceUpdatePrompt(cfg.ProjectDir, source)
+		},
+		EnvFallback: func(source, _ string) (bool, components.NewConfirmParams) {
+			if source == "" {
+				return false, components.NewConfirmParams{}
+			}
+			return envFallbackPrompt(cfg.ProjectDir, cfg.Config, source, "")
+		},
+	}
 }
 
 // filterByPaths returns the available files whose path is in paths, erroring on
@@ -374,6 +385,9 @@ type resolveTargetParams struct {
 	cfg          shared.ConfigResult
 	sourceBranch string
 	choice       extracttui.TargetChoice
+	// create holds the new-worktree answers collected in the combined wizard, used
+	// when choice.CreateNew.
+	create newpicker.WizardResult
 }
 
 // resolveTarget resolves the destination worktree from the --to flag or the
@@ -414,39 +428,13 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 		return extractTarget{path: wt.Path, branch: wt.Branch}, nil
 	}
 
-	return createTargetInteractive(params)
-}
-
-// createTargetInteractive runs the new-worktree wizard with the source's parent
-// branch pre-selected, then creates the worktree. The source-reconciliation and
-// env-fallback confirmations are hosted as steps of that wizard (breadcrumb +
-// back) rather than orphaned prompts after it — declining them backs out to the
-// extract Target step. Only the accepted fast-forward is executed here.
-func createTargetInteractive(params resolveTargetParams) (extractTarget, error) {
-	wiz, err := newpicker.RunWizard(newpicker.WizardParams{
-		ProjectDir:     params.cfg.ProjectDir,
-		Branches:       branchCandidates(params.cfg.ProjectDir),
-		DefaultBranch:  defaultParent(defaultParentParams{cfg: params.cfg, sourceBranch: params.sourceBranch}),
-		ConfigStrategy: params.cfg.Config.Project.Env.Strategy,
-		IncludeBranch:  true,
-		SourceUpdate: func(source string) newpicker.SourceUpdatePrompt {
-			return sourceUpdatePrompt(params.cfg.ProjectDir, source)
-		},
-		EnvFallback: func(source, _ string) (bool, components.NewConfirmParams) {
-			// extract creates the target with the config-default env strategy, so
-			// gauge the fallback against that, ignoring the wizard's env step.
-			return envFallbackPrompt(params.cfg.ProjectDir, params.cfg.Config, source, "")
-		},
-	})
-	if err != nil {
-		return extractTarget{}, err
-	}
-
-	if wiz.FastForwardSource && !executeFastForwardSource(params.cfg.ProjectDir, wiz.FromBranch) {
+	// "Create new" — the branch/source/fast-forward were collected in the combined
+	// wizard (already confirmed on its recap). Only the accepted fast-forward is
+	// executed here; its failure-recovery prompt is a legitimate post-exec standalone.
+	if params.create.FastForwardSource && !executeFastForwardSource(params.cfg.ProjectDir, params.create.FromBranch) {
 		return extractTarget{}, domain.ErrUserAborted
 	}
-
-	return createTarget(createTargetParams{cfg: params.cfg, branch: wiz.BranchName, fromBranch: wiz.FromBranch})
+	return createTarget(createTargetParams{cfg: params.cfg, branch: params.create.BranchName, fromBranch: params.create.FromBranch})
 }
 
 type defaultParentParams struct {
