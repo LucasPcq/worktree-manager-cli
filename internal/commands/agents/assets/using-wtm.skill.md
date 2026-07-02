@@ -46,6 +46,7 @@ self-documenting:
 | `12` | config not found — repo not initialized (`wtm init`) |
 | `14` | service/job not declared in `run.toml` |
 | `15` | `extract`: selected changes conflict with the target worktree |
+| `16` | run module not initialized — run `wtm run init` first |
 
 ## Discovery first — get names before you act
 
@@ -106,7 +107,13 @@ flagged; everything else is what the name implies.
 
 **Dev jobs (`wtm run`)** — jobs live in a per-clone `run.toml` (wtm-managed; never edit it
 directly). Each is a `service` (long-running) or `task` (one-shot, blocks the profile,
-non-zero exit aborts it); profiles are named, ordered job groups.
+non-zero exit aborts it); profiles are named, ordered job groups. The module is **opt-in**
+and **experimental**: the global `wtm init` does not configure it.
+- `run init` sets up `run.toml` from detection (docker-compose + package scripts). It is
+  the only entry point that works before the module exists; every other run command exits
+  `16` (run module not initialized) until at least one job/profile is declared. Non-TTY it
+  auto-generates; re-running merges without overwriting. `run job add` / `run profile add`
+  also work before init (they create the first job).
 - `run up [profile]` / `run down` — start / stop a profile. `run start <job>` / `run stop
   <job>` — one job. A failing job aborts the rest and exits non-zero, leaving started
   services up (fix and re-run).
@@ -124,7 +131,8 @@ non-zero exit aborts it); profiles are named, ordered job groups.
 - `wtm config show` inspects config; `wtm config edit` and the `wtm init` wizard are
   interactive. Bootstrap non-interactively with
   `wtm init --non-interactive [--base-branch … --env-strategy … --install-command …]`, and
-  reconfigure one section later with `wtm init --only <section> --non-interactive --yes`.
+  reconfigure one section later with `wtm init --only env|hooks|worktrees --non-interactive --yes`.
+  Services are **not** part of `wtm init` — configure them with `wtm run init`.
   See their `--help` for the full flag set.
 
 ## Failure handling
@@ -137,6 +145,8 @@ On non-zero exit, read stderr, then:
 - `14` (job not found) → not declared in `run.toml`; check `wtm run list`.
 - `15` (extract conflict) → nothing changed; retry with `--on-conflict resolve` or a
   different `--to`.
+- `16` (run module not initialized) → run `wtm run init` (or `wtm run init --non-interactive`)
+  to create `run.toml`, then re-run the command.
 - `gh: …` → `gh` isn't authenticated; tell the user to run `gh auth login`.
 - A `run up`/`run start` job failed → its captured output is in the JSON error entry; read
   it to see why, fix, and re-run.

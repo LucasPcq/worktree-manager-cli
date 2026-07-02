@@ -2,6 +2,7 @@ package run
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -84,7 +85,12 @@ func TestRunJobRm_OK(t *testing.T) {
 }
 
 func TestRunJobRm_NotFound(t *testing.T) {
-	setupTestProject(t)
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "api", Kind: domain.JobKindService, Cmd: "echo hi"},
+		},
+	})
 
 	_, _, err := runCmd(t, domain.CmdJob, domain.CmdRm, "ghost")
 	if err == nil {
@@ -246,7 +252,15 @@ func TestRunProfileRm_OK(t *testing.T) {
 }
 
 func TestRunProfileRm_NotFound(t *testing.T) {
-	setupTestProject(t)
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "api", Kind: domain.JobKindService, Cmd: "echo hi"},
+		},
+		Profiles: []domain.ProfileConfig{
+			{Name: "dev", Jobs: []string{"api"}},
+		},
+	})
 
 	_, _, err := runCmd(t, domain.CmdProfile, domain.CmdRm, "ghost")
 	if err == nil {
@@ -316,7 +330,12 @@ func TestRunJobRm_JSONOutput(t *testing.T) {
 }
 
 func TestRunJobEdit_NotFound(t *testing.T) {
-	setupTestProject(t)
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "api", Kind: domain.JobKindService, Cmd: "echo hi"},
+		},
+	})
 
 	_, _, err := runCmd(t, domain.CmdJob, domain.CmdEdit, "ghost")
 	if err == nil {
@@ -399,7 +418,15 @@ func TestRunProfileRm_JSONOutput(t *testing.T) {
 }
 
 func TestRunProfileEdit_NotFound(t *testing.T) {
-	setupTestProject(t)
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "api", Kind: domain.JobKindService, Cmd: "echo hi"},
+		},
+		Profiles: []domain.ProfileConfig{
+			{Name: "dev", Jobs: []string{"api"}},
+		},
+	})
 
 	_, _, err := runCmd(t, domain.CmdProfile, domain.CmdEdit, "ghost")
 	if err == nil {
@@ -464,22 +491,20 @@ func TestRunProfileList_JSONOutput(t *testing.T) {
 	}
 }
 
-func TestRunJobList_EmptyJSON(t *testing.T) {
+// TestRunJobList_NotInitialized verifies the opt-in guard: on an uninitialized
+// run module (no run.toml jobs/profiles), a blocked command like `job list`
+// fails with the pedagogical ErrRunNotInitialized rather than emitting output.
+func TestRunJobList_NotInitialized(t *testing.T) {
 	setupTestProject(t)
 
-	stdout, _, err := runCmd(t,
+	_, _, err := runCmd(t,
 		domain.CmdJob, domain.CmdList,
 		"--"+domain.FlagOutput, domain.OutputJSON,
 	)
-	if err != nil {
-		t.Fatalf("run job list --output json (empty): %v", err)
+	if err == nil {
+		t.Fatal("expected error on uninitialized run module")
 	}
-
-	var jobs []domain.JobConfig
-	if err := json.Unmarshal([]byte(stdout), &jobs); err != nil {
-		t.Fatalf("parse JSON: %v\noutput: %s", err, stdout)
-	}
-	if jobs == nil || len(jobs) != 0 {
-		t.Errorf("expected empty array, got: %+v", jobs)
+	if !errors.Is(err, domain.ErrRunNotInitialized) {
+		t.Errorf("expected ErrRunNotInitialized, got: %v", err)
 	}
 }

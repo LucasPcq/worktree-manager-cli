@@ -125,10 +125,13 @@ Full flags live in `wtm <command> --help` and [`docs/`](docs/wtm.md). Overview:
 
 ### Dev jobs *(experimental)*
 
-Per-worktree services + tasks. Functional, but the flow is still stabilizing.
+Per-worktree services + tasks. Functional, but the flow is still stabilizing. The
+run module is **opt-in**: run `wtm run init` once to set it up (the global `wtm init`
+no longer touches services). Until then, run commands stop with a hint pointing there.
 
 | Command | Purpose |
 |---|---|
+| [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts) |
 | [`run up`](docs/wtm_run_up.md) / [`down`](docs/wtm_run_down.md) | Start / stop a profile's jobs |
 | [`run start`](docs/wtm_run_start.md) / [`stop`](docs/wtm_run_stop.md) | Start / stop a single job |
 | [`run ps`](docs/wtm_run_ps.md) / [`list`](docs/wtm_run_list.md) | Running jobs / declared jobs + profiles |
@@ -223,8 +226,10 @@ Hooks interpolate `{{worktree}}`, `{{branch}}`, `{{root}}`, and `{{from_branch}}
 
 ### Run config — `run.toml`
 
-Optional. Declares dev **jobs** and groups them into **profiles**. Per-clone, never
-committed — share layouts with `wtm run export | wtm run import -`.
+Optional and opt-in — created by `wtm run init` (which detects docker-compose files
+and package scripts), not by the global `wtm init`. Declares dev **jobs** and groups
+them into **profiles**. Per-clone, never committed — share layouts with
+`wtm run export | wtm run import -`.
 
 ```toml
 [[job]]

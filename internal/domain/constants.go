@@ -18,11 +18,12 @@ const (
 	ExitCodeUsage = 2
 
 	// Granular exit codes let LLM agents branch precisely on failure cause.
-	ExitCodeWorktreeExists  = 10 // a worktree or its path already exists
-	ExitCodeBranchNotFound  = 11 // the requested branch does not exist locally
-	ExitCodeConfigNotFound  = 12 // the repo has no wtm config (run `wtm init`)
-	ExitCodeServiceNotFound = 14 // the referenced job is not declared in run.toml
-	ExitCodeExtractConflict = 15 // selected changes do not apply cleanly onto the target worktree
+	ExitCodeWorktreeExists    = 10 // a worktree or its path already exists
+	ExitCodeBranchNotFound    = 11 // the requested branch does not exist locally
+	ExitCodeConfigNotFound    = 12 // the repo has no wtm config (run `wtm init`)
+	ExitCodeServiceNotFound   = 14 // the referenced job is not declared in run.toml
+	ExitCodeExtractConflict   = 15 // selected changes do not apply cleanly onto the target worktree
+	ExitCodeRunNotInitialized = 16 // the run module is not initialized (run `wtm run init`)
 
 	// StateDirName is the wtm state directory inside the git common dir
 	// (i.e. <git-common-dir>/wtm/). Never committed — git ignores .git/.
@@ -122,9 +123,8 @@ const (
 	FlagInstallCommand = "install-command"
 
 	// init skip flags — opt out of optional config sections (non-interactive).
-	FlagSkipEnv      = "skip-env"
-	FlagSkipHooks    = "skip-hooks"
-	FlagSkipServices = "skip-services"
+	FlagSkipEnv   = "skip-env"
+	FlagSkipHooks = "skip-hooks"
 
 	// init wizard section gate choices — whether to configure or skip a section.
 	WizardChoiceConfigure = "configure"
@@ -271,6 +271,17 @@ const (
 	// RunFileName is the run config file name (inside <state-dir>/).
 	RunFileName = "run.toml"
 
+	// ExperimentalRunNotice is the single source of truth for the "run is
+	// experimental" wording. Reused by the run-init output, the not-initialized
+	// guard, and the mention printed at the end of `wtm init`, so the caveat
+	// stays consistent everywhere the run module surfaces.
+	ExperimentalRunNotice = "`wtm run` is experimental — the workflow is still stabilizing and commands may change."
+
+	// MsgRunInitHint points users at the dedicated command that configures the
+	// run module, printed at the end of `wtm init` (which no longer configures
+	// services itself).
+	MsgRunInitHint = "Run services per worktree ? Configure them with `wtm run init` (experimental)."
+
 	// SchemasDirName is the directory (inside <state-dir>/ or under the global
 	// config dir) where `wtm schema dump` writes the JSON Schema files
 	// that editors reference via the TOML `#:schema` directive.
@@ -309,6 +320,7 @@ const (
 	// CLI command names — used in Use: declarations and exec.Command(bin, …) call sites.
 	// Centralised here so a rename is a single-file change with no silent breakage.
 	CmdRun      = "run"
+	CmdInit     = "init"
 	CmdGo       = "go"
 	CmdCreate   = "create"
 	CmdClean    = "clean"

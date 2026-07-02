@@ -21,6 +21,8 @@ func ExitCode(err error) int {
 		return domain.ExitCodeConfigNotFound
 	case errors.Is(err, domain.ErrJobNotFound):
 		return domain.ExitCodeServiceNotFound
+	case errors.Is(err, domain.ErrRunNotInitialized):
+		return domain.ExitCodeRunNotInitialized
 	case errors.Is(err, domain.ErrExtractConflict):
 		return domain.ExitCodeExtractConflict
 	default:

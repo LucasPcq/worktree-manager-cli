@@ -37,12 +37,13 @@ func TestParseSections(t *testing.T) {
 		want    []string
 		wantErr bool
 	}{
-		{name: "single", input: []string{"services"}, want: []string{"services"}},
+		{name: "single", input: []string{"env"}, want: []string{"env"}},
 		{name: "worktrees", input: []string{"worktrees"}, want: []string{"worktrees"}},
-		{name: "csv", input: []string{"env,services"}, want: []string{"env", "services"}},
+		{name: "csv", input: []string{"env,hooks"}, want: []string{"env", "hooks"}},
 		{name: "repeated", input: []string{"env", "hooks"}, want: []string{"env", "hooks"}},
 		{name: "dedup", input: []string{"env", "env"}, want: []string{"env"}},
-		{name: "trim", input: []string{" env , services "}, want: []string{"env", "services"}},
+		{name: "trim", input: []string{" env , hooks "}, want: []string{"env", "hooks"}},
+		{name: "services redirected", input: []string{"services"}, wantErr: true},
 		{name: "unknown", input: []string{"nope"}, wantErr: true},
 		{name: "mixed valid+invalid", input: []string{"env,bogus"}, wantErr: true},
 	}
@@ -111,44 +112,6 @@ func TestApplyConfigReinitOnlyRewritesRequestedSection(t *testing.T) {
 	}
 	if len(got.Hooks.OnCreate) != 1 || got.Hooks.OnCreate[0].Cmd != "pnpm install" {
 		t.Errorf("hooks not preserved: %+v", got.Hooks.OnCreate)
-	}
-}
-
-func TestApplyServicesReinitRegeneratesJobsAndPreservesProfiles(t *testing.T) {
-	dir := t.TempDir()
-
-	seedRun := domain.RunConfig{
-		Jobs: []domain.JobConfig{
-			{Name: "stale", Kind: domain.JobKindService, Cmd: "echo stale", Cwd: "."},
-		},
-		Profiles: []domain.ProfileConfig{
-			{Name: "default", Jobs: []string{"stale"}, Default: true},
-		},
-	}
-	if err := config.WriteRun(config.WriteRunParams{StateDir: dir, Config: seedRun}); err != nil {
-		t.Fatalf("seed run config: %v", err)
-	}
-
-	answers := domain.InitProjectAnswers{
-		SelectedPackageScripts: []domain.PackageScript{{Name: "dev"}},
-	}
-
-	if err := applyServicesReinit(newReinitTestCmd(), dir, answers, domain.PkgManagerPnpm); err != nil {
-		t.Fatalf("applyServicesReinit: %v", err)
-	}
-
-	got, err := config.LoadRun(dir)
-	if err != nil {
-		t.Fatalf("LoadRun: %v", err)
-	}
-
-	// Jobs are regenerated from detection — the stale job is gone.
-	if len(got.Jobs) != 1 || got.Jobs[0].Name != "dev" {
-		t.Errorf("jobs not regenerated: %+v", got.Jobs)
-	}
-	// Profiles are carried over untouched.
-	if len(got.Profiles) != 1 || got.Profiles[0].Name != "default" || !got.Profiles[0].Default {
-		t.Errorf("profiles not preserved: %+v", got.Profiles)
 	}
 }
 
