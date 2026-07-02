@@ -312,5 +312,5 @@ func (m HookListModel) helpHint() string {
 	if m.editing {
 		return "  tab next field • space toggle • enter save • esc cancel"
 	}
-	return "  ↑/↓ move • enter select • d delete • shift+↑/↓ reorder • esc back"
+	return "  ↑↓ navigate • enter select • d delete • shift+↑/↓ reorder • esc back"
 }
