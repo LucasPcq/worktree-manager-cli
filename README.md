@@ -15,7 +15,7 @@ and cleanup — replacing manual `git worktree` juggling with one streamlined wo
 | Tool | Required | Purpose |
 |---|---|---|
 | `git` | ✅ Required | Worktree management |
-| `gh` | ⭐ Recommended | PR listing, creation, and checkout |
+| `gh` | ⭐ Recommended | PR listing, creation, checkout, and prune (merged/closed detection) |
 
 `gh` is optional — worktree creation, navigation, hooks, and services all work without
 it. Install and authenticate it to unlock GitHub features: [cli.github.com](https://cli.github.com).
@@ -104,7 +104,7 @@ Full flags live in `wtm <command> --help` and [`docs/`](docs/wtm.md). Overview:
 | [`list`](docs/wtm_list.md) | List all worktrees |
 | [`tree`](docs/wtm_tree.md) | Show the worktree forest (parent → child) |
 | [`clean`](docs/wtm_clean.md) | Remove a worktree and its local branch |
-| [`prune`](docs/wtm_prune.md) | Remove finished worktrees (merged / closed PR / gone) in one pass |
+| [`prune`](docs/wtm_prune.md) | Remove finished worktrees (merged / closed PR / gone) in one pass — merged/closed need `gh` |
 | [`extract`](docs/wtm_extract.md) | Move uncommitted changes to another worktree (split an oversized PR) |
 | [`relocate`](docs/wtm_relocate.md) | Move worktrees to align with `base_path` and adopt external ones |
 
