@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	agentActionCreated = "created"
-	agentActionSkipped = "skipped"
+	agentActionCreated   = "created"
+	agentActionUpdated   = "updated"
+	agentActionUnchanged = "unchanged"
+	agentActionSkipped   = "skipped"
 )
 
 type agentInstallResult struct {
@@ -158,13 +160,25 @@ func applyAgentTarget(t domain.AgentTarget) agentInstallResult {
 }
 
 func writeSkillFile(t domain.AgentTarget) agentInstallResult {
-	if _, err := os.Stat(t.Path); err == nil {
-		return agentInstallResult{Kind: t.Kind, Path: t.Path, Action: agentActionSkipped, Reason: "skill already exists"}
+	content := renderSkillMarkdown()
+
+	existing, err := os.ReadFile(t.Path)
+	if err == nil {
+		if string(existing) == content {
+			return agentInstallResult{Kind: t.Kind, Path: t.Path, Action: agentActionUnchanged}
+		}
+		if writeErr := os.WriteFile(t.Path, []byte(content), 0o644); writeErr != nil {
+			return agentInstallResult{Kind: t.Kind, Path: t.Path, Action: agentActionSkipped, Reason: writeErr.Error()}
+		}
+		return agentInstallResult{Kind: t.Kind, Path: t.Path, Action: agentActionUpdated}
+	}
+	if !os.IsNotExist(err) {
+		return agentInstallResult{Kind: t.Kind, Path: t.Path, Action: agentActionSkipped, Reason: err.Error()}
 	}
 	if err := os.MkdirAll(filepath.Dir(t.Path), 0o755); err != nil {
 		return agentInstallResult{Kind: t.Kind, Path: t.Path, Action: agentActionSkipped, Reason: err.Error()}
 	}
-	if err := os.WriteFile(t.Path, []byte(renderSkillMarkdown()), 0o644); err != nil {
+	if err := os.WriteFile(t.Path, []byte(content), 0o644); err != nil {
 		return agentInstallResult{Kind: t.Kind, Path: t.Path, Action: agentActionSkipped, Reason: err.Error()}
 	}
 	return agentInstallResult{Kind: t.Kind, Path: t.Path, Action: agentActionCreated}
@@ -213,6 +227,10 @@ func printAgentResults(w io.Writer, results []agentInstallResult) {
 			switch r.Action {
 			case agentActionCreated:
 				output.Success(w, fmt.Sprintf("Created %s", r.Path))
+			case agentActionUpdated:
+				output.Update(w, fmt.Sprintf("Updated %s", r.Path))
+			case agentActionUnchanged:
+				output.Unchanged(w, fmt.Sprintf("Up to date %s", r.Path))
 			case agentActionSkipped:
 				if r.Reason != "" {
 					output.Warning(w, fmt.Sprintf("Skipped %s — %s", r.Path, r.Reason))
