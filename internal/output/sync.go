@@ -27,6 +27,27 @@ func FormatSyncPlan(w io.Writer, plan domain.SyncPlan) {
 	}
 }
 
+// SprintSyncPlan returns the cascade preview as a plain (unstyled) string: a
+// header line plus one "branch ← parent" line per step, in execution order.
+// Unlike FormatSyncPlan it emits no ANSI styling, so it can be embedded in a
+// wizard step description that the wizard re-renders in its own muted style.
+// Returns "" when the plan has no rebase steps (e.g. a base-only refresh).
+func SprintSyncPlan(plan domain.SyncPlan) string {
+	if len(plan.Steps) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Sync plan (base: %s)", plan.BaseBranch)
+	for i, step := range plan.Steps {
+		parent := step.SourceBranch
+		if parent == "" {
+			parent = "unknown parent"
+		}
+		fmt.Fprintf(&b, "\n%d. %s ← %s", i+1, step.Branch, parent)
+	}
+	return b.String()
+}
+
 // FormatSyncResult prints the detailed recap of a sync run: the base update and
 // one line per branch (parent, target commit, before→after, replayed count).
 // It is rendered BEFORE the push decision so the user sees what happened before
@@ -133,8 +154,9 @@ func printPushSummary(w io.Writer, steps []domain.SyncStepResult) {
 		Success(w, fmt.Sprintf("Pushed %d branch(es) (force-with-lease): %s", len(pushed), strings.Join(pushed, ", ")))
 	}
 	if len(ready) > 0 {
-		Message(w, fmt.Sprintf("%d branch(es) ready to push (force-with-lease): %s",
-			len(ready), strings.Join(ready, ", ")))
+		// No branch list here: the per-branch recap just above already names them,
+		// so the pending line only needs the count.
+		Message(w, fmt.Sprintf("%d branch(es) ready to push (force-with-lease).", len(ready)))
 	}
 	if len(pushed) == 0 && len(ready) == 0 {
 		Message(w, styles.Muted.Render("Everything is in sync with origin — nothing to push."))

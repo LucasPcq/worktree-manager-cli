@@ -77,12 +77,35 @@ func runSync(cmd *cobra.Command, args []string) error {
 	baseBranch := resolveBase(baseOverride, cfg)
 	interactive := rules.IsHumanFormat(format)
 
+	// planPreview lets the interactive picker render the cascade preview on its
+	// confirmation step without importing the service/output packages. It plans
+	// against the in-progress selection; conflict mode does not affect the plan.
+	planTemplate := worktree.SyncParams{
+		ProjectDir: cfg.ProjectDir,
+		StateDir:   cfg.StateDir,
+		Config:     cfg.Config,
+		BaseBranch: baseBranch,
+		DryRun:     dryRun,
+	}
+	planPreview := func(p syncpicker.PlanPreviewParams) (string, int, error) {
+		preview := planTemplate
+		preview.SelectedBranches = p.Branches
+		plan, err := worktree.PlanSync(preview)
+		if err != nil {
+			return "", 0, err
+		}
+		return output.SprintSyncPlan(plan), len(plan.Steps), nil
+	}
+
 	selection, err := resolveSyncSelection(resolveSyncSelectionParams{
 		Args:         args,
 		All:          all,
 		KeepConflict: keepConflict,
 		CanPrompt:    interactive && term.IsTerminal(int(os.Stdin.Fd())),
 		Cfg:          cfg,
+		BaseBranch:   baseBranch,
+		PlanPreview:  planPreview,
+		SkipConfirm:  dryRun || yes,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
@@ -112,11 +135,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	if interactive && len(plan.Steps) > 0 {
 		output.FrameStart(cmd.ErrOrStderr())
-		output.FormatSyncPlan(cmd.ErrOrStderr(), plan)
-		if !dryRun && !yes && !confirmSync(confirmSyncParams{Count: len(plan.Steps), KeepConflict: syncParams.KeepConflict}) {
-			output.Message(cmd.ErrOrStderr(), "Aborted.")
-			output.FrameEnd(cmd.ErrOrStderr())
-			return nil
+		// The interactive picker already previewed the plan and confirmed it on its
+		// own step (see syncpicker); only the non-picker flow previews/confirms here.
+		if !selection.PlanConfirmed {
+			output.FormatSyncPlan(cmd.ErrOrStderr(), plan)
+			if !dryRun && !yes && !confirmSync(confirmSyncParams{Count: len(plan.Steps), KeepConflict: syncParams.KeepConflict}) {
+				output.Message(cmd.ErrOrStderr(), "Aborted.")
+				output.FrameEnd(cmd.ErrOrStderr())
+				return nil
+			}
 		}
 	}
 
@@ -179,13 +206,21 @@ type resolveSyncSelectionParams struct {
 	KeepConflict bool
 	CanPrompt    bool
 	Cfg          shared.ConfigResult
+	// BaseBranch, PlanPreview and SkipConfirm are forwarded to the interactive
+	// picker so its confirmation step can preview the cascade (see syncpicker).
+	BaseBranch  string
+	PlanPreview func(syncpicker.PlanPreviewParams) (string, int, error)
+	SkipConfirm bool
 }
 
 // syncSelection is the resolved sync target: the branches to rebase (nil means
-// "every worktree") and whether a conflicting rebase is left in progress.
+// "every worktree"), whether a conflicting rebase is left in progress, and
+// whether the plan was already previewed and confirmed interactively (by the
+// picker) so runSync must not preview/confirm it again.
 type syncSelection struct {
-	Branches     []string
-	KeepConflict bool
+	Branches      []string
+	KeepConflict  bool
+	PlanConfirmed bool
 }
 
 // resolveSyncSelection turns the CLI inputs into the branches to sync and the
@@ -226,11 +261,22 @@ func resolveSyncSelection(params resolveSyncSelectionParams) (syncSelection, err
 	result, err := syncpicker.Run(syncpicker.RunParams{
 		Statuses:            statuses,
 		DefaultKeepConflict: params.KeepConflict,
+		BaseBranch:          params.BaseBranch,
+		PlanPreview:         params.PlanPreview,
+		SkipConfirm:         params.SkipConfirm,
 	})
 	if err != nil {
 		return syncSelection{}, err
 	}
-	return syncSelection{Branches: result.Branches, KeepConflict: result.KeepConflict}, nil
+	// Declining the plan on the picker's confirmation step aborts, like Esc.
+	if !result.Confirmed {
+		return syncSelection{}, domain.ErrUserAborted
+	}
+	return syncSelection{
+		Branches:      result.Branches,
+		KeepConflict:  result.KeepConflict,
+		PlanConfirmed: !params.SkipConfirm,
+	}, nil
 }
 
 func renderEmptyPlan(cmd *cobra.Command, base string, interactive bool) error {
@@ -251,11 +297,10 @@ type confirmSyncParams struct {
 func confirmSync(params confirmSyncParams) bool {
 	warning := ""
 	if params.KeepConflict {
-		warning = "On conflict the rebase is left in progress in its worktree (not aborted). " +
-			"Several worktrees may be left mid-rebase; resolve each with git rebase --continue."
+		warning = domain.SyncKeepConflictWarning
 	}
 	cm := components.NewConfirm(components.NewConfirmParams{
-		Title:      fmt.Sprintf("Rebase %d worktree(s) onto their parents?", params.Count),
+		Title:      fmt.Sprintf(domain.SyncConfirmPrompt, params.Count),
 		Warning:    warning,
 		DefaultYes: true,
 	})
@@ -291,8 +336,8 @@ func shouldPush(params shouldPushParams) bool {
 
 func confirmPush(count int) bool {
 	cm := components.NewConfirm(components.NewConfirmParams{
-		Title:      fmt.Sprintf("Push %d rebased branch(es) to origin?", count),
-		Warning:    "This rewrites the remote branches with --force-with-lease.",
+		Title:      fmt.Sprintf(domain.SyncPushPrompt, count),
+		Warning:    domain.SyncPushWarning,
 		DefaultYes: false,
 	})
 	confirmed, err := components.RunStandaloneConfirm(cm)
