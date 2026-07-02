@@ -29,6 +29,23 @@ func IsRemoteBranch(name string) bool {
 	return strings.HasPrefix(name, domain.RemoteBranchPrefix)
 }
 
+// DivergenceStateString maps a DivergenceState to its JSON label. It returns ""
+// for DivergenceUnknown (no origin counterpart) so callers omit the field.
+func DivergenceStateString(state domain.DivergenceState) string {
+	switch state {
+	case domain.DivergenceUpToDate:
+		return domain.DivergenceLabelUpToDate
+	case domain.DivergenceBehind:
+		return domain.DivergenceLabelBehind
+	case domain.DivergenceAhead:
+		return domain.DivergenceLabelAhead
+	case domain.DivergenceDiverged:
+		return domain.DivergenceLabelDiverged
+	default:
+		return ""
+	}
+}
+
 // BranchCandidateExists reports whether ref matches a known start-point (a local
 // branch or a remote-tracking ref like origin/x) in candidates.
 func BranchCandidateExists(candidates []domain.BranchCandidate, ref string) bool {

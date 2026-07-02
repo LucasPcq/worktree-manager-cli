@@ -16,6 +16,7 @@ wtm extract [flags]
 ### Options
 
 ```
+      --ff                   Fast-forward the parent branch to origin before creating the target (non-interactive; skipped when it has diverged)
       --files strings        Files to extract (skips interactive selection)
       --from string          Parent branch when creating the target worktree
   -h, --help                 help for extract

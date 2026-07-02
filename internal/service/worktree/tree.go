@@ -58,6 +58,9 @@ func BuildTree(params BuildTreeParams) (domain.Forest, error) {
 				IsDirty:          st.IsDirty,
 				RebaseInProgress: st.RebaseInProgress,
 				NeedsSync:        needsSync[n.Branch],
+				OriginAhead:      st.OriginAhead,
+				OriginBehind:     st.OriginBehind,
+				OriginState:      st.OriginState,
 				PR:               matchTreePR(n.Branch, params.PRs),
 			},
 		})

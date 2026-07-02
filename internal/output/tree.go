@@ -109,6 +109,7 @@ const (
 	annVirtual treeAnnotation = iota
 	annPR
 	annAhead
+	annOrigin
 	annRebasing
 	annDirty
 	annNeedsSync
@@ -116,7 +117,7 @@ const (
 )
 
 func nodeAnnotations(node *domain.TreeNode) []treeAnnotation {
-	kinds := make([]treeAnnotation, 0, 6)
+	kinds := make([]treeAnnotation, 0, 7)
 	if node.IsVirtual {
 		kinds = append(kinds, annVirtual)
 	}
@@ -125,6 +126,9 @@ func nodeAnnotations(node *domain.TreeNode) []treeAnnotation {
 	}
 	if node.Status.CommitsAhead > 0 {
 		kinds = append(kinds, annAhead)
+	}
+	if hasOriginDivergence(node.Status.OriginState) {
+		kinds = append(kinds, annOrigin)
 	}
 	if node.Status.RebaseInProgress {
 		kinds = append(kinds, annRebasing)
@@ -150,7 +154,9 @@ func formatTreeAnnotations(node *domain.TreeNode) string {
 		case annPR:
 			parts = append(parts, formatTreePR(node.Status.PR))
 		case annAhead:
-			parts = append(parts, styles.Muted.Render(fmt.Sprintf("↑%d", node.Status.CommitsAhead)))
+			parts = append(parts, styles.Muted.Render(fmt.Sprintf("%s %s%d", domain.BadgeTextBase, domain.BadgeGlyphAhead, node.Status.CommitsAhead)))
+		case annOrigin:
+			parts = append(parts, styleOriginAnnotation(node.Status))
 		case annRebasing:
 			parts = append(parts, styles.Warning.Render("⚠ rebasing"))
 		case annDirty:
@@ -162,6 +168,44 @@ func formatTreeAnnotations(node *domain.TreeNode) string {
 		}
 	}
 	return strings.Join(parts, "  ")
+}
+
+// hasOriginDivergence reports whether an origin state warrants an annotation
+// (behind, ahead, or diverged) — up-to-date and unknown show none.
+func hasOriginDivergence(state domain.DivergenceState) bool {
+	switch state {
+	case domain.DivergenceBehind, domain.DivergenceAhead, domain.DivergenceDiverged:
+		return true
+	default:
+		return false
+	}
+}
+
+// originAnnotationText renders the plain "origin ↑a ↓b" label (Mermaid form).
+func originAnnotationText(s domain.TreeNodeStatus) string {
+	switch s.OriginState {
+	case domain.DivergenceBehind:
+		return fmt.Sprintf("%s %s%d", domain.BadgeTextOrigin, domain.BadgeGlyphBehind, s.OriginBehind)
+	case domain.DivergenceAhead:
+		return fmt.Sprintf("%s %s%d", domain.BadgeTextOrigin, domain.BadgeGlyphAhead, s.OriginAhead)
+	case domain.DivergenceDiverged:
+		return fmt.Sprintf("%s %s%d %s%d", domain.BadgeTextOrigin, domain.BadgeGlyphAhead, s.OriginAhead, domain.BadgeGlyphBehind, s.OriginBehind)
+	default:
+		return ""
+	}
+}
+
+// styleOriginAnnotation colors the origin label by state (ASCII form).
+func styleOriginAnnotation(s domain.TreeNodeStatus) string {
+	text := originAnnotationText(s)
+	switch s.OriginState {
+	case domain.DivergenceBehind:
+		return styles.Warning.Render(text)
+	case domain.DivergenceDiverged:
+		return styles.DangerText.Render(text)
+	default:
+		return styles.Muted.Render(text)
+	}
 }
 
 func formatTreePR(pr *domain.WorktreeListPR) string {
@@ -239,7 +283,9 @@ func mermaidLabel(node *domain.TreeNode) string {
 			}
 			parts = append(parts, label)
 		case annAhead:
-			parts = append(parts, fmt.Sprintf("↑%d", node.Status.CommitsAhead))
+			parts = append(parts, fmt.Sprintf("%s %s%d", domain.BadgeTextBase, domain.BadgeGlyphAhead, node.Status.CommitsAhead))
+		case annOrigin:
+			parts = append(parts, originAnnotationText(node.Status))
 		case annRebasing:
 			parts = append(parts, "⚠ rebasing")
 		case annDirty:

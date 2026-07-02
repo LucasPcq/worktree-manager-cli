@@ -76,6 +76,7 @@ const (
 
 	// Flag names.
 	FlagFrom       = "from"
+	FlagFF         = "ff"
 	FlagEnvFrom    = "env-from"
 	FlagForce      = "force"
 	FlagBase       = "base"
@@ -214,10 +215,24 @@ const (
 	// worktree start-point or parent in a branch picker.
 	BadgeTextRemote = "remote"
 
+	// BadgeTextBase and BadgeTextOrigin prefix a worktree's commit badges to name
+	// the referential the arrows count against: "base ↑N" = commits ahead of the
+	// parent/base branch; "origin ↑a ↓b" = divergence from origin/<branch>. Same
+	// glyphs, two referentials — the labels disambiguate them.
+	BadgeTextBase   = "base"
+	BadgeTextOrigin = "origin"
+
 	// Divergence badge glyphs: a local branch ahead of / behind its origin
 	// counterpart is labelled with these in a branch picker (e.g. "↑2 ↓5").
 	BadgeGlyphAhead  = "↑"
 	BadgeGlyphBehind = "↓"
+
+	// Divergence state labels: the string form of a DivergenceState emitted in
+	// JSON output (worktree origin divergence) so agents can branch on it.
+	DivergenceLabelUpToDate = "up-to-date"
+	DivergenceLabelBehind   = "behind"
+	DivergenceLabelAhead    = "ahead"
+	DivergenceLabelDiverged = "diverged"
 
 	// Status pill glyphs: the leading symbol of a worktree row's right-aligned
 	// dirty/clean status pill.
@@ -236,6 +251,10 @@ const (
 	// LoadingBranchesText labels the spinner shown while a branch picker fetches
 	// origin to refresh its divergence badges.
 	LoadingBranchesText = "Fetching branches…"
+
+	// LoadingWorktreesText labels the spinner shown while a worktree list fetches
+	// origin to refresh its divergence badges.
+	LoadingWorktreesText = "Fetching worktrees…"
 
 	// SummaryConfigDefault is the env-step summary shown when no explicit env
 	// strategy is chosen and the project config default applies.

@@ -49,8 +49,8 @@ func TestFormatWorktreeListDirtyAndAhead(t *testing.T) {
 	if !strings.Contains(got, "dirty") {
 		t.Error("expected output to contain 'dirty'")
 	}
-	if !strings.Contains(got, "3 commits ahead") {
-		t.Error("expected output to contain '3 commits ahead'")
+	if !strings.Contains(got, "base ↑3") {
+		t.Error("expected output to contain 'base ↑3'")
 	}
 }
 
@@ -61,8 +61,8 @@ func TestFormatWorktreeListSingleCommitAhead(t *testing.T) {
 		},
 	})
 
-	if !strings.Contains(got, "1 commit ahead") {
-		t.Error("expected '1 commit ahead' (singular)")
+	if !strings.Contains(got, "base ↑1") {
+		t.Error("expected output to contain 'base ↑1'")
 	}
 }
 
@@ -135,15 +135,44 @@ func TestFormatAheadZero(t *testing.T) {
 
 func TestFormatAheadOne(t *testing.T) {
 	got := formatAhead(1)
-	if !strings.Contains(got, "1 commit ahead") {
-		t.Errorf("expected '1 commit ahead' (singular), got %q", got)
+	if !strings.Contains(got, "base ↑1") {
+		t.Errorf("expected 'base ↑1', got %q", got)
 	}
 }
 
 func TestFormatAheadMultiple(t *testing.T) {
 	got := formatAhead(5)
-	if !strings.Contains(got, "5 commits ahead") {
-		t.Errorf("expected '5 commits ahead' (plural), got %q", got)
+	if !strings.Contains(got, "base ↑5") {
+		t.Errorf("expected 'base ↑5', got %q", got)
+	}
+}
+
+func TestFormatOriginStates(t *testing.T) {
+	cases := []struct {
+		name  string
+		s     domain.WorktreeStatus
+		want  string
+		empty bool
+	}{
+		{name: "unknown", s: domain.WorktreeStatus{OriginState: domain.DivergenceUnknown}, empty: true},
+		{name: "up-to-date", s: domain.WorktreeStatus{OriginState: domain.DivergenceUpToDate}, empty: true},
+		{name: "behind", s: domain.WorktreeStatus{OriginState: domain.DivergenceBehind, OriginBehind: 5}, want: "origin ↓5"},
+		{name: "ahead", s: domain.WorktreeStatus{OriginState: domain.DivergenceAhead, OriginAhead: 2}, want: "origin ↑2"},
+		{name: "diverged", s: domain.WorktreeStatus{OriginState: domain.DivergenceDiverged, OriginAhead: 2, OriginBehind: 5}, want: "origin ↑2 ↓5"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := formatOrigin(tc.s)
+			if tc.empty {
+				if got != "" {
+					t.Errorf("expected empty, got %q", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("expected %q, got %q", tc.want, got)
+			}
+		})
 	}
 }
 

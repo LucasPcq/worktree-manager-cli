@@ -13,6 +13,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/branch"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	extracttui "github.com/LucasPcq/wtm/internal/tui/extract"
 	newpicker "github.com/LucasPcq/wtm/internal/tui/newwt"
@@ -33,6 +34,7 @@ func newExtractCmd() *cobra.Command {
 	cmd.Flags().StringSlice(domain.FlagFiles, nil, "Files to extract (skips interactive selection)")
 	cmd.Flags().String(domain.FlagTo, "", "Target worktree branch; created if it does not exist")
 	cmd.Flags().String(domain.FlagFrom, "", "Parent branch when creating the target worktree")
+	cmd.Flags().Bool(domain.FlagFF, false, "Fast-forward the parent branch to origin before creating the target (non-interactive; skipped when it has diverged)")
 	cmd.Flags().Bool(domain.FlagKeep, false, "Copy instead of move (keep the changes in the source)")
 	cmd.Flags().String(domain.FlagOnConflict, "", "On conflict: abort (default) or resolve (write conflict markers in the target)")
 	shared.AddOutputFlag(cmd)
@@ -374,10 +376,18 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 			return extractTarget{path: wt.Path, branch: wt.Branch}, nil
 		}
 		fromFlag, _ := params.cmd.Flags().GetString(domain.FlagFrom)
+		fromBranch := defaultParent(defaultParentParams{cfg: params.cfg, sourceBranch: params.sourceBranch, override: fromFlag})
+		if isInteractive() {
+			if !maybeFastForwardSource(params.cfg.ProjectDir, fromBranch) {
+				return extractTarget{}, domain.ErrUserAborted
+			}
+		} else if ffFlag, _ := params.cmd.Flags().GetBool(domain.FlagFF); ffFlag {
+			_ = branch.FastForwardIfBehind(branch.BranchParams{ProjectDir: params.cfg.ProjectDir, Branch: fromBranch})
+		}
 		return createTarget(createTargetParams{
 			cfg:        params.cfg,
 			branch:     toFlag,
-			fromBranch: defaultParent(defaultParentParams{cfg: params.cfg, sourceBranch: params.sourceBranch, override: fromFlag}),
+			fromBranch: fromBranch,
 		})
 	}
 

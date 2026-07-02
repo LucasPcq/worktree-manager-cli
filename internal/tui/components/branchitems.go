@@ -79,22 +79,38 @@ func branchItem(params branchItemParams) SelectItem {
 	if c.IsRemote {
 		item.Badges = append(item.Badges, Badge{Text: domain.BadgeTextRemote, Variant: BadgeNeutral})
 	}
-	if badge, ok := divergenceBadge(c); ok {
+	if badge, ok := DivergenceBadge(DivergenceBadgeParams{State: c.State, Ahead: c.Ahead, Behind: c.Behind}); ok {
 		item.Badges = append(item.Badges, badge)
 	}
 	return item
 }
 
-// divergenceBadge renders a local branch's ahead/behind state as a compact tag
-// (e.g. "↓5", "↑2 ↓5"). Up-to-date and unknown (no origin counterpart) show none.
-func divergenceBadge(c domain.BranchCandidate) (Badge, bool) {
-	switch c.State {
+// DivergenceBadgeParams holds inputs for DivergenceBadge.
+type DivergenceBadgeParams struct {
+	State  domain.DivergenceState
+	Ahead  int
+	Behind int
+	// Label, when non-empty, is prefixed to the badge text to name the referential
+	// the counts are measured against (e.g. "origin ↑2 ↓5"). Empty renders the bare
+	// glyphs, as branch pickers do (a single, implicit origin referential).
+	Label string
+}
+
+// DivergenceBadge renders an ahead/behind state as a compact tag (e.g. "↓5",
+// "↑2 ↓5", or "origin ↑2 ↓5" when Label is set). Up-to-date and unknown (no origin
+// counterpart) show none.
+func DivergenceBadge(params DivergenceBadgeParams) (Badge, bool) {
+	prefix := ""
+	if params.Label != "" {
+		prefix = params.Label + " "
+	}
+	switch params.State {
 	case domain.DivergenceBehind:
-		return Badge{Text: fmt.Sprintf("%s%d", domain.BadgeGlyphBehind, c.Behind), Variant: BadgeWarning}, true
+		return Badge{Text: fmt.Sprintf("%s%s%d", prefix, domain.BadgeGlyphBehind, params.Behind), Variant: BadgeWarning}, true
 	case domain.DivergenceAhead:
-		return Badge{Text: fmt.Sprintf("%s%d", domain.BadgeGlyphAhead, c.Ahead), Variant: BadgeNeutral}, true
+		return Badge{Text: fmt.Sprintf("%s%s%d", prefix, domain.BadgeGlyphAhead, params.Ahead), Variant: BadgeNeutral}, true
 	case domain.DivergenceDiverged:
-		return Badge{Text: fmt.Sprintf("%s%d %s%d", domain.BadgeGlyphAhead, c.Ahead, domain.BadgeGlyphBehind, c.Behind), Variant: BadgeDanger}, true
+		return Badge{Text: fmt.Sprintf("%s%s%d %s%d", prefix, domain.BadgeGlyphAhead, params.Ahead, domain.BadgeGlyphBehind, params.Behind), Variant: BadgeDanger}, true
 	default:
 		return Badge{}, false
 	}

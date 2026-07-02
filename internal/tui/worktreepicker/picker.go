@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"
 	"github.com/LucasPcq/wtm/internal/tui/components"
+	"github.com/LucasPcq/wtm/internal/tui/worktreerefresh"
 )
 
 // LoadingPRsText is the status-line label shown while PRs stream in.
@@ -70,6 +71,11 @@ type RunParams struct {
 	// a loading badge per row and refreshes badges when the fetch completes.
 	// When set, PRs is ignored (it is loaded lazily instead).
 	PRLoader PRLoaderFunc
+	// ProjectDir/StateDir/Config back the "r" refresh key: pressing r re-fetches
+	// origin and re-lists the worktrees so the divergence badges update in place.
+	ProjectDir string
+	StateDir   string
+	Config     domain.Config
 }
 
 // Run shows the picker and returns the selected worktree.
@@ -85,38 +91,61 @@ func Run(params RunParams) (domain.WorktreeStatus, error) {
 	styles.UseRendererOn(os.Stderr)
 
 	loading := params.PRLoader != nil
-	items := make([]components.SelectItem, 0, len(params.Statuses))
-	for i, s := range params.Statuses {
-		status := BuildStatus(s)
-		items = append(items, components.SelectItem{
-			Label: s.Branch,
-			Value: strconv.Itoa(i),
-			Badges: BuildTags(BuildTagsParams{
-				Status:   s,
-				PRs:      params.PRs,
-				Services: params.Services,
-			}),
-			Status: &status,
-		})
+
+	// holder backs the rows and is swapped in place when the user presses "r"
+	// (re-fetch origin + re-list); lastPRs is the most recent async PR set. Both
+	// the initial build and every in-place rebuild read through them so a refresh
+	// keeps the streamed PR badges.
+	holder := &params.Statuses
+	lastPRs := params.PRs
+	buildItems := func() []components.SelectItem {
+		items := make([]components.SelectItem, 0, len(*holder))
+		for i, s := range *holder {
+			status := BuildStatus(s)
+			items = append(items, components.SelectItem{
+				Label: s.Branch,
+				Value: strconv.Itoa(i),
+				Badges: BuildTags(BuildTagsParams{
+					Status:   s,
+					PRs:      lastPRs,
+					Services: params.Services,
+				}),
+				Status: &status,
+			})
+		}
+		return items
 	}
+
+	listParams := domain.ListParams{ProjectDir: params.ProjectDir, StateDir: params.StateDir, Config: params.Config}
 
 	wiz := components.NewWizardWithParams(components.WizardParams{
 		Steps: []components.Step{
 			{
-				Name:  params.Title,
-				Model: components.NewSelectList(components.NewSelectListParams{Title: params.Title, Items: items}),
+				Name:       params.Title,
+				Model:      components.NewSelectList(components.NewSelectListParams{Title: params.Title, Items: buildItems()}),
+				Build:      func([]components.Step) any { return components.NewSelectList(components.NewSelectListParams{Title: params.Title, Items: buildItems()}) },
+				CanRefresh: true,
 			},
 		},
 		InitCmd:     PRLoadCmd(params.PRLoader),
 		Loading:     loading,
 		LoadingText: LoadingPRsText,
 		OnMsg: func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+			if cmd, handled := worktreerefresh.Handle(worktreerefresh.HandleParams{
+				Wizard:     w,
+				Msg:        msg,
+				ListParams: listParams,
+				Holder:     holder,
+			}); handled {
+				return cmd, true
+			}
 			loaded, ok := msg.(PRsLoadedMsg)
 			if !ok {
 				return nil, false
 			}
+			lastPRs = loaded.PRs
 			badges := BadgesByValue(BadgesByValueParams{
-				Statuses: params.Statuses,
+				Statuses: *holder,
 				PRs:      loaded.PRs,
 				Services: params.Services,
 			})
@@ -146,11 +175,11 @@ func Run(params RunParams) (domain.WorktreeStatus, error) {
 	if err != nil {
 		return domain.WorktreeStatus{}, fmt.Errorf("parse worktree index: %w", err)
 	}
-	if idx < 0 || idx >= len(params.Statuses) {
+	if idx < 0 || idx >= len(*holder) {
 		return domain.WorktreeStatus{}, fmt.Errorf("worktree index out of range")
 	}
 
-	return params.Statuses[idx], nil
+	return (*holder)[idx], nil
 }
 
 // BuildTagsParams holds the inputs for BuildTags.
@@ -182,6 +211,20 @@ func BuildTags(params BuildTagsParams) []components.Badge {
 			tags = append(tags, components.Badge{Text: "services", Variant: components.BadgeSuccess})
 			break
 		}
+	}
+	if s.CommitsAhead > 0 {
+		tags = append(tags, components.Badge{
+			Text:    fmt.Sprintf("%s %s%d", domain.BadgeTextBase, domain.BadgeGlyphAhead, s.CommitsAhead),
+			Variant: components.BadgeNeutral,
+		})
+	}
+	if badge, ok := components.DivergenceBadge(components.DivergenceBadgeParams{
+		State:  s.OriginState,
+		Ahead:  s.OriginAhead,
+		Behind: s.OriginBehind,
+		Label:  domain.BadgeTextOrigin,
+	}); ok {
+		tags = append(tags, badge)
 	}
 	return tags
 }
