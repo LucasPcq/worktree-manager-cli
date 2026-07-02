@@ -214,9 +214,11 @@ func pickWorktreeAndAction(params pickParams) (domain.WorktreeStatus, string, []
 	wiz := components.NewWizardWithParams(components.WizardParams{
 		Steps: []components.Step{
 			{
-				Name:       "Worktree",
-				Model:      components.NewSelectList(components.NewSelectListParams{Title: "Select a worktree", Items: buildWtItems()}),
-				Build:      func([]components.Step) any { return components.NewSelectList(components.NewSelectListParams{Title: "Select a worktree", Items: buildWtItems()}) },
+				Name:  "Worktree",
+				Model: components.NewSelectList(components.NewSelectListParams{Title: "Select a worktree", Items: buildWtItems()}),
+				Build: func([]components.Step) any {
+					return components.NewSelectList(components.NewSelectListParams{Title: "Select a worktree", Items: buildWtItems()})
+				},
 				CanRefresh: true,
 				Summary: func(m any) string {
 					sl, ok := m.(components.SelectListModel)

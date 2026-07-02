@@ -149,22 +149,39 @@ func TestBuildProjectAnswers_SkipHooks(t *testing.T) {
 	}
 }
 
-func TestBuildProjectAnswers_SkipServices(t *testing.T) {
+// TestBuildProjectAnswers_NoServices asserts the global init no longer configures
+// services: even when docker-compose files and scripts are detected, the answers
+// carry no services — that surface belongs to `wtm run init` now.
+func TestBuildProjectAnswers_NoServices(t *testing.T) {
 	detection := domain.InitDetectionResult{
 		BaseBranch:         "main",
 		DockerComposeFiles: []string{"docker-compose.yml"},
 		DockerComposeCmd:   "docker compose",
 		PackageScripts:     []domain.PackageScript{{Name: "dev"}},
 	}
-	got, err := rules.BuildProjectAnswers(rules.InitProjectFlags{SkipServices: true}, detection)
+	got, err := rules.BuildProjectAnswers(rules.InitProjectFlags{}, detection)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !got.SkipServices {
-		t.Error("SkipServices = false, want true")
-	}
 	if len(got.DockerComposeFiles) != 0 || len(got.SelectedPackageScripts) != 0 {
-		t.Errorf("services not skipped: docker=%v scripts=%v", got.DockerComposeFiles, got.SelectedPackageScripts)
+		t.Errorf("global init should not populate services: docker=%v scripts=%v", got.DockerComposeFiles, got.SelectedPackageScripts)
+	}
+}
+
+// TestAutoServicesAnswers verifies the non-interactive `wtm run init` path pulls
+// every detected docker-compose file and package script into the answers.
+func TestAutoServicesAnswers(t *testing.T) {
+	detection := domain.InitDetectionResult{
+		DockerComposeFiles: []string{"docker-compose.yml"},
+		DockerComposeCmd:   "docker compose",
+		PackageScripts:     []domain.PackageScript{{Name: "dev"}},
+	}
+	got := rules.AutoServicesAnswers(detection)
+	if len(got.DockerComposeFiles) != 1 || got.DockerComposeCmd != "docker compose" {
+		t.Errorf("docker not carried: files=%v cmd=%q", got.DockerComposeFiles, got.DockerComposeCmd)
+	}
+	if len(got.SelectedPackageScripts) != 1 {
+		t.Errorf("scripts not carried: %v", got.SelectedPackageScripts)
 	}
 }
 

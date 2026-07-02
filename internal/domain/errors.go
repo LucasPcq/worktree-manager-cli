@@ -55,6 +55,11 @@ var (
 	// ErrJobNotFound is returned when a referenced job is not declared in run.toml.
 	ErrJobNotFound = errors.New("job not found")
 
+	// ErrRunNotInitialized is returned when a run command runs before the run
+	// module is initialized — run.toml is absent or declares no job/profile. The
+	// message points at the dedicated setup command.
+	ErrRunNotInitialized = errors.New("run module not initialized — run `wtm run init` first")
+
 	// ErrExtractConflict is returned when the selected changes do not apply
 	// cleanly onto the target worktree. The extraction is aborted and the source
 	// worktree is left untouched.

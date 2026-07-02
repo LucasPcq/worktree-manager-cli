@@ -75,11 +75,6 @@ func Message(w io.Writer, msg string) {
 	fmt.Fprintf(w, "%s%s\n", Indent, msg)
 }
 
-// Intro prints a styled introductory message used to open an interactive flow.
-func Intro(w io.Writer, msg string) {
-	fmt.Fprintf(w, "%s%s %s\n", Indent, styles.Primary.Render("›"), styles.Bold.Render(msg))
-}
-
 // Blank prints an empty line for vertical spacing.
 func Blank(w io.Writer) {
 	fmt.Fprintln(w)

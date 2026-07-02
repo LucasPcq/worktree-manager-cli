@@ -6,6 +6,14 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
+// IsRunInitialized reports whether the run module counts as initialized: its
+// run.toml declares at least one job or profile. An absent run.toml loads as an
+// empty RunConfig, so this doubles as the "run.toml missing" check. The
+// not-initialized guard on run commands is built on this predicate.
+func IsRunInitialized(cfg domain.RunConfig) bool {
+	return len(cfg.Jobs) > 0 || len(cfg.Profiles) > 0
+}
+
 // IsDetached reports whether the job is a service with a stop command,
 // meaning the launcher process exits after starting detached work
 // (e.g. docker compose up -d).

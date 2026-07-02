@@ -42,11 +42,11 @@ type WorktreeStatus struct {
 // WorktreeListEntry is the JSON-serializable projection of a worktree for the
 // `list --output json` payload.
 type WorktreeListEntry struct {
-	Branch           string          `json:"branch"`
-	Path             string          `json:"path"`
-	IsParent         bool            `json:"is_parent"`
-	IsDirty          bool            `json:"is_dirty"`
-	RebaseInProgress bool            `json:"rebase_in_progress"`
+	Branch           string              `json:"branch"`
+	Path             string              `json:"path"`
+	IsParent         bool                `json:"is_parent"`
+	IsDirty          bool                `json:"is_dirty"`
+	RebaseInProgress bool                `json:"rebase_in_progress"`
 	CommitsAhead     int                 `json:"commits_ahead"`
 	CreatedAt        time.Time           `json:"created_at"`
 	Origin           *WorktreeListOrigin `json:"origin"`

@@ -18,6 +18,7 @@ Run commands and profiles declared in <git-common-dir>/wtm/run.toml — long-run
 * [wtm run down](wtm_run_down.md)	 - Stop jobs running in the current worktree
 * [wtm run export](wtm_run_export.md)	 - Export run.toml as JSON on stdout
 * [wtm run import](wtm_run_import.md)	 - Import a JSON run config into run.toml
+* [wtm run init](wtm_run_init.md)	 - Configure the run module (services & tasks) for this repo
 * [wtm run job](wtm_run_job.md)	 - Add, remove, or edit jobs in run.toml
 * [wtm run list](wtm_run_list.md)	 - List jobs and profiles declared in run.toml
 * [wtm run logs](wtm_run_logs.md)	 - Attach to a job's output

@@ -23,7 +23,6 @@ func parseSections(raw []string) ([]string, error) {
 		domain.SectionWorktrees: true,
 		domain.SectionEnv:       true,
 		domain.SectionHooks:     true,
-		domain.SectionServices:  true,
 	}
 	seen := map[string]bool{}
 	var sections []string
@@ -33,9 +32,12 @@ func parseSections(raw []string) ([]string, error) {
 			if name == "" {
 				continue
 			}
+			if name == domain.SectionServices {
+				return nil, fmt.Errorf("services moved to a dedicated command — run `wtm run init` (experimental) to configure them")
+			}
 			if !valid[name] {
-				return nil, fmt.Errorf("unknown section %q for --%s (valid: %s, %s, %s, %s)",
-					name, domain.FlagOnly, domain.SectionWorktrees, domain.SectionEnv, domain.SectionHooks, domain.SectionServices)
+				return nil, fmt.Errorf("unknown section %q for --%s (valid: %s, %s, %s)",
+					name, domain.FlagOnly, domain.SectionWorktrees, domain.SectionEnv, domain.SectionHooks)
 			}
 			if !seen[name] {
 				seen[name] = true
@@ -66,7 +68,7 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 		}
 		answers = built
 	} else {
-		prefill, err := buildPrefill(stateDir, detection)
+		prefill, err := buildPrefill(stateDir)
 		if err != nil {
 			return err
 		}
@@ -100,11 +102,6 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 
 	output.FrameStart(cmd.OutOrStdout())
 
-	if contains(sections, domain.SectionServices) {
-		if err := applyServicesReinit(cmd, stateDir, answers, detection.PackageManager); err != nil {
-			return err
-		}
-	}
 	if contains(sections, domain.SectionWorktrees) || contains(sections, domain.SectionEnv) || contains(sections, domain.SectionHooks) {
 		if err := applyConfigReinit(cmd, stateDir, sections, answers); err != nil {
 			return err
@@ -115,25 +112,18 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 	return nil
 }
 
-// buildPrefill snapshots the current config + run files so the interactive
-// re-init wizard pre-selects what's already configured.
-func buildPrefill(stateDir string, detection domain.InitDetectionResult) (*initwizard.SectionPrefill, error) {
+// buildPrefill snapshots the current config so the interactive re-init wizard
+// pre-selects what's already configured.
+func buildPrefill(stateDir string) (*initwizard.SectionPrefill, error) {
 	cfg, err := config.LoadProjectRaw(stateDir)
 	if err != nil {
 		return nil, fmt.Errorf("load project config: %w", err)
 	}
-	runCfg, err := config.LoadRun(stateDir)
-	if err != nil {
-		return nil, fmt.Errorf("load run config: %w", err)
-	}
-
 	return &initwizard.SectionPrefill{
-		BaseBranch:    cfg.Worktrees.BaseBranch,
-		EnvStrategy:   string(cfg.Env.Strategy),
-		EnvCopyFiles:  toSet(cfg.Env.CopyFiles),
-		OnCreate:      cfg.Hooks.OnCreate,
-		DockerFiles:   rules.DockerFilesConfigured(runCfg, detection.DockerComposeFiles),
-		ScriptIndices: rules.ScriptsConfigured(runCfg, detection.PackageScripts, detection.PackageManager),
+		BaseBranch:   cfg.Worktrees.BaseBranch,
+		EnvStrategy:  string(cfg.Env.Strategy),
+		EnvCopyFiles: toSet(cfg.Env.CopyFiles),
+		OnCreate:     cfg.Hooks.OnCreate,
 	}, nil
 }
 
@@ -176,25 +166,6 @@ func buildReinitAnswers(cmd *cobra.Command, stateDir string, detection domain.In
 	}, detection)
 }
 
-// applyServicesReinit regenerates run.toml jobs from detection while preserving
-// the existing profiles.
-func applyServicesReinit(cmd *cobra.Command, stateDir string, answers domain.InitProjectAnswers, pm domain.PackageManager) error {
-	existing, err := config.LoadRun(stateDir)
-	if err != nil {
-		return fmt.Errorf("load run config: %w", err)
-	}
-
-	built := rules.BuildInitRunConfig(answers, pm)
-	newRun := domain.RunConfig{Jobs: built.Jobs, Profiles: existing.Profiles}
-
-	if err := config.WriteRun(config.WriteRunParams{StateDir: stateDir, Config: newRun, Force: true}); err != nil {
-		return fmt.Errorf("write run config: %w", err)
-	}
-
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Regenerated run.toml: %d job(s), %d profile(s) preserved", len(newRun.Jobs), len(newRun.Profiles)))
-	return nil
-}
-
 // applyConfigReinit rewrites config.toml, updating only the requested sections
 // and preserving every other section's current values.
 func applyConfigReinit(cmd *cobra.Command, stateDir string, sections []string, answers domain.InitProjectAnswers) error {
@@ -233,8 +204,6 @@ func reinitWarning(sections []string) string {
 			lines = append(lines, "config.toml [env] will be rewritten")
 		case domain.SectionHooks:
 			lines = append(lines, "config.toml [hooks] will be rewritten")
-		case domain.SectionServices:
-			lines = append(lines, "run.toml jobs will be regenerated (profiles preserved)")
 		}
 	}
 	return strings.Join(lines, "; ")

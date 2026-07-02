@@ -41,6 +41,10 @@ func runExport(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("load run config: %w", err)
 	}
 
+	if err := shared.RequireRunInitialized(runCfg); err != nil {
+		return err
+	}
+
 	profile, _ := cmd.Flags().GetString(domain.FlagProfile)
 	if profile != "" {
 		runCfg, err = rules.FilterToProfile(runCfg, profile)

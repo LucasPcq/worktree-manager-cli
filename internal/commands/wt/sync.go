@@ -343,4 +343,3 @@ func confirmPush(count int) bool {
 	confirmed, err := components.RunStandaloneConfirm(cm)
 	return err == nil && confirmed
 }
-

@@ -55,5 +55,4 @@ type InitProjectAnswers struct {
 	SelectedPackageScripts []PackageScript
 	SkipEnv                bool
 	SkipHooks              bool
-	SkipServices           bool
 }

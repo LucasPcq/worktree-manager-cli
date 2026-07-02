@@ -121,9 +121,11 @@ func Run(params RunParams) (domain.WorktreeStatus, error) {
 	wiz := components.NewWizardWithParams(components.WizardParams{
 		Steps: []components.Step{
 			{
-				Name:       params.Title,
-				Model:      components.NewSelectList(components.NewSelectListParams{Title: params.Title, Items: buildItems()}),
-				Build:      func([]components.Step) any { return components.NewSelectList(components.NewSelectListParams{Title: params.Title, Items: buildItems()}) },
+				Name:  params.Title,
+				Model: components.NewSelectList(components.NewSelectListParams{Title: params.Title, Items: buildItems()}),
+				Build: func([]components.Step) any {
+					return components.NewSelectList(components.NewSelectListParams{Title: params.Title, Items: buildItems()})
+				},
 				CanRefresh: true,
 			},
 		},

@@ -46,6 +46,9 @@ func runStop(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load run config: %w", err)
 	}
+	if err := shared.RequireRunInitialized(runCfg); err != nil {
+		return err
+	}
 	if _, declared := rules.FindJob(runCfg, args[0]); !declared {
 		return fmt.Errorf("%w: %s", domain.ErrJobNotFound, args[0])
 	}
