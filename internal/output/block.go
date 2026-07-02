@@ -40,6 +40,18 @@ func Success(w io.Writer, msg string) {
 	fmt.Fprintf(w, "%s%s %s\n", Indent, styles.Success.Render("✓"), msg)
 }
 
+// Update prints a styled update line: "  ↻ message".
+// Mirrors Success but signals that an existing artifact was refreshed.
+func Update(w io.Writer, msg string) {
+	fmt.Fprintf(w, "%s%s %s\n", Indent, styles.Primary.Render("↻"), msg)
+}
+
+// Unchanged prints a muted no-op line: "  = message".
+// Use it when an artifact already matched the desired state and nothing was written.
+func Unchanged(w io.Writer, msg string) {
+	fmt.Fprintf(w, "%s%s %s\n", Indent, styles.Muted.Render("="), styles.Muted.Render(msg))
+}
+
 // Error prints a styled error line: "  ✗ message".
 // If msg contains newlines (e.g. captured subprocess output), only the first
 // line rides next to the cross; the rest is indented underneath so terminal
