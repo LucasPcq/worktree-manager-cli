@@ -390,4 +390,78 @@ const (
 	// No or Esc leaves the rebased branches local.
 	SyncPushWarning = "Force-pushes the rebased branches with --force-with-lease. " +
 		"No or Esc skips the push — branches stay local."
+
+	// SyncPlanComputing is the loading message shown while the sync plan preview is
+	// computed asynchronously on entering the confirmation step.
+	SyncPlanComputing = "Computing sync plan…"
+
+	// Source-reconciliation and env-fallback prompts shared by the create and
+	// extract flows — used both by the in-wizard confirmation steps and the
+	// standalone confirms on the non-interactive --from path. Format verbs:
+	// %s source branch, %d commit counts.
+
+	// SourceFastForwardPrompt offers to fast-forward a behind-only source branch
+	// to origin before creating the worktree (source, behind).
+	SourceFastForwardPrompt = "%s is %d commit(s) behind origin — fast-forward it before creating?"
+	// SourceFastForwardDescription explains what the fast-forward does. Declining
+	// keeps the source as-is rather than aborting.
+	SourceFastForwardDescription = "Updates your local branch to origin so the new worktree starts up to date. " +
+		"Skipped if its worktree has uncommitted changes."
+	// SourceDivergedPrompt warns that a diverged source can't be fast-forwarded and
+	// asks whether to create from it anyway (source, ahead, behind).
+	SourceDivergedPrompt = "%s has diverged from origin (%d ahead, %d behind) — create the worktree from it anyway?"
+	// SourceDivergedWarning explains the consequence of a diverged source.
+	SourceDivergedWarning = "It can't be fast-forwarded. The worktree starts from your local branch, missing commits " +
+		"that are on origin — you may have to rebase or resolve conflicts later."
+	// SourceProceedStalePrompt asks whether to create from a stale local source
+	// after a fast-forward failed (source, behind).
+	SourceProceedStalePrompt = "Create the worktree from local %s anyway? (behind origin by %d)"
+	// SourceProceedStaleWarning reports why the fast-forward failed (cause).
+	SourceProceedStaleWarning = "Couldn't fast-forward: %v"
+
+	// EnvParentFallbackPrompt warns, before creating, that the "parent" env
+	// strategy will source .env from main because the source has no local worktree
+	// (source).
+	EnvParentFallbackPrompt = "%s has no local worktree — copy .env from the main worktree instead of the parent?"
+	// EnvParentFallbackWarning explains why the fallback happens.
+	EnvParentFallbackWarning = "The \"parent\" env strategy needs the source branch checked out to copy its .env; " +
+		"without a worktree it comes from main."
+
+	// PruneReparentPrompt is the confirmation shown when a prune leaves child
+	// worktrees that can be reparented onto their grandparent (count). Hosted as a
+	// step of the prune picker so declining goes back rather than aborting.
+	PruneReparentPrompt = "Reparent %d child worktree(s) onto their grandparent?"
+	// PruneReparentIntro precedes the list of children a prune would otherwise
+	// orphan, shown in the reparent confirmation.
+	PruneReparentIntro = "These children would otherwise be left orphaned:"
+
+	// CleanReparentPrompt is the confirmation shown when cleaning a worktree that
+	// has children which can be reparented onto their grandparent (count,
+	// grandparent). Hosted as a step of the clean confirm wizard.
+	CleanReparentPrompt = "Reparent %d child worktree(s) onto %s?"
+	// CleanReparentIntro precedes the list of children a clean would otherwise
+	// orphan, shown in the reparent confirmation.
+	CleanReparentIntro = "These children would otherwise be left orphaned:"
+
+	// WizardCancelLabel is the constant final option on every wizard recap step —
+	// the single explicit cancellation point (alongside Esc on the first step).
+	// Kept identical across commands so "No, cancel" always reads and sits the same.
+	WizardCancelLabel = "No, cancel"
+	// WizardCancelValue is the sentinel carried by the WizardCancelLabel row; the
+	// command layer maps a chosen WizardCancelValue to ErrUserAborted.
+	WizardCancelValue = "__wtm_wizard_cancel__"
+	// WizardRecapTitle heads the final recap step, marking it visually as the
+	// synthesis and action point.
+	WizardRecapTitle = "Review & confirm"
+
+	// MultiSelectHint is the shared footer hint for multi-select wizard steps, kept
+	// identical across commands (sync, prune, extract) so the controls always read
+	// the same.
+	MultiSelectHint = "Space to toggle, a to select all, / to filter, enter to confirm, esc to cancel."
+
+	// PinnedSuffixDefault, PinnedSuffixBase, and PinnedSuffixDetected label the
+	// pinned first row of a branch picker, sharing one leading-space convention.
+	PinnedSuffixDefault  = " (default)"
+	PinnedSuffixBase     = " (base)"
+	PinnedSuffixDetected = " (detected)"
 )

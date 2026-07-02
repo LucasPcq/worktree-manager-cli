@@ -15,6 +15,9 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
+// relocateApply is the recap step's action value.
+const relocateApply = "apply"
+
 // RunParams holds the inputs for the relocate wizard.
 type RunParams struct {
 	ProjectDir string
@@ -80,12 +83,14 @@ type parentStepParams struct {
 func parentStep(params parentStepParams) components.Step {
 	build := func() any {
 		return components.NewSelectList(components.NewSelectListParams{
-			Title:       "Parent for " + params.Branch,
-			Description: "Recorded as the worktree's parent so `wtm sync` can rebase it.",
+			Title: "Parent for " + params.Branch,
+			Description: params.Branch + " was created outside wtm, so it has no recorded parent. " +
+				"Pick the branch `wtm sync` should rebase it onto — its files stay where they are. " +
+				"The full set of moves and adoptions is recapped on the final step.",
 			Items: components.BranchItems(components.BranchItemsParams{
 				Candidates:   *params.Holder,
 				Pinned:       params.BaseBranch,
-				PinnedSuffix: "  (default)",
+				PinnedSuffix: domain.PinnedSuffixDefault,
 				Exclude:      params.Branch,
 			}),
 		})
@@ -97,29 +102,33 @@ func parentStep(params parentStepParams) components.Step {
 		Build:      func([]components.Step) any { return build() },
 		CanRefresh: true,
 		Summary:    components.SelectSummary,
+		Callout:    true,
 	}
 }
 
 func applyStep(params RunParams) components.Step {
-	step := components.Step{Name: "Apply"}
+	step := components.Step{Name: "Apply", Recap: true, Summary: components.SelectSummary}
 	if len(params.Adoptions) == 0 {
 		// No pickers precede this step, so the wizard never calls Build (it skips
 		// index 0). Build the recap directly from the plan.
-		step.Model = newApplyConfirm(params.Plan, nil)
+		step.Model = newApplyRecap(params.Plan, nil)
 		return step
 	}
 	step.Build = func(prev []components.Step) any {
-		return newApplyConfirm(params.Plan, extractParents(prev, params.Adoptions))
+		return newApplyRecap(params.Plan, extractParents(prev, params.Adoptions))
 	}
-	step.Model = newApplyConfirm(params.Plan, nil)
+	step.Model = newApplyRecap(params.Plan, nil)
 	return step
 }
 
-func newApplyConfirm(plan domain.RelocatePlan, parents map[string]string) components.ConfirmModel {
-	return components.NewConfirm(components.NewConfirmParams{
-		Title:       "Apply these changes?",
+func newApplyRecap(plan domain.RelocatePlan, parents map[string]string) components.SelectListModel {
+	return components.NewSelectList(components.NewSelectListParams{
 		Description: buildRecap(plan, parents),
-		DefaultYes:  true,
+		Items: []components.SelectItem{
+			{Label: "Yes, apply", Value: relocateApply},
+			{Separator: true},
+			{Label: domain.WizardCancelLabel, Value: domain.WizardCancelValue},
+		},
 	})
 }
 
@@ -196,6 +205,6 @@ func lastStepConfirmed(steps []components.Step) bool {
 	if len(steps) == 0 {
 		return false
 	}
-	cm, ok := steps[len(steps)-1].Model.(components.ConfirmModel)
-	return ok && cm.Confirmed()
+	sl, ok := steps[len(steps)-1].Model.(components.SelectListModel)
+	return ok && sl.Value() == relocateApply
 }

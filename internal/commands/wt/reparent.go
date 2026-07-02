@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -30,6 +31,7 @@ func newReparentCmd() *cobra.Command {
 	}
 
 	cmd.Flags().String(domain.FlagTo, "", "New parent branch to rebase onto")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Reparent straight from the flags without the interactive wizard (needs the worktree and --to)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -37,8 +39,13 @@ func newReparentCmd() *cobra.Command {
 
 func runReparent(cmd *cobra.Command, args []string) error {
 	to, _ := cmd.Flags().GetString(domain.FlagTo)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	interactive := rules.IsHumanFormat(format)
+	humanOutput := rules.IsHumanFormat(format)
+	// The wizard (and its confirmation recap) needs a TTY and is skipped by --yes; a
+	// human-format run without a terminal also falls back to the non-interactive path.
+	// This gates the wizard only — the output format still follows --output.
+	interactive := humanOutput && !yes && term.IsTerminal(int(os.Stdin.Fd()))
 
 	dir, err := os.Getwd()
 	if err != nil {
@@ -60,6 +67,9 @@ func runReparent(cmd *cobra.Command, args []string) error {
 		Interactive: interactive,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "Aborted.")
+		})
 		return nil
 	}
 	if err != nil {
@@ -77,7 +87,7 @@ func runReparent(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if !interactive {
+	if !humanOutput {
 		return output.WriteReparentJSON(cmd.OutOrStdout(), result)
 	}
 
@@ -103,20 +113,19 @@ type resolveReparentTargetsParams struct {
 	Interactive bool
 }
 
-// resolveReparentTargets fills in the worktree and new parent. When both are
-// already supplied it returns them untouched. Otherwise an interactive run opens
-// the multi-step wizard for whichever is missing; a non-interactive run is a usage
-// error (there is no picker to fall back to).
+// resolveReparentTargets fills in the worktree and new parent. A non-interactive
+// run requires both (there is no picker to fall back to). An interactive run always
+// opens the wizard — picking whatever is missing and confirming on a final recap,
+// even when both were given as flags (mirrors create --from).
 func resolveReparentTargets(params resolveReparentTargetsParams) (branch, newParent string, err error) {
-	if params.Branch != "" && params.NewParent != "" {
-		return params.Branch, params.NewParent, nil
-	}
-
 	if !params.Interactive {
 		if params.Branch == "" {
 			return "", "", fmt.Errorf("specify a worktree (no interactive picker in --%s %s mode)", domain.FlagOutput, domain.OutputJSON)
 		}
-		return "", "", fmt.Errorf("specify the new parent with --%s (no interactive picker in --%s %s mode)", domain.FlagTo, domain.FlagOutput, domain.OutputJSON)
+		if params.NewParent == "" {
+			return "", "", fmt.Errorf("specify the new parent with --%s (no interactive picker in --%s %s mode)", domain.FlagTo, domain.FlagOutput, domain.OutputJSON)
+		}
+		return params.Branch, params.NewParent, nil
 	}
 
 	res, err := reparenttui.RunWizard(reparenttui.RunWizardParams{

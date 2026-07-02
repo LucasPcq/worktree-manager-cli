@@ -6,12 +6,18 @@ package reparent
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/service/branch"
 	"github.com/LucasPcq/wtm/internal/tui/branchrefresh"
 	"github.com/LucasPcq/wtm/internal/tui/components"
+)
+
+const (
+	stepConfirm    = "Confirm"
+	reparentAction = "reparent"
 )
 
 // RunWizardParams holds the inputs for the reparent wizard. A non-empty Branch or
@@ -76,20 +82,34 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 		}))
 	}
 
-	final, err := components.RunWizard(components.RunWizardParams{
-		Steps:       steps,
-		Stderr:      true,
-		ErrLabel:    "reparent wizard",
-		InitCmd:     branchrefresh.Cmd(params.ProjectDir),
-		Loading:     true,
-		LoadingText: domain.LoadingBranchesText,
-		OnMsg:       branchrefresh.Handler(params.ProjectDir, holder),
-	})
+	// The recap is always the last step, even when both the worktree and the parent
+	// were given as flags — the interactive run still confirms before recording.
+	steps = append(steps, recapStep(recapStepParams{
+		WorktreeStepIdx: worktreeStep,
+		ParentStepIdx:   parentStepIdx,
+		PresetBranch:    params.Branch,
+		PresetParent:    params.NewParent,
+		CurrentParents:  params.CurrentParents,
+	}))
+
+	// The background branch refresh only feeds the parent picker; skip it (and its
+	// loading spinner) when --to fixed the parent and there is no picker.
+	wp := components.RunWizardParams{Steps: steps, Stderr: true, ErrLabel: "reparent wizard"}
+	if parentStepIdx >= 0 {
+		wp.InitCmd = branchrefresh.Cmd(params.ProjectDir)
+		wp.Loading = true
+		wp.LoadingText = domain.LoadingBranchesText
+		wp.OnMsg = branchrefresh.Handler(params.ProjectDir, holder)
+	}
+	final, err := components.RunWizard(wp)
 	if err != nil {
 		return RunResult{}, err
 	}
 
 	done := final.Steps()
+	if stepValueByName(done, stepConfirm) == domain.WizardCancelValue {
+		return RunResult{}, domain.ErrUserAborted
+	}
 	result := RunResult{Branch: params.Branch, NewParent: params.NewParent}
 	if worktreeStep >= 0 {
 		result.Branch = stepValue(done, worktreeStep)
@@ -98,6 +118,64 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 		result.NewParent = stepValue(done, parentStepIdx)
 	}
 	return result, nil
+}
+
+// recapStepParams holds inputs for the reparent recap.
+type recapStepParams struct {
+	WorktreeStepIdx int
+	ParentStepIdx   int
+	PresetBranch    string
+	PresetParent    string
+	CurrentParents  map[string]string
+}
+
+// recapStep builds the final, unconditional recap: it restates the worktree, its
+// current parent, and its new parent, then offers "Yes, reparent" then the
+// constant "No, cancel".
+func recapStep(params recapStepParams) components.Step {
+	return components.RecapStep(components.RecapStepParams{
+		Name: stepConfirm,
+		Build: func(prev []components.Step) components.RecapContent {
+			branch := params.PresetBranch
+			if params.WorktreeStepIdx >= 0 {
+				branch = stepValue(prev, params.WorktreeStepIdx)
+			}
+			parent := params.PresetParent
+			if params.ParentStepIdx >= 0 {
+				parent = stepValue(prev, params.ParentStepIdx)
+			}
+			current := params.CurrentParents[branch]
+			if current == "" {
+				current = "(none recorded)"
+			}
+			desc := strings.Join([]string{
+				"Worktree:        " + branch,
+				"Current parent:  " + current,
+				"New parent:      " + parent,
+				"",
+				"Applied on the next sync.",
+			}, "\n")
+			return components.RecapContent{
+				Description: desc,
+				Actions: []components.SelectItem{
+					{Label: "Yes, reparent", Value: reparentAction},
+				},
+			}
+		},
+	})
+}
+
+// stepValueByName reads the chosen value of the named SelectList step.
+func stepValueByName(steps []components.Step, name string) string {
+	for _, s := range steps {
+		if s.Name != name {
+			continue
+		}
+		if sl, ok := s.Model.(components.SelectListModel); ok {
+			return sl.Value()
+		}
+	}
+	return ""
 }
 
 type parentStepParams struct {

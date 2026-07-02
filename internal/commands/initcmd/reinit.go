@@ -72,32 +72,34 @@ func runReinit(cmd *cobra.Command, dir, stateDir string, sections []string) erro
 		if err != nil {
 			return err
 		}
-		wizardAnswers, err := initwizard.RunSectionWizard(dir, sections, detection, prefill)
+		// The re-init confirmation is the wizard's final step (unless --yes), so Esc
+		// on it returns to the section steps instead of aborting the whole flow.
+		yes, _ := cmd.Flags().GetBool(domain.FlagYes)
+		var confirm *components.NewConfirmParams
+		if !yes {
+			confirm = &components.NewConfirmParams{
+				Title:       "Re-initialize " + strings.Join(sections, ", "),
+				Description: "This regenerates the selected section(s) cleanly.",
+				Warning:     reinitWarning(sections),
+			}
+		}
+		wizardAnswers, err := initwizard.RunSectionWizard(initwizard.SectionWizardParams{
+			ProjectDir: dir,
+			Sections:   sections,
+			Detection:  detection,
+			Prefill:    prefill,
+			Confirm:    confirm,
+		})
 		if errors.Is(err, domain.ErrUserAborted) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		answers = wizardAnswers
-	}
-
-	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
-	if !yes && !nonInteractive {
-		confirmed, err := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
-			Title:       "Re-initialize " + strings.Join(sections, ", "),
-			Description: "This regenerates the selected section(s) cleanly.",
-			Warning:     reinitWarning(sections),
-		}))
-		if errors.Is(err, components.ErrAborted) || (err == nil && !confirmed) {
 			output.Frame(cmd.OutOrStdout(), func() {
-				output.Message(cmd.OutOrStdout(), "Cancelled.")
+				output.Message(cmd.OutOrStdout(), "Aborted.")
 			})
 			return nil
 		}
 		if err != nil {
 			return err
 		}
+		answers = wizardAnswers
 	}
 
 	output.FrameStart(cmd.OutOrStdout())

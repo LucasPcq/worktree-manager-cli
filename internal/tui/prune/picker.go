@@ -15,23 +15,57 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// Confirm choices for the second step.
+// Confirm-step action choices (the constant "No, cancel" row uses
+// domain.WizardCancelValue).
 const (
 	confirmYes   = "yes"
 	confirmForce = "force"
-	confirmNo    = "no"
 )
 
-// RunResult is the picker outcome: the checked branches and whether the user
-// confirmed with force (allowing unsafe worktrees to be removed).
+// Reparent-step choices.
+const (
+	reparentYes = "reparent"
+	reparentNo  = "orphan"
+)
+
+// Step names, used for construction and value extraction.
+const (
+	stepWorktrees = "Worktrees"
+	stepReparent  = "Reparent children"
+	stepConfirm   = "Confirm"
+)
+
+// ReparentPreviewFunc computes, for the current selection and force choice, the
+// children a prune would orphan and could reparent onto their grandparent.
+// Injected by the command layer so the picker stays free of prune business logic.
+type ReparentPreviewFunc func(chosen []string, force bool) []domain.ReparentResult
+
+// RunParams holds the inputs for the prune picker.
+type RunParams struct {
+	Plan domain.PrunePlan
+	// ReparentPreview derives the reparent moves shown in the final confirmation
+	// step from the live selection; nil disables the step.
+	ReparentPreview ReparentPreviewFunc
+}
+
+// RunResult is the picker outcome: the checked branches, whether the user
+// confirmed with force (allowing unsafe worktrees to be removed), and — when the
+// reparent step applied — whether surviving children should be reparented.
 type RunResult struct {
 	Branches []string
 	Force    bool
+	// ReparentAsked is true when the reparent step was shown; ReparentChildren
+	// then holds the user's answer (reparent vs leave orphaned).
+	ReparentAsked    bool
+	ReparentChildren bool
 }
 
-// Run shows the candidate multi-select (unsafe ones tagged and left unchecked)
-// then a confirmation screen. Returns domain.ErrUserAborted on Esc or "No".
-func Run(plan domain.PrunePlan) (RunResult, error) {
+// Run shows the candidate multi-select (unsafe ones tagged and left unchecked),
+// a confirmation screen, then — when children would be orphaned — a reparent
+// confirmation, all in one wizard. Returns domain.ErrUserAborted on Esc at the
+// first step or the explicit "No, cancel".
+func Run(params RunParams) (RunResult, error) {
+	plan := params.Plan
 	// The picker may be reached through a shell wrapper that captures stdout, so
 	// force lipgloss to detect color against stderr (the TTY).
 	styles.UseRendererOn(os.Stderr)
@@ -50,19 +84,23 @@ func Run(plan domain.PrunePlan) (RunResult, error) {
 
 	ms := components.NewMultiSelect(components.NewMultiSelectParams{
 		Title:       "Select worktrees to prune",
-		Description: "Space to toggle, a to select all, / to filter, enter to continue, esc to cancel.",
+		Description: domain.MultiSelectHint,
 		Items:       items,
 	})
 
+	// Order: multi-select → reparent (optional select) → confirm recap (last).
+	// The reparent decision precedes the recap so the recap is reliably the final,
+	// unconditional action point.
+	steps := []components.Step{
+		{Name: stepWorktrees, Model: ms},
+	}
+	if params.ReparentPreview != nil {
+		steps = append(steps, reparentStep(params.ReparentPreview))
+	}
+	steps = append(steps, confirmStep(plan, params.ReparentPreview))
+
 	final, err := components.RunWizard(components.RunWizardParams{
-		Steps: []components.Step{
-			{Name: "Worktrees", Model: ms},
-			{
-				Name:  "Confirm",
-				Model: confirmStep(nil, plan),
-				Build: func(prev []components.Step) any { return confirmStep(prev, plan) },
-			},
-		},
+		Steps:    steps,
 		Stderr:   true,
 		ErrLabel: "prune picker",
 	})
@@ -70,49 +108,141 @@ func Run(plan domain.PrunePlan) (RunResult, error) {
 		return RunResult{}, err
 	}
 
-	steps := final.Steps()
-	msModel, ok := steps[0].Model.(components.MultiSelectModel)
-	if !ok {
-		return RunResult{}, errors.New("unexpected model type")
-	}
-	confirm, ok := steps[1].Model.(components.SelectListModel)
+	finalSteps := final.Steps()
+	msModel, ok := finalSteps[0].Model.(components.MultiSelectModel)
 	if !ok {
 		return RunResult{}, errors.New("unexpected model type")
 	}
 
-	if confirm.Value() == confirmNo {
+	if stepSelectValue(finalSteps, stepConfirm) == domain.WizardCancelValue {
 		return RunResult{}, domain.ErrUserAborted
 	}
-	return RunResult{
+	result := RunResult{
 		Branches: msModel.Values(),
-		Force:    confirm.Value() == confirmForce,
-	}, nil
+		Force:    stepSelectValue(finalSteps, stepConfirm) == confirmForce,
+	}
+	if idx := stepIndex(finalSteps, stepReparent); idx >= 0 && !final.Skipped(idx) {
+		result.ReparentAsked = true
+		result.ReparentChildren = stepSelectValue(finalSteps, stepReparent) == reparentYes
+	}
+	return result, nil
 }
 
-// confirmStep builds the confirmation choice. It recaps the count and the
-// reparenting that will follow, and offers a danger "force" option only when an
-// unsafe worktree (dirty, unpushed, or open PR) is currently checked.
-func confirmStep(prev []components.Step, plan domain.PrunePlan) components.SelectListModel {
-	selected := selectedBranches(prev)
-	desc := confirmDescription(selected)
-
-	items := []components.SelectItem{{Label: "Yes, prune", Value: confirmYes}}
-	if anyUnsafeSelected(selected, plan) {
-		items = append(items,
-			components.SelectItem{Separator: true},
-			components.SelectItem{Label: "Yes, force prune (bypass safety checks)", Value: confirmForce, Danger: true},
-		)
-	}
-	items = append(items,
-		components.SelectItem{Separator: true},
-		components.SelectItem{Label: "No, cancel", Value: confirmNo},
-	)
-
-	return components.NewSelectList(components.NewSelectListParams{
-		Title:       "Proceed with prune?",
-		Description: desc,
-		Items:       items,
+// reparentStep builds the conditional reparent decision as a select: it derives
+// the orphaned children from the live selection and is skipped (with a reason)
+// when the prune leaves no children to reparent. It precedes the confirm recap so
+// every option merely advances — Esc returns to the multi-select, never aborting.
+// The preview assumes force so it lists the maximal set of children; the actual
+// reparent plan is recomputed by the command layer from the confirmed force value.
+func reparentStep(preview ReparentPreviewFunc) components.Step {
+	return components.ChoiceStep(components.ChoiceStepParams{
+		Name:    stepReparent,
+		Summary: reparentSummary,
+		Decide: func(prev []components.Step) (bool, string, components.NewSelectListParams) {
+			moves := preview(selectedBranches(prev), true)
+			if len(moves) == 0 {
+				return false, "no children to reparent", components.NewSelectListParams{}
+			}
+			return true, "", components.NewSelectListParams{
+				Description: reparentProposalText(moves),
+				Items: []components.SelectItem{
+					{Label: fmt.Sprintf("Reparent onto grandparent (%d)", len(moves)), Value: reparentYes},
+					{Separator: true},
+					{Label: "Leave orphaned", Value: reparentNo},
+				},
+			}
+		},
 	})
+}
+
+// reparentSummary labels the reparent choice in the completed-step summaries.
+func reparentSummary(model any) string {
+	sl, ok := model.(components.SelectListModel)
+	if !ok {
+		return ""
+	}
+	if sl.Value() == reparentYes {
+		return "reparent onto grandparent"
+	}
+	return "leave orphaned"
+}
+
+// stepSelectValue reads the chosen value of the named SelectList step.
+func stepSelectValue(steps []components.Step, name string) string {
+	for _, s := range steps {
+		if s.Name != name {
+			continue
+		}
+		if sl, ok := s.Model.(components.SelectListModel); ok {
+			return sl.Value()
+		}
+	}
+	return ""
+}
+
+// stepIndex returns the position of the named step, or -1 when absent.
+func stepIndex(steps []components.Step, name string) int {
+	for i, s := range steps {
+		if s.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// reparentProposalText lists the children a prune would orphan and where each
+// would be reparented, as the reparent step's description.
+func reparentProposalText(moves []domain.ReparentResult) string {
+	lines := make([]string, 0, len(moves)+1)
+	lines = append(lines, domain.PruneReparentIntro)
+	for _, m := range moves {
+		lines = append(lines, fmt.Sprintf("  • %s will rebase onto %s instead of %s", m.Branch, m.NewParent, m.OldParent))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// confirmStep builds the final recap step. It recaps what will be pruned, the
+// reparent decision made earlier, and offers a danger "force" option only when an
+// unsafe worktree (dirty, unpushed, or open PR) is currently checked, followed by
+// the constant "No, cancel" row.
+func confirmStep(plan domain.PrunePlan, preview ReparentPreviewFunc) components.Step {
+	return components.RecapStep(components.RecapStepParams{
+		Name: stepConfirm,
+		Build: func(prev []components.Step) components.RecapContent {
+			selected := selectedBranches(prev)
+			desc := confirmDescription(selected)
+			if line := reparentRecapLine(prev, preview, selected); line != "" {
+				desc += "\n\n" + line
+			}
+			actions := []components.SelectItem{{Label: "Yes, prune", Value: confirmYes}}
+			if anyUnsafeSelected(selected, plan) {
+				actions = append(actions,
+					components.SelectItem{Separator: true},
+					components.SelectItem{Label: "Yes, force prune (bypass safety checks)", Value: confirmForce, Danger: true},
+				)
+			}
+			return components.RecapContent{
+				Description: desc,
+				Actions:     actions,
+			}
+		},
+	})
+}
+
+// reparentRecapLine summarizes the reparent decision (made on the earlier step)
+// for the recap, or "" when there are no children to reparent.
+func reparentRecapLine(prev []components.Step, preview ReparentPreviewFunc, selected []string) string {
+	if preview == nil {
+		return ""
+	}
+	moves := preview(selected, true)
+	if len(moves) == 0 {
+		return ""
+	}
+	if stepSelectValue(prev, stepReparent) == reparentYes {
+		return fmt.Sprintf("Then reparent %d child worktree(s) onto their grandparent.", len(moves))
+	}
+	return fmt.Sprintf("Then leave %d child worktree(s) orphaned.", len(moves))
 }
 
 // confirmDescription recaps the worktrees the confirmed prune will remove. The

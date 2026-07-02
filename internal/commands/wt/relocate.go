@@ -90,19 +90,17 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 	}
 
 	if interactive && !yes {
-		// Frame top lives on stderr alongside the plan. With --yes there is no
-		// plan, so the frame opens on stdout via the result's leading blank below
-		// (mirrors sync), avoiding a blank stacked against an empty stderr section.
-		output.FrameStart(cmd.ErrOrStderr())
-		output.FormatRelocatePlan(cmd.ErrOrStderr(), plan)
-		// No separator blank here: the wizard owns its leading blank.
+		// The plan is recapped by the wizard's own "Apply" step, so nothing is
+		// printed before it — on abort the wizard clears and only "Aborted." remains,
+		// instead of a plan preview lingering above the prompt.
 		res, werr := runRelocateWizard(cfg, plan, params.BaseBranch)
 		if werr != nil {
 			return werr
 		}
 		if !res.Confirmed {
-			output.Message(cmd.ErrOrStderr(), "Aborted.")
-			output.FrameEnd(cmd.ErrOrStderr())
+			output.Frame(cmd.OutOrStdout(), func() {
+				output.Message(cmd.OutOrStdout(), "Aborted.")
+			})
 			return nil
 		}
 		params.Parents = res.Parents
@@ -119,11 +117,9 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 	}
 
 	if interactive {
-		// The blank separates the plan/spinner section (stderr) from the result
-		// (stdout); it replaces the spinner's former self-padding.
-		output.Blank(cmd.OutOrStdout())
-		output.FormatRelocateResult(cmd.OutOrStdout(), result)
-		output.FrameEnd(cmd.OutOrStdout())
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.FormatRelocateResult(cmd.OutOrStdout(), result)
+		})
 	} else if jsonErr := output.WriteRelocateResultJSON(cmd.OutOrStdout(), result); jsonErr != nil {
 		return jsonErr
 	}

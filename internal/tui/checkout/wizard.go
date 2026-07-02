@@ -5,6 +5,7 @@ package checkout
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -15,10 +16,14 @@ import (
 )
 
 const (
-	stepPR     = "Pull request"
-	stepParent = "Parent branch"
-	stepEnv    = "Env strategy"
+	stepPR      = "Pull request"
+	stepParent  = "Parent branch"
+	stepEnv     = "Env strategy"
+	stepConfirm = "Confirm"
 )
+
+// checkoutConfirm is the recap's action value.
+const checkoutConfirm = "checkout"
 
 // WizardParams holds inputs for the checkout wizard.
 type WizardParams struct {
@@ -38,6 +43,15 @@ type WizardParams struct {
 	// value is already fixed by a flag (--from / --env-from).
 	IncludeParent bool
 	IncludeEnv    bool
+	// FromOverride / EnvOverride are the --from / --env-from flag values, used to
+	// resolve the effective source and env for the env-fallback confirmation when
+	// their step is not shown.
+	FromOverride string
+	EnvOverride  string
+	// EnvFallback, when set, adds a conditional confirmation after the env step:
+	// given the resolved source and env override it decides whether the "parent"
+	// strategy falls back to copying .env from main. Injected by the command layer.
+	EnvFallback func(source, envOverride string) (show bool, params components.NewConfirmParams)
 }
 
 // WizardResult holds the answers from the checkout wizard. FromBranch and
@@ -70,8 +84,15 @@ func runPreselected(params WizardParams) (WizardResult, error) {
 	}
 
 	if len(steps) == 0 {
+		// Everything is fixed by flags — nothing to review, so no wizard (and no
+		// recap): this is effectively a non-interactive checkout.
 		return WizardResult{PR: *params.Preselected}, nil
 	}
+
+	preselected := *params.Preselected
+	steps = append(steps, recapStep(params, func([]components.Step) string {
+		return prDisplay(preselected)
+	}))
 
 	wiz := components.NewWizardWithParams(components.WizardParams{
 		Steps: steps,
@@ -80,6 +101,9 @@ func runPreselected(params WizardParams) (WizardResult, error) {
 	final, err := runProgram(wiz)
 	if err != nil {
 		return WizardResult{}, err
+	}
+	if stepConfirmValue(final.Steps()) == domain.WizardCancelValue {
+		return WizardResult{}, domain.ErrUserAborted
 	}
 
 	res := extractStepValues(final.Steps())
@@ -109,6 +133,17 @@ func runPicker(params WizardParams) (WizardResult, error) {
 	if params.IncludeEnv {
 		steps = append(steps, envStep(params.ConfigStrategy))
 	}
+	steps = append(steps, recapStep(params, func(prev []components.Step) string {
+		sl, ok := stepModel(prev, stepPR)
+		if !ok {
+			return ""
+		}
+		num, _ := strconv.Atoi(sl.Value())
+		if pr, found := findPR(loadedPRs, num); found {
+			return prDisplay(pr)
+		}
+		return ""
+	}))
 
 	refresh := branchrefresh.Handler(params.ProjectDir, holder)
 	wiz := components.NewWizardWithParams(components.WizardParams{
@@ -143,6 +178,9 @@ func runPicker(params WizardParams) (WizardResult, error) {
 	final, err := runProgram(wiz)
 	if err != nil {
 		return WizardResult{}, err
+	}
+	if stepConfirmValue(final.Steps()) == domain.WizardCancelValue {
+		return WizardResult{}, domain.ErrUserAborted
 	}
 
 	res := extractStepValues(final.Steps())
@@ -248,6 +286,90 @@ func baseBranchForSelection(prev []components.Step, prs []domain.PRInfo) string 
 	return ""
 }
 
+// recapStep builds the final, unconditional recap for checkout: it recaps the PR,
+// parent, and env, folds the env fallback into a ⚠ line, and offers
+// "Yes, checkout" then the constant "No, cancel". prLabel resolves the chosen PR's
+// display text (fixed for a preselected PR, or looked up from the picked number).
+func recapStep(params WizardParams, prLabel func(prev []components.Step) string) components.Step {
+	return components.RecapStep(components.RecapStepParams{
+		Name: stepConfirm,
+		Build: func(prev []components.Step) components.RecapContent {
+			return components.RecapContent{
+				Description: buildCheckoutRecap(prev, params, prLabel),
+				Actions: []components.SelectItem{
+					{Label: "Yes, checkout", Value: checkoutConfirm},
+				},
+			}
+		},
+	})
+}
+
+// buildCheckoutRecap recaps the selections with a ⚠ line for the env fallback.
+func buildCheckoutRecap(prev []components.Step, params WizardParams, prLabel func(prev []components.Step) string) string {
+	var lines []string
+	if pr := prLabel(prev); pr != "" {
+		lines = append(lines, "PR:      "+pr)
+	}
+	source := resolveSource(prev, params.FromOverride, params.Preselected)
+	if source != "" {
+		lines = append(lines, "Parent:  "+source)
+	}
+	env := resolveEnv(prev, params.EnvOverride)
+	envLabel := env
+	if envLabel == "" {
+		envLabel = domain.SummaryConfigDefault
+	}
+	lines = append(lines, "Env:     "+envLabel)
+
+	if params.EnvFallback != nil {
+		if show, p := params.EnvFallback(source, env); show && p.Warning != "" {
+			lines = append(lines, "", "⚠ "+p.Warning)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// prDisplay renders a PR as "#<number> <title>" for the recap.
+func prDisplay(pr domain.PRInfo) string {
+	return fmt.Sprintf("#%d %s", pr.Number, pr.Title)
+}
+
+// stepConfirmValue reads the value chosen on the recap step.
+func stepConfirmValue(steps []components.Step) string {
+	if sl, ok := stepModel(steps, stepConfirm); ok {
+		return sl.Value()
+	}
+	return ""
+}
+
+// resolveSource resolves the effective parent/source branch for the env-fallback
+// check: the --from override, else the chosen parent step, else the preselected
+// PR's base branch.
+func resolveSource(prev []components.Step, fromOverride string, preselected *domain.PRInfo) string {
+	if fromOverride != "" {
+		return fromOverride
+	}
+	if sl, ok := stepModel(prev, stepParent); ok && sl.Value() != "" {
+		return sl.Value()
+	}
+	if preselected != nil {
+		return preselected.BaseBranch
+	}
+	return ""
+}
+
+// resolveEnv resolves the effective env override: the --env-from override, else
+// the chosen env step.
+func resolveEnv(prev []components.Step, envOverride string) string {
+	if envOverride != "" {
+		return envOverride
+	}
+	if sl, ok := stepModel(prev, stepEnv); ok {
+		return sl.Value()
+	}
+	return ""
+}
+
 func envStep(strategy domain.EnvStrategy) components.Step {
 	return components.Step{
 		Name: stepEnv,
@@ -320,7 +442,7 @@ func buildBranchItems(branches []domain.BranchCandidate, base string) []componen
 	return components.BranchItems(components.BranchItemsParams{
 		Candidates:   branches,
 		Pinned:       base,
-		PinnedSuffix: " (base)",
+		PinnedSuffix: domain.PinnedSuffixBase,
 	})
 }
 

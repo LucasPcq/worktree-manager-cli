@@ -13,6 +13,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/tui/components"
+	newpicker "github.com/LucasPcq/wtm/internal/tui/newwt"
 )
 
 // newWorktreeValue is the sentinel SelectList value for the "create new" entry.
@@ -34,12 +35,11 @@ type RunParams struct {
 	NeedFiles    bool
 	NeedTarget   bool
 	NeedMode     bool
-	// Preselected marks files already chosen on a previous pass so they stay
-	// checked when the wizard is re-entered.
-	Preselected []string
-	// StartAtTarget re-enters the wizard on the Target step (with Files already
-	// answered), used when the user backs out of the new-worktree sub-flow.
-	StartAtTarget bool
+	// Create configures the embedded "create new worktree" sub-flow, inserted after
+	// the target step and auto-skipped unless the target is "create new". Only used
+	// when NeedTarget. Its Source is "" (source picked), IncludeBranch true,
+	// IncludeEnv false (the new worktree uses the config-default env strategy).
+	Create newpicker.WizardParams
 }
 
 // RunResult holds the wizard answers. Only the fields for the requested steps
@@ -48,6 +48,9 @@ type RunResult struct {
 	Files  []string
 	Target TargetChoice
 	Keep   bool
+	// Create holds the new-worktree answers (branch/source/fast-forward) when
+	// Target.CreateNew; zero otherwise.
+	Create newpicker.WizardResult
 }
 
 const (
@@ -55,47 +58,73 @@ const (
 	modeKeep = "keep"
 )
 
-// Run shows the extraction wizard and returns the selected files and target.
-// Returns domain.ErrUserAborted when the user cancels at the first step.
+// Step name and action value for the final recap.
+const (
+	stepConfirm    = "Confirm"
+	extractConfirm = "extract"
+)
+
+// Step names, used for construction and name-based value extraction.
+const (
+	stepFiles  = "Files"
+	stepTarget = "Target worktree"
+	stepMode   = "Mode"
+)
+
+// Run shows the extraction wizard and returns the selected files, target, and —
+// when the target is "create new" — the new-worktree answers. The create sub-flow
+// is embedded so a single combined recap covers both create and extract. Returns
+// domain.ErrUserAborted when the user cancels.
 func Run(params RunParams) (RunResult, error) {
-	var (
-		steps         []components.Step
-		fileStepIdx   = -1
-		targetStepIdx = -1
-		modeStepIdx   = -1
-	)
+	var steps []components.Step
 
 	if params.NeedFiles {
-		fileStepIdx = len(steps)
 		steps = append(steps, components.Step{
-			Name:    "Files",
-			Model:   newFileSelect(params.Files, params.Preselected),
+			Name:    stepFiles,
+			Model:   newFileSelect(params.Files, nil),
 			Summary: fileSummary,
 		})
 	}
 	if params.NeedTarget {
-		targetStepIdx = len(steps)
 		steps = append(steps, components.Step{
-			Name:    "Target worktree",
+			Name:    stepTarget,
 			Model:   newTargetSelect(params.Worktrees, params.SourceBranch),
 			Summary: targetSummary,
 		})
 	}
+
+	// The create sub-flow, inserted after the target step and auto-skipped unless
+	// the target is "create new" — so creating the worktree and extracting share
+	// one combined recap instead of two.
+	var createFlow newpicker.CreateFlow
+	if params.NeedTarget {
+		createFlow = newpicker.CreateSteps(params.Create, isNewTarget)
+		steps = append(steps, createFlow.Steps...)
+	}
+
 	if params.NeedMode {
-		modeStepIdx = len(steps)
 		steps = append(steps, components.Step{
-			Name:    "Mode",
-			Model:   newModeSelect(params.SourceBranch),
+			Name:    stepMode,
+			Model:   newModeSelect(newModeSelectParams{SourceBranch: params.SourceBranch}),
 			Summary: modeSummary,
 		})
 	}
 
-	start := 0
-	if params.StartAtTarget && targetStepIdx > 0 {
-		start = targetStepIdx
+	// Combined recap: files + target (existing branch, or "new worktree <branch>
+	// from <source>") + mode + ⚠ create warnings, then "No, cancel".
+	steps = append(steps, components.RecapStep(components.RecapStepParams{
+		Name:  stepConfirm,
+		Build: func(prev []components.Step) components.RecapContent { return buildCombinedRecap(prev, params) },
+	}))
+
+	wp := components.WizardParams{
+		Steps:       steps,
+		InitCmd:     createFlow.InitCmd,
+		OnMsg:       createFlow.OnMsg,
+		LoadingText: createFlow.LoadingText,
+		Loading:     createFlow.InitCmd != nil,
 	}
-	wiz := components.NewWizardAtStep(steps, start)
-	finalModel, err := tea.NewProgram(wiz).Run()
+	finalModel, err := tea.NewProgram(components.NewWizardWithParams(wp)).Run()
 	if err != nil {
 		return RunResult{}, fmt.Errorf("extract wizard: %w", err)
 	}
@@ -104,30 +133,91 @@ func Run(params RunParams) (RunResult, error) {
 	if !ok || final.Aborted() {
 		return RunResult{}, domain.ErrUserAborted
 	}
+	steps = final.Steps()
+	if v, _ := stepSelectValue(steps, stepConfirm); v == domain.WizardCancelValue {
+		return RunResult{}, domain.ErrUserAborted
+	}
 
 	var result RunResult
-	if fileStepIdx >= 0 {
-		ms, ok := final.Steps()[fileStepIdx].Model.(components.MultiSelectModel)
-		if !ok {
-			return RunResult{}, fmt.Errorf("unexpected model type for files step")
-		}
+	if ms, ok := stepModelByName(steps, stepFiles).(components.MultiSelectModel); ok {
 		result.Files = ms.Values()
 	}
-	if targetStepIdx >= 0 {
-		sl, ok := final.Steps()[targetStepIdx].Model.(components.SelectListModel)
-		if !ok {
-			return RunResult{}, fmt.Errorf("unexpected model type for target step")
+	if v, ok := stepSelectValue(steps, stepTarget); ok {
+		result.Target = parseTarget(v)
+		if result.Target.CreateNew {
+			result.Create = newpicker.ReadCreateResult(steps, params.Create)
 		}
-		result.Target = parseTarget(sl.Value())
 	}
-	if modeStepIdx >= 0 {
-		sl, ok := final.Steps()[modeStepIdx].Model.(components.SelectListModel)
-		if !ok {
-			return RunResult{}, fmt.Errorf("unexpected model type for mode step")
-		}
-		result.Keep = sl.Value() == modeKeep
+	if v, ok := stepSelectValue(steps, stepMode); ok {
+		result.Keep = v == modeKeep
 	}
 	return result, nil
+}
+
+// isNewTarget reports whether the chosen target is the "create new worktree" entry
+// — the gate for the embedded create steps.
+func isNewTarget(steps []components.Step) bool {
+	v, _ := stepSelectValue(steps, stepTarget)
+	return v == newWorktreeValue
+}
+
+// buildCombinedRecap recaps whichever of the file/target/mode steps are present,
+// expanding a "create new" target into its branch/source and folding in the create
+// warnings.
+func buildCombinedRecap(prev []components.Step, params RunParams) components.RecapContent {
+	var lines []string
+	if ms, ok := stepModelByName(prev, stepFiles).(components.MultiSelectModel); ok {
+		lines = append(lines, "Files:   "+strings.Join(ms.Values(), ", "))
+	}
+
+	action := "extract"
+	if sl, ok := stepModelByName(prev, stepTarget).(components.SelectListModel); ok {
+		if isNewTarget(prev) {
+			cr := newpicker.ReadCreateResult(prev, params.Create)
+			source := cr.FromBranch
+			if cr.FastForwardSource {
+				source += " (fast-forward to origin)"
+			}
+			lines = append(lines, "Target:  new worktree "+cr.BranchName+" from "+source)
+			action = "create & extract"
+		} else {
+			lines = append(lines, "Target:  "+targetSummary(sl))
+		}
+	}
+
+	if sl, ok := stepModelByName(prev, stepMode).(components.SelectListModel); ok {
+		lines = append(lines, "Mode:    "+modeSummary(sl))
+	}
+
+	if isNewTarget(prev) {
+		if warnings := newpicker.CreateWarnings(prev, params.Create); len(warnings) > 0 {
+			lines = append(lines, "")
+			lines = append(lines, warnings...)
+		}
+	}
+
+	return components.RecapContent{
+		Description: strings.Join(lines, "\n"),
+		Actions:     []components.SelectItem{{Label: "Yes, " + action, Value: extractConfirm}},
+	}
+}
+
+// stepSelectValue reads the chosen value of the named SelectList step.
+func stepSelectValue(steps []components.Step, name string) (string, bool) {
+	if sl, ok := stepModelByName(steps, name).(components.SelectListModel); ok {
+		return sl.Value(), true
+	}
+	return "", false
+}
+
+// stepModelByName returns the model of the named step, or nil when absent.
+func stepModelByName(steps []components.Step, name string) any {
+	for _, s := range steps {
+		if s.Name == name {
+			return s.Model
+		}
+	}
+	return nil
 }
 
 func newFileSelect(files []domain.ExtractFile, preselected []string) components.MultiSelectModel {
@@ -150,7 +240,7 @@ func newFileSelect(files []domain.ExtractFile, preselected []string) components.
 
 	return components.NewMultiSelect(components.NewMultiSelectParams{
 		Title:       "Select files to extract",
-		Description: "Space to toggle, enter to confirm.",
+		Description: domain.MultiSelectHint,
 		Items:       items,
 		Validate: func(vals []string) error {
 			if len(vals) == 0 {
@@ -185,13 +275,18 @@ func newTargetSelect(worktrees []domain.WorktreeStatus, sourceBranch string) com
 	})
 }
 
-func newModeSelect(sourceBranch string) components.SelectListModel {
+// newModeSelectParams holds inputs for newModeSelect.
+type newModeSelectParams struct {
+	SourceBranch string
+}
+
+func newModeSelect(params newModeSelectParams) components.SelectListModel {
 	return components.NewSelectList(components.NewSelectListParams{
 		Title:       "Mode",
 		Description: "Move removes the files from the source; copy keeps them.",
 		Items: []components.SelectItem{
-			{Label: "Move — remove the files from " + sourceBranch, Value: modeMove},
-			{Label: "Copy — keep the files in " + sourceBranch, Value: modeKeep},
+			{Label: "Move — remove the files from " + params.SourceBranch, Value: modeMove},
+			{Label: "Copy — keep the files in " + params.SourceBranch, Value: modeKeep},
 		},
 	})
 }

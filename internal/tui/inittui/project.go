@@ -115,21 +115,33 @@ func RunServicesWizard(projectDir string, detection domain.InitDetectionResult, 
 	return extractProjectAnswers(final, detection, s.idx), nil
 }
 
+// SectionWizardParams holds inputs for RunSectionWizard.
+type SectionWizardParams struct {
+	ProjectDir string
+	Sections   []string
+	Detection  domain.InitDetectionResult
+	Prefill    *SectionPrefill
+	// Confirm, when set, appends a final confirmation step so the re-init prompt
+	// lives inside the wizard (breadcrumb + back) instead of as an orphaned prompt
+	// after it. Declining it — or Esc at the first step — yields ErrUserAborted.
+	Confirm *components.NewConfirmParams
+}
+
 // RunSectionWizard presents a targeted wizard for the requested sections only,
 // without gates or core steps. Used by `wtm init --only <section>`. Returns a
 // nil-ish answers set with no steps when nothing is configurable; callers handle
 // the empty case.
-func RunSectionWizard(projectDir string, sections []string, detection domain.InitDetectionResult, prefill *SectionPrefill) (domain.InitProjectAnswers, error) {
+func RunSectionWizard(params SectionWizardParams) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
-	holder := &detection.Branches
-	for _, section := range sections {
+	holder := &params.Detection.Branches
+	for _, section := range params.Sections {
 		switch section {
 		case domain.SectionWorktrees:
-			addWorktreesSteps(s, holder, detection, prefill)
+			addWorktreesSteps(s, holder, params.Detection, params.Prefill)
 		case domain.SectionEnv:
-			addEnvSteps(s, detection, nil, prefill)
+			addEnvSteps(s, params.Detection, nil, params.Prefill)
 		case domain.SectionHooks:
-			addHooksSteps(s, detection, nil, prefill)
+			addHooksSteps(s, params.Detection, nil, params.Prefill)
 		}
 	}
 
@@ -137,17 +149,65 @@ func RunSectionWizard(projectDir string, sections []string, detection domain.Ini
 		return domain.InitProjectAnswers{}, nil
 	}
 
-	// Only wire the background branch refresh when a base-branch step is present.
-	params := runWizardParams{steps: s.steps, projectDir: projectDir}
-	if s.at(stepBaseBranch) >= 0 {
-		params.holder = holder
+	steps := s.steps
+	if params.Confirm != nil {
+		steps = append(steps, reinitConfirmStep(*params.Confirm))
 	}
 
-	final, err := runWizard(params)
+	// Only wire the background branch refresh when a base-branch step is present.
+	wp := runWizardParams{steps: steps, projectDir: params.ProjectDir}
+	if s.at(stepBaseBranch) >= 0 {
+		wp.holder = holder
+	}
+
+	final, err := runWizard(wp)
 	if err != nil {
 		return domain.InitProjectAnswers{}, err
 	}
-	return extractProjectAnswers(final, detection, s.idx), nil
+	if params.Confirm != nil {
+		finalSteps := final.Steps()
+		if sl, ok := finalSteps[len(finalSteps)-1].Model.(components.SelectListModel); ok && sl.Value() == domain.WizardCancelValue {
+			return domain.InitProjectAnswers{}, domain.ErrUserAborted
+		}
+	}
+	return extractProjectAnswers(final, params.Detection, s.idx), nil
+}
+
+// reinitConfirmValue is the recap step's action value for a targeted re-init.
+const reinitConfirmValue = "reinit"
+
+// reinitConfirmStep builds the final recap for `wtm init --only`: it restates the
+// values chosen on the section steps (so the user sees exactly what will change),
+// folds the warning into a ⚠ line, and offers "Yes, re-initialize" then the
+// constant "No, cancel". It is always the last step (section steps precede it), so
+// Build always runs on entry.
+func reinitConfirmStep(p components.NewConfirmParams) components.Step {
+	return components.RecapStep(components.RecapStepParams{
+		Name: "Confirm",
+		Build: func(prev []components.Step) components.RecapContent {
+			var lines []string
+			if p.Description != "" {
+				lines = append(lines, p.Description, "")
+			}
+			for _, s := range prev {
+				if s.Summary == nil {
+					continue
+				}
+				if v := s.Summary(s.Model); v != "" {
+					lines = append(lines, "• "+s.Name+": "+v)
+				}
+			}
+			if p.Warning != "" {
+				lines = append(lines, "", "⚠ "+p.Warning)
+			}
+			return components.RecapContent{
+				Description: strings.Join(lines, "\n"),
+				Actions: []components.SelectItem{
+					{Label: "Yes, re-initialize", Value: reinitConfirmValue},
+				},
+			}
+		},
+	})
 }
 
 // runWizardParams holds inputs for runWizard. When holder is non-nil the wizard
@@ -231,7 +291,7 @@ func baseBranchItems(branches []domain.BranchCandidate, detected string) []compo
 	return components.BranchItems(components.BranchItemsParams{
 		Candidates:   branches,
 		Pinned:       detected,
-		PinnedSuffix: " (detected)",
+		PinnedSuffix: domain.PinnedSuffixDetected,
 	})
 }
 

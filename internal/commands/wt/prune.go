@@ -167,8 +167,21 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 		return renderPruneDryRun(cmd, format, plan)
 	}
 
+	// Set when the picker's reparent step ran, carrying the user's answer so the
+	// reparent decision below reuses it instead of a second, orphaned prompt.
+	var pickerReparent *bool
 	if interactivePick {
-		res, pickErr := prunetui.Run(plan)
+		res, pickErr := prunetui.Run(prunetui.RunParams{
+			Plan: plan,
+			ReparentPreview: func(chosen []string, force bool) []domain.ReparentResult {
+				return rules.FinalizePrunePlan(rules.FinalizePrunePlanParams{
+					Plan:       plan,
+					Chosen:     chosen,
+					BaseBranch: baseBranch,
+					Force:      force,
+				}).Reparents
+			},
+		})
 		if errors.Is(pickErr, domain.ErrUserAborted) {
 			return renderPruneAborted(cmd)
 		}
@@ -184,19 +197,21 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 		if len(plan.Selected) == 0 {
 			return renderNothingToPrune(cmd, format)
 		}
+		if res.ReparentAsked {
+			answer := res.ReparentChildren
+			pickerReparent = &answer
+		}
 	}
 
 	// Reparenting surviving children rewrites their metadata, so — like clean — it
-	// needs explicit consent: the --reparent-children flag, an interactive Yes, or
-	// (non-interactive without the flag) it is skipped and they are left orphaned.
-	orphaned, aborted := decidePruneReparent(cmd, decidePruneReparentParams{
+	// needs explicit consent: the --reparent-children flag, the picker's in-wizard
+	// answer, or (non-interactive without the flag) it is skipped and they are left
+	// orphaned.
+	orphaned := decidePruneReparent(decidePruneReparentParams{
 		Reparents:        plan.Reparents,
 		ReparentChildren: reparentChildren,
-		Interactive:      interactivePick,
+		PickerAnswer:     pickerReparent,
 	})
-	if aborted {
-		return renderPruneAborted(cmd)
-	}
 	if len(orphaned) > 0 {
 		plan.Reparents = nil
 	}
@@ -243,50 +258,30 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 type decidePruneReparentParams struct {
 	Reparents        []domain.ReparentResult
 	ReparentChildren bool
-	Interactive      bool
+	// PickerAnswer is the reparent choice the interactive picker already collected
+	// (nil when the picker did not run or did not ask).
+	PickerAnswer *bool
 }
 
 // decidePruneReparent resolves whether surviving children are reparented onto
-// their grandparent, mirroring clean's decideReparent. It returns the children to
-// leave orphaned (empty when they are reparented) and whether the user aborted at
-// the interactive confirmation. With no children it is a no-op. The flag is the
-// explicit permission in non-interactive mode; interactively the user is asked.
-func decidePruneReparent(cmd *cobra.Command, params decidePruneReparentParams) (orphaned []domain.ReparentResult, abort bool) {
+// their grandparent. It returns the children to leave orphaned (empty when they
+// are reparented). With no children it is a no-op. Precedence: the
+// --reparent-children flag forces reparenting; otherwise the picker's in-wizard
+// answer decides; non-interactively without either, children are left orphaned.
+func decidePruneReparent(params decidePruneReparentParams) (orphaned []domain.ReparentResult) {
 	if len(params.Reparents) == 0 {
-		return nil, false
+		return nil
 	}
 	if params.ReparentChildren {
-		return nil, false
+		return nil
 	}
-	if !params.Interactive {
-		return params.Reparents, false
+	if params.PickerAnswer != nil {
+		if *params.PickerAnswer {
+			return nil
+		}
+		return params.Reparents
 	}
-	apply, aborted := confirmPruneReparent(cmd, params.Reparents)
-	if aborted {
-		return nil, true
-	}
-	if apply {
-		return nil, false
-	}
-	return params.Reparents, false
-}
-
-// confirmPruneReparent shows the proposed reparenting of pruned worktrees'
-// orphaned children and asks for a dedicated confirmation, mirroring clean. Yes →
-// reparent onto the grandparent; No → leave the children orphaned; Esc → abort
-// the whole prune (nothing is removed).
-func confirmPruneReparent(cmd *cobra.Command, moves []domain.ReparentResult) (apply bool, abort bool) {
-	output.FormatPruneReparentProposal(cmd.ErrOrStderr(), moves)
-
-	cm := components.NewConfirm(components.NewConfirmParams{
-		Title:      fmt.Sprintf("Reparent %d child worktree(s) onto their grandparent?", len(moves)),
-		DefaultYes: true,
-	})
-	confirmed, err := components.RunStandaloneConfirm(cm)
-	if err != nil {
-		return false, true
-	}
-	return confirmed, false
+	return params.Reparents
 }
 
 // renderPruneAborted reports an aborted interactive prune.
