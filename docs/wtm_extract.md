@@ -4,13 +4,18 @@ Move uncommitted changes to another worktree
 
 ### Synopsis
 
-Move a subset of the current worktree's uncommitted changes to another worktree
+Move a subset of a worktree's uncommitted changes to another worktree
 (new or existing) to split an oversized PR or isolate unrelated work.
+
+The source worktree is the first thing chosen: pass its branch as [source],
+or omit it to pick interactively from the worktrees that have changes. A source
+is required when there is no terminal or with --output json.
+
 On conflict it aborts by default, leaving the source intact; --on-conflict resolve
 applies conflict markers in the target so you can resolve them like a rebase.
 
 ```
-wtm extract [flags]
+wtm extract [source] [flags]
 ```
 
 ### Options
@@ -24,6 +29,7 @@ wtm extract [flags]
       --on-conflict string   On conflict: abort (default) or resolve (write conflict markers in the target)
       --output string        Output format: text or json (default "text")
       --to string            Target worktree branch; created if it does not exist
+  -y, --yes                  Skip the confirmation recap (the selection pickers still show)
 ```
 
 ### SEE ALSO

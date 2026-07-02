@@ -25,16 +25,38 @@ type TargetChoice struct {
 	Branch    string
 }
 
-// RunParams holds inputs for the interactive extraction wizard. NeedFiles and
-// NeedTarget toggle the corresponding steps, letting the command skip a step
-// already resolved from a flag.
+// RunParams holds inputs for the interactive extraction wizard. NeedSource,
+// NeedFiles, NeedTarget and NeedMode toggle the corresponding steps, letting the
+// command skip a step already resolved from a flag or the positional argument.
 type RunParams struct {
-	Files        []domain.ExtractFile
-	Worktrees    []domain.WorktreeStatus
+	// Files are the source worktree's changes when the source is fixed (an argument
+	// was given, NeedSource false). When NeedSource, the changes are loaded lazily
+	// per picked worktree via LoadFiles instead.
+	Files     []domain.ExtractFile
+	Worktrees []domain.WorktreeStatus
+	// SourceBranch fixes the source when NeedSource is false; empty otherwise (the
+	// source is then chosen on the first step).
 	SourceBranch string
-	NeedFiles    bool
-	NeedTarget   bool
-	NeedMode     bool
+	// Sources are the candidate source worktrees (those with changes) for the source
+	// picker. Only used when NeedSource.
+	Sources []domain.WorktreeStatus
+	// LoadFiles returns the changes of a source worktree, injected by the command so
+	// the TUI stays free of git/service imports. Only used when NeedSource.
+	LoadFiles  func(branch string) []domain.ExtractFile
+	NeedSource bool
+	NeedFiles  bool
+	NeedTarget bool
+	NeedMode   bool
+	// SkipConfirm omits the final recap step (--yes), so the wizard completes after
+	// the last selection step. The selection steps (source/file/target/mode) still
+	// show — --yes only drops the confirmation.
+	SkipConfirm bool
+	// FixedFiles, FixedTarget and FixedKeep carry the values resolved from the
+	// --files/--to/--keep flags, so the combined recap names every part of the plan
+	// even for the steps a flag skipped. Each is used only when its step is absent.
+	FixedFiles  []string
+	FixedTarget string
+	FixedKeep   bool
 	// Create configures the embedded "create new worktree" sub-flow, inserted after
 	// the target step and auto-skipped unless the target is "create new". Only used
 	// when NeedTarget. Its Source is "" (source picked), IncludeBranch true,
@@ -45,9 +67,12 @@ type RunParams struct {
 // RunResult holds the wizard answers. Only the fields for the requested steps
 // are populated.
 type RunResult struct {
-	Files  []string
-	Target TargetChoice
-	Keep   bool
+	// SourceBranch is the picked source worktree branch when NeedSource; empty
+	// otherwise (the command already knows the fixed source).
+	SourceBranch string
+	Files        []string
+	Target       TargetChoice
+	Keep         bool
 	// Create holds the new-worktree answers (branch/source/fast-forward) when
 	// Target.CreateNew; zero otherwise.
 	Create newpicker.WizardResult
@@ -66,9 +91,22 @@ const (
 
 // Step names, used for construction and name-based value extraction.
 const (
+	stepSource = "Source worktree"
 	stepFiles  = "Files"
 	stepTarget = "Target worktree"
 	stepMode   = "Mode"
+)
+
+// filesRequestMsg asks the message handler to load the changes of the picked
+// source worktree; filesDoneMsg carries them back. The changes are loaded lazily
+// (git status per worktree is proportional to the selection) behind the shared
+// loading spinner, mirroring clean's async safety check.
+type (
+	filesRequestMsg struct{ branch string }
+	filesDoneMsg    struct {
+		branch string
+		files  []domain.ExtractFile
+	}
 )
 
 // Run shows the extraction wizard and returns the selected files, target, and —
@@ -78,19 +116,23 @@ const (
 func Run(params RunParams) (RunResult, error) {
 	var steps []components.Step
 
-	if params.NeedFiles {
+	if params.NeedSource {
 		steps = append(steps, components.Step{
-			Name:    stepFiles,
-			Model:   newFileSelect(params.Files, nil),
-			Summary: fileSummary,
+			Name:    stepSource,
+			Model:   newSourceSelect(params.Sources),
+			Summary: components.SelectSummary,
 		})
 	}
+
+	// The Files step index in the final steps slice, so the message handler can swap
+	// the lazily-loaded changes in. -1 when there is no Files step.
+	filesIdx := -1
+	if params.NeedFiles {
+		filesIdx = len(steps)
+		steps = append(steps, filesStep(params))
+	}
 	if params.NeedTarget {
-		steps = append(steps, components.Step{
-			Name:    stepTarget,
-			Model:   newTargetSelect(params.Worktrees, params.SourceBranch),
-			Summary: targetSummary,
-		})
+		steps = append(steps, targetStep(params))
 	}
 
 	// The create sub-flow, inserted after the target step and auto-skipped unless
@@ -103,35 +145,29 @@ func Run(params RunParams) (RunResult, error) {
 	}
 
 	if params.NeedMode {
-		steps = append(steps, components.Step{
-			Name:    stepMode,
-			Model:   newModeSelect(newModeSelectParams{SourceBranch: params.SourceBranch}),
-			Summary: modeSummary,
-		})
+		steps = append(steps, modeStep(params))
 	}
 
-	// Combined recap: files + target (existing branch, or "new worktree <branch>
-	// from <source>") + mode + ⚠ create warnings, then "No, cancel".
-	steps = append(steps, components.RecapStep(components.RecapStepParams{
-		Name:  stepConfirm,
-		Build: func(prev []components.Step) components.RecapContent { return buildCombinedRecap(prev, params) },
-	}))
+	// Combined recap: source + files + target (existing branch, or "new worktree
+	// <branch> from <source>") + mode + ⚠ create warnings, then "No, cancel".
+	// Skipped with --yes, so the wizard completes after the last selection step.
+	if !params.SkipConfirm {
+		steps = append(steps, components.RecapStep(components.RecapStepParams{
+			Name:  stepConfirm,
+			Build: func(prev []components.Step) components.RecapContent { return buildCombinedRecap(prev, params) },
+		}))
+	}
 
-	wp := components.WizardParams{
+	final, err := components.RunWizard(components.RunWizardParams{
 		Steps:       steps,
+		ErrLabel:    "extract wizard",
+		OnMsg:       combineMsgHandlers(filesMsgHandler(filesIdx, params.LoadFiles), createFlow.OnMsg),
 		InitCmd:     createFlow.InitCmd,
-		OnMsg:       createFlow.OnMsg,
-		LoadingText: createFlow.LoadingText,
 		Loading:     createFlow.InitCmd != nil,
-	}
-	finalModel, err := tea.NewProgram(components.NewWizardWithParams(wp)).Run()
+		LoadingText: createFlow.LoadingText,
+	})
 	if err != nil {
-		return RunResult{}, fmt.Errorf("extract wizard: %w", err)
-	}
-
-	final, ok := finalModel.(components.WizardModel)
-	if !ok || final.Aborted() {
-		return RunResult{}, domain.ErrUserAborted
+		return RunResult{}, err
 	}
 	steps = final.Steps()
 	if v, _ := stepSelectValue(steps, stepConfirm); v == domain.WizardCancelValue {
@@ -139,6 +175,9 @@ func Run(params RunParams) (RunResult, error) {
 	}
 
 	var result RunResult
+	if v, ok := stepSelectValue(steps, stepSource); ok {
+		result.SourceBranch = v
+	}
 	if ms, ok := stepModelByName(steps, stepFiles).(components.MultiSelectModel); ok {
 		result.Files = ms.Values()
 	}
@@ -154,6 +193,142 @@ func Run(params RunParams) (RunResult, error) {
 	return result, nil
 }
 
+// filesStep builds the file multi-select. When the source is picked (NeedSource),
+// its model starts empty and its changes are loaded lazily on entry via OnEnter +
+// the message handler; when the source is fixed, the changes are known up front.
+func filesStep(params RunParams) components.Step {
+	if !params.NeedSource {
+		return components.Step{
+			Name:    stepFiles,
+			Model:   newFileSelect(params.Files, nil),
+			Summary: fileSummary,
+		}
+	}
+	return components.Step{
+		Name:    stepFiles,
+		Model:   newFileSelect(nil, nil),
+		Summary: fileSummary,
+		OnEnter: func(prev []components.Step) tea.Cmd {
+			branch, _ := stepSelectValue(prev, stepSource)
+			return func() tea.Msg { return filesRequestMsg{branch: branch} }
+		},
+	}
+}
+
+// targetStep builds the target picker. When the source is picked it rebuilds on
+// entry to exclude the chosen source; when fixed, the source is known up front.
+func targetStep(params RunParams) components.Step {
+	step := components.Step{
+		Name:    stepTarget,
+		Model:   newTargetSelect(params.Worktrees, params.SourceBranch),
+		Summary: targetSummary,
+	}
+	if params.NeedSource {
+		step.Build = func(prev []components.Step) any {
+			return newTargetSelect(params.Worktrees, sourceBranchFromPrev(prev, params.SourceBranch))
+		}
+	}
+	return step
+}
+
+// modeStep builds the move/copy select. When the source is picked its label is
+// rebuilt on entry to name the chosen source branch.
+func modeStep(params RunParams) components.Step {
+	step := components.Step{
+		Name:    stepMode,
+		Model:   newModeSelect(newModeSelectParams{SourceBranch: params.SourceBranch}),
+		Summary: modeSummary,
+	}
+	if params.NeedSource {
+		step.Build = func(prev []components.Step) any {
+			return newModeSelect(newModeSelectParams{SourceBranch: sourceBranchFromPrev(prev, params.SourceBranch)})
+		}
+	}
+	return step
+}
+
+// filesMsgHandler lazily loads the picked source worktree's changes into the Files
+// step behind the shared spinner, mirroring clean's async safety check. It is a
+// no-op (returns unhandled) when there is no Files step or no loader.
+func filesMsgHandler(filesIdx int, load func(branch string) []domain.ExtractFile) components.WizardMsgHandler {
+	if filesIdx < 0 || load == nil {
+		return nil
+	}
+	return func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+		switch m := msg.(type) {
+		case filesRequestMsg:
+			// Clear any changes left from a previously-picked source so the spinner
+			// isn't shown over a stale list while the new load runs.
+			w.UpdateStepModel(filesIdx, func(any) any { return newFileSelect(nil, nil) })
+			loadCmd := w.StartLoading("Loading changes…")
+			return tea.Batch(loadCmd, loadFilesCmd(m.branch, load)), true
+		case filesDoneMsg:
+			w.UpdateStepModel(filesIdx, func(any) any { return filesModel(m.branch, m.files) })
+			w.SetLoading(false)
+			return nil, true
+		}
+		return nil, false
+	}
+}
+
+// combineMsgHandlers runs first, then next, returning on the first that consumes
+// the message. Either may be nil.
+func combineMsgHandlers(first, next components.WizardMsgHandler) components.WizardMsgHandler {
+	if first == nil {
+		return next
+	}
+	if next == nil {
+		return first
+	}
+	return func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+		if cmd, handled := first(w, msg); handled {
+			return cmd, true
+		}
+		return next(w, msg)
+	}
+}
+
+// loadFilesCmd runs the (git) change listing off the UI goroutine so the spinner
+// animates while it runs.
+func loadFilesCmd(branch string, load func(branch string) []domain.ExtractFile) tea.Cmd {
+	return func() tea.Msg { return filesDoneMsg{branch: branch, files: load(branch)} }
+}
+
+// filesModel builds the loaded file multi-select, or an empty placeholder naming
+// the source when it has no changes (Validate then blocks Enter; Esc goes back).
+func filesModel(branch string, files []domain.ExtractFile) components.MultiSelectModel {
+	if len(files) == 0 {
+		return components.NewMultiSelect(components.NewMultiSelectParams{
+			Title:       "Select files to extract",
+			Description: "No changes to extract in " + branch + " — press esc to pick another worktree.",
+			Validate:    func([]string) error { return fmt.Errorf("no changes to extract in %s", branch) },
+		})
+	}
+	return newFileSelect(files, nil)
+}
+
+// sourceBranchFromPrev returns the picked source branch, or the fixed fallback
+// when there is no source step.
+func sourceBranchFromPrev(prev []components.Step, fixed string) string {
+	if v, ok := stepSelectValue(prev, stepSource); ok {
+		return v
+	}
+	return fixed
+}
+
+// newSourceSelect lists the candidate source worktrees (those with changes).
+func newSourceSelect(sources []domain.WorktreeStatus) components.SelectListModel {
+	items := make([]components.SelectItem, 0, len(sources))
+	for _, s := range sources {
+		items = append(items, components.SelectItem{Label: s.Branch, Value: s.Branch})
+	}
+	return components.NewSelectList(components.NewSelectListParams{
+		Title:       "Source worktree",
+		Description: "Which worktree to extract changes from",
+		Items:       items,
+	})
+}
+
 // isNewTarget reports whether the chosen target is the "create new worktree" entry
 // — the gate for the embedded create steps.
 func isNewTarget(steps []components.Step) bool {
@@ -166,8 +341,13 @@ func isNewTarget(steps []components.Step) bool {
 // warnings.
 func buildCombinedRecap(prev []components.Step, params RunParams) components.RecapContent {
 	var lines []string
+	if source := sourceBranchFromPrev(prev, params.SourceBranch); source != "" {
+		lines = append(lines, "Source:  "+source)
+	}
 	if ms, ok := stepModelByName(prev, stepFiles).(components.MultiSelectModel); ok {
 		lines = append(lines, "Files:   "+strings.Join(ms.Values(), ", "))
+	} else if len(params.FixedFiles) > 0 {
+		lines = append(lines, "Files:   "+strings.Join(params.FixedFiles, ", "))
 	}
 
 	action := "extract"
@@ -183,10 +363,14 @@ func buildCombinedRecap(prev []components.Step, params RunParams) components.Rec
 		} else {
 			lines = append(lines, "Target:  "+targetSummary(sl))
 		}
+	} else if params.FixedTarget != "" {
+		lines = append(lines, "Target:  "+params.FixedTarget)
 	}
 
 	if sl, ok := stepModelByName(prev, stepMode).(components.SelectListModel); ok {
 		lines = append(lines, "Mode:    "+modeSummary(sl))
+	} else if !params.NeedMode {
+		lines = append(lines, "Mode:    "+fixedModeLabel(params.FixedKeep))
 	}
 
 	if isNewTarget(prev) {
@@ -351,6 +535,15 @@ func modeSummary(model any) string {
 		return ""
 	}
 	if sl.Value() == modeKeep {
+		return "copy"
+	}
+	return "move"
+}
+
+// fixedModeLabel labels the move/copy mode fixed by --keep for the recap, when the
+// mode step was skipped.
+func fixedModeLabel(keep bool) string {
+	if keep {
 		return "copy"
 	}
 	return "move"
