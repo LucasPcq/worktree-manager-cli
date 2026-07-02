@@ -358,4 +358,24 @@ const (
 	// repeat start (e.g. re-running `run up` while services are up) as a benign
 	// no-op rather than a failure that aborts the profile.
 	JobAlreadyRunningSuffix = "is already running"
+
+	// SyncConfirmPrompt is the confirmation question shown before running a sync
+	// cascade, formatted with the number of worktrees to rebase. Shared by the
+	// interactive picker's confirmation step and the non-picker confirm prompt.
+	SyncConfirmPrompt = "Rebase %d worktree(s) onto their parents?"
+
+	// SyncKeepConflictWarning explains the consequence of keeping conflicting
+	// rebases in progress; shown on the sync confirmation when --keep-conflict is
+	// active.
+	SyncKeepConflictWarning = "On conflict the rebase is left in progress in its worktree (not aborted). " +
+		"Several worktrees may be left mid-rebase; resolve each with git rebase --continue."
+
+	// SyncPushPrompt is the push confirmation question shown after a successful
+	// cascade, formatted with the number of pushable branches.
+	SyncPushPrompt = "Push %d rebased branch(es) to origin?"
+
+	// SyncPushWarning clarifies what pushing does and that declining skips it:
+	// No or Esc leaves the rebased branches local.
+	SyncPushWarning = "Force-pushes the rebased branches with --force-with-lease. " +
+		"No or Esc skips the push — branches stay local."
 )

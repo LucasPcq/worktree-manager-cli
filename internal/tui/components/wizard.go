@@ -495,6 +495,8 @@ func (m WizardModel) renderHelpBar() string {
 		help = "  ↑↓ navigate • enter confirm • space toggle • a all • / filter"
 	case ReorderListModel:
 		help = "  ↑↓ navigate • enter confirm • shift+↑/↓ move"
+	case ConfirmModel:
+		help = "  ↑↓ navigate • enter confirm"
 	}
 	if m.visiblePosition() > 1 {
 		help += " • esc back"
