@@ -3,11 +3,12 @@ package components
 import "github.com/LucasPcq/wtm/internal/domain"
 
 // ParentStepContext is what a ParentStep resolves, on entry, from the completed
-// prior wizard steps: which worktree to exclude from the candidate list and the
+// prior wizard steps: which worktree(s) to exclude from the candidate list and the
 // description to render above it. Keeping this per-entry lets the parent list track
-// a worktree chosen in an earlier step.
+// the worktree(s) chosen in an earlier step. Excludes holds one branch for a single
+// reparent/adoption, or several for a batch reparent.
 type ParentStepContext struct {
-	Exclude     string
+	Excludes    []string
 	Description string
 }
 
@@ -44,7 +45,7 @@ func ParentStep(params ParentStepParams) Step {
 				Candidates:   *params.Holder,
 				Pinned:       params.Pinned,
 				PinnedSuffix: params.PinnedSuffix,
-				Exclude:      ctx.Exclude,
+				ExcludeSet:   ctx.Excludes,
 			}),
 		})
 	}

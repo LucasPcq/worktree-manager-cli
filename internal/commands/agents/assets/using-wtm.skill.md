@@ -98,8 +98,9 @@ flagged; everything else is what the name implies.
   recorded parent, in cascade (parents before children), fetching first. A conflict aborts
   that branch's rebase (its descendants are skipped) unless `--keep-conflict` leaves it in
   progress. Local only — pass `--push` to force-push (with lease) in JSON mode.
-- `wtm reparent <branch> --to <parent>` — change the recorded parent (metadata only; the
-  rebase happens on the next `sync`). Use after a middle branch merges.
+- `wtm reparent <branch…> --to <parent>` — change the recorded parent of one or more
+  worktrees to the same new parent (metadata only; the rebase happens on the next `sync`).
+  Use after a middle branch merges. JSON: `{"reparented":[{branch,old_parent,new_parent},…]}`.
 
 **Navigate**
 - `wtm go` / `wtm switch` need the user's **shell integration** to `cd`, so you can't drive

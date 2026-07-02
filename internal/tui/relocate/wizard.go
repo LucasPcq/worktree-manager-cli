@@ -92,7 +92,7 @@ func parentStep(params parentStepParams) components.Step {
 		PinnedSuffix: domain.PinnedSuffixDefault,
 		Callout:      true,
 		Resolve: func([]components.Step) components.ParentStepContext {
-			return components.ParentStepContext{Exclude: params.Branch, Description: desc}
+			return components.ParentStepContext{Excludes: []string{params.Branch}, Description: desc}
 		},
 	})
 }

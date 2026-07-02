@@ -267,9 +267,16 @@ func WriteWorktreeCleanJSON(w io.Writer, params WriteWorktreeCleanJSONParams) er
 	return encodeJSON(w, params)
 }
 
+// WriteReparentJSONParams holds the reparent payload: the list of worktrees whose
+// parent changed, each with its old and new parent. The array shape (mirroring
+// clean/prune's `reparented`) fits the command reparenting several worktrees at once.
+type WriteReparentJSONParams struct {
+	Reparented []domain.ReparentResult `json:"reparented"`
+}
+
 // WriteReparentJSON writes the JSON payload for `reparent`.
-func WriteReparentJSON(w io.Writer, result domain.ReparentResult) error {
-	return encodeJSON(w, result)
+func WriteReparentJSON(w io.Writer, results []domain.ReparentResult) error {
+	return encodeJSON(w, WriteReparentJSONParams{Reparented: results})
 }
 
 // FormatReparentProposal renders the proposed reparenting of a cleaned worktree's

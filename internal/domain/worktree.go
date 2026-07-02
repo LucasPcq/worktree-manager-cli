@@ -118,14 +118,16 @@ type CleanParams struct {
 	Config     Config
 }
 
-// ReparentParams holds inputs for changing a worktree's recorded parent.
-type ReparentParams struct {
+// ReparentBatchParams holds inputs for reparenting one or more worktrees onto the
+// same new parent in a single pass. A single-element Branches is the ordinary
+// one-worktree reparent.
+type ReparentBatchParams struct {
 	ProjectDir string
 	StateDir   string
-	Branch     string
+	Branches   []string
 	NewParent  string
-	// BaseBranch is the dependency-tree root, used to validate the new parent
-	// graph stays acyclic.
+	// BaseBranch is the dependency-tree root, used to validate the combined parent
+	// graph stays acyclic once every listed worktree is reparented.
 	BaseBranch string
 }
 

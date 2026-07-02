@@ -25,7 +25,7 @@ wtm [flags]
 * [wtm list](wtm_list.md)	 - List all worktrees
 * [wtm prune](wtm_prune.md)	 - Remove finished worktrees (merged, closed PR, gone, or old) in one pass
 * [wtm relocate](wtm_relocate.md)	 - Move worktrees to align with base_path and adopt external ones
-* [wtm reparent](wtm_reparent.md)	 - Change the parent a worktree is rebased onto
+* [wtm reparent](wtm_reparent.md)	 - Change the parent one or more worktrees are rebased onto
 * [wtm resolve](wtm_resolve.md)	 - Resolve a branch to its worktree path
 * [wtm run](wtm_run.md)	 - Manage dev jobs (services + tasks)
 * [wtm schema](wtm_schema.md)	 - Inspect or extract bundled JSON Schemas
