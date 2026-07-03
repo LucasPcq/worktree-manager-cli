@@ -23,14 +23,17 @@ func newPruneCmd() *cobra.Command {
 		Use:   domain.CmdPrune,
 		Short: "Remove finished worktrees (merged, closed PR, gone, or old) in one pass",
 		Long: "Batch-remove worktrees whose work is done, reparenting any surviving children onto\n" +
-			"their grandparent (like `clean --reparent-children`). By default prune considers\n" +
-			"every finished worktree: merged into the base, closed/merged PR, or upstream branch\n" +
-			"gone. The reason flags restrict to specific categories — --merged (no commits ahead),\n" +
-			"--closed (PR merged/closed, needs gh), --gone (remote branch deleted).\n" +
+			"their grandparent (like `clean --reparent-children`). Whether work is \"done\" is read\n" +
+			"from GitHub via the `gh` CLI — never guessed from local commits — so squash- and\n" +
+			"rebase-merges are detected correctly. By default prune considers every finished\n" +
+			"worktree: merged PR, closed PR, or upstream branch gone. The reason flags restrict to\n" +
+			"specific categories — --merged (PR merged), --closed (PR closed unmerged), --gone\n" +
+			"(remote branch deleted).\n" +
 			"\n" +
+			"--merged and --closed require the GitHub CLI (`gh`) to be installed and authenticated;\n" +
+			"without it they match nothing and prune prints a notice — only --gone still applies.\n" +
 			"gone-detection runs `git fetch --prune` first so deleted remote branches are seen\n" +
-			"(pass --no-fetch to skip). --merged does not catch squash-merges (the branch keeps\n" +
-			"distinct commits); --gone or --closed do.\n" +
+			"(pass --no-fetch to skip).\n" +
 			"\n" +
 			"On a TTY, matches are shown for review (unsafe ones unchecked), then a prune\n" +
 			"confirmation, then — like clean — a dedicated confirmation to reparent surviving\n" +
@@ -44,13 +47,13 @@ func newPruneCmd() *cobra.Command {
 		RunE: runPrune,
 	}
 
-	cmd.Flags().Bool(domain.FlagMerged, false, "Restrict to worktrees whose branch is merged into the base (no commits ahead)")
-	cmd.Flags().Bool(domain.FlagClosed, false, "Restrict to worktrees whose PR is merged or closed (needs gh)")
+	cmd.Flags().Bool(domain.FlagMerged, false, "Restrict to worktrees whose PR was merged on GitHub (needs gh)")
+	cmd.Flags().Bool(domain.FlagClosed, false, "Restrict to worktrees whose PR was closed without merging (needs gh)")
 	cmd.Flags().Bool(domain.FlagGone, false, "Restrict to worktrees whose upstream branch was deleted on the remote")
 	cmd.Flags().Bool(domain.FlagNoFetch, false, "Skip the git fetch --prune that gone-detection performs; use already-fetched state")
-	cmd.Flags().Bool(domain.FlagForce, false, "Also remove unsafe worktrees (dirty, unpushed commits, or open PR)")
-	cmd.Flags().Bool(domain.FlagReparentChildren, false, "Reparent orphaned child worktrees onto the grandparent (non-interactive; otherwise you're asked)")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation/selection prompt (keeps every match)")
+	cmd.Flags().Bool(domain.FlagForce, false, "Lift safety refusals (dirty/unpushed/open-PR): also remove unsafe worktrees; still asks to confirm unless --yes")
+	cmd.Flags().Bool(domain.FlagReparentChildren, false, "Reparent orphaned child worktrees onto the grandparent (no prompt)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; keep every match without the selection picker (use --force for unsafe worktrees)")
 	cmd.Flags().Bool(domain.FlagDryRun, false, "Preview what would be pruned without removing anything")
 	shared.AddOutputFlag(cmd)
 
@@ -115,10 +118,11 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 		DryRun:     dryRun,
 	}
 
-	// PR states are needed to match --closed candidates and to enforce the
-	// open-PR safety guard (mirrors clean) whenever removal is not forced. With
-	// --force the guard is bypassed, so PRs are only loaded for the closed filter.
-	needPRs := closed || !force
+	// PR states are the source of truth for --merged and --closed, and also enforce
+	// the open-PR safety guard (mirrors clean) whenever removal is not forced. With
+	// --force the guard is bypassed, so PRs are only loaded for the merged/closed
+	// filters then.
+	needPRs := merged || closed || !force
 
 	// Both gone-detection (git fetch --prune) and PR-detection (gh) hit the
 	// network, so tell the user the spinner is fetching, not just scanning.
@@ -128,13 +132,14 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 	}
 
 	var plan domain.PrunePlan
+	var ghConn domain.GHConnection
 	err = components.RunLoading(components.LoadingParams{
 		Message: scanMessage,
 		Animate: interactive,
 		Work: func() error {
 			var prs []domain.PRInfo
 			if needPRs {
-				prs = shared.LoadPRsAllStatesGraceful(cfg.ProjectDir)
+				prs, ghConn = shared.LoadPRsAllStates(cfg.ProjectDir)
 			}
 			var e error
 			plan, e = worktree.PlanPrune(params, prs)
@@ -145,6 +150,15 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// prune reads "done" from GitHub, so warn (on stderr, once — never polluting
+	// JSON stdout) when the gh CLI is unavailable: merged/closed detection is then
+	// inert and only --gone applies.
+	if needPRs {
+		if title, lines, show := rules.PruneGHNotice(ghConn); show {
+			output.Callout(cmd.ErrOrStderr(), title, lines)
+		}
+	}
+
 	if len(plan.Selected) == 0 {
 		return renderNothingToPrune(cmd, format)
 	}
@@ -153,8 +167,21 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 		return renderPruneDryRun(cmd, format, plan)
 	}
 
+	// Set when the picker's reparent step ran, carrying the user's answer so the
+	// reparent decision below reuses it instead of a second, orphaned prompt.
+	var pickerReparent *bool
 	if interactivePick {
-		res, pickErr := prunetui.Run(plan)
+		res, pickErr := prunetui.Run(prunetui.RunParams{
+			Plan: plan,
+			ReparentPreview: func(chosen []string, force bool) []domain.ReparentResult {
+				return rules.FinalizePrunePlan(rules.FinalizePrunePlanParams{
+					Plan:       plan,
+					Chosen:     chosen,
+					BaseBranch: baseBranch,
+					Force:      force,
+				}).Reparents
+			},
+		})
 		if errors.Is(pickErr, domain.ErrUserAborted) {
 			return renderPruneAborted(cmd)
 		}
@@ -170,19 +197,21 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 		if len(plan.Selected) == 0 {
 			return renderNothingToPrune(cmd, format)
 		}
+		if res.ReparentAsked {
+			answer := res.ReparentChildren
+			pickerReparent = &answer
+		}
 	}
 
 	// Reparenting surviving children rewrites their metadata, so — like clean — it
-	// needs explicit consent: the --reparent-children flag, an interactive Yes, or
-	// (non-interactive without the flag) it is skipped and they are left orphaned.
-	orphaned, aborted := decidePruneReparent(cmd, decidePruneReparentParams{
+	// needs explicit consent: the --reparent-children flag, the picker's in-wizard
+	// answer, or (non-interactive without the flag) it is skipped and they are left
+	// orphaned.
+	orphaned := decidePruneReparent(decidePruneReparentParams{
 		Reparents:        plan.Reparents,
 		ReparentChildren: reparentChildren,
-		Interactive:      interactivePick,
+		PickerAnswer:     pickerReparent,
 	})
-	if aborted {
-		return renderPruneAborted(cmd)
-	}
 	if len(orphaned) > 0 {
 		plan.Reparents = nil
 	}
@@ -229,50 +258,30 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 type decidePruneReparentParams struct {
 	Reparents        []domain.ReparentResult
 	ReparentChildren bool
-	Interactive      bool
+	// PickerAnswer is the reparent choice the interactive picker already collected
+	// (nil when the picker did not run or did not ask).
+	PickerAnswer *bool
 }
 
 // decidePruneReparent resolves whether surviving children are reparented onto
-// their grandparent, mirroring clean's decideReparent. It returns the children to
-// leave orphaned (empty when they are reparented) and whether the user aborted at
-// the interactive confirmation. With no children it is a no-op. The flag is the
-// explicit permission in non-interactive mode; interactively the user is asked.
-func decidePruneReparent(cmd *cobra.Command, params decidePruneReparentParams) (orphaned []domain.ReparentResult, abort bool) {
+// their grandparent. It returns the children to leave orphaned (empty when they
+// are reparented). With no children it is a no-op. Precedence: the
+// --reparent-children flag forces reparenting; otherwise the picker's in-wizard
+// answer decides; non-interactively without either, children are left orphaned.
+func decidePruneReparent(params decidePruneReparentParams) (orphaned []domain.ReparentResult) {
 	if len(params.Reparents) == 0 {
-		return nil, false
+		return nil
 	}
 	if params.ReparentChildren {
-		return nil, false
+		return nil
 	}
-	if !params.Interactive {
-		return params.Reparents, false
+	if params.PickerAnswer != nil {
+		if *params.PickerAnswer {
+			return nil
+		}
+		return params.Reparents
 	}
-	apply, aborted := confirmPruneReparent(cmd, params.Reparents)
-	if aborted {
-		return nil, true
-	}
-	if apply {
-		return nil, false
-	}
-	return params.Reparents, false
-}
-
-// confirmPruneReparent shows the proposed reparenting of pruned worktrees'
-// orphaned children and asks for a dedicated confirmation, mirroring clean. Yes →
-// reparent onto the grandparent; No → leave the children orphaned; Esc → abort
-// the whole prune (nothing is removed).
-func confirmPruneReparent(cmd *cobra.Command, moves []domain.ReparentResult) (apply bool, abort bool) {
-	output.FormatPruneReparentProposal(cmd.ErrOrStderr(), moves)
-
-	cm := components.NewConfirm(components.NewConfirmParams{
-		Title:      fmt.Sprintf("Reparent %d child worktree(s) onto their grandparent?", len(moves)),
-		DefaultYes: true,
-	})
-	confirmed, err := components.RunStandaloneConfirm(cm)
-	if err != nil {
-		return false, true
-	}
-	return confirmed, false
+	return params.Reparents
 }
 
 // renderPruneAborted reports an aborted interactive prune.

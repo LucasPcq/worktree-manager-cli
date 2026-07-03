@@ -15,10 +15,12 @@ wtm create [branch] [flags]
 
 ```
       --env-from string   Override env strategy (example, main, parent)
+      --ff                Fast-forward the source branch to origin before creating (non-interactive; skipped when it has diverged)
       --from string       Source branch (skips interactive picker)
   -h, --help              help for create
       --if-not-exists     Succeed silently if the worktree already exists (idempotent)
       --output string     Output format: text or json (default "text")
+  -y, --yes               Skip all prompts; resolve every decision from flags and safe defaults (branch name required; source defaults to the base branch)
 ```
 
 ### SEE ALSO

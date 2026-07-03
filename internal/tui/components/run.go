@@ -221,7 +221,8 @@ func (m standaloneModel) View() string {
 		return out
 	}
 
-	help := "  enter confirm"
+	// Both standalone child types (SelectList, Confirm) navigate vertically.
+	help := "  ↑↓ navigate • enter confirm"
 	if _, ok := m.child.(SelectListModel); ok {
 		help += " • / filter"
 	}

@@ -18,6 +18,7 @@ func NewCmd() *cobra.Command {
 		GroupID: domain.CmdGroupJobs,
 	}
 
+	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newPsCmd())
 	cmd.AddCommand(newUpCmd())

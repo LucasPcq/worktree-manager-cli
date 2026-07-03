@@ -37,7 +37,7 @@ func newSyncCmd() *cobra.Command {
 
 	cmd.Flags().Bool(domain.FlagAll, false, "Sync every managed worktree")
 	cmd.Flags().Bool(domain.FlagDryRun, false, "Preview the cascade without rebasing or pushing")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the pre-sync confirmation")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (requires branch args or --all; use --push to push)")
 	cmd.Flags().Bool(domain.FlagPush, false, "Force-push (with lease) rebased branches without prompting")
 	cmd.Flags().Bool(domain.FlagNoPush, false, "Rebase locally only; never push")
 	cmd.Flags().Bool(domain.FlagKeepConflict, false, "Leave a conflicting rebase in progress in its worktree instead of aborting")
@@ -64,6 +64,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--%s cannot be combined with branch arguments", domain.FlagAll)
 	}
 
+	if format == domain.OutputJSON && !yes && !dryRun {
+		return fmt.Errorf("--output json requires --%s or --%s (prompts cannot run in JSON mode)", domain.FlagYes, domain.FlagDryRun)
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
@@ -77,14 +81,42 @@ func runSync(cmd *cobra.Command, args []string) error {
 	baseBranch := resolveBase(baseOverride, cfg)
 	interactive := rules.IsHumanFormat(format)
 
+	// planPreview lets the interactive picker render the cascade preview on its
+	// confirmation step without importing the service/output packages. It plans
+	// against the in-progress selection; conflict mode does not affect the plan.
+	planTemplate := worktree.SyncParams{
+		ProjectDir: cfg.ProjectDir,
+		StateDir:   cfg.StateDir,
+		Config:     cfg.Config,
+		BaseBranch: baseBranch,
+		DryRun:     dryRun,
+	}
+	planPreview := func(p syncpicker.PlanPreviewParams) (string, int, error) {
+		preview := planTemplate
+		preview.SelectedBranches = p.Branches
+		plan, err := worktree.PlanSync(preview)
+		if err != nil {
+			return "", 0, err
+		}
+		return output.SprintSyncPlan(plan), len(plan.Steps), nil
+	}
+
 	selection, err := resolveSyncSelection(resolveSyncSelectionParams{
 		Args:         args,
 		All:          all,
 		KeepConflict: keepConflict,
-		CanPrompt:    interactive && term.IsTerminal(int(os.Stdin.Fd())),
+		// --yes runs fully unattended: it forces the non-interactive path so a missing
+		// worktree selection errors (specify branches or --all) instead of a picker.
+		CanPrompt: interactive && term.IsTerminal(int(os.Stdin.Fd())) && !yes,
 		Cfg:          cfg,
+		BaseBranch:   baseBranch,
+		PlanPreview:  planPreview,
+		SkipConfirm:  dryRun || yes,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "Aborted.")
+		})
 		return nil
 	}
 	if err != nil {
@@ -112,11 +144,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	if interactive && len(plan.Steps) > 0 {
 		output.FrameStart(cmd.ErrOrStderr())
-		output.FormatSyncPlan(cmd.ErrOrStderr(), plan)
-		if !dryRun && !yes && !confirmSync(confirmSyncParams{Count: len(plan.Steps), KeepConflict: syncParams.KeepConflict}) {
-			output.Message(cmd.ErrOrStderr(), "Aborted.")
-			output.FrameEnd(cmd.ErrOrStderr())
-			return nil
+		// The interactive picker already previewed the plan and confirmed it on its
+		// own step (see syncpicker); only the non-picker flow previews/confirms here.
+		if !selection.PlanConfirmed {
+			output.FormatSyncPlan(cmd.ErrOrStderr(), plan)
+			if !dryRun && !yes && !confirmSync(confirmSyncParams{Count: len(plan.Steps), KeepConflict: syncParams.KeepConflict}) {
+				output.Message(cmd.ErrOrStderr(), "Aborted.")
+				output.FrameEnd(cmd.ErrOrStderr())
+				return nil
+			}
 		}
 	}
 
@@ -141,6 +177,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if !dryRun && shouldPush(shouldPushParams{
 		Push:        push,
 		NoPush:      noPush,
+		Yes:         yes,
 		Interactive: interactive,
 		Steps:       syncResult.Steps,
 	}) {
@@ -179,25 +216,32 @@ type resolveSyncSelectionParams struct {
 	KeepConflict bool
 	CanPrompt    bool
 	Cfg          shared.ConfigResult
+	// BaseBranch, PlanPreview and SkipConfirm are forwarded to the interactive
+	// picker so its confirmation step can preview the cascade (see syncpicker).
+	BaseBranch  string
+	PlanPreview func(syncpicker.PlanPreviewParams) (string, int, error)
+	SkipConfirm bool
 }
 
 // syncSelection is the resolved sync target: the branches to rebase (nil means
-// "every worktree") and whether a conflicting rebase is left in progress.
+// "every worktree"), whether a conflicting rebase is left in progress, and
+// whether the plan was already previewed and confirmed interactively (by the
+// picker) so runSync must not preview/confirm it again.
 type syncSelection struct {
-	Branches     []string
-	KeepConflict bool
+	Branches      []string
+	KeepConflict  bool
+	PlanConfirmed bool
 }
 
 // resolveSyncSelection turns the CLI inputs into the branches to sync and the
-// conflict mode. Positional args and --all take the conflict mode from the
-// --keep-conflict flag. With no args, the two-step picker opens when the session
-// can prompt (human format on a TTY) — its second step decides the conflict mode
-// (pre-selected from the flag) — and is otherwise a usage error.
+// conflict mode. Whenever the session can prompt and the confirmation is not
+// skipped, the wizard runs for every entry path — the multi-select is shown only
+// when no worktrees are fixed (branch args or --all), while the on-conflict choice
+// and the plan recap are shared by all paths. Fully flag-specified or
+// non-interactive runs bypass it.
 func resolveSyncSelection(params resolveSyncSelectionParams) (syncSelection, error) {
-	if params.All {
-		return syncSelection{Branches: nil, KeepConflict: params.KeepConflict}, nil
-	}
-
+	// Branches fixed by args (--all defers to the resolved worktree list below).
+	var preselected []string
 	if len(params.Args) > 0 {
 		branches, err := worktree.ResolveSyncBranches(worktree.ResolveSyncBranchesParams{
 			ProjectDir: params.Cfg.ProjectDir,
@@ -206,12 +250,23 @@ func resolveSyncSelection(params resolveSyncSelectionParams) (syncSelection, err
 		if err != nil {
 			return syncSelection{}, err
 		}
-		return syncSelection{Branches: branches, KeepConflict: params.KeepConflict}, nil
+		preselected = branches
+	}
+	needSelect := !params.All && len(preselected) == 0
+
+	// No terminal to prompt on: fall back to the flags (an explicit target is required).
+	if !params.CanPrompt {
+		if needSelect {
+			return syncSelection{}, fmt.Errorf("specify one or more worktrees, or pass --%s (no interactive picker under --%s, without a terminal, or in --%s %s mode)",
+				domain.FlagAll, domain.FlagYes, domain.FlagOutput, domain.OutputJSON)
+		}
+		return syncSelection{Branches: branchesForSync(params.All, preselected), KeepConflict: params.KeepConflict}, nil
 	}
 
-	if !params.CanPrompt {
-		return syncSelection{}, fmt.Errorf("specify one or more worktrees, or pass --%s (no interactive picker without a terminal or in --%s %s mode)",
-			domain.FlagAll, domain.FlagOutput, domain.OutputJSON)
+	// Worktrees already fixed and the confirmation skipped (--yes/--dry-run): nothing
+	// to ask, sync straight away.
+	if !needSelect && params.SkipConfirm {
+		return syncSelection{Branches: branchesForSync(params.All, preselected), KeepConflict: params.KeepConflict}, nil
 	}
 
 	statuses, err := worktree.List(domain.ListParams{
@@ -222,15 +277,64 @@ func resolveSyncSelection(params resolveSyncSelectionParams) (syncSelection, err
 	if err != nil {
 		return syncSelection{}, err
 	}
+	if params.All {
+		// --all previews the explicit worktree list; the service still receives nil.
+		preselected = syncableBranches(statuses)
+	}
 
 	result, err := syncpicker.Run(syncpicker.RunParams{
 		Statuses:            statuses,
+		Preselected:         pickerPreselection(needSelect, preselected),
 		DefaultKeepConflict: params.KeepConflict,
+		KeepConflict:        params.KeepConflict,
+		BaseBranch:          params.BaseBranch,
+		PlanPreview:         params.PlanPreview,
+		SkipConfirm:         params.SkipConfirm,
 	})
 	if err != nil {
 		return syncSelection{}, err
 	}
-	return syncSelection{Branches: result.Branches, KeepConflict: result.KeepConflict}, nil
+	// Declining the plan on the picker's recap aborts, like Esc.
+	if !result.Confirmed {
+		return syncSelection{}, domain.ErrUserAborted
+	}
+	return syncSelection{
+		Branches:      branchesForSync(params.All, result.Branches),
+		KeepConflict:  result.KeepConflict,
+		PlanConfirmed: !params.SkipConfirm,
+	}, nil
+}
+
+// branchesForSync preserves --all's "sync every worktree" semantics: the service
+// treats a nil selection as "all", so --all passes nil even though the picker
+// previewed the resolved list.
+func branchesForSync(all bool, list []string) []string {
+	if all {
+		return nil
+	}
+	return list
+}
+
+// pickerPreselection returns nil (show the multi-select) when the worktrees still
+// need choosing, else the fixed list (args / --all).
+func pickerPreselection(needSelect bool, preselected []string) []string {
+	if needSelect {
+		return nil
+	}
+	return preselected
+}
+
+// syncableBranches lists the managed non-base worktree branches — the explicit set
+// --all previews (the service still receives nil to sync them all).
+func syncableBranches(statuses []domain.WorktreeStatus) []string {
+	branches := make([]string, 0, len(statuses))
+	for _, s := range statuses {
+		if s.IsParent {
+			continue
+		}
+		branches = append(branches, s.Branch)
+	}
+	return branches
 }
 
 func renderEmptyPlan(cmd *cobra.Command, base string, interactive bool) error {
@@ -251,11 +355,10 @@ type confirmSyncParams struct {
 func confirmSync(params confirmSyncParams) bool {
 	warning := ""
 	if params.KeepConflict {
-		warning = "On conflict the rebase is left in progress in its worktree (not aborted). " +
-			"Several worktrees may be left mid-rebase; resolve each with git rebase --continue."
+		warning = domain.SyncKeepConflictWarning
 	}
 	cm := components.NewConfirm(components.NewConfirmParams{
-		Title:      fmt.Sprintf("Rebase %d worktree(s) onto their parents?", params.Count),
+		Title:      fmt.Sprintf(domain.SyncConfirmPrompt, params.Count),
 		Warning:    warning,
 		DefaultYes: true,
 	})
@@ -266,6 +369,7 @@ func confirmSync(params confirmSyncParams) bool {
 type shouldPushParams struct {
 	Push        bool
 	NoPush      bool
+	Yes         bool
 	Interactive bool
 	Steps       []domain.SyncStepResult
 }
@@ -277,6 +381,7 @@ func shouldPush(params shouldPushParams) bool {
 	switch rules.DecidePush(rules.DecidePushParams{
 		Push:          params.Push,
 		NoPush:        params.NoPush,
+		Yes:           params.Yes,
 		Interactive:   params.Interactive,
 		PushableCount: ready,
 	}) {
@@ -289,13 +394,25 @@ func shouldPush(params shouldPushParams) bool {
 	}
 }
 
-func confirmPush(count int) bool {
-	cm := components.NewConfirm(components.NewConfirmParams{
-		Title:      fmt.Sprintf("Push %d rebased branch(es) to origin?", count),
-		Warning:    "This rewrites the remote branches with --force-with-lease.",
-		DefaultYes: false,
-	})
-	confirmed, err := components.RunStandaloneConfirm(cm)
-	return err == nil && confirmed
-}
+// Post-sync push choices.
+const (
+	syncPushKeep = "keep"
+	syncPushDo   = "push"
+)
 
+func confirmPush(count int) bool {
+	// A select rather than a Yes/No so the effect of each choice is explicit. "Keep
+	// local" leads (the default): the push force-pushes with --force-with-lease, so
+	// it stays opt-in rather than the highlighted default.
+	sl := components.NewSelectList(components.NewSelectListParams{
+		Title:       fmt.Sprintf(domain.SyncPushPrompt, count),
+		Description: domain.SyncPushWarning,
+		Items: []components.SelectItem{
+			{Label: "Keep local", Value: syncPushKeep},
+			{Separator: true},
+			{Label: "Push to origin", Value: syncPushDo},
+		},
+	})
+	choice, err := components.RunStandaloneSelect(sl)
+	return err == nil && choice == syncPushDo
+}

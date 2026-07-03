@@ -37,6 +37,7 @@ func NewCmd() *cobra.Command {
 	cmd.Flags().Bool(domain.FlagMine, false, "Show only your PRs")
 	cmd.Flags().String(domain.FlagFrom, "", "Parent branch for sync (defaults to the PR base branch)")
 	cmd.Flags().String(domain.FlagEnvFrom, "", "Override env strategy (example, main, parent)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (PR number required)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -56,10 +57,18 @@ func runCheckout(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	fromOverride, _ := cmd.Flags().GetString(domain.FlagFrom)
 	envOverride, _ := cmd.Flags().GetString(domain.FlagEnvFrom)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 
+	if format == domain.OutputJSON && !yes {
+		return fmt.Errorf("--output json requires --%s (prompts cannot run in JSON mode)", domain.FlagYes)
+	}
+
+	// --yes runs prompt-free: parent defaults to the PR base branch, env to the
+	// config strategy, and the env-fallback confirmation is skipped. It behaves like
+	// a non-interactive run (a PR number is required) while still framing human output.
 	opts := checkoutOptions{
 		jsonMode:     format == domain.OutputJSON,
-		interactive:  rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd())),
+		interactive:  rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd())) && !yes,
 		fromOverride: fromOverride,
 		envOverride:  envOverride,
 	}
@@ -112,7 +121,7 @@ func checkoutByNumber(cmd *cobra.Command, result shared.ConfigResult, number int
 	}
 	parentBranches := parentBranchCandidates(result.ProjectDir)
 
-	parent, env, aborted, err := resolveParentAndEnv(resolveParams{
+	parent, env, aborted, wizardRan, err := resolveParentAndEnv(resolveParams{
 		result:         result,
 		pr:             p,
 		parentBranches: parentBranches,
@@ -122,14 +131,17 @@ func checkoutByNumber(cmd *cobra.Command, result shared.ConfigResult, number int
 		return err
 	}
 
-	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode, interactive: opts.interactive})
+	// When the wizard ran it already hosted the env-fallback confirmation; only
+	// the no-wizard interactive path (both --from and --env-from given) still needs
+	// the standalone confirm.
+	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode, interactive: opts.interactive, envConfirmed: wizardRan})
 }
 
 // checkoutInteractive handles `wtm checkout` with no number: it renders the
 // multi-step wizard instantly and streams open PRs in asynchronously.
 func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts checkoutOptions) error {
 	if !opts.interactive {
-		return fmt.Errorf("PR number required in non-interactive mode")
+		return fmt.Errorf("PR number required without an interactive terminal (or when --yes is set)")
 	}
 
 	localBranches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: result.ProjectDir})
@@ -151,6 +163,9 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 		ConfigStrategy:   result.Config.Project.Env.Strategy,
 		IncludeParent:    opts.fromOverride == "",
 		IncludeEnv:       opts.envOverride == "",
+		FromOverride:     opts.fromOverride,
+		EnvOverride:      opts.envOverride,
+		EnvFallback:      shared.EnvFallbackDecider(dir, result.Config),
 	})
 	if err != nil {
 		if errors.Is(err, domain.ErrUserAborted) {
@@ -170,7 +185,8 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 	parent := rules.FirstNonEmpty(opts.fromOverride, res.FromBranch, p.BaseBranch)
 	env := rules.FirstNonEmpty(opts.envOverride, res.EnvFromOverride)
 
-	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode, interactive: opts.interactive})
+	// The env-fallback confirmation ran inside the wizard.
+	return createFromPR(cmd, result, createFromPRParams{pr: p, parent: parent, env: env, jsonMode: opts.jsonMode, interactive: opts.interactive, envConfirmed: true})
 }
 
 // resolveParams holds inputs for resolving parent/env for a known PR.
@@ -183,7 +199,9 @@ type resolveParams struct {
 
 // resolveParentAndEnv determines the parent branch and env strategy for a known
 // PR, running the wizard for whatever the flags left unset (interactive only).
-func resolveParentAndEnv(params resolveParams) (parent, env string, aborted bool, err error) {
+// wizardRan reports whether the wizard ran — and thus already hosted the
+// env-fallback confirmation.
+func resolveParentAndEnv(params resolveParams) (parent, env string, aborted, wizardRan bool, err error) {
 	parent = params.opts.fromOverride
 	env = params.opts.envOverride
 
@@ -191,6 +209,7 @@ func resolveParentAndEnv(params resolveParams) (parent, env string, aborted bool
 	needEnv := env == ""
 
 	if params.opts.interactive && (needParent || needEnv) {
+		wizardRan = true
 		pr := params.pr
 		res, runErr := checkoutwizard.RunWizard(checkoutwizard.WizardParams{
 			ProjectDir:     params.result.ProjectDir,
@@ -199,12 +218,15 @@ func resolveParentAndEnv(params resolveParams) (parent, env string, aborted bool
 			ConfigStrategy: params.result.Config.Project.Env.Strategy,
 			IncludeParent:  needParent,
 			IncludeEnv:     needEnv,
+			FromOverride:   params.opts.fromOverride,
+			EnvOverride:    params.opts.envOverride,
+			EnvFallback:    shared.EnvFallbackDecider(params.result.ProjectDir, params.result.Config),
 		})
 		if runErr != nil {
 			if errors.Is(runErr, domain.ErrUserAborted) {
-				return "", "", true, nil
+				return "", "", true, wizardRan, nil
 			}
-			return "", "", false, runErr
+			return "", "", false, wizardRan, runErr
 		}
 		if needParent {
 			parent = res.FromBranch
@@ -217,7 +239,7 @@ func resolveParentAndEnv(params resolveParams) (parent, env string, aborted bool
 	if parent == "" {
 		parent = params.pr.BaseBranch
 	}
-	return parent, env, false, nil
+	return parent, env, false, wizardRan, nil
 }
 
 // createFromPRParams holds inputs for the final worktree creation step.
@@ -227,18 +249,20 @@ type createFromPRParams struct {
 	env         string
 	jsonMode    bool
 	interactive bool
+	// envConfirmed is true when the env-fallback confirmation already ran inside
+	// the wizard; only the no-wizard interactive path confirms it here.
+	envConfirmed bool
 }
 
 func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createFromPRParams) error {
 	p := params.pr
 
-	if params.interactive && !shared.ConfirmEnvParentFallback(shared.EnvFallbackParams{
-		ProjectDir:  result.ProjectDir,
-		Source:      params.parent,
-		Config:      result.Config,
-		EnvOverride: params.env,
-	}) {
-		return nil
+	if params.interactive && !params.envConfirmed {
+		if show, cp := shared.EnvFallbackDecider(result.ProjectDir, result.Config)(params.parent, params.env); show {
+			if confirmed, _ := components.RunStandaloneConfirm(components.NewConfirm(cp)); !confirmed {
+				return nil
+			}
+		}
 	}
 
 	fetchErr := components.RunLoading(components.LoadingParams{

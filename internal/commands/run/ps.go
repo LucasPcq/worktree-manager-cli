@@ -29,6 +29,14 @@ func newPsCmd() *cobra.Command {
 }
 
 func runPs(cmd *cobra.Command, _ []string) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+	if err := shared.GuardRunInitialized(dir); err != nil {
+		return err
+	}
+
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	if format == domain.OutputJSON {

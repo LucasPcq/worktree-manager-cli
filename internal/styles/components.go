@@ -78,6 +78,11 @@ var (
 	// SummaryLine renders a collapsed previous-step summary.
 	SummaryLine = lipgloss.NewStyle().Foreground(ColorMuted).Italic(true)
 
+	// SummaryLineSkipped renders an auto-skipped step's summary line
+	// ("⊘ <step> — <reason>"), so the breadcrumb history shows why a step was
+	// skipped instead of hiding it.
+	SummaryLineSkipped = lipgloss.NewStyle().Foreground(ColorMuted)
+
 	// HelpBar renders the bottom help text.
 	HelpBar = lipgloss.NewStyle().Foreground(ColorMuted)
 

@@ -14,7 +14,8 @@ type InitGlobalFlags struct {
 // InitProjectFlags holds the raw project-config inputs for non-interactive init.
 // NonInteractive makes unresolved required values fail rather than silently
 // falling back to a constant default. The Skip* flags opt out of optional
-// sections, mirroring the wizard skip key.
+// sections, mirroring the wizard skip key. Services are no longer part of the
+// global init — they are configured by the dedicated `wtm run init` command.
 type InitProjectFlags struct {
 	BasePath       string
 	BaseBranch     string
@@ -23,7 +24,6 @@ type InitProjectFlags struct {
 	NonInteractive bool
 	SkipEnv        bool
 	SkipHooks      bool
-	SkipServices   bool
 }
 
 // BuildGlobalAnswers resolves global config from flags, falling back to the
@@ -97,15 +97,20 @@ func BuildProjectAnswers(flags InitProjectFlags, detection domain.InitDetectionR
 		}
 	}
 
-	if flags.SkipServices {
-		answers.SkipServices = true
-	} else {
-		answers.SelectedPackageScripts = detection.PackageScripts
-		if len(detection.DockerComposeFiles) > 0 {
-			answers.DockerComposeFiles = detection.DockerComposeFiles
-			answers.DockerComposeCmd = detection.DockerComposeCmd
-		}
-	}
-
 	return answers, nil
+}
+
+// AutoServicesAnswers builds the services portion of InitProjectAnswers from
+// detection alone — every detected docker-compose file and package script — for
+// the non-interactive `wtm run init` path. The base config fields are left
+// zero-valued: only the services fields feed BuildInitRunConfig.
+func AutoServicesAnswers(detection domain.InitDetectionResult) domain.InitProjectAnswers {
+	answers := domain.InitProjectAnswers{
+		SelectedPackageScripts: detection.PackageScripts,
+	}
+	if len(detection.DockerComposeFiles) > 0 {
+		answers.DockerComposeFiles = detection.DockerComposeFiles
+		answers.DockerComposeCmd = detection.DockerComposeCmd
+	}
+	return answers
 }

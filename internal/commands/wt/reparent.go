@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -19,17 +20,19 @@ import (
 // newReparentCmd creates the wtm reparent subcommand.
 func newReparentCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdReparent + " [branch]",
-		Short: "Change the parent a worktree is rebased onto",
-		Long: "Change the recorded parent (source branch) of a worktree. Only the metadata is\n" +
-			"updated — the rebase happens on the next `wtm sync`. Pass the worktree and --to <parent>,\n" +
-			"or run with no arguments to pick interactively. The new parent must exist as a local or\n" +
-			"origin remote-tracking branch (origin/x), and the resulting parent chain must stay acyclic.",
-		Args: cobra.MaximumNArgs(1),
+		Use:   domain.CmdReparent + " [branch...]",
+		Short: "Change the parent one or more worktrees are rebased onto",
+		Long: "Change the recorded parent (source branch) of one or more worktrees. Only the\n" +
+			"metadata is updated — the rebase happens on the next `wtm sync`. Pass the worktrees\n" +
+			"and --to <parent>, or run with no arguments to multi-select interactively. The new\n" +
+			"parent must exist as a local or origin remote-tracking branch (origin/x), and the\n" +
+			"resulting parent chain must stay acyclic.",
+		Args: cobra.ArbitraryArgs,
 		RunE: runReparent,
 	}
 
 	cmd.Flags().String(domain.FlagTo, "", "New parent branch to rebase onto")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (needs at least one worktree and --to)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -37,8 +40,18 @@ func newReparentCmd() *cobra.Command {
 
 func runReparent(cmd *cobra.Command, args []string) error {
 	to, _ := cmd.Flags().GetString(domain.FlagTo)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	interactive := rules.IsHumanFormat(format)
+
+	if format == domain.OutputJSON && !yes {
+		return fmt.Errorf("--output json requires --%s (the confirmation cannot run in JSON mode)", domain.FlagYes)
+	}
+
+	humanOutput := rules.IsHumanFormat(format)
+	// The wizard (and its confirmation recap) needs a TTY and is skipped by --yes; a
+	// human-format run without a terminal also falls back to the non-interactive path.
+	// This gates the wizard only — the output format still follows --output.
+	interactive := humanOutput && !yes && term.IsTerminal(int(os.Stdin.Fd()))
 
 	dir, err := os.Getwd()
 	if err != nil {
@@ -50,26 +63,27 @@ func runReparent(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	branch := firstArg(args)
-
-	branch, newParent, err := resolveReparentTargets(resolveReparentTargetsParams{
-		Branch:      branch,
+	branches, newParent, err := resolveReparentTargets(resolveReparentTargetsParams{
+		Branches:    args,
 		NewParent:   to,
 		ProjectDir:  cfg.ProjectDir,
 		StateDir:    cfg.StateDir,
 		Interactive: interactive,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), "Aborted.")
+		})
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 
-	result, err := worktree.Reparent(domain.ReparentParams{
+	results, err := worktree.ReparentBatch(domain.ReparentBatchParams{
 		ProjectDir: cfg.ProjectDir,
 		StateDir:   cfg.StateDir,
-		Branch:     branch,
+		Branches:   branches,
 		NewParent:  newParent,
 		BaseBranch: resolveBase("", cfg),
 	})
@@ -77,58 +91,61 @@ func runReparent(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if !interactive {
-		return output.WriteReparentJSON(cmd.OutOrStdout(), result)
+	if !humanOutput {
+		return output.WriteReparentJSON(cmd.OutOrStdout(), results)
 	}
 
 	output.Frame(cmd.OutOrStdout(), func() {
-		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Reparented %s: %s → %s", result.Branch, result.OldParent, result.NewParent))
-		output.Message(cmd.OutOrStdout(), fmt.Sprintf("Run `wtm sync %s` to rebase onto the new parent.", result.Branch))
+		for _, result := range results {
+			output.Success(cmd.OutOrStdout(), fmt.Sprintf("Reparented %s: %s → %s", result.Branch, result.OldParent, result.NewParent))
+		}
+		output.Message(cmd.OutOrStdout(), reparentSyncHint(results))
 	})
 	return nil
 }
 
-func firstArg(args []string) string {
-	if len(args) > 0 {
-		return args[0]
+// reparentSyncHint tells the user how to apply the recorded change. A single
+// worktree names it in the suggested command; several point at a bare `wtm sync`.
+func reparentSyncHint(results []domain.ReparentResult) string {
+	if len(results) == 1 {
+		return fmt.Sprintf("Run `wtm sync %s` to rebase onto the new parent.", results[0].Branch)
 	}
-	return ""
+	return "Run `wtm sync` to rebase the reparented worktrees onto their new parent."
 }
 
 type resolveReparentTargetsParams struct {
-	Branch      string
+	Branches    []string
 	NewParent   string
 	ProjectDir  string
 	StateDir    string
 	Interactive bool
 }
 
-// resolveReparentTargets fills in the worktree and new parent. When both are
-// already supplied it returns them untouched. Otherwise an interactive run opens
-// the multi-step wizard for whichever is missing; a non-interactive run is a usage
-// error (there is no picker to fall back to).
-func resolveReparentTargets(params resolveReparentTargetsParams) (branch, newParent string, err error) {
-	if params.Branch != "" && params.NewParent != "" {
-		return params.Branch, params.NewParent, nil
-	}
-
+// resolveReparentTargets fills in the worktrees and new parent. A non-interactive
+// run requires both (there is no picker to fall back to). An interactive run always
+// opens the wizard — picking whatever is missing and confirming on a final recap,
+// even when both were given as flags (mirrors create --from).
+func resolveReparentTargets(params resolveReparentTargetsParams) (branches []string, newParent string, err error) {
 	if !params.Interactive {
-		if params.Branch == "" {
-			return "", "", fmt.Errorf("specify a worktree (no interactive picker in --%s %s mode)", domain.FlagOutput, domain.OutputJSON)
+		if len(params.Branches) == 0 {
+			return nil, "", fmt.Errorf("specify at least one worktree (no interactive picker under --%s, without a terminal, or in --%s %s mode)", domain.FlagYes, domain.FlagOutput, domain.OutputJSON)
 		}
-		return "", "", fmt.Errorf("specify the new parent with --%s (no interactive picker in --%s %s mode)", domain.FlagTo, domain.FlagOutput, domain.OutputJSON)
+		if params.NewParent == "" {
+			return nil, "", fmt.Errorf("specify the new parent with --%s (no interactive picker under --%s, without a terminal, or in --%s %s mode)", domain.FlagTo, domain.FlagYes, domain.FlagOutput, domain.OutputJSON)
+		}
+		return params.Branches, params.NewParent, nil
 	}
 
 	res, err := reparenttui.RunWizard(reparenttui.RunWizardParams{
 		ProjectDir:     params.ProjectDir,
-		Branch:         params.Branch,
+		Branches:       params.Branches,
 		NewParent:      params.NewParent,
 		CurrentParents: currentParents(params.ProjectDir, params.StateDir),
 	})
 	if err != nil {
-		return "", "", err
+		return nil, "", err
 	}
-	return res.Branch, res.NewParent, nil
+	return res.Branches, res.NewParent, nil
 }
 
 // currentParents maps each non-main worktree to its recorded parent, so the

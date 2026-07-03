@@ -21,6 +21,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
+	"github.com/LucasPcq/wtm/internal/tui/worktreerefresh"
 )
 
 // newListCmd creates the wtm list subcommand.
@@ -122,6 +123,8 @@ func runList(cmd *cobra.Command, _ []string) error {
 		statuses:   statuses,
 		services:   services,
 		projectDir: result.ProjectDir,
+		stateDir:   result.StateDir,
+		config:     result.Config,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
@@ -158,6 +161,8 @@ type pickParams struct {
 	statuses   []domain.WorktreeStatus
 	services   []domain.JobInfo
 	projectDir string
+	stateDir   string
+	config     domain.Config
 }
 
 // pickWorktreeAndAction renders the worktree picker instantly and streams PRs
@@ -167,45 +172,60 @@ type pickParams struct {
 func pickWorktreeAndAction(params pickParams) (domain.WorktreeStatus, string, []domain.PRInfo, error) {
 	statuses := params.statuses
 
-	wtItems := make([]components.SelectItem, 0, len(statuses))
-	for i, s := range statuses {
-		status := worktreepicker.BuildStatus(s)
-		wtItems = append(wtItems, components.SelectItem{
-			Label: s.Branch,
-			Value: strconv.Itoa(i),
-			Badges: worktreepicker.BuildTags(worktreepicker.BuildTagsParams{
-				Status:   s,
-				Services: params.services,
-			}),
-			Status: &status,
-		})
-	}
-
-	branchByIdx := make(map[string]string, len(statuses))
-	for i, s := range statuses {
-		branchByIdx[strconv.Itoa(i)] = s.Branch
-	}
-
 	var (
 		loadedPRs  []domain.PRInfo
 		loadedConn domain.GHConnection
 		prsLoaded  bool
 	)
 
+	// holder backs the worktree rows and is swapped in place on "r" refresh
+	// (re-fetch origin + re-list); buildWtItems reads through it and loadedPRs so a
+	// refresh keeps the streamed PR badges. Closures below read the `statuses`
+	// variable (not a copy) so a refresh reaching them sees the fresh slice.
+	holder := &statuses
+	buildWtItems := func() []components.SelectItem {
+		items := make([]components.SelectItem, 0, len(*holder))
+		for i, s := range *holder {
+			status := worktreepicker.BuildStatus(s)
+			items = append(items, components.SelectItem{
+				Label: s.Branch,
+				Value: strconv.Itoa(i),
+				Badges: worktreepicker.BuildTags(worktreepicker.BuildTagsParams{
+					Status:   s,
+					PRs:      loadedPRs,
+					Services: params.services,
+				}),
+				Status: &status,
+			})
+		}
+		return items
+	}
+
+	branchForValue := func(v string) string {
+		idx, err := strconv.Atoi(v)
+		if err != nil || idx < 0 || idx >= len(*holder) {
+			return v
+		}
+		return (*holder)[idx].Branch
+	}
+
+	listParams := domain.ListParams{ProjectDir: params.projectDir, StateDir: params.stateDir, Config: params.config}
+
 	wiz := components.NewWizardWithParams(components.WizardParams{
 		Steps: []components.Step{
 			{
 				Name:  "Worktree",
-				Model: components.NewSelectList(components.NewSelectListParams{Title: "Select a worktree", Items: wtItems}),
+				Model: components.NewSelectList(components.NewSelectListParams{Title: "Select a worktree", Items: buildWtItems()}),
+				Build: func([]components.Step) any {
+					return components.NewSelectList(components.NewSelectListParams{Title: "Select a worktree", Items: buildWtItems()})
+				},
+				CanRefresh: true,
 				Summary: func(m any) string {
 					sl, ok := m.(components.SelectListModel)
 					if !ok {
 						return ""
 					}
-					if name, found := branchByIdx[sl.Value()]; found {
-						return name
-					}
-					return sl.Value()
+					return branchForValue(sl.Value())
 				},
 			},
 			{
@@ -236,6 +256,14 @@ func pickWorktreeAndAction(params pickParams) (domain.WorktreeStatus, string, []
 		Loading:     true,
 		LoadingText: worktreepicker.LoadingPRsText,
 		OnMsg: func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+			if cmd, handled := worktreerefresh.Handle(worktreerefresh.HandleParams{
+				Wizard:     w,
+				Msg:        msg,
+				ListParams: listParams,
+				Holder:     holder,
+			}); handled {
+				return cmd, true
+			}
 			loaded, ok := msg.(worktreepicker.PRsLoadedMsg)
 			if !ok {
 				return nil, false
@@ -244,7 +272,7 @@ func pickWorktreeAndAction(params pickParams) (domain.WorktreeStatus, string, []
 			loadedConn = loaded.Conn
 			prsLoaded = true
 			badges := worktreepicker.BadgesByValue(worktreepicker.BadgesByValueParams{
-				Statuses: statuses,
+				Statuses: *holder,
 				PRs:      loaded.PRs,
 				Services: params.services,
 			})

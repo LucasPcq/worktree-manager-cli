@@ -55,6 +55,11 @@ var (
 	// ErrJobNotFound is returned when a referenced job is not declared in run.toml.
 	ErrJobNotFound = errors.New("job not found")
 
+	// ErrRunNotInitialized is returned when a run command runs before the run
+	// module is initialized — run.toml is absent or declares no job/profile. The
+	// message points at the dedicated setup command.
+	ErrRunNotInitialized = errors.New("run module not initialized — run `wtm run init` first")
+
 	// ErrExtractConflict is returned when the selected changes do not apply
 	// cleanly onto the target worktree. The extraction is aborted and the source
 	// worktree is left untouched.
@@ -63,6 +68,30 @@ var (
 	// ErrNoChangesToExtract is returned when the source worktree has no
 	// uncommitted changes to extract.
 	ErrNoChangesToExtract = errors.New("no uncommitted changes to extract")
+
+	// ErrNoDirtyWorktrees is returned when no managed worktree has uncommitted
+	// changes, so the interactive source picker would be empty.
+	ErrNoDirtyWorktrees = errors.New("no worktree has changes to extract")
+
+	// ErrExtractSourceRequired is returned when extract is invoked without a
+	// source worktree argument and cannot fall back to the interactive picker
+	// (--yes, no terminal, or --output json).
+	ErrExtractSourceRequired = errors.New("specify a source worktree (no interactive picker under --yes, without a terminal, or in --output json mode)")
+
+	// ErrExtractFilesRequired is returned when extract cannot resolve which files
+	// to extract: --files was omitted and there is no interactive picker (--yes, no
+	// terminal, or --output json).
+	ErrExtractFilesRequired = errors.New("specify --files (no interactive picker under --yes, without a terminal, or in --output json mode)")
+
+	// ErrExtractTargetRequired is returned when extract cannot resolve the target
+	// worktree: --to was omitted and there is no interactive picker (--yes, no
+	// terminal, or --output json).
+	ErrExtractTargetRequired = errors.New("specify --to (no interactive picker under --yes, without a terminal, or in --output json mode)")
+
+	// ErrCleanBranchRequired is returned when clean is invoked without a worktree
+	// branch argument and cannot fall back to the interactive picker (--yes, no
+	// terminal, or --output json).
+	ErrCleanBranchRequired = errors.New("specify a worktree branch to clean (no interactive picker under --yes, without a terminal, or in --output json mode)")
 
 	// ErrNoFilesSelected is returned when the user selects no files to extract.
 	ErrNoFilesSelected = errors.New("no files selected")

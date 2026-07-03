@@ -152,6 +152,39 @@ machine output (shell-eval: `resolve` success, `shell-init`) are never framed.
 Route on `rules.IsHumanFormat(format)`. See the `go-cli` skill (Output section) for
 the full convention.
 
+**Mutation commands — bypass flags (two orthogonal axes):** every worktree-mutating
+command (`create`, `clean`, `sync`, `prune`, `relocate`, `reparent`, `extract`,
+`checkout`) exposes bypass on two independent axes. This is the standardized model
+(aligned with `gcloud --quiet`, `terraform -input=false`, `apt -y` vs `--force-yes`,
+and [clig.dev](https://clig.dev)); every new or refactored mutation command MUST follow it.
+- **`--yes` / `-y` = the confirmation/decision axis — runs fully unattended, zero prompts.**
+  Every input resolves in one of three ways, no interaction:
+  1. **Decision / confirmation** (recap, reparent, push, on-conflict, fast-forward) →
+     its flag value, else a documented **safe default** (never destructive: `sync --yes`
+     does not push — use `--push`; `extract --yes` aborts on conflict; `clean`/`prune --yes`
+     leave orphans unless `--reparent-children`).
+  2. **Required selection with no safe default** (which files for `extract`, which
+     worktrees for `sync`, source/branch args) → its flag/arg, else **error naming the
+     missing flag**. Never fall back to an interactive picker under `--yes`.
+  3. A picker only ever runs in a **fully interactive** run (no `--yes`, TTY, human output).
+- **`--force` = the safety axis, strictly separate.** It only lifts safety refusals
+  (dirty / unpushed / open-PR / locked). It does **not** imply `--yes`: `--force`
+  alone still runs the wizard and asks to confirm (thread `--force` into the wizard as a
+  preset so refusals are lifted without re-asking). JSON mode requires `--yes`.
+
+Implementation rule: fold `--yes` into the command's `interactive` boolean
+(`interactive := isTTY && IsHumanFormat(format) && !yes`); every picker/prompt gates on
+`interactive`, and each required-selection guard returns a sentinel error when it is
+false. See `internal/commands/wt/extract.go` and `internal/commands/wt/sync.go`
+(`resolveSyncSelection`). Route decision defaults through a pure rule where one exists
+(`rules.DecidePush` takes a `Yes` field).
+
+**Recap completeness:** every recap builder reads the value from its wizard step,
+**else falls back to the flag/arg** that resolved it. A flag must never make a line
+disappear from the recap. See each `build*Recap` / `recapStep` (e.g.
+`internal/tui/extract` `buildCombinedRecap`, `internal/tui/newwt` `buildCreateRecap`,
+`internal/tui/checkout` `buildCheckoutRecap`, `internal/tui/reparent` `recapBody`).
+
 ## 10. Validate before commit
 
 Run the **`build-validator`** subagent at the end of every development session

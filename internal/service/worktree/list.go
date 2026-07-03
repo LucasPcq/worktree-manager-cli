@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/branch"
 )
 
 // statusWorkers bounds concurrent git probes when building worktree status.
@@ -36,7 +37,12 @@ func List(params domain.ListParams) ([]domain.WorktreeStatus, error) {
 		go func(idx int, wt domain.GitWorktree) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			statuses[idx] = buildStatus(wt, baseBranch, params.StateDir)
+			statuses[idx] = buildStatus(buildStatusParams{
+				GitWorktree: wt,
+				BaseBranch:  baseBranch,
+				StateDir:    params.StateDir,
+				ProjectDir:  params.ProjectDir,
+			})
 		}(i, gitWorktree)
 	}
 	wg.Wait()
@@ -46,17 +52,39 @@ func List(params domain.ListParams) ([]domain.WorktreeStatus, error) {
 	return statuses, nil
 }
 
-func buildStatus(gitWorktree domain.GitWorktree, baseBranch, stateDir string) domain.WorktreeStatus {
+// Refresh fetches origin then re-lists so the origin-divergence badges reflect
+// the latest remote state. A failed fetch is ignored (best effort): the list
+// still refreshes from whatever remote-tracking refs are present. The dirty and
+// base-ahead fields are local and recompute harmlessly.
+func Refresh(params domain.ListParams) ([]domain.WorktreeStatus, error) {
+	_ = infra.Fetch(infra.FetchParams{ProjectDir: params.ProjectDir})
+	return List(params)
+}
+
+type buildStatusParams struct {
+	GitWorktree domain.GitWorktree
+	BaseBranch  string
+	StateDir    string
+	ProjectDir  string
+}
+
+func buildStatus(params buildStatusParams) domain.WorktreeStatus {
+	gitWorktree := params.GitWorktree
 	dirty, _ := infra.IsDirty(infra.IsDirtyParams{WorktreePath: gitWorktree.Path})
 
 	ahead := 0
 	if !gitWorktree.IsMain {
 		ahead, _ = infra.CommitsAhead(infra.CommitsAheadParams{
 			WorktreePath: gitWorktree.Path,
-			BaseBranch:   baseBranch,
+			BaseBranch:   params.BaseBranch,
 			Branch:       gitWorktree.Branch,
 		})
 	}
+
+	originState, originAB := branch.Divergence(branch.BranchParams{
+		ProjectDir: params.ProjectDir,
+		Branch:     gitWorktree.Branch,
+	})
 
 	return domain.WorktreeStatus{
 		Branch:           gitWorktree.Branch,
@@ -65,7 +93,10 @@ func buildStatus(gitWorktree domain.GitWorktree, baseBranch, stateDir string) do
 		IsDirty:          dirty,
 		RebaseInProgress: gitWorktree.RebaseInProgress,
 		CommitsAhead:     ahead,
-		CreatedAt:        worktreeCreatedAt(stateDir, gitWorktree.Branch, gitWorktree.Path),
+		CreatedAt:        worktreeCreatedAt(params.StateDir, gitWorktree.Branch, gitWorktree.Path),
+		OriginAhead:      originAB.Ahead,
+		OriginBehind:     originAB.Behind,
+		OriginState:      originState,
 	}
 }
 

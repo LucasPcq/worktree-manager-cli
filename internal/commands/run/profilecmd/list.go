@@ -42,6 +42,10 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("load run.toml: %w", err)
 	}
 
+	if err := shared.RequireRunInitialized(cfg); err != nil {
+		return err
+	}
+
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
 		return output.WriteProfilesJSON(cmd.OutOrStdout(), cfg.Profiles)

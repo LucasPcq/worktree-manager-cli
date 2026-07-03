@@ -8,41 +8,61 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-// Reparent changes the recorded parent (source_branch) of a worktree. It only
-// rewrites metadata — the actual rebase happens on the next `wtm sync`. The new
-// parent must exist as a local branch or an origin remote-tracking branch
-// (origin/x), and must keep the parent graph acyclic.
-func Reparent(params domain.ReparentParams) (domain.ReparentResult, error) {
+// ReparentBatch changes the recorded parent (source_branch) of one or more worktrees
+// to the same new parent in a single pass. It only rewrites metadata — the actual
+// rebase happens on the next `wtm sync`. The new parent must exist as a local branch
+// or an origin remote-tracking branch (origin/x), and the combined change must keep
+// the parent graph acyclic. A single-element Branches is the ordinary one-worktree
+// reparent.
+func ReparentBatch(params domain.ReparentBatchParams) ([]domain.ReparentResult, error) {
 	nodes, err := buildNodes(params.ProjectDir, params.StateDir)
 	if err != nil {
-		return domain.ReparentResult{}, err
+		return nil, err
 	}
 
-	if !isManaged(params.StateDir, params.Branch) {
-		return domain.ReparentResult{}, fmt.Errorf("%w: %s", domain.ErrWorktreeNotFound, params.Branch)
+	// Collapse repeated arguments (`wtm reparent feat feat`) so each worktree is
+	// validated and rewritten once — and reported once in the results.
+	branches := rules.UniqueStrings(params.Branches)
+
+	for _, branch := range branches {
+		if !isManaged(params.StateDir, branch) {
+			return nil, fmt.Errorf("%w: %s", domain.ErrWorktreeNotFound, branch)
+		}
 	}
 
 	if !infra.BranchOrRemoteExists(infra.BranchOrRemoteExistsParams{
 		ProjectDir: params.ProjectDir,
 		Ref:        params.NewParent,
 	}) {
-		return domain.ReparentResult{}, fmt.Errorf("%w: %s", domain.ErrBranchNotFound, params.NewParent)
+		return nil, fmt.Errorf("%w: %s", domain.ErrBranchNotFound, params.NewParent)
 	}
 
-	if err := rules.ValidateReparent(rules.ValidateReparentParams{
+	if err := rules.ValidateReparentBatch(rules.ValidateReparentBatchParams{
 		Nodes:      nodes,
-		Branch:     params.Branch,
+		Branches:   branches,
 		NewParent:  params.NewParent,
 		BaseBranch: params.BaseBranch,
 	}); err != nil {
-		return domain.ReparentResult{}, err
+		return nil, err
 	}
 
-	return setSourceBranch(setSourceBranchParams{
-		StateDir:  params.StateDir,
-		Branch:    params.Branch,
-		NewParent: params.NewParent,
-	})
+	results := make([]domain.ReparentResult, 0, len(branches))
+	for _, branch := range branches {
+		res, err := setSourceBranch(setSourceBranchParams{
+			StateDir:  params.StateDir,
+			Branch:    branch,
+			NewParent: params.NewParent,
+		})
+		if err != nil {
+			// Partial failure has no rollback: branches already rewritten in this loop
+			// keep their new parent, and results reports what succeeded. All validation
+			// (managed, parent existence, acyclicity) runs before the loop, so only an
+			// I/O write fault reaches here.
+			return results, err
+		}
+		results = append(results, res)
+	}
+	return results, nil
 }
 
 // PlanCleanReparent computes which children would be orphaned by cleaning a

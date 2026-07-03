@@ -1,20 +1,21 @@
+// Package clean builds the interactive worktree picker and confirm wizard for the
+// wtm clean command.
 package clean
 
 import (
 	"fmt"
 	"sort"
 
-	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// RunWorktreePicker displays a filterable picker of worktrees (excluding parent).
-// Returns ErrUserAborted on Ctrl+C.
-func RunWorktreePicker(projectDir string) (string, error) {
+// pickableItems lists the worktrees that can be cleaned (every worktree but the
+// main one), sorted by branch. Returns an error when none exist.
+func pickableItems(projectDir string) ([]components.SelectItem, error) {
 	worktrees, err := infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: projectDir})
 	if err != nil {
-		return "", fmt.Errorf("list worktrees: %w", err)
+		return nil, fmt.Errorf("list worktrees: %w", err)
 	}
 
 	var items []components.SelectItem
@@ -30,18 +31,7 @@ func RunWorktreePicker(projectDir string) (string, error) {
 	})
 
 	if len(items) == 0 {
-		return "", fmt.Errorf("no worktrees to clean (only the parent worktree exists)")
+		return nil, fmt.Errorf("no worktrees to clean (only the parent worktree exists)")
 	}
-
-	sl := components.NewSelectList(components.NewSelectListParams{
-		Title:       "Select worktree to clean",
-		Description: "The parent worktree cannot be cleaned",
-		Items:       items,
-	})
-
-	result, err := components.RunStandaloneSelect(sl)
-	if err != nil {
-		return "", domain.ErrUserAborted
-	}
-	return result, nil
+	return items, nil
 }

@@ -72,16 +72,44 @@ func TestWizardGoBackHopsOverAutoSkipped(t *testing.T) {
 	}
 }
 
-func TestWizardVisibleCounterExcludesSkipped(t *testing.T) {
+func TestWizardFiresOnEnterWhenAdvancing(t *testing.T) {
+	entered := 0
+	steps := []Step{
+		{Name: "a", Model: NewTextInput(NewTextInputParams{Title: "a"})},
+		{
+			Name:    "b",
+			Model:   NewTextInput(NewTextInputParams{Title: "b"}),
+			OnEnter: func([]Step) tea.Cmd { entered++; return nil },
+		},
+	}
+	m := NewWizard(steps)
+
+	m = updateWizard(m, key(tea.KeyEnter)) // confirm step a → advance into b
+	if entered != 1 {
+		t.Fatalf("OnEnter should fire once when advancing into step b, got %d", entered)
+	}
+
+	m = updateWizard(m, key(tea.KeyEsc)) // back to a (a has no OnEnter)
+	if m.current != 0 {
+		t.Fatalf("expected to be on step a after back, got %d", m.current)
+	}
+	if entered != 1 {
+		t.Errorf("OnEnter should not fire on back navigation, got %d", entered)
+	}
+}
+
+func TestWizardCounterFixedDenominatorAndJump(t *testing.T) {
 	skip := true
 	m := newAutoSkipWizard(&skip)
 
-	m = updateWizard(m, key(tea.KeyEnter)) // a → c
+	m = updateWizard(m, key(tea.KeyEnter)) // a → c (b auto-skipped)
 
-	if got := m.visibleCount(); got != 2 {
-		t.Errorf("visibleCount = %d, want 2 (a and c)", got)
+	// The denominator stays the fixed total; the position jumps past the skipped
+	// step (1/3 → 3/3) rather than shrinking the total.
+	if got := m.visibleCount(); got != 3 {
+		t.Errorf("visibleCount = %d, want 3 (fixed total)", got)
 	}
-	if got := m.visiblePosition(); got != 2 {
-		t.Errorf("visiblePosition = %d, want 2 (c is the 2nd visible step)", got)
+	if got := m.visiblePosition(); got != 3 {
+		t.Errorf("visiblePosition = %d, want 3 (jumped past skipped b)", got)
 	}
 }

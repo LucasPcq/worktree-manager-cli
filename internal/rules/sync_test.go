@@ -75,6 +75,9 @@ func TestDecidePush(t *testing.T) {
 		{"force with push flag", DecidePushParams{Push: true, PushableCount: 2}, PushForce},
 		{"non-interactive without push", DecidePushParams{Interactive: false, PushableCount: 2}, PushSkip},
 		{"interactive asks", DecidePushParams{Interactive: true, PushableCount: 2}, PushConfirm},
+		{"yes without push skips", DecidePushParams{Yes: true, Interactive: true, PushableCount: 2}, PushSkip},
+		{"yes with push forces", DecidePushParams{Yes: true, Push: true, Interactive: true, PushableCount: 2}, PushForce},
+		{"yes with no-push skips", DecidePushParams{Yes: true, NoPush: true, Interactive: true, PushableCount: 2}, PushSkip},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

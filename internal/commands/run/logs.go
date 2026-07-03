@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/process"
@@ -29,6 +30,14 @@ func newLogsCmd() *cobra.Command {
 }
 
 func runLogs(cmd *cobra.Command, args []string) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+	if err := shared.GuardRunInitialized(dir); err != nil {
+		return err
+	}
+
 	socketPath := process.SocketPath()
 	if err := components.RunLoading(components.LoadingParams{
 		Message: "Connecting to daemon…",
@@ -37,8 +46,6 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	}); err != nil {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
-
-	dir, _ := os.Getwd()
 
 	if len(args) > 0 {
 		return attachSingleJob(socketPath, args[0], dir)

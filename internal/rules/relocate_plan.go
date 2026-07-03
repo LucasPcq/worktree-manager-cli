@@ -145,6 +145,47 @@ func samePath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
+// ReprojectRelocatePlanParams holds inputs for ReprojectRelocatePlan.
+type ReprojectRelocatePlanParams struct {
+	Plan       domain.RelocatePlan
+	ProjectDir string
+	BasePath   string
+}
+
+// ReprojectRelocatePlan re-targets an existing plan onto a different base_path
+// without touching the filesystem: every worktree's destination becomes
+// <base_path>/<branch>, and a worktree that was already at its old destination but
+// now moves is reclassified from in-place (noop/adopt) to a move. Dirty and locked
+// skips carry through — those facts are base_path-independent. An occupied-destination
+// block is NOT re-evaluated (that needs a filesystem check), so a worktree whose new
+// target happens to be dirty/occupied may read optimistically here; execution, which
+// re-plans against the filesystem, remains the source of truth for those edges. Used
+// to preview a base_path change in the interactive recap.
+func ReprojectRelocatePlan(params ReprojectRelocatePlanParams) domain.RelocatePlan {
+	steps := make([]domain.RelocateStep, 0, len(params.Plan.Steps))
+	for _, s := range params.Plan.Steps {
+		to := DesiredWorktreePath(DesiredWorktreePathParams{
+			ProjectDir: params.ProjectDir,
+			BasePath:   params.BasePath,
+			Branch:     s.Branch,
+		})
+		next := s
+		next.ToPath = to
+		switch {
+		case samePath(s.FromPath, to):
+			next.Status = inPlaceStatus(s.Adopt)
+		case s.Status == domain.RelocateStatusNoop || s.Status == domain.RelocateStatusAdopt:
+			next.Status = domain.RelocateStatusMove
+		}
+		steps = append(steps, next)
+	}
+	return domain.RelocatePlan{
+		BasePath:   params.BasePath,
+		BaseBranch: params.Plan.BaseBranch,
+		Steps:      steps,
+	}
+}
+
 // PlanHasWork reports whether a relocate plan contains any step that is not a
 // no-op (i.e. something will move, be adopted, be skipped, or be blocked).
 func PlanHasWork(plan domain.RelocatePlan) bool {

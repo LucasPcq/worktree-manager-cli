@@ -57,20 +57,17 @@ func runCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	return outBuf.String(), errBuf.String(), err
 }
 
-func TestRunExportEmpty(t *testing.T) {
+// TestRunExport_NotInitialized verifies the opt-in guard blocks export on an
+// uninitialized run module (nothing to export) with ErrRunNotInitialized.
+func TestRunExport_NotInitialized(t *testing.T) {
 	setupTestProject(t)
 
-	stdout, _, err := runCmd(t, domain.CmdExport)
-	if err != nil {
-		t.Fatalf("run export: %v", err)
+	_, _, err := runCmd(t, domain.CmdExport)
+	if err == nil {
+		t.Fatal("expected error on uninitialized run module")
 	}
-
-	var got domain.RunConfig
-	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
-		t.Fatalf("parse JSON: %v\noutput: %s", err, stdout)
-	}
-	if len(got.Jobs) != 0 {
-		t.Errorf("expected empty jobs, got %d", len(got.Jobs))
+	if !errors.Is(err, domain.ErrRunNotInitialized) {
+		t.Errorf("expected ErrRunNotInitialized, got: %v", err)
 	}
 }
 

@@ -294,15 +294,134 @@ bug: no breadcrumb, and `Esc` quits the whole flow instead of going back.
 
 - Build `[]components.Step{}`; a step whose options depend on a previous answer uses
   `Build: func(prev []components.Step) any` to rebuild its model from `prev[i].Model.(...).Value()`.
-- Run with `tea.NewProgram(wiz, tea.WithOutput(os.Stderr)).Run()`, then read
-  `final.(components.WizardModel)`: `Aborted()` → `domain.ErrUserAborted`; otherwise pull values
-  from `final.Steps()[i].Model.(components.SelectListModel).Value()`.
-- Use `NewWizardWithParams` for async first steps (data loaded after the wizard starts).
+- Prefer the runner `components.RunWizard(components.RunWizardParams{Steps, Stderr: true, ErrLabel,
+  OnMsg, InitCmd, Loading, LoadingText})` — it centralises the program/assertion/abort boilerplate.
+  It maps `Esc` at step 1 to `domain.ErrUserAborted`; otherwise pull values from
+  `final.Steps()[i].Model.(components.SelectListModel).Value()`.
 - Reference implementations: `internal/tui/relocate/wizard.go`, `internal/tui/checkout/wizard.go`,
-  `internal/tui/reparent/picker.go`.
+  `internal/tui/clean/wizard.go`, `internal/tui/syncpicker/picker.go`.
 
 Standalone wrappers (`RunStandaloneSelect`/`RunStandaloneConfirm`) are only for a **single**
-one-shot decision (e.g. the `clean` deletion confirm).
+one-shot decision where there is no prior step to go back to (e.g. `run up`'s profile picker).
+
+### Wizard shape for worktree-mutation commands: `[inputs] → [ChoiceStep…] → RecapStep`
+
+Confirmations belong INSIDE the wizard, never as a trailing standalone (`Esc` on a standalone
+aborts the whole flow instead of stepping back — the LUC-115 defect). LUC-116 further harmonised
+every mutation wizard onto one shape: input/picker steps, then any optional-decision **selects**,
+then a single **recap** as the last step. The rules:
+
+- **Optional decision → `components.ChoiceStep`** (a select, never a Yes/No). Every option merely
+  advances; `Esc` goes back; it never cancels the operation. `Decide func(prev []Step) (apply bool,
+  skipReason string, params NewSelectListParams)` runs on entry: `apply == false` auto-skips with a
+  reason shown in the summaries as `⊘ <Name> — <reason>`. Use for fast-forward-vs-keep, reparent-vs-
+  leave-orphaned, push-vs-keep-local, on-conflict.
+- **Final gate → `components.RecapStep`** (always last, unconditional). `Build func(prev []Step)
+  RecapContent` returns the recap description (selections + `⚠` warning lines) and the command's
+  action option(s); RecapStep appends the constant `domain.WizardCancelLabel` ("No, cancel") row
+  carrying `domain.WizardCancelValue`. It renders a distinct "Review & confirm" header (`Step.Recap`).
+  Read the outcome via the step's `SelectListModel.Value()`: `== domain.WizardCancelValue` →
+  `domain.ErrUserAborted`, else it is the chosen action.
+- **Blocking warnings are NOT gate steps** — fold a diverged source / env fallback / keep-conflict
+  into a `⚠` line in the RecapStep description. The single cancellation point is "No, cancel"
+  (plus `Esc` on step 1). Don't reintroduce an `AbortOnDecline` gate.
+- A `ChoiceStep`/`RecapStep` **cannot be the wizard's first step** (the wizard never builds or
+  auto-skips index 0). When a conditional select would otherwise be first (e.g. `clean --branch`
+  with no picker), compute it synchronously and add a concrete step only when it applies — see
+  `internal/tui/clean/wizard.go` (`reparentConcreteStep`).
+- For an **async** recap (safety check, plan preview), keep a hand-built `SelectListModel` step with
+  `Recap: true` and swap its model in via `OnMsg`/`UpdateStepModel` (RecapStep's `Build` is sync).
+  See `internal/tui/clean/wizard.go` (delete) and `internal/tui/syncpicker/picker.go` (plan).
+- `ConfirmStep`/`ConfirmModel` stay only for genuine one-shot standalone Yes/No prompts outside a
+  wizard (e.g. extract's conflict-marker `ConfirmResolve`). `ConfirmStep.Decide` also returns a
+  `skipReason` for parity.
+- Business data shown in a step arrives via an **injected closure** from the command layer (the TUI
+  never imports `service`/`output`), e.g. `shared.EnvFallbackDecider`, sync's `PlanPreview`.
+- The breadcrumb denominator is **fixed** (`len(steps)`); an auto-skipped step makes the position
+  **jump** (3/5 → 5/5), so the recap reliably reads `n/n`.
+- **One wizard for every interactive entry path.** A command with several entry forms (a picker,
+  positional args, `--all`) routes them all through the *same* wizard, skipping the steps a form
+  already fixes (e.g. `sync <branches>`/`--all` skip the multi-select but keep the on-conflict
+  choice and the recap). Don't leave one path on a standalone confirm while another gets the
+  wizard — see `internal/tui/syncpicker/picker.go` + `internal/commands/wt/sync.go`
+  (`resolveSyncSelection`). A genuinely post-execution decision that reacts to a runtime outcome
+  (sync's push after the rebase, a failed fast-forward, an extract conflict) legitimately stays a
+  standalone prompt after the run — it can't be decided upfront.
+- Bypass flags follow the two-axis taxonomy below (`--yes` = confirmations/decisions,
+  `--force` = safety). Under `--yes` / `--output json` / no-TTY the wizard never runs: every
+  decision resolves to a flag or safe default, and a missing **required selection** errors
+  naming the flag — never a picker.
+
+### Bypass flags for mutation commands: `--yes` vs `--force` (two axes) — MANDATORY
+
+Every worktree-mutating command (`create`, `clean`, `sync`, `prune`, `relocate`, `reparent`,
+`extract`, `checkout`) exposes bypass on two **orthogonal** axes. This is the standardized model
+(matches `gcloud --quiet`, `terraform -auto-approve`/`-input=false`, `apt -y` vs `--force-yes`, and
+[clig.dev](https://clig.dev)); every new or refactored mutation command MUST follow it exactly
+(LUC-119). Keep the axes separate — do not let one imply the other.
+
+- **`--yes` / `-y` — confirmation/decision axis. Runs fully unattended, ZERO prompts.** Every input
+  resolves without interaction, one of three ways:
+  1. **Decision / confirmation** (recap, reparent, push, on-conflict, fast-forward) → flag value,
+     else a documented **safe default** — never destructive: `sync --yes` does **not** push (opt in
+     with `--push`); `extract --yes` defaults on-conflict to **abort**; `clean`/`prune --yes` leave
+     children **orphaned** unless `--reparent-children`. Route the default through a pure rule where
+     one exists (`rules.DecidePush` takes a `Yes` field).
+  2. **Required selection with no safe default** (extract's `--files`/`--to`/source, sync's
+     branches/`--all`) → flag/arg, else **error naming the missing flag**. A picker MUST NOT appear
+     under `--yes`.
+  3. A picker runs only in a **fully interactive** run (no `--yes`, TTY, human output).
+- **`--force` — safety axis, strictly separate.** Only lifts safety refusals (dirty / unpushed /
+  open-PR / locked). It does **not** imply `--yes`: `--force` alone still runs the wizard/recap and
+  asks to confirm (thread `--force` into the wizard as a preset so it lifts refusals without
+  re-asking — see `internal/tui/clean/wizard.go` `Force`). JSON mode requires `--yes` (confirmations
+  can't run); `--force` alone in JSON is rejected.
+
+**How to wire it (the standard):**
+1. Fold `--yes` into the command's interactivity flag once, at entry:
+   `interactive := isTTY && rules.IsHumanFormat(format) && !yes`.
+2. Gate every picker/prompt and every `need*` step on that `interactive` flag.
+3. For each required selection, add a guard: `if !interactive && <flag unset> { return
+   domain.Err<X>Required }` — a sentinel in `internal/domain/errors.go` whose message names the flag
+   (see `ErrExtractFilesRequired`, `ErrExtractTargetRequired`). Because `--yes` makes `interactive`
+   false, the wizard is now unreachable under `--yes`, so its RecapStep is unconditional (no
+   `SkipConfirm` flag on the wizard — the recap always shows when the wizard runs at all).
+4. Help-string wording is uniform: `--yes` → *"Skip all prompts; resolve every decision from flags
+   and safe defaults (requires …; errors if a selection is missing)"*; `--force` → *"Lift safety
+   refusals (…); still asks to confirm unless --yes"*.
+
+### Recap completeness: read the step value, else the flag/arg fallback
+
+A recap builder must name **every** part of the plan, even the parts a flag resolved. Each
+`build*Recap` / `recapStep` reads the value from its wizard step and **falls back to the flag/arg**
+when that step was skipped — a flag must never make a line disappear from the recap. Pattern
+references: `internal/tui/extract` `buildCombinedRecap` (`FixedFiles`/`FixedTarget`/`FixedKeep`),
+`internal/tui/newwt` `buildCreateRecap` (`BranchName`/`Source`/`EnvOverride`), `internal/tui/checkout`
+`buildCheckoutRecap` (`FromOverride`/`EnvOverride`), `internal/tui/reparent` `recapBody`
+(`PresetBranches`/`PresetParent`). Add the fallback whenever you add a flag that pre-fills a step.
+
+### Async data in a wizard: `InitCmd` (at start) vs `OnEnter` (per step)
+
+Never block the render doing slow I/O in a `Build` hook. Two async entry points, by when the data
+is known:
+
+- **`InitCmd` + `Loading`/`LoadingText` + `OnMsg`** — one-shot load at wizard start, for data an
+  early step needs that does **not** depend on a later answer (e.g. `checkout` streams open PRs
+  into step 1). Set them via `RunWizardParams`.
+- **`Step.OnEnter func(prev []Step) tea.Cmd`** — fires each time the wizard *advances* into the
+  step (not on back-navigation), for slow work **derived from a prior answer**: a network call or
+  git work proportional to the selection. Pair it with an `OnMsg` handler:
+  1. `OnEnter` returns a `tea.Cmd` emitting a request message (carrying the prior-step values).
+  2. `OnMsg` on that message: `cmd := w.StartLoading("…")`; return `tea.Batch(cmd, workCmd())` — the
+     work runs off the UI goroutine so the spinner (shared loading callout) animates.
+  3. `OnMsg` on the result message: `w.UpdateStepModel(idx, func(any) any { return realModel })` then
+     `w.SetLoading(false)`.
+  Guard against a premature commit while loading: an empty `SelectList` makes `Enter` a no-op
+  (`clean`'s delete step); a `ConfirmModel` needs an explicit `if w.Loading() && key=="enter"` swallow
+  in `OnMsg` (`sync`'s confirm step). Refs: `internal/tui/clean/wizard.go` (async safety check),
+  `internal/tui/syncpicker/picker.go` (async plan preview).
+- Keep `Build` (synchronous) for **fast, local** derivation — reserve `OnEnter` for genuinely slow
+  work; over-using it is needless complexity.
 
 ### Screen-specific TUI
 

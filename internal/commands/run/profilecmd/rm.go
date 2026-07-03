@@ -44,6 +44,10 @@ func runRm(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("load run.toml: %w", err)
 	}
 
+	if err := shared.RequireRunInitialized(cfg); err != nil {
+		return err
+	}
+
 	var name string
 	if len(args) > 0 {
 		name = args[0]

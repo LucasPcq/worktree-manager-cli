@@ -16,16 +16,15 @@ import (
 // the same builders feed both the full init wizard and the targeted
 // `wtm init --only <section>` re-init wizard.
 const (
-	stepBasePath     = "base_path"
-	stepBaseBranch   = "base_branch"
-	stepEnvGate      = "env_gate"
-	stepEnvStrategy  = "env_strategy"
-	stepEnvFiles     = "env_files"
-	stepHooksGate    = "hooks_gate"
-	stepHooks        = "hooks"
-	stepServicesGate = "services_gate"
-	stepDocker       = "docker"
-	stepScripts      = "scripts"
+	stepBasePath    = "base_path"
+	stepBaseBranch  = "base_branch"
+	stepEnvGate     = "env_gate"
+	stepEnvStrategy = "env_strategy"
+	stepEnvFiles    = "env_files"
+	stepHooksGate   = "hooks_gate"
+	stepHooks       = "hooks"
+	stepDocker      = "docker"
+	stepScripts     = "scripts"
 )
 
 // stepSet accumulates wizard steps and records each one's index by key.
@@ -66,9 +65,10 @@ type SectionPrefill struct {
 // RunProjectWizard presents the full project init wizard pre-populated with
 // detection results. Returns ErrUserAborted if the user aborts.
 //
-// The wizard is organised by concept. Each optional section (env, hooks,
-// services) is introduced by a "gate" step that explains what the section does
-// and offers Configure / Skip; its sub-steps auto-skip when the gate is skipped.
+// The wizard is organised by concept. Each optional section (env, hooks) is
+// introduced by a "gate" step that explains what the section does and offers
+// Configure / Skip; its sub-steps auto-skip when the gate is skipped. Services
+// are configured separately by `wtm run init` (see RunServicesWizard).
 func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
 	holder := &detection.Branches
@@ -86,9 +86,6 @@ func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (
 	s.add(stepHooksGate, hooksGate(detection))
 	addHooksSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepHooksGate)), nil)
 
-	s.add(stepServicesGate, servicesGate(detection))
-	addServicesSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepServicesGate)), nil)
-
 	final, err := runWizard(runWizardParams{steps: s.steps, projectDir: projectDir, holder: holder})
 	if err != nil {
 		return domain.InitProjectAnswers{}, err
@@ -96,23 +93,55 @@ func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (
 	return extractProjectAnswers(final, detection, s.idx), nil
 }
 
+// RunServicesWizard presents the services-only wizard used by `wtm run init`.
+// The user has already opted into the run module by invoking the command, so
+// there is no Configure/Skip gate: it goes straight to the docker-compose and
+// package-script multiselects. A nil prefill (fresh init) pre-selects the
+// detection defaults; a non-nil prefill (re-run) pre-selects what run.toml
+// already declares so the merge is additive. Returns empty answers with no
+// error when nothing is detected — the caller reports how to add jobs manually.
+func RunServicesWizard(projectDir string, detection domain.InitDetectionResult, prefill *SectionPrefill) (domain.InitProjectAnswers, error) {
+	s := newStepSet()
+	addServicesSteps(s, detection, nil, prefill)
+
+	if len(s.steps) == 0 {
+		return domain.InitProjectAnswers{}, nil
+	}
+
+	final, err := runWizard(runWizardParams{steps: s.steps, projectDir: projectDir})
+	if err != nil {
+		return domain.InitProjectAnswers{}, err
+	}
+	return extractProjectAnswers(final, detection, s.idx), nil
+}
+
+// SectionWizardParams holds inputs for RunSectionWizard.
+type SectionWizardParams struct {
+	ProjectDir string
+	Sections   []string
+	Detection  domain.InitDetectionResult
+	Prefill    *SectionPrefill
+	// Confirm, when set, appends a final confirmation step so the re-init prompt
+	// lives inside the wizard (breadcrumb + back) instead of as an orphaned prompt
+	// after it. Declining it — or Esc at the first step — yields ErrUserAborted.
+	Confirm *components.NewConfirmParams
+}
+
 // RunSectionWizard presents a targeted wizard for the requested sections only,
 // without gates or core steps. Used by `wtm init --only <section>`. Returns a
-// nil-ish answers set with no steps when nothing is configurable (e.g. services
-// requested but none detected); callers handle the empty case.
-func RunSectionWizard(projectDir string, sections []string, detection domain.InitDetectionResult, prefill *SectionPrefill) (domain.InitProjectAnswers, error) {
+// nil-ish answers set with no steps when nothing is configurable; callers handle
+// the empty case.
+func RunSectionWizard(params SectionWizardParams) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
-	holder := &detection.Branches
-	for _, section := range sections {
+	holder := &params.Detection.Branches
+	for _, section := range params.Sections {
 		switch section {
 		case domain.SectionWorktrees:
-			addWorktreesSteps(s, holder, detection, prefill)
+			addWorktreesSteps(s, holder, params.Detection, params.Prefill)
 		case domain.SectionEnv:
-			addEnvSteps(s, detection, nil, prefill)
+			addEnvSteps(s, params.Detection, nil, params.Prefill)
 		case domain.SectionHooks:
-			addHooksSteps(s, detection, nil, prefill)
-		case domain.SectionServices:
-			addServicesSteps(s, detection, nil, prefill)
+			addHooksSteps(s, params.Detection, nil, params.Prefill)
 		}
 	}
 
@@ -120,17 +149,65 @@ func RunSectionWizard(projectDir string, sections []string, detection domain.Ini
 		return domain.InitProjectAnswers{}, nil
 	}
 
-	// Only wire the background branch refresh when a base-branch step is present.
-	params := runWizardParams{steps: s.steps, projectDir: projectDir}
-	if s.at(stepBaseBranch) >= 0 {
-		params.holder = holder
+	steps := s.steps
+	if params.Confirm != nil {
+		steps = append(steps, reinitConfirmStep(*params.Confirm))
 	}
 
-	final, err := runWizard(params)
+	// Only wire the background branch refresh when a base-branch step is present.
+	wp := runWizardParams{steps: steps, projectDir: params.ProjectDir}
+	if s.at(stepBaseBranch) >= 0 {
+		wp.holder = holder
+	}
+
+	final, err := runWizard(wp)
 	if err != nil {
 		return domain.InitProjectAnswers{}, err
 	}
-	return extractProjectAnswers(final, detection, s.idx), nil
+	if params.Confirm != nil {
+		finalSteps := final.Steps()
+		if sl, ok := finalSteps[len(finalSteps)-1].Model.(components.SelectListModel); ok && sl.Value() == domain.WizardCancelValue {
+			return domain.InitProjectAnswers{}, domain.ErrUserAborted
+		}
+	}
+	return extractProjectAnswers(final, params.Detection, s.idx), nil
+}
+
+// reinitConfirmValue is the recap step's action value for a targeted re-init.
+const reinitConfirmValue = "reinit"
+
+// reinitConfirmStep builds the final recap for `wtm init --only`: it restates the
+// values chosen on the section steps (so the user sees exactly what will change),
+// folds the warning into a ⚠ line, and offers "Yes, re-initialize" then the
+// constant "No, cancel". It is always the last step (section steps precede it), so
+// Build always runs on entry.
+func reinitConfirmStep(p components.NewConfirmParams) components.Step {
+	return components.RecapStep(components.RecapStepParams{
+		Name: "Confirm",
+		Build: func(prev []components.Step) components.RecapContent {
+			var lines []string
+			if p.Description != "" {
+				lines = append(lines, p.Description, "")
+			}
+			for _, s := range prev {
+				if s.Summary == nil {
+					continue
+				}
+				if v := s.Summary(s.Model); v != "" {
+					lines = append(lines, "• "+s.Name+": "+v)
+				}
+			}
+			if p.Warning != "" {
+				lines = append(lines, "", "⚠ "+p.Warning)
+			}
+			return components.RecapContent{
+				Description: strings.Join(lines, "\n"),
+				Actions: []components.SelectItem{
+					{Label: "Yes, re-initialize", Value: reinitConfirmValue},
+				},
+			}
+		},
+	})
 }
 
 // runWizardParams holds inputs for runWizard. When holder is non-nil the wizard
@@ -214,7 +291,7 @@ func baseBranchItems(branches []domain.BranchCandidate, detected string) []compo
 	return components.BranchItems(components.BranchItemsParams{
 		Candidates:   branches,
 		Pinned:       detected,
-		PinnedSuffix: " (detected)",
+		PinnedSuffix: domain.PinnedSuffixDetected,
 	})
 }
 
@@ -318,18 +395,6 @@ func addHooksSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip fu
 		Summary:  hookListSummary,
 		AutoSkip: autoSkip,
 		Callout:  true,
-	})
-}
-
-func servicesGate(detection domain.InitDetectionResult) components.Step {
-	return sectionGate(sectionGateParams{
-		Name: "Services & tasks",
-		Description: "Let wtm run your dev stack per worktree — long-running services (databases, dev servers) " +
-			"and one-off tasks — so you start/stop everything with `wtm run` instead of juggling terminals. " +
-			"Note: `wtm run` is still experimental and the workflow is stabilizing; you can skip this and add it later.",
-		Detected:       detectedServices(detection),
-		ConfigureLabel: "Configure services & tasks",
-		SkipLabel:      "Skip — no service management",
 	})
 }
 
@@ -615,15 +680,4 @@ func detectedEnv(d domain.InitDetectionResult) string {
 
 func detectedHooks(d domain.InitDetectionResult) string {
 	return d.InstallCommand
-}
-
-func detectedServices(d domain.InitDetectionResult) string {
-	var parts []string
-	if n := len(d.DockerComposeFiles); n > 0 {
-		parts = append(parts, fmt.Sprintf("%d docker-compose file(s)", n))
-	}
-	if n := len(d.PackageScripts); n > 0 {
-		parts = append(parts, fmt.Sprintf("%d script(s)", n))
-	}
-	return strings.Join(parts, ", ")
 }

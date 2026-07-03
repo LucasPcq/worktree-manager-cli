@@ -28,7 +28,7 @@ wtm sync [branch...] [flags]
       --no-push         Rebase locally only; never push
       --output string   Output format: text or json (default "text")
       --push            Force-push (with lease) rebased branches without prompting
-  -y, --yes             Skip the pre-sync confirmation
+  -y, --yes             Skip all prompts; resolve every decision from flags and safe defaults (requires branch args or --all; use --push to push)
 ```
 
 ### SEE ALSO

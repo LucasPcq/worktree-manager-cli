@@ -28,9 +28,18 @@ self-documenting:
    warnings go to stderr — ignore stderr unless the exit code is non-zero.
 3. **Trust exit codes.** `0` = success. Beyond generic `1`, wtm returns granular codes
    (table below) so you can branch precisely. On failure, surface the stderr text.
-4. **JSON mode is non-interactive**, so anything that would prompt needs an explicit flag:
-   `clean`/`prune` need `--yes` (keep safety checks) or `--force` (also remove unsafe);
-   `sync` needs branch args or `--all` (and `--push` to push). Check `--help` when unsure.
+4. **JSON mode requires `--yes` on every mutating command.** JSON is non-interactive, so any
+   command that changes state (`create`, `clean`, `prune`, `sync`, `relocate`, `reparent`,
+   `extract`, `checkout`) needs `--yes` — it errors otherwise. Two orthogonal axes: **`--yes`**
+   resolves confirmations/decisions from flags and safe defaults; **`--force`** only lifts
+   safety refusals and does *not* imply `--yes` (`--force` alone is rejected in JSON). Required
+   selections must still be passed explicitly: `clean` needs a branch (add `--force` to also
+   remove unsafe worktrees); `sync` needs branch args or `--all` (`--yes` won't push — pass
+   `--push`); `extract` needs the source arg, `--files`, and `--to` (`--yes` defaults
+   on-conflict to abort — pass `--on-conflict resolve`); `reparent` needs worktrees and `--to`;
+   `checkout` needs the PR `<number>`; `relocate` uses `--to` to change base_path.
+   Read-only data commands (`list`, `tree`, `resolve`, `config show`, `run list`/`ps`) take
+   `--output json` with no `--yes`. Check `--help` when unsure.
 5. **Operations are idempotent — safe to retry.** `create --if-not-exists` no-ops on an
    existing worktree; `clean` no-ops on an absent one; `run up`/`down`/`stop` re-run cleanly.
 
@@ -46,6 +55,7 @@ self-documenting:
 | `12` | config not found — repo not initialized (`wtm init`) |
 | `14` | service/job not declared in `run.toml` |
 | `15` | `extract`: selected changes conflict with the target worktree |
+| `16` | run module not initialized — run `wtm run init` first |
 
 ## Discovery first — get names before you act
 
@@ -67,28 +77,46 @@ flagged; everything else is what the name implies.
 **Worktrees**
 - `wtm list` — flat inventory. `wtm tree` — the parent→child forest; use it (not `list`)
   when hierarchy/orchestration order matters. Its `needs_sync` flag is the key signal
-  that a node's parent moved past it.
+  that a node's parent moved past it. Both expose an `origin` object
+  (`{ahead, behind, state}`, or `null` when the branch has no origin counterpart)
+  describing divergence from `origin/<branch>` — distinct from `commits_ahead`, which
+  counts commits vs the **parent/base** branch. `state` is `up-to-date`/`behind`/`ahead`/`diverged`.
 - `wtm create <branch> --from <base>` — new worktree + env provisioning + `on_create`
   hooks. `--from` accepts a remote ref (`origin/x`). Add `--if-not-exists` for idempotency.
+  Add `--ff` to fast-forward a behind-only `--from` branch to origin first (so the worktree
+  starts up to date); a diverged branch is left as-is (no prompt in JSON mode). `extract`
+  accepts the same `--ff` for the parent branch of a newly-created target.
 - `wtm clean <branch>` / `wtm prune [filters]` — remove one / batch-remove finished
   worktrees. **In JSON mode surviving children are left orphaned unless you pass
-  `--reparent-children`** (they reparent onto the grandparent). `prune` with no filter
-  considers every finished worktree (merged + closed + gone). Both **refuse unsafe
-  worktrees** — dirty, unpushed commits, or an open PR — unless you pass `--force`;
-  in JSON/`--yes` mode those are reported under `skipped` (reason `dirty`/`unpushed`/
-  `open_pr`) instead of being removed, so committed work is never silently lost.
-- `wtm extract --files <a,b> --to <branch>` — move part of the current worktree's
-  uncommitted changes onto another branch (split an oversized PR). On conflict it changes
-  nothing and exits `15`; retry with `--on-conflict resolve` to apply git conflict markers.
+  `--reparent-children`** (they reparent onto the grandparent). `prune` decides "finished"
+  from **GitHub PR state via the `gh` CLI** (not local commits): `--merged` = PR merged,
+  `--closed` = PR closed without merging, `--gone` = remote branch deleted; no filter = all
+  three. **`--merged`/`--closed` need `gh` installed + authenticated** — without it they match
+  nothing and prune prints a notice on stderr; only `--gone` works offline. Prune `reason`
+  values in JSON are `pr_merged` / `pr_closed` / `gone` (there is no plain `merged`). Both
+  **refuse unsafe worktrees** — dirty, unpushed commits, or an open PR — unless you pass
+  `--force`; in JSON/`--yes` mode those are reported under `skipped` (reason `dirty`/
+  `unpushed`/`open_pr`) instead of being removed, so committed work is never silently lost.
+- `wtm extract <source> --files <a,b> --to <branch>` — move part of the `<source>`
+  worktree's uncommitted changes onto another branch (split an oversized PR). In JSON mode pass
+  `--yes` plus the source arg, `--files`, and `--to` — all **required** (omitting any errors
+  naming the missing flag; there is no picker). On conflict it changes nothing and exits `15`;
+  retry with `--on-conflict resolve` to apply git conflict markers (`--yes` defaults on-conflict
+  to abort).
 - `wtm relocate` — realign worktrees with `base_path` and adopt externally-created ones.
+  `--to <path>` sets a new `base_path` non-interactively; the interactive wizard also lets
+  the user change it. You can't drive the wizard — in JSON mode pass `--yes` (and `--to` to
+  change base_path).
 
 **Stacked branches**
 - `wtm sync <branch…>` / `wtm sync --all` — rebase the selected worktrees onto their
   recorded parent, in cascade (parents before children), fetching first. A conflict aborts
   that branch's rebase (its descendants are skipped) unless `--keep-conflict` leaves it in
-  progress. Local only — pass `--push` to force-push (with lease) in JSON mode.
-- `wtm reparent <branch> --to <parent>` — change the recorded parent (metadata only; the
-  rebase happens on the next `sync`). Use after a middle branch merges.
+  progress. Local only — in JSON mode pass `--yes` (and `--push` to force-push with lease).
+- `wtm reparent <branch…> --to <parent>` — change the recorded parent of one or more
+  worktrees to the same new parent (metadata only; the rebase happens on the next `sync`).
+  Use after a middle branch merges. In JSON mode pass `--yes` with the worktrees and `--to`.
+  JSON: `{"reparented":[{branch,old_parent,new_parent},…]}`.
 
 **Navigate**
 - `wtm go` / `wtm switch` need the user's **shell integration** to `cd`, so you can't drive
@@ -96,7 +124,13 @@ flagged; everything else is what the name implies.
 
 **Dev jobs (`wtm run`)** — jobs live in a per-clone `run.toml` (wtm-managed; never edit it
 directly). Each is a `service` (long-running) or `task` (one-shot, blocks the profile,
-non-zero exit aborts it); profiles are named, ordered job groups.
+non-zero exit aborts it); profiles are named, ordered job groups. The module is **opt-in**
+and **experimental**: the global `wtm init` does not configure it.
+- `run init` sets up `run.toml` from detection (docker-compose + package scripts). It is
+  the only entry point that works before the module exists; every other run command exits
+  `16` (run module not initialized) until at least one job/profile is declared. Non-TTY it
+  auto-generates; re-running merges without overwriting. `run job add` / `run profile add`
+  also work before init (they create the first job).
 - `run up [profile]` / `run down` — start / stop a profile. `run start <job>` / `run stop
   <job>` — one job. A failing job aborts the rest and exits non-zero, leaving started
   services up (fix and re-run).
@@ -107,14 +141,17 @@ non-zero exit aborts it); profiles are named, ordered job groups.
 
 **GitHub**
 - `wtm checkout <number>` — fetch a PR's branch into a worktree; parent defaults to the
-  PR's base. Fork PRs are out of scope — fall back to `gh pr checkout <number>`. Creating
-  a PR is out of scope too — use `gh pr create`.
+  PR's base. In JSON mode pass `--yes` and the PR `<number>` (both **required**; no picker);
+  `--yes` resolves the parent → PR base and env → config default. Fork
+  PRs are out of scope — fall back to `gh pr checkout <number>`. Creating a PR is out of
+  scope too — use `gh pr create`.
 
 **Setup**
 - `wtm config show` inspects config; `wtm config edit` and the `wtm init` wizard are
   interactive. Bootstrap non-interactively with
   `wtm init --non-interactive [--base-branch … --env-strategy … --install-command …]`, and
-  reconfigure one section later with `wtm init --only <section> --non-interactive --yes`.
+  reconfigure one section later with `wtm init --only env|hooks|worktrees --non-interactive --yes`.
+  Services are **not** part of `wtm init` — configure them with `wtm run init`.
   See their `--help` for the full flag set.
 
 ## Failure handling
@@ -127,6 +164,8 @@ On non-zero exit, read stderr, then:
 - `14` (job not found) → not declared in `run.toml`; check `wtm run list`.
 - `15` (extract conflict) → nothing changed; retry with `--on-conflict resolve` or a
   different `--to`.
+- `16` (run module not initialized) → run `wtm run init` (or `wtm run init --non-interactive`)
+  to create `run.toml`, then re-run the command.
 - `gh: …` → `gh` isn't authenticated; tell the user to run `gh auth login`.
 - A `run up`/`run start` job failed → its captured output is in the JSON error entry; read
   it to see why, fix, and re-run.

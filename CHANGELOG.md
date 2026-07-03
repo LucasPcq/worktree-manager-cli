@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.22.0 — Module `run` opt-in, bypass `--yes`/`--force` unifié & wizards harmonisés
+
+### Breaking changes
+
+- **`--output json` exige désormais `--yes` sur toutes les commandes qui mutent** (`create`, `clean`, `sync`, `prune`, `relocate`, `reparent`, `extract`, `checkout`) — auparavant seuls `clean`/`prune` le demandaient. En JSON, une sélection requise sans défaut (`extract` source/`--files`/`--to`, `sync` branches ou `--all`, `reparent` worktrees + `--to`) **erreure en nommant le flag** au lieu d'ouvrir un picker. `--force` reste un axe séparé : il ne lève que les refus de sécurité et n'implique jamais `--yes` (LUC-119).
+- **Le module `run` devient opt-in** — `wtm init` ne détecte/configure plus les services (suppression de `--skip-services` et `--only services`) ; le module s'initialise via **`wtm run init`**. Toute commande `run` sur un module non initialisé sort en **code 16** avec un message pédagogique (LUC-101).
+
+### New features
+
+- **`wtm run init`** — met en place `run.toml` depuis la détection (docker-compose + scripts de package). Wizard interactif (pré-rempli en ré-exécution) ou auto-génération non-interactive ; les deux fusionnent additivement sans écraser les jobs existants. Seul point d'entrée fonctionnant avant l'existence du module (`run job/profile add` et `run import` en sont aussi exemptés) (LUC-101).
+- **Badges de divergence `origin` dans les listes de worktrees** — `list`/`tree`/pickers/JSON affichent l'avance/retard vis-à-vis d'`origin` à côté du compteur vs base, étiquetés `base ↑N` et `origin ↑a ↓b` (lus depuis les refs remote-tracking en cache, sans fetch ; touche `r` pour rafraîchir). Le contrôle de fast-forward des sources périmées s'étend aux chemins explicites `create --from` / `extract`, avec un flag opt-in `--ff` pour fast-forwarder une source en simple retard en non-interactif (LUC-109).
+- **`wtm extract [source]`** — la source n'est plus le worktree courant mais un **picker en première étape** (worktrees avec changements uniquement), donc on extrait depuis n'importe où. Argument `[source]` requis en non-interactif / `--output json` ; `-y/--yes` saute le récap final (LUC-118).
+- **`wtm reparent` multi-sélection** — reparente plusieurs worktrees sur un même nouveau parent en un seul passage ; le récap liste le parent actuel de chacun (`branche (from parent)`) (LUC-108).
+
+### Improvements
+
+- **Taxonomie `--yes`/`--force` unifiée sur les 8 commandes mutantes** — deux axes orthogonaux (confirmation vs sécurité) alignés sur `gcloud --quiet` / `terraform -input=false` / clig.dev : `--yes` résout chaque décision par son flag ou un **défaut sûr** (sync no-push, extract on-conflict abort, clean/prune orphelins) sans jamais retomber sur un picker ; `clean` converge sur `prune` (LUC-119).
+- **Wizards harmonisés — fil d'Ariane partout** — chaque confirmation vit désormais **dans** son wizard (breadcrumb + retour arrière), plus aucun prompt orphelin où `Esc` annulait tout le run. Forme unique `[saisies] → [sélections optionnelles] → récap`, raisons de skip visibles, `No, cancel` constant, chargements async par étape (`OnEnter`). `clean` est réécrit en un seul wizard (picker → suppression → reparent), et `relocate` unifie l'édition de `base_path` dans le même wizard (LUC-115, LUC-116, LUC-108).
+- **`wtm sync` : la prévisualisation du plan devient l'étape finale du wizard** — `Esc` revient à l'étape précédente au lieu d'abandonner le run ; recall compact (compteur) sur les étapes intermédiaires, liste détaillée sur la confirmation (LUC-110).
+- **`wtm agents install` met à jour une skill déjà installée** au lieu de la laisser intacte — résultat par destination : `created` / `updated` / `unchanged` (aucune écriture) / `skipped` (erreur réelle), identique en interactif et JSON (#34).
+- **Guidage post-`init`** — les worktrees pré-existants sont signalés après un `wtm init`, avec un pointeur vers `wtm relocate` pour les adopter/réaligner (LUC-108).
+
+### Bug fixes
+
+- **`wtm prune` détecte mergé/fermé depuis l'état PR GitHub, pas les commits locaux** — l'ancienne heuristique (`git rev-list base..branch == 0`) taguait à tort tout worktree jamais divergé et manquait les squash/rebase-merges. Désormais `--merged` = PR mergée, `--closed` = PR fermée sans merge, `--gone` = distante supprimée (seul filtre hors-ligne) ; une branche sans PR n'est jamais taguée. Alerte sur stderr si `gh` manque ; valeurs JSON `pr_merged`/`pr_closed`/`gone` (LUC-111).
+- **`clean`/`relocate` en environnement non-TTY** — un run piped/CI en format humain sans `--yes` erreure proprement au lieu de lancer un wizard sur un stdin non-interactif ; `relocate` refuse de muter sans `--yes` quand il ne peut pas confirmer.
+- **`clean --reparent-children` ignoré sur le chemin wizard interactif** — le flag est désormais respecté (LUC-119).
+
 ## v0.21.0 — `wtm prune`, `sync --keep-conflict` & parité JSON
 
 ### New features
