@@ -159,7 +159,7 @@ func TestReparentRequiresParentInJSONMode(t *testing.T) {
 func TestCleanReparentsChildrenWithFlag(t *testing.T) {
 	_, stateDir := setupStack(t)
 
-	if _, _, err := runWtCmd(t, domain.CmdClean, "dev-a", "--force", "--reparent-children", "--output", domain.OutputJSON); err != nil {
+	if _, _, err := runWtCmd(t, domain.CmdClean, "dev-a", "--yes", "--force", "--reparent-children", "--output", domain.OutputJSON); err != nil {
 		t.Fatalf("clean dev-a: %v", err)
 	}
 
@@ -171,7 +171,7 @@ func TestCleanReparentsChildrenWithFlag(t *testing.T) {
 func TestCleanLeavesChildrenOrphanedWithoutFlag(t *testing.T) {
 	_, stateDir := setupStack(t)
 
-	if _, _, err := runWtCmd(t, domain.CmdClean, "dev-a", "--force", "--output", domain.OutputJSON); err != nil {
+	if _, _, err := runWtCmd(t, domain.CmdClean, "dev-a", "--yes", "--force", "--output", domain.OutputJSON); err != nil {
 		t.Fatalf("clean dev-a: %v", err)
 	}
 

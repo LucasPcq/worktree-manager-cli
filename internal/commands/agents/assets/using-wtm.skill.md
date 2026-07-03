@@ -28,9 +28,13 @@ self-documenting:
    warnings go to stderr — ignore stderr unless the exit code is non-zero.
 3. **Trust exit codes.** `0` = success. Beyond generic `1`, wtm returns granular codes
    (table below) so you can branch precisely. On failure, surface the stderr text.
-4. **JSON mode is non-interactive**, so anything that would prompt needs an explicit flag:
-   `clean`/`prune` need `--yes` (keep safety checks) or `--force` (also remove unsafe);
-   `sync` needs branch args or `--all` (and `--push` to push). Check `--help` when unsure.
+4. **JSON mode is non-interactive**, so anything that would prompt needs an explicit flag.
+   Two orthogonal axes: **`--yes`** skips confirmations/decisions (using safe defaults);
+   **`--force`** only lifts safety refusals and does *not* imply `--yes`. So JSON
+   `clean`/`prune` need `--yes` (add `--force` to also remove unsafe worktrees — `--force`
+   alone is rejected in JSON); `sync` needs branch args or `--all` (`--yes` won't push — pass
+   `--push`); `extract --yes` defaults on-conflict to abort (pass `--on-conflict resolve`);
+   `checkout --yes <number>` creates without prompts. Check `--help` when unsure.
 5. **Operations are idempotent — safe to retry.** `create --if-not-exists` no-ops on an
    existing worktree; `clean` no-ops on an absent one; `run up`/`down`/`stop` re-run cleanly.
 
@@ -89,10 +93,11 @@ flagged; everything else is what the name implies.
   `--force`; in JSON/`--yes` mode those are reported under `skipped` (reason `dirty`/
   `unpushed`/`open_pr`) instead of being removed, so committed work is never silently lost.
 - `wtm extract <source> --files <a,b> --to <branch>` — move part of the `<source>`
-  worktree's uncommitted changes onto another branch (split an oversized PR). The source
-  worktree is the first argument: **in `--output json`/non-interactive mode it is required**
-  (there is no current-directory default and no picker — omitting it errors). On conflict it
-  changes nothing and exits `15`; retry with `--on-conflict resolve` to apply git conflict markers.
+  worktree's uncommitted changes onto another branch (split an oversized PR). Non-interactively
+  (`--output json`, `--yes`, or no TTY) there is **no picker**: the source arg, `--files`, and
+  `--to` are all **required** — omitting any errors naming the missing flag. On conflict it
+  changes nothing and exits `15`; retry with `--on-conflict resolve` to apply git conflict markers
+  (`--yes` defaults on-conflict to abort).
 - `wtm relocate` — realign worktrees with `base_path` and adopt externally-created ones.
   `--to <path>` sets a new `base_path` non-interactively; the interactive wizard also lets
   the user change it. You can't drive the wizard — pass `--to` (or `--yes`) in JSON mode.
@@ -129,8 +134,10 @@ and **experimental**: the global `wtm init` does not configure it.
 
 **GitHub**
 - `wtm checkout <number>` — fetch a PR's branch into a worktree; parent defaults to the
-  PR's base. Fork PRs are out of scope — fall back to `gh pr checkout <number>`. Creating
-  a PR is out of scope too — use `gh pr create`.
+  PR's base. In `--output json`/non-interactive mode the number is **required** (no picker);
+  add `--yes` to skip the parent/env prompts (parent → PR base, env → config default). Fork
+  PRs are out of scope — fall back to `gh pr checkout <number>`. Creating a PR is out of
+  scope too — use `gh pr create`.
 
 **Setup**
 - `wtm config show` inspects config; `wtm config edit` and the `wtm init` wizard are

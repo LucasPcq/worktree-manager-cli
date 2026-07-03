@@ -60,6 +60,29 @@ func TestReparentStepSkipsWithoutChildren(t *testing.T) {
 	}
 }
 
+// TestReparentRecapLineForcedByFlag guards the LUC-119 fix: with
+// --reparent-children the reparent step is omitted, so the recap must state the
+// forced reparent from the flag rather than reading a (missing) step value and
+// defaulting to "orphaned".
+func TestReparentRecapLineForcedByFlag(t *testing.T) {
+	plan := domain.CleanReparentPlan{
+		Grandparent: "gp",
+		Children:    []domain.ReparentResult{{Branch: "c", OldParent: "o", NewParent: "gp"}},
+	}
+	preview := func(string) domain.CleanReparentPlan { return plan }
+
+	forced := reparentRecapLine(nil, preview, "feat", true)
+	if !strings.Contains(forced, "reparent") || strings.Contains(forced, "orphaned") {
+		t.Errorf("forced recap should announce the reparent, got %q", forced)
+	}
+
+	// Without the flag and no step answer, the default is to leave orphaned.
+	unforced := reparentRecapLine(nil, preview, "feat", false)
+	if !strings.Contains(unforced, "orphaned") {
+		t.Errorf("unforced recap without a step answer should leave orphaned, got %q", unforced)
+	}
+}
+
 func TestReparentProposalTextListsMoves(t *testing.T) {
 	text := reparentProposalText(domain.CleanReparentPlan{
 		Grandparent: "gp",

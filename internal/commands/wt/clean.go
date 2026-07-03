@@ -29,8 +29,8 @@ func newCleanCmd() *cobra.Command {
 		RunE:  runClean,
 	}
 
-	cmd.Flags().Bool(domain.FlagForce, false, "Bypass all safety checks")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation prompt but keep safety checks (refuses dirty/unpushed/open-PR worktrees)")
+	cmd.Flags().Bool(domain.FlagForce, false, "Lift safety refusals (dirty/unpushed/open-PR); still asks to confirm unless --yes")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (keeps safety checks unless --force)")
 	cmd.Flags().Bool(domain.FlagReparentChildren, false, "Reparent orphaned child worktrees onto the grandparent (no prompt)")
 	shared.AddOutputFlag(cmd)
 
@@ -43,8 +43,8 @@ func runClean(cmd *cobra.Command, args []string) error {
 	reparentFlag, _ := cmd.Flags().GetBool(domain.FlagReparentChildren)
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
-	if format == domain.OutputJSON && !force && !yes {
-		return fmt.Errorf("--output json requires --yes or --force (confirmations cannot run in JSON mode)")
+	if format == domain.OutputJSON && !yes {
+		return fmt.Errorf("--output json requires --yes (confirmations cannot run in JSON mode; add --force to lift safety checks)")
 	}
 
 	dir, err := os.Getwd()
@@ -61,14 +61,16 @@ func runClean(cmd *cobra.Command, args []string) error {
 	baseBranch := resolveBase("", result)
 
 	// The full interactive path runs one wizard: picker → delete → reparent, with
-	// the safety check loaded async behind the spinner. --force / --yes / JSON keep
-	// the lighter path (single-step picker + optional standalone reparent prompt).
-	if interactive && !force && !yes {
+	// the safety check loaded async behind the spinner. --force is the safety axis,
+	// not a confirmation bypass: it still runs the wizard (which confirms) with the
+	// refusals lifted. Only --yes (or JSON) takes the lighter, prompt-free path.
+	if interactive && !yes {
 		return runCleanWizard(cmd, cleanWizardParams{
 			result:       result,
 			args:         args,
 			format:       format,
 			baseBranch:   baseBranch,
+			force:        force,
 			reparentFlag: reparentFlag,
 		})
 	}
@@ -110,6 +112,7 @@ type cleanWizardParams struct {
 	args         []string
 	format       string
 	baseBranch   string
+	force        bool
 	reparentFlag bool
 }
 
@@ -138,6 +141,8 @@ func runCleanWizard(cmd *cobra.Command, p cleanWizardParams) error {
 		ProjectDir:        p.result.ProjectDir,
 		PreselectedBranch: argBranch,
 		PreCheck:          preCheck,
+		Force:             p.force,
+		ReparentChildren:  p.reparentFlag,
 		Check: func(branch string) domain.CleanCheckResult {
 			check, checkErr := worktree.Check(cleanParamsFor(cleanParamsInput{result: p.result, baseBranch: p.baseBranch, branch: branch}))
 			if checkErr != nil {

@@ -64,11 +64,14 @@ type DecidePushParams struct {
 	NoPush        bool
 	Interactive   bool
 	PushableCount int
+	// Yes is --yes: run without the push prompt. Pushing force-pushes with lease,
+	// so the safe default under --yes is not to push; the user opts in with --push.
+	Yes bool
 }
 
 // DecidePush resolves whether to push the rebased branches. With branches to
 // push and neither --push nor --no-push, an interactive run is asked (PushConfirm);
-// a non-interactive run only pushes when --push is set.
+// a non-interactive or --yes run only pushes when --push is set (safe default: no push).
 func DecidePush(params DecidePushParams) PushDecision {
 	if params.PushableCount == 0 || params.NoPush {
 		return PushSkip
@@ -76,7 +79,7 @@ func DecidePush(params DecidePushParams) PushDecision {
 	if params.Push {
 		return PushForce
 	}
-	if !params.Interactive {
+	if params.Yes || !params.Interactive {
 		return PushSkip
 	}
 	return PushConfirm

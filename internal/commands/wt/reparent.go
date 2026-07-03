@@ -32,7 +32,7 @@ func newReparentCmd() *cobra.Command {
 	}
 
 	cmd.Flags().String(domain.FlagTo, "", "New parent branch to rebase onto")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Reparent straight from the flags without the interactive wizard (needs at least one worktree and --to)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (needs at least one worktree and --to)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd

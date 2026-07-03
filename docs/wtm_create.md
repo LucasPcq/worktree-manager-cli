@@ -20,7 +20,7 @@ wtm create [branch] [flags]
   -h, --help              help for create
       --if-not-exists     Succeed silently if the worktree already exists (idempotent)
       --output string     Output format: text or json (default "text")
-  -y, --yes               Create straight from the flags without the interactive wizard (source defaults to the base branch)
+  -y, --yes               Skip all prompts; resolve every decision from flags and safe defaults (branch name required; source defaults to the base branch)
 ```
 
 ### SEE ALSO

@@ -35,14 +35,14 @@ wtm prune [flags]
 ```
       --closed              Restrict to worktrees whose PR was closed without merging (needs gh)
       --dry-run             Preview what would be pruned without removing anything
-      --force               Also remove unsafe worktrees (dirty, unpushed commits, or open PR)
+      --force               Lift safety refusals: also remove unsafe worktrees (dirty, unpushed commits, or open PR)
       --gone                Restrict to worktrees whose upstream branch was deleted on the remote
   -h, --help                help for prune
       --merged              Restrict to worktrees whose PR was merged on GitHub (needs gh)
       --no-fetch            Skip the git fetch --prune that gone-detection performs; use already-fetched state
       --output string       Output format: text or json (default "text")
-      --reparent-children   Reparent orphaned child worktrees onto the grandparent (non-interactive; otherwise you're asked)
-  -y, --yes                 Skip the confirmation/selection prompt (keeps every match)
+      --reparent-children   Reparent orphaned child worktrees onto the grandparent (no prompt)
+  -y, --yes                 Skip all prompts; keep every match without the selection picker (use --force for unsafe worktrees)
 ```
 
 ### SEE ALSO

@@ -32,7 +32,7 @@ func newCreateCmd() *cobra.Command {
 	cmd.Flags().Bool(domain.FlagFF, false, "Fast-forward the source branch to origin before creating (non-interactive; skipped when it has diverged)")
 	cmd.Flags().String(domain.FlagEnvFrom, "", "Override env strategy (example, main, parent)")
 	cmd.Flags().Bool(domain.FlagIfNotExists, false, "Succeed silently if the worktree already exists (idempotent)")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Create straight from the flags without the interactive wizard (source defaults to the base branch)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (branch name required; source defaults to the base branch)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
