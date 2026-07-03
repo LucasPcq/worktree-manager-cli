@@ -52,6 +52,13 @@ type RunWizardParams struct {
 	// for a branch chosen in the picker (unused when PreselectedBranch is set).
 	Check           CheckFunc
 	ReparentPreview ReparentPreviewFunc
+	// Force is --force: lift safety refusals. The wizard still shows the delete
+	// recap (confirmation) with the warnings visible; confirming applies the force.
+	Force bool
+	// ReparentChildren is --reparent-children: reparent orphaned children onto the
+	// grandparent without prompting. When true the reparent step is skipped and the
+	// recap states the forced reparent.
+	ReparentChildren bool
 }
 
 // RunResult is the wizard outcome.
@@ -104,8 +111,12 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 		})
 		// Reparent is conditional on the picked branch, so it is a ChoiceStep that
 		// auto-skips (with a reason) when the branch has no orphaned children.
-		steps = append(steps, reparentStep(params.ReparentPreview))
-	} else if params.ReparentPreview != nil {
+		// --reparent-children forces reparenting without a prompt, so the step is
+		// omitted entirely then.
+		if !params.ReparentChildren {
+			steps = append(steps, reparentStep(params.ReparentPreview))
+		}
+	} else if params.ReparentPreview != nil && !params.ReparentChildren {
 		// Branch is known up front: compute children synchronously and add a concrete
 		// reparent step only when there are any. A ChoiceStep cannot be the first
 		// step (the wizard never builds or auto-skips step 0), so this path avoids it.
@@ -143,7 +154,7 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 			// before it (when the branch has children; otherwise delete is step 0 and
 			// Build does not run, which is fine — there is no reparent line then).
 			Build: func(prev []components.Step) any {
-				return deleteStep(check, reparentRecapLine(prev, params.ReparentPreview, branch))
+				return deleteStep(check, reparentRecapLine(prev, params.ReparentPreview, branch, params.ReparentChildren))
 			},
 		})
 	}
@@ -162,7 +173,7 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 				return tea.Batch(loadCmd, runCheckCmd(m.branch, params.Check)), true
 			case checkDoneMsg:
 				result := m.check
-				line := reparentRecapLine(w.Steps(), params.ReparentPreview, pickerValue(w.Steps()))
+				line := reparentRecapLine(w.Steps(), params.ReparentPreview, pickerValue(w.Steps()), params.ReparentChildren)
 				w.UpdateStepModel(deleteIdx, func(any) any { return deleteStep(result, line) })
 				w.SetLoading(false)
 				return nil, true
@@ -185,13 +196,18 @@ func RunWizard(params RunWizardParams) (RunResult, error) {
 
 	result := RunResult{
 		Branch: params.PreselectedBranch,
-		Force:  deleteSel.Value() == deleteForce,
+		Force:  params.Force || deleteSel.Value() == deleteForce,
 	}
 	if hasPicker {
 		result.Branch = pickerValue(finalSteps)
 	}
 
-	if idx := stepIndex(finalSteps, stepReparent); idx >= 0 && !final.Skipped(idx) {
+	// --reparent-children forces the reparent without a step; otherwise the answer
+	// comes from the reparent step when it ran.
+	if params.ReparentChildren {
+		result.ReparentAsked = true
+		result.ReparentChildren = true
+	} else if idx := stepIndex(finalSteps, stepReparent); idx >= 0 && !final.Skipped(idx) {
 		result.ReparentAsked = true
 		result.ReparentChildren = stepValue(finalSteps, stepReparent) == reparentYes
 	}
@@ -260,9 +276,10 @@ func deleteDescription(check domain.CleanCheckResult, reparentLine string) strin
 	return strings.Join(lines, "\n")
 }
 
-// reparentRecapLine summarizes the reparent decision (made on the earlier step)
-// for the delete recap, or "" when the branch has no orphaned children.
-func reparentRecapLine(steps []components.Step, preview ReparentPreviewFunc, branch string) string {
+// reparentRecapLine summarizes the reparent decision for the delete recap, or ""
+// when the branch has no orphaned children. forced is --reparent-children: the
+// step was omitted, so the recap states the reparent without reading a step value.
+func reparentRecapLine(steps []components.Step, preview ReparentPreviewFunc, branch string, forced bool) string {
 	if preview == nil || branch == "" {
 		return ""
 	}
@@ -270,7 +287,7 @@ func reparentRecapLine(steps []components.Step, preview ReparentPreviewFunc, bra
 	if len(plan.Children) == 0 {
 		return ""
 	}
-	if stepValue(steps, stepReparent) == reparentYes {
+	if forced || stepValue(steps, stepReparent) == reparentYes {
 		return fmt.Sprintf("Then reparent %d child worktree(s) onto %s.", len(plan.Children), plan.Grandparent)
 	}
 	return fmt.Sprintf("Then leave %d child worktree(s) orphaned.", len(plan.Children))

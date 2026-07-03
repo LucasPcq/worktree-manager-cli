@@ -37,7 +37,7 @@ func newSyncCmd() *cobra.Command {
 
 	cmd.Flags().Bool(domain.FlagAll, false, "Sync every managed worktree")
 	cmd.Flags().Bool(domain.FlagDryRun, false, "Preview the cascade without rebasing or pushing")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the pre-sync confirmation")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (requires branch args or --all; use --push to push)")
 	cmd.Flags().Bool(domain.FlagPush, false, "Force-push (with lease) rebased branches without prompting")
 	cmd.Flags().Bool(domain.FlagNoPush, false, "Rebase locally only; never push")
 	cmd.Flags().Bool(domain.FlagKeepConflict, false, "Leave a conflicting rebase in progress in its worktree instead of aborting")
@@ -101,7 +101,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 		Args:         args,
 		All:          all,
 		KeepConflict: keepConflict,
-		CanPrompt:    interactive && term.IsTerminal(int(os.Stdin.Fd())),
+		// --yes runs fully unattended: it forces the non-interactive path so a missing
+		// worktree selection errors (specify branches or --all) instead of a picker.
+		CanPrompt: interactive && term.IsTerminal(int(os.Stdin.Fd())) && !yes,
 		Cfg:          cfg,
 		BaseBranch:   baseBranch,
 		PlanPreview:  planPreview,
@@ -171,6 +173,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if !dryRun && shouldPush(shouldPushParams{
 		Push:        push,
 		NoPush:      noPush,
+		Yes:         yes,
 		Interactive: interactive,
 		Steps:       syncResult.Steps,
 	}) {
@@ -250,8 +253,8 @@ func resolveSyncSelection(params resolveSyncSelectionParams) (syncSelection, err
 	// No terminal to prompt on: fall back to the flags (an explicit target is required).
 	if !params.CanPrompt {
 		if needSelect {
-			return syncSelection{}, fmt.Errorf("specify one or more worktrees, or pass --%s (no interactive picker without a terminal or in --%s %s mode)",
-				domain.FlagAll, domain.FlagOutput, domain.OutputJSON)
+			return syncSelection{}, fmt.Errorf("specify one or more worktrees, or pass --%s (no interactive picker under --%s, without a terminal, or in --%s %s mode)",
+				domain.FlagAll, domain.FlagYes, domain.FlagOutput, domain.OutputJSON)
 		}
 		return syncSelection{Branches: branchesForSync(params.All, preselected), KeepConflict: params.KeepConflict}, nil
 	}
@@ -362,6 +365,7 @@ func confirmSync(params confirmSyncParams) bool {
 type shouldPushParams struct {
 	Push        bool
 	NoPush      bool
+	Yes         bool
 	Interactive bool
 	Steps       []domain.SyncStepResult
 }
@@ -373,6 +377,7 @@ func shouldPush(params shouldPushParams) bool {
 	switch rules.DecidePush(rules.DecidePushParams{
 		Push:          params.Push,
 		NoPush:        params.NoPush,
+		Yes:           params.Yes,
 		Interactive:   params.Interactive,
 		PushableCount: ready,
 	}) {

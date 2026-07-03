@@ -51,9 +51,9 @@ func newPruneCmd() *cobra.Command {
 	cmd.Flags().Bool(domain.FlagClosed, false, "Restrict to worktrees whose PR was closed without merging (needs gh)")
 	cmd.Flags().Bool(domain.FlagGone, false, "Restrict to worktrees whose upstream branch was deleted on the remote")
 	cmd.Flags().Bool(domain.FlagNoFetch, false, "Skip the git fetch --prune that gone-detection performs; use already-fetched state")
-	cmd.Flags().Bool(domain.FlagForce, false, "Also remove unsafe worktrees (dirty, unpushed commits, or open PR)")
-	cmd.Flags().Bool(domain.FlagReparentChildren, false, "Reparent orphaned child worktrees onto the grandparent (non-interactive; otherwise you're asked)")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation/selection prompt (keeps every match)")
+	cmd.Flags().Bool(domain.FlagForce, false, "Lift safety refusals (dirty/unpushed/open-PR): also remove unsafe worktrees; still asks to confirm unless --yes")
+	cmd.Flags().Bool(domain.FlagReparentChildren, false, "Reparent orphaned child worktrees onto the grandparent (no prompt)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; keep every match without the selection picker (use --force for unsafe worktrees)")
 	cmd.Flags().Bool(domain.FlagDryRun, false, "Preview what would be pruned without removing anything")
 	shared.AddOutputFlag(cmd)
 

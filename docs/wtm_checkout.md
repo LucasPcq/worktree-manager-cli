@@ -20,6 +20,7 @@ wtm checkout [number] [flags]
       --mine              Show only your PRs
       --output string     Output format: text or json (default "text")
       --review            Show only PRs where you are requested as reviewer
+  -y, --yes               Skip all prompts; resolve every decision from flags and safe defaults (PR number required)
 ```
 
 ### SEE ALSO

@@ -29,8 +29,8 @@ func newCleanCmd() *cobra.Command {
 		RunE:  runClean,
 	}
 
-	cmd.Flags().Bool(domain.FlagForce, false, "Bypass all safety checks")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation prompt but keep safety checks (refuses dirty/unpushed/open-PR worktrees)")
+	cmd.Flags().Bool(domain.FlagForce, false, "Lift safety refusals (dirty/unpushed/open-PR); still asks to confirm unless --yes")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (keeps safety checks unless --force)")
 	cmd.Flags().Bool(domain.FlagReparentChildren, false, "Reparent orphaned child worktrees onto the grandparent (no prompt)")
 	shared.AddOutputFlag(cmd)
 
@@ -43,8 +43,8 @@ func runClean(cmd *cobra.Command, args []string) error {
 	reparentFlag, _ := cmd.Flags().GetBool(domain.FlagReparentChildren)
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
-	if format == domain.OutputJSON && !force && !yes {
-		return fmt.Errorf("--output json requires --yes or --force (confirmations cannot run in JSON mode)")
+	if format == domain.OutputJSON && !yes {
+		return fmt.Errorf("--output json requires --yes (confirmations cannot run in JSON mode; add --force to lift safety checks)")
 	}
 
 	dir, err := os.Getwd()
@@ -58,28 +58,32 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 
 	interactive := rules.IsHumanFormat(format)
+	// canPrompt is the true prompt-capability gate: a human format AND not --yes.
+	// Every interactive picker/prompt keys off it; --yes takes the prompt-free path.
+	canPrompt := interactive && !yes
 	baseBranch := resolveBase("", result)
 
 	// The full interactive path runs one wizard: picker → delete → reparent, with
-	// the safety check loaded async behind the spinner. --force / --yes / JSON keep
-	// the lighter path (single-step picker + optional standalone reparent prompt).
-	if interactive && !force && !yes {
+	// the safety check loaded async behind the spinner. --force is the safety axis,
+	// not a confirmation bypass: it still runs the wizard (which confirms) with the
+	// refusals lifted. Only --yes (or JSON) takes the lighter, prompt-free path.
+	if canPrompt {
 		return runCleanWizard(cmd, cleanWizardParams{
 			result:       result,
 			args:         args,
 			format:       format,
 			baseBranch:   baseBranch,
+			force:        force,
 			reparentFlag: reparentFlag,
 		})
 	}
 
-	branch, err := resolveBranchArg(args, result.ProjectDir)
-	if err != nil {
-		if errors.Is(err, domain.ErrUserAborted) {
-			return nil
-		}
-		return err
+	// Prompt-free path (--yes or JSON): the worktree must be named explicitly — no
+	// picker fallback. A missing branch errors naming the flag.
+	if len(args) == 0 {
+		return domain.ErrCleanBranchRequired
 	}
+	branch := args[0]
 
 	cleanParams := cleanParamsFor(cleanParamsInput{result: result, baseBranch: baseBranch, branch: branch, force: force})
 	reparentPlan := worktree.PlanCleanReparent(cleanParams)
@@ -90,10 +94,12 @@ func runClean(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// canPrompt is false here, so decideReparent resolves the reparent decision from
+	// the flag or the safe default (orphan) — never a prompt under --yes.
 	applyReparent, aborted := decideReparent(cmd, decideReparentParams{
 		Plan:        reparentPlan,
 		Flag:        reparentFlag,
-		Interactive: interactive,
+		Interactive: canPrompt,
 	})
 	if aborted {
 		output.Frame(cmd.OutOrStdout(), func() {
@@ -110,6 +116,7 @@ type cleanWizardParams struct {
 	args         []string
 	format       string
 	baseBranch   string
+	force        bool
 	reparentFlag bool
 }
 
@@ -138,6 +145,8 @@ func runCleanWizard(cmd *cobra.Command, p cleanWizardParams) error {
 		ProjectDir:        p.result.ProjectDir,
 		PreselectedBranch: argBranch,
 		PreCheck:          preCheck,
+		Force:             p.force,
+		ReparentChildren:  p.reparentFlag,
 		Check: func(branch string) domain.CleanCheckResult {
 			check, checkErr := worktree.Check(cleanParamsFor(cleanParamsInput{result: p.result, baseBranch: p.baseBranch, branch: branch}))
 			if checkErr != nil {
@@ -300,13 +309,6 @@ func cleanUnsafeReason(check domain.CleanCheckResult) (string, bool) {
 		return "has an open pull request", true
 	}
 	return "", false
-}
-
-func resolveBranchArg(args []string, projectDir string) (string, error) {
-	if len(args) > 0 {
-		return args[0], nil
-	}
-	return cleanui.RunWorktreePicker(projectDir)
 }
 
 func doClean(cmd *cobra.Command, params domain.CleanParams, format string, reparentPlan domain.CleanReparentPlan, applyReparent bool) error {

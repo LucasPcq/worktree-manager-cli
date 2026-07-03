@@ -47,10 +47,6 @@ type RunParams struct {
 	NeedFiles  bool
 	NeedTarget bool
 	NeedMode   bool
-	// SkipConfirm omits the final recap step (--yes), so the wizard completes after
-	// the last selection step. The selection steps (source/file/target/mode) still
-	// show — --yes only drops the confirmation.
-	SkipConfirm bool
 	// FixedFiles, FixedTarget and FixedKeep carry the values resolved from the
 	// --files/--to/--keep flags, so the combined recap names every part of the plan
 	// even for the steps a flag skipped. Each is used only when its step is absent.
@@ -149,14 +145,13 @@ func Run(params RunParams) (RunResult, error) {
 	}
 
 	// Combined recap: source + files + target (existing branch, or "new worktree
-	// <branch> from <source>") + mode + ⚠ create warnings, then "No, cancel".
-	// Skipped with --yes, so the wizard completes after the last selection step.
-	if !params.SkipConfirm {
-		steps = append(steps, components.RecapStep(components.RecapStepParams{
-			Name:  stepConfirm,
-			Build: func(prev []components.Step) components.RecapContent { return buildCombinedRecap(prev, params) },
-		}))
-	}
+	// <branch> from <source>") + mode + ⚠ create warnings, then "No, cancel". This
+	// wizard only runs fully interactively (--yes / no-TTY / JSON never reach it), so
+	// the recap is always the last step.
+	steps = append(steps, components.RecapStep(components.RecapStepParams{
+		Name:  stepConfirm,
+		Build: func(prev []components.Step) components.RecapContent { return buildCombinedRecap(prev, params) },
+	}))
 
 	final, err := components.RunWizard(components.RunWizardParams{
 		Steps:       steps,

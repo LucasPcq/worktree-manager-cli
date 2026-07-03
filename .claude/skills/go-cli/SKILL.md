@@ -347,8 +347,58 @@ then a single **recap** as the last step. The rules:
   (`resolveSyncSelection`). A genuinely post-execution decision that reacts to a runtime outcome
   (sync's push after the rebase, a failed fast-forward, an extract conflict) legitimately stays a
   standalone prompt after the run — it can't be decided upfront.
-- Non-interactive paths (`--yes`, `--from`, `--output json`, no TTY) must bypass the wizard entirely
-  and keep their prior behaviour.
+- Bypass flags follow the two-axis taxonomy below (`--yes` = confirmations/decisions,
+  `--force` = safety). Under `--yes` / `--output json` / no-TTY the wizard never runs: every
+  decision resolves to a flag or safe default, and a missing **required selection** errors
+  naming the flag — never a picker.
+
+### Bypass flags for mutation commands: `--yes` vs `--force` (two axes) — MANDATORY
+
+Every worktree-mutating command (`create`, `clean`, `sync`, `prune`, `relocate`, `reparent`,
+`extract`, `checkout`) exposes bypass on two **orthogonal** axes. This is the standardized model
+(matches `gcloud --quiet`, `terraform -auto-approve`/`-input=false`, `apt -y` vs `--force-yes`, and
+[clig.dev](https://clig.dev)); every new or refactored mutation command MUST follow it exactly
+(LUC-119). Keep the axes separate — do not let one imply the other.
+
+- **`--yes` / `-y` — confirmation/decision axis. Runs fully unattended, ZERO prompts.** Every input
+  resolves without interaction, one of three ways:
+  1. **Decision / confirmation** (recap, reparent, push, on-conflict, fast-forward) → flag value,
+     else a documented **safe default** — never destructive: `sync --yes` does **not** push (opt in
+     with `--push`); `extract --yes` defaults on-conflict to **abort**; `clean`/`prune --yes` leave
+     children **orphaned** unless `--reparent-children`. Route the default through a pure rule where
+     one exists (`rules.DecidePush` takes a `Yes` field).
+  2. **Required selection with no safe default** (extract's `--files`/`--to`/source, sync's
+     branches/`--all`) → flag/arg, else **error naming the missing flag**. A picker MUST NOT appear
+     under `--yes`.
+  3. A picker runs only in a **fully interactive** run (no `--yes`, TTY, human output).
+- **`--force` — safety axis, strictly separate.** Only lifts safety refusals (dirty / unpushed /
+  open-PR / locked). It does **not** imply `--yes`: `--force` alone still runs the wizard/recap and
+  asks to confirm (thread `--force` into the wizard as a preset so it lifts refusals without
+  re-asking — see `internal/tui/clean/wizard.go` `Force`). JSON mode requires `--yes` (confirmations
+  can't run); `--force` alone in JSON is rejected.
+
+**How to wire it (the standard):**
+1. Fold `--yes` into the command's interactivity flag once, at entry:
+   `interactive := isTTY && rules.IsHumanFormat(format) && !yes`.
+2. Gate every picker/prompt and every `need*` step on that `interactive` flag.
+3. For each required selection, add a guard: `if !interactive && <flag unset> { return
+   domain.Err<X>Required }` — a sentinel in `internal/domain/errors.go` whose message names the flag
+   (see `ErrExtractFilesRequired`, `ErrExtractTargetRequired`). Because `--yes` makes `interactive`
+   false, the wizard is now unreachable under `--yes`, so its RecapStep is unconditional (no
+   `SkipConfirm` flag on the wizard — the recap always shows when the wizard runs at all).
+4. Help-string wording is uniform: `--yes` → *"Skip all prompts; resolve every decision from flags
+   and safe defaults (requires …; errors if a selection is missing)"*; `--force` → *"Lift safety
+   refusals (…); still asks to confirm unless --yes"*.
+
+### Recap completeness: read the step value, else the flag/arg fallback
+
+A recap builder must name **every** part of the plan, even the parts a flag resolved. Each
+`build*Recap` / `recapStep` reads the value from its wizard step and **falls back to the flag/arg**
+when that step was skipped — a flag must never make a line disappear from the recap. Pattern
+references: `internal/tui/extract` `buildCombinedRecap` (`FixedFiles`/`FixedTarget`/`FixedKeep`),
+`internal/tui/newwt` `buildCreateRecap` (`BranchName`/`Source`/`EnvOverride`), `internal/tui/checkout`
+`buildCheckoutRecap` (`FromOverride`/`EnvOverride`), `internal/tui/reparent` `recapBody`
+(`PresetBranches`/`PresetParent`). Add the fallback whenever you add a flag that pre-fills a step.
 
 ### Async data in a wizard: `InitCmd` (at start) vs `OnEnter` (per step)
 

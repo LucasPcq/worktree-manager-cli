@@ -32,7 +32,7 @@ func newReparentCmd() *cobra.Command {
 	}
 
 	cmd.Flags().String(domain.FlagTo, "", "New parent branch to rebase onto")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Reparent straight from the flags without the interactive wizard (needs at least one worktree and --to)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (needs at least one worktree and --to)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -123,10 +123,10 @@ type resolveReparentTargetsParams struct {
 func resolveReparentTargets(params resolveReparentTargetsParams) (branches []string, newParent string, err error) {
 	if !params.Interactive {
 		if len(params.Branches) == 0 {
-			return nil, "", fmt.Errorf("specify at least one worktree (no interactive picker in --%s %s mode)", domain.FlagOutput, domain.OutputJSON)
+			return nil, "", fmt.Errorf("specify at least one worktree (no interactive picker under --%s, without a terminal, or in --%s %s mode)", domain.FlagYes, domain.FlagOutput, domain.OutputJSON)
 		}
 		if params.NewParent == "" {
-			return nil, "", fmt.Errorf("specify the new parent with --%s (no interactive picker in --%s %s mode)", domain.FlagTo, domain.FlagOutput, domain.OutputJSON)
+			return nil, "", fmt.Errorf("specify the new parent with --%s (no interactive picker under --%s, without a terminal, or in --%s %s mode)", domain.FlagTo, domain.FlagYes, domain.FlagOutput, domain.OutputJSON)
 		}
 		return params.Branches, params.NewParent, nil
 	}

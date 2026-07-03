@@ -31,8 +31,8 @@ func newRelocateCmd() *cobra.Command {
 
 	cmd.Flags().String(domain.FlagTo, "", "New base_path (relative to repo root); also moves existing worktrees there")
 	cmd.Flags().Bool(domain.FlagDryRun, false, "Preview the plan without moving or adopting anything")
-	cmd.Flags().Bool(domain.FlagForce, false, "Move dirty or locked worktrees too")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation and parent prompts (parents default to the base branch)")
+	cmd.Flags().Bool(domain.FlagForce, false, "Lift safety refusals (dirty/locked): move those worktrees too; still asks to confirm unless --yes")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (parents default to the base branch)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd

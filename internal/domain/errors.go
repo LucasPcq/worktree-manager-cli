@@ -75,8 +75,23 @@ var (
 
 	// ErrExtractSourceRequired is returned when extract is invoked without a
 	// source worktree argument and cannot fall back to the interactive picker
-	// (no terminal, or --output json).
-	ErrExtractSourceRequired = errors.New("specify a source worktree (no interactive picker without a terminal or in --output json mode)")
+	// (--yes, no terminal, or --output json).
+	ErrExtractSourceRequired = errors.New("specify a source worktree (no interactive picker under --yes, without a terminal, or in --output json mode)")
+
+	// ErrExtractFilesRequired is returned when extract cannot resolve which files
+	// to extract: --files was omitted and there is no interactive picker (--yes, no
+	// terminal, or --output json).
+	ErrExtractFilesRequired = errors.New("specify --files (no interactive picker under --yes, without a terminal, or in --output json mode)")
+
+	// ErrExtractTargetRequired is returned when extract cannot resolve the target
+	// worktree: --to was omitted and there is no interactive picker (--yes, no
+	// terminal, or --output json).
+	ErrExtractTargetRequired = errors.New("specify --to (no interactive picker under --yes, without a terminal, or in --output json mode)")
+
+	// ErrCleanBranchRequired is returned when clean is invoked without a worktree
+	// branch argument and cannot fall back to the interactive picker (--yes, no
+	// terminal, or --output json).
+	ErrCleanBranchRequired = errors.New("specify a worktree branch to clean (no interactive picker under --yes, without a terminal, or in --output json mode)")
 
 	// ErrNoFilesSelected is returned when the user selects no files to extract.
 	ErrNoFilesSelected = errors.New("no files selected")

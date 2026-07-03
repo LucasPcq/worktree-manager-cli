@@ -42,7 +42,7 @@ func newExtractCmd() *cobra.Command {
 	cmd.Flags().Bool(domain.FlagFF, false, "Fast-forward the parent branch to origin before creating the target (non-interactive; skipped when it has diverged)")
 	cmd.Flags().Bool(domain.FlagKeep, false, "Copy instead of move (keep the changes in the source)")
 	cmd.Flags().String(domain.FlagOnConflict, "", "On conflict: abort (default) or resolve (write conflict markers in the target)")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation recap (the selection pickers still show)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (requires a source arg, --files and --to; errors if a selection is missing)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -64,7 +64,11 @@ func runExtract(cmd *cobra.Command, args []string) error {
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	interactive := isInteractive() && rules.IsHumanFormat(format)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
+	// --yes runs fully unattended: it forces the non-interactive path so a missing
+	// required selection (source / --files / --to) errors naming the flag instead of
+	// opening a picker. Decisions with a safe default (mode, on-conflict) still default.
+	interactive := isInteractive() && rules.IsHumanFormat(format) && !yes
 
 	sourceArg := ""
 	if len(args) == 1 {
@@ -121,15 +125,15 @@ func runExtract(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	sel, err := resolveSelectionAndTarget(resolveParams{
-		cmd:        cmd,
-		cfg:        cfg,
-		statuses:   statuses,
-		source:     source,
-		needSource: needSource,
-		yes:        yes,
-		loadFiles:  extractFilesLoader(statuses),
+		cmd:         cmd,
+		cfg:         cfg,
+		statuses:    statuses,
+		source:      source,
+		needSource:  needSource,
+		interactive: interactive,
+		yes:         yes,
+		loadFiles:   extractFilesLoader(statuses),
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		if rules.IsHumanFormat(format) {
@@ -148,6 +152,7 @@ func runExtract(cmd *cobra.Command, args []string) error {
 		sourcePath: sel.sourcePath,
 		target:     sel.target,
 		selected:   sel.selected,
+		yes:        yes,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		if rules.IsHumanFormat(format) {
@@ -272,6 +277,9 @@ type resolveConflictModeParams struct {
 	sourcePath string
 	target     extractTarget
 	selected   []domain.ExtractFile
+	// yes is --yes: the on-conflict decision is a prompt like any other, so under
+	// --yes it resolves to the safe default (abort) unless --on-conflict was given.
+	yes bool
 }
 
 // resolveConflictMode decides what Extract does on conflict. No conflict → abort
@@ -293,7 +301,8 @@ func resolveConflictMode(p resolveConflictModeParams) (string, error) {
 		return mode, nil
 	}
 
-	if !isInteractive() {
+	// --yes runs without decision prompts: fall back to the safe default (abort).
+	if p.yes || !isInteractive() {
 		return domain.OnConflictAbort, nil
 	}
 
@@ -349,8 +358,11 @@ type resolveParams struct {
 	statuses   []domain.WorktreeStatus
 	source     extractSource
 	needSource bool
-	yes        bool
-	loadFiles  func(branch string) []domain.ExtractFile
+	// interactive is false under --yes, no TTY, or --output json: a required
+	// selection with no flag then errors instead of opening a picker.
+	interactive bool
+	yes         bool
+	loadFiles   func(branch string) []domain.ExtractFile
 }
 
 // extractSelection is the fully-resolved plan: which source, its path, the files,
@@ -373,7 +385,19 @@ func resolveSelectionAndTarget(p resolveParams) (extractSelection, error) {
 	keepFlag, _ := p.cmd.Flags().GetBool(domain.FlagKeep)
 	needFiles := len(filesFlag) == 0
 	needTarget := toFlag == ""
-	needMode := !p.cmd.Flags().Changed(domain.FlagKeep) && isInteractive()
+	needMode := !p.cmd.Flags().Changed(domain.FlagKeep) && p.interactive
+
+	// Non-interactive (--yes / no TTY / --output json): a required selection with no
+	// flag is an error naming the flag, never a picker. Mode has a safe default
+	// (move), so it is not required here.
+	if !p.interactive {
+		if needFiles {
+			return extractSelection{}, domain.ErrExtractFilesRequired
+		}
+		if needTarget {
+			return extractSelection{}, domain.ErrExtractTargetRequired
+		}
+	}
 
 	wizard, err := runWizard(runWizardParams{
 		cmd:         p.cmd,
@@ -381,14 +405,13 @@ func resolveSelectionAndTarget(p resolveParams) (extractSelection, error) {
 		statuses:    p.statuses,
 		source:      p.source,
 		loadFiles:   p.loadFiles,
-		needSource:  p.needSource,
-		needFiles:   needFiles,
-		needTarget:  needTarget,
-		needMode:    needMode,
-		skipConfirm: p.yes,
-		filesFlag:   filesFlag,
-		toFlag:      toFlag,
-		keepFlag:    keepFlag,
+		needSource: p.needSource,
+		needFiles:  needFiles,
+		needTarget: needTarget,
+		needMode:   needMode,
+		filesFlag:  filesFlag,
+		toFlag:     toFlag,
+		keepFlag:   keepFlag,
 	})
 	if err != nil {
 		return extractSelection{}, err
@@ -427,6 +450,7 @@ func resolveSelectionAndTarget(p resolveParams) (extractSelection, error) {
 		sourceBranch: sourceBranch,
 		choice:       wizard.Target,
 		create:       wizard.Create,
+		interactive:  p.interactive,
 	})
 	if err != nil {
 		return extractSelection{}, err
@@ -446,11 +470,10 @@ type runWizardParams struct {
 	statuses   []domain.WorktreeStatus
 	source     extractSource
 	loadFiles  func(branch string) []domain.ExtractFile
-	needSource  bool
-	needFiles   bool
-	needTarget  bool
-	needMode    bool
-	skipConfirm bool
+	needSource bool
+	needFiles  bool
+	needTarget bool
+	needMode   bool
 	// filesFlag/toFlag/keepFlag are the flag values, forwarded to the wizard so the
 	// recap names every part of the plan even for the steps a flag skipped.
 	filesFlag []string
@@ -482,7 +505,6 @@ func runWizard(params runWizardParams) (extracttui.RunResult, error) {
 		NeedFiles:    params.needFiles,
 		NeedTarget:   params.needTarget,
 		NeedMode:     params.needMode,
-		SkipConfirm:  params.skipConfirm,
 		FixedFiles:   params.filesFlag,
 		FixedTarget:  params.toFlag,
 		FixedKeep:    params.keepFlag,
@@ -552,6 +574,9 @@ type resolveTargetParams struct {
 	// create holds the new-worktree answers collected in the combined wizard, used
 	// when choice.CreateNew.
 	create newpicker.WizardResult
+	// interactive is false under --yes / no TTY / --output json: the source
+	// fast-forward is then a non-prompting decision (skip unless --ff).
+	interactive bool
 }
 
 // resolveTarget resolves the destination worktree from the --to flag or the
@@ -567,7 +592,10 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 		}
 		fromFlag, _ := params.cmd.Flags().GetString(domain.FlagFrom)
 		fromBranch := defaultParent(defaultParentParams{cfg: params.cfg, sourceBranch: params.sourceBranch, override: fromFlag})
-		if isInteractive() {
+		// The fast-forward prompt is a decision like any other: only interactive runs
+		// ask. Under --yes / no TTY / JSON it is non-prompting — fast-forward only when
+		// --ff was passed, otherwise leave the parent as-is.
+		if params.interactive {
 			if !maybeFastForwardSource(params.cfg.ProjectDir, fromBranch) {
 				return extractTarget{}, domain.ErrUserAborted
 			}

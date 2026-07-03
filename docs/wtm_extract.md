@@ -29,7 +29,7 @@ wtm extract [source] [flags]
       --on-conflict string   On conflict: abort (default) or resolve (write conflict markers in the target)
       --output string        Output format: text or json (default "text")
       --to string            Target worktree branch; created if it does not exist
-  -y, --yes                  Skip the confirmation recap (the selection pickers still show)
+  -y, --yes                  Skip all prompts; resolve every decision from flags and safe defaults (requires a source arg, --files and --to; errors if a selection is missing)
 ```
 
 ### SEE ALSO

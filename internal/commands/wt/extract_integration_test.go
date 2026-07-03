@@ -62,6 +62,32 @@ func TestExtractUnknownSource(t *testing.T) {
 	}
 }
 
+// TestExtractYesRequiresSelectionFlags verifies the hardened bypass taxonomy: under
+// --yes a missing required selection errors naming the flag (no picker fallback),
+// while --yes with every selection supplied runs unattended.
+func TestExtractYesRequiresSelectionFlags(t *testing.T) {
+	_, _ = extractTestRepo(t)
+	src := createWorktree(t, "src")
+	createWorktree(t, "dst")
+
+	if err := os.WriteFile(filepath.Join(src.Path, "f.txt"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	// --yes without --files errors (files are a required selection with no default).
+	if _, _, err := runWtCmd(t, domain.CmdExtract, "src", "--to", "dst", "--yes"); !errors.Is(err, domain.ErrExtractFilesRequired) {
+		t.Fatalf("expected ErrExtractFilesRequired, got %v", err)
+	}
+	// --yes without --to errors (target is a required selection with no default).
+	if _, _, err := runWtCmd(t, domain.CmdExtract, "src", "--files", "f.txt", "--yes"); !errors.Is(err, domain.ErrExtractTargetRequired) {
+		t.Fatalf("expected ErrExtractTargetRequired, got %v", err)
+	}
+	// --yes with source + --files + --to runs unattended (text output, no picker).
+	if _, _, err := runWtCmd(t, domain.CmdExtract, "src", "--files", "f.txt", "--to", "dst", "--yes"); err != nil {
+		t.Fatalf("extract --yes with full flags: %v", err)
+	}
+}
+
 // TestExtractWithSourceArgJSON drives the full non-interactive extraction: a
 // source worktree is named by argument, its uncommitted file is moved to the
 // target worktree, and the JSON result reports the source branch.

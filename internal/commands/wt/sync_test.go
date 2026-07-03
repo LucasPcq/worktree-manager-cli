@@ -1,10 +1,34 @@
 package wt
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
+
+// TestResolveSyncSelectionRequiresTargetWhenNoPrompt covers the hardened bypass
+// path --yes routes to: with no picker available (CanPrompt false, as under --yes /
+// no TTY / JSON) and no worktree fixed by args/--all, a missing selection errors
+// naming --all instead of falling back to a picker.
+func TestResolveSyncSelectionRequiresTargetWhenNoPrompt(t *testing.T) {
+	_, err := resolveSyncSelection(resolveSyncSelectionParams{CanPrompt: false})
+	if err == nil {
+		t.Fatal("expected an error when no worktree is selected and prompting is disabled")
+	}
+	if !strings.Contains(err.Error(), "--"+domain.FlagAll) {
+		t.Fatalf("expected the error to mention --all, got: %v", err)
+	}
+
+	// With worktrees fixed by --all, the same no-prompt path resolves without error.
+	sel, err := resolveSyncSelection(resolveSyncSelectionParams{CanPrompt: false, All: true})
+	if err != nil {
+		t.Fatalf("resolveSyncSelection with --all: %v", err)
+	}
+	if sel.Branches != nil {
+		t.Errorf("--all should sync every worktree (nil branches), got %v", sel.Branches)
+	}
+}
 
 func TestBranchesForSync(t *testing.T) {
 	// --all preserves the "sync every worktree" semantics by passing nil, even

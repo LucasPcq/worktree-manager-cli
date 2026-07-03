@@ -37,6 +37,7 @@ func NewCmd() *cobra.Command {
 	cmd.Flags().Bool(domain.FlagMine, false, "Show only your PRs")
 	cmd.Flags().String(domain.FlagFrom, "", "Parent branch for sync (defaults to the PR base branch)")
 	cmd.Flags().String(domain.FlagEnvFrom, "", "Override env strategy (example, main, parent)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (PR number required)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -56,10 +57,14 @@ func runCheckout(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	fromOverride, _ := cmd.Flags().GetString(domain.FlagFrom)
 	envOverride, _ := cmd.Flags().GetString(domain.FlagEnvFrom)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 
+	// --yes runs prompt-free: parent defaults to the PR base branch, env to the
+	// config strategy, and the env-fallback confirmation is skipped. It behaves like
+	// a non-interactive run (a PR number is required) while still framing human output.
 	opts := checkoutOptions{
 		jsonMode:     format == domain.OutputJSON,
-		interactive:  rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd())),
+		interactive:  rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd())) && !yes,
 		fromOverride: fromOverride,
 		envOverride:  envOverride,
 	}
@@ -132,7 +137,7 @@ func checkoutByNumber(cmd *cobra.Command, result shared.ConfigResult, number int
 // multi-step wizard instantly and streams open PRs in asynchronously.
 func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts checkoutOptions) error {
 	if !opts.interactive {
-		return fmt.Errorf("PR number required in non-interactive mode")
+		return fmt.Errorf("PR number required without an interactive terminal (or when --yes is set)")
 	}
 
 	localBranches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: result.ProjectDir})
