@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
@@ -35,26 +34,4 @@ func pickableItems(projectDir string) ([]components.SelectItem, error) {
 		return nil, fmt.Errorf("no worktrees to clean (only the parent worktree exists)")
 	}
 	return items, nil
-}
-
-// RunWorktreePicker displays a filterable picker of worktrees (excluding parent).
-// Used by the non-wizard paths (--force / --yes); the full interactive path hosts
-// the picker inside RunWizard instead. Returns ErrUserAborted on Esc.
-func RunWorktreePicker(projectDir string) (string, error) {
-	items, err := pickableItems(projectDir)
-	if err != nil {
-		return "", err
-	}
-
-	sl := components.NewSelectList(components.NewSelectListParams{
-		Title:       "Select worktree to clean",
-		Description: "The parent worktree cannot be cleaned",
-		Items:       items,
-	})
-
-	result, err := components.RunStandaloneSelect(sl)
-	if err != nil {
-		return "", domain.ErrUserAborted
-	}
-	return result, nil
 }

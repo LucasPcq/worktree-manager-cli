@@ -450,6 +450,7 @@ func resolveSelectionAndTarget(p resolveParams) (extractSelection, error) {
 		sourceBranch: sourceBranch,
 		choice:       wizard.Target,
 		create:       wizard.Create,
+		interactive:  p.interactive,
 	})
 	if err != nil {
 		return extractSelection{}, err
@@ -573,6 +574,9 @@ type resolveTargetParams struct {
 	// create holds the new-worktree answers collected in the combined wizard, used
 	// when choice.CreateNew.
 	create newpicker.WizardResult
+	// interactive is false under --yes / no TTY / --output json: the source
+	// fast-forward is then a non-prompting decision (skip unless --ff).
+	interactive bool
 }
 
 // resolveTarget resolves the destination worktree from the --to flag or the
@@ -588,7 +592,10 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 		}
 		fromFlag, _ := params.cmd.Flags().GetString(domain.FlagFrom)
 		fromBranch := defaultParent(defaultParentParams{cfg: params.cfg, sourceBranch: params.sourceBranch, override: fromFlag})
-		if isInteractive() {
+		// The fast-forward prompt is a decision like any other: only interactive runs
+		// ask. Under --yes / no TTY / JSON it is non-prompting — fast-forward only when
+		// --ff was passed, otherwise leave the parent as-is.
+		if params.interactive {
 			if !maybeFastForwardSource(params.cfg.ProjectDir, fromBranch) {
 				return extractTarget{}, domain.ErrUserAborted
 			}

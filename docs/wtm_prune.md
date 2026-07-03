@@ -35,7 +35,7 @@ wtm prune [flags]
 ```
       --closed              Restrict to worktrees whose PR was closed without merging (needs gh)
       --dry-run             Preview what would be pruned without removing anything
-      --force               Lift safety refusals: also remove unsafe worktrees (dirty, unpushed commits, or open PR)
+      --force               Lift safety refusals (dirty/unpushed/open-PR): also remove unsafe worktrees; still asks to confirm unless --yes
       --gone                Restrict to worktrees whose upstream branch was deleted on the remote
   -h, --help                help for prune
       --merged              Restrict to worktrees whose PR was merged on GitHub (needs gh)

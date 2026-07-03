@@ -88,6 +88,11 @@ var (
 	// terminal, or --output json).
 	ErrExtractTargetRequired = errors.New("specify --to (no interactive picker under --yes, without a terminal, or in --output json mode)")
 
+	// ErrCleanBranchRequired is returned when clean is invoked without a worktree
+	// branch argument and cannot fall back to the interactive picker (--yes, no
+	// terminal, or --output json).
+	ErrCleanBranchRequired = errors.New("specify a worktree branch to clean (no interactive picker under --yes, without a terminal, or in --output json mode)")
+
 	// ErrNoFilesSelected is returned when the user selects no files to extract.
 	ErrNoFilesSelected = errors.New("no files selected")
 

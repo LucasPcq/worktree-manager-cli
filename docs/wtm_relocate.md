@@ -18,7 +18,7 @@ wtm relocate [flags]
 
 ```
       --dry-run         Preview the plan without moving or adopting anything
-      --force           Lift safety refusals: move dirty or locked worktrees too
+      --force           Lift safety refusals (dirty/locked): move those worktrees too; still asks to confirm unless --yes
   -h, --help            help for relocate
       --output string   Output format: text or json (default "text")
       --to string       New base_path (relative to repo root); also moves existing worktrees there

@@ -179,3 +179,20 @@ func TestCleanLeavesChildrenOrphanedWithoutFlag(t *testing.T) {
 		t.Errorf("dev-b parent = %q, want dev-a (unchanged, no opt-in)", got)
 	}
 }
+
+// TestCleanYesTextModeReparentDoesNotPrompt is the regression guard for the leak
+// where clean derived interactivity from the output format alone: in text mode
+// (human format, no TTY) --yes must resolve the reparent decision to the safe
+// orphan default without prompting — before the fix this reached the standalone
+// confirm and hung. Text mode (no --output json) exercises the leaked path.
+func TestCleanYesTextModeReparentDoesNotPrompt(t *testing.T) {
+	_, stateDir := setupStack(t)
+
+	if _, _, err := runWtCmd(t, domain.CmdClean, "dev-a", "--yes", "--force"); err != nil {
+		t.Fatalf("clean dev-a --yes (text mode): %v", err)
+	}
+
+	if got := readSourceBranch(t, stateDir, "dev-b"); got != "dev-a" {
+		t.Errorf("dev-b parent = %q, want dev-a (orphaned, no prompt under --yes)", got)
+	}
+}

@@ -2,6 +2,7 @@ package wt
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,6 +119,24 @@ func TestCleanAxesStrictlySeparated(t *testing.T) {
 	}
 	if _, err := os.Stat(wtPath); !os.IsNotExist(err) {
 		t.Errorf("expected the dirty worktree to be removed, stat: %v", err)
+	}
+}
+
+// TestCleanYesWithoutBranchErrors guards the hardened bypass: under --yes a missing
+// worktree branch errors naming the flag (no picker fallback), even in text mode
+// where the output format alone would otherwise read as "interactive".
+func TestCleanYesWithoutBranchErrors(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	stateDir := filepath.Join(dir, ".git", "wtm")
+	t.Setenv("WTM_PROJECT_DIR", dir)
+	t.Setenv("WTM_STATE_DIR", stateDir)
+	t.Setenv(domain.EnvGoFile, "")
+	if err := setupMinimalConfig(t, stateDir); err != nil {
+		t.Fatalf("setup config: %v", err)
+	}
+
+	if _, _, err := runWtCmd(t, domain.CmdClean, "--yes"); !errors.Is(err, domain.ErrCleanBranchRequired) {
+		t.Fatalf("expected ErrCleanBranchRequired, got %v", err)
 	}
 }
 
