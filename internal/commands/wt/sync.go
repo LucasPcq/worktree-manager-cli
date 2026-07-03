@@ -64,6 +64,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--%s cannot be combined with branch arguments", domain.FlagAll)
 	}
 
+	if format == domain.OutputJSON && !yes && !dryRun {
+		return fmt.Errorf("--output json requires --%s or --%s (prompts cannot run in JSON mode)", domain.FlagYes, domain.FlagDryRun)
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)

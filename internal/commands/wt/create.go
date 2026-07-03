@@ -60,6 +60,11 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
+	if format == domain.OutputJSON && !yes {
+		return fmt.Errorf("--output json requires --%s (prompts cannot run in JSON mode)", domain.FlagYes)
+	}
+
 	// The wizard needs a TTY and is skipped by --yes; a human-format run without a
 	// terminal (piped/scripted) also falls back to the non-interactive path.
 	interactive := rules.IsHumanFormat(format) && !yes && term.IsTerminal(int(os.Stdin.Fd()))

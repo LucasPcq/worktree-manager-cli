@@ -34,7 +34,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 	all, _ := cmd.Flags().GetBool(domain.FlagAll)
 
 	if all && len(args) > 0 {
-		return fmt.Errorf("--all cannot be combined with a profile argument")
+		return fmt.Errorf("--%s cannot be combined with a profile argument", domain.FlagAll)
 	}
 
 	dir, err := os.Getwd()

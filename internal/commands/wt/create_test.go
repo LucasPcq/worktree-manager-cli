@@ -29,7 +29,7 @@ func TestWtCreateFromRemoteBranch(t *testing.T) {
 	}
 
 	branch := "feat/from-remote"
-	if _, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "origin/upstream", "--output", domain.OutputJSON); err != nil {
+	if _, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "origin/upstream", "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
 		t.Fatalf("wt create --from origin/upstream: %v", err)
 	}
 
@@ -49,7 +49,7 @@ func TestWtCreateFromUnknownBranchFails(t *testing.T) {
 		t.Fatalf("setup config: %v", err)
 	}
 
-	if _, _, err := runWtCmd(t, domain.CmdCreate, "feat/x", "--from", "origin/ghost", "--output", domain.OutputJSON); err == nil {
+	if _, _, err := runWtCmd(t, domain.CmdCreate, "feat/x", "--from", "origin/ghost", "--output", domain.OutputJSON, "--"+domain.FlagYes); err == nil {
 		t.Fatal("expected an error for a nonexistent source branch")
 	}
 }

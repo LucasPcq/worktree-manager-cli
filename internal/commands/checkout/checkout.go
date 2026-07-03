@@ -59,6 +59,10 @@ func runCheckout(cmd *cobra.Command, args []string) error {
 	envOverride, _ := cmd.Flags().GetString(domain.FlagEnvFrom)
 	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 
+	if format == domain.OutputJSON && !yes {
+		return fmt.Errorf("--output json requires --%s (prompts cannot run in JSON mode)", domain.FlagYes)
+	}
+
 	// --yes runs prompt-free: parent defaults to the PR base branch, env to the
 	// config strategy, and the env-fallback confirmation is skipped. It behaves like
 	// a non-interactive run (a PR number is required) while still framing human output.

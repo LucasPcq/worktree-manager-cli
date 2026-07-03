@@ -48,7 +48,7 @@ func TestRelocateForceMovesLockedWorktree(t *testing.T) {
 	gitWorktreeLock(t, dir, lockedPath)
 
 	// Without --force the locked worktree is skipped.
-	stdout, _, err := runWtCmd(t, domain.CmdRelocate, "--output", domain.OutputJSON)
+	stdout, _, err := runWtCmd(t, domain.CmdRelocate, "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if err != nil {
 		t.Fatalf("wt relocate: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestRelocateForceMovesLockedWorktree(t *testing.T) {
 	}
 
 	// With --force it is moved (git worktree move -f -f) and adopted.
-	stdout, _, err = runWtCmd(t, domain.CmdRelocate, "--force", "--output", domain.OutputJSON)
+	stdout, _, err = runWtCmd(t, domain.CmdRelocate, "--force", "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if err != nil {
 		t.Fatalf("wt relocate --force: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestRelocateBlocksOnOccupiedDestination(t *testing.T) {
 	}
 
 	// Even with --force the move is blocked; the source stays put and exit is non-zero.
-	_, _, err := runWtCmd(t, domain.CmdRelocate, "--force", "--output", domain.OutputJSON)
+	_, _, err := runWtCmd(t, domain.CmdRelocate, "--force", "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if !errors.Is(err, domain.ErrAborted) {
 		t.Fatalf("expected ErrAborted on blocked_dest, got %v", err)
 	}
@@ -122,7 +122,7 @@ func TestRelocateMovesAndAdoptsExternalWorktree(t *testing.T) {
 	manualPath := filepath.Join(filepath.Dir(dir), "manual-wt")
 	gitWorktreeAdd(t, dir, manualPath, "feat/manual")
 
-	stdout, _, err := runWtCmd(t, domain.CmdRelocate, "--output", domain.OutputJSON)
+	stdout, _, err := runWtCmd(t, domain.CmdRelocate, "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if err != nil {
 		t.Fatalf("wt relocate: %v", err)
 	}
@@ -174,11 +174,11 @@ func TestRelocateToChangesBasePathAndUpdatesConfig(t *testing.T) {
 	}
 
 	// A managed worktree at the current base_path.
-	if _, _, err := runWtCmd(t, domain.CmdCreate, "feat/move", "--from", "main", "--output", domain.OutputJSON); err != nil {
+	if _, _, err := runWtCmd(t, domain.CmdCreate, "feat/move", "--from", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
 		t.Fatalf("wt create: %v", err)
 	}
 
-	stdout, _, err := runWtCmd(t, domain.CmdRelocate, "--to", "../.worktrees", "--output", domain.OutputJSON)
+	stdout, _, err := runWtCmd(t, domain.CmdRelocate, "--to", "../.worktrees", "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if err != nil {
 		t.Fatalf("wt relocate --to: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestRelocateToDryRunDoesNotUpdateBasePath(t *testing.T) {
 		t.Fatalf("setup config: %v", err)
 	}
 
-	if _, _, err := runWtCmd(t, domain.CmdCreate, "feat/move", "--from", "main", "--output", domain.OutputJSON); err != nil {
+	if _, _, err := runWtCmd(t, domain.CmdCreate, "feat/move", "--from", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
 		t.Fatalf("wt create: %v", err)
 	}
 
@@ -253,7 +253,7 @@ func TestRelocateRejectsInvalidTo(t *testing.T) {
 	}
 
 	for _, to := range []string{"   ", "/abs/worktrees"} {
-		_, _, err := runWtCmd(t, domain.CmdRelocate, "--to", to, "--output", domain.OutputJSON)
+		_, _, err := runWtCmd(t, domain.CmdRelocate, "--to", to, "--output", domain.OutputJSON, "--"+domain.FlagYes)
 		if !errors.Is(err, domain.ErrInvalidBasePath) {
 			t.Fatalf("expected ErrInvalidBasePath for --to %q, got %v", to, err)
 		}

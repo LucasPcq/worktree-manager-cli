@@ -60,6 +60,25 @@ type RunResult struct {
 	ReparentChildren bool
 }
 
+// worktreesSummary lists the selected worktrees under the breadcrumb once the step
+// is completed, capping the list at 5 names with a "+N" tail so a large selection
+// does not overflow the line.
+func worktreesSummary(model any) string {
+	ms, ok := model.(components.MultiSelectModel)
+	if !ok {
+		return ""
+	}
+	vals := ms.Values()
+	if len(vals) == 0 {
+		return "none"
+	}
+	const maxNames = 5
+	if len(vals) <= maxNames {
+		return strings.Join(vals, ", ")
+	}
+	return strings.Join(vals[:maxNames], ", ") + fmt.Sprintf(" +%d", len(vals)-maxNames)
+}
+
 // Run shows the candidate multi-select (unsafe ones tagged and left unchecked),
 // a confirmation screen, then — when children would be orphaned — a reparent
 // confirmation, all in one wizard. Returns domain.ErrUserAborted on Esc at the
@@ -92,7 +111,7 @@ func Run(params RunParams) (RunResult, error) {
 	// The reparent decision precedes the recap so the recap is reliably the final,
 	// unconditional action point.
 	steps := []components.Step{
-		{Name: stepWorktrees, Model: ms},
+		{Name: stepWorktrees, Model: ms, Summary: worktreesSummary},
 	}
 	if params.ReparentPreview != nil {
 		steps = append(steps, reparentStep(params.ReparentPreview))

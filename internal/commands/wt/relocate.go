@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -49,6 +50,10 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	if format == domain.OutputJSON && !yes && !dryRun {
+		return fmt.Errorf("--output json requires --%s or --%s (the confirmation cannot run in JSON mode)", domain.FlagYes, domain.FlagDryRun)
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
@@ -70,13 +75,23 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 	}
 
 	interactive := rules.IsHumanFormat(format)
+	// canPrompt gates the confirmation wizard: a human format on a real terminal.
+	// A piped/non-TTY human run cannot show it, so it must be driven by flags.
+	canPrompt := interactive && term.IsTerminal(int(os.Stdin.Fd()))
+
+	// Without a terminal to confirm and without --yes to run unattended, relocate
+	// refuses to mutate rather than silently moving worktrees or opening a wizard
+	// against a non-TTY stdin. --dry-run is always safe (no writes).
+	if !canPrompt && !yes && !dryRun {
+		return fmt.Errorf("relocate needs a terminal to confirm; re-run with --%s to proceed unattended", domain.FlagYes)
+	}
 
 	plan, err := worktree.PlanRelocate(params)
 	if err != nil {
 		return err
 	}
 
-	if interactive && !yes && !dryRun {
+	if canPrompt && !yes && !dryRun {
 		// A single wizard: opt-in base_path edit, one parent picker per adopted
 		// worktree, then a recap. Always reachable — relocate is the only command that
 		// changes base_path, so it opens even with zero worktrees. --to fixes base_path

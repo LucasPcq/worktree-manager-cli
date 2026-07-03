@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -58,9 +59,11 @@ func runClean(cmd *cobra.Command, args []string) error {
 	}
 
 	interactive := rules.IsHumanFormat(format)
-	// canPrompt is the true prompt-capability gate: a human format AND not --yes.
-	// Every interactive picker/prompt keys off it; --yes takes the prompt-free path.
-	canPrompt := interactive && !yes
+	// canPrompt is the true prompt-capability gate: a human format on a real
+	// terminal AND not --yes. Every interactive picker/prompt keys off it; --yes and
+	// a piped/non-TTY run both take the prompt-free path (which errors when the branch
+	// is missing rather than launching a wizard against a non-TTY stdin).
+	canPrompt := interactive && term.IsTerminal(int(os.Stdin.Fd())) && !yes
 	baseBranch := resolveBase("", result)
 
 	// The full interactive path runs one wizard: picker → delete → reparent, with

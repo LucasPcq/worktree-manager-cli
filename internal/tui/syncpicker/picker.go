@@ -118,7 +118,7 @@ func Run(params RunParams) (RunResult, error) {
 		// Build hook. The placeholder confirm's Enter is guarded while loading so the
 		// user cannot accept a plan they have not seen yet.
 		steps = append(steps, components.Step{
-			Name:  "Confirm",
+			Name:  stepConfirm,
 			Model: planPlaceholder(),
 			Recap: true,
 			OnEnter: func(prev []components.Step) tea.Cmd {

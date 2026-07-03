@@ -46,7 +46,7 @@ func TestWtCreateAndClean(t *testing.T) {
 
 	branch := "feat/wt-e2e-test"
 
-	_, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON)
+	_, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if err != nil {
 		t.Fatalf("wt create: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestCleanAxesStrictlySeparated(t *testing.T) {
 	}
 
 	branch := "feat/axes"
-	if _, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON); err != nil {
+	if _, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
 		t.Fatalf("wt create: %v", err)
 	}
 	wtPath := resolveWorktreePath(t, dir, branch)
@@ -154,7 +154,7 @@ func TestCleanRedirectsToBaseWhenInsideWorktree(t *testing.T) {
 	}
 
 	branch := "feat/redirect-test"
-	if _, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON); err != nil {
+	if _, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
 		t.Fatalf("wt create: %v", err)
 	}
 
@@ -190,7 +190,7 @@ func TestCleanDoesNotRedirectFromOtherWorktree(t *testing.T) {
 	}
 
 	branch := "feat/other-test"
-	if _, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON); err != nil {
+	if _, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
 		t.Fatalf("wt create: %v", err)
 	}
 

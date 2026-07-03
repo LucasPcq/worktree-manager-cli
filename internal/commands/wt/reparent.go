@@ -42,6 +42,11 @@ func runReparent(cmd *cobra.Command, args []string) error {
 	to, _ := cmd.Flags().GetString(domain.FlagTo)
 	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
+	if format == domain.OutputJSON && !yes {
+		return fmt.Errorf("--output json requires --%s (the confirmation cannot run in JSON mode)", domain.FlagYes)
+	}
+
 	humanOutput := rules.IsHumanFormat(format)
 	// The wizard (and its confirmation recap) needs a TTY and is skipped by --yes; a
 	// human-format run without a terminal also falls back to the non-interactive path.

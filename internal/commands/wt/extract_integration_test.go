@@ -28,7 +28,7 @@ func extractTestRepo(t *testing.T) (dir, stateDir string) {
 
 func createWorktree(t *testing.T, branch string) domain.CreateResult {
 	t.Helper()
-	out, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON)
+	out, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if err != nil {
 		t.Fatalf("create %s: %v", branch, err)
 	}
@@ -45,7 +45,7 @@ func createWorktree(t *testing.T, branch string) domain.CreateResult {
 func TestExtractRequiresSourceNonInteractive(t *testing.T) {
 	_, _ = extractTestRepo(t)
 
-	_, _, err := runWtCmd(t, domain.CmdExtract, "--output", domain.OutputJSON)
+	_, _, err := runWtCmd(t, domain.CmdExtract, "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if !errors.Is(err, domain.ErrExtractSourceRequired) {
 		t.Fatalf("expected ErrExtractSourceRequired, got %v", err)
 	}
@@ -56,7 +56,7 @@ func TestExtractRequiresSourceNonInteractive(t *testing.T) {
 func TestExtractUnknownSource(t *testing.T) {
 	_, _ = extractTestRepo(t)
 
-	_, _, err := runWtCmd(t, domain.CmdExtract, "does-not-exist", "--files", "x", "--to", "main", "--output", domain.OutputJSON)
+	_, _, err := runWtCmd(t, domain.CmdExtract, "does-not-exist", "--files", "x", "--to", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if err == nil {
 		t.Fatal("expected an error for an unknown source worktree")
 	}
@@ -103,7 +103,7 @@ func TestExtractWithSourceArgJSON(t *testing.T) {
 	}
 
 	out, _, err := runWtCmd(t, domain.CmdExtract, "src",
-		"--files", "extracted.txt", "--to", "dst", "--output", domain.OutputJSON)
+		"--files", "extracted.txt", "--to", "dst", "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if err != nil {
 		t.Fatalf("extract: %v", err)
 	}

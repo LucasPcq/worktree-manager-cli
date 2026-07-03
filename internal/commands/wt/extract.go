@@ -65,6 +65,11 @@ func runExtract(cmd *cobra.Command, args []string) error {
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
+
+	if format == domain.OutputJSON && !yes {
+		return fmt.Errorf("--output json requires --%s (prompts cannot run in JSON mode)", domain.FlagYes)
+	}
+
 	// --yes runs fully unattended: it forces the non-interactive path so a missing
 	// required selection (source / --files / --to) errors naming the flag instead of
 	// opening a picker. Decisions with a safe default (mode, on-conflict) still default.

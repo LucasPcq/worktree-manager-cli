@@ -28,13 +28,18 @@ self-documenting:
    warnings go to stderr — ignore stderr unless the exit code is non-zero.
 3. **Trust exit codes.** `0` = success. Beyond generic `1`, wtm returns granular codes
    (table below) so you can branch precisely. On failure, surface the stderr text.
-4. **JSON mode is non-interactive**, so anything that would prompt needs an explicit flag.
-   Two orthogonal axes: **`--yes`** skips confirmations/decisions (using safe defaults);
-   **`--force`** only lifts safety refusals and does *not* imply `--yes`. So JSON
-   `clean`/`prune` need `--yes` (add `--force` to also remove unsafe worktrees — `--force`
-   alone is rejected in JSON); `sync` needs branch args or `--all` (`--yes` won't push — pass
-   `--push`); `extract --yes` defaults on-conflict to abort (pass `--on-conflict resolve`);
-   `checkout --yes <number>` creates without prompts. Check `--help` when unsure.
+4. **JSON mode requires `--yes` on every mutating command.** JSON is non-interactive, so any
+   command that changes state (`create`, `clean`, `prune`, `sync`, `relocate`, `reparent`,
+   `extract`, `checkout`) needs `--yes` — it errors otherwise. Two orthogonal axes: **`--yes`**
+   resolves confirmations/decisions from flags and safe defaults; **`--force`** only lifts
+   safety refusals and does *not* imply `--yes` (`--force` alone is rejected in JSON). Required
+   selections must still be passed explicitly: `clean` needs a branch (add `--force` to also
+   remove unsafe worktrees); `sync` needs branch args or `--all` (`--yes` won't push — pass
+   `--push`); `extract` needs the source arg, `--files`, and `--to` (`--yes` defaults
+   on-conflict to abort — pass `--on-conflict resolve`); `reparent` needs worktrees and `--to`;
+   `checkout` needs the PR `<number>`; `relocate` uses `--to` to change base_path.
+   Read-only data commands (`list`, `tree`, `resolve`, `config show`, `run list`/`ps`) take
+   `--output json` with no `--yes`. Check `--help` when unsure.
 5. **Operations are idempotent — safe to retry.** `create --if-not-exists` no-ops on an
    existing worktree; `clean` no-ops on an absent one; `run up`/`down`/`stop` re-run cleanly.
 
@@ -93,23 +98,25 @@ flagged; everything else is what the name implies.
   `--force`; in JSON/`--yes` mode those are reported under `skipped` (reason `dirty`/
   `unpushed`/`open_pr`) instead of being removed, so committed work is never silently lost.
 - `wtm extract <source> --files <a,b> --to <branch>` — move part of the `<source>`
-  worktree's uncommitted changes onto another branch (split an oversized PR). Non-interactively
-  (`--output json`, `--yes`, or no TTY) there is **no picker**: the source arg, `--files`, and
-  `--to` are all **required** — omitting any errors naming the missing flag. On conflict it
-  changes nothing and exits `15`; retry with `--on-conflict resolve` to apply git conflict markers
-  (`--yes` defaults on-conflict to abort).
+  worktree's uncommitted changes onto another branch (split an oversized PR). In JSON mode pass
+  `--yes` plus the source arg, `--files`, and `--to` — all **required** (omitting any errors
+  naming the missing flag; there is no picker). On conflict it changes nothing and exits `15`;
+  retry with `--on-conflict resolve` to apply git conflict markers (`--yes` defaults on-conflict
+  to abort).
 - `wtm relocate` — realign worktrees with `base_path` and adopt externally-created ones.
   `--to <path>` sets a new `base_path` non-interactively; the interactive wizard also lets
-  the user change it. You can't drive the wizard — pass `--to` (or `--yes`) in JSON mode.
+  the user change it. You can't drive the wizard — in JSON mode pass `--yes` (and `--to` to
+  change base_path).
 
 **Stacked branches**
 - `wtm sync <branch…>` / `wtm sync --all` — rebase the selected worktrees onto their
   recorded parent, in cascade (parents before children), fetching first. A conflict aborts
   that branch's rebase (its descendants are skipped) unless `--keep-conflict` leaves it in
-  progress. Local only — pass `--push` to force-push (with lease) in JSON mode.
+  progress. Local only — in JSON mode pass `--yes` (and `--push` to force-push with lease).
 - `wtm reparent <branch…> --to <parent>` — change the recorded parent of one or more
   worktrees to the same new parent (metadata only; the rebase happens on the next `sync`).
-  Use after a middle branch merges. JSON: `{"reparented":[{branch,old_parent,new_parent},…]}`.
+  Use after a middle branch merges. In JSON mode pass `--yes` with the worktrees and `--to`.
+  JSON: `{"reparented":[{branch,old_parent,new_parent},…]}`.
 
 **Navigate**
 - `wtm go` / `wtm switch` need the user's **shell integration** to `cd`, so you can't drive
@@ -134,8 +141,8 @@ and **experimental**: the global `wtm init` does not configure it.
 
 **GitHub**
 - `wtm checkout <number>` — fetch a PR's branch into a worktree; parent defaults to the
-  PR's base. In `--output json`/non-interactive mode the number is **required** (no picker);
-  add `--yes` to skip the parent/env prompts (parent → PR base, env → config default). Fork
+  PR's base. In JSON mode pass `--yes` and the PR `<number>` (both **required**; no picker);
+  `--yes` resolves the parent → PR base and env → config default. Fork
   PRs are out of scope — fall back to `gh pr checkout <number>`. Creating a PR is out of
   scope too — use `gh pr create`.
 

@@ -69,6 +69,22 @@ func ValidateReparentBatch(params ValidateReparentBatchParams) error {
 	return nil
 }
 
+// UniqueStrings returns the elements of in with duplicates removed, preserving
+// first-seen order. Used to collapse repeated worktree arguments so a batch
+// operation acts on (and reports) each branch once.
+func UniqueStrings(in []string) []string {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
 // ChildrenOfParams holds inputs for ChildrenOf.
 type ChildrenOfParams struct {
 	Nodes  []domain.WorktreeNode

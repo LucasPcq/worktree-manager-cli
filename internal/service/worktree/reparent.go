@@ -20,7 +20,11 @@ func ReparentBatch(params domain.ReparentBatchParams) ([]domain.ReparentResult, 
 		return nil, err
 	}
 
-	for _, branch := range params.Branches {
+	// Collapse repeated arguments (`wtm reparent feat feat`) so each worktree is
+	// validated and rewritten once — and reported once in the results.
+	branches := rules.UniqueStrings(params.Branches)
+
+	for _, branch := range branches {
 		if !isManaged(params.StateDir, branch) {
 			return nil, fmt.Errorf("%w: %s", domain.ErrWorktreeNotFound, branch)
 		}
@@ -35,21 +39,25 @@ func ReparentBatch(params domain.ReparentBatchParams) ([]domain.ReparentResult, 
 
 	if err := rules.ValidateReparentBatch(rules.ValidateReparentBatchParams{
 		Nodes:      nodes,
-		Branches:   params.Branches,
+		Branches:   branches,
 		NewParent:  params.NewParent,
 		BaseBranch: params.BaseBranch,
 	}); err != nil {
 		return nil, err
 	}
 
-	results := make([]domain.ReparentResult, 0, len(params.Branches))
-	for _, branch := range params.Branches {
+	results := make([]domain.ReparentResult, 0, len(branches))
+	for _, branch := range branches {
 		res, err := setSourceBranch(setSourceBranchParams{
 			StateDir:  params.StateDir,
 			Branch:    branch,
 			NewParent: params.NewParent,
 		})
 		if err != nil {
+			// Partial failure has no rollback: branches already rewritten in this loop
+			// keep their new parent, and results reports what succeeded. All validation
+			// (managed, parent existence, acyclicity) runs before the loop, so only an
+			// I/O write fault reaches here.
 			return results, err
 		}
 		results = append(results, res)

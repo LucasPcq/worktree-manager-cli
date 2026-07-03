@@ -44,7 +44,7 @@ func setupStack(t *testing.T) (dir, stateDir string) {
 		{"dev-a", "feat"},
 		{"dev-b", "dev-a"},
 	} {
-		if _, _, err := runWtCmd(t, domain.CmdCreate, step.branch, "--from", step.from, "--output", domain.OutputJSON); err != nil {
+		if _, _, err := runWtCmd(t, domain.CmdCreate, step.branch, "--from", step.from, "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
 			t.Fatalf("create %s: %v", step.branch, err)
 		}
 	}
@@ -58,7 +58,7 @@ func TestReparentUpdatesMetadata(t *testing.T) {
 		t.Fatalf("precondition: dev-b parent = %q, want dev-a", got)
 	}
 
-	stdout, _, err := runWtCmd(t, domain.CmdReparent, "dev-b", "--to", "feat", "--output", domain.OutputJSON)
+	stdout, _, err := runWtCmd(t, domain.CmdReparent, "dev-b", "--to", "feat", "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if err != nil {
 		t.Fatalf("reparent: %v", err)
 	}
@@ -91,7 +91,7 @@ func unmarshalReparent(t *testing.T, stdout string) []domain.ReparentResult {
 func TestReparentReparentsMultipleWorktrees(t *testing.T) {
 	_, stateDir := setupStack(t)
 
-	stdout, _, err := runWtCmd(t, domain.CmdReparent, "dev-a", "dev-b", "--to", "main", "--output", domain.OutputJSON)
+	stdout, _, err := runWtCmd(t, domain.CmdReparent, "dev-a", "dev-b", "--to", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if err != nil {
 		t.Fatalf("batch reparent: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestReparentBatchRejectsCycle(t *testing.T) {
 
 	// feat and dev-a onto dev-b closes dev-a → dev-b → dev-a; the whole batch must
 	// be rejected and nothing written.
-	if _, _, err := runWtCmd(t, domain.CmdReparent, "feat", "dev-a", "--to", "dev-b", "--output", domain.OutputJSON); err == nil {
+	if _, _, err := runWtCmd(t, domain.CmdReparent, "feat", "dev-a", "--to", "dev-b", "--output", domain.OutputJSON, "--"+domain.FlagYes); err == nil {
 		t.Fatalf("expected a cycle error for the batch")
 	}
 	if got := readSourceBranch(t, stateDir, "dev-a"); got != "feat" {
@@ -131,7 +131,7 @@ func TestReparentAcceptsRemoteParent(t *testing.T) {
 		t.Fatalf("git update-ref: %s: %v", out, err)
 	}
 
-	if _, _, err := runWtCmd(t, domain.CmdReparent, "dev-b", "--to", "origin/staging", "--output", domain.OutputJSON); err != nil {
+	if _, _, err := runWtCmd(t, domain.CmdReparent, "dev-b", "--to", "origin/staging", "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
 		t.Fatalf("reparent onto remote parent: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestReparentAcceptsRemoteParent(t *testing.T) {
 func TestReparentRejectsUnknownParent(t *testing.T) {
 	_, _ = setupStack(t)
 
-	if _, _, err := runWtCmd(t, domain.CmdReparent, "dev-b", "--to", "does-not-exist", "--output", domain.OutputJSON); err == nil {
+	if _, _, err := runWtCmd(t, domain.CmdReparent, "dev-b", "--to", "does-not-exist", "--output", domain.OutputJSON, "--"+domain.FlagYes); err == nil {
 		t.Fatalf("expected an error reparenting onto a missing branch")
 	}
 }
@@ -151,7 +151,7 @@ func TestReparentRejectsUnknownParent(t *testing.T) {
 func TestReparentRequiresParentInJSONMode(t *testing.T) {
 	_, _ = setupStack(t)
 
-	if _, _, err := runWtCmd(t, domain.CmdReparent, "dev-b", "--output", domain.OutputJSON); err == nil {
+	if _, _, err := runWtCmd(t, domain.CmdReparent, "dev-b", "--output", domain.OutputJSON, "--"+domain.FlagYes); err == nil {
 		t.Fatalf("expected a usage error without --to in JSON mode")
 	}
 }
