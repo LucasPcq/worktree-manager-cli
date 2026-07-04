@@ -14,11 +14,12 @@ wtm clean [branch] [flags]
 ### Options
 
 ```
+      --dry-run             Preview what would be removed without deleting anything (no confirmation, no --yes needed)
       --force               Lift safety refusals (dirty/unpushed/open-PR); still asks to confirm unless --yes
   -h, --help                help for clean
       --output string       Output format: text or json (default "text")
       --reparent-children   Reparent orphaned child worktrees onto the grandparent (no prompt)
-  -y, --yes                 Skip all prompts; resolve every decision from flags and safe defaults (keeps safety checks unless --force)
+  -y, --yes                 Skip all prompts and run non-interactively; resolve every decision from flags and safe defaults (requires a branch; keeps safety checks unless --force)
 ```
 
 ### SEE ALSO

@@ -87,7 +87,13 @@ flagged; everything else is what the name implies.
   starts up to date); a diverged branch is left as-is (no prompt in JSON mode). `extract`
   accepts the same `--ff` for the parent branch of a newly-created target.
 - `wtm clean <branch>` / `wtm prune [filters]` — remove one / batch-remove finished
-  worktrees. **In JSON mode surviving children are left orphaned unless you pass
+  worktrees. **`clean` never destroys silently: outside a fully interactive terminal it
+  refuses to run without `--yes` (it errors asking for it) — so a scripted `wtm clean <branch>`
+  must pass `--yes`.** `--yes` means *full non-interactive mode* (no picker at all — a branch is
+  required, `clean --yes` with no branch errors). Preview first with **`wtm clean <branch>
+  --dry-run`** — it prints what would be removed/reparented and makes no changes (needs neither
+  `--yes` nor a terminal; works with `--output json`, where the payload carries `"dry_run": true`).
+  **In JSON mode surviving children are left orphaned unless you pass
   `--reparent-children`** (they reparent onto the grandparent). `prune` decides "finished"
   from **GitHub PR state via the `gh` CLI** (not local commits): `--merged` = PR merged,
   `--closed` = PR closed without merging, `--gone` = remote branch deleted; no filter = all

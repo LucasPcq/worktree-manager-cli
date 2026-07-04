@@ -221,7 +221,11 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 	insidePruned := isInsidePruned(dir, plan.Selected)
 
 	for _, c := range plan.Selected {
-		stopWorktreeServices(cmd, cfg.ProjectDir, c.Branch)
+		shared.StopWorktreeServices(shared.StopWorktreeServicesParams{
+			ErrOut:     cmd.ErrOrStderr(),
+			ProjectDir: cfg.ProjectDir,
+			Branch:     c.Branch,
+		})
 	}
 
 	var result domain.PruneResult
@@ -242,7 +246,7 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 	// Like clean, if we removed the worktree the user was sitting in, ask the
 	// shell wrapper to cd back to the base repo (no-op without shell integration).
 	if insidePruned {
-		redirectToBase(cfg.ProjectDir)
+		shared.RedirectToBase(cfg.ProjectDir)
 	}
 
 	if format == domain.OutputJSON {
@@ -299,12 +303,12 @@ func isInsidePruned(currentDir string, selected []domain.PruneCandidate) bool {
 	if currentDir == "" {
 		return false
 	}
-	cwd := resolveSymlinks(currentDir)
+	cwd := shared.ResolveSymlinks(currentDir)
 	for _, c := range selected {
 		if c.Path == "" {
 			continue
 		}
-		if rules.IsPathWithin(resolveSymlinks(c.Path), cwd) {
+		if rules.IsPathWithin(shared.ResolveSymlinks(c.Path), cwd) {
 			return true
 		}
 	}

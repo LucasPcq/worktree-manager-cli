@@ -10,9 +10,26 @@ import (
 
 	"github.com/spf13/cobra"
 
+	clean "github.com/LucasPcq/wtm/internal/cmd/clean"
+	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/progress"
 	"github.com/LucasPcq/wtm/internal/testutil/gittest"
+	"github.com/LucasPcq/wtm/internal/tui/cleanui"
+	"github.com/LucasPcq/wtm/pkg/cmdutil"
+	"github.com/LucasPcq/wtm/pkg/iostreams"
 )
+
+// stubPrompter is a non-interactive Prompter for the integration harness: these
+// tests always drive clean with --yes, so Confirm is never reached.
+type stubPrompter struct{}
+
+func (stubPrompter) Confirm(string, bool) (bool, error) { return false, nil }
+
+// stubProgress runs the work synchronously, no spinner.
+type stubProgress struct{}
+
+func (stubProgress) Run(_ progress.RunParams, work func() error) error { return work() }
 
 func runWtCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
@@ -25,7 +42,24 @@ func runWtCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	for _, c := range NewCmds() {
 		root.AddCommand(c)
 	}
+
 	var outBuf, errBuf bytes.Buffer
+
+	// clean is migrated to the Factory pattern (internal/cmd/clean); register the
+	// factory-built command here so these end-to-end tests exercise the new
+	// implementation. Streams are non-TTY buffers and the prompter is a stub, since
+	// every clean call below is non-interactive (--yes).
+	io := &iostreams.IOStreams{In: strings.NewReader(""), Out: &outBuf, ErrOut: &errBuf}
+	f := &cmdutil.Factory{
+		IOStreams: io,
+		Prompter:  stubPrompter{},
+		Progress:  stubProgress{},
+		Config:    func(dir string) (shared.ConfigResult, error) { return shared.LoadConfigDir(dir) },
+	}
+	cleanCmd := clean.NewCmdClean(f, cleanui.NewWizard(io), nil)
+	cleanCmd.GroupID = domain.CmdGroupWorktrees
+	root.AddCommand(cleanCmd)
+
 	root.SetOut(&outBuf)
 	root.SetErr(&errBuf)
 	root.SetArgs(args)

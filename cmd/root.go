@@ -3,11 +3,13 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/cmd/clean"
 	"github.com/LucasPcq/wtm/internal/commands/agents"
 	"github.com/LucasPcq/wtm/internal/commands/checkout"
 	"github.com/LucasPcq/wtm/internal/commands/configcmd"
@@ -17,10 +19,16 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/run"
 	"github.com/LucasPcq/wtm/internal/commands/schema"
 	"github.com/LucasPcq/wtm/internal/commands/shell"
+	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/commands/wt"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	progbubble "github.com/LucasPcq/wtm/internal/progress/bubbletea"
+	pbubble "github.com/LucasPcq/wtm/internal/prompter/bubbletea"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/tui/cleanui"
+	"github.com/LucasPcq/wtm/pkg/cmdutil"
+	"github.com/LucasPcq/wtm/pkg/iostreams"
 )
 
 func init() {
@@ -36,6 +44,16 @@ func init() {
 	for _, cmd := range wt.NewCmds() {
 		rootCmd.AddCommand(cmd)
 	}
+
+	// clean is the Command-Factory pilot: built from a Factory (composition root),
+	// with its interactive wizard injected (ports & adapters — the tea adapter lives
+	// in internal/tui/cleanui). Registered here so the docs generator (which walks Root
+	// without calling Execute) also sees it.
+	cleanFactory := buildFactory()
+	cleanCmd := clean.NewCmdClean(cleanFactory, cleanui.NewWizard(cleanFactory.IOStreams), nil)
+	cleanCmd.GroupID = domain.CmdGroupWorktrees
+	rootCmd.AddCommand(cleanCmd)
+
 	rootCmd.AddCommand(run.NewCmd())
 
 	resolveCmd := resolve.NewCmd()
@@ -114,16 +132,44 @@ func Root() *cobra.Command {
 	return rootCmd
 }
 
+// buildFactory constructs the dependency container for Factory-based commands: real
+// IOStreams, the bubbletea Prompter, and a cobra-free config loader.
+func buildFactory() *cmdutil.Factory {
+	io := iostreams.System()
+	return &cmdutil.Factory{
+		IOStreams: io,
+		Prompter:  pbubble.New(io),
+		Progress:  progbubble.New(io),
+		Config: func(dir string) (shared.ConfigResult, error) {
+			return shared.LoadConfigDir(dir)
+		},
+	}
+}
+
 // Execute runs the root command and exits with the appropriate code.
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		// ErrAborted means the command already printed its own report; just
-		// propagate the non-zero exit without a second error line.
-		if !errors.Is(err, domain.ErrAborted) {
-			output.Blank(os.Stderr)
-			output.Error(os.Stderr, err.Error())
-			output.Blank(os.Stderr)
-		}
-		os.Exit(rules.ExitCode(err))
+	cmd, err := rootCmd.ExecuteC()
+	if err == nil {
+		return
 	}
+
+	// A FlagError is a usage error: show the offending command's usage and exit
+	// with the usage code (this is what makes cmdutil.FlagErrorf meaningful).
+	var flagErr cmdutil.FlagError
+	if errors.As(err, &flagErr) {
+		output.Blank(os.Stderr)
+		output.Error(os.Stderr, err.Error())
+		fmt.Fprint(os.Stderr, cmd.UsageString())
+		output.Blank(os.Stderr)
+		os.Exit(domain.ExitCodeUsage)
+	}
+
+	// ErrAborted: the command already printed its own report. ErrUserAborted: a
+	// clean user cancel — exit quietly, without an alarming error line.
+	if !errors.Is(err, domain.ErrAborted) && !errors.Is(err, domain.ErrUserAborted) {
+		output.Blank(os.Stderr)
+		output.Error(os.Stderr, err.Error())
+		output.Blank(os.Stderr)
+	}
+	os.Exit(rules.ExitCode(err))
 }

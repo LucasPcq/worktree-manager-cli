@@ -12,7 +12,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
-	"github.com/LucasPcq/wtm/internal/service/detect"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	"github.com/LucasPcq/wtm/internal/tui/syncpicker"
@@ -201,13 +200,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 }
 
 func resolveBase(override string, cfg shared.ConfigResult) string {
-	if override != "" {
-		return override
-	}
-	if cfg.Config.Project.Worktrees.BaseBranch != "" {
-		return cfg.Config.Project.Worktrees.BaseBranch
-	}
-	return detect.BaseBranch(cfg.ProjectDir)
+	return shared.ResolveBase(override, cfg)
 }
 
 type resolveSyncSelectionParams struct {

@@ -11,6 +11,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/detect"
 )
 
 // ConfigResult holds the loaded config along with the resolved paths every
@@ -38,11 +39,12 @@ func ProjectRoot(dir string) (string, error) {
 	return mainPath, nil
 }
 
-// LoadConfig resolves the main worktree + state dir and loads config.toml from
+// LoadConfigDir resolves the main worktree + state dir and loads config.toml from
 // the state dir. On failure it returns an error for the caller to propagate so
 // the top-level handler can pick the right exit code (e.g. ExitCodeConfigNotFound
-// when the repo is uninitialized); it does not print anything itself.
-func LoadConfig(cmd *cobra.Command, dir string) (ConfigResult, error) {
+// when the repo is uninitialized); it does not print anything itself. This is the
+// cobra-free entry point the Factory's Config closure builds on.
+func LoadConfigDir(dir string) (ConfigResult, error) {
 	root, err := ProjectRoot(dir)
 	if err != nil {
 		return ConfigResult{}, err
@@ -62,6 +64,28 @@ func LoadConfig(cmd *cobra.Command, dir string) (ConfigResult, error) {
 	}
 
 	return ConfigResult{Config: cfg, ProjectDir: root, StateDir: stateDir}, nil
+}
+
+// LoadConfig is the legacy cobra-taking wrapper around LoadConfigDir, kept so the
+// existing (pre-Factory) commands compile unchanged. cmd is unused. New Factory-based
+// commands should depend on LoadConfigDir (via Factory.Config) instead.
+func LoadConfig(cmd *cobra.Command, dir string) (ConfigResult, error) {
+	return LoadConfigDir(dir)
+}
+
+// ResolveBase resolves the base branch a worktree operation should fall back to,
+// in precedence order: an explicit override, then the project config, then git
+// auto-detection. The resolution lives here (command-support layer) so the pure
+// service layer only ever receives an already-resolved base branch — never the
+// "how was this chosen" logic.
+func ResolveBase(override string, cfg ConfigResult) string {
+	if override != "" {
+		return override
+	}
+	if cfg.Config.Project.Worktrees.BaseBranch != "" {
+		return cfg.Config.Project.Worktrees.BaseBranch
+	}
+	return detect.BaseBranch(cfg.ProjectDir)
 }
 
 // AddOutputFlag registers the standard --output flag on cmd.

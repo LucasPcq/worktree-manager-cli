@@ -256,7 +256,10 @@ type WriteWorktreeCleanJSONParams struct {
 	Branch        string                  `json:"branch"`
 	Path          string                  `json:"path"`
 	AlreadyAbsent bool                    `json:"already_absent"`
-	Reparented    []domain.ReparentResult `json:"reparented,omitempty"`
+	// DryRun marks the payload as a preview: nothing was removed or reparented; the
+	// Reparented/OrphanedChildren lists describe what would happen.
+	DryRun     bool                    `json:"dry_run,omitempty"`
+	Reparented []domain.ReparentResult `json:"reparented,omitempty"`
 	// OrphanedChildren lists children left dangling because reparenting was not
 	// authorized (no --reparent-children in non-interactive mode).
 	OrphanedChildren []domain.ReparentResult `json:"orphaned_children,omitempty"`

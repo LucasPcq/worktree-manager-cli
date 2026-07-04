@@ -1,6 +1,6 @@
-// Package clean builds the interactive worktree picker and confirm wizard for the
+// Package cleanui builds the interactive worktree picker and confirm wizard for the
 // wtm clean command.
-package clean
+package cleanui
 
 import (
 	"fmt"
