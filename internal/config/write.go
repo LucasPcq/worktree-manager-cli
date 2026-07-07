@@ -27,6 +27,8 @@ type projectTemplateData struct {
 	EnvCopyFiles []string
 	SkipHooks    bool
 	OnCreate     []domain.HookCommand
+	SkipClean    bool
+	OnClean      []domain.HookCommand
 }
 
 // WriteProjectParams holds the inputs for writing a project config file.
@@ -83,6 +85,8 @@ func answersToTemplate(a domain.InitProjectAnswers) projectTemplateData {
 		EnvCopyFiles: a.EnvCopyFiles,
 		SkipHooks:    a.SkipHooks,
 		OnCreate:     a.OnCreate,
+		SkipClean:    a.SkipClean,
+		OnClean:      a.OnClean,
 	}
 }
 
@@ -98,6 +102,8 @@ func configToTemplate(c domain.ProjectConfig) projectTemplateData {
 		EnvCopyFiles: c.Env.CopyFiles,
 		SkipHooks:    false,
 		OnCreate:     c.Hooks.OnCreate,
+		SkipClean:    false,
+		OnClean:      c.Hooks.OnClean,
 	}
 }
 

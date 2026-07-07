@@ -57,11 +57,11 @@ func loadProjectConfig(path string) (domain.ProjectConfig, error) {
 	}
 
 	var raw rawProjectConfig
-	// hooks.on_create entries are decoded as []interface{} (string|table union)
-	// so the inner table keys (cmd, cwd, continue_on_error) appear as
-	// "undecoded" to the strict checker even though the custom unmarshaler
-	// reads them — skip that sub-tree.
-	if err := decodeStrict(path, &raw, "hooks.on_create"); err != nil {
+	// hooks.on_create / hooks.on_clean entries are decoded as []interface{}
+	// (string|table union) so the inner table keys (cmd, cwd, continue_on_error)
+	// appear as "undecoded" to the strict checker even though the custom
+	// unmarshaler reads them — skip those sub-trees.
+	if err := decodeStrict(path, &raw, "hooks.on_create", "hooks.on_clean"); err != nil {
 		return domain.ProjectConfig{}, err
 	}
 

@@ -110,7 +110,13 @@ func runClean(cmd *cobra.Command, args []string) error {
 		})
 		return nil
 	}
-	return doClean(cmd, cleanParams, format, reparentPlan, applyReparent)
+	return doClean(cmd, doCleanParams{
+		Params:        cleanParams,
+		Format:        format,
+		ReparentPlan:  reparentPlan,
+		ApplyReparent: applyReparent,
+		CanPrompt:     false,
+	})
 }
 
 // cleanWizardParams holds inputs for runCleanWizard.
@@ -174,7 +180,13 @@ func runCleanWizard(cmd *cobra.Command, p cleanWizardParams) error {
 	cleanParams := cleanParamsFor(cleanParamsInput{result: p.result, baseBranch: p.baseBranch, branch: res.Branch, force: res.Force})
 	reparentPlan := worktree.PlanCleanReparent(cleanParams)
 	applyReparent := len(reparentPlan.Children) > 0 && res.ReparentAsked && res.ReparentChildren
-	return doClean(cmd, cleanParams, p.format, reparentPlan, applyReparent)
+	return doClean(cmd, doCleanParams{
+		Params:        cleanParams,
+		Format:        p.format,
+		ReparentPlan:  reparentPlan,
+		ApplyReparent: applyReparent,
+		CanPrompt:     true,
+	})
 }
 
 // cleanParamsInput holds inputs for cleanParamsFor.
@@ -314,7 +326,21 @@ func cleanUnsafeReason(check domain.CleanCheckResult) (string, bool) {
 	return "", false
 }
 
-func doClean(cmd *cobra.Command, params domain.CleanParams, format string, reparentPlan domain.CleanReparentPlan, applyReparent bool) error {
+// doCleanParams holds inputs for doClean.
+type doCleanParams struct {
+	Params        domain.CleanParams
+	Format        string
+	ReparentPlan  domain.CleanReparentPlan
+	ApplyReparent bool
+	// CanPrompt reports whether the run may show an interactive prompt (a human
+	// format on a TTY, not --yes). It gates the sudo-rm removal-failure fallback.
+	CanPrompt bool
+}
+
+func doClean(cmd *cobra.Command, p doCleanParams) error {
+	params := p.Params
+	format := p.Format
+
 	wtPath := ""
 	if wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
 		ProjectDir: params.ProjectDir,
@@ -329,9 +355,12 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string, repar
 
 	stopWorktreeServices(cmd, params.ProjectDir, params.Branch)
 
+	// on_clean hooks stream their own output, so suppress the spinner when any
+	// are configured (mirrors create).
+	hasCleanHooks := len(params.Config.Project.Hooks.OnClean) > 0
 	err := components.RunLoading(components.LoadingParams{
 		Message: "Cleaning worktree…",
-		Animate: rules.IsHumanFormat(format),
+		Animate: rules.IsHumanFormat(format) && !hasCleanHooks,
 		Work:    func() error { return worktree.Clean(params) },
 	})
 	if errors.Is(err, domain.ErrWorktreeNotFound) {
@@ -354,9 +383,29 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string, repar
 		})
 		return nil
 	}
+	if errors.Is(err, domain.ErrWorktreeRemoveFailed) {
+		recovered, rerr := recoverRemoveFailure(cmd, recoverRemoveParams{
+			CanPrompt: p.CanPrompt,
+			Params:    params,
+			WtPath:    wtPath,
+			CleanErr:  err,
+		})
+		if rerr != nil {
+			return rerr
+		}
+		if !recovered {
+			return err
+		}
+		// Recovered via sudo rm: rejoin the normal post-clean flow so redirect,
+		// child reparenting, and the success output all still run.
+		err = nil
+	}
 	if err != nil {
 		return err
 	}
+
+	reparentPlan := p.ReparentPlan
+	applyReparent := p.ApplyReparent
 
 	if insideRemoved {
 		redirectToBase(params.ProjectDir)
@@ -386,6 +435,49 @@ func doClean(cmd *cobra.Command, params domain.CleanParams, format string, repar
 		}
 	})
 	return nil
+}
+
+// recoverRemoveParams holds inputs for recoverRemoveFailure.
+type recoverRemoveParams struct {
+	CanPrompt bool
+	Params    domain.CleanParams
+	WtPath    string
+	CleanErr  error
+}
+
+// recoverRemoveFailure offers the interactive `sudo rm -rf` fallback when
+// `git worktree remove` failed on files it cannot delete as the current user
+// (typically root-owned files left by Docker). It returns recovered=true only
+// when the privileged deletion succeeded, so the caller resumes the normal
+// post-clean flow (reparent, redirect, success output). A non-interactive run,
+// an unknown worktree path, or a declined prompt returns recovered=false, leaving
+// the caller to surface the original error.
+func recoverRemoveFailure(cmd *cobra.Command, p recoverRemoveParams) (bool, error) {
+	if !p.CanPrompt || p.WtPath == "" {
+		return false, nil
+	}
+
+	output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("Removal failed: %s", p.CleanErr))
+
+	confirm := components.NewConfirm(components.NewConfirmParams{
+		Title:      fmt.Sprintf("Force-delete %s with `sudo rm -rf`? (you may be prompted for your password)", p.WtPath),
+		DefaultYes: false,
+	})
+	confirmed, err := components.RunStandaloneConfirm(confirm)
+	if err != nil || !confirmed {
+		return false, nil
+	}
+
+	if forceErr := worktree.ForceClean(domain.ForceCleanParams{
+		ProjectDir: p.Params.ProjectDir,
+		Path:       p.WtPath,
+		Branch:     p.Params.Branch,
+		Force:      p.Params.Force,
+	}); forceErr != nil {
+		return false, forceErr
+	}
+
+	return true, nil
 }
 
 // applyChildReparent reparents the orphaned children when authorized, otherwise

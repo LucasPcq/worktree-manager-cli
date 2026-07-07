@@ -52,6 +52,7 @@ func unmarshalHookCommands(raw []interface{}) ([]domain.HookCommand, error) {
 
 type rawHooksConfig struct {
 	OnCreate []interface{} `toml:"on_create"`
+	OnClean  []interface{} `toml:"on_clean"`
 }
 
 func decodeHooksConfig(raw rawHooksConfig) (domain.HooksConfig, error) {
@@ -60,7 +61,13 @@ func decodeHooksConfig(raw rawHooksConfig) (domain.HooksConfig, error) {
 		return domain.HooksConfig{}, fmt.Errorf("on_create: %w", err)
 	}
 
+	onClean, err := unmarshalHookCommands(raw.OnClean)
+	if err != nil {
+		return domain.HooksConfig{}, fmt.Errorf("on_clean: %w", err)
+	}
+
 	return domain.HooksConfig{
 		OnCreate: onCreate,
+		OnClean:  onClean,
 	}, nil
 }

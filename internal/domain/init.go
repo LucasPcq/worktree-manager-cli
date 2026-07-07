@@ -50,9 +50,11 @@ type InitProjectAnswers struct {
 	EnvCopyFiles           []string
 	EnvStrategy            EnvStrategy
 	OnCreate               []HookCommand
+	OnClean                []HookCommand
 	DockerComposeFiles     []string
 	DockerComposeCmd       string
 	SelectedPackageScripts []PackageScript
 	SkipEnv                bool
 	SkipHooks              bool
+	SkipClean              bool
 }

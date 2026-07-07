@@ -121,10 +121,12 @@ const (
 	FlagBaseBranch     = "base-branch"
 	FlagEnvStrategy    = "env-strategy"
 	FlagInstallCommand = "install-command"
+	FlagCleanCommand   = "clean-command"
 
 	// init skip flags — opt out of optional config sections (non-interactive).
 	FlagSkipEnv   = "skip-env"
 	FlagSkipHooks = "skip-hooks"
+	FlagSkipClean = "skip-clean"
 
 	// init wizard section gate choices — whether to configure or skip a section.
 	WizardChoiceConfigure = "configure"

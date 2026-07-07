@@ -2,6 +2,7 @@ package infra
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -89,6 +90,39 @@ func RemoveWorktree(params RemoveWorktreeParams) error {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git worktree remove: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// SudoDeleteDirParams holds inputs for a privileged directory deletion.
+type SudoDeleteDirParams struct {
+	Path string
+}
+
+// SudoDeleteDir removes a directory tree with `sudo rm -rf`. It inherits the
+// current stdio so sudo can prompt for the password on the terminal — do not
+// capture the output. Used as a last-resort fallback when `git worktree remove`
+// cannot delete files owned by another user (e.g. root-owned Docker files).
+func SudoDeleteDir(params SudoDeleteDirParams) error {
+	cmd := exec.Command("sudo", "rm", "-rf", params.Path)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("sudo rm -rf %s: %w", params.Path, err)
+	}
+	return nil
+}
+
+// PruneWorktrees runs `git worktree prune` to clear the administrative metadata
+// (.git/worktrees/<name>) left behind when a worktree directory is removed
+// outside of git (e.g. by SudoDeleteDir).
+func PruneWorktrees(projectDir string) error {
+	cmd := exec.Command("git", "worktree", "prune")
+	cmd.Dir = projectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git worktree prune: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }

@@ -176,6 +176,70 @@ func TestWriteProjectRoundTripTableFormHook(t *testing.T) {
 	}
 }
 
+func TestWriteProjectSkipCleanCommentsSection(t *testing.T) {
+	dir := t.TempDir()
+
+	answers := domain.InitProjectAnswers{
+		BasePath:    ".trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+		SkipClean:   true,
+	}
+
+	if err := WriteProject(WriteProjectParams{StateDir: dir, Answers: answers}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
+	content := string(data)
+
+	if !strings.Contains(content, "on_clean = []") {
+		t.Error("expected empty on_clean when clean hooks skipped")
+	}
+
+	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
+	if err != nil {
+		t.Fatalf("loadProjectConfig: %v", err)
+	}
+	if len(cfg.Hooks.OnClean) != 0 {
+		t.Errorf("expected no clean hooks, got %v", cfg.Hooks.OnClean)
+	}
+}
+
+func TestWriteProjectRoundTripOnClean(t *testing.T) {
+	dir := t.TempDir()
+
+	answers := domain.InitProjectAnswers{
+		BasePath:    ".trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+		OnClean: []domain.HookCommand{
+			{Cmd: "docker compose down"},
+			{Cmd: "./scripts/teardown.sh", Cwd: "infra", ContinueOnError: true},
+		},
+	}
+
+	if err := WriteProject(WriteProjectParams{StateDir: dir, Answers: answers}); err != nil {
+		t.Fatalf("WriteProject: %v", err)
+	}
+
+	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
+	if err != nil {
+		t.Fatalf("loadProjectConfig: %v", err)
+	}
+
+	if len(cfg.Hooks.OnClean) != 2 {
+		t.Fatalf("expected 2 clean hooks, got %d: %+v", len(cfg.Hooks.OnClean), cfg.Hooks.OnClean)
+	}
+	if cfg.Hooks.OnClean[0].Cmd != "docker compose down" || cfg.Hooks.OnClean[0].Cwd != "" {
+		t.Errorf("bare clean hook not preserved: %+v", cfg.Hooks.OnClean[0])
+	}
+	table := cfg.Hooks.OnClean[1]
+	if table.Cmd != "./scripts/teardown.sh" || table.Cwd != "infra" || !table.ContinueOnError {
+		t.Errorf("table-form clean hook fields not preserved: %+v", table)
+	}
+}
+
 func TestWriteRunTemplateCreatesCommentedFile(t *testing.T) {
 	dir := t.TempDir()
 

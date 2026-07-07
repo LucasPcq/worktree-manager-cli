@@ -97,6 +97,11 @@ flagged; everything else is what the name implies.
   **refuse unsafe worktrees** — dirty, unpushed commits, or an open PR — unless you pass
   `--force`; in JSON/`--yes` mode those are reported under `skipped` (reason `dirty`/
   `unpushed`/`open_pr`) instead of being removed, so committed work is never silently lost.
+  Both also run any configured **`on_clean`** hooks in the worktree just before removing it
+  (e.g. `docker compose down`); a hook that exits non-zero **aborts the removal** unless its
+  entry sets `continue_on_error`. If `git worktree remove` then fails on undeletable files
+  (e.g. root-owned Docker files), interactive runs offer a `sudo rm -rf` fallback — this
+  never triggers in JSON/`--yes` mode, where the failure is surfaced as an error.
 - `wtm extract <source> --files <a,b> --to <branch>` — move part of the `<source>`
   worktree's uncommitted changes onto another branch (split an oversized PR). In JSON mode pass
   `--yes` plus the source arg, `--files`, and `--to` — all **required** (omitting any errors
