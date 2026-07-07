@@ -214,7 +214,7 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool)
 
 	output.Frame(cmd.OutOrStdout(), func() {
 		output.InitProjectRecap(cmd.OutOrStdout(), output.InitProjectRecapParams{
-			ConfigPath: rules.DisplayPath(dir, filepath.Join(stateDir, domain.ConfigFileName)),
+			ConfigPath: rules.DisplayPath(rules.DisplayPathParams{Base: dir, Target: filepath.Join(stateDir, domain.ConfigFileName)}),
 			Fields:     rules.InitProjectRecapFields(answers),
 			NextSteps: []string{
 				domain.InitNextStepCreate,

@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
@@ -131,6 +132,15 @@ func RunCleanHooks(params domain.CleanHooksParams) error {
 // stale git metadata, then deletes the local branch. Intended to run only after
 // the user has confirmed the privileged deletion.
 func ForceClean(params domain.ForceCleanParams) error {
+	homeDir, _ := os.UserHomeDir()
+	if err := rules.ValidateSudoDeletePath(rules.SudoDeletePathParams{
+		Path:       params.Path,
+		HomeDir:    homeDir,
+		ProjectDir: params.ProjectDir,
+	}); err != nil {
+		return err
+	}
+
 	if err := infra.SudoDeleteDir(infra.SudoDeleteDirParams{Path: params.Path}); err != nil {
 		return err
 	}

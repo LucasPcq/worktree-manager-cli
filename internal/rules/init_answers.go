@@ -8,13 +8,21 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// DisplayPath renders target relative to base for readable output, falling back to
-// target unchanged when it lies outside base or cannot be made relative. Lexical
+// DisplayPathParams holds the inputs for DisplayPath.
+type DisplayPathParams struct {
+	// Base is the directory the result is made relative to.
+	Base string
+	// Target is the path to render.
+	Target string
+}
+
+// DisplayPath renders Target relative to Base for readable output, falling back to
+// Target unchanged when it lies outside Base or cannot be made relative. Lexical
 // only: no filesystem access.
-func DisplayPath(base, target string) string {
-	rel, err := filepath.Rel(base, target)
+func DisplayPath(p DisplayPathParams) string {
+	rel, err := filepath.Rel(p.Base, p.Target)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		return target
+		return p.Target
 	}
 	return rel
 }

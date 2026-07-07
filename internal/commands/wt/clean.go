@@ -45,7 +45,7 @@ func runClean(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	if format == domain.OutputJSON && !yes {
-		return fmt.Errorf("--output json requires --yes (confirmations cannot run in JSON mode; add --force to lift safety checks)")
+		return domain.ErrCleanJSONNeedsYes
 	}
 
 	dir, err := os.Getwd()
@@ -307,7 +307,7 @@ func ensureSafeToClean(params domain.CleanParams, interactive bool) error {
 		return nil
 	}
 	if reason, unsafe := cleanUnsafeReason(check); unsafe {
-		return fmt.Errorf("worktree %s %s; pass --force to remove it anyway", params.Branch, reason)
+		return fmt.Errorf(domain.CleanForceHintFmt, params.Branch, reason)
 	}
 	return nil
 }
@@ -472,7 +472,7 @@ func recoverRemoveFailure(cmd *cobra.Command, p recoverRemoveParams) (bool, erro
 	output.Warning(cmd.ErrOrStderr(), fmt.Sprintf("Removal failed: %s", p.CleanErr))
 
 	confirm := components.NewConfirm(components.NewConfirmParams{
-		Title:      fmt.Sprintf("Force-delete %s with `sudo rm -rf`? (you may be prompted for your password)", p.WtPath),
+		Title:      fmt.Sprintf(domain.CleanSudoConfirmFmt, p.WtPath),
 		DefaultYes: false,
 	})
 	confirmed, err := components.RunStandaloneConfirm(confirm)

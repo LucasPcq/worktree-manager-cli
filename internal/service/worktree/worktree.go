@@ -56,11 +56,11 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		sourceBranch = params.FromBranch
 	}
 
-	envTargets := rules.EnvTargets(params.Config.Project.Env.Files)
-	if len(envTargets) > 0 {
+	envFiles := params.Config.Project.Env.Files
+	if len(envFiles) > 0 {
 		copyErr := env.CopyEnvFiles(env.CopyEnvFilesParams{
 			Strategy:           strategy,
-			CopyFiles:          envTargets,
+			Files:              envFiles,
 			TargetDir:          worktreePath,
 			MainWorktreePath:   mainPath,
 			ParentWorktreePath: parentWorktreePath(params.ProjectDir, sourceBranch),

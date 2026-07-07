@@ -511,6 +511,13 @@ const (
 	// orphan, shown in the reparent confirmation.
 	CleanReparentIntro = "These children would otherwise be left orphaned:"
 
+	// CleanForceHintFmt is the refusal shown when a worktree is unsafe to remove
+	// without --force (branch, reason).
+	CleanForceHintFmt = "worktree %s %s; pass --force to remove it anyway"
+	// CleanSudoConfirmFmt is the confirmation title for the privileged `sudo rm -rf`
+	// removal fallback (worktree path).
+	CleanSudoConfirmFmt = "Force-delete %s with `sudo rm -rf`? (you may be prompted for your password)"
+
 	// WizardCancelLabel is the constant final option on every wizard recap step —
 	// the single explicit cancellation point (alongside Esc on the first step).
 	// Kept identical across commands so "No, cancel" always reads and sits the same.

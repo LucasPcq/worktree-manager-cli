@@ -246,11 +246,11 @@ func TestInitProjectRecapFields_OmitsEmptyOnCreate(t *testing.T) {
 }
 
 func TestDisplayPath(t *testing.T) {
-	if got := rules.DisplayPath("/repo", "/repo/.git/wtm/config.toml"); got != ".git/wtm/config.toml" {
+	if got := rules.DisplayPath(rules.DisplayPathParams{Base: "/repo", Target: "/repo/.git/wtm/config.toml"}); got != ".git/wtm/config.toml" {
 		t.Errorf("DisplayPath inside base = %q, want relative", got)
 	}
 	// A target outside base keeps the absolute path rather than an ugly ../.. climb.
-	if got := rules.DisplayPath("/repo", "/elsewhere/wtm/config.toml"); got != "/elsewhere/wtm/config.toml" {
+	if got := rules.DisplayPath(rules.DisplayPathParams{Base: "/repo", Target: "/elsewhere/wtm/config.toml"}); got != "/elsewhere/wtm/config.toml" {
 		t.Errorf("DisplayPath outside base = %q, want unchanged absolute", got)
 	}
 }

@@ -226,6 +226,9 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 
 	// Run on_clean hooks for every selected worktree as a distinct, titled phase
 	// before the removal spinner (mirrors clean); Prune then skips them internally.
+	// All hooks run before any removal: if hook N fails we abort before removing
+	// anything, but worktrees 1..N-1 already had their teardown run — on_clean hooks
+	// must therefore be idempotent.
 	if onClean := cfg.Config.Project.Hooks.OnClean; len(onClean) > 0 {
 		if interactive {
 			output.HooksSection(cmd.ErrOrStderr(), domain.HooksTitleOnClean)

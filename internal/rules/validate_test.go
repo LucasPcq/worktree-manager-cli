@@ -34,6 +34,40 @@ func TestValidateEnvFiles(t *testing.T) {
 	}
 }
 
+func TestValidateSudoDeletePath(t *testing.T) {
+	const home = "/home/dev"
+	const project = "/home/dev/repo"
+
+	cases := []struct {
+		name    string
+		path    string
+		wantErr bool
+	}{
+		{"safe worktree under project", "/home/dev/repo/.worktrees/feat", false},
+		{"safe sibling worktree", "/home/dev/worktrees/feat", false},
+		{"filesystem root", "/", true},
+		{"home dir", home, true},
+		{"project root", project, true},
+		{"ancestor of project", "/home/dev", true},
+		{"relative path", "repo/.worktrees/feat", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateSudoDeletePath(SudoDeletePathParams{
+				Path:       tc.path,
+				HomeDir:    home,
+				ProjectDir: project,
+			})
+			if tc.wantErr && !errors.Is(err, domain.ErrUnsafeSudoDeletePath) {
+				t.Fatalf("expected ErrUnsafeSudoDeletePath for %q, got %v", tc.path, err)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("expected no error for %q, got %v", tc.path, err)
+			}
+		})
+	}
+}
+
 func TestValidateRelocateTarget(t *testing.T) {
 	cases := []struct {
 		name    string

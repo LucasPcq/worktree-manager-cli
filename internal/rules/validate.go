@@ -35,16 +35,67 @@ func ValidateEnvFiles(files []domain.EnvFile) error {
 		}
 		seen[f.Target] = true
 
-		if f.Template != "" && !isTemplateOf(f.Target, f.Template) {
+		if f.Template != "" && !isTemplateOf(templateMatchParams{Target: f.Target, Template: f.Template}) {
 			return fmt.Errorf("%w: %s is not a template of %s", domain.ErrEnvFileBadTemplate, f.Template, f.Target)
 		}
 	}
 	return nil
 }
 
-func isTemplateOf(target, template string) bool {
-	for _, c := range TemplateCandidates(target) {
-		if c == template {
+// SudoDeletePathParams holds the inputs for ValidateSudoDeletePath.
+type SudoDeletePathParams struct {
+	// Path is the directory that would be removed with `sudo rm -rf`.
+	Path string
+	// HomeDir is the current user's home directory ("" when it cannot be resolved).
+	HomeDir string
+	// ProjectDir is the repository root the worktree belongs to.
+	ProjectDir string
+}
+
+// ValidateSudoDeletePath rejects a privileged recursive delete of an obviously
+// dangerous path: a non-absolute path, a filesystem root, the home directory, the
+// repository root, or an ancestor of it. Purely lexical — no filesystem access.
+func ValidateSudoDeletePath(params SudoDeletePathParams) error {
+	if !filepath.IsAbs(params.Path) {
+		return domain.ErrUnsafeSudoDeletePath
+	}
+
+	path := filepath.Clean(params.Path)
+	if path == filepath.Dir(path) {
+		return domain.ErrUnsafeSudoDeletePath
+	}
+	if params.HomeDir != "" && path == filepath.Clean(params.HomeDir) {
+		return domain.ErrUnsafeSudoDeletePath
+	}
+	if params.ProjectDir != "" {
+		project := filepath.Clean(params.ProjectDir)
+		if path == project || isAncestor(path, project) {
+			return domain.ErrUnsafeSudoDeletePath
+		}
+	}
+	return nil
+}
+
+// isAncestor reports whether ancestor is a strict parent directory of child. Both
+// must be cleaned absolute paths. Segment-aware so "/a/b" is not treated as an
+// ancestor of "/a/bc".
+func isAncestor(ancestor, child string) bool {
+	rel, err := filepath.Rel(ancestor, child)
+	if err != nil {
+		return false
+	}
+	return rel != "." && !strings.HasPrefix(rel, "..")
+}
+
+// templateMatchParams holds the inputs for isTemplateOf.
+type templateMatchParams struct {
+	Target   string
+	Template string
+}
+
+func isTemplateOf(p templateMatchParams) bool {
+	for _, c := range TemplateCandidates(p.Target) {
+		if c == p.Template {
 			return true
 		}
 	}

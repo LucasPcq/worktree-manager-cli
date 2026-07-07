@@ -26,7 +26,7 @@ func TestExampleStrategy(t *testing.T) {
 
 	err := CopyEnvFiles(CopyEnvFilesParams{
 		Strategy:         domain.EnvStrategyExample,
-		CopyFiles:        []string{".env"},
+		Files:            []domain.EnvFile{{Target: ".env", Template: ".env.example"}},
 		TargetDir:        target,
 		MainWorktreePath: main,
 	})
@@ -43,13 +43,63 @@ func TestExampleStrategy(t *testing.T) {
 	}
 }
 
+func TestExampleStrategyPinnedNonExampleTemplate(t *testing.T) {
+	main := t.TempDir()
+	target := t.TempDir()
+
+	writeTestFile(t, filepath.Join(main, ".env.dist"), "FROM_DIST=yes")
+
+	err := CopyEnvFiles(CopyEnvFilesParams{
+		Strategy:         domain.EnvStrategyExample,
+		Files:            []domain.EnvFile{{Target: ".env", Template: ".env.dist"}},
+		TargetDir:        target,
+		MainWorktreePath: main,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, ".env"))
+	if err != nil {
+		t.Fatal("expected .env to exist in target")
+	}
+	if string(data) != "FROM_DIST=yes" {
+		t.Errorf("expected content copied from .env.dist, got: %s", data)
+	}
+}
+
+func TestExampleStrategyProbesCandidatesWhenTemplateEmpty(t *testing.T) {
+	main := t.TempDir()
+	target := t.TempDir()
+
+	writeTestFile(t, filepath.Join(main, ".env.sample"), "FROM_SAMPLE=yes")
+
+	err := CopyEnvFiles(CopyEnvFilesParams{
+		Strategy:         domain.EnvStrategyExample,
+		Files:            []domain.EnvFile{{Target: ".env"}},
+		TargetDir:        target,
+		MainWorktreePath: main,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(target, ".env"))
+	if err != nil {
+		t.Fatal("expected .env to exist in target")
+	}
+	if string(data) != "FROM_SAMPLE=yes" {
+		t.Errorf("expected content probed from .env.sample, got: %s", data)
+	}
+}
+
 func TestExampleStrategyMissingFile(t *testing.T) {
 	main := t.TempDir()
 	target := t.TempDir()
 
 	err := CopyEnvFiles(CopyEnvFilesParams{
 		Strategy:         domain.EnvStrategyExample,
-		CopyFiles:        []string{".env"},
+		Files:            []domain.EnvFile{{Target: ".env", Template: ".env.example"}},
 		TargetDir:        target,
 		MainWorktreePath: main,
 	})
@@ -70,7 +120,7 @@ func TestMainStrategy(t *testing.T) {
 
 	err := CopyEnvFiles(CopyEnvFilesParams{
 		Strategy:         domain.EnvStrategyMain,
-		CopyFiles:        []string{".env"},
+		Files:            []domain.EnvFile{{Target: ".env"}},
 		TargetDir:        target,
 		MainWorktreePath: main,
 	})
@@ -94,7 +144,7 @@ func TestParentStrategy(t *testing.T) {
 
 	err := CopyEnvFiles(CopyEnvFilesParams{
 		Strategy:           domain.EnvStrategyParent,
-		CopyFiles:          []string{".env"},
+		Files:              []domain.EnvFile{{Target: ".env"}},
 		TargetDir:          target,
 		MainWorktreePath:   main,
 		ParentWorktreePath: parent,
@@ -118,7 +168,7 @@ func TestParentStrategyFallbackToMain(t *testing.T) {
 
 	err := CopyEnvFiles(CopyEnvFilesParams{
 		Strategy:           domain.EnvStrategyParent,
-		CopyFiles:          []string{".env"},
+		Files:              []domain.EnvFile{{Target: ".env"}},
 		TargetDir:          target,
 		MainWorktreePath:   main,
 		ParentWorktreePath: parent,
@@ -141,7 +191,7 @@ func TestNestedEnvFiles(t *testing.T) {
 
 	err := CopyEnvFiles(CopyEnvFilesParams{
 		Strategy:         domain.EnvStrategyMain,
-		CopyFiles:        []string{"apps/api/.env"},
+		Files:            []domain.EnvFile{{Target: "apps/api/.env"}},
 		TargetDir:        target,
 		MainWorktreePath: main,
 	})
@@ -155,14 +205,14 @@ func TestNestedEnvFiles(t *testing.T) {
 	}
 }
 
-func TestEmptyCopyFiles(t *testing.T) {
+func TestEmptyFiles(t *testing.T) {
 	err := CopyEnvFiles(CopyEnvFilesParams{
 		Strategy:         domain.EnvStrategyExample,
-		CopyFiles:        nil,
+		Files:            nil,
 		TargetDir:        t.TempDir(),
 		MainWorktreePath: t.TempDir(),
 	})
 	if err != nil {
-		t.Fatalf("empty copy_files should be no-op: %v", err)
+		t.Fatalf("empty files should be no-op: %v", err)
 	}
 }

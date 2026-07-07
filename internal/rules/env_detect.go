@@ -67,7 +67,6 @@ func ClassifyEnvFiles(paths []string) []domain.EnvFile {
 		tmplRank int
 	}
 	byTarget := map[string]*entry{}
-	order := make([]string, 0, len(paths))
 
 	get := func(target string) *entry {
 		e, ok := byTarget[target]
@@ -79,7 +78,6 @@ func ClassifyEnvFiles(paths []string) []domain.EnvFile {
 			tmplRank: len(domain.EnvTemplateSuffixes),
 		}
 		byTarget[target] = e
-		order = append(order, target)
 		return e
 	}
 
@@ -112,9 +110,9 @@ func ClassifyEnvFiles(paths []string) []domain.EnvFile {
 		}
 	}
 
-	files := make([]domain.EnvFile, 0, len(order))
-	for _, t := range order {
-		files = append(files, byTarget[t].file)
+	files := make([]domain.EnvFile, 0, len(byTarget))
+	for _, e := range byTarget {
+		files = append(files, e.file)
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Target < files[j].Target })
 	return files
