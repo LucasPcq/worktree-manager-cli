@@ -203,8 +203,19 @@ base_path   = "../.trees"   # where worktrees are created (relative to repo root
 base_branch = "main"        # default base for new worktrees
 
 [env]
-strategy   = "example"      # example | main | parent (see below)
-copy_files = [".env", "apps/api/.env"]
+strategy = "example"        # example | main | parent (see below)
+
+# Each detected value file and its committed template (schema). wtm distinguishes
+# templates (.env.example / .dist / .sample / .template / .tmpl, committed) from
+# value files (.env, gitignored). .env.local is detected and flagged local but
+# stays syncable.
+[[env.file]]
+target   = ".env"
+template = ".env.example"
+
+[[env.file]]
+target = ".env.local"
+local  = true
 
 [hooks]
 on_create = [

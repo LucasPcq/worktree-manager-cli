@@ -58,7 +58,7 @@ func (s *stepSet) at(key string) int {
 type SectionPrefill struct {
 	BaseBranch    string
 	EnvStrategy   string
-	EnvCopyFiles  map[string]bool
+	EnvTargets    map[string]bool
 	OnCreate      []domain.HookCommand
 	OnClean       []domain.HookCommand
 	DockerFiles   map[string]bool
@@ -354,8 +354,8 @@ func addEnvSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func
 	}
 	items := make([]components.MultiSelectItem, 0, len(detection.EnvFiles))
 	for _, f := range detection.EnvFiles {
-		selected := prefillSelected(prefill, prefill != nil && prefill.EnvCopyFiles[f], true)
-		items = append(items, components.MultiSelectItem{Label: f, Value: f, Selected: selected})
+		selected := prefillSelected(prefill, prefill != nil && prefill.EnvTargets[f.Target], true)
+		items = append(items, components.MultiSelectItem{Label: envFileLabel(f), Value: f.Target, Selected: selected})
 	}
 	s.add(stepEnvFiles, components.Step{
 		Name: "Env files",
@@ -528,7 +528,7 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 			answers.EnvStrategy = domain.EnvStrategy(m.Value())
 			if fi := at(stepEnvFiles); fi >= 0 && !final.Skipped(fi) {
 				if fm, ok := steps[fi].Model.(components.MultiSelectModel); ok {
-					answers.EnvCopyFiles = fm.Values()
+					answers.EnvFiles = selectEnvFiles(detection.EnvFiles, fm.Values())
 				}
 			}
 		}
@@ -721,7 +721,40 @@ func moveToFront(items []components.SelectItem, value string) []components.Selec
 }
 
 func detectedEnv(d domain.InitDetectionResult) string {
-	return strings.Join(d.EnvFiles, ", ")
+	labels := make([]string, 0, len(d.EnvFiles))
+	for _, f := range d.EnvFiles {
+		labels = append(labels, envFileLabel(f))
+	}
+	return strings.Join(labels, ", ")
+}
+
+// envFileLabel renders a detected env file for display: the value target, its
+// committed template if any, and a local badge for machine-local overrides.
+func envFileLabel(f domain.EnvFile) string {
+	label := f.Target
+	if f.Template != "" {
+		label += " ← " + f.Template
+	}
+	if f.Local {
+		label += " (local)"
+	}
+	return label
+}
+
+// selectEnvFiles keeps the detected files whose target was selected in the wizard,
+// preserving the detection order and the template relation.
+func selectEnvFiles(detected []domain.EnvFile, targets []string) []domain.EnvFile {
+	chosen := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		chosen[t] = true
+	}
+	files := make([]domain.EnvFile, 0, len(targets))
+	for _, f := range detected {
+		if chosen[f.Target] {
+			files = append(files, f)
+		}
+	}
+	return files
 }
 
 func detectedHooks(d domain.InitDetectionResult) string {

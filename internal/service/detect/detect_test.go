@@ -111,7 +111,16 @@ func TestInstallCommand(t *testing.T) {
 	}
 }
 
-func TestEnvFilesDeduplicatesTargets(t *testing.T) {
+func envFileByTarget(files []domain.EnvFile, target string) (domain.EnvFile, bool) {
+	for _, f := range files {
+		if f.Target == target {
+			return f, true
+		}
+	}
+	return domain.EnvFile{}, false
+}
+
+func TestEnvFilesPairsTemplateWithTarget(t *testing.T) {
 	dir := t.TempDir()
 	touchFile(t, filepath.Join(dir, ".env"))
 	touchFile(t, filepath.Join(dir, ".env.example"))
@@ -120,20 +129,62 @@ func TestEnvFilesDeduplicatesTargets(t *testing.T) {
 
 	files := EnvFiles(dir)
 	if len(files) != 2 {
-		t.Fatalf("expected 2 deduplicated targets (.env, apps/api/.env), got %d: %v", len(files), files)
+		t.Fatalf("expected 2 targets (.env, apps/api/.env), got %d: %v", len(files), files)
+	}
+	root, ok := envFileByTarget(files, ".env")
+	if !ok || root.Template != ".env.example" {
+		t.Errorf("root .env not paired with .env.example: %+v", files)
+	}
+	nested, ok := envFileByTarget(files, filepath.Join("apps", "api", ".env"))
+	if !ok || nested.Template != filepath.Join("apps", "api", ".env.example") {
+		t.Errorf("nested .env not paired with its template: %+v", files)
 	}
 }
 
-func TestEnvFilesStripsExampleSuffix(t *testing.T) {
+func TestEnvFilesLoneTemplateYieldsTarget(t *testing.T) {
 	dir := t.TempDir()
-	touchFile(t, filepath.Join(dir, ".env.example"))
+	touchFile(t, filepath.Join(dir, ".env.dist"))
 
 	files := EnvFiles(dir)
 	if len(files) != 1 {
 		t.Fatalf("expected 1 file, got %d: %v", len(files), files)
 	}
-	if files[0] != ".env" {
-		t.Errorf("expected .env (stripped .example), got %s", files[0])
+	if files[0].Target != ".env" || files[0].Template != ".env.dist" {
+		t.Errorf("expected target .env with template .env.dist, got %+v", files[0])
+	}
+}
+
+func TestEnvFilesTemplatePriority(t *testing.T) {
+	dir := t.TempDir()
+	touchFile(t, filepath.Join(dir, ".env.dist"))
+	touchFile(t, filepath.Join(dir, ".env.example"))
+
+	files := EnvFiles(dir)
+	if len(files) != 1 || files[0].Template != ".env.example" {
+		t.Errorf("expected .env.example pinned over .env.dist, got %+v", files)
+	}
+}
+
+func TestEnvFilesLocalFlagged(t *testing.T) {
+	dir := t.TempDir()
+	touchFile(t, filepath.Join(dir, ".env"))
+	touchFile(t, filepath.Join(dir, ".env.local"))
+
+	files := EnvFiles(dir)
+	local, ok := envFileByTarget(files, ".env.local")
+	if !ok || !local.Local {
+		t.Errorf("expected .env.local detected and flagged local, got %+v", files)
+	}
+}
+
+func TestEnvFilesIgnoresMultiEnv(t *testing.T) {
+	dir := t.TempDir()
+	touchFile(t, filepath.Join(dir, ".env.production"))
+	touchFile(t, filepath.Join(dir, ".env.staging"))
+
+	files := EnvFiles(dir)
+	if len(files) != 0 {
+		t.Fatalf("multi-env files should be ignored, got %+v", files)
 	}
 }
 

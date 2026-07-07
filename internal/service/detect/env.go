@@ -4,18 +4,18 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-// EnvFiles scans the project directory recursively for .env and .env.example files.
-// Returns deduplicated target names (e.g. ".env", not ".env.example") since copy_files
-// lists the target names and the env strategy determines the source.
-// Excludes node_modules, .trees, .git, and vendor directories.
-func EnvFiles(projectDir string) []string {
-	seen := map[string]bool{}
-
+// EnvFiles scans the project directory recursively for env files and classifies
+// them into value targets and their committed templates (see rules.ClassifyEnvFiles).
+// It recognizes .env, .env.local, and the known template suffixes (.example, .dist,
+// .sample, .template, .tmpl); multi-environment files (.env.production, …) are
+// ignored. Excludes node_modules, .trees, .git, vendor, and dist directories.
+func EnvFiles(projectDir string) []domain.EnvFile {
 	skipDirs := map[string]bool{
 		"node_modules": true,
 		".trees":       true,
@@ -24,6 +24,7 @@ func EnvFiles(projectDir string) []string {
 		"dist":         true,
 	}
 
+	var paths []string
 	_ = filepath.Walk(projectDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -36,8 +37,7 @@ func EnvFiles(projectDir string) []string {
 			return nil
 		}
 
-		name := info.Name()
-		if name != ".env" && name != ".env.example" && name != ".env.local" {
+		if !rules.IsEnvCandidate(info.Name()) {
 			return nil
 		}
 
@@ -45,21 +45,12 @@ func EnvFiles(projectDir string) []string {
 		if relErr != nil {
 			return nil
 		}
-
-		// Normalize to target name: strip .example suffix
-		target := strings.TrimSuffix(rel, ".example")
-		seen[target] = true
-
+		paths = append(paths, rel)
 		return nil
 	})
 
-	files := make([]string, 0, len(seen))
-	for f := range seen {
-		files = append(files, f)
-	}
-	sort.Strings(files)
-
-	return files
+	sort.Strings(paths)
+	return rules.ClassifyEnvFiles(paths)
 }
 
 // DockerComposeFiles scans for docker-compose*.yml and docker-compose*.yaml files.

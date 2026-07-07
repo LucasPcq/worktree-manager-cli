@@ -52,6 +52,22 @@ const (
 	// DefaultEnvStrategy is the default .env provisioning strategy.
 	DefaultEnvStrategy = EnvStrategyExample
 
+	// EnvFileName is the canonical env value file — the copy target of any template.
+	EnvFileName = ".env"
+
+	// EnvLocalFileName is the machine-local override. Detected as a value file
+	// (worktrees share a machine, so a local value is legitimately shareable) and
+	// flagged local for informational display — never excluded from detection.
+	EnvLocalFileName = ".env.local"
+
+	// Committed-schema template suffixes recognized on a `.env` file. `.example`
+	// is the dominant ecosystem convention; the rest are real but minority.
+	EnvTemplateSuffixExample  = ".example"
+	EnvTemplateSuffixDist     = ".dist"
+	EnvTemplateSuffixSample   = ".sample"
+	EnvTemplateSuffixTemplate = ".template"
+	EnvTemplateSuffixTmpl     = ".tmpl"
+
 	// DefaultShell is the default shell for integration.
 	DefaultShell = ShellZsh
 
@@ -472,3 +488,14 @@ const (
 	PinnedSuffixBase     = " (base)"
 	PinnedSuffixDetected = " (detected)"
 )
+
+// EnvTemplateSuffixes are the committed-schema template suffixes recognized on a
+// `.env` file, in priority order — the first match is pinned when several templates
+// exist for the same target (e.g. `.env.example` wins over `.env.dist`).
+var EnvTemplateSuffixes = []string{
+	EnvTemplateSuffixExample,
+	EnvTemplateSuffixDist,
+	EnvTemplateSuffixSample,
+	EnvTemplateSuffixTemplate,
+	EnvTemplateSuffixTmpl,
+}

@@ -13,10 +13,42 @@ func Validate(cfg domain.Config) error {
 	if err := ValidateEnvStrategy(cfg.Project.Env.Strategy); err != nil {
 		return err
 	}
+	if err := ValidateEnvFiles(cfg.Project.Env.Files); err != nil {
+		return err
+	}
 	if err := ValidateShellType(cfg.Global.Shell); err != nil {
 		return err
 	}
 	return nil
+}
+
+// ValidateEnvFiles rejects entries with an empty target, duplicate targets, or a
+// template that is not a recognized template of its target.
+func ValidateEnvFiles(files []domain.EnvFile) error {
+	seen := make(map[string]bool, len(files))
+	for _, f := range files {
+		if f.Target == "" {
+			return domain.ErrEnvFileNoTarget
+		}
+		if seen[f.Target] {
+			return fmt.Errorf("%w: %s", domain.ErrEnvFileDuplicateTarget, f.Target)
+		}
+		seen[f.Target] = true
+
+		if f.Template != "" && !isTemplateOf(f.Target, f.Template) {
+			return fmt.Errorf("%w: %s is not a template of %s", domain.ErrEnvFileBadTemplate, f.Template, f.Target)
+		}
+	}
+	return nil
+}
+
+func isTemplateOf(target, template string) bool {
+	for _, c := range TemplateCandidates(target) {
+		if c == template {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidateEnvStrategy returns ErrInvalidEnvStrategy if s is not a known value.
