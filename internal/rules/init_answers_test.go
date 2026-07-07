@@ -185,6 +185,76 @@ func TestAutoServicesAnswers(t *testing.T) {
 	}
 }
 
+func TestInitProjectRecapFields_ResolvedValues(t *testing.T) {
+	fields := rules.InitProjectRecapFields(domain.InitProjectAnswers{
+		BasePath:    "../.trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+		OnCreate:    []domain.HookCommand{{Cmd: "pnpm install"}, {Cmd: "pnpm install", Cwd: "packages/a"}},
+		OnClean:     []domain.HookCommand{{Cmd: "docker compose down"}},
+	})
+	got := map[string]string{}
+	for _, f := range fields {
+		got[f.Label] = f.Value
+	}
+	if got[domain.InitRecapLabelBasePath] != "../.trees" || got[domain.InitRecapLabelBaseBranch] != "main" {
+		t.Errorf("base fields wrong: %+v", got)
+	}
+	if got[domain.InitRecapLabelEnvStrategy] != string(domain.EnvStrategyExample) {
+		t.Errorf("env_strategy = %q, want %q", got[domain.InitRecapLabelEnvStrategy], domain.EnvStrategyExample)
+	}
+	if got[domain.InitRecapLabelOnCreate] != "pnpm install  (+1 more)" {
+		t.Errorf("on_create = %q, want condensed +more form", got[domain.InitRecapLabelOnCreate])
+	}
+	if got[domain.InitRecapLabelOnClean] != "docker compose down" {
+		t.Errorf("on_clean = %q, want the single hook command", got[domain.InitRecapLabelOnClean])
+	}
+}
+
+func TestInitProjectRecapFields_Skipped(t *testing.T) {
+	fields := rules.InitProjectRecapFields(domain.InitProjectAnswers{
+		BasePath:   "../.trees",
+		BaseBranch: "main",
+		SkipEnv:    true,
+		SkipHooks:  true,
+	})
+	got := map[string]string{}
+	for _, f := range fields {
+		got[f.Label] = f.Value
+	}
+	if got[domain.InitRecapLabelEnvStrategy] != domain.InitRecapValueSkippedTemplate {
+		t.Errorf("env_strategy = %q, want %q", got[domain.InitRecapLabelEnvStrategy], domain.InitRecapValueSkippedTemplate)
+	}
+	if got[domain.InitRecapLabelOnCreate] != domain.InitRecapValueSkipped {
+		t.Errorf("on_create = %q, want %q", got[domain.InitRecapLabelOnCreate], domain.InitRecapValueSkipped)
+	}
+}
+
+// TestInitProjectRecapFields_OmitsEmptyOnCreate asserts the on_create row disappears
+// (rather than showing a blank value) when no hook was configured and none skipped.
+func TestInitProjectRecapFields_OmitsEmptyOnCreate(t *testing.T) {
+	fields := rules.InitProjectRecapFields(domain.InitProjectAnswers{
+		BasePath:    "../.trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+	})
+	for _, f := range fields {
+		if f.Label == domain.InitRecapLabelOnCreate {
+			t.Errorf("on_create row should be omitted when empty, got %q", f.Value)
+		}
+	}
+}
+
+func TestDisplayPath(t *testing.T) {
+	if got := rules.DisplayPath("/repo", "/repo/.git/wtm/config.toml"); got != ".git/wtm/config.toml" {
+		t.Errorf("DisplayPath inside base = %q, want relative", got)
+	}
+	// A target outside base keeps the absolute path rather than an ugly ../.. climb.
+	if got := rules.DisplayPath("/repo", "/elsewhere/wtm/config.toml"); got != "/elsewhere/wtm/config.toml" {
+		t.Errorf("DisplayPath outside base = %q, want unchanged absolute", got)
+	}
+}
+
 func TestBuildProjectAnswers_MonorepoToHooks(t *testing.T) {
 	detection := domain.InitDetectionResult{
 		BaseBranch:       "main",

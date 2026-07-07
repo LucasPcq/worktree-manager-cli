@@ -74,23 +74,20 @@ func WriteImportResultJSON(w io.Writer, result ImportResult) error {
 	return encodeJSON(w, result)
 }
 
-// WriteImportResultText writes the import result as human-readable text.
-func WriteImportResultText(w io.Writer, result ImportResult) error {
-	if len(result.Added) > 0 {
-		if _, err := fmt.Fprintf(w, "%sAdded: %s\n", Indent, strings.Join(result.Added, ", ")); err != nil {
-			return err
-		}
-	}
-	if len(result.Skipped) > 0 {
-		if _, err := fmt.Fprintf(w, "%sSkipped (duplicate): %s\n", Indent, strings.Join(result.Skipped, ", ")); err != nil {
-			return err
-		}
-	}
+// WriteImportResultText writes the import result as human-readable status lines,
+// using the shared icon vocabulary: ✓ for imported jobs, = for duplicates left
+// untouched. It emits a raw body; the caller's frame owns the outer padding.
+func WriteImportResultText(w io.Writer, result ImportResult) {
 	if len(result.Added) == 0 && len(result.Skipped) == 0 {
-		_, err := fmt.Fprintf(w, "%sNothing to import.\n", Indent)
-		return err
+		Message(w, "Nothing to import.")
+		return
 	}
-	return nil
+	for _, name := range result.Added {
+		Success(w, fmt.Sprintf("Imported %s", name))
+	}
+	for _, name := range result.Skipped {
+		Unchanged(w, fmt.Sprintf("%s already present", name))
+	}
 }
 
 // WriteRunConfigJSON writes the JSON payload for `run list`.

@@ -85,16 +85,13 @@ func TestWriteImportResultText(t *testing.T) {
 		Skipped: []string{"old"},
 	}
 
-	if err := WriteImportResultText(&buf, result); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	WriteImportResultText(&buf, result)
 
 	out := buf.String()
-	if !strings.Contains(out, "dev, build") {
-		t.Errorf("expected added names in output: %q", out)
-	}
-	if !strings.Contains(out, "Skipped") {
-		t.Errorf("expected skipped section in output: %q", out)
+	for _, want := range []string{"Imported dev", "Imported build", "old already present"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output: %q", want, out)
+		}
 	}
 }
 
@@ -117,9 +114,7 @@ func TestWriteImportResultJSON(t *testing.T) {
 
 func TestWriteImportResultText_NothingToImport(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteImportResultText(&buf, ImportResult{}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	WriteImportResultText(&buf, ImportResult{})
 	if !strings.Contains(buf.String(), "Nothing to import") {
 		t.Errorf("expected nothing-to-import message: %q", buf.String())
 	}

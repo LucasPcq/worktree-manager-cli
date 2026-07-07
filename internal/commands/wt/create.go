@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -132,15 +133,15 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// on_create hooks stream their own output, so only show a spinner for the
-	// silent path (git worktree add + env copy) on the human-facing run.
-	hasHooks := len(result.Config.Project.Hooks.OnCreate) > 0
-	showSpinner := rules.IsHumanFormat(format) && !hasHooks
+	human := rules.IsHumanFormat(format)
 
+	// Phase 1 — the silent creation (git worktree add + env copy) under a spinner.
+	// Hooks are held back (SkipHooks) so they can stream in their own phase below
+	// without fighting the spinner for the terminal.
 	var createResult domain.CreateResult
 	err = components.RunLoading(components.LoadingParams{
-		Message: "Creating worktree…",
-		Animate: showSpinner,
+		Message: fmt.Sprintf("Creating worktree %s…", branch),
+		Animate: human,
 		Work: func() error {
 			var e error
 			createResult, e = worktree.Create(domain.CreateParams{
@@ -151,6 +152,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 				Config:          result.Config,
 				EnvFromOverride: envOverride,
 				IfNotExists:     ifNotExists,
+				SkipHooks:       true,
 			})
 			return e
 		},
@@ -159,19 +161,45 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Phase 2 — on_create hooks as a distinct, titled phase. Skipped when the
+	// worktree already existed (its hooks already ran on first creation).
+	if !createResult.AlreadyExists {
+		if hookErr := shared.RunCreateHooksPhase(shared.CreateHooksPhaseParams{
+			Cmd:          cmd,
+			ShowHeader:   human,
+			ProjectDir:   result.ProjectDir,
+			WorktreePath: createResult.Path,
+			Branch:       branch,
+			FromBranch:   fromBranch,
+			Hooks:        result.Config.Project.Hooks.OnCreate,
+		}); hookErr != nil {
+			return hookErr
+		}
+	}
+
 	if format == domain.OutputJSON {
 		return output.WriteWorktreeCreateJSON(cmd.OutOrStdout(), createResult)
 	}
 
+	// Phase 3 — the recap, with a jump-in `wtm go` step.
 	output.Frame(cmd.OutOrStdout(), func() {
-		if createResult.AlreadyExists {
-			output.Success(cmd.OutOrStdout(), fmt.Sprintf("Worktree %s already exists at %s", branch, createResult.Path))
-		} else {
-			output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created worktree %s at %s", branch, createResult.Path))
-		}
+		output.FormatCreateResult(cmd.OutOrStdout(), output.CreateResultParams{
+			Branch:        branch,
+			AlreadyExists: createResult.AlreadyExists,
+			From:          fromBranch,
+			EnvStrategy:   string(createResult.Metadata.EnvStrategy),
+			Path:          createDisplayPath(result.Config, createResult.Path),
+			GoCommand:     fmt.Sprintf(domain.GoCommandFmt, branch),
+		})
 	})
 
 	return nil
+}
+
+// createDisplayPath renders the new worktree as base_path/<name>, matching how
+// worktrees are conceptually located, instead of a long absolute path.
+func createDisplayPath(config domain.Config, path string) string {
+	return filepath.Join(config.Project.Worktrees.BasePath, filepath.Base(path))
 }
 
 type createWizardParams struct {

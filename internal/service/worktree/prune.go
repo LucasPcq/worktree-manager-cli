@@ -83,6 +83,9 @@ func Prune(params domain.PruneParams, plan domain.PrunePlan) (domain.PruneResult
 			Force:      true, // safety was already decided during classification
 			BaseBranch: params.BaseBranch,
 			Config:     params.Config,
+			// on_clean hooks are run as a titled phase by the prune command before
+			// this removal loop (mirrors clean), so Clean skips them here.
+			SkipHooks: true,
 		})
 		if err != nil && !errors.Is(err, domain.ErrWorktreeNotFound) {
 			return result, err

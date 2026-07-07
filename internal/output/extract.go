@@ -32,6 +32,8 @@ func PrintExtractResult(w io.Writer, result domain.ExtractResult) {
 	Blank(w)
 	InfoLine(w, "source", result.SourceBranch+" · "+sourceState(result.Kept))
 	InfoLine(w, "worktree", result.TargetPath)
+	Blank(w)
+	GoHint(w, fmt.Sprintf(domain.GoCommandFmt, result.TargetBranch))
 }
 
 // sourceState describes what happened to the source worktree after a clean

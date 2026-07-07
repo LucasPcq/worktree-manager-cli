@@ -81,19 +81,17 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		return domain.CreateResult{}, err
 	}
 
-	if len(params.Config.Project.Hooks.OnCreate) > 0 {
-		hookErr := hooks.RunHooks(hooks.RunHooksParams{
-			Hooks:   params.Config.Project.Hooks.OnCreate,
-			WorkDir: worktreePath,
-			Vars: rules.TemplateVars{
-				Worktree:   worktreePath,
-				Branch:     params.Branch,
-				Root:       mainPath,
-				FromBranch: params.FromBranch,
-			},
-		})
-		if hookErr != nil {
-			return domain.CreateResult{}, fmt.Errorf("on_create hooks: %w", hookErr)
+	// on_create hooks run inline unless the caller opts to run them as a separate
+	// phase (create's phased output) via SkipHooks.
+	if !params.SkipHooks {
+		if err := RunCreateHooks(domain.CreateHooksParams{
+			ProjectDir:   params.ProjectDir,
+			WorktreePath: worktreePath,
+			Branch:       params.Branch,
+			FromBranch:   params.FromBranch,
+			Hooks:        params.Config.Project.Hooks.OnCreate,
+		}); err != nil {
+			return domain.CreateResult{}, err
 		}
 	}
 
@@ -102,6 +100,32 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		Path:     worktreePath,
 		Metadata: metadata,
 	}, nil
+}
+
+// RunCreateHooks executes the on_create hooks in the new worktree, streaming their
+// output. It is a no-op when no hooks are configured. Exposed so `create` can run
+// them as a distinct, titled phase after the silent creation spinner.
+func RunCreateHooks(params domain.CreateHooksParams) error {
+	if len(params.Hooks) == 0 {
+		return nil
+	}
+	mainPath, err := infra.FindMainWorktreePath(infra.FindMainWorktreeParams{ProjectDir: params.ProjectDir})
+	if err != nil {
+		return fmt.Errorf("find main worktree: %w", err)
+	}
+	if err := hooks.RunHooks(hooks.RunHooksParams{
+		Hooks:   params.Hooks,
+		WorkDir: params.WorktreePath,
+		Vars: rules.TemplateVars{
+			Worktree:   params.WorktreePath,
+			Branch:     params.Branch,
+			Root:       mainPath,
+			FromBranch: params.FromBranch,
+		},
+	}); err != nil {
+		return fmt.Errorf("on_create hooks: %w", err)
+	}
+	return nil
 }
 
 // parentWorktreePath resolves the on-disk worktree of the parent branch, used by

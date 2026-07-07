@@ -118,7 +118,7 @@ func runEditByName(params editByNameParams) error {
 	}
 
 	output.Frame(params.Cmd.OutOrStdout(), func() {
-		output.Success(params.Cmd.OutOrStdout(), fmt.Sprintf("Updated profile %q", updated.Name))
+		output.Update(params.Cmd.OutOrStdout(), fmt.Sprintf("Updated profile %q", updated.Name))
 	})
 	return nil
 }

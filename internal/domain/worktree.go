@@ -96,6 +96,20 @@ type CreateParams struct {
 	Config          Config
 	EnvFromOverride string
 	IfNotExists     bool
+	// SkipHooks leaves on_create hooks unrun so the caller can execute them as a
+	// separate, titled phase (used by `create` for its phased output). Callers that
+	// want hooks to run inline (extract, checkout) leave it false.
+	SkipHooks bool
+}
+
+// CreateHooksParams holds inputs for running on_create hooks as a standalone phase,
+// after the worktree exists.
+type CreateHooksParams struct {
+	ProjectDir   string
+	WorktreePath string
+	Branch       string
+	FromBranch   string
+	Hooks        []HookCommand
 }
 
 // CreateResult holds the output of a successful worktree creation.
@@ -116,6 +130,18 @@ type CleanParams struct {
 	// worktree has no recorded parent of its own.
 	BaseBranch string
 	Config     Config
+	// SkipHooks leaves on_clean hooks unrun so the caller can execute them as a
+	// separate, titled phase before removal (used by `clean` for its phased output).
+	SkipHooks bool
+}
+
+// CleanHooksParams holds inputs for running on_clean hooks as a standalone phase,
+// before the worktree directory is removed.
+type CleanHooksParams struct {
+	ProjectDir   string
+	WorktreePath string
+	Branch       string
+	Hooks        []HookCommand
 }
 
 // ForceCleanParams holds inputs for the forced worktree recovery: delete the
