@@ -126,6 +126,7 @@ func buildPrefill(stateDir string) (*initwizard.SectionPrefill, error) {
 		EnvStrategy:  string(cfg.Env.Strategy),
 		EnvCopyFiles: toSet(cfg.Env.CopyFiles),
 		OnCreate:     cfg.Hooks.OnCreate,
+		OnClean:      cfg.Hooks.OnClean,
 	}, nil
 }
 
@@ -160,12 +161,25 @@ func buildReinitAnswers(cmd *cobra.Command, stateDir string, detection domain.In
 	if installCommand == "" {
 		installCommand = rules.InstallCommandFromHooks(cfg.Hooks.OnCreate)
 	}
+	cleanCommand, _ := cmd.Flags().GetString(domain.FlagCleanCommand)
 
-	return rules.BuildProjectAnswers(rules.InitProjectFlags{
+	answers, err := rules.BuildProjectAnswers(rules.InitProjectFlags{
 		BaseBranch:     baseBranch,
 		EnvStrategy:    envStrategy,
 		InstallCommand: installCommand,
+		CleanCommand:   cleanCommand,
 	}, detection)
+	if err != nil {
+		return domain.InitProjectAnswers{}, err
+	}
+
+	// on_clean has no single-command reverse like the install command, so preserve
+	// the existing list when --clean-command was not provided.
+	if cleanCommand == "" {
+		answers.OnClean = cfg.Hooks.OnClean
+	}
+
+	return answers, nil
 }
 
 // applyConfigReinit rewrites config.toml, updating only the requested sections
@@ -185,6 +199,7 @@ func applyConfigReinit(cmd *cobra.Command, stateDir string, sections []string, a
 	}
 	if contains(sections, domain.SectionHooks) {
 		cfg.Hooks.OnCreate = answers.OnCreate
+		cfg.Hooks.OnClean = answers.OnClean
 	}
 
 	if err := config.WriteProjectConfig(config.WriteProjectConfigParams{StateDir: stateDir, Config: cfg}); err != nil {

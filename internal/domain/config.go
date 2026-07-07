@@ -31,6 +31,7 @@ type EnvConfig struct {
 // HooksConfig defines lifecycle hooks as lists of commands.
 type HooksConfig struct {
 	OnCreate []HookCommand `toml:"on_create" json:"on_create"`
+	OnClean  []HookCommand `toml:"on_clean" json:"on_clean"`
 }
 
 // GlobalConfig maps to ~/.config/wtm/config.toml (user-level configuration).

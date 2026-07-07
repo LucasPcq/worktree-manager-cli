@@ -46,6 +46,12 @@ var (
 	// ErrCannotCleanParent is returned when trying to clean the parent worktree.
 	ErrCannotCleanParent = errors.New("cannot clean the parent worktree")
 
+	// ErrWorktreeRemoveFailed wraps a failure of the `git worktree remove` step in
+	// Clean, so the command layer can offer the interactive `sudo rm -rf` fallback
+	// (files owned by root — e.g. Docker — that git cannot delete as the current
+	// user) instead of aborting.
+	ErrWorktreeRemoveFailed = errors.New("worktree removal failed")
+
 	// ErrGHNotInstalled is returned when the gh CLI is not found on PATH.
 	ErrGHNotInstalled = errors.New("gh CLI not found — install it from https://cli.github.com")
 

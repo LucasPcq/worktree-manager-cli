@@ -21,9 +21,11 @@ type InitProjectFlags struct {
 	BaseBranch     string
 	EnvStrategy    string
 	InstallCommand string
+	CleanCommand   string
 	NonInteractive bool
 	SkipEnv        bool
 	SkipHooks      bool
+	SkipClean      bool
 }
 
 // BuildGlobalAnswers resolves global config from flags, falling back to the
@@ -95,6 +97,14 @@ func BuildProjectAnswers(flags InitProjectFlags, detection domain.InitDetectionR
 				answers.OnCreate = append(answers.OnCreate, domain.HookCommand{Cmd: installCommand, Cwd: pkg})
 			}
 		}
+	}
+
+	// on_clean has no auto-detected seed (nothing to detect); it stays empty
+	// unless --clean-command is provided.
+	if flags.SkipClean {
+		answers.SkipClean = true
+	} else if flags.CleanCommand != "" {
+		answers.OnClean = append(answers.OnClean, domain.HookCommand{Cmd: flags.CleanCommand})
 	}
 
 	return answers, nil

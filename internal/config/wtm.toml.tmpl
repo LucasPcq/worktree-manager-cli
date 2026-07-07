@@ -47,3 +47,22 @@ on_create = [
 {{- end }}
 ]
 {{- end }}
+
+# Commands run right before removing a worktree (e.g. tear down external
+# resources like Docker). A non-zero exit aborts the removal unless the entry
+# sets continue_on_error.
+{{- if .SkipClean }}
+# Skipped during init. Add teardown commands to run before removal, e.g.:
+#   on_clean = ["docker compose down"]
+on_clean = []
+{{- else }}
+on_clean = [
+{{- range .OnClean }}
+{{- if or .Cwd .ContinueOnError }}
+  { cmd = "{{ .Cmd }}"{{ if .Cwd }}, cwd = "{{ .Cwd }}"{{ end }}{{ if .ContinueOnError }}, continue_on_error = true{{ end }} },
+{{- else }}
+  "{{ .Cmd }}",
+{{- end }}
+{{- end }}
+]
+{{- end }}

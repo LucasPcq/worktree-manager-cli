@@ -16,15 +16,17 @@ import (
 // the same builders feed both the full init wizard and the targeted
 // `wtm init --only <section>` re-init wizard.
 const (
-	stepBasePath    = "base_path"
-	stepBaseBranch  = "base_branch"
-	stepEnvGate     = "env_gate"
-	stepEnvStrategy = "env_strategy"
-	stepEnvFiles    = "env_files"
-	stepHooksGate   = "hooks_gate"
-	stepHooks       = "hooks"
-	stepDocker      = "docker"
-	stepScripts     = "scripts"
+	stepBasePath       = "base_path"
+	stepBaseBranch     = "base_branch"
+	stepEnvGate        = "env_gate"
+	stepEnvStrategy    = "env_strategy"
+	stepEnvFiles       = "env_files"
+	stepHooksGate      = "hooks_gate"
+	stepHooks          = "hooks"
+	stepHooksCleanGate = "hooks_clean_gate"
+	stepHooksClean     = "hooks_clean"
+	stepDocker         = "docker"
+	stepScripts        = "scripts"
 )
 
 // stepSet accumulates wizard steps and records each one's index by key.
@@ -58,6 +60,7 @@ type SectionPrefill struct {
 	EnvStrategy   string
 	EnvCopyFiles  map[string]bool
 	OnCreate      []domain.HookCommand
+	OnClean       []domain.HookCommand
 	DockerFiles   map[string]bool
 	ScriptIndices map[int]bool
 }
@@ -85,6 +88,9 @@ func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (
 
 	s.add(stepHooksGate, hooksGate(detection))
 	addHooksSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepHooksGate)), nil)
+
+	s.add(stepHooksCleanGate, hooksCleanGate())
+	addHooksCleanSteps(s, autoSkipWhenGateSkipped(s.at(stepHooksCleanGate)), nil)
 
 	final, err := runWizard(runWizardParams{steps: s.steps, projectDir: projectDir, holder: holder})
 	if err != nil {
@@ -142,6 +148,7 @@ func RunSectionWizard(params SectionWizardParams) (domain.InitProjectAnswers, er
 			addEnvSteps(s, params.Detection, nil, params.Prefill)
 		case domain.SectionHooks:
 			addHooksSteps(s, params.Detection, nil, params.Prefill)
+			addHooksCleanSteps(s, nil, params.Prefill)
 		}
 	}
 
@@ -398,6 +405,38 @@ func addHooksSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip fu
 	})
 }
 
+func hooksCleanGate() components.Step {
+	return sectionGate(sectionGateParams{
+		Name: "Pre-clean hooks",
+		Description: "Run commands automatically right before a worktree is removed — typically tearing down " +
+			"external resources like Docker — so nothing is left orphaned after cleanup.",
+		ConfigureLabel: "Configure teardown commands",
+		SkipLabel:      "Skip — no teardown commands",
+	})
+}
+
+// addHooksCleanSteps adds the on_clean hook-list step. Unlike post-create hooks
+// there is nothing to auto-detect, so the list starts empty (or from the prefill
+// on re-init).
+func addHooksCleanSteps(s *stepSet, autoSkip func(components.WizardModel) bool, prefill *SectionPrefill) {
+	var hooks []domain.HookCommand
+	if prefill != nil {
+		hooks = prefill.OnClean
+	}
+
+	s.add(stepHooksClean, components.Step{
+		Name: "Pre-clean hooks",
+		Model: components.NewHookList(components.NewHookListParams{
+			Title:       "Pre-clean hooks",
+			Description: "Commands run before removing a worktree (e.g. `docker compose down`). Add, edit, remove or reorder them — then select Done.",
+			Hooks:       hooks,
+		}),
+		Summary:  hookListSummary,
+		AutoSkip: autoSkip,
+		Callout:  true,
+	})
+}
+
 func addServicesSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool, prefill *SectionPrefill) {
 	if len(detection.DockerComposeFiles) > 0 {
 		items := make([]components.MultiSelectItem, 0, len(detection.DockerComposeFiles))
@@ -501,6 +540,13 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 			answers.SkipHooks = true
 		} else if m, ok := steps[i].Model.(components.HookListModel); ok {
 			answers.OnCreate = m.Hooks()
+		}
+	}
+	if i := at(stepHooksClean); i >= 0 {
+		if final.Skipped(i) {
+			answers.SkipClean = true
+		} else if m, ok := steps[i].Model.(components.HookListModel); ok {
+			answers.OnClean = m.Hooks()
 		}
 	}
 

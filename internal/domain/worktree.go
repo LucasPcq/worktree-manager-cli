@@ -118,6 +118,16 @@ type CleanParams struct {
 	Config     Config
 }
 
+// ForceCleanParams holds inputs for the forced worktree recovery: delete the
+// directory with `sudo rm -rf`, prune the stale git metadata, then delete the
+// local branch. Used when `git worktree remove` failed on undeletable files.
+type ForceCleanParams struct {
+	ProjectDir string
+	Path       string
+	Branch     string
+	Force      bool
+}
+
 // ReparentBatchParams holds inputs for reparenting one or more worktrees onto the
 // same new parent in a single pass. A single-element Branches is the ordinary
 // one-worktree reparent.
