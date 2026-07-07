@@ -137,6 +137,7 @@ func runExtract(cmd *cobra.Command, args []string) error {
 		source:      source,
 		needSource:  needSource,
 		interactive: interactive,
+		human:       rules.IsHumanFormat(format),
 		yes:         yes,
 		loadFiles:   extractFilesLoader(statuses),
 	})
@@ -366,8 +367,11 @@ type resolveParams struct {
 	// interactive is false under --yes, no TTY, or --output json: a required
 	// selection with no flag then errors instead of opening a picker.
 	interactive bool
-	yes         bool
-	loadFiles   func(branch string) []domain.ExtractFile
+	// human gates the on_create hooks section header (text format, incl. --yes),
+	// mirroring create/clean; it is broader than interactive.
+	human     bool
+	yes       bool
+	loadFiles func(branch string) []domain.ExtractFile
 }
 
 // extractSelection is the fully-resolved plan: which source, its path, the files,
@@ -456,6 +460,7 @@ func resolveSelectionAndTarget(p resolveParams) (extractSelection, error) {
 		choice:       wizard.Target,
 		create:       wizard.Create,
 		interactive:  p.interactive,
+		human:        p.human,
 	})
 	if err != nil {
 		return extractSelection{}, err
@@ -582,6 +587,8 @@ type resolveTargetParams struct {
 	// interactive is false under --yes / no TTY / --output json: the source
 	// fast-forward is then a non-prompting decision (skip unless --ff).
 	interactive bool
+	// human gates the on_create hooks section header (text format, incl. --yes).
+	human bool
 }
 
 // resolveTarget resolves the destination worktree from the --to flag or the
@@ -608,6 +615,8 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 			_ = branch.FastForwardIfBehind(branch.BranchParams{ProjectDir: params.cfg.ProjectDir, Branch: fromBranch})
 		}
 		return createTarget(createTargetParams{
+			cmd:        params.cmd,
+			showHeader: params.human,
 			cfg:        params.cfg,
 			branch:     toFlag,
 			fromBranch: fromBranch,
@@ -631,7 +640,13 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 	if params.create.FastForwardSource && !executeFastForwardSource(params.cfg.ProjectDir, params.create.FromBranch) {
 		return extractTarget{}, domain.ErrUserAborted
 	}
-	return createTarget(createTargetParams{cfg: params.cfg, branch: params.create.BranchName, fromBranch: params.create.FromBranch})
+	return createTarget(createTargetParams{
+		cmd:        params.cmd,
+		showHeader: params.human,
+		cfg:        params.cfg,
+		branch:     params.create.BranchName,
+		fromBranch: params.create.FromBranch,
+	})
 }
 
 type defaultParentParams struct {
@@ -657,6 +672,8 @@ func defaultParent(params defaultParentParams) string {
 }
 
 type createTargetParams struct {
+	cmd        *cobra.Command
+	showHeader bool
 	cfg        shared.ConfigResult
 	branch     string
 	fromBranch string
@@ -669,8 +686,21 @@ func createTarget(params createTargetParams) (extractTarget, error) {
 		Branch:     params.branch,
 		FromBranch: params.fromBranch,
 		Config:     params.cfg.Config,
+		SkipHooks:  true,
 	})
 	if err != nil {
+		return extractTarget{}, err
+	}
+	// on_create hooks as a distinct, titled phase (shared with create/checkout).
+	if err := shared.RunCreateHooksPhase(shared.CreateHooksPhaseParams{
+		Cmd:          params.cmd,
+		ShowHeader:   params.showHeader,
+		ProjectDir:   params.cfg.ProjectDir,
+		WorktreePath: res.Path,
+		Branch:       res.Branch,
+		FromBranch:   params.fromBranch,
+		Hooks:        params.cfg.Config.Project.Hooks.OnCreate,
+	}); err != nil {
 		return extractTarget{}, err
 	}
 	return extractTarget{path: res.Path, branch: res.Branch}, nil

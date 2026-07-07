@@ -224,6 +224,27 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 		stopWorktreeServices(cmd, cfg.ProjectDir, c.Branch)
 	}
 
+	// Run on_clean hooks for every selected worktree as a distinct, titled phase
+	// before the removal spinner (mirrors clean); Prune then skips them internally.
+	if onClean := cfg.Config.Project.Hooks.OnClean; len(onClean) > 0 {
+		if interactive {
+			output.HooksSection(cmd.ErrOrStderr(), domain.HooksTitleOnClean)
+		}
+		for _, c := range plan.Selected {
+			if c.Path == "" {
+				continue
+			}
+			if hookErr := worktree.RunCleanHooks(domain.CleanHooksParams{
+				ProjectDir:   cfg.ProjectDir,
+				WorktreePath: c.Path,
+				Branch:       c.Branch,
+				Hooks:        onClean,
+			}); hookErr != nil {
+				return hookErr
+			}
+		}
+	}
+
 	var result domain.PruneResult
 	err = components.RunLoading(components.LoadingParams{
 		Message: "Pruning worktrees…",

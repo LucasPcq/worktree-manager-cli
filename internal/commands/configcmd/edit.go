@@ -65,7 +65,9 @@ func runEdit(cmd *cobra.Command, _ []string) error {
 			})
 			return nil
 		}
-		output.Error(cmd.ErrOrStderr(), fmt.Sprintf("Config no longer valid: %v", err))
+		output.Frame(cmd.ErrOrStderr(), func() {
+			output.Error(cmd.ErrOrStderr(), fmt.Sprintf("Config no longer valid: %v", err))
+		})
 		return err
 	}
 

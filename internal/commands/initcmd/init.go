@@ -120,9 +120,10 @@ func ensureGlobalConfig(cmd *cobra.Command, flagged bool) error {
 	}
 
 	output.Frame(cmd.OutOrStdout(), func() {
-		output.Success(cmd.OutOrStdout(), "Global config saved.")
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), domain.MsgShellInitHint)
+		output.InitGlobalRecap(cmd.OutOrStdout(), output.InitGlobalRecapParams{
+			Fields:    rules.InitGlobalRecapFields(answers),
+			NextSteps: []string{domain.InitNextStepShell},
+		})
 	})
 
 	return nil
@@ -207,16 +208,21 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool)
 		return fmt.Errorf("write project config: %w", err)
 	}
 
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s", filepath.Join(stateDir, domain.ConfigFileName)))
-
 	if err := dumpProjectSchemas(stateDir); err != nil {
 		return err
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Message(cmd.OutOrStdout(), domain.MsgRelocateHint)
-	output.Message(cmd.OutOrStdout(), domain.MsgRunInitHint)
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.InitProjectRecap(cmd.OutOrStdout(), output.InitProjectRecapParams{
+			ConfigPath: rules.DisplayPath(dir, filepath.Join(stateDir, domain.ConfigFileName)),
+			Fields:     rules.InitProjectRecapFields(answers),
+			NextSteps: []string{
+				domain.InitNextStepCreate,
+				domain.InitNextStepRelocate,
+				domain.InitNextStepRunInit,
+			},
+		})
+	})
 	return nil
 }
 

@@ -40,6 +40,13 @@ type InitGlobalAnswers struct {
 	Shell ShellType
 }
 
+// RecapField is one aligned "label   value" row of a framed command recap (the
+// init config summary, the create result fields, etc.).
+type RecapField struct {
+	Label string
+	Value string
+}
+
 // InitProjectAnswers holds the wizard answers for project config setup.
 // The Skip* flags record sections the user opted out of (via the wizard skip
 // key or the --skip-* flags); they drive whether each section is written as

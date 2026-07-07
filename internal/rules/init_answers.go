@@ -2,9 +2,22 @@ package rules
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
+
+// DisplayPath renders target relative to base for readable output, falling back to
+// target unchanged when it lies outside base or cannot be made relative. Lexical
+// only: no filesystem access.
+func DisplayPath(base, target string) string {
+	rel, err := filepath.Rel(base, target)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return target
+	}
+	return rel
+}
 
 // InitGlobalFlags holds the raw --shell input for non-interactive init.
 type InitGlobalFlags struct {
@@ -108,6 +121,55 @@ func BuildProjectAnswers(flags InitProjectFlags, detection domain.InitDetectionR
 	}
 
 	return answers, nil
+}
+
+// InitGlobalRecapFields maps resolved global answers to the aligned label/value
+// rows of the framed init recap. Pure: no I/O.
+func InitGlobalRecapFields(answers domain.InitGlobalAnswers) []domain.RecapField {
+	return []domain.RecapField{
+		{Label: domain.InitRecapLabelShell, Value: string(answers.Shell)},
+	}
+}
+
+// InitProjectRecapFields maps resolved project answers to the aligned label/value
+// rows of the framed init recap. Opted-out sections render as "skipped"; on_create
+// is omitted entirely when empty. Pure: no I/O.
+func InitProjectRecapFields(answers domain.InitProjectAnswers) []domain.RecapField {
+	fields := []domain.RecapField{
+		{Label: domain.InitRecapLabelBasePath, Value: answers.BasePath},
+		{Label: domain.InitRecapLabelBaseBranch, Value: answers.BaseBranch},
+		{Label: domain.InitRecapLabelEnvStrategy, Value: initEnvValue(answers)},
+	}
+	if value := initHookValue(answers.SkipHooks, answers.OnCreate); value != "" {
+		fields = append(fields, domain.RecapField{Label: domain.InitRecapLabelOnCreate, Value: value})
+	}
+	if value := initHookValue(answers.SkipClean, answers.OnClean); value != "" {
+		fields = append(fields, domain.RecapField{Label: domain.InitRecapLabelOnClean, Value: value})
+	}
+	return fields
+}
+
+func initEnvValue(answers domain.InitProjectAnswers) string {
+	if answers.SkipEnv {
+		return domain.InitRecapValueSkippedTemplate
+	}
+	return string(answers.EnvStrategy)
+}
+
+// initHookValue renders a hook section for the recap: "skipped" when opted out,
+// empty (omitted row) when unset, else the first command with a "(+N more)" suffix.
+func initHookValue(skip bool, hooks []domain.HookCommand) string {
+	if skip {
+		return domain.InitRecapValueSkipped
+	}
+	if len(hooks) == 0 {
+		return ""
+	}
+	first := hooks[0].Cmd
+	if len(hooks) == 1 {
+		return first
+	}
+	return fmt.Sprintf(domain.InitRecapHookMoreFmt, first, len(hooks)-1)
 }
 
 // AutoServicesAnswers builds the services portion of InitProjectAnswers from

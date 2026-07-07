@@ -355,12 +355,24 @@ func doClean(cmd *cobra.Command, p doCleanParams) error {
 
 	stopWorktreeServices(cmd, params.ProjectDir, params.Branch)
 
-	// on_clean hooks stream their own output, so suppress the spinner when any
-	// are configured (mirrors create).
-	hasCleanHooks := len(params.Config.Project.Hooks.OnClean) > 0
+	// Run on_clean hooks as a distinct, titled phase before removal, so they don't
+	// fight the removal spinner for the terminal; Clean itself then skips them.
+	params.SkipHooks = true
+	human := rules.IsHumanFormat(format)
+	if hookErr := shared.RunCleanHooksPhase(shared.CleanHooksPhaseParams{
+		Cmd:          cmd,
+		ShowHeader:   human,
+		ProjectDir:   params.ProjectDir,
+		WorktreePath: wtPath,
+		Branch:       params.Branch,
+		Hooks:        params.Config.Project.Hooks.OnClean,
+	}); hookErr != nil {
+		return hookErr
+	}
+
 	err := components.RunLoading(components.LoadingParams{
-		Message: "Cleaning worktree…",
-		Animate: rules.IsHumanFormat(format) && !hasCleanHooks,
+		Message: fmt.Sprintf("Removing worktree %s…", params.Branch),
+		Animate: human,
 		Work:    func() error { return worktree.Clean(params) },
 	})
 	if errors.Is(err, domain.ErrWorktreeNotFound) {

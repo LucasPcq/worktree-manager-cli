@@ -61,8 +61,17 @@ func Clean(params domain.CleanParams) error {
 		return domain.ErrCannotCleanParent
 	}
 
-	if err := runOnCleanHooks(params, wt.Path); err != nil {
-		return err
+	// on_clean hooks run inline unless the caller opts to run them as a separate
+	// phase (clean's phased output) via SkipHooks.
+	if !params.SkipHooks {
+		if err := RunCleanHooks(domain.CleanHooksParams{
+			ProjectDir:   params.ProjectDir,
+			WorktreePath: wt.Path,
+			Branch:       params.Branch,
+			Hooks:        params.Config.Project.Hooks.OnClean,
+		}); err != nil {
+			return err
+		}
 	}
 
 	if err := infra.RemoveWorktree(infra.RemoveWorktreeParams{
@@ -84,13 +93,14 @@ func Clean(params domain.CleanParams) error {
 	return nil
 }
 
-// runOnCleanHooks runs the configured on_clean hooks in the worktree directory
+// RunCleanHooks runs the configured on_clean hooks in the worktree directory
 // before it is removed (e.g. `docker compose down`). It runs after wtm has
 // stopped its own services and before the directory is deleted, so hooks can
 // still reference files being removed. A failing hook aborts the removal unless
-// the entry sets continue_on_error.
-func runOnCleanHooks(params domain.CleanParams, worktreePath string) error {
-	if len(params.Config.Project.Hooks.OnClean) == 0 {
+// the entry sets continue_on_error. Exposed so `clean` can run them as a distinct,
+// titled phase before the removal spinner.
+func RunCleanHooks(params domain.CleanHooksParams) error {
+	if len(params.Hooks) == 0 {
 		return nil
 	}
 
@@ -102,10 +112,10 @@ func runOnCleanHooks(params domain.CleanParams, worktreePath string) error {
 	}
 
 	if err := hooks.RunHooks(hooks.RunHooksParams{
-		Hooks:   params.Config.Project.Hooks.OnClean,
-		WorkDir: worktreePath,
+		Hooks:   params.Hooks,
+		WorkDir: params.WorktreePath,
 		Vars: rules.TemplateVars{
-			Worktree: worktreePath,
+			Worktree: params.WorktreePath,
 			Branch:   params.Branch,
 			Root:     mainPath,
 		},

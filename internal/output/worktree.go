@@ -251,6 +251,61 @@ func WriteWorktreeCreateJSON(w io.Writer, v any) error {
 	return encodeJSON(w, v)
 }
 
+// CreateResultParams holds inputs for the framed create conclusion.
+type CreateResultParams struct {
+	Branch        string
+	AlreadyExists bool
+	From          string
+	EnvStrategy   string
+	Path          string
+	// GoCommand is the ready-to-run jump-in command (e.g. "wtm go feat-x").
+	GoCommand string
+}
+
+// FormatCreateResult prints the create conclusion: a ✓ headline, an aligned
+// summary (from / env / path), then a highlighted `wtm go` step to jump straight
+// into the new worktree. The idempotent already-exists case collapses to a single
+// line + the jump-in step. Raw body — the caller's frame owns the outer padding.
+func FormatCreateResult(w io.Writer, p CreateResultParams) {
+	if p.AlreadyExists {
+		Success(w, fmt.Sprintf("Worktree %s already exists at %s", p.Branch, p.Path))
+		Blank(w)
+		GoHint(w, p.GoCommand)
+		return
+	}
+
+	Success(w, fmt.Sprintf("Created worktree %s", p.Branch))
+	Blank(w)
+	writeAlignedFields(w, []domain.RecapField{
+		{Label: domain.CreateRecapLabelFrom, Value: p.From},
+		{Label: domain.CreateRecapLabelEnv, Value: p.EnvStrategy},
+		{Label: domain.CreateRecapLabelPath, Value: p.Path},
+	})
+	Blank(w)
+	GoHint(w, p.GoCommand)
+}
+
+// GoHint prints the highlighted jump-in step shared by every worktree-creating
+// command (create, extract, checkout): a primary arrow + the bold `wtm go` command.
+func GoHint(w io.Writer, goCommand string) {
+	fmt.Fprintf(w, "%s%s  %s\n", Indent, styles.Primary.Render("→"), styles.Bold.Render(goCommand))
+}
+
+// writeAlignedFields prints indented "label   value" rows with values aligned to a
+// common column. Labels are plain ASCII, so byte length equals printable width.
+func writeAlignedFields(w io.Writer, fields []domain.RecapField) {
+	width := 0
+	for _, f := range fields {
+		if l := len(f.Label); l > width {
+			width = l
+		}
+	}
+	for _, f := range fields {
+		pad := strings.Repeat(" ", width-len(f.Label))
+		fmt.Fprintf(w, "%s%s%s  %s\n", Indent, styles.Muted.Render(f.Label), pad, f.Value)
+	}
+}
+
 // WriteWorktreeCleanJSONParams holds inputs for the clean payload.
 type WriteWorktreeCleanJSONParams struct {
 	Branch        string                  `json:"branch"`

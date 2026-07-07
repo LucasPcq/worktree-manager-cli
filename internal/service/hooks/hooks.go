@@ -63,15 +63,21 @@ func runSingleHook(hook domain.HookCommand, defaultDir string, output io.Writer)
 	cmd.Stdout = output
 	cmd.Stderr = &stderr
 
+	// A hook prints in three visually separated beats — the command being run, its
+	// live output, then the result line — so a streamed install is easy to read.
+	fmt.Fprintln(output)
 	fmt.Fprintf(output, "  → %s", hook.Cmd)
 	if hook.Cwd != "" {
 		fmt.Fprintf(output, " (cwd: %s)", hook.Cwd)
 	}
 	fmt.Fprintln(output)
+	fmt.Fprintln(output)
 
 	start := time.Now()
 	err := cmd.Run()
 	elapsed := time.Since(start)
+
+	fmt.Fprintln(output)
 
 	if err != nil {
 		fmt.Fprintf(output, "  ✗ %s (%s)\n", hook.Cmd, formatDuration(elapsed))
