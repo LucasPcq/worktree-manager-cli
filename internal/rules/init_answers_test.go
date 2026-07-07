@@ -38,7 +38,7 @@ func TestBuildProjectAnswers_FlagsWinOverDetection(t *testing.T) {
 	detection := domain.InitDetectionResult{
 		BaseBranch:     "develop",
 		InstallCommand: "npm install",
-		EnvFiles:       []string{".env"},
+		EnvFiles:       []domain.EnvFile{{Target: ".env", Template: ".env.example"}},
 	}
 	got, err := rules.BuildProjectAnswers(rules.InitProjectFlags{
 		BasePath:       "../wt",
@@ -58,8 +58,8 @@ func TestBuildProjectAnswers_FlagsWinOverDetection(t *testing.T) {
 	if len(got.OnCreate) == 0 || got.OnCreate[0].Cmd != "pnpm install" {
 		t.Errorf("install flag should win in on_create: %+v", got.OnCreate)
 	}
-	if len(got.EnvCopyFiles) != 1 || got.EnvCopyFiles[0] != ".env" {
-		t.Errorf("detected env files dropped: %+v", got.EnvCopyFiles)
+	if len(got.EnvFiles) != 1 || got.EnvFiles[0].Target != ".env" {
+		t.Errorf("detected env files dropped: %+v", got.EnvFiles)
 	}
 }
 
@@ -100,7 +100,7 @@ func TestBuildProjectAnswers_InvalidEnvStrategy(t *testing.T) {
 func TestBuildProjectAnswers_SkipEnv(t *testing.T) {
 	detection := domain.InitDetectionResult{
 		BaseBranch: "main",
-		EnvFiles:   []string{".env", ".env.local"},
+		EnvFiles:   []domain.EnvFile{{Target: ".env"}, {Target: ".env.local", Local: true}},
 	}
 	got, err := rules.BuildProjectAnswers(rules.InitProjectFlags{SkipEnv: true}, detection)
 	if err != nil {
@@ -112,8 +112,8 @@ func TestBuildProjectAnswers_SkipEnv(t *testing.T) {
 	if got.EnvStrategy != "" {
 		t.Errorf("EnvStrategy = %q, want empty when skipped", got.EnvStrategy)
 	}
-	if len(got.EnvCopyFiles) != 0 {
-		t.Errorf("EnvCopyFiles = %v, want none when skipped", got.EnvCopyFiles)
+	if len(got.EnvFiles) != 0 {
+		t.Errorf("EnvFiles = %v, want none when skipped", got.EnvFiles)
 	}
 }
 
@@ -182,6 +182,76 @@ func TestAutoServicesAnswers(t *testing.T) {
 	}
 	if len(got.SelectedPackageScripts) != 1 {
 		t.Errorf("scripts not carried: %v", got.SelectedPackageScripts)
+	}
+}
+
+func TestInitProjectRecapFields_ResolvedValues(t *testing.T) {
+	fields := rules.InitProjectRecapFields(domain.InitProjectAnswers{
+		BasePath:    "../.trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+		OnCreate:    []domain.HookCommand{{Cmd: "pnpm install"}, {Cmd: "pnpm install", Cwd: "packages/a"}},
+		OnClean:     []domain.HookCommand{{Cmd: "docker compose down"}},
+	})
+	got := map[string]string{}
+	for _, f := range fields {
+		got[f.Label] = f.Value
+	}
+	if got[domain.InitRecapLabelBasePath] != "../.trees" || got[domain.InitRecapLabelBaseBranch] != "main" {
+		t.Errorf("base fields wrong: %+v", got)
+	}
+	if got[domain.InitRecapLabelEnvStrategy] != string(domain.EnvStrategyExample) {
+		t.Errorf("env_strategy = %q, want %q", got[domain.InitRecapLabelEnvStrategy], domain.EnvStrategyExample)
+	}
+	if got[domain.InitRecapLabelOnCreate] != "pnpm install  (+1 more)" {
+		t.Errorf("on_create = %q, want condensed +more form", got[domain.InitRecapLabelOnCreate])
+	}
+	if got[domain.InitRecapLabelOnClean] != "docker compose down" {
+		t.Errorf("on_clean = %q, want the single hook command", got[domain.InitRecapLabelOnClean])
+	}
+}
+
+func TestInitProjectRecapFields_Skipped(t *testing.T) {
+	fields := rules.InitProjectRecapFields(domain.InitProjectAnswers{
+		BasePath:   "../.trees",
+		BaseBranch: "main",
+		SkipEnv:    true,
+		SkipHooks:  true,
+	})
+	got := map[string]string{}
+	for _, f := range fields {
+		got[f.Label] = f.Value
+	}
+	if got[domain.InitRecapLabelEnvStrategy] != domain.InitRecapValueSkippedTemplate {
+		t.Errorf("env_strategy = %q, want %q", got[domain.InitRecapLabelEnvStrategy], domain.InitRecapValueSkippedTemplate)
+	}
+	if got[domain.InitRecapLabelOnCreate] != domain.InitRecapValueSkipped {
+		t.Errorf("on_create = %q, want %q", got[domain.InitRecapLabelOnCreate], domain.InitRecapValueSkipped)
+	}
+}
+
+// TestInitProjectRecapFields_OmitsEmptyOnCreate asserts the on_create row disappears
+// (rather than showing a blank value) when no hook was configured and none skipped.
+func TestInitProjectRecapFields_OmitsEmptyOnCreate(t *testing.T) {
+	fields := rules.InitProjectRecapFields(domain.InitProjectAnswers{
+		BasePath:    "../.trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+	})
+	for _, f := range fields {
+		if f.Label == domain.InitRecapLabelOnCreate {
+			t.Errorf("on_create row should be omitted when empty, got %q", f.Value)
+		}
+	}
+}
+
+func TestDisplayPath(t *testing.T) {
+	if got := rules.DisplayPath(rules.DisplayPathParams{Base: "/repo", Target: "/repo/.git/wtm/config.toml"}); got != ".git/wtm/config.toml" {
+		t.Errorf("DisplayPath inside base = %q, want relative", got)
+	}
+	// A target outside base keeps the absolute path rather than an ugly ../.. climb.
+	if got := rules.DisplayPath(rules.DisplayPathParams{Base: "/repo", Target: "/elsewhere/wtm/config.toml"}); got != "/elsewhere/wtm/config.toml" {
+		t.Errorf("DisplayPath outside base = %q, want unchanged absolute", got)
 	}
 }
 

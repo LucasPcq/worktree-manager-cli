@@ -247,7 +247,6 @@ base_branch = "main"
 
 [env]
 strategy = "example"
-copy_files = []
 
 [hooks]
 on_create = []

@@ -8,12 +8,13 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // CopyEnvFilesParams holds inputs for provisioning .env files.
 type CopyEnvFilesParams struct {
 	Strategy           domain.EnvStrategy
-	CopyFiles          []string
+	Files              []domain.EnvFile
 	TargetDir          string
 	MainWorktreePath   string
 	ParentWorktreePath string
@@ -21,7 +22,7 @@ type CopyEnvFilesParams struct {
 
 // CopyEnvFiles provisions .env files into a new worktree according to the chosen strategy.
 func CopyEnvFiles(params CopyEnvFilesParams) error {
-	for _, file := range params.CopyFiles {
+	for _, file := range params.Files {
 		if err := copyEnvFile(params, file); err != nil {
 			return err
 		}
@@ -29,28 +30,50 @@ func CopyEnvFiles(params CopyEnvFilesParams) error {
 	return nil
 }
 
-func copyEnvFile(params CopyEnvFilesParams, file string) error {
-	dst := filepath.Join(params.TargetDir, file)
+func copyEnvFile(params CopyEnvFilesParams, file domain.EnvFile) error {
+	dst := filepath.Join(params.TargetDir, file.Target)
 
 	switch params.Strategy {
 	case domain.EnvStrategyExample:
 		return copyFromExample(params.MainWorktreePath, dst, file)
 	case domain.EnvStrategyMain:
-		return copyFromDir(params.MainWorktreePath, dst, file)
+		return copyFromDir(params.MainWorktreePath, dst, file.Target)
 	case domain.EnvStrategyParent:
-		return copyFromParent(params, dst, file)
+		return copyFromParent(params, dst, file.Target)
 	default:
 		return fmt.Errorf("unknown env strategy: %s", params.Strategy)
 	}
 }
 
-func copyFromExample(mainPath string, dst string, file string) error {
-	src := filepath.Join(mainPath, file+".example")
-	if !fileExists(src) {
-		fmt.Fprintf(os.Stderr, "warning: %s.example not found, skipping\n", file)
+// copyFromExample provisions a value file from its committed template. It uses the
+// template pinned by detection (file.Template) when present, otherwise probes the
+// known template candidates for file.Target in priority order.
+func copyFromExample(mainPath string, dst string, file domain.EnvFile) error {
+	src := resolveTemplateSrc(mainPath, file)
+	if src == "" {
+		fmt.Fprintf(os.Stderr, "warning: no template found for %s, skipping\n", file.Target)
 		return nil
 	}
 	return copyFile(src, dst)
+}
+
+// resolveTemplateSrc returns the absolute path of the template to copy for file,
+// or "" when none exists on disk. Both Target and Template are repo-relative.
+func resolveTemplateSrc(mainPath string, file domain.EnvFile) string {
+	if file.Template != "" {
+		src := filepath.Join(mainPath, file.Template)
+		if fileExists(src) {
+			return src
+		}
+		return ""
+	}
+	for _, candidate := range rules.TemplateCandidates(file.Target) {
+		src := filepath.Join(mainPath, candidate)
+		if fileExists(src) {
+			return src
+		}
+	}
+	return ""
 }
 
 func copyFromDir(dir string, dst string, file string) error {

@@ -203,8 +203,19 @@ base_path   = "../.trees"   # where worktrees are created (relative to repo root
 base_branch = "main"        # default base for new worktrees
 
 [env]
-strategy   = "example"      # example | main | parent (see below)
-copy_files = [".env", "apps/api/.env"]
+strategy = "example"        # example | main | parent (see below)
+
+# Each detected value file and its committed template (schema). wtm distinguishes
+# templates (.env.example / .dist / .sample / .template / .tmpl, committed) from
+# value files (.env, gitignored). .env.local is detected and flagged local but
+# stays syncable.
+[[env.file]]
+target   = ".env"
+template = ".env.example"
+
+[[env.file]]
+target = ".env.local"
+local  = true
 
 [hooks]
 on_create = [
@@ -212,9 +223,15 @@ on_create = [
   { cmd = "pnpm install", cwd = "apps/api" },                 # object: runs from a subdir
   { cmd = "pnpm install", cwd = "apps/web", continue_on_error = true },  # non-fatal
 ]
+on_clean = [
+  "docker compose down",                                      # runs right before a worktree is removed
+]
 ```
 
-Hooks interpolate `{{worktree}}`, `{{branch}}`, `{{root}}`, and `{{from_branch}}`.
+`on_create` hooks run after a worktree is created; `on_clean` hooks run in the worktree
+just before it is removed by `clean`/`prune` (e.g. to tear down external resources). A
+non-zero hook aborts the operation unless the entry sets `continue_on_error`. Hooks
+interpolate `{{worktree}}`, `{{branch}}`, `{{root}}`, and (for `on_create`) `{{from_branch}}`.
 
 ### Env strategies
 

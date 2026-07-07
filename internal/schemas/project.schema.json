@@ -29,10 +29,28 @@
           "enum": ["example", "main", "parent"],
           "description": "How .env files are provisioned in new worktrees. example = copy .env.example as .env; main = copy from main worktree; parent = copy from the source worktree (--from), fall back to main."
         },
-        "copy_files": {
+        "file": {
           "type": "array",
-          "items": { "type": "string" },
-          "description": "Extra files (relative to project root) copied into each new worktree. Used for env files outside the standard locations."
+          "description": "Detected env value files and their committed templates. Each entry pins a value target to the schema template it derives from.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["target"],
+            "properties": {
+              "target": {
+                "type": "string",
+                "description": "The .env value file to provision, relative to the project root (e.g. .env, apps/api/.env, .env.local)."
+              },
+              "template": {
+                "type": "string",
+                "description": "The committed schema template this value derives from (e.g. .env.example). Empty when the file has no template."
+              },
+              "local": {
+                "type": "boolean",
+                "description": "Marks a machine-local override (.env.local). Informational only — it stays syncable."
+              }
+            }
+          }
         }
       }
     },
@@ -54,6 +72,25 @@
                   "cmd": { "type": "string", "description": "Shell command to run." },
                   "cwd": { "type": "string", "description": "Working directory relative to the worktree root." },
                   "continue_on_error": { "type": "boolean", "description": "If true, a non-zero exit doesn't abort subsequent hooks." }
+                }
+              }
+            ]
+          }
+        },
+        "on_clean": {
+          "type": "array",
+          "description": "Commands to run right before a worktree is removed (e.g. tearing down external resources like Docker). Entries can be a plain string or a table {cmd, cwd, continue_on_error}. A non-zero exit aborts the removal unless continue_on_error is set.",
+          "items": {
+            "oneOf": [
+              { "type": "string", "description": "Shell command to run in the worktree before removal." },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["cmd"],
+                "properties": {
+                  "cmd": { "type": "string", "description": "Shell command to run." },
+                  "cwd": { "type": "string", "description": "Working directory relative to the worktree root." },
+                  "continue_on_error": { "type": "boolean", "description": "If true, a non-zero exit doesn't abort subsequent hooks or the removal." }
                 }
               }
             ]

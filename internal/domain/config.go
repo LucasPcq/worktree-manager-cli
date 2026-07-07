@@ -22,15 +22,28 @@ type WorktreesConfig struct {
 	BaseBranch string `toml:"base_branch" json:"base_branch"`
 }
 
-// EnvConfig controls .env file provisioning.
+// EnvFile is a detected/configured env value file and its committed template.
+// Target is the value file to provision (e.g. ".env", "apps/api/.env",
+// ".env.local"); Template is the committed schema it derives from (e.g.
+// ".env.example"), empty when the file is value-only. Local marks a machine-local
+// override (".env.local") for informational display — it stays syncable.
+type EnvFile struct {
+	Target   string `toml:"target" json:"target"`
+	Template string `toml:"template" json:"template"`
+	Local    bool   `toml:"local" json:"local"`
+}
+
+// EnvConfig controls .env file provisioning. Files is the single source of truth
+// for the value targets and their committed templates.
 type EnvConfig struct {
-	Strategy  EnvStrategy `toml:"strategy" json:"strategy"`
-	CopyFiles []string    `toml:"copy_files" json:"copy_files"`
+	Strategy EnvStrategy `toml:"strategy" json:"strategy"`
+	Files    []EnvFile   `toml:"file" json:"files"`
 }
 
 // HooksConfig defines lifecycle hooks as lists of commands.
 type HooksConfig struct {
 	OnCreate []HookCommand `toml:"on_create" json:"on_create"`
+	OnClean  []HookCommand `toml:"on_clean" json:"on_clean"`
 }
 
 // GlobalConfig maps to ~/.config/wtm/config.toml (user-level configuration).

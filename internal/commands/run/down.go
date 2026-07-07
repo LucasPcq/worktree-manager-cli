@@ -162,10 +162,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	output.FrameStart(cmd.OutOrStdout())
-	for i, job := range resp.Jobs {
-		if i > 0 {
-			output.Blank(cmd.OutOrStdout())
-		}
+	for _, job := range resp.Jobs {
 		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", job.Name))
 	}
 	output.FrameEnd(cmd.OutOrStdout())

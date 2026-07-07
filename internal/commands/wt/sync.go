@@ -142,17 +142,18 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return renderEmptyPlan(cmd, syncParams.BaseBranch, interactive)
 	}
 
-	if interactive && len(plan.Steps) > 0 {
+	// The interactive picker already previewed the plan and confirmed it on its own
+	// step (see syncpicker); only the non-picker flow previews/confirms here — and
+	// only that flow needs the frame's leading blank. In the picker-confirmed path
+	// the recap below owns its own top padding (output.Blank), so emitting the frame
+	// blank here too would stack two blank lines before the recap.
+	if interactive && len(plan.Steps) > 0 && !selection.PlanConfirmed {
 		output.FrameStart(cmd.ErrOrStderr())
-		// The interactive picker already previewed the plan and confirmed it on its
-		// own step (see syncpicker); only the non-picker flow previews/confirms here.
-		if !selection.PlanConfirmed {
-			output.FormatSyncPlan(cmd.ErrOrStderr(), plan)
-			if !dryRun && !yes && !confirmSync(confirmSyncParams{Count: len(plan.Steps), KeepConflict: syncParams.KeepConflict}) {
-				output.Message(cmd.ErrOrStderr(), "Aborted.")
-				output.FrameEnd(cmd.ErrOrStderr())
-				return nil
-			}
+		output.FormatSyncPlan(cmd.ErrOrStderr(), plan)
+		if !dryRun && !yes && !confirmSync(confirmSyncParams{Count: len(plan.Steps), KeepConflict: syncParams.KeepConflict}) {
+			output.Message(cmd.ErrOrStderr(), "Aborted.")
+			output.FrameEnd(cmd.ErrOrStderr())
+			return nil
 		}
 	}
 
@@ -181,10 +182,20 @@ func runSync(cmd *cobra.Command, args []string) error {
 		Interactive: interactive,
 		Steps:       syncResult.Steps,
 	}) {
-		syncResult = worktree.PushSynced(worktree.PushSyncedParams{
-			ProjectDir: cfg.ProjectDir,
-			Result:     syncResult,
+		err = components.RunLoading(components.LoadingParams{
+			Message: "Pushing to origin…",
+			Animate: interactive,
+			Work: func() error {
+				syncResult = worktree.PushSynced(worktree.PushSyncedParams{
+					ProjectDir: cfg.ProjectDir,
+					Result:     syncResult,
+				})
+				return nil
+			},
 		})
+		if err != nil {
+			return err
+		}
 	}
 
 	if interactive {

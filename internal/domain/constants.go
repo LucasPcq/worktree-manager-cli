@@ -52,11 +52,31 @@ const (
 	// DefaultEnvStrategy is the default .env provisioning strategy.
 	DefaultEnvStrategy = EnvStrategyExample
 
+	// EnvFileName is the canonical env value file — the copy target of any template.
+	EnvFileName = ".env"
+
+	// EnvLocalFileName is the machine-local override. Detected as a value file
+	// (worktrees share a machine, so a local value is legitimately shareable) and
+	// flagged local for informational display — never excluded from detection.
+	EnvLocalFileName = ".env.local"
+
+	// Committed-schema template suffixes recognized on a `.env` file. `.example`
+	// is the dominant ecosystem convention; the rest are real but minority.
+	EnvTemplateSuffixExample  = ".example"
+	EnvTemplateSuffixDist     = ".dist"
+	EnvTemplateSuffixSample   = ".sample"
+	EnvTemplateSuffixTemplate = ".template"
+	EnvTemplateSuffixTmpl     = ".tmpl"
+
 	// DefaultShell is the default shell for integration.
 	DefaultShell = ShellZsh
 
+	// ShellInitCommand is the single source of truth for the shell-integration
+	// eval line; both the multi-line hint and the init recap bullet compose it.
+	ShellInitCommand = "eval \"$(wtm shell-init)\""
+
 	// MsgShellInitHint tells the user how to set up shell integration.
-	MsgShellInitHint = "Add this to your shell config:\n\n  eval \"$(wtm shell-init)\""
+	MsgShellInitHint = "Add this to your shell config:\n\n  " + ShellInitCommand
 
 	// Lockfile names for package manager detection.
 	LockfilePnpm = "pnpm-lock.yaml"
@@ -121,10 +141,12 @@ const (
 	FlagBaseBranch     = "base-branch"
 	FlagEnvStrategy    = "env-strategy"
 	FlagInstallCommand = "install-command"
+	FlagCleanCommand   = "clean-command"
 
 	// init skip flags — opt out of optional config sections (non-interactive).
 	FlagSkipEnv   = "skip-env"
 	FlagSkipHooks = "skip-hooks"
+	FlagSkipClean = "skip-clean"
 
 	// init wizard section gate choices — whether to configure or skip a section.
 	WizardChoiceConfigure = "configure"
@@ -287,6 +309,47 @@ const (
 	// not probe for pre-existing worktrees, the hint is cheap and always relevant.
 	MsgRelocateHint = "Worktrees created before wtm ? Adopt and align them with `wtm relocate`."
 
+	// Init recap (LUC-125): labels and copy for the framed end-of-init recap
+	// (accent-bar box + pill title) that summarizes the written config and lists
+	// the next steps. RecapWidth is the fixed render width shared with `relocate`.
+	RecapWidth = 80
+
+	InitRecapTitleGlobal  = "Global config ready"
+	InitRecapTitleProject = "Project ready"
+	InitRecapNextSteps    = "Next steps"
+
+	InitRecapLabelShell       = "shell"
+	InitRecapLabelBasePath    = "base_path"
+	InitRecapLabelBaseBranch  = "base_branch"
+	InitRecapLabelEnvStrategy = "env_strategy"
+	InitRecapLabelOnCreate    = "on_create"
+	InitRecapLabelOnClean     = "on_clean"
+
+	InitRecapValueSkipped         = "skipped"
+	InitRecapValueSkippedTemplate = "skipped (template)"
+	InitRecapHookMoreFmt          = "%s  (+%d more)"
+
+	// Hook phase titles: shown as a bold section header above the streamed hook
+	// output, so create/clean read as distinct phases instead of loose lines.
+	HooksTitleOnCreate = "Running on_create hooks"
+	HooksTitleOnClean  = "Running on_clean hooks"
+
+	// create result recap labels (aligned "label   value" rows).
+	CreateRecapLabelFrom = "from"
+	CreateRecapLabelEnv  = "env"
+	CreateRecapLabelPath = "path"
+
+	// GoCommandFmt builds the jump-in command shown by every worktree-creating
+	// command (create, extract, checkout): `wtm go <branch>`.
+	GoCommandFmt = "wtm go %s"
+
+	// Next-step bullets printed in the recap. Each is a single line so the
+	// "Next steps" block stays flat (no cascading indentation).
+	InitNextStepShell    = "Add to your shell config:  " + ShellInitCommand
+	InitNextStepCreate   = "wtm create <branch>  — create a worktree to get started"
+	InitNextStepRelocate = "wtm relocate  — adopt & align pre-existing worktrees"
+	InitNextStepRunInit  = "wtm run init  — (experimental) configure per-worktree services"
+
 	// SchemasDirName is the directory (inside <state-dir>/ or under the global
 	// config dir) where `wtm schema dump` writes the JSON Schema files
 	// that editors reference via the TOML `#:schema` directive.
@@ -448,6 +511,13 @@ const (
 	// orphan, shown in the reparent confirmation.
 	CleanReparentIntro = "These children would otherwise be left orphaned:"
 
+	// CleanForceHintFmt is the refusal shown when a worktree is unsafe to remove
+	// without --force (branch, reason).
+	CleanForceHintFmt = "worktree %s %s; pass --force to remove it anyway"
+	// CleanSudoConfirmFmt is the confirmation title for the privileged `sudo rm -rf`
+	// removal fallback (worktree path).
+	CleanSudoConfirmFmt = "Force-delete %s with `sudo rm -rf`? (you may be prompted for your password)"
+
 	// WizardCancelLabel is the constant final option on every wizard recap step —
 	// the single explicit cancellation point (alongside Esc on the first step).
 	// Kept identical across commands so "No, cancel" always reads and sits the same.
@@ -470,3 +540,14 @@ const (
 	PinnedSuffixBase     = " (base)"
 	PinnedSuffixDetected = " (detected)"
 )
+
+// EnvTemplateSuffixes are the committed-schema template suffixes recognized on a
+// `.env` file, in priority order — the first match is pinned when several templates
+// exist for the same target (e.g. `.env.example` wins over `.env.dist`).
+var EnvTemplateSuffixes = []string{
+	EnvTemplateSuffixExample,
+	EnvTemplateSuffixDist,
+	EnvTemplateSuffixSample,
+	EnvTemplateSuffixTemplate,
+	EnvTemplateSuffixTmpl,
+}

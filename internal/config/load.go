@@ -57,11 +57,11 @@ func loadProjectConfig(path string) (domain.ProjectConfig, error) {
 	}
 
 	var raw rawProjectConfig
-	// hooks.on_create entries are decoded as []interface{} (string|table union)
-	// so the inner table keys (cmd, cwd, continue_on_error) appear as
-	// "undecoded" to the strict checker even though the custom unmarshaler
-	// reads them — skip that sub-tree.
-	if err := decodeStrict(path, &raw, "hooks.on_create"); err != nil {
+	// hooks.on_create / hooks.on_clean entries are decoded as []interface{}
+	// (string|table union) so the inner table keys (cmd, cwd, continue_on_error)
+	// appear as "undecoded" to the strict checker even though the custom
+	// unmarshaler reads them — skip those sub-trees.
+	if err := decodeStrict(path, &raw, "hooks.on_create", "hooks.on_clean"); err != nil {
 		return domain.ProjectConfig{}, err
 	}
 
@@ -75,14 +75,23 @@ func loadProjectConfig(path string) (domain.ProjectConfig, error) {
 			BasePath:   raw.Worktrees.BasePath,
 			BaseBranch: raw.Worktrees.BaseBranch,
 		},
-		Env: domain.EnvConfig{
-			Strategy:  domain.EnvStrategy(raw.Env.Strategy),
-			CopyFiles: raw.Env.CopyFiles,
-		},
+		Env:   buildEnvConfig(raw.Env),
 		Hooks: hooks,
 	}
 
 	return cfg, nil
+}
+
+// buildEnvConfig resolves the env config from the raw decode.
+func buildEnvConfig(raw rawEnvConfig) domain.EnvConfig {
+	files := make([]domain.EnvFile, len(raw.File))
+	for i, f := range raw.File {
+		files[i] = domain.EnvFile{Target: f.Target, Template: f.Template, Local: f.Local}
+	}
+	return domain.EnvConfig{
+		Strategy: domain.EnvStrategy(raw.Strategy),
+		Files:    files,
+	}
 }
 
 // rawProjectConfig is the intermediate TOML-decoded structure.
@@ -92,11 +101,20 @@ type rawProjectConfig struct {
 		BasePath   string `toml:"base_path"`
 		BaseBranch string `toml:"base_branch"`
 	} `toml:"worktrees"`
-	Env struct {
-		Strategy  string   `toml:"strategy"`
-		CopyFiles []string `toml:"copy_files"`
-	} `toml:"env"`
+	Env   rawEnvConfig   `toml:"env"`
 	Hooks rawHooksConfig `toml:"hooks"`
+}
+
+// rawEnvConfig decodes the [env] table.
+type rawEnvConfig struct {
+	Strategy string       `toml:"strategy"`
+	File     []rawEnvFile `toml:"file"`
+}
+
+type rawEnvFile struct {
+	Target   string `toml:"target"`
+	Template string `toml:"template"`
+	Local    bool   `toml:"local"`
 }
 
 // loadGlobalConfig reads ~/.config/wtm/config.toml. Returns zero-value GlobalConfig

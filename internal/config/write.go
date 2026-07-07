@@ -20,13 +20,15 @@ var ErrRunFileExists = errors.New("run file already exists")
 // Both the init wizard answers and a full ProjectConfig (for re-init) convert
 // to it, so the template emits every section's actual values.
 type projectTemplateData struct {
-	BasePath     string
-	BaseBranch   string
-	SkipEnv      bool
-	EnvStrategy  string
-	EnvCopyFiles []string
-	SkipHooks    bool
-	OnCreate     []domain.HookCommand
+	BasePath    string
+	BaseBranch  string
+	SkipEnv     bool
+	EnvStrategy string
+	EnvFiles    []domain.EnvFile
+	SkipHooks   bool
+	OnCreate    []domain.HookCommand
+	SkipClean   bool
+	OnClean     []domain.HookCommand
 }
 
 // WriteProjectParams holds the inputs for writing a project config file.
@@ -76,13 +78,15 @@ func renderProjectConfig(stateDir string, data projectTemplateData) error {
 // answersToTemplate converts init wizard answers to template data.
 func answersToTemplate(a domain.InitProjectAnswers) projectTemplateData {
 	return projectTemplateData{
-		BasePath:     a.BasePath,
-		BaseBranch:   a.BaseBranch,
-		SkipEnv:      a.SkipEnv,
-		EnvStrategy:  string(a.EnvStrategy),
-		EnvCopyFiles: a.EnvCopyFiles,
-		SkipHooks:    a.SkipHooks,
-		OnCreate:     a.OnCreate,
+		BasePath:    a.BasePath,
+		BaseBranch:  a.BaseBranch,
+		SkipEnv:     a.SkipEnv,
+		EnvStrategy: string(a.EnvStrategy),
+		EnvFiles:    a.EnvFiles,
+		SkipHooks:   a.SkipHooks,
+		OnCreate:    a.OnCreate,
+		SkipClean:   a.SkipClean,
+		OnClean:     a.OnClean,
 	}
 }
 
@@ -91,13 +95,15 @@ func answersToTemplate(a domain.InitProjectAnswers) projectTemplateData {
 // stays valid.
 func configToTemplate(c domain.ProjectConfig) projectTemplateData {
 	return projectTemplateData{
-		BasePath:     c.Worktrees.BasePath,
-		BaseBranch:   c.Worktrees.BaseBranch,
-		SkipEnv:      c.Env.Strategy == "",
-		EnvStrategy:  string(c.Env.Strategy),
-		EnvCopyFiles: c.Env.CopyFiles,
-		SkipHooks:    false,
-		OnCreate:     c.Hooks.OnCreate,
+		BasePath:    c.Worktrees.BasePath,
+		BaseBranch:  c.Worktrees.BaseBranch,
+		SkipEnv:     c.Env.Strategy == "",
+		EnvStrategy: string(c.Env.Strategy),
+		EnvFiles:    c.Env.Files,
+		SkipHooks:   false,
+		OnCreate:    c.Hooks.OnCreate,
+		SkipClean:   false,
+		OnClean:     c.Hooks.OnClean,
 	}
 }
 

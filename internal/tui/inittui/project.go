@@ -16,15 +16,17 @@ import (
 // the same builders feed both the full init wizard and the targeted
 // `wtm init --only <section>` re-init wizard.
 const (
-	stepBasePath    = "base_path"
-	stepBaseBranch  = "base_branch"
-	stepEnvGate     = "env_gate"
-	stepEnvStrategy = "env_strategy"
-	stepEnvFiles    = "env_files"
-	stepHooksGate   = "hooks_gate"
-	stepHooks       = "hooks"
-	stepDocker      = "docker"
-	stepScripts     = "scripts"
+	stepBasePath       = "base_path"
+	stepBaseBranch     = "base_branch"
+	stepEnvGate        = "env_gate"
+	stepEnvStrategy    = "env_strategy"
+	stepEnvFiles       = "env_files"
+	stepHooksGate      = "hooks_gate"
+	stepHooks          = "hooks"
+	stepHooksCleanGate = "hooks_clean_gate"
+	stepHooksClean     = "hooks_clean"
+	stepDocker         = "docker"
+	stepScripts        = "scripts"
 )
 
 // stepSet accumulates wizard steps and records each one's index by key.
@@ -56,8 +58,9 @@ func (s *stepSet) at(key string) int {
 type SectionPrefill struct {
 	BaseBranch    string
 	EnvStrategy   string
-	EnvCopyFiles  map[string]bool
+	EnvTargets    map[string]bool
 	OnCreate      []domain.HookCommand
+	OnClean       []domain.HookCommand
 	DockerFiles   map[string]bool
 	ScriptIndices map[int]bool
 }
@@ -85,6 +88,9 @@ func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (
 
 	s.add(stepHooksGate, hooksGate(detection))
 	addHooksSteps(s, detection, autoSkipWhenGateSkipped(s.at(stepHooksGate)), nil)
+
+	s.add(stepHooksCleanGate, hooksCleanGate())
+	addHooksCleanSteps(s, autoSkipWhenGateSkipped(s.at(stepHooksCleanGate)), nil)
 
 	final, err := runWizard(runWizardParams{steps: s.steps, projectDir: projectDir, holder: holder})
 	if err != nil {
@@ -142,6 +148,7 @@ func RunSectionWizard(params SectionWizardParams) (domain.InitProjectAnswers, er
 			addEnvSteps(s, params.Detection, nil, params.Prefill)
 		case domain.SectionHooks:
 			addHooksSteps(s, params.Detection, nil, params.Prefill)
+			addHooksCleanSteps(s, nil, params.Prefill)
 		}
 	}
 
@@ -347,8 +354,8 @@ func addEnvSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func
 	}
 	items := make([]components.MultiSelectItem, 0, len(detection.EnvFiles))
 	for _, f := range detection.EnvFiles {
-		selected := prefillSelected(prefill, prefill != nil && prefill.EnvCopyFiles[f], true)
-		items = append(items, components.MultiSelectItem{Label: f, Value: f, Selected: selected})
+		selected := prefillSelected(prefill, prefill != nil && prefill.EnvTargets[f.Target], true)
+		items = append(items, components.MultiSelectItem{Label: envFileLabel(f), Value: f.Target, Selected: selected})
 	}
 	s.add(stepEnvFiles, components.Step{
 		Name: "Env files",
@@ -390,6 +397,38 @@ func addHooksSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip fu
 		Model: components.NewHookList(components.NewHookListParams{
 			Title:       "Post-create hooks",
 			Description: "Commands run after creating a worktree. Add, edit, remove or reorder them — then select Done.",
+			Hooks:       hooks,
+		}),
+		Summary:  hookListSummary,
+		AutoSkip: autoSkip,
+		Callout:  true,
+	})
+}
+
+func hooksCleanGate() components.Step {
+	return sectionGate(sectionGateParams{
+		Name: "Pre-clean hooks",
+		Description: "Run commands automatically right before a worktree is removed — typically tearing down " +
+			"external resources like Docker — so nothing is left orphaned after cleanup.",
+		ConfigureLabel: "Configure teardown commands",
+		SkipLabel:      "Skip — no teardown commands",
+	})
+}
+
+// addHooksCleanSteps adds the on_clean hook-list step. Unlike post-create hooks
+// there is nothing to auto-detect, so the list starts empty (or from the prefill
+// on re-init).
+func addHooksCleanSteps(s *stepSet, autoSkip func(components.WizardModel) bool, prefill *SectionPrefill) {
+	var hooks []domain.HookCommand
+	if prefill != nil {
+		hooks = prefill.OnClean
+	}
+
+	s.add(stepHooksClean, components.Step{
+		Name: "Pre-clean hooks",
+		Model: components.NewHookList(components.NewHookListParams{
+			Title:       "Pre-clean hooks",
+			Description: "Commands run before removing a worktree (e.g. `docker compose down`). Add, edit, remove or reorder them — then select Done.",
 			Hooks:       hooks,
 		}),
 		Summary:  hookListSummary,
@@ -489,7 +528,7 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 			answers.EnvStrategy = domain.EnvStrategy(m.Value())
 			if fi := at(stepEnvFiles); fi >= 0 && !final.Skipped(fi) {
 				if fm, ok := steps[fi].Model.(components.MultiSelectModel); ok {
-					answers.EnvCopyFiles = fm.Values()
+					answers.EnvFiles = selectEnvFiles(detection.EnvFiles, fm.Values())
 				}
 			}
 		}
@@ -501,6 +540,13 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 			answers.SkipHooks = true
 		} else if m, ok := steps[i].Model.(components.HookListModel); ok {
 			answers.OnCreate = m.Hooks()
+		}
+	}
+	if i := at(stepHooksClean); i >= 0 {
+		if final.Skipped(i) {
+			answers.SkipClean = true
+		} else if m, ok := steps[i].Model.(components.HookListModel); ok {
+			answers.OnClean = m.Hooks()
 		}
 	}
 
@@ -675,7 +721,40 @@ func moveToFront(items []components.SelectItem, value string) []components.Selec
 }
 
 func detectedEnv(d domain.InitDetectionResult) string {
-	return strings.Join(d.EnvFiles, ", ")
+	labels := make([]string, 0, len(d.EnvFiles))
+	for _, f := range d.EnvFiles {
+		labels = append(labels, envFileLabel(f))
+	}
+	return strings.Join(labels, ", ")
+}
+
+// envFileLabel renders a detected env file for display: the value target, its
+// committed template if any, and a local badge for machine-local overrides.
+func envFileLabel(f domain.EnvFile) string {
+	label := f.Target
+	if f.Template != "" {
+		label += " ← " + f.Template
+	}
+	if f.Local {
+		label += " (local)"
+	}
+	return label
+}
+
+// selectEnvFiles keeps the detected files whose target was selected in the wizard,
+// preserving the detection order and the template relation.
+func selectEnvFiles(detected []domain.EnvFile, targets []string) []domain.EnvFile {
+	chosen := make(map[string]bool, len(targets))
+	for _, t := range targets {
+		chosen[t] = true
+	}
+	files := make([]domain.EnvFile, 0, len(targets))
+	for _, f := range detected {
+		if chosen[f.Target] {
+			files = append(files, f)
+		}
+	}
+	return files
 }
 
 func detectedHooks(d domain.InitDetectionResult) string {

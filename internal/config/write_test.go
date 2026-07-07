@@ -15,11 +15,14 @@ func TestWriteProjectRendersValidTOML(t *testing.T) {
 	dir := t.TempDir()
 
 	answers := domain.InitProjectAnswers{
-		BasePath:     ".trees",
-		BaseBranch:   "main",
-		EnvCopyFiles: []string{".env", "apps/api/.env"},
-		EnvStrategy:  domain.EnvStrategyExample,
-		OnCreate:     []domain.HookCommand{{Cmd: "pnpm install"}},
+		BasePath:   ".trees",
+		BaseBranch: "main",
+		EnvFiles: []domain.EnvFile{
+			{Target: ".env", Template: ".env.example"},
+			{Target: "apps/api/.env", Template: "apps/api/.env.example"},
+		},
+		EnvStrategy: domain.EnvStrategyExample,
+		OnCreate:    []domain.HookCommand{{Cmd: "pnpm install"}},
 	}
 
 	err := WriteProject(WriteProjectParams{
@@ -47,6 +50,12 @@ func TestWriteProjectRendersValidTOML(t *testing.T) {
 	}
 	if !strings.Contains(content, `"pnpm install"`) {
 		t.Error("missing install command in hooks")
+	}
+	if !strings.Contains(content, "[[env.file]]") || !strings.Contains(content, `target = ".env"`) {
+		t.Errorf("missing structured env file block:\n%s", content)
+	}
+	if !strings.Contains(content, `template = ".env.example"`) {
+		t.Errorf("missing pinned template:\n%s", content)
 	}
 
 	// Verify it parses as valid TOML
@@ -176,6 +185,70 @@ func TestWriteProjectRoundTripTableFormHook(t *testing.T) {
 	}
 }
 
+func TestWriteProjectSkipCleanCommentsSection(t *testing.T) {
+	dir := t.TempDir()
+
+	answers := domain.InitProjectAnswers{
+		BasePath:    ".trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+		SkipClean:   true,
+	}
+
+	if err := WriteProject(WriteProjectParams{StateDir: dir, Answers: answers}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, domain.ConfigFileName))
+	content := string(data)
+
+	if !strings.Contains(content, "on_clean = []") {
+		t.Error("expected empty on_clean when clean hooks skipped")
+	}
+
+	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
+	if err != nil {
+		t.Fatalf("loadProjectConfig: %v", err)
+	}
+	if len(cfg.Hooks.OnClean) != 0 {
+		t.Errorf("expected no clean hooks, got %v", cfg.Hooks.OnClean)
+	}
+}
+
+func TestWriteProjectRoundTripOnClean(t *testing.T) {
+	dir := t.TempDir()
+
+	answers := domain.InitProjectAnswers{
+		BasePath:    ".trees",
+		BaseBranch:  "main",
+		EnvStrategy: domain.EnvStrategyExample,
+		OnClean: []domain.HookCommand{
+			{Cmd: "docker compose down"},
+			{Cmd: "./scripts/teardown.sh", Cwd: "infra", ContinueOnError: true},
+		},
+	}
+
+	if err := WriteProject(WriteProjectParams{StateDir: dir, Answers: answers}); err != nil {
+		t.Fatalf("WriteProject: %v", err)
+	}
+
+	cfg, err := loadProjectConfig(filepath.Join(dir, domain.ConfigFileName))
+	if err != nil {
+		t.Fatalf("loadProjectConfig: %v", err)
+	}
+
+	if len(cfg.Hooks.OnClean) != 2 {
+		t.Fatalf("expected 2 clean hooks, got %d: %+v", len(cfg.Hooks.OnClean), cfg.Hooks.OnClean)
+	}
+	if cfg.Hooks.OnClean[0].Cmd != "docker compose down" || cfg.Hooks.OnClean[0].Cwd != "" {
+		t.Errorf("bare clean hook not preserved: %+v", cfg.Hooks.OnClean[0])
+	}
+	table := cfg.Hooks.OnClean[1]
+	if table.Cmd != "./scripts/teardown.sh" || table.Cwd != "infra" || !table.ContinueOnError {
+		t.Errorf("table-form clean hook fields not preserved: %+v", table)
+	}
+}
+
 func TestWriteRunTemplateCreatesCommentedFile(t *testing.T) {
 	dir := t.TempDir()
 
@@ -218,7 +291,7 @@ func TestWriteProjectConfigPreservesAllSections(t *testing.T) {
 
 	cfg := domain.ProjectConfig{
 		Worktrees: domain.WorktreesConfig{BasePath: "../.trees", BaseBranch: "develop"},
-		Env:       domain.EnvConfig{Strategy: domain.EnvStrategyParent, CopyFiles: []string{".env"}},
+		Env:       domain.EnvConfig{Strategy: domain.EnvStrategyParent, Files: []domain.EnvFile{{Target: ".env"}}},
 		Hooks:     domain.HooksConfig{OnCreate: []domain.HookCommand{{Cmd: "pnpm install"}}},
 	}
 
@@ -357,11 +430,14 @@ func TestWriteProjectRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
 	answers := domain.InitProjectAnswers{
-		BasePath:     ".trees",
-		BaseBranch:   "develop",
-		EnvCopyFiles: []string{".env", "apps/web/.env"},
-		EnvStrategy:  domain.EnvStrategyParent,
-		OnCreate:     []domain.HookCommand{{Cmd: "yarn install"}},
+		BasePath:   ".trees",
+		BaseBranch: "develop",
+		EnvFiles: []domain.EnvFile{
+			{Target: ".env"},
+			{Target: "apps/web/.env"},
+		},
+		EnvStrategy: domain.EnvStrategyParent,
+		OnCreate:    []domain.HookCommand{{Cmd: "yarn install"}},
 	}
 
 	err := WriteProject(WriteProjectParams{
@@ -387,8 +463,8 @@ func TestWriteProjectRoundTrip(t *testing.T) {
 	if cfg.Env.Strategy != domain.EnvStrategyParent {
 		t.Errorf("round-trip strategy: got %s", cfg.Env.Strategy)
 	}
-	if len(cfg.Env.CopyFiles) != 2 {
-		t.Errorf("round-trip copy_files: got %d", len(cfg.Env.CopyFiles))
+	if len(cfg.Env.Files) != 2 {
+		t.Errorf("round-trip env files: got %d", len(cfg.Env.Files))
 	}
 	if len(cfg.Hooks.OnCreate) != 1 || cfg.Hooks.OnCreate[0].Cmd != "yarn install" {
 		t.Errorf("round-trip on_create: got %v", cfg.Hooks.OnCreate)

@@ -18,16 +18,25 @@ base_branch = "{{ .BaseBranch }}"
 {{- if .SkipEnv }}
 # Skipped during init. Uncomment to enable .env provisioning.
 # strategy = "example"
-# copy_files = [".env"]
+#
+# [[env.file]]
+# target = ".env"
+# template = ".env.example"
 {{- else }}
 strategy = "{{ .EnvStrategy }}"
 
-# Files to copy into each new worktree
-copy_files = [
-{{- range .EnvCopyFiles }}
-  "{{ . }}",
+# Each value file to provision, with its committed template (if any).
+{{- range .EnvFiles }}
+
+[[env.file]]
+target = "{{ .Target }}"
+{{- if .Template }}
+template = "{{ .Template }}"
 {{- end }}
-]
+{{- if .Local }}
+local = true
+{{- end }}
+{{- end }}
 {{- end }}
 
 [hooks]
@@ -39,6 +48,25 @@ on_create = []
 {{- else }}
 on_create = [
 {{- range .OnCreate }}
+{{- if or .Cwd .ContinueOnError }}
+  { cmd = "{{ .Cmd }}"{{ if .Cwd }}, cwd = "{{ .Cwd }}"{{ end }}{{ if .ContinueOnError }}, continue_on_error = true{{ end }} },
+{{- else }}
+  "{{ .Cmd }}",
+{{- end }}
+{{- end }}
+]
+{{- end }}
+
+# Commands run right before removing a worktree (e.g. tear down external
+# resources like Docker). A non-zero exit aborts the removal unless the entry
+# sets continue_on_error.
+{{- if .SkipClean }}
+# Skipped during init. Add teardown commands to run before removal, e.g.:
+#   on_clean = ["docker compose down"]
+on_clean = []
+{{- else }}
+on_clean = [
+{{- range .OnClean }}
 {{- if or .Cwd .ContinueOnError }}
   { cmd = "{{ .Cmd }}"{{ if .Cwd }}, cwd = "{{ .Cwd }}"{{ end }}{{ if .ContinueOnError }}, continue_on_error = true{{ end }} },
 {{- else }}

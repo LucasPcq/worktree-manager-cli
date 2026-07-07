@@ -80,6 +80,14 @@ func Blank(w io.Writer) {
 	fmt.Fprintln(w)
 }
 
+// HooksSection prints a leading blank and a bold title above a phase of streamed
+// hook output (e.g. "Running on_create hooks"), so lifecycle hooks read as a
+// distinct, labelled phase instead of loose lines in the middle of the command.
+func HooksSection(w io.Writer, title string) {
+	Blank(w)
+	SectionTitle(w, title)
+}
+
 // Callout prints a bordered notice box with a bold title followed by body lines.
 // Use it to surface an optional, non-blocking hint above an interactive flow.
 // It emits a raw box with no surrounding blank lines; the caller's frame owns

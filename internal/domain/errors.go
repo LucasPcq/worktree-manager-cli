@@ -46,6 +46,12 @@ var (
 	// ErrCannotCleanParent is returned when trying to clean the parent worktree.
 	ErrCannotCleanParent = errors.New("cannot clean the parent worktree")
 
+	// ErrWorktreeRemoveFailed wraps a failure of the `git worktree remove` step in
+	// Clean, so the command layer can offer the interactive `sudo rm -rf` fallback
+	// (files owned by root — e.g. Docker — that git cannot delete as the current
+	// user) instead of aborting.
+	ErrWorktreeRemoveFailed = errors.New("worktree removal failed")
+
 	// ErrGHNotInstalled is returned when the gh CLI is not found on PATH.
 	ErrGHNotInstalled = errors.New("gh CLI not found — install it from https://cli.github.com")
 
@@ -101,4 +107,24 @@ var (
 
 	// ErrReparentSelf is returned when a worktree is asked to become its own parent.
 	ErrReparentSelf = errors.New("a worktree cannot be its own parent")
+
+	// ErrEnvFileNoTarget is returned when an env.file entry has an empty target.
+	ErrEnvFileNoTarget = errors.New("env file entry must have a target")
+
+	// ErrEnvFileDuplicateTarget is returned when two env.file entries share a target.
+	ErrEnvFileDuplicateTarget = errors.New("duplicate env file target")
+
+	// ErrEnvFileBadTemplate is returned when an env.file template is not a known
+	// template of its target (a recognized suffix appended to the target path).
+	ErrEnvFileBadTemplate = errors.New("env file template must be a known template of its target")
+
+	// ErrCleanJSONNeedsYes is returned when clean runs in --output json without
+	// --yes: confirmations cannot run in JSON mode.
+	ErrCleanJSONNeedsYes = errors.New("--output json requires --yes (confirmations cannot run in JSON mode; add --force to lift safety checks)")
+
+	// ErrUnsafeSudoDeletePath is returned when the `sudo rm -rf` recovery path
+	// would target an obviously dangerous location (a filesystem root, the home
+	// directory, the repository root, or an ancestor of it) — a defensive guard
+	// against corrupted git worktree metadata before privilege escalation.
+	ErrUnsafeSudoDeletePath = errors.New("refusing to sudo rm -rf an unsafe path")
 )

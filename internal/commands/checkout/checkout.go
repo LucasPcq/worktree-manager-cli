@@ -290,9 +290,23 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 		SourceBranch:    params.parent,
 		Config:          result.Config,
 		EnvFromOverride: params.env,
+		SkipHooks:       true,
 	})
 	if err != nil {
 		return err
+	}
+
+	// on_create hooks as a distinct, titled phase (shared with create/extract).
+	if hookErr := shared.RunCreateHooksPhase(shared.CreateHooksPhaseParams{
+		Cmd:          cmd,
+		ShowHeader:   !params.jsonMode,
+		ProjectDir:   result.ProjectDir,
+		WorktreePath: createResult.Path,
+		Branch:       p.Branch,
+		FromBranch:   domain.RemoteBranchPrefix + p.Branch,
+		Hooks:        result.Config.Project.Hooks.OnCreate,
+	}); hookErr != nil {
+		return hookErr
 	}
 
 	if params.jsonMode {
@@ -308,7 +322,7 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 
 	output.Frame(cmd.OutOrStdout(), func() {
 		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Checked out PR #%d (%s) at %s", p.Number, p.Branch, createResult.Path))
-		output.InfoLine(cmd.OutOrStdout(), "cd", fmt.Sprintf("wtm go %s", p.Branch))
+		output.GoHint(cmd.OutOrStdout(), fmt.Sprintf(domain.GoCommandFmt, p.Branch))
 	})
 	return nil
 }

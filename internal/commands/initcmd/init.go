@@ -37,8 +37,10 @@ func NewCmd() *cobra.Command {
 	cmd.Flags().String(domain.FlagBaseBranch, "", "Default base branch for new worktrees")
 	cmd.Flags().String(domain.FlagEnvStrategy, "", "Env provisioning strategy: example, main, or parent")
 	cmd.Flags().String(domain.FlagInstallCommand, "", "Command to run after creating a worktree")
+	cmd.Flags().String(domain.FlagCleanCommand, "", "Command to run before removing a worktree")
 	cmd.Flags().Bool(domain.FlagSkipEnv, false, "Skip .env provisioning config")
 	cmd.Flags().Bool(domain.FlagSkipHooks, false, "Skip on_create hooks config")
+	cmd.Flags().Bool(domain.FlagSkipClean, false, "Skip on_clean hooks config")
 	cmd.Flags().StringSlice(domain.FlagOnly, nil, "Re-init only these sections (env, hooks, worktrees); regenerates them cleanly")
 	cmd.Flags().Bool(domain.FlagYes, false, "Skip the re-init confirmation prompt")
 
@@ -51,7 +53,8 @@ func initFlagged(cmd *cobra.Command) bool {
 	for _, name := range []string{
 		domain.FlagNonInteractive, domain.FlagShell,
 		domain.FlagBasePath, domain.FlagBaseBranch, domain.FlagEnvStrategy,
-		domain.FlagInstallCommand, domain.FlagSkipEnv, domain.FlagSkipHooks,
+		domain.FlagInstallCommand, domain.FlagCleanCommand,
+		domain.FlagSkipEnv, domain.FlagSkipHooks, domain.FlagSkipClean,
 	} {
 		if cmd.Flags().Changed(name) {
 			return true
@@ -117,9 +120,10 @@ func ensureGlobalConfig(cmd *cobra.Command, flagged bool) error {
 	}
 
 	output.Frame(cmd.OutOrStdout(), func() {
-		output.Success(cmd.OutOrStdout(), "Global config saved.")
-		output.Blank(cmd.OutOrStdout())
-		output.Message(cmd.OutOrStdout(), domain.MsgShellInitHint)
+		output.InitGlobalRecap(cmd.OutOrStdout(), output.InitGlobalRecapParams{
+			Fields:    rules.InitGlobalRecapFields(answers),
+			NextSteps: []string{domain.InitNextStepShell},
+		})
 	})
 
 	return nil
@@ -154,16 +158,20 @@ func resolveProjectAnswers(cmd *cobra.Command, projectDir string, flagged bool, 
 		baseBranch, _ := cmd.Flags().GetString(domain.FlagBaseBranch)
 		envStrategy, _ := cmd.Flags().GetString(domain.FlagEnvStrategy)
 		installCommand, _ := cmd.Flags().GetString(domain.FlagInstallCommand)
+		cleanCommand, _ := cmd.Flags().GetString(domain.FlagCleanCommand)
 		skipEnv, _ := cmd.Flags().GetBool(domain.FlagSkipEnv)
 		skipHooks, _ := cmd.Flags().GetBool(domain.FlagSkipHooks)
+		skipClean, _ := cmd.Flags().GetBool(domain.FlagSkipClean)
 		return rules.BuildProjectAnswers(rules.InitProjectFlags{
 			BasePath:       basePath,
 			BaseBranch:     baseBranch,
 			EnvStrategy:    envStrategy,
 			InstallCommand: installCommand,
+			CleanCommand:   cleanCommand,
 			NonInteractive: nonInteractive,
 			SkipEnv:        skipEnv,
 			SkipHooks:      skipHooks,
+			SkipClean:      skipClean,
 		}, detection)
 	}
 
@@ -200,16 +208,21 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool)
 		return fmt.Errorf("write project config: %w", err)
 	}
 
-	output.Success(cmd.OutOrStdout(), fmt.Sprintf("Created %s", filepath.Join(stateDir, domain.ConfigFileName)))
-
 	if err := dumpProjectSchemas(stateDir); err != nil {
 		return err
 	}
 
-	output.Blank(cmd.OutOrStdout())
-	output.Message(cmd.OutOrStdout(), domain.MsgRelocateHint)
-	output.Message(cmd.OutOrStdout(), domain.MsgRunInitHint)
-	output.Blank(cmd.OutOrStdout())
+	output.Frame(cmd.OutOrStdout(), func() {
+		output.InitProjectRecap(cmd.OutOrStdout(), output.InitProjectRecapParams{
+			ConfigPath: rules.DisplayPath(rules.DisplayPathParams{Base: dir, Target: filepath.Join(stateDir, domain.ConfigFileName)}),
+			Fields:     rules.InitProjectRecapFields(answers),
+			NextSteps: []string{
+				domain.InitNextStepCreate,
+				domain.InitNextStepRelocate,
+				domain.InitNextStepRunInit,
+			},
+		})
+	})
 	return nil
 }
 

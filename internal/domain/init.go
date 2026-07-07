@@ -26,7 +26,7 @@ type PackageScript struct {
 type InitDetectionResult struct {
 	BaseBranch         string
 	Branches           []BranchCandidate
-	EnvFiles           []string
+	EnvFiles           []EnvFile
 	PackageManager     PackageManager
 	InstallCommand     string
 	DockerComposeFiles []string
@@ -40,6 +40,13 @@ type InitGlobalAnswers struct {
 	Shell ShellType
 }
 
+// RecapField is one aligned "label   value" row of a framed command recap (the
+// init config summary, the create result fields, etc.).
+type RecapField struct {
+	Label string
+	Value string
+}
+
 // InitProjectAnswers holds the wizard answers for project config setup.
 // The Skip* flags record sections the user opted out of (via the wizard skip
 // key or the --skip-* flags); they drive whether each section is written as
@@ -47,12 +54,14 @@ type InitGlobalAnswers struct {
 type InitProjectAnswers struct {
 	BasePath               string
 	BaseBranch             string
-	EnvCopyFiles           []string
+	EnvFiles               []EnvFile
 	EnvStrategy            EnvStrategy
 	OnCreate               []HookCommand
+	OnClean                []HookCommand
 	DockerComposeFiles     []string
 	DockerComposeCmd       string
 	SelectedPackageScripts []PackageScript
 	SkipEnv                bool
 	SkipHooks              bool
+	SkipClean              bool
 }
