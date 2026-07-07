@@ -115,7 +115,8 @@ func printStep(w io.Writer, step domain.SyncStepResult) {
 				step.Branch, step.SourceBranch, conflictCount(step.ConflictFiles)))
 		} else {
 			Danger(w, fmt.Sprintf("%s conflict on %s — aborted, tree clean (%s); descendants skipped",
-				step.Branch, step.SourceBranch, conflictCountAndFiles(step.ConflictFiles)))
+				step.Branch, step.SourceBranch, conflictCount(step.ConflictFiles)))
+			printConflictFiles(w, step.ConflictFiles)
 		}
 	case domain.SyncStatusError:
 		Error(w, fmt.Sprintf("%s failed — %s", step.Branch, step.Detail))
@@ -188,7 +189,8 @@ func printConflictFooter(w io.Writer, steps []domain.SyncStepResult) {
 		Blank(w)
 		InfoLine(w, step.Branch, styles.Muted.Render(step.Path))
 		if len(step.ConflictFiles) > 0 {
-			Message(w, "   "+styles.Muted.Render("conflicting: "+conflictFileList(step.ConflictFiles)))
+			Message(w, "   "+styles.Muted.Render("conflicting:"))
+			printConflictFiles(w, step.ConflictFiles)
 		}
 		Message(w, "   "+styles.Muted.Render("→ resolve, then: git rebase --continue    (abort: git rebase --abort)"))
 	}
@@ -202,23 +204,30 @@ func conflictCount(files []string) string {
 	return fmt.Sprintf("%d files", len(files))
 }
 
-// conflictCountAndFiles renders the count followed by the (capped) file list,
-// e.g. "2 files: a.go, b.go".
-func conflictCountAndFiles(files []string) string {
-	if len(files) == 0 {
-		return "0 files"
+// printConflictFiles lists the conflicting paths vertically, one indented line
+// each, capping at maxConflictFilesShown and collapsing the rest into "…+N more".
+func printConflictFiles(w io.Writer, files []string) {
+	for _, line := range conflictFileLines(files) {
+		Message(w, "      "+styles.Muted.Render(line))
 	}
-	return conflictCount(files) + ": " + conflictFileList(files)
 }
 
-// conflictFileList joins the conflicting paths, capping the list at
-// maxConflictFilesShown and collapsing the remainder into "…+N more".
-func conflictFileList(files []string) string {
-	if len(files) <= maxConflictFilesShown {
-		return strings.Join(files, ", ")
+// conflictFileLines returns the conflicting paths as one line each, capping the
+// list at maxConflictFilesShown and collapsing the remainder into a trailing
+// "…+N more" line.
+func conflictFileLines(files []string) []string {
+	shown := files
+	overflow := 0
+	if len(files) > maxConflictFilesShown {
+		shown = files[:maxConflictFilesShown]
+		overflow = len(files) - maxConflictFilesShown
 	}
-	return strings.Join(files[:maxConflictFilesShown], ", ") +
-		fmt.Sprintf(", …+%d more", len(files)-maxConflictFilesShown)
+	lines := make([]string, 0, len(shown)+1)
+	lines = append(lines, shown...)
+	if overflow > 0 {
+		lines = append(lines, fmt.Sprintf("…+%d more", overflow))
+	}
+	return lines
 }
 
 // WriteSyncResultJSON writes the sync result as pretty-printed JSON.

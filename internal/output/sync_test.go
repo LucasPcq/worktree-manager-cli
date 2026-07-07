@@ -8,20 +8,24 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-func TestConflictFileList_CapsAtFive(t *testing.T) {
+func TestConflictFileLines_CapsAtFive(t *testing.T) {
 	files := []string{"a", "b", "c", "d", "e", "f", "g"}
-	got := conflictFileList(files)
-	if !strings.HasPrefix(got, "a, b, c, d, e") {
-		t.Fatalf("expected first five listed, got %q", got)
+	got := conflictFileLines(files)
+	want := []string{"a", "b", "c", "d", "e", "…+2 more"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d lines %q, want %d %q", len(got), got, len(want), want)
 	}
-	if !strings.Contains(got, "…+2 more") {
-		t.Fatalf("expected collapsed remainder, got %q", got)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("line %d: got %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 
-func TestConflictFileList_ShortListed(t *testing.T) {
-	if got := conflictFileList([]string{"a", "b"}); got != "a, b" {
-		t.Fatalf("got %q, want %q", got, "a, b")
+func TestConflictFileLines_ShortListed(t *testing.T) {
+	got := conflictFileLines([]string{"a", "b"})
+	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("got %q, want [a b] with no overflow line", got)
 	}
 }
 
@@ -56,8 +60,11 @@ func TestFormatSyncResult_KeptConflictShowsFooter(t *testing.T) {
 	if !strings.Contains(out, "git rebase --continue") {
 		t.Errorf("expected resume hint, got:\n%s", out)
 	}
-	if !strings.Contains(out, "a.go, b.go") {
-		t.Errorf("expected conflicting files list, got:\n%s", out)
+	if !strings.Contains(out, "conflicting:") {
+		t.Errorf("expected conflicting label, got:\n%s", out)
+	}
+	if !strings.Contains(out, "a.go") || !strings.Contains(out, "b.go") {
+		t.Errorf("expected conflicting files listed vertically, got:\n%s", out)
 	}
 }
 
@@ -132,8 +139,11 @@ func TestFormatSyncResult_AbortedConflictNoFooter(t *testing.T) {
 	FormatSyncResult(&buf, result)
 	out := buf.String()
 
-	if !strings.Contains(out, "aborted, tree clean (2 files: a.go, b.go)") {
+	if !strings.Contains(out, "aborted, tree clean (2 files)") {
 		t.Errorf("expected enriched aborted line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "a.go") || !strings.Contains(out, "b.go") {
+		t.Errorf("expected conflicting files listed vertically, got:\n%s", out)
 	}
 	if strings.Contains(out, "Conflicts left in progress") {
 		t.Errorf("did not expect footer in aborted mode, got:\n%s", out)
