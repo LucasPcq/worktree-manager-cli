@@ -154,7 +154,7 @@ and **experimental**: the global `wtm init` does not configure it.
 **Setup**
 - `wtm config show` inspects config; `wtm config edit` and the `wtm init` wizard are
   interactive. Bootstrap non-interactively with
-  `wtm init --non-interactive [--base-branch … --env-strategy … --install-command …]`, and
+  `wtm init --non-interactive [--base-branch … --env-strategy … --install-command … --clean-command …]`, and
   reconfigure one section later with `wtm init --only env|hooks|worktrees --non-interactive --yes`.
   Services are **not** part of `wtm init` — configure them with `wtm run init`.
   See their `--help` for the full flag set.

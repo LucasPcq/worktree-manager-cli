@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.23.0 — Hooks `on_clean`, détection `.env` généralisée & sorties harmonisées
+
+### Breaking changes
+
+- **La config `.env` passe d'un `copy_files` plat à un modèle structuré `[[env.file]]`** — chaque entrée décrit une **cible** (`target`, le fichier de valeurs à provisionner, ex. `.env`, `apps/api/.env`) et son **template committé** (`template`, ex. `.env.example`), avec `.env.local` détecté et marqué `local = true`. `copy_files` est abandonné **sans migration douce** : un `wtm.toml` qui l'utilise doit être régénéré (`wtm init --only env`) ou édité à la main. La détection reconnaît désormais `.env.example` / `.env.dist` / `.env.sample` / `.env.template` / `.env.tmpl` comme templates (priorité dans cet ordre) et distingue templates (committés) et fichiers de valeurs (gitignorés) (LUC-89).
+
+### New features
+
+- **Hooks `on_clean` — teardown avant suppression** — une nouvelle liste `[hooks] on_clean` s'exécute **dans le worktree, juste avant** que `clean`/`prune` ne le retirent (ex. `docker compose down` pour libérer des ressources externes). Un hook qui sort non-zéro **abandonne la suppression** sauf si son entrée pose `continue_on_error`. Interpolation `{{worktree}}` / `{{branch}}` / `{{root}}` (le `{{from_branch}}` reste réservé à `on_create`). `wtm init` gagne `--clean-command` et `--skip-clean` pour configurer la section en non-interactif (#45).
+- **Fallback `sudo rm -rf` sur suppression bloquée** — si `git worktree remove` échoue sur des fichiers non-supprimables par l'utilisateur courant (typiquement des fichiers root créés par Docker), un run **interactif** propose un `sudo rm -rf` en dernier recours, puis prune la métadonnée git obsolète et supprime la branche. Ne se déclenche **jamais** en mode `--output json` / `--yes`, où l'échec est remonté comme une erreur. Une garde de sécurité refuse d'escalader sur un chemin manifestement dangereux (racine du système de fichiers, `$HOME`, racine du dépôt ou un de ses ancêtres) (#45).
+
+### Improvements
+
+- **Recap `init` encadré & sorties de commandes harmonisées** — le récapitulatif final de `wtm init` est désormais cadré comme les autres sorties, et les micro-conventions d'affichage (icônes, lignes vides, décomptes) sont uniformisées entre commandes pour une lecture homogène (LUC-125).
+- **Provisioning `.env` fidèle au template détecté** — la stratégie `example` copie le template **résolu par la détection** (`.env.dist`, `.env.sample`, …) ou, à défaut, sonde les candidats connus, au lieu de coder en dur `.env.example`. Un projet dont le template committé n'est pas `.env.example` reçoit maintenant bien son `.env` au lieu d'être silencieusement ignoré (LUC-89).
+
+### Bug fixes
+
+- **`wtm sync` : sortie de push et liste de conflits** — le push affiche le spinner « Pushing to origin… » au lieu de paraître figé ; plus de double ligne vide au-dessus du récap sur le chemin picker-confirmé ; les fichiers en conflit sont rendus en **liste verticale** plafonnée à 5 (`…+N more`), dans le footer `--keep-conflict` comme dans le récap d'abandon automatique (#44).
+
 ## v0.22.0 — Module `run` opt-in, bypass `--yes`/`--force` unifié & wizards harmonisés
 
 ### Breaking changes
