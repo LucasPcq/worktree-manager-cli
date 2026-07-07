@@ -122,11 +122,11 @@ func buildPrefill(stateDir string) (*initwizard.SectionPrefill, error) {
 		return nil, fmt.Errorf("load project config: %w", err)
 	}
 	return &initwizard.SectionPrefill{
-		BaseBranch:   cfg.Worktrees.BaseBranch,
-		EnvStrategy:  string(cfg.Env.Strategy),
-		EnvCopyFiles: toSet(cfg.Env.CopyFiles),
-		OnCreate:     cfg.Hooks.OnCreate,
-		OnClean:      cfg.Hooks.OnClean,
+		BaseBranch:  cfg.Worktrees.BaseBranch,
+		EnvStrategy: string(cfg.Env.Strategy),
+		EnvTargets:  toSet(rules.EnvTargets(cfg.Env.Files)),
+		OnCreate:    cfg.Hooks.OnCreate,
+		OnClean:     cfg.Hooks.OnClean,
 	}, nil
 }
 
@@ -195,7 +195,7 @@ func applyConfigReinit(cmd *cobra.Command, stateDir string, sections []string, a
 	}
 	if contains(sections, domain.SectionEnv) {
 		cfg.Env.Strategy = answers.EnvStrategy
-		cfg.Env.CopyFiles = answers.EnvCopyFiles
+		cfg.Env.Files = answers.EnvFiles
 	}
 	if contains(sections, domain.SectionHooks) {
 		cfg.Hooks.OnCreate = answers.OnCreate

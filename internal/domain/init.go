@@ -26,7 +26,7 @@ type PackageScript struct {
 type InitDetectionResult struct {
 	BaseBranch         string
 	Branches           []BranchCandidate
-	EnvFiles           []string
+	EnvFiles           []EnvFile
 	PackageManager     PackageManager
 	InstallCommand     string
 	DockerComposeFiles []string
@@ -47,7 +47,7 @@ type InitGlobalAnswers struct {
 type InitProjectAnswers struct {
 	BasePath               string
 	BaseBranch             string
-	EnvCopyFiles           []string
+	EnvFiles               []EnvFile
 	EnvStrategy            EnvStrategy
 	OnCreate               []HookCommand
 	OnClean                []HookCommand

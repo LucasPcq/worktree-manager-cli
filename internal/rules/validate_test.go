@@ -8,6 +8,32 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
+func TestValidateEnvFiles(t *testing.T) {
+	cases := []struct {
+		name    string
+		files   []domain.EnvFile
+		wantErr error
+	}{
+		{"valid pair", []domain.EnvFile{{Target: ".env", Template: ".env.example"}}, nil},
+		{"valid local", []domain.EnvFile{{Target: ".env.local", Local: true}}, nil},
+		{"empty target", []domain.EnvFile{{Target: ""}}, domain.ErrEnvFileNoTarget},
+		{"duplicate target", []domain.EnvFile{{Target: ".env"}, {Target: ".env"}}, domain.ErrEnvFileDuplicateTarget},
+		{"bad template", []domain.EnvFile{{Target: ".env", Template: ".env.bogus"}}, domain.ErrEnvFileBadTemplate},
+		{"template mismatched target", []domain.EnvFile{{Target: ".env", Template: "apps/.env.example"}}, domain.ErrEnvFileBadTemplate},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateEnvFiles(tc.files)
+			if tc.wantErr == nil && err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestValidateRelocateTarget(t *testing.T) {
 	cases := []struct {
 		name    string

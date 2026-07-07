@@ -56,10 +56,11 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		sourceBranch = params.FromBranch
 	}
 
-	if len(params.Config.Project.Env.CopyFiles) > 0 {
+	envTargets := rules.EnvTargets(params.Config.Project.Env.Files)
+	if len(envTargets) > 0 {
 		copyErr := env.CopyEnvFiles(env.CopyEnvFilesParams{
 			Strategy:           strategy,
-			CopyFiles:          params.Config.Project.Env.CopyFiles,
+			CopyFiles:          envTargets,
 			TargetDir:          worktreePath,
 			MainWorktreePath:   mainPath,
 			ParentWorktreePath: parentWorktreePath(params.ProjectDir, sourceBranch),
@@ -135,7 +136,7 @@ func EnvParentFallsBackToMain(params EnvFallbackParams) bool {
 	strategy := rules.ResolveEnvStrategy(params.Config.Project.Env.Strategy, params.EnvOverride)
 	return rules.ParentEnvFallsBackToMain(rules.ParentEnvFallbackParams{
 		Strategy:          strategy,
-		HasCopyFiles:      len(params.Config.Project.Env.CopyFiles) > 0,
+		HasCopyFiles:      len(params.Config.Project.Env.Files) > 0,
 		SourceHasWorktree: parentWorktreePath(params.ProjectDir, params.Source) != "",
 	})
 }

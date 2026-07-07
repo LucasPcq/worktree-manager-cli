@@ -38,7 +38,7 @@ func TestBuildProjectAnswers_FlagsWinOverDetection(t *testing.T) {
 	detection := domain.InitDetectionResult{
 		BaseBranch:     "develop",
 		InstallCommand: "npm install",
-		EnvFiles:       []string{".env"},
+		EnvFiles:       []domain.EnvFile{{Target: ".env", Template: ".env.example"}},
 	}
 	got, err := rules.BuildProjectAnswers(rules.InitProjectFlags{
 		BasePath:       "../wt",
@@ -58,8 +58,8 @@ func TestBuildProjectAnswers_FlagsWinOverDetection(t *testing.T) {
 	if len(got.OnCreate) == 0 || got.OnCreate[0].Cmd != "pnpm install" {
 		t.Errorf("install flag should win in on_create: %+v", got.OnCreate)
 	}
-	if len(got.EnvCopyFiles) != 1 || got.EnvCopyFiles[0] != ".env" {
-		t.Errorf("detected env files dropped: %+v", got.EnvCopyFiles)
+	if len(got.EnvFiles) != 1 || got.EnvFiles[0].Target != ".env" {
+		t.Errorf("detected env files dropped: %+v", got.EnvFiles)
 	}
 }
 
@@ -100,7 +100,7 @@ func TestBuildProjectAnswers_InvalidEnvStrategy(t *testing.T) {
 func TestBuildProjectAnswers_SkipEnv(t *testing.T) {
 	detection := domain.InitDetectionResult{
 		BaseBranch: "main",
-		EnvFiles:   []string{".env", ".env.local"},
+		EnvFiles:   []domain.EnvFile{{Target: ".env"}, {Target: ".env.local", Local: true}},
 	}
 	got, err := rules.BuildProjectAnswers(rules.InitProjectFlags{SkipEnv: true}, detection)
 	if err != nil {
@@ -112,8 +112,8 @@ func TestBuildProjectAnswers_SkipEnv(t *testing.T) {
 	if got.EnvStrategy != "" {
 		t.Errorf("EnvStrategy = %q, want empty when skipped", got.EnvStrategy)
 	}
-	if len(got.EnvCopyFiles) != 0 {
-		t.Errorf("EnvCopyFiles = %v, want none when skipped", got.EnvCopyFiles)
+	if len(got.EnvFiles) != 0 {
+		t.Errorf("EnvFiles = %v, want none when skipped", got.EnvFiles)
 	}
 }
 

@@ -18,16 +18,25 @@ base_branch = "{{ .BaseBranch }}"
 {{- if .SkipEnv }}
 # Skipped during init. Uncomment to enable .env provisioning.
 # strategy = "example"
-# copy_files = [".env"]
+#
+# [[env.file]]
+# target = ".env"
+# template = ".env.example"
 {{- else }}
 strategy = "{{ .EnvStrategy }}"
 
-# Files to copy into each new worktree
-copy_files = [
-{{- range .EnvCopyFiles }}
-  "{{ . }}",
+# Each value file to provision, with its committed template (if any).
+{{- range .EnvFiles }}
+
+[[env.file]]
+target = "{{ .Target }}"
+{{- if .Template }}
+template = "{{ .Template }}"
 {{- end }}
-]
+{{- if .Local }}
+local = true
+{{- end }}
+{{- end }}
 {{- end }}
 
 [hooks]

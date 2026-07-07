@@ -107,4 +107,14 @@ var (
 
 	// ErrReparentSelf is returned when a worktree is asked to become its own parent.
 	ErrReparentSelf = errors.New("a worktree cannot be its own parent")
+
+	// ErrEnvFileNoTarget is returned when an env.file entry has an empty target.
+	ErrEnvFileNoTarget = errors.New("env file entry must have a target")
+
+	// ErrEnvFileDuplicateTarget is returned when two env.file entries share a target.
+	ErrEnvFileDuplicateTarget = errors.New("duplicate env file target")
+
+	// ErrEnvFileBadTemplate is returned when an env.file template is not a known
+	// template of its target (a recognized suffix appended to the target path).
+	ErrEnvFileBadTemplate = errors.New("env file template must be a known template of its target")
 )

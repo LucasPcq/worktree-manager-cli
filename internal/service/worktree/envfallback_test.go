@@ -11,7 +11,7 @@ import (
 func parentEnvConfig() domain.Config {
 	cfg := domain.Config{}
 	cfg.Project.Env.Strategy = domain.EnvStrategyParent
-	cfg.Project.Env.CopyFiles = []string{".env"}
+	cfg.Project.Env.Files = []domain.EnvFile{{Target: ".env"}}
 	return cfg
 }
 

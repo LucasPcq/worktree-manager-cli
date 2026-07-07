@@ -71,7 +71,7 @@ func TestParseSections(t *testing.T) {
 func fullSeededConfig() domain.ProjectConfig {
 	return domain.ProjectConfig{
 		Worktrees: domain.WorktreesConfig{BasePath: "../.trees", BaseBranch: "develop"},
-		Env:       domain.EnvConfig{Strategy: domain.EnvStrategyParent, CopyFiles: []string{".env"}},
+		Env:       domain.EnvConfig{Strategy: domain.EnvStrategyParent, Files: []domain.EnvFile{{Target: ".env"}}},
 		Hooks:     domain.HooksConfig{OnCreate: []domain.HookCommand{{Cmd: "pnpm install"}}},
 	}
 }
@@ -85,8 +85,8 @@ func TestApplyConfigReinitOnlyRewritesRequestedSection(t *testing.T) {
 		BaseBranch: "should-not-apply",
 		OnCreate:   []domain.HookCommand{{Cmd: "should-not-apply"}},
 		// The env section is the only one requested.
-		EnvStrategy:  domain.EnvStrategyExample,
-		EnvCopyFiles: []string{".env.local"},
+		EnvStrategy: domain.EnvStrategyExample,
+		EnvFiles:    []domain.EnvFile{{Target: ".env.local", Local: true}},
 	}
 
 	if err := applyConfigReinit(newReinitTestCmd(), dir, []string{domain.SectionEnv}, answers); err != nil {
@@ -102,8 +102,8 @@ func TestApplyConfigReinitOnlyRewritesRequestedSection(t *testing.T) {
 	if got.Env.Strategy != domain.EnvStrategyExample {
 		t.Errorf("env.strategy: got %q, want %q", got.Env.Strategy, domain.EnvStrategyExample)
 	}
-	if len(got.Env.CopyFiles) != 1 || got.Env.CopyFiles[0] != ".env.local" {
-		t.Errorf("env.copy_files: got %v", got.Env.CopyFiles)
+	if len(got.Env.Files) != 1 || got.Env.Files[0].Target != ".env.local" {
+		t.Errorf("env.file: got %+v", got.Env.Files)
 	}
 
 	// Every untouched section preserved its on-disk value.

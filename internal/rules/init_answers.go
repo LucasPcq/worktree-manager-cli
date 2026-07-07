@@ -81,7 +81,7 @@ func BuildProjectAnswers(flags InitProjectFlags, detection domain.InitDetectionR
 			return domain.InitProjectAnswers{}, err
 		}
 		answers.EnvStrategy = envStrategy
-		answers.EnvCopyFiles = detection.EnvFiles
+		answers.EnvFiles = detection.EnvFiles
 	}
 
 	if flags.SkipHooks {

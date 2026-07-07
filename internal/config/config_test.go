@@ -16,7 +16,12 @@ base_branch = "develop"
 
 [env]
 strategy = "main"
-copy_files = [".env", "apps/api/.env"]
+
+[[env.file]]
+target = ".env"
+
+[[env.file]]
+target = "apps/api/.env"
 
 [hooks]
 on_create = [
@@ -55,9 +60,37 @@ func TestLoadFullConfig(t *testing.T) {
 	if cfg.Project.Env.Strategy != domain.EnvStrategyMain {
 		t.Errorf("expected strategy=main, got %s", cfg.Project.Env.Strategy)
 	}
-	if len(cfg.Project.Env.CopyFiles) != 2 {
-		t.Errorf("expected 2 copy_files, got %d", len(cfg.Project.Env.CopyFiles))
+	if len(cfg.Project.Env.Files) != 2 || cfg.Project.Env.Files[0].Target != ".env" {
+		t.Errorf("env files not loaded: %+v", cfg.Project.Env.Files)
 	}
+}
+
+func TestLoadStructuredEnvFiles(t *testing.T) {
+	dir := t.TempDir()
+	toml := "[env]\nstrategy = \"example\"\n\n[[env.file]]\ntarget = \".env\"\ntemplate = \".env.dist\"\n\n[[env.file]]\ntarget = \".env.local\"\nlocal = true\n"
+	writeFile(t, dir, domain.ConfigFileName, toml)
+
+	cfg, err := Load(LoadParams{StateDir: dir})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	env, ok := findEnvFile(cfg.Project.Env.Files, ".env")
+	if !ok || env.Template != ".env.dist" {
+		t.Errorf("structured template not read: %+v", cfg.Project.Env.Files)
+	}
+	local, ok := findEnvFile(cfg.Project.Env.Files, ".env.local")
+	if !ok || !local.Local {
+		t.Errorf(".env.local not flagged local: %+v", cfg.Project.Env.Files)
+	}
+}
+
+func findEnvFile(files []domain.EnvFile, target string) (domain.EnvFile, bool) {
+	for _, f := range files {
+		if f.Target == target {
+			return f, true
+		}
+	}
+	return domain.EnvFile{}, false
 }
 
 func TestLoadMinimalConfigAppliesDefaults(t *testing.T) {
