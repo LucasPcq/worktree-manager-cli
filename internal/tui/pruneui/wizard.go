@@ -1,8 +1,9 @@
-// Package prune renders the interactive flow for `wtm prune`: a multi-select of
+// Package pruneui renders the interactive flow for `wtm prune`: a multi-select of
 // the worktrees that matched the prune filters, followed by a confirmation that
 // surfaces a force option when an unsafe worktree (dirty, unpushed commits, or an
-// open PR) is checked (mirroring clean).
-package prune
+// open PR) is checked (mirroring clean). It is the tea adapter behind prune's
+// wizard port (internal/cmd/prune/wizard).
+package pruneui
 
 import (
 	"errors"
@@ -40,9 +41,13 @@ const (
 // Injected by the command layer so the picker stays free of prune business logic.
 type ReparentPreviewFunc func(chosen []string, force bool) []domain.ReparentResult
 
-// RunParams holds the inputs for the prune picker.
-type RunParams struct {
+// RunWizardParams holds the inputs for the prune picker.
+type RunWizardParams struct {
 	Plan domain.PrunePlan
+	// Force is the --force preset: when set, unsafe candidates start checked and the
+	// primary confirm already carries force, so a single "Yes" removes them without
+	// the user having to pick the separate "force prune" option (mirrors clean).
+	Force bool
 	// ReparentPreview derives the reparent moves shown in the final confirmation
 	// step from the live selection; nil disables the step.
 	ReparentPreview ReparentPreviewFunc
@@ -79,11 +84,11 @@ func worktreesSummary(model any) string {
 	return strings.Join(vals[:maxNames], ", ") + fmt.Sprintf(" +%d", len(vals)-maxNames)
 }
 
-// Run shows the candidate multi-select (unsafe ones tagged and left unchecked),
-// a confirmation screen, then — when children would be orphaned — a reparent
-// confirmation, all in one wizard. Returns domain.ErrUserAborted on Esc at the
-// first step or the explicit "No, cancel".
-func Run(params RunParams) (RunResult, error) {
+// RunWizard shows the candidate multi-select (unsafe ones tagged; unchecked unless
+// --force preselects them), a confirmation screen, then — when children would be
+// orphaned — a reparent confirmation, all in one wizard. Returns
+// domain.ErrUserAborted on Esc at the first step or the explicit "No, cancel".
+func RunWizard(params RunWizardParams) (RunResult, error) {
 	plan := params.Plan
 	// The picker may be reached through a shell wrapper that captures stdout, so
 	// force lipgloss to detect color against stderr (the TTY).
@@ -93,9 +98,10 @@ func Run(params RunParams) (RunResult, error) {
 	for _, c := range plan.Selected {
 		tag, variant := candidateTag(c)
 		items = append(items, components.MultiSelectItem{
-			Label:    c.Branch,
-			Value:    c.Branch,
-			Selected: c.UnsafeReason == "", // unsafe worktrees are opt-in
+			Label: c.Branch,
+			Value: c.Branch,
+			// Unsafe worktrees are opt-in — unless --force preselected them.
+			Selected: params.Force || c.UnsafeReason == "",
 			Tag:      tag,
 			Variant:  variant,
 		})
@@ -138,7 +144,8 @@ func Run(params RunParams) (RunResult, error) {
 	}
 	result := RunResult{
 		Branches: msModel.Values(),
-		Force:    stepSelectValue(finalSteps, stepConfirm) == confirmForce,
+		// --force pre-lifts the refusal, so the primary "Yes" already carries force.
+		Force: params.Force || stepSelectValue(finalSteps, stepConfirm) == confirmForce,
 	}
 	if idx := stepIndex(finalSteps, stepReparent); idx >= 0 && !final.Skipped(idx) {
 		result.ReparentAsked = true

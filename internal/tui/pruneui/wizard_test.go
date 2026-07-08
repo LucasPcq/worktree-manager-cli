@@ -1,4 +1,4 @@
-package prune
+package pruneui
 
 import (
 	"strings"

@@ -21,6 +21,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	checkoutwizard "github.com/LucasPcq/wtm/internal/tui/checkout"
 	"github.com/LucasPcq/wtm/internal/tui/components"
+	"github.com/LucasPcq/wtm/internal/tui/envconfirm"
 )
 
 // NewCmd creates the wtm checkout command.
@@ -165,7 +166,7 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 		IncludeEnv:       opts.envOverride == "",
 		FromOverride:     opts.fromOverride,
 		EnvOverride:      opts.envOverride,
-		EnvFallback:      shared.EnvFallbackDecider(dir, result.Config),
+		EnvFallback:      envconfirm.Decider(dir, result.Config),
 	})
 	if err != nil {
 		if errors.Is(err, domain.ErrUserAborted) {
@@ -220,7 +221,7 @@ func resolveParentAndEnv(params resolveParams) (parent, env string, aborted, wiz
 			IncludeEnv:     needEnv,
 			FromOverride:   params.opts.fromOverride,
 			EnvOverride:    params.opts.envOverride,
-			EnvFallback:    shared.EnvFallbackDecider(params.result.ProjectDir, params.result.Config),
+			EnvFallback:    envconfirm.Decider(params.result.ProjectDir, params.result.Config),
 		})
 		if runErr != nil {
 			if errors.Is(runErr, domain.ErrUserAborted) {
@@ -258,7 +259,7 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 	p := params.pr
 
 	if params.interactive && !params.envConfirmed {
-		if show, cp := shared.EnvFallbackDecider(result.ProjectDir, result.Config)(params.parent, params.env); show {
+		if show, cp := envconfirm.Decider(result.ProjectDir, result.Config)(params.parent, params.env); show {
 			if confirmed, _ := components.RunStandaloneConfirm(components.NewConfirm(cp)); !confirmed {
 				return nil
 			}

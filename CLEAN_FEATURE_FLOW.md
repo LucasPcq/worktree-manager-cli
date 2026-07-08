@@ -82,10 +82,12 @@ flowchart TD
     class TUICLEAN,PBUB,PROGBUB,COMP,TEALIB teaCls
 ```
 
-Vérification de l'invariant :
+Vérification de l'invariant — **par un test, pas un grep** (le grep n'attrape que les imports
+textuels directs, pas la clôture transitive) :
 
 ```bash
-grep -rl "charmbracelet/bubbletea" internal/cmd   # → vide (y compris le port wizard/)
+go test ./internal/archtest/                       # clôture transitive de internal/cmd sans tea
+grep -rl "charmbracelet/bubbletea" internal/cmd    # smoke check rapide (≠ garantie)
 ```
 
 ---

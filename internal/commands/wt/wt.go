@@ -18,9 +18,8 @@ func NewCmds() []*cobra.Command {
 		grouped(newListCmd(), domain.CmdGroupWorktrees),
 		grouped(newTreeCmd(), domain.CmdGroupWorktrees),
 		grouped(newCreateCmd(), domain.CmdGroupWorktrees),
-		// clean is migrated to the Factory pattern and registered from cmd/root.go
-		// (see internal/cmd/clean).
-		grouped(newPruneCmd(), domain.CmdGroupWorktrees),
+		// clean and prune are migrated to the Factory pattern and registered from
+		// cmd/root.go (see internal/cmd/clean and internal/cmd/prune).
 		grouped(newExtractCmd(), domain.CmdGroupWorktrees),
 		grouped(newRelocateCmd(), domain.CmdGroupWorktrees),
 		grouped(newGoCmd(), domain.CmdGroupNavigate),

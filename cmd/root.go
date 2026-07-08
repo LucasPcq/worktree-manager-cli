@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/cmd/clean"
+	"github.com/LucasPcq/wtm/internal/cmd/prune"
 	"github.com/LucasPcq/wtm/internal/commands/agents"
 	"github.com/LucasPcq/wtm/internal/commands/checkout"
 	"github.com/LucasPcq/wtm/internal/commands/configcmd"
@@ -27,6 +28,7 @@ import (
 	pbubble "github.com/LucasPcq/wtm/internal/prompter/bubbletea"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/tui/cleanui"
+	"github.com/LucasPcq/wtm/internal/tui/pruneui"
 	"github.com/LucasPcq/wtm/pkg/cmdutil"
 	"github.com/LucasPcq/wtm/pkg/iostreams"
 )
@@ -53,6 +55,14 @@ func init() {
 	cleanCmd := clean.NewCmdClean(cleanFactory, cleanui.NewWizard(cleanFactory.IOStreams), nil)
 	cleanCmd.GroupID = domain.CmdGroupWorktrees
 	rootCmd.AddCommand(cleanCmd)
+
+	// prune is likewise a Factory-pattern command with its interactive picker
+	// injected as a ports & adapters wizard (the tea adapter lives in
+	// internal/tui/pruneui). Registered here so the docs generator sees it.
+	pruneFactory := buildFactory()
+	pruneCmd := prune.NewCmdPrune(pruneFactory, pruneui.NewWizard(pruneFactory.IOStreams), nil)
+	pruneCmd.GroupID = domain.CmdGroupWorktrees
+	rootCmd.AddCommand(pruneCmd)
 
 	rootCmd.AddCommand(run.NewCmd())
 

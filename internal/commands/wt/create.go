@@ -15,6 +15,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/branch"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
+	"github.com/LucasPcq/wtm/internal/tui/envconfirm"
 	newpicker "github.com/LucasPcq/wtm/internal/tui/newwt"
 )
 
@@ -255,7 +256,7 @@ func envFallbackPrompt(projectDir string, config domain.Config, source, override
 	}) {
 		return false, components.NewConfirmParams{}
 	}
-	return true, shared.EnvParentFallbackConfirm(source)
+	return true, envconfirm.Confirm(source)
 }
 
 // executeFastForwardSource fast-forwards an accepted behind-only source branch.

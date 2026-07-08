@@ -1,10 +1,15 @@
 # Architecture des commandes wtm — Command / Options / Run + Factory
 
-> **Référence concrète**, tirée du pilote réel **`clean`** (branche `refactor/command-factory`).
-> Objectif : servir de patron pour migrer la commande suivante. Tout ce qui est décrit ici
-> **existe dans le code** — les chemins renvoient aux fichiers vivants.
+> **Référence concrète**, éprouvée sur **deux commandes réelles** — le pilote **`clean`** puis
+> **`prune`** (branche `refactor/command-factory`). Objectif : servir de patron pour migrer la
+> commande suivante. Tout ce qui est décrit ici **existe dans le code** — les chemins renvoient aux
+> fichiers vivants.
 >
-> Pour les schémas de flux détaillés de `clean`, voir [`CLEAN_FEATURE_FLOW.md`](./CLEAN_FEATURE_FLOW.md).
+> **Verdict : GO** (validé sur `clean` + `prune`, cf. §12).
+>
+> Pour les schémas de flux détaillés, voir [`CLEAN_FEATURE_FLOW.md`](./CLEAN_FEATURE_FLOW.md)
+> (cible unique) et [`PRUNE_FEATURE_FLOW.md`](./PRUNE_FEATURE_FLOW.md) (batch multi-sélection +
+> scan I/O en deux temps).
 
 Inspiré de la GitHub CLI (`gh`), **adapté à wtm** : une commande n'est qu'un **adaptateur**, pas un
 service. Elle déclare des flags, les range dans une struct typée, valide, puis délègue au métier pur.
@@ -13,7 +18,8 @@ service. Elle déclare des flags, les range dans une struct typée, valide, puis
 
 ## 0. État du pilote & ce qu'on réutilise
 
-Le pilote **`clean` est fait**.
+Le pilote **`clean` est fait**, et **`prune` est migré** par-dessus (2ᵉ commande, structurellement
+plus complexe : batch multi-sélection + scan I/O en deux temps). Le pattern a tenu → **GO** (§12).
 
 **Stratégie réelle : socle neuf + réutilisation du métier existant** (pas un « greenfield qui réécrit
 tout »). On a posé un socle transverse neuf, mais on **réutilise tel quel** ce qui était déjà propre :
@@ -91,11 +97,21 @@ flowchart TD
     class TUI,PBUB,PROGBUB,COMP,TEALIB teaCls
 ```
 
-Vérification (doit être vide) :
+**Vérification — la garantie est un test, pas un grep.** L'invariant réel est « la **clôture
+transitive** de tout paquet sous `internal/cmd` exclut `tea` ». Un `grep -rl bubbletea internal/cmd`
+n'attrape que les imports **textuels directs** : le jour où un paquet intermédiaire (`internal/output`,
+`internal/commands/shared`…) tire `tea`, le grep reste vide alors que la clôture est polluée. C'est
+d'ailleurs arrivé — `shared` bridgeait `internal/tui/components` via `envfallback.go` ; corrigé en
+déplaçant le helper tea-typé vers `internal/tui/envconfirm`. La vérité vit donc dans un **test d'archi
+qui casse le build** :
 
 ```bash
-grep -rl "charmbracelet/bubbletea" internal/cmd
+go test ./internal/archtest/        # marche sur go list -deps (clôture transitive)
 ```
+
+`internal/archtest/arch_test.go` parcourt le graphe `go list -deps` de chaque couche et échoue —
+en **nommant le paquet-pont fautif** — dès qu'une fuite transitive apparaît. Le grep reste utile
+comme *smoke check* rapide, mais **il ne constitue pas la garantie**.
 
 ---
 
@@ -314,8 +330,18 @@ Sans vrai terminal, grâce à `runF` + streams mémoire + mocks :
   4. **`--dry-run`** : aperçu, métier **jamais** muté ; requiert une sélection explicite (TTY + pipe).
   5. **Interactif mocké** : le wizard reçoit le bon `Prompt` (presets, closures non-nil), son `Choice`
      est consommé.
+  6. **Parité `--force`** (si la commande câble `--force` dans un wizard) : run interactif `--force`
+     → le `Prompt` capturé a `Force == true` ; sans `--force` → `Force == false`. C'est la famille qui
+     empêche la déviation « le flag existe mais ne descend pas ».
 
-Réf. : `internal/cmd/clean/clean_test.go`. Les tests métier (`service/*`, `rules/*`) restent à part.
+⚠ **Quand le wizard n'est atteint qu'après une phase de scan** (cas `prune` : le picker ne
+s'ouvre que si le plan est non vide), le mock du wizard ne suffit pas — il faut **une fixture qui
+produit un candidat**. Faute d'interface injectable sur le métier (réserve §12 n°1), `prune` seed un
+worktree « gone » réel en git (voir `internal/cmd/prune/prune_test.go` `seedGoneWorktree`). Cible :
+remplacer ces fixtures par un port scan/PR stubbé, au fil des migrations.
+
+Réf. : `internal/cmd/clean/clean_test.go` (5 familles) et `internal/cmd/prune/prune_test.go`
+(6 familles + fixture de scan). Les tests métier (`service/*`, `rules/*`) restent à part.
 
 ---
 
@@ -340,28 +366,67 @@ pattern.** Réversible si un vrai besoin de précédence `flag > env > config` a
 - [ ] `NewCmdXxx(f, [ports], runF)` : flags + wiring `RunE` seulement. Zéro métier. `GroupID` posé.
 - [ ] `RunE` suit **Resolve → Complete → Validate → (Confirm) → Dispatch**.
 - [ ] Mutation destructive → **deux axes** `--force`/`--yes` + `--dry-run` (§5) ; `cmdutil.Confirm` porte la garde.
-- [ ] Collecte interactive = **wizard port** (`internal/cmd/<cmd>/wizard` + adapter `internal/tui/<cmd>ui`), injecté au root. Aucun import tea sous `internal/cmd`.
+- [ ] **Audit de parité bypass** (migration ≠ parité automatique) : `--yes`/`--force`/`--dry-run`
+  doivent avoir la **même sémantique que le pilote**, pas seulement exister. Vérifier explicitement
+  que `--force` est **câblé dans le wizard** comme preset (lever les refus **sans re-demander**),
+  que la garde non-TTY renvoie un `cmdutil.FlagError` (exit `2`), et que le fold
+  `Interactive = CanPrompt() && !Yes` + garde `Interactive && !DryRun` sont posés. Piège vécu sur
+  `prune` : le flag `--force` **existait** mais ne descendait pas dans le picker → il fallait le
+  re-choisir à la main (déviation silencieuse). Cf. `PRUNE_FEATURE_FLOW.md`.
+- [ ] Collecte interactive = **wizard port** (`internal/cmd/<cmd>/wizard` + adapter `internal/tui/<cmd>ui`), injecté au root. Membrane tea garantie par `go test ./internal/archtest/` (clôture transitive), pas par un grep.
 - [ ] `xxxRun` lit `opts`, appelle le métier via une struct `Params` dédiée. Métier réutilisé (`service/*`).
 - [ ] Fonctions pures → `internal/rules/<cmd>.go`. Helpers I/O partagés → `internal/commands/shared`. Aucune duplication.
 - [ ] Aucune écriture directe sur `os.Stdout` : tout via `opts.IO.Out/ErrOut`. Framing via `output.Frame` (jamais en JSON).
 - [ ] Enregistrement dans `cmd/root.go` `init()` (docs le voient) + gestion `FlagError`/abort dans `Execute`.
-- [ ] Tests des 5 familles (§9), sans vrai terminal.
+- [ ] Tests des familles (§9), sans vrai terminal — dont la **famille parité `--force`** si un wizard est câblé.
 - [ ] `make docs` régénéré + skill agent (`using-wtm.skill.md`) + README si la surface CLI change.
 - [ ] `build-validator` : `go build`, `vet`, `staticcheck`, `go test ./...` verts.
 
 ---
 
-## 12. Critères go / no-go du pilote
+## 12. Critères go / no-go — **verdict : GO**
 
-Le pilote `clean` valide déjà :
+Validé sur **deux** commandes de nature différente : `clean` (cible unique) **et** `prune` (batch
+multi-sélection + scan I/O en deux temps). Les cinq critères tiennent sur les deux :
 
 - Même `--flag` → résultat **identique** en interactif et non-interactif (le mode ne change que la
   *collecte*, pas le *résultat*).
 - Ajouter un flag ne touche que `Options` + une ligne de déclaration (+ éventuellement un bloc de
-  collecte/validation) — **jamais** le métier.
+  collecte/validation) — **jamais** le métier (`prune` : 9 flags, 0 ligne de `service/*` touchée).
 - `go test ./internal/cmd/...` couvre les familles **sans** vrai terminal.
-- `grep -rl "charmbracelet/bubbletea" internal/cmd` est **vide**.
-- Le métier compile et se teste **sans** cobra/bubbletea.
+- `go test ./internal/archtest/` est **vert** : la **clôture transitive** de `internal/cmd` exclut
+  `tea` (et le reste de la membrane — cf. §1). *Pas* un grep : un test qui casse le build sur toute
+  fuite transitive future.
+- Le métier compile et se teste **sans** cobra/bubbletea (réutilisé **tel quel** sur `prune`).
+
+**Signal fort** : le modèle de bypass s'est *généralisé sans se déformer*. `prune` étant batch, le
+« required selection → erreur » de `clean` devient un « safe default = tous les matchs » — **même
+modèle**, défaut par-commande correct. Et le pattern a rendu *visible* une déviation `--force`
+latente que l'ancien monolithe cachait : une architecture qui standardise **fait remonter** les
+incohérences au lieu de les enfouir.
+
+### Réserves ouvertes (non bloquantes, à traiter au fil de l'eau)
+
+1. **Testabilité de la phase de collecte / scan → injecter le métier par interface.** Le wizard de
+   `clean` se déclenche inconditionnellement ; celui de `prune` **seulement si `scanPrune`
+   (`LoadPRsAllStates` + `worktree.PlanPrune`, appelés en dur) renvoie un plan non vide**. Pour
+   tester l'invocation du wizard, il a fallu **seeder un vrai worktree « gone »** en git. C'est le
+   symptôme que **les couches inférieures / métier doivent, elles aussi, dépendre d'interfaces**
+   (ex. un port `Scanner`/`PRLoader` injecté via la `Factory`) pour être stubbées sans fixtures
+   git. **Décision** : on le fera **progressivement**, commande par commande, une fois la structure
+   autour (Options/Run/ports wizard) déjà en place — pas de big-bang sur le métier. Priorité avant
+   les commandes à forte pré-collecte (`sync`, `extract`).
+2. **Migration ≠ parité automatique.** Vérifier activement chaque axe de bypass à chaque migration
+   (cf. la checklist §11, item « Audit de parité bypass »). Un flag qui « existe » n'a pas
+   forcément la bonne sémantique.
+3. **Boilerplate mécanique.** Certains helpers (`decidePruneReparent`, `isInsidePruned`, `render*`)
+   sont copiés avec substitution `cmd.Out → opts.IO.Out`. Prévisible et sûr, coût accepté.
+
+### Ordre de rollout conseillé
+
+Complexité de collecte croissante : `relocate` / `reparent` (simples) → puis `sync` / `extract`
+(collecte lourde). **Avant `sync`**, poser la couture d'injection du métier (réserve n°1) — c'est là
+que le pattern sera réellement stressé.
 
 ---
 
