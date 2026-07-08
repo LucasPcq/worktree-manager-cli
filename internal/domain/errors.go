@@ -108,6 +108,19 @@ var (
 	// ErrReparentSelf is returned when a worktree is asked to become its own parent.
 	ErrReparentSelf = errors.New("a worktree cannot be its own parent")
 
+	// ErrEnvWorktreeRequired is returned when `wtm env` is invoked without a worktree
+	// argument and cannot fall back to the interactive picker (--yes, no terminal, or
+	// --output json).
+	ErrEnvWorktreeRequired = errors.New("specify a worktree (no interactive picker under --yes, without a terminal, or in --output json mode)")
+
+	// ErrEnvJSONNeedsYes is returned when `wtm env` runs in --output json without
+	// --yes: interactive resolution cannot run in JSON mode.
+	ErrEnvJSONNeedsYes = errors.New("--output json requires --yes (interactive resolution cannot run in JSON mode)")
+
+	// ErrEnvNoFiles is returned when `wtm env` runs on a project whose config
+	// declares no env files to reconcile.
+	ErrEnvNoFiles = errors.New("no env files configured — run `wtm init --only env` to detect them")
+
 	// ErrEnvFileNoTarget is returned when an env.file entry has an empty target.
 	ErrEnvFileNoTarget = errors.New("env file entry must have a target")
 

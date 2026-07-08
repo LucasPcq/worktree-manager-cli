@@ -13,7 +13,7 @@ import (
 
 // Step defines one step in a wizard.
 // Model must be a SelectListModel, TextInputModel, ConfirmModel, MultiSelectModel,
-// or ReorderListModel.
+// ReorderListModel, HookListModel, or EnvResolveModel.
 type Step struct {
 	Name  string
 	Model any
@@ -308,6 +308,10 @@ func (m WizardModel) updateStep(step *Step, msg tea.Msg) (advanced bool, back bo
 		updated, c := child.Update(msg)
 		step.Model = updated
 		return updated.Done(), updated.Aborted(), c
+	case EnvResolveModel:
+		updated, c := child.Update(msg)
+		step.Model = updated
+		return updated.Done(), updated.Aborted(), c
 	}
 	return false, false, nil
 }
@@ -508,6 +512,9 @@ func (m WizardModel) renderHelpBar() string {
 	if hl, ok := m.steps[m.current].Model.(HookListModel); ok {
 		return styles.HelpBar.Render(hl.helpHint())
 	}
+	if er, ok := m.steps[m.current].Model.(EnvResolveModel); ok {
+		return styles.HelpBar.Render(er.helpHint())
+	}
 	if sl, ok := m.steps[m.current].Model.(SelectListModel); ok && sl.filtering {
 		return styles.HelpBar.Render(sl.filterHelpHint())
 	}
@@ -567,6 +574,11 @@ func (m *WizardModel) propagateSize(stepIdx int) {
 		child.height = h
 		child.cmdInput.Width = max(hookInputMinWidth, m.width-hookInputWidthInset)
 		child.cwdInput.Width = max(hookInputMinWidth, m.width-hookInputWidthInset)
+		m.steps[stepIdx].Model = child
+	case EnvResolveModel:
+		child.width = m.width
+		child.height = h
+		child.input.Width = max(10, m.width-8)
 		m.steps[stepIdx].Model = child
 	}
 }
@@ -646,6 +658,8 @@ func (m WizardModel) initStep(stepIdx int) tea.Cmd {
 		return child.Init()
 	case HookListModel:
 		return child.Init()
+	case EnvResolveModel:
+		return child.Init()
 	}
 	return nil
 }
@@ -663,6 +677,8 @@ func (m WizardModel) viewStep(stepIdx int) string {
 	case ReorderListModel:
 		return child.View()
 	case HookListModel:
+		return child.View()
+	case EnvResolveModel:
 		return child.View()
 	}
 	return ""
@@ -698,6 +714,11 @@ func (m *WizardModel) resetStep(stepIdx int) {
 		child.aborted = false
 		child.editing = false
 		m.steps[stepIdx].Model = child
+	case EnvResolveModel:
+		child.done = false
+		child.aborted = false
+		child.editing = false
+		m.steps[stepIdx].Model = child
 	}
 }
 
@@ -724,6 +745,8 @@ func (m WizardModel) stepDescription(step Step) string {
 	case ReorderListModel:
 		return child.desc
 	case HookListModel:
+		return child.desc
+	case EnvResolveModel:
 		return child.desc
 	}
 	return ""

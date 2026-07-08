@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.24.0 - Module `env` : Détection & gestion des conflits d'un worktree à un autre
+
+### New features 
+
+- **wtm env [branch]** - Détecter et de gérer les conflits d'un worktree en fonction de la méthode choisi lors de la création (main, parent, exemple). Sans argument : Affiche un picker interactif.
+
+### Improvements
+
+- Mise à jour du skill et de la documentation
+
 ## v0.23.0 — Hooks `on_clean`, détection `.env` généralisée & sorties harmonisées
 
 ### Breaking changes

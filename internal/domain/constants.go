@@ -68,6 +68,26 @@ const (
 	EnvTemplateSuffixTemplate = ".template"
 	EnvTemplateSuffixTmpl     = ".tmpl"
 
+	// `wtm env` value-source display labels — the single source a worktree's env
+	// values come from, named by its strategy and shown in the drift report header.
+	// `example` reads placeholders from the template only; `main` reads the main
+	// worktree; `parent` reads the parent worktree only (main solely when the parent
+	// has no local worktree at all).
+	EnvSourceLabelTemplate = "template"
+	EnvSourceLabelMain     = "main"
+	EnvSourceLabelParent   = "parent worktree"
+	// EnvSourceLabelNone is shown when the strategy's value source has no .env file at
+	// all (and no fallback either) — nothing to sync from, so keys come from the
+	// template as placeholders. Typical on a fresh project before any .env is created.
+	EnvSourceLabelNone = "template (no .env to sync from)"
+
+	// Tokens recognized by the .env content parser (internal/rules/env_parse.go).
+	EnvCommentPrefix = "#"
+	EnvExportPrefix  = "export "
+	EnvAssign        = "="
+	EnvQuoteDouble   = '"'
+	EnvQuoteSingle   = '\''
+
 	// DefaultShell is the default shell for integration.
 	DefaultShell = ShellZsh
 
@@ -123,6 +143,13 @@ const (
 	FlagKeep       = "keep"
 	FlagFiles      = "files"
 	FlagOnConflict = "on-conflict"
+
+	// `wtm env` flags. FlagFrom (source override), FlagOnConflict (keep/overwrite),
+	// FlagYes and FlagOutput are shared with other commands. FlagMode selects
+	// add/refresh, FlagCheck is the read-only drift report, FlagPrune drops orphans.
+	FlagMode  = "mode"
+	FlagCheck = "check"
+	FlagPrune = "prune"
 
 	// FlagReparentChildren opts in (non-interactively) to reparenting the orphaned
 	// children of a cleaned worktree onto its grandparent. In interactive mode the
@@ -414,6 +441,7 @@ const (
 	CmdReparent = "reparent"
 	CmdTree     = "tree"
 	CmdPrune    = "prune"
+	CmdEnv      = "env"
 
 	// MinWizardListHeight is the minimum number of rows reserved for a wizard
 	// step's scrollable list. Completed-step summaries are bounded so they never
