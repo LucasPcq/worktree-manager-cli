@@ -68,6 +68,13 @@ const (
 	EnvTemplateSuffixTemplate = ".template"
 	EnvTemplateSuffixTmpl     = ".tmpl"
 
+	// Tokens recognized by the .env content parser (internal/rules/env_parse.go).
+	EnvCommentPrefix = "#"
+	EnvExportPrefix  = "export "
+	EnvAssign        = "="
+	EnvQuoteDouble   = '"'
+	EnvQuoteSingle   = '\''
+
 	// DefaultShell is the default shell for integration.
 	DefaultShell = ShellZsh
 
