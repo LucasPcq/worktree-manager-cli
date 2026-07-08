@@ -134,13 +134,17 @@ func resolveSource(params resolveSourceParams) (value, source string, export, ok
 // ApplyEnvDiffParams holds the inputs to materialize a resolved diff. Child is the
 // original document to edit in place (round-trip preserved via EnvLine.Raw).
 // Decisions settle conflicts (keep/overwrite); FilledValues supplies prompted or
-// edited values (missing keys and conflict edits); Prune drops orphan keys.
+// edited values (missing keys, conflict edits, and edited additions); Prune drops
+// every orphan key, while PruneKeys drops only the named orphans; SkipKeys omits a
+// resolved/missing addition the user chose not to add (per-key from the wizard).
 type ApplyEnvDiffParams struct {
 	Child        []domain.EnvLine
 	Diff         domain.EnvDiff
 	Decisions    map[string]domain.EnvConflictDecision
 	FilledValues map[string]string
 	Prune        bool
+	PruneKeys    map[string]bool
+	SkipKeys     map[string]bool
 }
 
 // ApplyEnvDiff produces the reconciled .env lines from a diff and its decisions,
@@ -174,7 +178,7 @@ func ApplyEnvDiff(params ApplyEnvDiffParams) []domain.EnvLine {
 		}
 		switch entry.Status {
 		case domain.EnvKeyOrphan:
-			if params.Prune {
+			if params.Prune || params.PruneKeys[l.Key] {
 				continue
 			}
 			out = append(out, l)
@@ -187,6 +191,9 @@ func ApplyEnvDiff(params ApplyEnvDiffParams) []domain.EnvLine {
 
 	for _, e := range params.Diff.Entries {
 		if childKeys[e.Key] {
+			continue
+		}
+		if params.SkipKeys[e.Key] {
 			continue
 		}
 		if line, ok := addedLine(e, params.FilledValues); ok {
@@ -214,6 +221,9 @@ func resolveConflict(line domain.EnvLine, entry domain.EnvKeyDiff, params ApplyE
 func addedLine(entry domain.EnvKeyDiff, filled map[string]string) (domain.EnvLine, bool) {
 	switch entry.Status {
 	case domain.EnvKeyResolved:
+		if v, ok := filled[entry.Key]; ok {
+			return newPair(entry.Key, v, entry.Export), true
+		}
 		return newPair(entry.Key, entry.ResolvedValue, entry.Export), true
 	case domain.EnvKeyMissing:
 		if v, ok := filled[entry.Key]; ok {
