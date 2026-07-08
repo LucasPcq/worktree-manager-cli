@@ -16,28 +16,31 @@ func ParseEnv(content string) []domain.EnvLine {
 	lines := make([]domain.EnvLine, 0, len(physical))
 
 	for i := 0; i < len(physical); i++ {
-		raw := physical[i]
-		trimmed := strings.TrimSpace(raw)
-
-		if trimmed == "" {
-			lines = append(lines, domain.EnvLine{Kind: domain.EnvLineBlank, Raw: raw})
-			continue
-		}
-		if strings.HasPrefix(trimmed, domain.EnvCommentPrefix) {
-			lines = append(lines, domain.EnvLine{Kind: domain.EnvLineComment, Raw: raw})
-			continue
-		}
-
-		pair, extra, ok := parsePair(physical, i)
-		if !ok {
-			lines = append(lines, domain.EnvLine{Kind: domain.EnvLineComment, Raw: raw})
-			continue
-		}
-		lines = append(lines, pair)
+		line, extra := classifyLine(physical, i)
+		lines = append(lines, line)
 		i += extra
 	}
 
 	return lines
+}
+
+// classifyLine turns physical[i] into one logical line and reports how many extra
+// physical lines it consumed (non-zero only for a multiline quoted value). Blank,
+// comment, valid pair, then a verbatim-comment fallback for anything else.
+func classifyLine(physical []string, i int) (domain.EnvLine, int) {
+	raw := physical[i]
+	trimmed := strings.TrimSpace(raw)
+
+	if trimmed == "" {
+		return domain.EnvLine{Kind: domain.EnvLineBlank, Raw: raw}, 0
+	}
+	if strings.HasPrefix(trimmed, domain.EnvCommentPrefix) {
+		return domain.EnvLine{Kind: domain.EnvLineComment, Raw: raw}, 0
+	}
+	if pair, extra, ok := parsePair(physical, i); ok {
+		return pair, extra
+	}
+	return domain.EnvLine{Kind: domain.EnvLineComment, Raw: raw}, 0
 }
 
 // RenderEnv serializes logical lines back to .env content. A pair whose Raw is
