@@ -21,6 +21,17 @@ func ParentBranch(params ParentBranchParams) string {
 	return loadSourceBranch(params.StateDir, params.Branch)
 }
 
+// Metadata returns the recorded metadata for a worktree and true, or a zero
+// value and false when none is recorded. Callers that need the memorized env
+// strategy or parent branch (e.g. `wtm env`) read it through here.
+func Metadata(params ParentBranchParams) (domain.WorktreeMetadata, bool) {
+	meta, err := loadMetadata(params.StateDir, params.Branch)
+	if err != nil {
+		return domain.WorktreeMetadata{}, false
+	}
+	return meta, true
+}
+
 func loadSourceBranch(stateDir, branch string) string {
 	meta, err := loadMetadata(stateDir, branch)
 	if err != nil {

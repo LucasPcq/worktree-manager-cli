@@ -19,6 +19,7 @@ wtm [flags]
 * [wtm clean](wtm_clean.md)	 - Remove a worktree and its local branch
 * [wtm config](wtm_config.md)	 - Inspect or edit the project wtm config
 * [wtm create](wtm_create.md)	 - Create a new worktree
+* [wtm env](wtm_env.md)	 - Reconcile a worktree's .env against its template and value sources
 * [wtm extract](wtm_extract.md)	 - Move uncommitted changes to another worktree
 * [wtm go](wtm_go.md)	 - Switch to a worktree
 * [wtm init](wtm_init.md)	 - Initialize wtm configuration

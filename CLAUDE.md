@@ -125,7 +125,7 @@ internal/
   config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/, plus ~/.config/wtm/config.toml
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
-    env/                      ←   .env file provisioning strategies
+    env/                      ←   .env provisioning (create) + drift reconciliation (`wtm env`, sync.go)
     hooks/                    ←   on_create hook execution
     shell/                    ←   shell integration generation (zsh, bash, fish)
     integration/              ←   third-party adapters (VS Code, Cursor)
@@ -154,7 +154,7 @@ the full convention.
 
 **Mutation commands — bypass flags (two orthogonal axes):** every worktree-mutating
 command (`create`, `clean`, `sync`, `prune`, `relocate`, `reparent`, `extract`,
-`checkout`) exposes bypass on two independent axes. This is the standardized model
+`checkout`, `env`) exposes bypass on two independent axes. This is the standardized model
 (aligned with `gcloud --quiet`, `terraform -input=false`, `apt -y` vs `--force-yes`,
 and [clig.dev](https://clig.dev)); every new or refactored mutation command MUST follow it.
 - **`--yes` / `-y` = the confirmation/decision axis — runs fully unattended, zero prompts.**

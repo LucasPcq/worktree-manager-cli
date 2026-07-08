@@ -106,6 +106,7 @@ Full flags live in `wtm <command> --help` and [`docs/`](docs/wtm.md). Overview:
 | [`clean`](docs/wtm_clean.md) | Remove a worktree and its local branch |
 | [`prune`](docs/wtm_prune.md) | Remove finished worktrees (merged / closed PR / gone) in one pass — merged/closed need `gh` |
 | [`extract`](docs/wtm_extract.md) | Move uncommitted changes to another worktree (split an oversized PR) |
+| [`env`](docs/wtm_env.md) | Detect and fix a worktree's `.env` drift against its template + value source |
 | [`relocate`](docs/wtm_relocate.md) | Move worktrees to align with `base_path` and adopt external ones |
 
 ### Navigate
@@ -240,6 +241,12 @@ interpolate `{{worktree}}`, `{{branch}}`, `{{root}}`, and (for `on_create`) `{{f
 | `example` | Copies `file.example` from the main worktree, renamed to `file`. Warns if `.example` is missing. |
 | `main` | Copies the actual file from the main worktree. |
 | `parent` | Copies from the source worktree (`--from`), falling back to `main`. |
+
+The strategy is recorded per worktree. Later, [`wtm env`](docs/wtm_env.md) reconciles a
+worktree's `.env` against its **template** (the committed schema) plus the **same value
+source** — adding missing keys, and (with `--mode refresh`) settling values that drifted.
+Override the source for a single run with `--from`; the report always shows which source
+was used.
 
 ### Run config — `run.toml`
 

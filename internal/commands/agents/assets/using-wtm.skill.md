@@ -108,6 +108,32 @@ flagged; everything else is what the name implies.
   naming the missing flag; there is no picker). On conflict it changes nothing and exits `15`;
   retry with `--on-conflict resolve` to apply git conflict markers (`--yes` defaults on-conflict
   to abort).
+- `wtm env [worktree]` — detect and fix a worktree's `.env` drift: reconcile it against its
+  committed **template** (the expected keys, read from the worktree itself) plus a single
+  **value source** chosen by the worktree's recorded strategy — never a silent mix:
+  `example` → template placeholders only; `main` → the main worktree; `parent` → the parent
+  worktree **only** (a key the parent lacks stays `missing_unresolved`, it is NOT pulled from
+  main). The one exception (mirroring `wtm create`): when there is no readable parent file at
+  all — the parent has no worktree, or that file isn't in it — it falls back to main for that
+  file, flagged `parent_fallback:true` (with `parent_branch` naming the parent). The
+  report/JSON `source` field names the source. `--from example|main|parent` is the only way to
+  pull a different source for a run. If there is no `.env` to sync from at all yet (fresh
+  project: templates detected by `init`, but no value files created), every expected key is
+  `missing_unresolved` and `source` reads `template (no .env to sync from)` — filling them
+  (interactively) scaffolds the `.env` from the template. `--mode add` (default)
+  only fills missing keys and never touches an existing value; `--mode refresh` also settles
+  values that diverge from the source. `--check` is a read-only drift report (writes nothing).
+  In JSON/`--yes` mode it is **report-only except safe additions**: keys missing from the child
+  but resolved from a real source are added; **conflicts** stay unless you pass
+  `--on-conflict overwrite` (default `keep`), **orphans** stay unless you pass `--prune`, and
+  keys with no real source value (`missing_unresolved`) are never auto-filled (they need the
+  interactive prompt). JSON requires `--yes` **except with `--check`** (read-only, never
+  prompts, so `wtm env <wt> --check --output json` works on its own); omit a worktree arg only
+  interactively (else it errors — there is no picker under `--yes`/JSON). JSON shape:
+  `{branch,mode,check,files:[{target,strategy,source,applied,parent_branch,parent_fallback,diff:{mode,
+  entries:[{key,status,current_value,resolved_value,placeholder,source,export}]}}]}` where
+  `status` is `resolved` / `missing_unresolved` / `conflict` / `orphan`. Round-trip is
+  preserved: comments, ordering and formatting of the `.env` are kept; only decided keys change.
 - `wtm relocate` — realign worktrees with `base_path` and adopt externally-created ones.
   `--to <path>` sets a new `base_path` non-interactively; the interactive wizard also lets
   the user change it. You can't drive the wizard — in JSON mode pass `--yes` (and `--to` to
