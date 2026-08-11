@@ -25,25 +25,44 @@ func Extract(params domain.ExtractParams) (domain.ExtractResult, error) {
 
 	tracked, untracked := splitByStatus(params.Files)
 
-	if err := ensureNoUntrackedCollision(untrackedCollisionParams{
-		TargetPath:   params.TargetPath,
-		TargetBranch: params.TargetBranch,
-		Untracked:    untracked,
-	}); err != nil {
-		return domain.ExtractResult{}, err
-	}
-
-	conflicts := conflictingFiles(conflictScanParams{
+	trackedConflicts := conflictingFiles(conflictScanParams{
 		SourcePath: params.SourcePath,
 		TargetPath: params.TargetPath,
 		Tracked:    tracked,
 	})
-	if len(conflicts) > 0 && params.ConflictMode != domain.OnConflictResolve {
-		return domain.ExtractResult{}, conflictError(conflictErrorParams{Files: conflicts, TargetBranch: params.TargetBranch})
+	collisions := collidingUntracked(untrackedCollisionParams{
+		SourcePath: params.SourcePath,
+		TargetPath: params.TargetPath,
+		Untracked:  untracked,
+	})
+
+	// Binary collisions cannot carry conflict markers, so resolve mode has nothing
+	// to offer them. They are reported first, whatever the mode, so the message
+	// never points at a --on-conflict resolve that would not help.
+	if len(collisions.Unmergeable) > 0 {
+		return domain.ExtractResult{}, binaryCollisionError(conflictErrorParams{
+			Untracked:    collisions.Unmergeable,
+			TargetBranch: params.TargetBranch,
+		})
 	}
 
-	plan := extractPlan{Params: params, Tracked: tracked, Untracked: untracked, Conflicts: conflicts}
-	if len(conflicts) > 0 {
+	if len(trackedConflicts)+len(collisions.Conflicting) > 0 &&
+		params.ConflictMode != domain.OnConflictResolve {
+		return domain.ExtractResult{}, conflictError(conflictErrorParams{
+			Tracked:      trackedConflicts,
+			Untracked:    collisions.Conflicting,
+			TargetBranch: params.TargetBranch,
+		})
+	}
+
+	plan := extractPlan{
+		Params:             params,
+		Tracked:            tracked,
+		Untracked:          untracked,
+		Conflicts:          trackedConflicts,
+		UntrackedConflicts: collisions.Conflicting,
+	}
+	if len(trackedConflicts)+len(collisions.Conflicting) > 0 {
 		return resolveExtract(plan)
 	}
 
@@ -51,12 +70,16 @@ func Extract(params domain.ExtractParams) (domain.ExtractResult, error) {
 }
 
 // extractPlan is the resolved extraction work: the request plus the selected
-// files split into tracked/untracked and the subset that conflicts.
+// files split into tracked/untracked and the subsets that conflict.
 type extractPlan struct {
 	Params    domain.ExtractParams
 	Tracked   []string
 	Untracked []string
+	// Conflicts holds the tracked files whose patch does not apply onto the target.
 	Conflicts []string
+	// UntrackedConflicts holds the untracked files that already exist in the target
+	// with different content.
+	UntrackedConflicts []string
 }
 
 // cleanExtract handles the no-conflict path: apply the whole selection to the
@@ -77,7 +100,7 @@ func cleanExtract(plan extractPlan) (domain.ExtractResult, error) {
 		ThreeWay:     true,
 	}); err != nil {
 		rollbackTarget(rollbackTargetParams{TargetPath: params.TargetPath, Patch: patch, Tracked: plan.Tracked})
-		return domain.ExtractResult{}, conflictError(conflictErrorParams{Files: plan.Tracked, TargetBranch: params.TargetBranch})
+		return domain.ExtractResult{}, conflictError(conflictErrorParams{Tracked: plan.Tracked, TargetBranch: params.TargetBranch})
 	}
 
 	if err := copyUntracked(copyUntrackedParams{
@@ -116,6 +139,10 @@ func cleanExtract(plan extractPlan) (domain.ExtractResult, error) {
 func resolveExtract(plan extractPlan) (domain.ExtractResult, error) {
 	params := plan.Params
 	clean := subtract(plan.Tracked, plan.Conflicts)
+	// An untracked file that already exists in the target is merged like a tracked
+	// one: MergeFile builds its base from `git show HEAD:<path>`, which is empty
+	// for a file absent from HEAD, so it degenerates into a two-way merge.
+	merged := append(append([]string{}, plan.Conflicts...), plan.UntrackedConflicts...)
 
 	cleanPatch, err := infra.DiffFiles(infra.DiffFilesParams{
 		WorktreePath: params.SourcePath,
@@ -130,10 +157,10 @@ func resolveExtract(plan extractPlan) (domain.ExtractResult, error) {
 		ThreeWay:     true,
 	}); err != nil {
 		rollbackTarget(rollbackTargetParams{TargetPath: params.TargetPath, Patch: cleanPatch, Tracked: clean})
-		return domain.ExtractResult{}, conflictError(conflictErrorParams{Files: clean, TargetBranch: params.TargetBranch})
+		return domain.ExtractResult{}, conflictError(conflictErrorParams{Tracked: clean, TargetBranch: params.TargetBranch})
 	}
 
-	for _, f := range plan.Conflicts {
+	for _, f := range merged {
 		if _, err := infra.MergeFile(infra.MergeFileParams{
 			SourceWorktree: params.SourcePath,
 			TargetWorktree: params.TargetPath,
@@ -148,7 +175,7 @@ func resolveExtract(plan extractPlan) (domain.ExtractResult, error) {
 	if err := copyUntracked(copyUntrackedParams{
 		SourcePath: params.SourcePath,
 		TargetPath: params.TargetPath,
-		Files:      plan.Untracked,
+		Files:      subtract(plan.Untracked, plan.UntrackedConflicts),
 	}); err != nil {
 		return domain.ExtractResult{}, err
 	}
@@ -159,19 +186,28 @@ func resolveExtract(plan extractPlan) (domain.ExtractResult, error) {
 		TargetBranch: params.TargetBranch,
 		SourceBranch: params.SourceBranch,
 		Kept:         true,
-		Conflicts:    plan.Conflicts,
+		Conflicts:    merged,
 	}, nil
 }
 
-// ConflictingFiles returns the selected tracked files whose changes do not apply
-// cleanly onto the target worktree. Used to decide whether to prompt the user.
+// ConflictingFiles returns the selected files that clash with the target worktree
+// and could be resolved with conflict markers: tracked files whose patch does not
+// apply, and untracked files that already exist there with different content.
+// Binary collisions are left out — they abort whatever the user answers, so
+// offering to resolve them would be a dead end.
 func ConflictingFiles(params domain.ConflictCheckParams) []string {
-	tracked, _ := splitByStatus(params.Files)
-	return conflictingFiles(conflictScanParams{
+	tracked, untracked := splitByStatus(params.Files)
+	conflicts := conflictingFiles(conflictScanParams{
 		SourcePath: params.SourcePath,
 		TargetPath: params.TargetPath,
 		Tracked:    tracked,
 	})
+	collisions := collidingUntracked(untrackedCollisionParams{
+		SourcePath: params.SourcePath,
+		TargetPath: params.TargetPath,
+		Untracked:  untracked,
+	})
+	return append(conflicts, collisions.Conflicting...)
 }
 
 func subtract(all, remove []string) []string {
@@ -188,6 +224,9 @@ func subtract(all, remove []string) []string {
 	return out
 }
 
+// splitByStatus separates the selection into paths carried by the patch and paths
+// copied verbatim. A rename contributes both of its paths to the patch: diffing
+// only the new path would produce the addition without the matching deletion.
 func splitByStatus(files []domain.ExtractFile) (tracked, untracked []string) {
 	for _, f := range files {
 		if f.Status == domain.ExtractStatusUntracked {
@@ -195,33 +234,51 @@ func splitByStatus(files []domain.ExtractFile) (tracked, untracked []string) {
 			continue
 		}
 		tracked = append(tracked, f.Path)
+		if f.OrigPath != "" {
+			tracked = append(tracked, f.OrigPath)
+		}
 	}
 	return tracked, untracked
 }
 
 type untrackedCollisionParams struct {
-	TargetPath   string
-	TargetBranch string
-	Untracked    []string
+	SourcePath string
+	TargetPath string
+	Untracked  []string
 }
 
-func ensureNoUntrackedCollision(params untrackedCollisionParams) error {
-	var clashing []string
-	for _, f := range params.Untracked {
-		if infra.FileExists(filepath.Join(params.TargetPath, f)) {
-			clashing = append(clashing, f)
-		}
-	}
-	if len(clashing) == 0 {
-		return nil
-	}
+// untrackedCollisions splits the untracked files that already exist in the target
+// by what can be done about them.
+type untrackedCollisions struct {
+	// Conflicting can be merged with conflict markers in resolve mode.
+	Conflicting []string
+	// Unmergeable is binary on one side, where markers would corrupt the file.
+	Unmergeable []string
+}
 
-	verb := "already exists"
-	if len(clashing) > 1 {
-		verb = "already exist"
+// collidingUntracked reports the untracked files that already exist in the target
+// with different content. Identical content is not a collision: copying is then a
+// no-op, and naming such a file as a conflict would promise markers that never
+// get written.
+func collidingUntracked(params untrackedCollisionParams) untrackedCollisions {
+	var collisions untrackedCollisions
+	for _, f := range params.Untracked {
+		targetPath := filepath.Join(params.TargetPath, f)
+		if !infra.FileExists(targetPath) {
+			continue
+		}
+		sourcePath := filepath.Join(params.SourcePath, f)
+		if infra.SameContent(infra.SameContentParams{A: sourcePath, B: targetPath}) {
+			continue
+		}
+		if infra.IsBinary(infra.IsBinaryParams{Path: sourcePath}) ||
+			infra.IsBinary(infra.IsBinaryParams{Path: targetPath}) {
+			collisions.Unmergeable = append(collisions.Unmergeable, f)
+			continue
+		}
+		collisions.Conflicting = append(collisions.Conflicting, f)
 	}
-	return fmt.Errorf("%w: %s %s in %q — remove %s there or extract to another worktree",
-		domain.ErrExtractConflict, strings.Join(clashing, ", "), verb, params.TargetBranch, them(len(clashing)))
+	return collisions
 }
 
 // conflictScanParams holds inputs for the per-file conflict scan.
@@ -254,19 +311,49 @@ func conflictingFiles(params conflictScanParams) []string {
 }
 
 type conflictErrorParams struct {
-	Files        []string
+	// Tracked holds files whose patch does not apply onto the target.
+	Tracked []string
+	// Untracked holds files that already exist in the target with other content.
+	Untracked    []string
 	TargetBranch string
 }
 
 // conflictError builds a readable, actionable conflict message naming the files
-// that clash with the target worktree.
+// that clash with the target worktree. The two kinds of clash are worded apart:
+// a tracked file was modified on both sides, an untracked file simply exists
+// already.
 func conflictError(params conflictErrorParams) error {
-	verb := "was also modified"
-	if len(params.Files) > 1 {
-		verb = "were also modified"
+	var clauses []string
+	if len(params.Tracked) > 0 {
+		clauses = append(clauses, fmt.Sprintf("%s %s", strings.Join(params.Tracked, ", "),
+			pick(len(params.Tracked), "was also modified", "were also modified")))
 	}
-	return fmt.Errorf("%w: %s %s in %q — resolve %s there or extract to another worktree",
-		domain.ErrExtractConflict, strings.Join(params.Files, ", "), verb, params.TargetBranch, them(len(params.Files)))
+	if len(params.Untracked) > 0 {
+		clauses = append(clauses, fmt.Sprintf("%s %s", strings.Join(params.Untracked, ", "),
+			pick(len(params.Untracked), "already exists", "already exist")))
+	}
+
+	total := len(params.Tracked) + len(params.Untracked)
+	return fmt.Errorf("%w: %s in %q — resolve %s there, extract to another worktree, or re-run with --%s %s",
+		domain.ErrExtractConflict, strings.Join(clauses, " and "), params.TargetBranch,
+		them(total), domain.FlagOnConflict, domain.OnConflictResolve)
+}
+
+// binaryCollisionError reports untracked binary files that already exist in the
+// target. Conflict markers would corrupt them, so resolve mode cannot help.
+func binaryCollisionError(params conflictErrorParams) error {
+	return fmt.Errorf("%w: %s %s in %q and %s binary — conflict markers cannot be written, remove %s there or extract to another worktree",
+		domain.ErrExtractConflict, strings.Join(params.Untracked, ", "),
+		pick(len(params.Untracked), "already exists", "already exist"), params.TargetBranch,
+		pick(len(params.Untracked), "is", "are"), them(len(params.Untracked)))
+}
+
+// pick returns the singular or plural wording matching a count.
+func pick(n int, singular, plural string) string {
+	if n == 1 {
+		return singular
+	}
+	return plural
 }
 
 // them returns the object pronoun matching the file count.
@@ -321,7 +408,28 @@ func cleanSource(params cleanSourceParams) error {
 		return err
 	}
 	removeTargetFiles(removeFilesParams{Dir: params.SourcePath, Files: params.Untracked})
+	pruneEmptyDirs(pruneEmptyDirsParams{Root: params.SourcePath, Files: params.Untracked})
 	return nil
+}
+
+type pruneEmptyDirsParams struct {
+	Root  string
+	Files []string
+}
+
+// pruneEmptyDirs removes the directories left behind once extracted untracked
+// files are gone. Untracked entries are listed per file, so moving out every file
+// of a brand-new directory would otherwise strand an empty tree in the source.
+func pruneEmptyDirs(params pruneEmptyDirsParams) {
+	for _, f := range params.Files {
+		dir := filepath.Dir(filepath.Join(params.Root, f))
+		for dir != params.Root && strings.HasPrefix(dir, params.Root+string(filepath.Separator)) {
+			if err := os.Remove(dir); err != nil {
+				break
+			}
+			dir = filepath.Dir(dir)
+		}
+	}
 }
 
 type rollbackTargetParams struct {

@@ -71,6 +71,11 @@ var (
 	// worktree is left untouched.
 	ErrExtractConflict = errors.New("cannot apply the selected changes")
 
+	// ErrPorcelainMalformed is returned when a `git status --porcelain -z` record
+	// is truncated: shorter than the status field plus a path, or a rename record
+	// with no origin-path field behind it.
+	ErrPorcelainMalformed = errors.New("malformed git status record")
+
 	// ErrNoChangesToExtract is returned when the source worktree has no
 	// uncommitted changes to extract.
 	ErrNoChangesToExtract = errors.New("no uncommitted changes to extract")

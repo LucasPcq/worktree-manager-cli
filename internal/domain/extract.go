@@ -12,12 +12,19 @@ const (
 
 	// ExtractStatusDeleted marks a tracked file removed from the working tree.
 	ExtractStatusDeleted ExtractFileStatus = "deleted"
+
+	// ExtractStatusRenamed marks a staged rename or copy. Both the new and the
+	// original path take part in the extraction patch.
+	ExtractStatusRenamed ExtractFileStatus = "renamed"
 )
 
 // ExtractFile is one uncommitted file eligible for extraction to another worktree.
 type ExtractFile struct {
 	Path   string            `json:"path"`
 	Status ExtractFileStatus `json:"status"`
+
+	// OrigPath is the path a renamed or copied file came from, empty otherwise.
+	OrigPath string `json:"orig_path,omitempty"`
 }
 
 // ExtractParams holds inputs for moving uncommitted files from the source

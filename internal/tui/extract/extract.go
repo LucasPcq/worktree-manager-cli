@@ -409,7 +409,7 @@ func newFileSelect(files []domain.ExtractFile, preselected []string) components.
 	for _, f := range files {
 		_, isChosen := chosen[f.Path]
 		items = append(items, components.MultiSelectItem{
-			Label:    f.Path,
+			Label:    fileLabel(f),
 			Value:    f.Path,
 			Tag:      rules.ExtractStatusLabel(f.Status),
 			Variant:  tagVariant(f.Status),
@@ -474,7 +474,7 @@ func newModeSelect(params newModeSelectParams) components.SelectListModel {
 // the consequences explicit. Returns false on No/Esc.
 func ConfirmResolve(files []string, targetBranch string) (bool, error) {
 	desc := fmt.Sprintf(
-		"%s already modified in %q.\n\n"+
+		"%s already present in %q.\n\n"+
 			"Applying writes conflict markers there to resolve.\n"+
 			"Nothing is removed from the source.\n"+
 			"Resolve in %q then discard there, or discard in %q to undo.",
@@ -553,12 +553,23 @@ func parseTarget(value string) TargetChoice {
 
 // tagVariant maps a file's extraction status to its tag color: yellow for a
 // modification, green for a new file, red for a deletion.
+// fileLabel is what the picker shows for a candidate. A rename names both of its
+// paths, since both take part in the extraction.
+func fileLabel(f domain.ExtractFile) string {
+	if f.OrigPath == "" {
+		return f.Path
+	}
+	return f.OrigPath + " → " + f.Path
+}
+
 func tagVariant(status domain.ExtractFileStatus) components.TagVariant {
 	switch status {
 	case domain.ExtractStatusUntracked:
 		return components.TagSuccess
 	case domain.ExtractStatusDeleted:
 		return components.TagDanger
+	case domain.ExtractStatusRenamed:
+		return components.TagNeutral
 	default:
 		return components.TagWarning
 	}

@@ -243,6 +243,161 @@ func TestExtractGuards(t *testing.T) {
 	}
 }
 
+func TestExtractResolveMergesUntrackedCollision(t *testing.T) {
+	env := setupExtract(t)
+	writeFile(t, env.source, "c.txt", "from source\n")
+	writeFile(t, env.target, "c.txt", "already here\n")
+
+	result, err := Extract(domain.ExtractParams{
+		SourcePath:   env.source,
+		SourceBranch: "main",
+		TargetPath:   env.target,
+		TargetBranch: "feat",
+		ConflictMode: domain.OnConflictResolve,
+		Files:        []domain.ExtractFile{{Path: "c.txt", Status: domain.ExtractStatusUntracked}},
+	})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	if len(result.Conflicts) != 1 || result.Conflicts[0] != "c.txt" {
+		t.Errorf("result.Conflicts = %v, want [c.txt]", result.Conflicts)
+	}
+	got := readFile(t, env.target, "c.txt")
+	if !strings.Contains(got, "<<<<<<<") || !strings.Contains(got, ">>>>>>>") {
+		t.Errorf("target c.txt missing conflict markers:\n%s", got)
+	}
+	if !strings.Contains(got, "from source") || !strings.Contains(got, "already here") {
+		t.Errorf("target c.txt lost a side of the merge:\n%s", got)
+	}
+	if src := readFile(t, env.source, "c.txt"); src != "from source\n" {
+		t.Errorf("source c.txt changed in resolve mode: %q", src)
+	}
+}
+
+func TestExtractUntrackedIdenticalContentIsNotAConflict(t *testing.T) {
+	env := setupExtract(t)
+	writeFile(t, env.source, "c.txt", "same bytes\n")
+	writeFile(t, env.target, "c.txt", "same bytes\n")
+
+	result, err := Extract(domain.ExtractParams{
+		SourcePath: env.source,
+		TargetPath: env.target,
+		Files:      []domain.ExtractFile{{Path: "c.txt", Status: domain.ExtractStatusUntracked}},
+	})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	if len(result.Conflicts) != 0 {
+		t.Errorf("result.Conflicts = %v, want none for identical content", result.Conflicts)
+	}
+	if got := readFile(t, env.target, "c.txt"); got != "same bytes\n" {
+		t.Errorf("target c.txt = %q", got)
+	}
+	if fileExists(env.source, "c.txt") {
+		t.Error("source c.txt still present after a move")
+	}
+}
+
+func TestExtractUntrackedBinaryCollisionAbortsEvenInResolveMode(t *testing.T) {
+	env := setupExtract(t)
+	writeFile(t, env.source, "blob.bin", "sourc\x00e bytes")
+	writeFile(t, env.target, "blob.bin", "targe\x00t bytes")
+
+	_, err := Extract(domain.ExtractParams{
+		SourcePath:   env.source,
+		TargetPath:   env.target,
+		TargetBranch: "feat",
+		ConflictMode: domain.OnConflictResolve,
+		Files:        []domain.ExtractFile{{Path: "blob.bin", Status: domain.ExtractStatusUntracked}},
+	})
+	if !errors.Is(err, domain.ErrExtractConflict) {
+		t.Fatalf("err = %v, want ErrExtractConflict", err)
+	}
+	if got := readFile(t, env.target, "blob.bin"); got != "targe\x00t bytes" {
+		t.Errorf("target blob.bin clobbered with markers: %q", got)
+	}
+}
+
+func TestExtractMovesSingleFileOutOfNewDirectory(t *testing.T) {
+	env := setupExtract(t)
+	writeFile(t, env.source, "newmod/x.go", "package newmod\n")
+	writeFile(t, env.source, "newmod/sub/y.go", "package sub\n")
+
+	_, err := Extract(domain.ExtractParams{
+		SourcePath: env.source,
+		TargetPath: env.target,
+		Files:      []domain.ExtractFile{{Path: "newmod/sub/y.go", Status: domain.ExtractStatusUntracked}},
+	})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	if got := readFile(t, env.target, "newmod/sub/y.go"); got != "package sub\n" {
+		t.Errorf("target newmod/sub/y.go = %q", got)
+	}
+	if fileExists(env.source, "newmod/sub/y.go") {
+		t.Error("source still has the moved file")
+	}
+	if !fileExists(env.source, "newmod/x.go") {
+		t.Error("sibling newmod/x.go must stay in the source")
+	}
+	if fileExists(env.source, "newmod/sub") {
+		t.Error("emptied newmod/sub must be pruned from the source")
+	}
+	if !fileExists(env.source, "newmod") {
+		t.Error("newmod still holds x.go and must not be pruned")
+	}
+}
+
+func TestExtractMovesUntrackedPathWithSpaces(t *testing.T) {
+	env := setupExtract(t)
+	writeFile(t, env.source, "a b.txt", "spaced\n")
+
+	_, err := Extract(domain.ExtractParams{
+		SourcePath: env.source,
+		TargetPath: env.target,
+		Files:      []domain.ExtractFile{{Path: "a b.txt", Status: domain.ExtractStatusUntracked}},
+	})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	if got := readFile(t, env.target, "a b.txt"); got != "spaced\n" {
+		t.Errorf("target %q = %q", "a b.txt", got)
+	}
+	if fileExists(env.source, "a b.txt") {
+		t.Error("source still has the moved file")
+	}
+}
+
+func TestExtractMovesRenamedFile(t *testing.T) {
+	env := setupExtract(t)
+	gitRun(t, env.source, "mv", "a.txt", "renamed.txt")
+
+	_, err := Extract(domain.ExtractParams{
+		SourcePath: env.source,
+		TargetPath: env.target,
+		Files: []domain.ExtractFile{
+			{Path: "renamed.txt", OrigPath: "a.txt", Status: domain.ExtractStatusRenamed},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+
+	if got := readFile(t, env.target, "renamed.txt"); got != "line1\nline2\nline3\n" {
+		t.Errorf("target renamed.txt = %q", got)
+	}
+	if fileExists(env.target, "a.txt") {
+		t.Error("target still has the pre-rename path: the deletion half of the patch was lost")
+	}
+	if status := gitStatus(t, env.source); status != "" {
+		t.Errorf("source not restored to HEAD after moving the rename: %q", status)
+	}
+}
+
 func writeFile(t *testing.T, dir, rel, content string) {
 	t.Helper()
 	path := filepath.Join(dir, rel)
