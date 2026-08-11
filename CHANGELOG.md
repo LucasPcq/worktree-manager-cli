@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — `wtm extract` : les fichiers non trackés enfin gérés pour de bon
+## v0.24.1 — `wtm extract` : les fichiers non trackés enfin gérés pour de bon
 
 ### Bug fixes
 
