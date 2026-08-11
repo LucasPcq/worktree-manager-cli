@@ -46,6 +46,20 @@ func TestFilesModel_Populated(t *testing.T) {
 	}
 }
 
+func TestFilesModel_ShowsBothPathsOfARename(t *testing.T) {
+	m := filesModel("feat-a", []domain.ExtractFile{
+		{Path: "new.txt", OrigPath: "old.txt", Status: domain.ExtractStatusRenamed},
+	})
+
+	view := m.View()
+	if !strings.Contains(view, "old.txt → new.txt") {
+		t.Errorf("a rename should name both paths, got:\n%s", view)
+	}
+	if !strings.Contains(view, "ren") {
+		t.Errorf("a rename should carry the ren tag, got:\n%s", view)
+	}
+}
+
 func TestBuildCombinedRecap_ShowsSource(t *testing.T) {
 	prev := []components.Step{sourceStepWith("feat-src"), targetStepWith("feat-a")}
 	rc := buildCombinedRecap(prev, RunParams{})

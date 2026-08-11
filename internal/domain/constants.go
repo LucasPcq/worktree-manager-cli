@@ -160,6 +160,20 @@ const (
 	OnConflictAbort   = "abort"
 	OnConflictResolve = "resolve"
 
+	// Status codes of the XY field of `git status --porcelain`.
+	PorcelainUntracked = "??"
+	PorcelainIgnored   = "!!"
+	PorcelainRename    = "R"
+	PorcelainCopy      = "C"
+	PorcelainDeleted   = "D"
+
+	// PorcelainFieldSep separates the records of `git status --porcelain -z`.
+	PorcelainFieldSep = "\x00"
+
+	// PorcelainPathOffset is where the path starts in a record: the two-character
+	// XY status field plus its trailing space.
+	PorcelainPathOffset = 3
+
 	// init flags (non-interactive bootstrap).
 	FlagIfNotExists    = "if-not-exists"
 	FlagNonInteractive = "non-interactive"

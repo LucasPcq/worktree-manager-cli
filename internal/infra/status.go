@@ -5,6 +5,9 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // IsDirtyParams holds inputs for checking worktree dirty state.
@@ -45,36 +48,28 @@ func CommitsAhead(params CommitsAheadParams) (int, error) {
 	return count, nil
 }
 
-// ModifiedFile represents a file from git status --porcelain.
-type ModifiedFile struct {
-	Status string
-	Path   string
-}
-
 // ListModifiedFilesParams holds inputs for listing modified files.
 type ListModifiedFilesParams struct {
 	WorktreePath string
 }
 
-// ListModifiedFiles returns all modified/untracked files in a worktree.
-func ListModifiedFiles(params ListModifiedFilesParams) ([]ModifiedFile, error) {
-	cmd := exec.Command("git", "-C", params.WorktreePath, "status", "--porcelain")
+// ListModifiedFiles returns every uncommitted change of a worktree, one entry per
+// file. -z keeps paths verbatim (no quoting of spaces or non-ASCII) and
+// --untracked-files=all lists the contents of new directories instead of
+// collapsing them into a single entry, so each file can be selected on its own.
+func ListModifiedFiles(params ListModifiedFilesParams) ([]domain.PorcelainEntry, error) {
+	cmd := exec.Command("git", "-C", params.WorktreePath,
+		"status", "--porcelain", "-z", "--untracked-files=all")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("git status: %w", err)
 	}
 
-	var files []ModifiedFile
-	for _, line := range strings.Split(string(out), "\n") {
-		if len(line) < 4 {
-			continue
-		}
-		status := strings.TrimSpace(line[:2])
-		path := line[3:]
-		files = append(files, ModifiedFile{Status: status, Path: path})
+	entries, err := rules.ParsePorcelainZ(out)
+	if err != nil {
+		return nil, fmt.Errorf("git status: %w", err)
 	}
-
-	return files, nil
+	return entries, nil
 }
 
 // UnpushedCommitsParams holds inputs for counting unpushed commits.

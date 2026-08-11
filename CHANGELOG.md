@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.24.1 — `wtm extract` : les fichiers non trackés enfin gérés pour de bon
+
+### Bug fixes
+
+- **Les dossiers entièrement neufs ne sont plus tout-ou-rien** — `wtm extract` énumérait ses
+  candidats avec `git status --porcelain`, qui replie un dossier non tracké en une seule entrée
+  `newmod/`. Le picker ne montrait que le dossier et `--files newmod/x.go` échouait sur
+  « is not an uncommitted change ». L'énumération passe à `--untracked-files=all` : chaque fichier
+  est listé et sélectionnable individuellement.
+- **Les chemins avec espaces ou caractères non-ASCII étaient inextractibles** — git les quote
+  (`?? "a b.txt"`, `?? "caf\303\251.txt"`) et le parser conservait guillemets et échappements, si
+  bien qu'aucun `--files` ne matchait et qu'une sélection dans le picker échouait à la copie. Le
+  passage à `git status --porcelain -z` supprime le quoting à la source ; les chemins sont rendus
+  verbatim. Le défaut touchait aussi les fichiers trackés.
+- **Les renommages indexés sont enfin extractibles** — un record `R` était lu comme un chemin bidon
+  `old -> new`. Le chemin d'origine est désormais lu dans son champ dédié et les deux chemins
+  partent ensemble dans le patch (sans quoi la cible recevait l'ajout sans la suppression).
+  Nouveau statut `renamed` et champ `orig_path` dans `--output json`, tag `ren` dans le picker.
+- **`--on-conflict resolve` couvre les fichiers non trackés** — un fichier non tracké déjà présent
+  dans la cible provoquait un abort inconditionnel, avant même que le mode de conflit soit
+  consulté ; il n'existait aucune échappatoire. Il rejoint l'axe `--on-conflict` : `abort` reste
+  le défaut sûr (y compris sous `--yes`), `resolve` écrit des marqueurs de conflit via un merge
+  à base vide. Un contenu identique des deux côtés n'est plus compté comme un conflit. Un fichier
+  binaire, qui ne peut pas porter de marqueurs, continue d'aborter avec un message explicite.
+  Le code de sortie `15` est inchangé.
+
+### Improvements
+
+- **`--files` accepte un dossier** — `--files newmod/` prend tous les changements en dessous.
+  Les entrées « dossier » ayant disparu de l'énumération, c'est ce qui garde fonctionnels les
+  scripts existants qui passaient un dossier.
+- **Les dossiers vidés sont purgés côté source** — déplacer tous les fichiers d'un dossier neuf ne
+  laisse plus une arborescence vide derrière lui.
+- Les fichiers ignorés par `.gitignore` restent volontairement hors de `extract` : `.env` et
+  consorts relèvent de `wtm env`.
+
 ## v0.24.0 - Module `env` : Détection & gestion des conflits d'un worktree à un autre
 
 ### New features 

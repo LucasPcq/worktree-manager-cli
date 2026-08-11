@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -124,5 +125,137 @@ func TestExtractWithSourceArgJSON(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dst.Path, "extracted.txt")); err != nil {
 		t.Errorf("expected the file in the target worktree: %v", err)
+	}
+}
+
+// TestExtractPicksOneFileOutOfANewDirectory covers the enumeration fix: files of a
+// brand-new directory are listed one by one, so --files can name a single one
+// instead of taking the whole tree.
+func TestExtractPicksOneFileOutOfANewDirectory(t *testing.T) {
+	_, _ = extractTestRepo(t)
+	src := createWorktree(t, "src")
+	dst := createWorktree(t, "dst")
+
+	writeWorktreeFile(t, src.Path, "newmod/x.go", "package newmod\n")
+	writeWorktreeFile(t, src.Path, "newmod/sub/y.go", "package sub\n")
+
+	out, _, err := runWtCmd(t, domain.CmdExtract, "src",
+		"--files", "newmod/x.go", "--to", "dst", "--output", domain.OutputJSON, "--"+domain.FlagYes)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+
+	var res domain.ExtractResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("decode extract result: %v\n%s", err, out)
+	}
+	if len(res.Files) != 1 || res.Files[0].Path != "newmod/x.go" {
+		t.Fatalf("files = %+v, want just newmod/x.go", res.Files)
+	}
+	if _, err := os.Stat(filepath.Join(dst.Path, "newmod/x.go")); err != nil {
+		t.Errorf("expected newmod/x.go in the target: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(src.Path, "newmod/sub/y.go")); err != nil {
+		t.Errorf("the sibling must stay in the source: %v", err)
+	}
+}
+
+// TestExtractFilesAcceptsDirectoryPrefix keeps the pre-uall spelling working:
+// naming a directory takes every change below it.
+func TestExtractFilesAcceptsDirectoryPrefix(t *testing.T) {
+	_, _ = extractTestRepo(t)
+	src := createWorktree(t, "src")
+	dst := createWorktree(t, "dst")
+
+	writeWorktreeFile(t, src.Path, "newmod/x.go", "package newmod\n")
+	writeWorktreeFile(t, src.Path, "newmod/sub/y.go", "package sub\n")
+
+	out, _, err := runWtCmd(t, domain.CmdExtract, "src",
+		"--files", "newmod/", "--to", "dst", "--output", domain.OutputJSON, "--"+domain.FlagYes)
+	if err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+
+	var res domain.ExtractResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("decode extract result: %v\n%s", err, out)
+	}
+	if len(res.Files) != 2 {
+		t.Fatalf("files = %+v, want both files under newmod/", res.Files)
+	}
+	for _, rel := range []string{"newmod/x.go", "newmod/sub/y.go"} {
+		if _, err := os.Stat(filepath.Join(dst.Path, rel)); err != nil {
+			t.Errorf("expected %s in the target: %v", rel, err)
+		}
+	}
+}
+
+// TestExtractQuotedPathViaFilesFlag covers the path-quoting fix: a name git would
+// quote under the default porcelain format is selectable verbatim.
+func TestExtractQuotedPathViaFilesFlag(t *testing.T) {
+	_, _ = extractTestRepo(t)
+	src := createWorktree(t, "src")
+	dst := createWorktree(t, "dst")
+
+	writeWorktreeFile(t, src.Path, "a b.txt", "spaced\n")
+
+	if _, _, err := runWtCmd(t, domain.CmdExtract, "src",
+		"--files", "a b.txt", "--to", "dst", "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
+		t.Fatalf("extract: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst.Path, "a b.txt")); err != nil {
+		t.Errorf("expected \"a b.txt\" in the target: %v", err)
+	}
+}
+
+// TestExtractUntrackedCollisionFollowsOnConflict verifies an untracked file that
+// already exists in the target sits on the --on-conflict axis: abort by default
+// under --yes, conflict markers with --on-conflict resolve.
+func TestExtractUntrackedCollisionFollowsOnConflict(t *testing.T) {
+	_, _ = extractTestRepo(t)
+	src := createWorktree(t, "src")
+	dst := createWorktree(t, "dst")
+
+	writeWorktreeFile(t, src.Path, "c.txt", "from source\n")
+	writeWorktreeFile(t, dst.Path, "c.txt", "already here\n")
+
+	_, _, err := runWtCmd(t, domain.CmdExtract, "src",
+		"--files", "c.txt", "--to", "dst", "--output", domain.OutputJSON, "--"+domain.FlagYes)
+	if !errors.Is(err, domain.ErrExtractConflict) {
+		t.Fatalf("expected ErrExtractConflict under the safe default, got %v", err)
+	}
+
+	out, _, err := runWtCmd(t, domain.CmdExtract, "src",
+		"--files", "c.txt", "--to", "dst", "--"+domain.FlagOnConflict, domain.OnConflictResolve,
+		"--output", domain.OutputJSON, "--"+domain.FlagYes)
+	if err != nil {
+		t.Fatalf("extract --on-conflict resolve: %v", err)
+	}
+
+	var res domain.ExtractResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("decode extract result: %v\n%s", err, out)
+	}
+	if len(res.Conflicts) != 1 || res.Conflicts[0] != "c.txt" {
+		t.Fatalf("conflicts = %v, want [c.txt]", res.Conflicts)
+	}
+
+	merged, err := os.ReadFile(filepath.Join(dst.Path, "c.txt"))
+	if err != nil {
+		t.Fatalf("read merged file: %v", err)
+	}
+	if !strings.Contains(string(merged), "<<<<<<<") {
+		t.Errorf("target c.txt missing conflict markers:\n%s", merged)
+	}
+}
+
+func writeWorktreeFile(t *testing.T, dir, rel, content string) {
+	t.Helper()
+	path := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir for %s: %v", rel, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", rel, err)
 	}
 }

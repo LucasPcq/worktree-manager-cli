@@ -11,8 +11,12 @@ The source worktree is the first thing chosen: pass its branch as [source],
 or omit it to pick interactively from the worktrees that have changes. A source
 is required when there is no terminal or with --output json.
 
+Untracked files are listed one by one, including inside brand-new directories,
+so you can take part of a new folder; gitignored files are never listed.
+
 On conflict it aborts by default, leaving the source intact; --on-conflict resolve
 applies conflict markers in the target so you can resolve them like a rebase.
+A file that merely already exists in the target counts as a conflict too.
 
 ```
 wtm extract [source] [flags]
@@ -22,7 +26,7 @@ wtm extract [source] [flags]
 
 ```
       --ff                   Fast-forward the parent branch to origin before creating the target (non-interactive; skipped when it has diverged)
-      --files strings        Files to extract (skips interactive selection)
+      --files strings        Files to extract, or a directory to take everything below it (skips interactive selection)
       --from string          Parent branch when creating the target worktree
   -h, --help                 help for extract
       --keep                 Copy instead of move (keep the changes in the source)

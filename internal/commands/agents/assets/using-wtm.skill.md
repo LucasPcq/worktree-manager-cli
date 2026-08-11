@@ -108,6 +108,11 @@ flagged; everything else is what the name implies.
   naming the missing flag; there is no picker). On conflict it changes nothing and exits `15`;
   retry with `--on-conflict resolve` to apply git conflict markers (`--yes` defaults on-conflict
   to abort).
+  `--files` takes paths exactly as reported (spaces and non-ASCII are never quoted or escaped),
+  including each untracked file of a brand-new directory individually; pass a directory
+  (`--files newmod/`) to take everything below it. Gitignored files are never listed — `.env`
+  drift is `wtm env`'s job. A file entry may report `"status": "renamed"` with an extra
+  `"orig_path"`: both paths move together, and `--files` names the new one.
 - `wtm env [worktree]` — detect and fix a worktree's `.env` drift: reconcile it against its
   committed **template** (the expected keys, read from the worktree itself) plus a single
   **value source** chosen by the worktree's recorded strategy — never a silent mix:
@@ -194,7 +199,9 @@ On non-zero exit, read stderr, then:
 - `11` (branch not found) → wrong name; re-run the relevant discovery call.
 - `14` (job not found) → not declared in `run.toml`; check `wtm run list`.
 - `15` (extract conflict) → nothing changed; retry with `--on-conflict resolve` or a
-  different `--to`.
+  different `--to`. Covers both a file modified on both sides and one that merely already
+  exists in the target. Exception: an untracked **binary** file already in the target cannot
+  take conflict markers — `resolve` won't help, pick a different `--to`.
 - `16` (run module not initialized) → run `wtm run init` (or `wtm run init --non-interactive`)
   to create `run.toml`, then re-run the command.
 - `gh: …` → `gh` isn't authenticated; tell the user to run `gh auth login`.

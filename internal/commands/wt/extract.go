@@ -30,13 +30,16 @@ func newExtractCmd() *cobra.Command {
 			"The source worktree is the first thing chosen: pass its branch as [source],\n" +
 			"or omit it to pick interactively from the worktrees that have changes. A source\n" +
 			"is required when there is no terminal or with --output json.\n\n" +
+			"Untracked files are listed one by one, including inside brand-new directories,\n" +
+			"so you can take part of a new folder; gitignored files are never listed.\n\n" +
 			"On conflict it aborts by default, leaving the source intact; --on-conflict resolve\n" +
-			"applies conflict markers in the target so you can resolve them like a rebase.",
+			"applies conflict markers in the target so you can resolve them like a rebase.\n" +
+			"A file that merely already exists in the target counts as a conflict too.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: runExtract,
 	}
 
-	cmd.Flags().StringSlice(domain.FlagFiles, nil, "Files to extract (skips interactive selection)")
+	cmd.Flags().StringSlice(domain.FlagFiles, nil, "Files to extract, or a directory to take everything below it (skips interactive selection)")
 	cmd.Flags().String(domain.FlagTo, "", "Target worktree branch; created if it does not exist")
 	cmd.Flags().String(domain.FlagFrom, "", "Parent branch when creating the target worktree")
 	cmd.Flags().Bool(domain.FlagFF, false, "Fast-forward the parent branch to origin before creating the target (non-interactive; skipped when it has diverged)")
@@ -351,8 +354,9 @@ func listExtractFiles(sourcePath string) ([]domain.ExtractFile, error) {
 	files := make([]domain.ExtractFile, 0, len(modified))
 	for _, m := range modified {
 		files = append(files, domain.ExtractFile{
-			Path:   m.Path,
-			Status: rules.ClassifyExtractStatus(m.Status),
+			Path:     m.Path,
+			OrigPath: m.OrigPath,
+			Status:   rules.ClassifyExtractStatus(m.Status),
 		})
 	}
 	return files, nil
@@ -443,7 +447,10 @@ func resolveSelectionAndTarget(p resolveParams) (extractSelection, error) {
 	if needFiles {
 		selectedPaths = wizard.Files
 	}
-	selected, err := filterByPaths(available, selectedPaths)
+	selected, err := rules.SelectExtractFiles(rules.SelectExtractFilesParams{
+		Available: available,
+		Paths:     selectedPaths,
+	})
 	if err != nil {
 		return extractSelection{}, err
 	}
@@ -547,28 +554,6 @@ func extractCreateParams(cfg shared.ConfigResult, sourceBranch string) newpicker
 			return envFallbackPrompt(cfg.ProjectDir, cfg.Config, source, "")
 		},
 	}
-}
-
-// filterByPaths returns the available files whose path is in paths, erroring on
-// any path that is not a current uncommitted change.
-func filterByPaths(available []domain.ExtractFile, paths []string) ([]domain.ExtractFile, error) {
-	byPath := make(map[string]domain.ExtractFile, len(available))
-	for _, f := range available {
-		byPath[f.Path] = f
-	}
-
-	out := make([]domain.ExtractFile, 0, len(paths))
-	for _, p := range paths {
-		f, ok := byPath[p]
-		if !ok {
-			return nil, fmt.Errorf("%w: %s is not an uncommitted change", domain.ErrNoFilesSelected, p)
-		}
-		out = append(out, f)
-	}
-	if len(out) == 0 {
-		return nil, domain.ErrNoFilesSelected
-	}
-	return out, nil
 }
 
 type extractTarget struct {

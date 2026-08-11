@@ -202,6 +202,54 @@ func CopyPath(params CopyPathParams) error {
 	return copyFile(src, dst, info.Mode())
 }
 
+// SameContentParams holds the two paths to compare.
+type SameContentParams struct {
+	A string
+	B string
+}
+
+// SameContent reports whether two paths are regular files with identical bytes.
+// A directory on either side, or an unreadable path, is never "same": the caller
+// treats that as a difference to be resolved rather than a silent no-op.
+func SameContent(params SameContentParams) bool {
+	a, err := os.ReadFile(params.A)
+	if err != nil {
+		return false
+	}
+	b, err := os.ReadFile(params.B)
+	if err != nil {
+		return false
+	}
+	return bytes.Equal(a, b)
+}
+
+// IsBinaryParams holds the path to sniff.
+type IsBinaryParams struct {
+	Path string
+}
+
+// binarySniffLimit is how many leading bytes are scanned for a NUL byte, the
+// same heuristic git uses to decide a blob is binary.
+const binarySniffLimit = 8000
+
+// IsBinary reports whether a file looks binary, i.e. holds a NUL byte in its
+// first bytes. Conflict markers are meaningless in such a file, so it is never
+// merged. An unreadable path is treated as binary (the conservative answer).
+func IsBinary(params IsBinaryParams) bool {
+	f, err := os.Open(params.Path)
+	if err != nil {
+		return true
+	}
+	defer f.Close()
+
+	buf := make([]byte, binarySniffLimit)
+	n, err := f.Read(buf)
+	if err != nil && n == 0 {
+		return false
+	}
+	return bytes.IndexByte(buf[:n], 0) >= 0
+}
+
 func copyTree(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
