@@ -4,9 +4,10 @@ package domain
 type ShellType string
 
 const (
-	ShellZsh  ShellType = "zsh"
-	ShellBash ShellType = "bash"
-	ShellFish ShellType = "fish"
+	ShellZsh        ShellType = "zsh"
+	ShellBash       ShellType = "bash"
+	ShellFish       ShellType = "fish"
+	ShellPowerShell ShellType = "powershell"
 )
 
 // ProjectConfig maps to .wtm.toml (project-level configuration).

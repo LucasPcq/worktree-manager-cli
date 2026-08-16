@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -120,6 +119,10 @@ func IsDaemonRunning(socketPath string) bool {
 
 // EnsureDaemon checks if the daemon is running; if not, starts it and waits.
 func EnsureDaemon(socketPath string) error {
+	if err := SupportedOnPlatform(); err != nil {
+		return err
+	}
+
 	if IsDaemonRunning(socketPath) {
 		return nil
 	}
@@ -153,7 +156,7 @@ func StartDaemon(socketPath string) error {
 	}
 
 	cmd := exec.Command(exePath, "daemon")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	setDetached(cmd)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil

@@ -30,6 +30,10 @@ func newDownCmd() *cobra.Command {
 }
 
 func runDown(cmd *cobra.Command, args []string) error {
+	if err := process.SupportedOnPlatform(); err != nil {
+		return err
+	}
+
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	all, _ := cmd.Flags().GetBool(domain.FlagAll)
 

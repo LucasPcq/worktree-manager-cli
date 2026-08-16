@@ -107,7 +107,7 @@ func TestValidateInvalidEnvStrategy(t *testing.T) {
 
 func TestValidateInvalidShellType(t *testing.T) {
 	cfg := validConfig()
-	cfg.Global.Shell = "powershell"
+	cfg.Global.Shell = "nushell"
 
 	err := Validate(cfg)
 	if !errors.Is(err, domain.ErrInvalidShellType) {

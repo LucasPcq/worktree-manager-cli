@@ -28,8 +28,18 @@ func TestBuildGlobalAnswers_Flags(t *testing.T) {
 	}
 }
 
+func TestBuildGlobalAnswers_PowerShell(t *testing.T) {
+	got, err := rules.BuildGlobalAnswers(rules.InitGlobalFlags{Shell: "powershell"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Shell != domain.ShellPowerShell {
+		t.Errorf("got %+v, want shell=powershell", got)
+	}
+}
+
 func TestBuildGlobalAnswers_Invalid(t *testing.T) {
-	if _, err := rules.BuildGlobalAnswers(rules.InitGlobalFlags{Shell: "powershell"}); !errors.Is(err, domain.ErrInvalidShellType) {
+	if _, err := rules.BuildGlobalAnswers(rules.InitGlobalFlags{Shell: "nushell"}); !errors.Is(err, domain.ErrInvalidShellType) {
 		t.Errorf("expected ErrInvalidShellType, got %v", err)
 	}
 }

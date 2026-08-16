@@ -24,7 +24,7 @@ wtm init [flags]
       --install-command string   Command to run after creating a worktree
       --non-interactive          Bootstrap from flags + auto-detection; never prompt
       --only strings             Re-init only these sections (env, hooks, worktrees); regenerates them cleanly
-      --shell string             Global shell: zsh, bash, or fish
+      --shell string             Global shell: zsh, bash, fish, or powershell
       --skip-clean               Skip on_clean hooks config
       --skip-env                 Skip .env provisioning config
       --skip-hooks               Skip on_create hooks config

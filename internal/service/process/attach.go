@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/creack/pty"
 	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -24,7 +25,7 @@ func Attach(ptmx *os.File) error {
 
 	// Handle window resize
 	resizeCh := make(chan os.Signal, 1)
-	signal.Notify(resizeCh, syscall.SIGWINCH)
+	notifyResize(resizeCh)
 	defer signal.Stop(resizeCh)
 
 	go func() {
@@ -82,10 +83,5 @@ func syncTerminalSize(ptmx *os.File) {
 	if err != nil {
 		return
 	}
-	syscall.Syscall(
-		syscall.SYS_IOCTL,
-		ptmx.Fd(),
-		syscall.TIOCSWINSZ,
-		uintptr(unsafeWinsize(width, height)),
-	)
+	_ = pty.Setsize(ptmx, &pty.Winsize{Rows: uint16(height), Cols: uint16(width)})
 }
