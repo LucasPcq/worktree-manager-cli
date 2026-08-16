@@ -75,13 +75,14 @@ func TestWriteSkillFile_UpdatesWhenDifferent(t *testing.T) {
 
 func TestWriteSkillFile_SkipsOnWriteError(t *testing.T) {
 	dir := t.TempDir()
-	// A read-only parent directory makes MkdirAll of a nested path fail.
-	if err := os.Chmod(dir, 0o500); err != nil {
-		t.Fatalf("chmod: %v", err)
+	// A regular file where the parent directory should be makes MkdirAll fail.
+	// Chmod would be the obvious lever but is a no-op on Windows directories.
+	blocker := filepath.Join(dir, "nested")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write blocker: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 
-	path := filepath.Join(dir, "nested", "SKILL.md")
+	path := filepath.Join(blocker, "SKILL.md")
 	res := writeSkillFile(newTarget(path))
 
 	if res.Action != agentActionSkipped {

@@ -1,6 +1,8 @@
 package output
 
 import (
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,7 +28,9 @@ func TestSprintRelocateRecapGroupsAndResolvesParents(t *testing.T) {
 
 	for _, want := range []string{
 		"To apply:",
-		"hotfix → ../.trees/hotfix (adopt, parent: feature/api)",
+		// The recap shows native separators, so the expectation is joined the
+		// same way rather than hardcoding "/".
+		fmt.Sprintf("hotfix → %s (adopt, parent: feature/api)", filepath.Join("../.trees", "hotfix")),
 		"legacy  adopt in place (parent: main)",
 		"Skipped:",
 		"experiment — uncommitted changes",

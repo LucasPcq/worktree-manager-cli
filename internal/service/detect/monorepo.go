@@ -31,7 +31,9 @@ func PnpmWorkspacePackages(projectDir string) []string {
 			}
 			rel, relErr := filepath.Rel(projectDir, m)
 			if relErr == nil {
-				packages = append(packages, rel)
+				// Slash-normalized: this becomes a job `cwd` in run.toml, which
+				// `run export`/`import` moves between machines.
+				packages = append(packages, filepath.ToSlash(rel))
 			}
 		}
 	}

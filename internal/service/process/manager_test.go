@@ -10,6 +10,16 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
+// requirePTY skips tests that spawn a job through a pseudo-terminal. Tasks run
+// on plain pipes and work everywhere; services and detached launchers need a
+// PTY, which Windows does not provide.
+func requirePTY(t *testing.T) {
+	t.Helper()
+	if err := SupportedOnPlatform(); err != nil {
+		t.Skipf("skipping PTY-backed test: %v", err)
+	}
+}
+
 // TestManagerStartTask_StreamsOutput verifies that a one-shot task streams its
 // output to the provided streamer, returns no error on a clean exit, and is
 // removed from the manager afterwards.
@@ -37,6 +47,8 @@ func TestManagerStartTask_StreamsOutput(t *testing.T) {
 // message ends with domain.JobAlreadyRunningSuffix, so `run up` can treat a
 // repeat start as a benign no-op instead of aborting the profile.
 func TestManagerStartService_AlreadyRunning(t *testing.T) {
+	requirePTY(t)
+
 	m := NewManager()
 	dir := t.TempDir()
 
@@ -60,6 +72,8 @@ func TestManagerStartService_AlreadyRunning(t *testing.T) {
 // startup output to the provided streamer live, and stays registered as
 // running after the launcher process exits.
 func TestManagerStartDetached_StreamsOutput(t *testing.T) {
+	requirePTY(t)
+
 	m := NewManager()
 	dir := t.TempDir()
 
@@ -84,6 +98,8 @@ func TestManagerStartDetached_StreamsOutput(t *testing.T) {
 // detached launcher streams its output live and returns a CONCISE error (the
 // capture is not re-embedded, since the client already saw it), and is removed.
 func TestManagerStartDetached_FailureConciseWhenStreamed(t *testing.T) {
+	requirePTY(t)
+
 	m := NewManager()
 	dir := t.TempDir()
 
@@ -114,6 +130,8 @@ func TestManagerStartDetached_FailureConciseWhenStreamed(t *testing.T) {
 // without a streamer (e.g. JSON mode) the captured output is embedded in the
 // error so the failure reason still reaches the caller.
 func TestManagerStartDetached_FailureEmbedsOutputWhenNotStreamed(t *testing.T) {
+	requirePTY(t)
+
 	m := NewManager()
 	dir := t.TempDir()
 

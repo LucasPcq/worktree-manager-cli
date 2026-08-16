@@ -1,7 +1,7 @@
 package rules
 
 import (
-	"path/filepath"
+	"path"
 	"sort"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -82,15 +82,15 @@ func ClassifyEnvFiles(paths []string) []domain.EnvFile {
 	}
 
 	for _, p := range paths {
-		dir := filepath.Dir(p)
-		name := filepath.Base(p)
+		dir := path.Dir(p)
+		name := path.Base(p)
 
 		targetBase, isTemplate, isLocal, ok := classifyEnvName(name)
 		if !ok {
 			continue
 		}
 
-		target := filepath.Join(dir, targetBase)
+		target := path.Join(dir, targetBase)
 
 		if isLocal {
 			get(target).file.Local = true
@@ -106,7 +106,7 @@ func ClassifyEnvFiles(paths []string) []domain.EnvFile {
 		e := get(target)
 		if rank < e.tmplRank {
 			e.tmplRank = rank
-			e.file.Template = filepath.Join(dir, name)
+			e.file.Template = path.Join(dir, name)
 		}
 	}
 

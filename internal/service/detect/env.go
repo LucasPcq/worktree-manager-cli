@@ -45,7 +45,9 @@ func EnvFiles(projectDir string) []domain.EnvFile {
 		if relErr != nil {
 			return nil
 		}
-		paths = append(paths, rel)
+		// Slash-normalized: this lands in config.toml, which is shared across
+		// machines — a Windows separator there breaks every other platform.
+		paths = append(paths, filepath.ToSlash(rel))
 		return nil
 	})
 

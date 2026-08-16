@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/testutil/gittest"
+	"github.com/LucasPcq/wtm/internal/testutil/pathtest"
 )
 
 func gitWorktreeAdd(t *testing.T, repo, path, branch string) {
@@ -252,7 +253,7 @@ func TestRelocateRejectsInvalidTo(t *testing.T) {
 		t.Fatalf("setup config: %v", err)
 	}
 
-	for _, to := range []string{"   ", "/abs/worktrees"} {
+	for _, to := range []string{"   ", pathtest.Abs("abs", "worktrees")} {
 		_, _, err := runWtCmd(t, domain.CmdRelocate, "--to", to, "--output", domain.OutputJSON, "--"+domain.FlagYes)
 		if !errors.Is(err, domain.ErrInvalidBasePath) {
 			t.Fatalf("expected ErrInvalidBasePath for --to %q, got %v", to, err)

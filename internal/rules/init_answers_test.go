@@ -2,10 +2,12 @@ package rules_test
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/testutil/pathtest"
 )
 
 func TestBuildGlobalAnswers_Defaults(t *testing.T) {
@@ -256,11 +258,17 @@ func TestInitProjectRecapFields_OmitsEmptyOnCreate(t *testing.T) {
 }
 
 func TestDisplayPath(t *testing.T) {
-	if got := rules.DisplayPath(rules.DisplayPathParams{Base: "/repo", Target: "/repo/.git/wtm/config.toml"}); got != ".git/wtm/config.toml" {
-		t.Errorf("DisplayPath inside base = %q, want relative", got)
+	// DisplayPath feeds the init recap, so it stays in native separators — the
+	// expectations are built the same way rather than hardcoding "/".
+	base := pathtest.Abs("repo")
+	inside := pathtest.Abs("repo", ".git", "wtm", "config.toml")
+	wantInside := filepath.Join(".git", "wtm", "config.toml")
+	if got := rules.DisplayPath(rules.DisplayPathParams{Base: base, Target: inside}); got != wantInside {
+		t.Errorf("DisplayPath inside base = %q, want %q", got, wantInside)
 	}
 	// A target outside base keeps the absolute path rather than an ugly ../.. climb.
-	if got := rules.DisplayPath(rules.DisplayPathParams{Base: "/repo", Target: "/elsewhere/wtm/config.toml"}); got != "/elsewhere/wtm/config.toml" {
+	outside := pathtest.Abs("elsewhere", "wtm", "config.toml")
+	if got := rules.DisplayPath(rules.DisplayPathParams{Base: base, Target: outside}); got != outside {
 		t.Errorf("DisplayPath outside base = %q, want unchanged absolute", got)
 	}
 }

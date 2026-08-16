@@ -8,11 +8,17 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
 // TestRunUp_NotInitialized asserts a blocked run command fails with the opt-in
 // guard (ErrRunNotInitialized) when run.toml declares no job/profile.
 func TestRunUp_NotInitialized(t *testing.T) {
+	// Where the run module is unsupported the platform guard fires first, by
+	// design: `wtm run init` cannot help there.
+	if err := process.SupportedOnPlatform(); err != nil {
+		t.Skipf("run module unsupported here: %v", err)
+	}
 	setupTestProject(t)
 
 	_, _, err := runCmd(t, domain.CmdUp)
