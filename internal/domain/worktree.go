@@ -118,6 +118,18 @@ type CreateResult struct {
 	Path          string           `json:"path"`
 	Metadata      WorktreeMetadata `json:"metadata"`
 	AlreadyExists bool             `json:"already_exists"`
+	// ExistingBranch reports that the worktree checked out a local branch that
+	// already existed instead of creating one; the source branch was then only
+	// recorded as the sync parent, not used as a start-point.
+	ExistingBranch bool `json:"existing_branch"`
+	// OriginState is the reused branch's divergence from origin, using the same
+	// labels as `list` and `tree`. Empty when the branch was created.
+	OriginState string `json:"origin_state,omitempty"`
+	// OriginAhead/OriginBehind are the reused branch's commit counts vs its origin
+	// counterpart, backing the human-readable reuse note. Zero when the branch was
+	// created (OriginState empty) or up to date.
+	OriginAhead  int `json:"origin_ahead,omitempty"`
+	OriginBehind int `json:"origin_behind,omitempty"`
 }
 
 // CleanParams holds inputs for cleaning a worktree.

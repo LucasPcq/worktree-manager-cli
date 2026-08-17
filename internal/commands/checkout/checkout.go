@@ -28,9 +28,12 @@ func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdCheckout + " [number]",
 		Short: "Create a worktree from an existing pull request",
-		Long:  "Create a worktree from a pull request.\nWithout arguments, shows an interactive picker of open PRs.",
-		Args:  cobra.MaximumNArgs(1),
-		RunE:  runCheckout,
+		Long: "Create a worktree from a pull request.\n" +
+			"A local branch of the PR's name is checked out as-is, keeping commits you never\n" +
+			"pushed; interactive runs offer to fast-forward it when it is behind origin.\n" +
+			"Without arguments, shows an interactive picker of open PRs.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: runCheckout,
 	}
 
 	cmd.Flags().Bool(domain.FlagReview, false, "Show only PRs where you are requested as reviewer")
@@ -112,11 +115,7 @@ func checkoutByNumber(cmd *cobra.Command, result shared.ConfigResult, number int
 		return fmt.Errorf("fetch PR: %w", err)
 	}
 
-	localBranches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: result.ProjectDir})
-	if err != nil {
-		return fmt.Errorf("list local branches: %w", err)
-	}
-	if err := rules.ValidatePRForCheckout(p, localBranches); err != nil {
+	if err := rules.ValidatePRForCheckout(p); err != nil {
 		return err
 	}
 	parentBranches := parentBranchCandidates(result.ProjectDir)
@@ -144,10 +143,6 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 		return fmt.Errorf("PR number required without an interactive terminal (or when --yes is set)")
 	}
 
-	localBranches, err := infra.ListLocalBranches(infra.ListBranchesParams{ProjectDir: result.ProjectDir})
-	if err != nil {
-		return fmt.Errorf("list local branches: %w", err)
-	}
 	parentBranches := parentBranchCandidates(result.ProjectDir)
 
 	dir := result.ProjectDir
@@ -166,6 +161,9 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 		FromOverride:     opts.fromOverride,
 		EnvOverride:      opts.envOverride,
 		EnvFallback:      shared.EnvFallbackDecider(dir, result.Config),
+		Target: func(b string) domain.BranchTarget {
+			return branch.Target(branch.BranchParams{ProjectDir: dir, Branch: b})
+		},
 	})
 	if err != nil {
 		if errors.Is(err, domain.ErrUserAborted) {
@@ -178,7 +176,7 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 	if p.Number == 0 {
 		return nil
 	}
-	if err := rules.ValidatePRForCheckout(p, localBranches); err != nil {
+	if err := rules.ValidatePRForCheckout(p); err != nil {
 		return err
 	}
 
@@ -221,6 +219,9 @@ func resolveParentAndEnv(params resolveParams) (parent, env string, aborted, wiz
 			FromOverride:   params.opts.fromOverride,
 			EnvOverride:    params.opts.envOverride,
 			EnvFallback:    shared.EnvFallbackDecider(params.result.ProjectDir, params.result.Config),
+			Target: func(b string) domain.BranchTarget {
+				return branch.Target(branch.BranchParams{ProjectDir: params.result.ProjectDir, Branch: b})
+			},
 		})
 		if runErr != nil {
 			if errors.Is(runErr, domain.ErrUserAborted) {
@@ -279,6 +280,27 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 		return fetchErr
 	}
 
+	// A local branch of the PR's name is not a conflict: the worktree checks it
+	// out as-is, keeping commits that were never pushed. Only a branch another
+	// worktree already holds is refused, by worktree.Create.
+	target := branch.Target(branch.BranchParams{ProjectDir: result.ProjectDir, Branch: p.Branch})
+	reused := target.State == domain.BranchTargetExisting
+
+	// The start-point applies only to a branch git has to create. Reusing one is
+	// never destructive, so it needs no confirmation — but a behind-only branch is
+	// worth offering to update, interactively only (--yes / JSON never touch refs).
+	startPoint := domain.RemoteBranchPrefix + p.Branch
+	if reused {
+		startPoint = ""
+		if params.interactive {
+			updated, ok := reconcileReusedBranch(reconcileReusedBranchParams{ProjectDir: result.ProjectDir, Target: target})
+			if !ok {
+				return nil
+			}
+			target = updated
+		}
+	}
+
 	if !params.jsonMode {
 		output.Loading(cmd.ErrOrStderr(), fmt.Sprintf("Creating worktree %s…", p.Branch))
 	}
@@ -286,7 +308,7 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 		ProjectDir:      result.ProjectDir,
 		StateDir:        result.StateDir,
 		Branch:          p.Branch,
-		FromBranch:      domain.RemoteBranchPrefix + p.Branch,
+		FromBranch:      startPoint,
 		SourceBranch:    params.parent,
 		Config:          result.Config,
 		EnvFromOverride: params.env,
@@ -297,13 +319,14 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 	}
 
 	// on_create hooks as a distinct, titled phase (shared with create/extract).
+	// A reused branch has no start-point, so the hooks see its recorded parent.
 	if hookErr := shared.RunCreateHooksPhase(shared.CreateHooksPhaseParams{
 		Cmd:          cmd,
 		ShowHeader:   !params.jsonMode,
 		ProjectDir:   result.ProjectDir,
 		WorktreePath: createResult.Path,
 		Branch:       p.Branch,
-		FromBranch:   domain.RemoteBranchPrefix + p.Branch,
+		FromBranch:   rules.FirstNonEmpty(startPoint, params.parent),
 		Hooks:        result.Config.Project.Hooks.OnCreate,
 	}); hookErr != nil {
 		return hookErr
@@ -311,20 +334,80 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 
 	if params.jsonMode {
 		return output.WritePRCheckoutJSON(cmd.OutOrStdout(), output.PRCheckoutJSON{
-			Number: p.Number,
-			Branch: p.Branch,
-			Path:   createResult.Path,
-			Author: p.Author,
-			URL:    p.URL,
-			Draft:  p.Draft,
+			Number:         p.Number,
+			Branch:         p.Branch,
+			Path:           createResult.Path,
+			Author:         p.Author,
+			URL:            p.URL,
+			Draft:          p.Draft,
+			ExistingBranch: createResult.ExistingBranch,
+			OriginState:    createResult.OriginState,
 		})
 	}
 
 	output.Frame(cmd.OutOrStdout(), func() {
 		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Checked out PR #%d (%s) at %s", p.Number, p.Branch, createResult.Path))
+		if createResult.ExistingBranch {
+			note := shared.ReusedBranchNote(shared.ReusedBranchNoteParams{
+				Branch: target.Branch,
+				Ahead:  target.AheadBehind.Ahead,
+				Behind: target.AheadBehind.Behind,
+			})
+			if note.Warning {
+				output.Warning(cmd.OutOrStdout(), note.Text)
+			} else {
+				output.Message(cmd.OutOrStdout(), note.Text)
+			}
+		}
 		output.GoHint(cmd.OutOrStdout(), fmt.Sprintf(domain.GoCommandFmt, p.Branch))
 	})
 	return nil
+}
+
+// reconcileReusedBranchParams holds inputs for reconcileReusedBranch.
+type reconcileReusedBranchParams struct {
+	ProjectDir string
+	Target     domain.BranchTarget
+}
+
+// reconcileReusedBranch offers to update a reused local branch that is behind
+// origin, mirroring create's fast-forward offer, and returns the branch's state
+// afterwards so the conclusion reports what is actually checked out. Declining
+// proceeds with the local branch as-is; only a failed fast-forward whose recovery
+// is declined cancels the checkout (ok=false). A diverged branch is never
+// rewritten — the local commits win and the user is told what that means.
+// Interactive runs only.
+func reconcileReusedBranch(p reconcileReusedBranchParams) (updated domain.BranchTarget, ok bool) {
+	target := p.Target
+	if !rules.ShouldOfferFastForward(target.Origin) {
+		return target, true
+	}
+	confirmed, _ := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
+		Title:       fmt.Sprintf(domain.SourceFastForwardPrompt, target.Branch, target.AheadBehind.Behind),
+		Description: domain.SourceFastForwardDescription,
+		DefaultYes:  true,
+	}))
+	if !confirmed {
+		return target, true
+	}
+
+	ffErr := components.RunLoading(components.LoadingParams{
+		Message: fmt.Sprintf(domain.SourceFastForwardLoadingFmt, target.Branch),
+		Animate: true,
+		Work: func() error {
+			return branch.FastForwardToOrigin(branch.BranchParams{ProjectDir: p.ProjectDir, Branch: target.Branch})
+		},
+	})
+	if ffErr == nil {
+		return branch.Target(branch.BranchParams{ProjectDir: p.ProjectDir, Branch: target.Branch}), true
+	}
+
+	proceed, _ := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
+		Title:      fmt.Sprintf(domain.SourceProceedStalePrompt, target.Branch, target.AheadBehind.Behind),
+		Warning:    fmt.Sprintf(domain.SourceProceedStaleWarning, ffErr),
+		DefaultYes: false,
+	}))
+	return target, proceed
 }
 
 func worktreeBranches(projectDir string) []string {

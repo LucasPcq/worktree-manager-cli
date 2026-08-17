@@ -83,6 +83,44 @@ func TestShouldOfferFastForward(t *testing.T) {
 	}
 }
 
+func TestSourceIsStartPoint(t *testing.T) {
+	cases := []struct {
+		name  string
+		state domain.BranchTargetState
+		want  bool
+	}{
+		{"a new branch starts from the source", domain.BranchTargetNew, true},
+		{"a reused branch carries its own history", domain.BranchTargetExisting, false},
+		{"a taken branch never starts from the source", domain.BranchTargetCheckedOut, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := SourceIsStartPoint(c.state); got != c.want {
+				t.Errorf("SourceIsStartPoint(%v) = %v, want %v", c.state, got, c.want)
+			}
+		})
+	}
+}
+
+func TestParentMustBeExplicit(t *testing.T) {
+	cases := []struct {
+		name  string
+		state domain.BranchTargetState
+		want  bool
+	}{
+		{"an existing branch has no inferable parent", domain.BranchTargetExisting, true},
+		{"a new branch's parent is its start-point", domain.BranchTargetNew, false},
+		{"a taken branch never reaches the question", domain.BranchTargetCheckedOut, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ParentMustBeExplicit(c.state); got != c.want {
+				t.Errorf("ParentMustBeExplicit(%v) = %v, want %v", c.state, got, c.want)
+			}
+		})
+	}
+}
+
 func TestMergeBranchCandidates(t *testing.T) {
 	got := MergeBranchCandidates(MergeBranchCandidatesParams{
 		Local:  []string{"main", "feature"},

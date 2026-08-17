@@ -11,6 +11,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/branch"
 	"github.com/LucasPcq/wtm/internal/service/env"
 	"github.com/LucasPcq/wtm/internal/service/hooks"
 )
@@ -33,11 +34,29 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		return domain.CreateResult{}, fmt.Errorf("%w: %s", domain.ErrWorktreePathExists, worktreePath)
 	}
 
+	// The branch is a separate axis from the directory: it may already exist (the
+	// worktree then checks it out as-is, FromBranch unused) or already be checked
+	// out somewhere else, which git allows only once.
+	target := branch.Target(branch.BranchParams{ProjectDir: params.ProjectDir, Branch: params.Branch})
+	if target.State == domain.BranchTargetCheckedOut {
+		if params.IfNotExists {
+			return domain.CreateResult{
+				Branch:        params.Branch,
+				Path:          target.WorktreePath,
+				AlreadyExists: true,
+			}, nil
+		}
+		return domain.CreateResult{}, fmt.Errorf("%w: "+domain.BranchCheckedOutElsewhereFmt,
+			domain.ErrWorktreeExists, params.Branch, target.WorktreePath, params.Branch)
+	}
+
+	reuseBranch := target.State == domain.BranchTargetExisting
 	if err := infra.CreateWorktree(infra.CreateWorktreeParams{
-		ProjectDir: params.ProjectDir,
-		Path:       worktreePath,
-		Branch:     params.Branch,
-		FromBranch: params.FromBranch,
+		ProjectDir:  params.ProjectDir,
+		Path:        worktreePath,
+		Branch:      params.Branch,
+		FromBranch:  params.FromBranch,
+		ReuseBranch: reuseBranch,
 	}); err != nil {
 		return domain.CreateResult{}, err
 	}
@@ -95,11 +114,18 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		}
 	}
 
-	return domain.CreateResult{
+	result := domain.CreateResult{
 		Branch:   params.Branch,
 		Path:     worktreePath,
 		Metadata: metadata,
-	}, nil
+	}
+	if reuseBranch {
+		result.ExistingBranch = true
+		result.OriginState = rules.DivergenceStateString(target.Origin)
+		result.OriginAhead = target.AheadBehind.Ahead
+		result.OriginBehind = target.AheadBehind.Behind
+	}
+	return result, nil
 }
 
 // RunCreateHooks executes the on_create hooks in the new worktree, streaming their

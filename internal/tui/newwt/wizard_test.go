@@ -9,7 +9,7 @@ import (
 func TestCreateStepsGating(t *testing.T) {
 	params := WizardParams{
 		IncludeBranch: true,
-		SourceUpdate:  func(string) SourceUpdatePrompt { return SourceUpdatePrompt{} },
+		SourceUpdate:  func(SourceUpdateParams) SourceUpdatePrompt { return SourceUpdatePrompt{} },
 	}
 
 	// Disabled → every embedded create step auto-skips.

@@ -75,9 +75,12 @@ A few ideas explain how the commands fit together:
 
 - **Worktree** — a checked-out branch in its own directory. wtm creates them under
   `base_path` (from `wtm init`) and records per-worktree metadata under
-  `<git-common-dir>/wtm/`. See [`create`](docs/wtm_create.md), [`list`](docs/wtm_list.md), [`clean`](docs/wtm_clean.md).
+  `<git-common-dir>/wtm/`. A branch that already exists locally is checked out as-is
+  (`create` and `checkout` both keep its commits — nothing to clean up first); only a
+  branch another worktree already holds is refused. See [`create`](docs/wtm_create.md), [`list`](docs/wtm_list.md), [`clean`](docs/wtm_clean.md).
 - **Stacking** — every worktree records the parent branch it was created from
-  (`source_branch`). [`sync`](docs/wtm_sync.md) rebases a worktree (and its descendants,
+  (`source_branch`) — the branch it was created from, or the parent you pick when reusing
+  an existing branch. [`sync`](docs/wtm_sync.md) rebases a worktree (and its descendants,
   in cascade) onto its parent; [`tree`](docs/wtm_tree.md) shows the parent→child forest and
   which branches need syncing; [`reparent`](docs/wtm_reparent.md) rewires the parent after a
   middle branch merges.

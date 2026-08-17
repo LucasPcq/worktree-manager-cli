@@ -375,10 +375,13 @@ const (
 	HooksTitleOnCreate = "Running on_create hooks"
 	HooksTitleOnClean  = "Running on_clean hooks"
 
-	// create result recap labels (aligned "label   value" rows).
-	CreateRecapLabelFrom = "from"
-	CreateRecapLabelEnv  = "env"
-	CreateRecapLabelPath = "path"
+	// create result recap labels (aligned "label   value" rows). "from" names the
+	// start-point of a newly created branch; "parent" replaces it when an existing
+	// local branch is reused, where the source is only the recorded sync parent.
+	CreateRecapLabelFrom   = "from"
+	CreateRecapLabelParent = "parent"
+	CreateRecapLabelEnv    = "env"
+	CreateRecapLabelPath   = "path"
 
 	// GoCommandFmt builds the jump-in command shown by every worktree-creating
 	// command (create, extract, checkout): `wtm go <branch>`.
@@ -528,6 +531,51 @@ const (
 	SourceProceedStalePrompt = "Create the worktree from local %s anyway? (behind origin by %d)"
 	// SourceProceedStaleWarning reports why the fast-forward failed (cause).
 	SourceProceedStaleWarning = "Couldn't fast-forward: %v"
+	// SourceFastForwardOptionFmt labels the fast-forward choice on the
+	// source-update step (subject).
+	SourceFastForwardOptionFmt = "Fast-forward %s to origin"
+	// SourceFastForwardLoadingFmt is the spinner message while a fast-forward
+	// runs, in the wizard's confirmation step or checkout's reuse reconciliation
+	// (subject).
+	SourceFastForwardLoadingFmt = "Updating %s from origin…"
+	// RecapUpdateFastForward is the recap line naming an accepted fast-forward,
+	// shared by create's and extract's combined recaps (subject).
+	RecapUpdateFastForward = "Update:  fast-forward %s to origin"
+	// RecapParentRecordedForSync explains, on the source-update step, that a
+	// reused branch's source is recorded for `wtm sync` rather than being a
+	// git start-point.
+	RecapParentRecordedForSync = "Parent recorded for `wtm sync` — the branch already exists and keeps its commits"
+
+	// Existing-branch reuse, shared by create, extract and checkout: a worktree
+	// created on a local branch that already exists checks it out as-is instead of
+	// branching off the source. Format verbs: %s branch, %s worktree path, %d
+	// commit counts.
+
+	// BranchCheckedOutElsewhereFmt reports that the branch cannot be checked out
+	// because another worktree already holds it (branch, path, branch). Phrased to
+	// read on from the ErrWorktreeExists sentinel it is wrapped in.
+	BranchCheckedOutElsewhereFmt = "%s is checked out at %s — run `wtm go %s` to jump in"
+	// BranchReusedSuffix marks the branch line of a recap when the worktree checks
+	// out an existing local branch instead of creating one.
+	BranchReusedSuffix = " (existing local branch — reused)"
+	// BranchReusedHeadline is the create conclusion for a reused branch (branch).
+	BranchReusedHeadline = "Created worktree %s on existing branch"
+	// BranchReusedNote states that the worktree checked out an existing local
+	// branch rather than origin's (branch).
+	BranchReusedNote = "Reused your existing local branch %s."
+	// BranchReusedBehindWarning warns that the reused branch is behind origin
+	// (branch, behind).
+	BranchReusedBehindWarning = "%s is %d commit(s) behind origin — the worktree starts from your local branch."
+	// BranchReusedDivergedWarning warns that the reused branch has diverged from
+	// origin (branch, ahead, behind).
+	BranchReusedDivergedWarning = "%s has diverged from origin (%d ahead, %d behind) — the worktree starts from your " +
+		"local branch, missing commits that are on origin."
+	// ParentRequiredFmt errors when a create/extract target names a branch that
+	// already exists locally but the caller gave no --from: its parent was set
+	// outside wtm, so nothing says what it was branched off, and defaulting would
+	// record a guess `wtm sync` then treats as fact (branch, flag name).
+	ParentRequiredFmt = "%s already exists locally: pass --%s to record its parent branch " +
+		"(it can't be inferred, and `wtm sync` needs it)"
 
 	// EnvParentFallbackPrompt warns, before creating, that the "parent" env
 	// strategy will source .env from main because the source has no local worktree
