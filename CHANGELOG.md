@@ -1,5 +1,55 @@
 # Changelog
 
+## v0.25.0 — Réutiliser une branche locale existante (`create`, `checkout`, `extract`)
+
+### New features
+
+- **`checkout <PR>` réutilise une branche locale existante** — refusait auparavant la PR
+  dès que la branche locale existait, en demandant un `wtm clean` (donc de supprimer des
+  commits non poussés). Elle réutilise désormais la branche telle quelle et propose un
+  fast-forward interactif quand elle est en retard sur origin — jamais sous `--yes`/JSON,
+  qui ne touchent aucune ref. Le recap annonce la réutilisation avant même le fetch, pas
+  après.
+- **`create <branche-existante>` et `extract --to <branche-existante>` réutilisent
+  proprement** — la source devient un simple parent de sync optionnel côté wizard,
+  `--ff` change de sujet pour cibler la branche réutilisée plutôt qu'une source hors
+  sujet, et le recap comme la sortie finale annoncent la réutilisation
+  (`Branch: x (existing local branch — reused)` + `Parent:`) au lieu du `from:` trompeur
+  d'avant.
+- **Une branche déjà checked out ailleurs est signalée proprement** — remontait une
+  erreur git brute en exit `1` ; lève désormais `ErrWorktreeExists` (exit `10`) avec un
+  hint `wtm go <branche>`. `--if-not-exists` renvoie le worktree existant, y compris
+  quand c'est le worktree main qui détient la branche.
+- **Nouveaux champs JSON** — `existing_branch`, `origin_state`, `origin_ahead` et
+  `origin_behind` sur `create` et `checkout` signalent la réutilisation et sa
+  divergence avec origin (`up-to-date`/`behind`/`ahead`/`diverged`).
+
+### Breaking changes
+
+- **`wtm create <branche-existante> --yes` exige désormais `--from`** — `extract --to
+  <branche-existante> --yes` aussi. Le parent d'une branche créée hors de wtm ne peut
+  pas être deviné sans risquer que `sync`, `tree` et `reparent` traitent la supposition
+  comme un fait ; la commande échoue en nommant le flag plutôt que de dégrader
+  silencieusement vers `base_branch`. Une branche neuve garde son défaut `base_branch`,
+  et `checkout <PR>` garde le sien (la base de la PR est un fait GitHub, pas une
+  supposition).
+
+### Improvements
+
+- **L'état de la branche cible n'est inspecté qu'une fois par run** — `branch.Target`
+  (nouveau `service/branch/target.go`) est désormais mémoïsé par nom de branche pour la
+  durée d'un wizard interactif, évitant des dizaines d'appels git redondants par run
+  (`create` en tournait ~20-25 auparavant).
+- **`wtm checkout` a maintenant des tests** — jusqu'ici sans aucune couverture, il en
+  gagne deux (réutilisation de branche, non-mutation des refs sous `--yes`), en testant
+  la logique de création directement, sans dépendance réseau à GitHub.
+- Nouveaux tests de bout en bout : `--yes` qui ne fast-forward jamais une branche en
+  retard, `--ff` qui retargete la branche réutilisée et pas la source, `origin_state`
+  vérifié en JSON, garde-fou `--from` sur `extract`.
+- Chaînes utilisateur dupliquées ("Fast-forward %s to origin", "Updating %s from
+  origin…", la ligne de recap "Update: fast-forward…") centralisées dans
+  `domain/constants.go`.
+
 ## v0.24.1 — `wtm extract` : les fichiers non trackés enfin gérés pour de bon
 
 ### Bug fixes
