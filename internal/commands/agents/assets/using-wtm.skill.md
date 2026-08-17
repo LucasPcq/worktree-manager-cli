@@ -37,11 +37,23 @@ self-documenting:
    remove unsafe worktrees); `sync` needs branch args or `--all` (`--yes` won't push — pass
    `--push`); `extract` needs the source arg, `--files`, and `--to` (`--yes` defaults
    on-conflict to abort — pass `--on-conflict resolve`); `reparent` needs worktrees and `--to`;
-   `checkout` needs the PR `<number>`; `relocate` uses `--to` to change base_path.
+   `checkout` needs the PR `<number>`; `relocate` uses `--to` to change base_path; `create`
+   needs `--from` when the branch already exists locally (its parent can't be inferred).
    Read-only data commands (`list`, `tree`, `resolve`, `config show`, `run list`/`ps`) take
    `--output json` with no `--yes`. Check `--help` when unsure.
 5. **Operations are idempotent — safe to retry.** `create --if-not-exists` no-ops on an
-   existing worktree; `clean` no-ops on an absent one; `run up`/`down`/`stop` re-run cleanly.
+   existing worktree (including one holding the branch outside `base_path`, whose path it
+   returns — even the **main** worktree's own path, if that's where the branch is checked
+   out; it is still `already_exists: true`, just not a directory under `base_path`); `clean`
+   no-ops on an absent one; `run up`/`down`/`stop` re-run cleanly. Note the flag is about
+   the **worktree**, not the branch: an existing branch with no worktree is still created.
+6. **An existing local branch is not an obstacle.** `create <branch>` and `checkout <number>`
+   both check out a same-named local branch as-is, keeping commits that were never pushed —
+   they never delete or reset it, so there is no `wtm clean` to run first. The response sets
+   `existing_branch: true` and `origin_state`. Only a branch **another worktree already holds**
+   is refused (exit `10`) — enter it with `wtm go <branch>` instead. What wtm will not do is
+   **guess its parent**: `create` requires `--from` there, while `checkout` takes the PR's
+   base branch (a fact, not a guess).
 
 ## Exit codes
 
@@ -50,7 +62,7 @@ self-documenting:
 | `0` | success |
 | `1` | generic error |
 | `2` | bad usage / invalid flags |
-| `10` | worktree (or its path) already exists |
+| `10` | worktree (or its path) already exists — or the branch is checked out in another worktree |
 | `11` | branch not found |
 | `12` | config not found — repo not initialized (`wtm init`) |
 | `14` | service/job not declared in `run.toml` |
@@ -86,6 +98,14 @@ flagged; everything else is what the name implies.
   Add `--ff` to fast-forward a behind-only `--from` branch to origin first (so the worktree
   starts up to date); a diverged branch is left as-is (no prompt in JSON mode). `extract`
   accepts the same `--ff` for the parent branch of a newly-created target.
+  **When `<branch>` already exists locally** it is checked out as-is, and `--from` stops
+  being a start-point: it names the **parent to record for `wtm sync`**. That parent
+  cannot be inferred (the branch was created outside wtm), so **`--from` is required
+  there** — the command errors instead of guessing the base branch, because `sync` and
+  `tree` would treat the guess as fact. Ask the user which branch it stacks on if you
+  don't know. `--ff` switches subject too, updating `<branch>` itself rather than the
+  source. The response adds `existing_branch: true` and `origin_state`
+  (`up-to-date`/`behind`/`ahead`/`diverged`) so you can tell reuse from creation.
 - `wtm clean <branch>` / `wtm prune [filters]` — remove one / batch-remove finished
   worktrees. **In JSON mode surviving children are left orphaned unless you pass
   `--reparent-children`** (they reparent onto the grandparent). `prune` decides "finished"
@@ -107,7 +127,9 @@ flagged; everything else is what the name implies.
   `--yes` plus the source arg, `--files`, and `--to` — all **required** (omitting any errors
   naming the missing flag; there is no picker). On conflict it changes nothing and exits `15`;
   retry with `--on-conflict resolve` to apply git conflict markers (`--yes` defaults on-conflict
-  to abort).
+  to abort). **When `--to` names a branch that already exists locally**, the same rule as
+  `create` applies: its parent can't be inferred, so `--from` is **required** there too
+  (the command errors naming the flag rather than guessing).
   `--files` takes paths exactly as reported (spaces and non-ASCII are never quoted or escaped),
   including each untracked file of a brand-new directory individually; pass a directory
   (`--files newmod/`) to take everything below it. Gitignored files are never listed — `.env`
@@ -178,9 +200,11 @@ and **experimental**: the global `wtm init` does not configure it.
 **GitHub**
 - `wtm checkout <number>` — fetch a PR's branch into a worktree; parent defaults to the
   PR's base. In JSON mode pass `--yes` and the PR `<number>` (both **required**; no picker);
-  `--yes` resolves the parent → PR base and env → config default. Fork
-  PRs are out of scope — fall back to `gh pr checkout <number>`. Creating a PR is out of
-  scope too — use `gh pr create`.
+  `--yes` resolves the parent → PR base and env → config default. A local branch of the
+  PR's name is **reused as-is**, never reset — the response then sets `existing_branch: true`
+  and `origin_state`; under `--yes` no ref is touched even when the branch is behind, so
+  read `origin_state` and decide yourself. Fork PRs are out of scope — fall back to
+  `gh pr checkout <number>`. Creating a PR is out of scope too — use `gh pr create`.
 
 **Setup**
 - `wtm config show` inspects config; `wtm config edit` and the `wtm init` wizard are
@@ -197,6 +221,10 @@ On non-zero exit, read stderr, then:
 - `12` (config not found) → repo not initialized. Run `wtm init --non-interactive` with
   flags, or ask the user to run interactive `wtm init`.
 - `11` (branch not found) → wrong name; re-run the relevant discovery call.
+- `10` (worktree already exists) → either the path is taken, or the branch is checked out
+  in another worktree. Enter it with `wtm go <branch>` (get its path from `wtm resolve
+  <branch>`), or pick a different branch name. `--if-not-exists` turns this into a success
+  returning the existing worktree's path.
 - `14` (job not found) → not declared in `run.toml`; check `wtm run list`.
 - `15` (extract conflict) → nothing changed; retry with `--on-conflict resolve` or a
   different `--to`. Covers both a file modified on both sides and one that merely already

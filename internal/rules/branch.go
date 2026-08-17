@@ -61,6 +61,25 @@ func ShouldOfferFastForward(state domain.DivergenceState) bool {
 	return state == domain.DivergenceBehind
 }
 
+// SourceIsStartPoint reports whether the source branch is the git start-point of
+// the worktree's branch. It is only when the branch does not exist yet: an
+// existing local branch is checked out as-is, and the source then merely records
+// the sync parent in metadata. Callers use it to decide whether a source is
+// required at all.
+func SourceIsStartPoint(state domain.BranchTargetState) bool {
+	return state == domain.BranchTargetNew
+}
+
+// ParentMustBeExplicit reports whether the sync parent has to be named by the
+// caller rather than defaulted. A branch that already exists was created outside
+// wtm, so nothing in the repo says what it was branched off — defaulting to the
+// base branch would record a guess that sync, tree and reparent then treat as
+// fact. A branch git is about to create has no such ambiguity: its start-point
+// is its parent.
+func ParentMustBeExplicit(state domain.BranchTargetState) bool {
+	return state == domain.BranchTargetExisting
+}
+
 // MergeBranchCandidatesParams holds inputs for MergeBranchCandidates. Local and
 // Remote are git ref short names ("feature", "origin/feature"). Divergence maps
 // a local branch name to its ahead/behind counts versus origin; locals absent

@@ -349,11 +349,26 @@ func buildCombinedRecap(prev []components.Step, params RunParams) components.Rec
 	if sl, ok := stepModelByName(prev, stepTarget).(components.SelectListModel); ok {
 		if isNewTarget(prev) {
 			cr := newpicker.ReadCreateResult(prev, params.Create)
-			source := cr.FromBranch
-			if cr.FastForwardSource {
-				source += " (fast-forward to origin)"
+			// A reused branch is checked out as-is, not created from a start-point —
+			// the recap says so instead of the misleading "new worktree ... from ...".
+			if cr.Reused {
+				lines = append(lines, "Target:  "+cr.BranchName+domain.BranchReusedSuffix)
+				if parent := cr.FromBranch; parent != "" {
+					if cr.FastForwardBranch == parent {
+						parent += " (fast-forward to origin)"
+					}
+					lines = append(lines, "Parent:  "+parent)
+				}
+			} else {
+				source := cr.FromBranch
+				if cr.FastForwardBranch == cr.FromBranch && cr.FastForwardBranch != "" {
+					source += " (fast-forward to origin)"
+				}
+				lines = append(lines, "Target:  new worktree "+cr.BranchName+" from "+source)
 			}
-			lines = append(lines, "Target:  new worktree "+cr.BranchName+" from "+source)
+			if cr.FastForwardBranch != "" && cr.FastForwardBranch != cr.FromBranch {
+				lines = append(lines, fmt.Sprintf(domain.RecapUpdateFastForward, cr.FastForwardBranch))
+			}
 			action = "create & extract"
 		} else {
 			lines = append(lines, "Target:  "+targetSummary(sl))

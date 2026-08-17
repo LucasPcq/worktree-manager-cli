@@ -13,12 +13,16 @@ type CreateWorktreeParams struct {
 	Path       string
 	Branch     string
 	FromBranch string
+	// ReuseBranch checks out an existing local branch instead of creating one
+	// with -b; FromBranch is then irrelevant. The caller decides — it already
+	// inspected the branch to reject one checked out elsewhere.
+	ReuseBranch bool
 }
 
-// CreateWorktree creates a new git worktree. If the branch does not exist,
-// it is created with -b. If it already exists, the worktree checks it out.
+// CreateWorktree creates a git worktree, either on a new branch (-b, from
+// FromBranch) or on an existing local branch (ReuseBranch).
 func CreateWorktree(params CreateWorktreeParams) error {
-	if branchExists(params.ProjectDir, params.Branch) {
+	if params.ReuseBranch {
 		return createWorktreeExisting(params)
 	}
 	return createWorktreeNew(params)
