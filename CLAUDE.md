@@ -137,6 +137,7 @@ delete the ones that restate the code — in the same change.
 cmd/                          ← entry points, cobra setup only
 internal/
   commands/                   ← flag wiring, delegates to flow/service (zero business logic)
+    ui/                       ←   `wtm ui`: refuses JSON and a missing TTY, then hands off to tui/dashboard
   domain/                     ← types, errors, constants only (no methods, no functions)
   rules/                      ← pure functions (stdlib + domain only, no I/O)
   config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/, plus ~/.config/wtm/config.toml
@@ -157,6 +158,9 @@ internal/
   tui/                        ← Bubbletea models (zero business logic, rendering only)
     flowui/                   ←   runs a flow.Session as a wizard (the only translator
                                   between flow.Step and components.Step)
+    dashboard/                ←   `wtm ui`: the full-screen worktree dashboard, the second
+                                  surface over flow/ (its own Prompter/Presenter, mouse
+                                  zones via bubblezone)
   infra/                      ← I/O, git exec, filesystem wrappers
 ```
 
@@ -184,7 +188,7 @@ the full convention.
 `commands/`: `runCreate`/`runClean` read the flags, decide *who may be asked* and
 *where output goes*, then call `create.Run` / `clean.Run`. One package per command,
 each splitting the run from the questions it asks. Three seams let a second surface
-(a dashboard) replay the same flow:
+(`tui/dashboard`) replay the same flow:
 - **`flow.Prompter`** answers the questions: `Ask(Session)` for a whole
   question-and-recap sequence, `Confirm` for a standalone post-execution question,
   `Interactive()` to know whether a decision may be offered at all. Implementations:
@@ -205,7 +209,19 @@ one place: returning an `Answer` is a decision with a safe default, returning an
 refuses the run naming the flag, and a step with no `Resolve` can only be answered
 interactively (`flow.Unattended` never falls back to a picker). A value the request
 already carries goes in `Session.Presets`: the step is not asked but is still read
-back, which is what keeps a flag from erasing a recap line.
+back, which is what keeps a flag from erasing a recap line. The `StepContent` a step
+builds also carries `Blockers` — the safety refusals standing in the way of its
+dangerous option, named one by one instead of folded into the prose, so a surface can
+have each of them lifted separately (`rules.CleanBlockers` feeds
+`internal/flow/clean/steps.go`).
+
+**`flow.Operation`** (`Kind`, `Mode`, `TargetKey`) is what a flow declares about *how it
+is scheduled*, for a surface that runs several at once. `Mode` says how long it holds
+that surface — `ModeBlocking` (`clean`) keeps it until the run ends, `ModeBackground`
+(`create`) gives it back and locks its target instead — and `TargetKey` names the answer
+carrying the worktree it locks, known only once that step is answered. The CLI ignores it
+(one run, one terminal); `internal/tui/dashboard/ops.go` is where it is enforced, once,
+rather than at every action site.
 
 Adding a kind means teaching every surface to render it: `flowui` refuses an unknown
 kind rather than guessing. Test doubles for the two seams live in
