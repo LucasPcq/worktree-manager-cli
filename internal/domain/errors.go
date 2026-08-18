@@ -145,4 +145,11 @@ var (
 	// directory, the repository root, or an ancestor of it) — a defensive guard
 	// against corrupted git worktree metadata before privilege escalation.
 	ErrUnsafeSudoDeletePath = errors.New("refusing to sudo rm -rf an unsafe path")
+
+	// ErrDashboardNotInteractive is returned when `wtm ui` is invoked without a
+	// terminal on both ends: a full-screen dashboard has no non-interactive form.
+	ErrDashboardNotInteractive = errors.New("`wtm ui` needs a terminal — the dashboard cannot be driven by an agent; use `wtm list --output json`")
+
+	// ErrDashboardJSON is returned when `wtm ui` is invoked with --output json.
+	ErrDashboardJSON = errors.New("`wtm ui` has no --output json form — the dashboard cannot be driven by an agent; use `wtm list --output json`")
 )
