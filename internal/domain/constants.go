@@ -806,9 +806,10 @@ const (
 	DashboardGlyphCheckOn   = "[x]"
 	DashboardGlyphCheckOff  = "[ ]"
 
-	DashboardModalPreparing = "Preparing…"
-	DashboardStepperHint    = "↑↓ move · enter confirm · esc back"
-	DashboardFormHint       = "↑↓ move · space toggle · enter confirm · esc cancel"
+	DashboardModalPreparing  = "Preparing…"
+	DashboardStepperHint     = "↑↓ move · / filter · enter confirm · esc back"
+	DashboardStepperTextHint = "enter confirm · esc back"
+	DashboardFormHint        = "↑↓ move · space toggle · enter confirm · esc cancel"
 
 	// DashboardUnsupportedStepFmt refuses a step kind no modal can draw, rather
 	// than guessing a widget for it (step key, kind).

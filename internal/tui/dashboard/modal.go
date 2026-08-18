@@ -419,8 +419,11 @@ func (mo modal) stepHeader() []string {
 }
 
 func (mo modal) hint() string {
-	if mo.shape == modalForm {
+	switch {
+	case mo.shape == modalForm:
 		return domain.DashboardFormHint
+	case mo.kind == flow.StepText:
+		return domain.DashboardStepperTextHint
 	}
 	return domain.DashboardStepperHint
 }

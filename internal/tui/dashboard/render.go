@@ -21,11 +21,13 @@ type panelParams struct {
 	Title string
 	// TitleZone, when set, makes the whole title row its own clickable zone.
 	TitleZone string
-	// TitleRight is rendered flush right on the title row. It carries its own zone
-	// marking, so the title beside it must not be marked too.
-	TitleRight string
-	Body       []string
-	Zone       string
+	// TitleRight is rendered flush right on the title row, under its own zone. It
+	// is dropped whole when the panel is too narrow for it: trimming it would cut
+	// through its marker and take the zone with it.
+	TitleRight     string
+	TitleRightZone string
+	Body           []string
+	Zone           string
 }
 
 // renderPanel draws a titled, bordered box filling Rect exactly and registers it
@@ -38,8 +40,10 @@ func (m Model) renderPanel(params panelParams) string {
 	}
 
 	title := styles.DashboardPanelTitle.Render(pad(truncate(params.Title, textWidth), textWidth))
-	if params.TitleRight != "" {
-		title = spread(styles.DashboardPanelTitle.Render(truncate(params.Title, textWidth)), params.TitleRight, textWidth)
+	if rightWidth := lipgloss.Width(params.TitleRight); params.TitleRight != "" && rightWidth+1 < textWidth {
+		left := styles.DashboardPanelTitle.Render(truncate(params.Title, textWidth-rightWidth-1))
+		gap := textWidth - lipgloss.Width(left) - rightWidth
+		title = left + strings.Repeat(" ", max(gap, 0)) + m.zones.Mark(params.TitleRightZone, params.TitleRight)
 	}
 	if params.TitleZone != "" {
 		title = m.zones.Mark(params.TitleZone, title)

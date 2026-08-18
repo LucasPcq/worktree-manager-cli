@@ -15,11 +15,12 @@ const (
 
 func (m Model) renderList(layout domain.DashboardLayout) string {
 	return m.renderPanel(panelParams{
-		Rect:       layout.List,
-		Title:      domain.DashboardListTitle,
-		TitleRight: m.zones.Mark(zoneAdd, styles.DashboardAddButton.Render(domain.DashboardAddLabel)),
-		Body:       m.listBody(layout),
-		Zone:       zoneList,
+		Rect:           layout.List,
+		Title:          domain.DashboardListTitle,
+		TitleRight:     styles.DashboardAddButton.Render(domain.DashboardAddLabel),
+		TitleRightZone: zoneAdd,
+		Body:           m.listBody(layout),
+		Zone:           zoneList,
 	})
 }
 
