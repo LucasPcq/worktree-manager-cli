@@ -69,44 +69,29 @@ var (
 	DashboardRow        = lipgloss.NewStyle()
 	DashboardRowFocused = lipgloss.NewStyle().Foreground(ColorSelectedFg).Background(ColorSelectedBg)
 
-	// DashboardDanger renders what destroys something, DashboardDisabled what
-	// cannot be activated yet.
-	DashboardDanger   = lipgloss.NewStyle().Foreground(ColorDanger).Bold(true)
-	DashboardDisabled = lipgloss.NewStyle().Foreground(ColorMuted).Italic(true)
+	// DashboardDanger renders what destroys something.
+	DashboardDanger = lipgloss.NewStyle().Foreground(ColorDanger).Bold(true)
 
 	// DashboardMenu frames the floating context menu, DashboardMenuTitle names
 	// the worktree it acts on.
 	DashboardMenu = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(ColorPrimary).
-			Padding(0, 1)
+			Padding(1, 1)
 
-	DashboardMenuTitle = lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)
+	DashboardMenuTitle = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
 
-	// The dashboard has one button language, used by the header's add button and
-	// by every modal: a padded label on a filled block, the focused one carrying
-	// the accent and a destructive one carrying the danger color.
-	DashboardButton = lipgloss.NewStyle().
-			Foreground(ColorSelectedFg).
-			Background(ColorRowTint).
-			Padding(0, 2)
-
-	DashboardButtonFocused = lipgloss.NewStyle().
+	// DashboardAddButton is the header's call to action, and the one place a
+	// filled block is warranted: it stands alone in a title row, with no focus
+	// ring around it to say what it is.
+	DashboardAddButton = lipgloss.NewStyle().
 				Foreground(ColorBadgeFg).
 				Background(ColorPrimary).
 				Bold(true).
-				Padding(0, 2)
+				Padding(0, 3)
 
-	DashboardButtonDanger = lipgloss.NewStyle().
-				Foreground(ColorBadgeFg).
-				Background(ColorDanger).
-				Bold(true).
-				Padding(0, 2)
-
-	DashboardButtonDisabled = lipgloss.NewStyle().
-				Foreground(ColorMuted).
-				Background(ColorRowTint).
-				Padding(0, 2)
+	// DashboardDisabled renders what cannot be activated yet.
+	DashboardDisabled = lipgloss.NewStyle().Foreground(ColorMuted).Italic(true)
 
 	// DashboardRowSelected tints the whole selected worktree row. Render plain
 	// (ANSI-free) text through it so the background fills every cell.
@@ -114,8 +99,10 @@ var (
 				Background(ColorRowTint).
 				Foreground(ColorSelectedFg)
 
-	// DashboardRowBar is the accent bar down the left of the selected row, and
-	// DashboardRowMeta the second line of a row that is not selected.
+	// DashboardRowBar is the accent bar down the left of the selected row,
+	// DashboardRowName the worktree's own name — the heaviest thing in the list —
+	// and DashboardRowMeta the quieter line under it.
 	DashboardRowBar  = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
+	DashboardRowName = lipgloss.NewStyle().Bold(true)
 	DashboardRowMeta = lipgloss.NewStyle().Foreground(ColorMuted)
 )

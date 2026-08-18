@@ -8,6 +8,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/styles"
 )
 
 func TestAWorktreeRowIsTwoLinesAndSaysWhatItsStateIs(t *testing.T) {
@@ -147,5 +148,80 @@ func TestAPlainConfirmSaysNothingAboutToggling(t *testing.T) {
 
 	if got := model.modal.hint(); got != domain.DashboardConfirmHint {
 		t.Errorf("hint = %q, want no mention of toggling in a form with nothing to toggle", got)
+	}
+}
+
+func TestTheRowMetaStartsWhereTheNameDoes(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model.parents = map[string]string{"b": "main"}
+	width := model.layout().List.Width - borderWidth - paddingWidth
+
+	for index, name := range []string{"a", "b"} {
+		lines := model.renderRow(index, width)
+		if indentOf(lines[0]) != indentOf(lines[1]) {
+			t.Errorf("%s: the name starts at column %d and the line under it at %d — they must align",
+				name, indentOf(lines[0]), indentOf(lines[1]))
+		}
+	}
+}
+
+// indentOf counts the leading blanks of a rendered line, styling aside.
+func indentOf(line string) int {
+	plain := stripANSI(line)
+	return len(plain) - len(strings.TrimLeft(plain, " ▌"))
+}
+
+func stripANSI(text string) string {
+	var out strings.Builder
+	inEscape := false
+	for _, char := range text {
+		switch {
+		case char == '\x1b':
+			inEscape = true
+		case inEscape && (char == 'm' || char == 'z'):
+			inEscape = false
+		case !inEscape:
+			out.WriteRune(char)
+		}
+	}
+	return out.String()
+}
+
+func TestTheContextMenuNamesItsWorktreeAndRulesItOff(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "feature/x")
+	model = update(model, key("j"))
+	model = update(model, key(domain.KeyMenu))
+
+	box, rect := model.menuBox()
+	lines := strings.Split(box, "\n")
+
+	if !strings.Contains(box, "feature/x") {
+		t.Error("the menu must name the worktree it acts on")
+	}
+	if !strings.Contains(box, domain.DashboardRuleGlyph) {
+		t.Error("the actions must be ruled off from that name")
+	}
+	if !strings.Contains(box, rowBar) {
+		t.Error("the focused entry carries the same accent bar as a focused row")
+	}
+	if rect.Height != len(lines) {
+		t.Errorf("the placement rule reserves %d rows for a box of %d", rect.Height, len(lines))
+	}
+}
+
+func TestOnlyTheHeaderButtonIsAFilledBlock(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	form, _ := openDeleteForm(t, deleteSession())
+
+	button := form.modal.renderButton(99, formRow{label: "Yes, delete", confirm: true})
+
+	if !strings.Contains(stripANSI(button), "[ Yes, delete ]") {
+		t.Errorf("an unfocused action reads by its brackets, not by a slab: %q", stripANSI(button))
+	}
+	if strings.Contains(button, styles.DashboardAddButton.Render("")) && styles.DashboardAddButton.Render("") != "" {
+		t.Error("the filled block belongs to the header button alone")
+	}
+	if !strings.Contains(model.addButton(model.layout()), domain.DashboardAddLabelLong) {
+		t.Error("the header button says what it does when there is room for it")
 	}
 }

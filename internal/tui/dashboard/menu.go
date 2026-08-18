@@ -22,12 +22,15 @@ const (
 type menuItem struct {
 	label  string
 	action menuAction
+	// danger marks an entry that destroys something, so it reads as one before it
+	// is activated.
+	danger bool
 	// disabled states why the entry cannot be used right now, and shows it.
 	disabled string
 }
 
 func (m Model) menuItems() []menuItem {
-	item := menuItem{label: domain.DashboardMenuDelete, action: menuDelete}
+	item := menuItem{label: domain.DashboardMenuDelete, action: menuDelete, danger: true}
 	if selected, ok := m.selected(); ok {
 		if reason, busy := m.busyReason(selected.Branch); busy {
 			item.disabled = reason
@@ -92,7 +95,8 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 }
 
 // menuBox draws the context menu as a floating box: it is anchored on the cell it
-// was opened from, and overlay() pastes it over the frame.
+// was opened from, and overlay() pastes it over the frame. It names the worktree
+// it acts on, then rules that off from the actions themselves.
 func (m Model) menuBox() (string, domain.Rect) {
 	selected, ok := m.selected()
 	if !ok {
@@ -105,13 +109,15 @@ func (m Model) menuBox() (string, domain.Rect) {
 		return "", domain.Rect{}
 	}
 
-	lines := make([]string, 0, len(items)+1)
-	lines = append(lines, styles.DashboardMenuTitle.Render(pad(truncate(selected.Branch, inner), inner)))
+	lines := []string{
+		rowIndent + styles.DashboardMenuTitle.Render(truncate(selected.Branch, max(inner-rowBarWidth, 0))),
+		styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, inner)),
+	}
 	for index, item := range items {
-		lines = append(lines, m.zones.Mark(menuZone(index), styleMenuRow(menuRowParams{
-			Text:     pad(truncate(menuLabel(item), inner), inner),
-			Focused:  index == m.menuCursor,
-			Disabled: item.disabled != "",
+		lines = append(lines, m.zones.Mark(menuZone(index), m.renderMenuItem(menuItemParams{
+			Item:    item,
+			Inner:   inner,
+			Focused: index == m.menuCursor,
 		})))
 	}
 
@@ -127,20 +133,50 @@ func (m Model) menuBox() (string, domain.Rect) {
 	return box, rect
 }
 
+type menuItemParams struct {
+	Item    menuItem
+	Inner   int
+	Focused bool
+}
+
+// renderMenuItem gives the entries the focus language of the rest of the
+// dashboard: the accent bar and a tinted span, never a flat line that only
+// changes color.
+func (m Model) renderMenuItem(params menuItemParams) string {
+	label := menuLabel(params.Item)
+	inner := max(params.Inner-rowBarWidth, 0)
+
+	if params.Focused {
+		return styles.DashboardRowBar.Render(rowBar+" ") +
+			styles.DashboardRowSelected.Width(inner).Render(truncate(label, inner))
+	}
+	return rowIndent + menuItemStyle(params.Item).Render(truncate(label, inner))
+}
+
+func menuItemStyle(item menuItem) lipgloss.Style {
+	switch {
+	case item.disabled != "":
+		return styles.DashboardDisabled
+	case item.danger:
+		return styles.DashboardDanger
+	}
+	return styles.DashboardRow
+}
+
 type menuInnerWidthParams struct {
 	Items  []menuItem
 	Title  string
 	Screen int
 }
 
-// menuInnerWidth sizes the menu on its longest line, then keeps it inside the
-// screen: the box is pasted whole, so it must never need trimming.
+// menuInnerWidth sizes the menu on its longest line, gutter included, then keeps
+// it inside the screen: the box is pasted whole, so it must never need trimming.
 func menuInnerWidth(params menuInnerWidthParams) int {
 	inner := lipgloss.Width(params.Title)
 	for _, item := range params.Items {
 		inner = max(inner, lipgloss.Width(menuLabel(item)))
 	}
-	return min(inner, params.Screen-domain.DashboardMenuChrome)
+	return min(inner+rowBarWidth, params.Screen-domain.DashboardMenuChrome)
 }
 
 func menuLabel(item menuItem) string {
@@ -148,20 +184,4 @@ func menuLabel(item menuItem) string {
 		return item.label + domain.DashboardMenuDisabledMark
 	}
 	return item.label
-}
-
-type menuRowParams struct {
-	Text     string
-	Focused  bool
-	Disabled bool
-}
-
-func styleMenuRow(params menuRowParams) string {
-	switch {
-	case params.Disabled:
-		return styles.DashboardDisabled.Render(params.Text)
-	case params.Focused:
-		return styles.DashboardRowFocused.Render(params.Text)
-	}
-	return styles.DashboardRow.Render(params.Text)
 }

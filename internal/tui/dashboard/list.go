@@ -34,7 +34,7 @@ func (m Model) addButton(layout domain.DashboardLayout) string {
 	if lipgloss.Width(domain.DashboardAddLabelLong)+buttonPadding+1 <= room {
 		label = domain.DashboardAddLabelLong
 	}
-	return styles.DashboardButton.Render(label)
+	return styles.DashboardAddButton.Render(label)
 }
 
 func (m Model) listBody(layout domain.DashboardLayout) []string {
@@ -69,15 +69,15 @@ func (m Model) renderRow(index, width int) []string {
 	if index == m.cursor {
 		bar := styles.DashboardRowBar.Render(rowBar + " ")
 		name := spread(status.Branch, pill.Text, inner)
-		meta := truncate(rowIndent+m.rowMeta(status, false), inner)
+		meta := truncate(m.rowMeta(status, false), inner)
 		return []string{
 			bar + styles.DashboardRowSelected.Width(inner).Bold(true).Render(name),
 			bar + styles.DashboardRowSelected.Width(inner).Render(meta),
 		}
 	}
 
-	name := spread(styles.DashboardValue.Render(status.Branch), pill.Render(), inner)
-	meta := rowIndent + m.rowMeta(status, true)
+	name := spread(styles.DashboardRowName.Render(status.Branch), pill.Render(), inner)
+	meta := m.rowMeta(status, true)
 	// Both lines are padded to the same width: the row is one clickable block, and
 	// a short second line would cut its zone short.
 	return []string{

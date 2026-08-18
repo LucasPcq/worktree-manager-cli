@@ -92,20 +92,22 @@ func TestEscClosesTheMenuAndOtherKeysFallThrough(t *testing.T) {
 }
 
 // menuEntryPoint is where entry i is drawn, derived from the placement rule and
-// the box's own composition (border row, then the title naming the worktree).
+// the box's own composition: the border, the padding row, then the worktree's
+// name and the rule that separates it from the actions.
 func menuEntryPoint(t *testing.T, model Model, index int) (x, y int) {
 	t.Helper()
 	box, rect := model.menuBox()
 	if box == "" {
 		t.Fatal("the menu has nothing to draw")
 	}
-	return rect.X + menuBorder + menuPadding, rect.Y + menuBorder + menuTitleRows + index
+	return rect.X + menuBorder + menuPadding, rect.Y + menuBorder + menuHeaderRows + index
 }
 
 const (
-	menuBorder    = 1
-	menuPadding   = 1
-	menuTitleRows = 1
+	menuBorder  = 1
+	menuPadding = 1
+	// menuHeaderRows is the box's top padding, its title, and the rule under it.
+	menuHeaderRows = 3
 )
 
 func TestTheMenuFloatsUnderTheCellItWasOpenedFrom(t *testing.T) {

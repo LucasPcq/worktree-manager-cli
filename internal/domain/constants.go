@@ -826,6 +826,9 @@ const (
 	DashboardBlockersTitle = "Lift every refusal to enable the deletion:"
 	DashboardBlockedSuffix = " — lift the refusals above"
 	DashboardConfirmLabel  = "Confirm"
+	// DashboardButtonFmt brackets an action so it reads as one without needing a
+	// block of color behind it.
+	DashboardButtonFmt = "[ %s ]"
 
 	DashboardGlyphChoiceOn  = "◉"
 	DashboardGlyphChoiceOff = "○"

@@ -1,9 +1,11 @@
 package dashboard
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
@@ -366,38 +368,36 @@ func (mo modal) renderRow(index int, row formRow) string {
 	case formButton:
 		return mo.renderButton(index, row)
 	case formChoice:
-		return mo.renderChoice(index, glyphChoice(mo.answers.Value(row.stepKey) == row.value)+" "+row.label)
+		return mo.renderFocusable(index, glyphChoice(mo.answers.Value(row.stepKey) == row.value)+" "+row.label, styles.DashboardRow)
 	}
-	return mo.renderChoice(index, glyphCheck(mo.lifted[row.value])+" "+row.label)
+	return mo.renderFocusable(index, glyphCheck(mo.lifted[row.value])+" "+row.label, styles.DashboardRow)
 }
 
-// renderChoice gives a modal row the same focus language as the worktree list:
-// an accent bar and a tinted span, so what the keyboard is on reads the same
-// everywhere.
-func (mo modal) renderChoice(index int, text string) string {
+// renderButton keeps an action recognizable by its brackets rather than by a
+// filled block: it sits in the same focus ring as the rows above it, and a
+// colored slab there reads as noise. The one filled button on the dashboard is
+// the header's, which stands alone.
+func (mo modal) renderButton(index int, row formRow) string {
+	label, style := fmt.Sprintf(domain.DashboardButtonFmt, row.label), styles.DashboardRow
+	switch {
+	case row.confirm && !mo.blockersLifted():
+		label, style = label+domain.DashboardBlockedSuffix, styles.DashboardDisabled
+	case row.danger:
+		style = styles.DashboardDanger
+	}
+	return mo.renderFocusable(index, label, style)
+}
+
+// renderFocusable draws a modal row with the dashboard's one focus language: the
+// accent bar and a tinted span, exactly what the worktree list does, so what the
+// keyboard is on reads the same everywhere.
+func (mo modal) renderFocusable(index int, text string, style lipgloss.Style) string {
 	inner := max(mo.bodyWidth()-rowBarWidth, 0)
 	if index != mo.focus {
-		return rowIndent + styles.DashboardRow.Render(truncate(text, inner))
+		return rowIndent + style.Render(truncate(text, inner))
 	}
 	return styles.DashboardRowBar.Render(rowBar+" ") +
 		styles.DashboardRowSelected.Width(inner).Render(truncate(text, inner))
-}
-
-// renderButton draws the one button the whole dashboard uses: a padded label on
-// a filled block, carrying the accent when the keyboard is on it, the danger
-// color when it destroys something, and dimmed while a refusal stands.
-func (mo modal) renderButton(index int, row formRow) string {
-	label, style := row.label, styles.DashboardButton
-	switch {
-	case row.confirm && !mo.blockersLifted():
-		label, style = label+domain.DashboardBlockedSuffix, styles.DashboardButtonDisabled
-	case index != mo.focus:
-	case row.danger:
-		style = styles.DashboardButtonDanger
-	default:
-		style = styles.DashboardButtonFocused
-	}
-	return rowIndent + style.Render(truncate(label, max(mo.bodyWidth()-rowBarWidth-buttonPadding, 1)))
 }
 
 func glyphChoice(selected bool) string {
