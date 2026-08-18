@@ -24,7 +24,13 @@ type menuItem struct {
 }
 
 func (m Model) menuItems() []menuItem {
-	return []menuItem{{label: domain.DashboardMenuDelete, action: menuDelete}}
+	item := menuItem{label: domain.DashboardMenuDelete, action: menuDelete}
+	if selected, ok := m.selected(); ok {
+		if reason, busy := m.busyReason(selected.Branch); busy {
+			item.disabled = reason
+		}
+	}
+	return []menuItem{item}
 }
 
 // openMenu anchors the menu on a worktree row. The right button is not always
@@ -56,7 +62,7 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 	item := items[index]
 	m = m.closeMenu()
 	if item.disabled != "" {
-		return m.appendOutput(OutputLineMsg{Text: item.disabled}), nil
+		return m.refuse(item.disabled), nil
 	}
 
 	selected, ok := m.selected()

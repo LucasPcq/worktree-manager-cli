@@ -37,6 +37,30 @@ func (o operations) retarget(id int, target string) operations {
 	return o
 }
 
+// holding reports the run that owns a worktree. A background run keeps its
+// target to itself: nothing else may act on a worktree still being worked on.
+func (o operations) holding(target string) (operation, bool) {
+	if target == "" {
+		return operation{}, false
+	}
+	for _, op := range o.running {
+		if op.target == target {
+			return op, true
+		}
+	}
+	return operation{}, false
+}
+
+// blocking reports a run that holds the whole surface, and with it every action.
+func (o operations) blocking() (operation, bool) {
+	for _, op := range o.running {
+		if op.mode == flow.ModeBlocking {
+			return op, true
+		}
+	}
+	return operation{}, false
+}
+
 func (o operations) end(id int) operations {
 	running := make([]operation, 0, len(o.running))
 	for _, op := range o.running {

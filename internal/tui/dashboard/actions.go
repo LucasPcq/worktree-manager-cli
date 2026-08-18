@@ -28,6 +28,9 @@ func (m Model) sender() func(tea.Msg) {
 }
 
 func (m Model) startCreate() (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(""); refused {
+		return m.refuse(reason), nil
+	}
 	declared := createflow.Operation()
 	m, id := m.beginOp(declared)
 	send := m.sender()
@@ -54,6 +57,9 @@ func (m Model) startCreate() (Model, tea.Cmd) {
 // never presets Force: lifting a refusal is an answer the user gives in the
 // modal, one refusal at a time.
 func (m Model) startClean(branch string) (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(branch); refused {
+		return m.refuse(reason), nil
+	}
 	declared := cleanflow.Operation()
 	m, id := m.beginOp(declared)
 	send := m.sender()
@@ -78,6 +84,26 @@ func (m Model) startClean(branch string) (Model, tea.Cmd) {
 		_, err := cleanflow.Run(params)
 		return opDoneMsg{id: id, err: err}
 	}
+}
+
+// busyReason states why nothing may act on a worktree right now: a run already
+// holds it, or one holds the whole dashboard. This is where the mode a flow
+// declares is enforced — once, rather than at every action site.
+func (m Model) busyReason(target string) (string, bool) {
+	if op, ok := m.ops.holding(target); ok {
+		return fmt.Sprintf(domain.DashboardBusyFmt, target, op.kind), true
+	}
+	if op, ok := m.ops.blocking(); ok {
+		return fmt.Sprintf(domain.DashboardBlockedByFmt, op.kind), true
+	}
+	return "", false
+}
+
+// refuse states the refusal where the user is already looking for the run that
+// caused it.
+func (m Model) refuse(text string) Model {
+	m.outputExpanded = true
+	return m.appendOutput(OutputLineMsg{Text: text}).reflow()
 }
 
 // beginOp records the run and opens the output panel: a run whose output is
