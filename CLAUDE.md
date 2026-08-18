@@ -107,22 +107,44 @@ if !ok {
 }
 ```
 
-## 8. Comments — only when necessary
+## 8. Comments — the exception, not the rule
 
-Do not comment what the code already says. Add comments only for:
-- Non-obvious algorithmic reasoning
-- Workarounds with a reference (issue URL or ticket)
-- Godoc on all exported symbols
+Aim for **near-zero** comments. A well-named function with a typed signature explains
+itself 99% of the time, and a comment that restates the code is noise that buries the
+few that matter. Encode the meaning in names and signatures first: `Skip func(Answers)
+(skip bool, reason string)` needs no prose, and a named result beats a line describing
+the second return value.
+
+Write a comment only when the code cannot carry the information:
+- **Why, never what**: a non-obvious decision, an ordering constraint, an invariant a
+  reader would otherwise break
+- A workaround, with its reference (issue URL or ticket)
+- A package comment (`// Package x …`), one line
+- Godoc on an exported symbol **only** when its name and signature leave a caller
+  guessing — not systematically
+
+Documenting a pattern or an architecture belongs in `docs/` or in this file, not in a
+header comment repeated across files. `internal/flow` is the reference for the density
+to aim for: 84 comment lines out of 2261, ~3.7%.
+
+**Migration:** the repo predates this rule, so it is applied as files are touched, not
+in one sweep. When you modify a file, bring the comments **in that file** into line —
+delete the ones that restate the code — in the same change.
 
 ## 9. Clean architecture layers
 
 ```
 cmd/                          ← entry points, cobra setup only
 internal/
-  commands/                   ← flag wiring, delegates to service (zero business logic)
+  commands/                   ← flag wiring, delegates to flow/service (zero business logic)
   domain/                     ← types, errors, constants only (no methods, no functions)
   rules/                      ← pure functions (stdlib + domain only, no I/O)
   config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/, plus ~/.config/wtm/config.toml
+  flow/                       ← the déroulé of the commands, surface-independent (see below):
+                                the vocabulary (Step, Session, Prompter, Presenter)
+    decide/                   ←   branch/env decisions shared by the create-like flows
+    create/                   ←   `wtm create`: the run (create.go) + its questions (steps.go)
+    clean/                    ←   `wtm clean`: the run (clean.go) + its questions (steps.go)
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
     env/                      ←   .env provisioning (create) + drift reconciliation (`wtm env`, sync.go)
@@ -133,6 +155,8 @@ internal/
   output/                     ← format and print results (zero decision logic)
   styles/                     ← all Lipgloss styles (only package allowed to instantiate lipgloss.Style)
   tui/                        ← Bubbletea models (zero business logic, rendering only)
+    flowui/                   ←   runs a flow.Session as a wizard (the only translator
+                                  between flow.Step and components.Step)
   infra/                      ← I/O, git exec, filesystem wrappers
 ```
 
@@ -143,6 +167,10 @@ internal/
 - `service/` has zero imports of `cobra`, `bubbletea`, `lipgloss`
 - `output/` and `tui/` have zero decision logic — only rendering
 - `styles/` is the only package allowed to instantiate `lipgloss.Style`
+- `flow/` imports **only** `internal/service/`, `internal/rules/`, `internal/domain/`
+  and the stdlib — never cobra, bubbletea or lipgloss, and never `output/`, `tui/`,
+  `config/` or `commands/`. It therefore cannot reach `infra/` either: add a thin
+  `service/` wrapper instead (e.g. `worktree.FindByBranch`, `worktree.ListAll`)
 
 **Vertical spacing (top/bottom padding):** centralized in one place. Each command
 frames its human output **exactly once** with `output.Frame` (or the
@@ -151,6 +179,39 @@ formatters return **raw** bodies (no outer blank lines). JSON (`--output json`) 
 machine output (shell-eval: `resolve` success, `shell-init`) are never framed.
 Route on `rules.IsHumanFormat(format)`. See the `go-cli` skill (Output section) for
 the full convention.
+
+**The `flow/` layer (LUC-175).** A command's déroulé lives in `internal/flow/`, not in
+`commands/`: `runCreate`/`runClean` read the flags, decide *who may be asked* and
+*where output goes*, then call `create.Run` / `clean.Run`. One package per command,
+each splitting the run from the questions it asks. Three seams let a second surface
+(a dashboard) replay the same flow:
+- **`flow.Prompter`** answers the questions: `Ask(Session)` for a whole
+  question-and-recap sequence, `Confirm` for a standalone post-execution question,
+  `Interactive()` to know whether a decision may be offered at all. Implementations:
+  `tui/flowui` (the CLI wizard), `flow.Unattended` (`--yes` / no TTY / JSON), and the
+  dashboard. `Interactive()` is only ever read to (a) not offer a decision nobody can
+  answer and (b) feed a pure rule that takes it as input (`rules.DecidePush`).
+- **`flow.Presenter`** shows the phases (`Stage`, `HookPhase`, `Notice`, `Status`) plus
+  one typed per-command conclusion (`Created`, `Cleaned`). A flow never frames, never
+  animates and never picks a stream; errors are **returned**, never presented.
+- **`flow.Request`** (`CreateRequest`, `CleanRequest`) carries what the surface already
+  knows. It holds no `--yes` and no output format: the confirmation axis is the
+  installed Prompter, the format is the surface. `--force` *does* belong there — it is
+  the safety axis, a business input.
+
+Steps are declared as `flow.Step` values (`Kind`, `Key`, `Label`, `Options`, `Skip`,
+`Build`, `Load`, `Resolve`, `Summarize`). `Resolve` is the entire bypass taxonomy in
+one place: returning an `Answer` is a decision with a safe default, returning an error
+refuses the run naming the flag, and a step with no `Resolve` can only be answered
+interactively (`flow.Unattended` never falls back to a picker). A value the request
+already carries goes in `Session.Presets`: the step is not asked but is still read
+back, which is what keeps a flag from erasing a recap line.
+
+Adding a kind means teaching every surface to render it: `flowui` refuses an unknown
+kind rather than guessing. Test doubles for the two seams live in
+`internal/testutil/flowtest`. `create` and `clean` are migrated; `extract`, `sync`,
+`prune` and the other commands still drive their wizard packages directly, and
+`tui/newwt` stays until `extract` (which embeds it) migrates.
 
 **Mutation commands — bypass flags (two orthogonal axes):** every worktree-mutating
 command (`create`, `clean`, `sync`, `prune`, `relocate`, `reparent`, `extract`,
@@ -181,9 +242,12 @@ false. See `internal/commands/wt/extract.go` and `internal/commands/wt/sync.go`
 
 **Recap completeness:** every recap builder reads the value from its wizard step,
 **else falls back to the flag/arg** that resolved it. A flag must never make a line
-disappear from the recap. See each `build*Recap` / `recapStep` (e.g.
-`internal/tui/extract` `buildCombinedRecap`, `internal/tui/newwt` `buildCreateRecap`,
-`internal/tui/checkout` `buildCheckoutRecap`, `internal/tui/reparent` `recapBody`).
+disappear from the recap. A migrated command gets this from `Session.Presets` (a preset
+step is not asked but is still read back — see `internal/flow/create/steps.go`
+`createFlow.recap`);
+the others do it in their recap builder (e.g. `internal/tui/extract`
+`buildCombinedRecap`, `internal/tui/newwt` `buildCreateRecap`, `internal/tui/checkout`
+`buildCheckoutRecap`, `internal/tui/reparent` `recapBody`).
 
 ## 10. Validate before commit
 

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"sort"
@@ -95,4 +96,19 @@ func FilterStatusesByMatches(statuses []domain.WorktreeStatus, matches []domain.
 		}
 	}
 	return out
+}
+
+// CleanUnsafeReason words the refusal, in the order a user acts on: uncommitted
+// work, then unpushed commits, then an open pull request.
+func CleanUnsafeReason(check domain.CleanCheckResult) (string, bool) {
+	if check.IsDirty {
+		return domain.CleanUnsafeDirty, true
+	}
+	if check.UnpushedCommits > 0 {
+		return fmt.Sprintf(domain.CleanUnsafeUnpushedFmt, check.UnpushedCommits), true
+	}
+	if check.HasOpenPR {
+		return domain.CleanUnsafeOpenPR, true
+	}
+	return "", false
 }

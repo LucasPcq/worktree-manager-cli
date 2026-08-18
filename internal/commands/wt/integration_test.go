@@ -2,6 +2,7 @@ package wt
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/testutil/gittest"
 )
 
@@ -119,6 +121,131 @@ func TestCleanAxesStrictlySeparated(t *testing.T) {
 	}
 	if _, err := os.Stat(wtPath); !os.IsNotExist(err) {
 		t.Errorf("expected the dirty worktree to be removed, stat: %v", err)
+	}
+
+	// The other direction of the same separation: --force is never *required* on the
+	// confirmation axis. A safe worktree goes away with --yes alone.
+	safe := "feat/axes-safe"
+	if _, _, err := runWtCmd(t, domain.CmdCreate, safe, "--from", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
+		t.Fatalf("wt create: %v", err)
+	}
+	safePath := resolveWorktreePath(t, dir, safe)
+	if _, _, err := runWtCmd(t, domain.CmdClean, safe, "--yes", "--output", domain.OutputJSON); err != nil {
+		t.Fatalf("clean --yes on a safe worktree: %v", err)
+	}
+	if _, err := os.Stat(safePath); !os.IsNotExist(err) {
+		t.Errorf("expected the safe worktree to be removed with --yes alone, stat: %v", err)
+	}
+}
+
+// TestCleanYesRefusesUnpushedCommitsUntilForce covers the second safety dimension
+// (the first being a dirty tree): unpushed commits are lost with the branch, so
+// --yes keeps refusing until the safety axis is lifted explicitly.
+func TestCleanYesRefusesUnpushedCommitsUntilForce(t *testing.T) {
+	work := repoWithRemote(t)
+	prepareRepo(t, work)
+
+	branch := "feat/unpushed"
+	if _, _, err := runWtCmd(t, domain.CmdCreate, branch, "--from", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
+		t.Fatalf("wt create: %v", err)
+	}
+	wtPath := resolveWorktreePath(t, work, branch)
+	// origin/<branch> must exist for the unpushed count to be measurable.
+	gitRun(t, wtPath, "push", "-u", "origin", branch)
+	gitRun(t, wtPath, "commit", "--allow-empty", "-m", "local work")
+
+	_, _, err := runWtCmd(t, domain.CmdClean, branch, "--yes", "--output", domain.OutputJSON)
+	if err == nil {
+		t.Fatal("expected clean --yes to refuse a branch with unpushed commits")
+	}
+	if !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("expected the refusal to direct to --force, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "unpushed") {
+		t.Errorf("expected the refusal to name the reason, got: %v", err)
+	}
+	if _, statErr := os.Stat(wtPath); statErr != nil {
+		t.Fatalf("worktree must still exist after a refused clean: %v", statErr)
+	}
+
+	if _, _, err := runWtCmd(t, domain.CmdClean, branch, "--yes", "--force", "--output", domain.OutputJSON); err != nil {
+		t.Fatalf("clean --yes --force with unpushed commits: %v", err)
+	}
+	if _, err := os.Stat(wtPath); !os.IsNotExist(err) {
+		t.Errorf("expected the worktree to be removed, stat: %v", err)
+	}
+}
+
+// TestCleanYesReportsTheReparentDecisionInJSON is the "safe default" clause of the
+// confirmation axis, seen from the output contract: --yes resolves the reparent
+// decision without prompting and leaves the children alone, naming them in
+// orphaned_children; --reparent-children moves them into reparented. The metadata
+// side of the same decision is covered by TestCleanReparentsChildrenWithFlag and
+// TestCleanLeavesChildrenOrphanedWithoutFlag.
+func TestCleanYesReportsTheReparentDecisionInJSON(t *testing.T) {
+	createRepo(t)
+
+	buildStack := func(t *testing.T, parent, child string) {
+		t.Helper()
+		if _, _, err := runWtCmd(t, domain.CmdCreate, parent, "--from", "main", "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
+			t.Fatalf("wt create %s: %v", parent, err)
+		}
+		if _, _, err := runWtCmd(t, domain.CmdCreate, child, "--from", parent, "--output", domain.OutputJSON, "--"+domain.FlagYes); err != nil {
+			t.Fatalf("wt create %s: %v", child, err)
+		}
+	}
+
+	// Default: the child keeps pointing at the removed parent.
+	buildStack(t, "feat/parent", "feat/child")
+	stdout, _, err := runWtCmd(t, domain.CmdClean, "feat/parent", "--yes", "--output", domain.OutputJSON)
+	if err != nil {
+		t.Fatalf("wt clean: %v", err)
+	}
+	var got output.WriteWorktreeCleanJSONParams
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("decode clean JSON: %v (payload %q)", err, stdout)
+	}
+	if len(got.Reparented) != 0 {
+		t.Errorf("reparented = %v, want none under --yes without --%s", got.Reparented, domain.FlagReparentChildren)
+	}
+	if len(got.OrphanedChildren) != 1 || got.OrphanedChildren[0].Branch != "feat/child" {
+		t.Fatalf("orphaned_children = %v, want the child left dangling", got.OrphanedChildren)
+	}
+
+	// Opt in: the child is reparented onto the grandparent.
+	buildStack(t, "feat/parent2", "feat/child2")
+	stdout, _, err = runWtCmd(t, domain.CmdClean, "feat/parent2", "--yes",
+		"--"+domain.FlagReparentChildren, "--output", domain.OutputJSON)
+	if err != nil {
+		t.Fatalf("wt clean --%s: %v", domain.FlagReparentChildren, err)
+	}
+	got = output.WriteWorktreeCleanJSONParams{}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("decode clean JSON: %v (payload %q)", err, stdout)
+	}
+	if len(got.OrphanedChildren) != 0 {
+		t.Errorf("orphaned_children = %v, want none once reparenting was authorized", got.OrphanedChildren)
+	}
+	if len(got.Reparented) != 1 || got.Reparented[0].NewParent != "main" {
+		t.Fatalf("reparented = %v, want the child moved onto main", got.Reparented)
+	}
+}
+
+// TestCleanAbsentWorktreeIsIdempotent: cleaning what is already gone is a success,
+// so an agent can retry safely.
+func TestCleanAbsentWorktreeIsIdempotent(t *testing.T) {
+	createRepo(t)
+
+	stdout, _, err := runWtCmd(t, domain.CmdClean, "feat/ghost", "--yes", "--output", domain.OutputJSON)
+	if err != nil {
+		t.Fatalf("cleaning an absent worktree must succeed: %v", err)
+	}
+	var got output.WriteWorktreeCleanJSONParams
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("decode clean JSON: %v (payload %q)", err, stdout)
+	}
+	if !got.AlreadyAbsent {
+		t.Errorf("already_absent = false, want true (payload %q)", stdout)
 	}
 }
 

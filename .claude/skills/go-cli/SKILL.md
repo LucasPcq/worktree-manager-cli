@@ -107,12 +107,21 @@ if !ok {
 }
 ```
 
-### 8. Comments — only when necessary
+### 8. Comments — the exception, not the rule
 
-Godoc on all exported symbols. No inline comments that restate the code.
-Only comment non-obvious decisions or workarounds (with an issue reference).
+Aim for near-zero comments: encode the meaning in names and signatures instead
+(`Skip func(Answers) (skip bool, reason string)` needs no prose). Comment only the
+why the code cannot carry — a non-obvious decision, an ordering constraint, a
+workaround with its issue reference — plus a one-line package comment. Godoc on an
+exported symbol only when its name and signature leave a caller guessing, never
+systematically. When you modify a file, strip the comments in it that restate the
+code, in the same change.
 
 ### 9. Clean architecture layers
+
+> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
+> authoritative.** This section describes the model of the commands not yet migrated.
+> Skill rewrite tracked in LUC-181.
 
 ```
 cmd/
@@ -210,6 +219,10 @@ Two env-var overrides exist for tests / CI:
 
 ### Adding a new command
 
+> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
+> authoritative.** This section describes the model of the commands not yet migrated.
+> Skill rewrite tracked in LUC-181.
+
 1. Create `internal/commands/<name>.go` with unexported constructor
 2. Use `domain.CmdXxx` for the `Use:` field (add constant if new)
 3. Register in the parent group's `NewXxxCmd()` function
@@ -306,6 +319,10 @@ one-shot decision where there is no prior step to go back to (e.g. `run up`'s pr
 
 ### Wizard shape for worktree-mutation commands: `[inputs] → [ChoiceStep…] → RecapStep`
 
+> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
+> authoritative.** This section describes the model of the commands not yet migrated.
+> Skill rewrite tracked in LUC-181.
+
 Confirmations belong INSIDE the wizard, never as a trailing standalone (`Esc` on a standalone
 aborts the whole flow instead of stepping back — the LUC-115 defect). LUC-116 further harmonised
 every mutation wizard onto one shape: input/picker steps, then any optional-decision **selects**,
@@ -354,6 +371,10 @@ then a single **recap** as the last step. The rules:
 
 ### Bypass flags for mutation commands: `--yes` vs `--force` (two axes) — MANDATORY
 
+> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
+> authoritative.** This section describes the model of the commands not yet migrated.
+> Skill rewrite tracked in LUC-181.
+
 Every worktree-mutating command (`create`, `clean`, `sync`, `prune`, `relocate`, `reparent`,
 `extract`, `checkout`) exposes bypass on two **orthogonal** axes. This is the standardized model
 (matches `gcloud --quiet`, `terraform -auto-approve`/`-input=false`, `apt -y` vs `--force-yes`, and
@@ -392,6 +413,10 @@ Every worktree-mutating command (`create`, `clean`, `sync`, `prune`, `relocate`,
 
 ### Recap completeness: read the step value, else the flag/arg fallback
 
+> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
+> authoritative.** This section describes the model of the commands not yet migrated.
+> Skill rewrite tracked in LUC-181.
+
 A recap builder must name **every** part of the plan, even the parts a flag resolved. Each
 `build*Recap` / `recapStep` reads the value from its wizard step and **falls back to the flag/arg**
 when that step was skipped — a flag must never make a line disappear from the recap. Pattern
@@ -401,6 +426,10 @@ references: `internal/tui/extract` `buildCombinedRecap` (`FixedFiles`/`FixedTarg
 (`PresetBranches`/`PresetParent`). Add the fallback whenever you add a flag that pre-fills a step.
 
 ### Async data in a wizard: `InitCmd` (at start) vs `OnEnter` (per step)
+
+> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
+> authoritative.** This section describes the model of the commands not yet migrated.
+> Skill rewrite tracked in LUC-181.
 
 Never block the render doing slow I/O in a `Build` hook. Two async entry points, by when the data
 is known:

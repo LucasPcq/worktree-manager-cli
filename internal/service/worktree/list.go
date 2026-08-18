@@ -122,3 +122,13 @@ func worktreeCreatedAt(stateDir, branch, fallbackPath string) time.Time {
 	}
 	return info.ModTime()
 }
+
+type ListAllParams struct {
+	ProjectDir string
+}
+
+// ListAll returns the raw worktrees; List enriches them with metadata, divergence
+// and dirtiness.
+func ListAll(params ListAllParams) ([]domain.GitWorktree, error) {
+	return infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: params.ProjectDir})
+}

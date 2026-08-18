@@ -531,6 +531,11 @@ const (
 	SourceProceedStalePrompt = "Create the worktree from local %s anyway? (behind origin by %d)"
 	// SourceProceedStaleWarning reports why the fast-forward failed (cause).
 	SourceProceedStaleWarning = "Couldn't fast-forward: %v"
+	// SourceUpdateSkip* explain why a run offers no source reconciliation.
+	SourceUpdateSkipNoSource = "no source to check"
+	SourceUpdateSkipRemote   = "source is a remote branch"
+	SourceUpdateSkipUpToDate = "source already up to date"
+	SourceUpdateSkipDiverged = "source diverged from origin — see recap"
 	// SourceFastForwardOptionFmt labels the fast-forward choice on the
 	// source-update step (subject).
 	SourceFastForwardOptionFmt = "Fast-forward %s to origin"
@@ -544,7 +549,42 @@ const (
 	// RecapParentRecordedForSync explains, on the source-update step, that a
 	// reused branch's source is recorded for `wtm sync` rather than being a
 	// git start-point.
-	RecapParentRecordedForSync = "Parent recorded for `wtm sync` — the branch already exists and keeps its commits"
+	RecapParentRecordedForSync     = "Parent recorded for `wtm sync` — the branch already exists and keeps its commits"
+	SourceKeepAsIsOption           = "Keep it as-is"
+	SourceUpdateSummaryFastForward = "fast-forward to origin"
+	SourceUpdateSummaryKeep        = "keep as-is"
+
+	// FlowStepRequired*Fmt refuse a step that has no safe default and cannot be
+	// asked (step label, flag name).
+	FlowStepRequiredFmt     = "%s is required and cannot be asked in this mode"
+	FlowStepRequiredFlagFmt = "%s is required and cannot be asked in this mode: pass --%s"
+
+	// The create déroulé (internal/flow/create): step prose, option labels, recap
+	// fields and refusals. Format verbs: %s branch, %s env strategy, %s flag name.
+	CreateLoadingFmt               = "Creating worktree %s…"
+	CreateBranchStepDescription    = "Name for the new worktree branch"
+	CreateBranchRequired           = "branch name is required"
+	CreateBranchRequiredUnattended = "branch name is required without the interactive wizard (pass it as an argument)"
+	CreateSourceStepDescription    = "Branch to base the new worktree on"
+	CreateEnvStepDescription       = "How to provision .env files in the new worktree"
+	CreateNoSourceFmt              = "no source branch: pass --%s (no base branch configured)"
+	CreateRecapConfirmOption       = "Yes, create worktree"
+	EnvOptionConfigDefaultFmt      = "Use config default (%s)"
+	EnvOptionExample               = "example — copy .env.example → .env"
+	EnvOptionMain                  = "main — copy .env from main worktree"
+	EnvOptionParent                = "parent — copy .env from source worktree"
+	// EnvSummaryConfigDefault names the empty env choice rather than leaving a
+	// recap line blank.
+	EnvSummaryConfigDefault = "config default"
+
+	// RecapField* are the aligned labels of the create recap body.
+	RecapFieldBranch       = "Branch:  "
+	RecapFieldSource       = "Source:  "
+	RecapFieldParent       = "Parent:  "
+	RecapFieldEnv          = "Env:     "
+	RecapFastForwardSuffix = " (fast-forward to origin)"
+	WarningPrefix          = "⚠ "
+	WizardErrLabel         = "wizard"
 
 	// Existing-branch reuse, shared by create, extract and checkout: a worktree
 	// created on a local branch that already exists checks it out as-is instead of
@@ -604,10 +644,46 @@ const (
 	// CleanForceHintFmt is the refusal shown when a worktree is unsafe to remove
 	// without --force (branch, reason).
 	CleanForceHintFmt = "worktree %s %s; pass --force to remove it anyway"
+	// The clean déroulé (internal/flow/clean): step prose, option labels, recap body,
+	// refusals and progress messages. Format verbs: %s branch, %s path, %d counts.
+	CleanPickerTitle        = "Select worktree to clean"
+	CleanPickerDescription  = "The parent worktree cannot be cleaned"
+	CleanNothingToClean     = "no worktrees to clean (only the parent worktree exists)"
+	CleanNoOrphanedChildren = "no orphaned children"
+	CleanReparentOptionFmt  = "Reparent onto %s (%d)"
+	CleanOrphanOption       = "Leave orphaned"
+	CleanReparentSummary    = "reparent"
+	CleanOrphanSummary      = "leave orphaned"
+	CleanReparentChildFmt   = "  • %s will rebase onto %s instead of %s"
+	CleanDeleteTitle        = "Proceed with deletion?"
+	CleanDeleteOption       = "Yes, delete"
+	CleanForceDeleteOption  = "Yes, force delete (bypass all checks)"
+	CleanWarnDirty          = "Worktree has uncommitted changes"
+	CleanWarnUnpushedFmt    = "%d commit(s) not pushed to remote"
+	CleanWarnOpenPR         = "Open PR: "
+	CleanWillDelete         = "Will delete:"
+	CleanWillDeleteWorktree = "  worktree  "
+	CleanWillDeleteBranch   = "  branch    "
+	CleanRecapReparentFmt   = "Then reparent %d child worktree(s) onto %s."
+	CleanRecapOrphanFmt     = "Then leave %d child worktree(s) orphaned."
+	CleanUnsafeDirty        = "has uncommitted changes"
+	CleanUnsafeUnpushedFmt  = "has %d unpushed commit(s)"
+	CleanUnsafeOpenPR       = "has an open pull request"
+	CleanCheckLoading       = "Checking worktree…"
+	CleanLoadingFmt         = "Removing worktree %s…"
+	CleanCannotCleanParent  = "Cannot clean the parent worktree."
+	CleanAlreadyAbsentFmt   = "Worktree %s already absent — nothing to clean"
+	CleanedFmt              = "Cleaned worktree and branch %s"
+	CleanReparentedFmt      = "Reparented %s onto %s"
+	CleanStillOrphanedFmt   = "%s still points at the removed parent %s — reparent it with `wtm reparent`"
+	CleanStoppedServicesFmt = "Stopped services on %s"
+	CleanRemovalFailedFmt   = "Removal failed: %s"
+	CleanWizardErrLabel     = "clean wizard"
 	// CleanSudoConfirmFmt is the confirmation title for the privileged `sudo rm -rf`
 	// removal fallback (worktree path).
 	CleanSudoConfirmFmt = "Force-delete %s with `sudo rm -rf`? (you may be prompted for your password)"
 
+	AbortedMessage = "Aborted."
 	// WizardCancelLabel is the constant final option on every wizard recap step —
 	// the single explicit cancellation point (alongside Esc on the first step).
 	// Kept identical across commands so "No, cancel" always reads and sits the same.
