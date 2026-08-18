@@ -101,6 +101,19 @@ func (m Model) busyReason(target string) (string, bool) {
 	return "", false
 }
 
+// busyCaption is what a menu entry says under itself while something holds its
+// worktree: the same fact as busyReason, worded to sit under a label rather than
+// to stand as a line in the output panel.
+func (m Model) busyCaption(target string) (string, bool) {
+	if op, ok := m.ops.holding(target); ok {
+		return fmt.Sprintf(domain.DashboardBusyCaptionFmt, op.kind), true
+	}
+	if op, ok := m.ops.blocking(); ok {
+		return fmt.Sprintf(domain.DashboardBusyCaptionFmt, op.kind), true
+	}
+	return "", false
+}
+
 // refuse states the refusal where the user is already looking for the run that
 // caused it.
 func (m Model) refuse(text string) Model {

@@ -820,8 +820,8 @@ const (
 	// DashboardMenuTitle heads the per-worktree context menu and
 	// DashboardMenuDelete is its only entry for now.
 	DashboardMenuDelete = "Delete worktree"
-	// DashboardMenuDisabledMark says an entry cannot be used right now.
-	DashboardMenuDisabledMark = "  ✗"
+	// DashboardMenuEmpty stands in for the actions of a worktree that has none.
+	DashboardMenuEmpty = "No actions available"
 	// DashboardMenuChrome is what the menu box spends on its borders and padding.
 	DashboardMenuChrome = 4
 
@@ -856,6 +856,8 @@ const (
 	// DashboardBusyFmt refuses an action on a worktree a background run still
 	// holds (branch, running operation).
 	DashboardBusyFmt = "%s is busy: a %s is still running on it"
+	// DashboardBusyCaptionFmt is the same fact under a menu entry (operation).
+	DashboardBusyCaptionFmt = "a %s is running on it"
 	// DashboardBlockedByFmt refuses to start anything while a blocking run owns
 	// the dashboard (running operation).
 	DashboardBlockedByFmt = "A %s is running — wait for it to finish"

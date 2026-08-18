@@ -29,20 +29,18 @@ type menuItem struct {
 	disabled string
 }
 
+// menuItems is what can be done to the selected worktree. An action that could
+// never apply is not listed at all; one that cannot apply right now is listed
+// with what is in its way, and is inert until that clears.
 func (m Model) menuItems() []menuItem {
-	item := menuItem{label: domain.DashboardMenuDelete, action: menuDelete, danger: true}
 	selected, ok := m.selected()
-	if !ok {
-		return []menuItem{item}
+	if !ok || selected.IsParent {
+		return nil
 	}
-	// The parent worktree is refused whatever happens, so the entry says so
-	// rather than opening a modal that can only end in that refusal.
-	if selected.IsParent {
-		item.disabled = domain.CleanCannotCleanParent
-		return []menuItem{item}
-	}
-	if reason, busy := m.busyReason(selected.Branch); busy {
-		item.disabled = reason
+
+	item := menuItem{label: domain.DashboardMenuDelete, action: menuDelete, danger: true}
+	if caption, busy := m.busyCaption(selected.Branch); busy {
+		item.disabled = caption
 	}
 	return []menuItem{item}
 }
@@ -54,7 +52,7 @@ func (m Model) openMenu(anchor domain.Rect) Model {
 	if _, ok := m.selected(); !ok {
 		return m
 	}
-	m.menuOpen, m.menuCursor, m.menuAnchor = true, 0, anchor
+	m.menuOpen, m.menuCursor, m.menuAnchor = true, firstEnabled(m.menuItems()), anchor
 	return m
 }
 
@@ -75,9 +73,27 @@ func (m Model) closeMenu() Model {
 	return m
 }
 
+// moveMenu walks over what cannot be activated: a cursor parked on an inert
+// entry is a keypress that does nothing.
 func (m Model) moveMenu(delta int) Model {
-	m.menuCursor = rules.ClampIndex(m.menuCursor+delta, len(m.menuItems()))
+	items := m.menuItems()
+	for index := m.menuCursor + delta; index >= 0 && index < len(items); index += delta {
+		if items[index].disabled == "" {
+			m.menuCursor = index
+			return m
+		}
+	}
 	return m
+}
+
+// firstEnabled is where the cursor lands when the menu opens.
+func firstEnabled(items []menuItem) int {
+	for index, item := range items {
+		if item.disabled == "" {
+			return index
+		}
+	}
+	return 0
 }
 
 func (m Model) activateMenu(index int) (Model, tea.Cmd) {
@@ -86,10 +102,10 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 		return m, nil
 	}
 	item := items[index]
-	m = m.closeMenu()
 	if item.disabled != "" {
-		return m.refuse(item.disabled), nil
+		return m, nil
 	}
+	m = m.closeMenu()
 
 	selected, ok := m.selected()
 	if !ok {
@@ -121,12 +137,17 @@ func (m Model) menuBox() (string, domain.Rect) {
 		styles.DashboardMenuTitle.Render(truncate(selected.Branch, inner)),
 		styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, inner)),
 	}
+	if len(items) == 0 {
+		lines = append(lines, styles.DashboardEmpty.Render(truncate(domain.DashboardMenuEmpty, inner)))
+	}
 	for index, item := range items {
-		lines = append(lines, m.zones.Mark(menuZone(index), m.renderMenuItem(menuItemParams{
-			Item:    item,
-			Inner:   inner,
-			Focused: index == m.menuCursor,
-		})))
+		rendered := m.menuItemLines(menuItemParams{Item: item, Inner: inner, Focused: index == m.menuCursor})
+		// Only what can be activated is marked: a zone over an inert entry is a
+		// click that looks like it should do something.
+		if item.disabled == "" {
+			rendered[0] = m.zones.Mark(menuZone(index), rendered[0])
+		}
+		lines = append(lines, rendered...)
 	}
 
 	box := styles.DashboardMenu.Render(strings.Join(lines, "\n"))
@@ -147,23 +168,25 @@ type menuItemParams struct {
 	Focused bool
 }
 
-// renderMenuItem marks the focused entry with the tint the rest of the dashboard
-// uses. It carries no accent bar: everything in this box is flush against the
-// same left edge, and a gutter for the bar would set the entries off from the
-// name they act on.
-func (m Model) renderMenuItem(params menuItemParams) string {
-	label := truncate(menuLabel(params.Item), params.Inner)
-	if params.Focused {
-		return styles.DashboardRowSelected.Width(params.Inner).Render(label)
+// menuItemLines draws one entry: its label, and under it what stands in its way
+// when something does. The focused entry carries the tint the rest of the
+// dashboard uses.
+func (m Model) menuItemLines(params menuItemParams) []string {
+	label := truncate(params.Item.label, params.Inner)
+	if params.Item.disabled != "" {
+		return []string{
+			styles.DashboardDisabled.Render(label),
+			rowIndent + styles.DashboardRowMeta.Render(truncate(params.Item.disabled, max(params.Inner-rowBarWidth, 0))),
+		}
 	}
-	return menuItemStyle(params.Item).Render(label)
+	if params.Focused {
+		return []string{styles.DashboardRowSelected.Width(params.Inner).Render(label)}
+	}
+	return []string{menuItemStyle(params.Item).Render(label)}
 }
 
 func menuItemStyle(item menuItem) lipgloss.Style {
-	switch {
-	case item.disabled != "":
-		return styles.DashboardDisabled
-	case item.danger:
+	if item.danger {
 		return styles.DashboardDanger
 	}
 	return styles.DashboardRow
@@ -178,16 +201,12 @@ type menuInnerWidthParams struct {
 // menuInnerWidth sizes the menu on its longest line, gutter included, then keeps
 // it inside the screen: the box is pasted whole, so it must never need trimming.
 func menuInnerWidth(params menuInnerWidthParams) int {
-	inner := lipgloss.Width(params.Title)
+	inner := max(lipgloss.Width(params.Title), lipgloss.Width(domain.DashboardMenuEmpty))
 	for _, item := range params.Items {
-		inner = max(inner, lipgloss.Width(menuLabel(item)))
+		inner = max(inner, lipgloss.Width(item.label))
+		if item.disabled != "" {
+			inner = max(inner, lipgloss.Width(item.disabled)+rowBarWidth)
+		}
 	}
 	return min(inner, params.Screen-domain.DashboardMenuChrome)
-}
-
-func menuLabel(item menuItem) string {
-	if item.disabled != "" {
-		return item.label + domain.DashboardMenuDisabledMark
-	}
-	return item.label
 }

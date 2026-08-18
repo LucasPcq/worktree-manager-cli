@@ -269,22 +269,54 @@ func lineIndex(lines []string, needle string) int {
 	return -1
 }
 
-func TestTheParentWorktreeCannotBeDeletedAndTheMenuSaysSo(t *testing.T) {
+func TestTheParentWorktreeIsOfferedNothingToDo(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "main", "feature/x")
 	model.statuses[0] = domain.WorktreeStatus{Branch: "main", Path: "/tmp/main", IsParent: true}
 
-	item := model.menuItems()[0]
-	if item.disabled == "" {
-		t.Fatal("the parent worktree is refused whatever happens; the entry must say so up front")
-	}
-	if !strings.Contains(item.disabled, "parent") {
-		t.Errorf("reason = %q, want it to name why", item.disabled)
+	if items := model.menuItems(); len(items) != 0 {
+		t.Fatalf("items = %+v, want none: a removal that could never apply is not an entry", items)
 	}
 
 	model = update(model, key(domain.KeyMenu))
-	model, cmd := updateCmd(model, namedKey(13))
+	box, _ := model.menuBox()
 
+	if !strings.Contains(box, "main") {
+		t.Error("the menu still names the worktree it was opened on")
+	}
+	if !strings.Contains(box, domain.DashboardMenuEmpty) {
+		t.Errorf("menu = %q, want it to say there is nothing to do rather than show a dead entry", box)
+	}
+
+	model, cmd := updateCmd(model, namedKey(13))
 	if cmd != nil || len(model.ops.running) != 0 {
-		t.Errorf("running = %+v, want the disabled entry to have started nothing", model.ops.running)
+		t.Errorf("running = %+v, want enter on an empty menu to start nothing", model.ops.running)
+	}
+}
+
+// A worktree a run is holding keeps its entry — the removal will be possible
+// again — but the entry is inert, unfocusable and unclickable, with what is in
+// its way written under it.
+func TestAHeldWorktreeKeepsAnInertEntryThatSaysWhy(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "feat")
+	model = creating(t, model, "feat")
+	model = selectBranch(t, model, "feat")
+
+	item := model.menuItems()[0]
+	if item.disabled == "" {
+		t.Fatal("the entry must say it cannot be used")
+	}
+	if !strings.Contains(item.disabled, domain.OpKindCreate) {
+		t.Errorf("caption = %q, want it to name what is in the way", item.disabled)
+	}
+
+	model = update(model, key(domain.KeyMenu))
+	box, _ := model.menuBox()
+	if !strings.Contains(stripANSI(box), item.disabled) {
+		t.Errorf("menu = %q, want the reason under the entry", box)
+	}
+
+	model.View()
+	if !model.zones.Get(menuZone(0)).IsZero() {
+		t.Error("an inert entry must not be clickable at all")
 	}
 }
