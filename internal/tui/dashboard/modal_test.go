@@ -143,7 +143,7 @@ func TestStepperSkipsWhatTheFlowDeclaresIrrelevant(t *testing.T) {
 
 	model = typeText(t, model, "feat")
 	model = press(t, model, namedKey(tea.KeyEnter))
-	model = press(t, model, namedKey(tea.KeyEnter))
+	press(t, model, namedKey(tea.KeyEnter))
 
 	answered := waitReply(t, reply)
 	skipped, known := answered.answers.Get("env")
@@ -162,7 +162,7 @@ func TestStepperPresetsAreNotAskedAgain(t *testing.T) {
 
 	// The first question on screen is the env one: the branch came in preset.
 	model = press(t, model, namedKey(tea.KeyEnter))
-	model = press(t, model, namedKey(tea.KeyEnter))
+	press(t, model, namedKey(tea.KeyEnter))
 
 	answered := waitReply(t, reply)
 	if got := answered.answers.Value("branch"); got != "given" {
@@ -199,7 +199,7 @@ func TestStepperCancelRowAbortsTheRun(t *testing.T) {
 	model = press(t, model, namedKey(tea.KeyEnter))
 	model = press(t, model, namedKey(tea.KeyEnter))
 	model = press(t, model, namedKey(tea.KeyDown))
-	model = press(t, model, namedKey(tea.KeyEnter))
+	press(t, model, namedKey(tea.KeyEnter))
 
 	answered := waitReply(t, reply)
 	if !errors.Is(answered.err, domain.ErrUserAborted) {

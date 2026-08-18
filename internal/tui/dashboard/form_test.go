@@ -160,7 +160,7 @@ func TestDeleteStaysInertUntilEveryRefusalIsLifted(t *testing.T) {
 	}
 
 	model = pressRow(t, model, blockers[1])
-	model = pressRow(t, model, confirmIndex(t, model))
+	pressRow(t, model, confirmIndex(t, model))
 
 	answered := waitReply(t, reply)
 	if answered.err != nil {
@@ -178,7 +178,7 @@ func TestASafeWorktreeIsDeletedWithoutLiftingAnything(t *testing.T) {
 		t.Fatal("nothing refuses the removal, so there is nothing to acknowledge")
 	}
 
-	model = pressRow(t, model, confirmIndex(t, model))
+	pressRow(t, model, confirmIndex(t, model))
 
 	answered := waitReply(t, reply)
 	if got := answered.answers.Value("delete"); got != deleteYes {
