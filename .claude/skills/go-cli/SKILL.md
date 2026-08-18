@@ -119,19 +119,20 @@ code, in the same change.
 
 ### 9. Clean architecture layers
 
-> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
-> authoritative.** This section describes the model of the commands not yet migrated.
-> Skill rewrite tracked in LUC-181.
-
 ```
 cmd/
   root.go                     ← cobra root, version, help
 
 internal/
-  commands/                   ← flag wiring only → delegates to service (zero logic)
+  commands/                   ← flag wiring only → delegates to flow/service (zero logic)
+    ui/                       ←   `wtm ui`: refuses JSON + missing TTY, hands off to tui/dashboard
   domain/                     ← types, errors, constants only (no methods, no functions)
   rules/                      ← pure business rules (stdlib + domain only, no I/O)
   config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/
+  flow/                       ← THE DÉROULÉ of a command, surface-independent
+    decide/                   ←   branch/env decisions shared by the create-like flows
+    create/                   ←   `wtm create`: the run (create.go) + its questions (steps.go)
+    clean/                    ←   `wtm clean`: the run (clean.go) + its questions (steps.go)
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   create, list, clean, resolve
     env/                      ←   .env file provisioning strategies
@@ -144,17 +145,58 @@ internal/
   output/                     ← format and print results (zero decision logic)
   styles/                     ← all Lipgloss styles + shared Indent constant
   tui/                        ← Bubbletea models (zero business logic, rendering only)
+    flowui/                   ←   runs a flow.Session as the CLI wizard (the only translator
+                                  between flow.Step and components.Step)
+    dashboard/                ←   `wtm ui`, the second surface over flow/ (its own
+                                  Prompter/Presenter, mouse zones via bubblezone)
   infra/                      ← I/O, git exec, filesystem wrappers
   testutil/gittest/           ← shared test helpers (InitRepo, CreateBranch)
+  testutil/flowtest/          ← test doubles for the two flow seams (Prompter, Presenter)
 ```
 
 **Hard rules:**
 - `commands/` has zero business logic
 - `domain/` imports only stdlib (unchanged)
 - `rules/` imports only stdlib + internal/domain
+- `flow/` imports **only** `internal/service/`, `internal/rules/`, `internal/domain/` and the
+  stdlib — never cobra, bubbletea or lipgloss, and never `output/`, `tui/`, `config/` or
+  `commands/`. It therefore cannot reach `infra/` either: add a thin `service/` wrapper
+  instead (e.g. `worktree.FindByBranch`, `worktree.ListAll`). `build-validator` step 6
+  checks this mechanically.
 - `service/` has zero imports of `cobra`, `bubbletea`, `lipgloss`
 - `output/` and `tui/` have zero decision logic — only rendering
 - `styles/` is the only package allowed to instantiate `lipgloss.Style`
+
+**The `flow/` layer — where the déroulé of a mutation command lives.** A command that
+mutates worktree state does **not** orchestrate: `commands/` reads the flags, builds a
+`Request`, picks a `Prompter` and a `Presenter`, and calls `<cmd>.Run`. Three seams let a
+second surface replay the same run:
+
+- **`flow.Prompter`** — `Ask(Session) (Answers, error)` for a whole question-and-recap
+  sequence, `Confirm(ConfirmParams) (bool, error)` for a standalone post-execution
+  decision, `Interactive() bool`. Implementations: `tui/flowui` (the CLI wizard),
+  `flow.Unattended` (`--yes` / no TTY / JSON), `tui/dashboard`. Read `Interactive()` only
+  to (a) not offer a decision nobody can answer, (b) feed a pure rule that takes it as an
+  input (`rules.DecidePush`).
+- **`flow.Presenter`** — `Stage`, `HookPhase`, `Notice`, `Status`, plus **one typed
+  conclusion per command** (`Created(Outcome) error`, `Cleaned(Outcome) error`). A flow
+  never frames, never animates, never picks a stream. Errors are **returned**, never
+  presented — there is no `Presenter.Error`.
+- **`Request`** (declared by the command's flow package, e.g. `create.Request`) — what the
+  surface already knows. It carries **no `--yes` and no `--output`**: the confirmation
+  axis is the installed Prompter, the format is the surface's business. `--force` *does*
+  belong there — it is the safety axis, a business input.
+
+Steps are `flow.Step` values (`Kind`, `Key`, `Label`, `Title`, `Description`, `Options`,
+`Skip`, `Build`, `Load`, `Resolve`, `Summarize`, `Flag`). `flow.Operation`
+(`Kind`, `Mode`, `TargetKey`) is what a flow declares about how a surface must schedule
+it; the CLI ignores it, `tui/dashboard/ops.go` enforces it.
+
+`create` and `clean` are migrated. `extract`, `sync`, `prune`, `relocate`, `reparent`,
+`checkout` and `env` still drive their `internal/tui/*` wizard packages directly — the
+`components.Step` sections below still describe them. **Any new mutation command goes
+through `flow/`.** Full reference: [`docs/dev/flow-layer.md`](../../../docs/dev/flow-layer.md)
+and [`docs/dev/adding-a-mutation-command.md`](../../../docs/dev/adding-a-mutation-command.md).
 
 ### 10. Validate before commit — run `build-validator`
 
@@ -202,6 +244,54 @@ Key conventions:
 - `shared.LoadConfig(cmd, dir)` resolves the main worktree path **and** the state dir, then loads `<state-dir>/config.toml`. Returns `ConfigResult{Config, ProjectDir, StateDir}`.
 - Unexported constructor (`newRunStartCmd`), registered by the parent group
 
+### Mutation command — build a Request, call the flow
+
+A command that **mutates worktree state** does not orchestrate anything: it reads the
+flags, builds the `Request`, picks the two seams, and calls `<cmd>.Run`. This is the
+whole runner (see `internal/commands/wt/create.go`, `clean.go`):
+
+```go
+func runClean(cmd *cobra.Command, args []string) error {
+  force, _ := cmd.Flags().GetBool(domain.FlagForce)
+  yes, _ := cmd.Flags().GetBool(domain.FlagYes)
+  format, _ := cmd.Flags().GetString(domain.FlagOutput)
+
+  if format == domain.OutputJSON && !yes {
+    return domain.ErrCleanJSONNeedsYes
+  }
+
+  dir, err := os.Getwd()
+  if err != nil {
+    return fmt.Errorf("get working directory: %w", err)
+  }
+  config, err := shared.LoadConfig(cmd, dir)
+  if err != nil {
+    return err
+  }
+
+  // The ONLY thing --yes decides: which Prompter gets installed.
+  interactive := rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd())) && !yes
+
+  _, err = cleanflow.Run(cleanflow.Params{
+    Context:   flowContext(config),                      // ProjectDir, StateDir, Config
+    Request:   cleanflow.Request{Branch: branchName, Force: force /* … */},
+    Prompter:  flowPrompter(flowPrompterParams{Interactive: interactive, Stderr: true}),
+    Presenter: cleanPresenter{cliPresenter: newPresenter(cmd, format)},
+  })
+  return err
+}
+```
+
+- `flowContext` / `flowPrompter` / `cliPresenter` are shared helpers in
+  `internal/commands/wt/presenter.go`. `flowPrompter` returns `flow.Unattended{}` when
+  `Interactive` is false, `flowui.New(...)` otherwise — that is the entire `--yes` wiring.
+- The command's presenter embeds `cliPresenter` and adds **only** the typed conclusion
+  (`Created`, `Cleaned`), which is where `--output json` branches and where
+  `output.Frame` is applied — exactly once.
+- No safety check, no picker fallback, no `need*` guard in the runner: those belong to
+  the flow's steps. If you are writing an `if !interactive` in a runner beyond the line
+  above, the logic is in the wrong layer.
+
 ### State-dir resolution
 
 wtm stores all of its state under `<git-common-dir>/wtm/` (i.e. `.git/wtm/` for a normal clone), so nothing leaks into the user's working tree. Resolution helpers live in `internal/commands/shared/`:
@@ -219,20 +309,24 @@ Two env-var overrides exist for tests / CI:
 
 ### Adding a new command
 
-> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
-> authoritative.** This section describes the model of the commands not yet migrated.
-> Skill rewrite tracked in LUC-181.
-
 1. Create `internal/commands/<name>.go` with unexported constructor
 2. Use `domain.CmdXxx` for the `Use:` field (add constant if new)
 3. Register in the parent group's `NewXxxCmd()` function
 4. Set the command's `GroupID` to the right root `--help` section
    (`domain.CmdGroup*` — Worktrees / Navigate / Stack / Jobs / GitHub / Setup). An
    unset `GroupID` renders under a stray "Additional Commands" heading.
-5. Follow the `runStart` pattern: getwd → loadConfig → delegate → format output
+5. **Read-only command** → follow the `runStart` pattern: getwd → loadConfig → delegate
+   to `service/` → format via `output/`.
+   **Mutation command** (creates/removes/moves/rewrites worktree state) → it goes
+   through `flow/`: declare `Request`/`Outcome`/`Presenter`/`Params`/`Run` in
+   `internal/flow/<name>/`, declare its questions as `flow.Step` in `steps.go`, and keep
+   the runner to the shape in "Mutation command" above. Never put the déroulé in
+   `commands/`, and never inject a service closure into a TUI package.
 6. Regenerate the reference and update the guide: `make docs` (writes `docs/`, never
    hand-edited) and add the command to the `README.md` overview table. See CLAUDE.md
    "Docs & README".
+
+Full recipe, step by step: [`docs/dev/adding-a-mutation-command.md`](../../../docs/dev/adding-a-mutation-command.md).
 
 ### Shared flag helpers
 
@@ -297,7 +391,19 @@ All reusable TUI primitives live in `internal/tui/components/`:
 - `ConfirmModel` — yes/no dialog
 - `RunStandaloneSelect(model)` / `RunStandaloneConfirm(model)` — one-shot wrappers
 
-### Multi-step form → always use `WizardModel`, never chained standalone pickers
+### Multi-step form → declare `flow.Step`, or `WizardModel` for a non-migrated wizard
+
+**A mutation command declares its steps as `flow.Step` values in
+`internal/flow/<cmd>/steps.go`, and never touches a Bubbletea model.** `internal/tui/flowui`
+is the single translator: it turns a `flow.Session` into `components.Step`s and runs the
+same `WizardModel` under the hood, so everything below about breadcrumbs and
+back-navigation still holds — it is just no longer the command's business. `flowui`
+refuses an unknown `StepKind` rather than guessing, so adding a kind means teaching every
+surface to render it.
+
+The `components.Step` API below remains the model for the wizards **not yet migrated**
+(`extract`, `sync`, `prune`, `relocate`, `reparent`, `checkout`, `env`) and for
+non-mutation pickers (`run`, `init`). Do not start a new mutation wizard here.
 
 A flow with **2+ sequential decisions** (e.g. pick worktree → pick new parent) MUST be a
 single `components.WizardModel`, exposed via a `RunWizard` in the screen package. The wizard
@@ -317,13 +423,62 @@ bug: no breadcrumb, and `Esc` quits the whole flow instead of going back.
 Standalone wrappers (`RunStandaloneSelect`/`RunStandaloneConfirm`) are only for a **single**
 one-shot decision where there is no prior step to go back to (e.g. `run up`'s profile picker).
 
-### Wizard shape for worktree-mutation commands: `[inputs] → [ChoiceStep…] → RecapStep`
+### Wizard shape for worktree-mutation commands: `[inputs] → [decisions…] → recap`
 
-> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
-> authoritative.** This section describes the model of the commands not yet migrated.
-> Skill rewrite tracked in LUC-181.
+**Migrated commands (`create`, `clean`) express this shape in `flow.Step`:**
 
-Confirmations belong INSIDE the wizard, never as a trailing standalone (`Esc` on a standalone
+```go
+func (f *createFlow) session() flow.Session {
+  return flow.Session{
+    ErrLabel: domain.WizardErrLabel,
+    // A value the request already carries: the step is NOT asked, but is still read back.
+    Presets: flow.NewAnswers(map[string]string{KeyBranch: f.request.Branch, /* … */}),
+    Steps: []flow.Step{
+      f.branchStep(),        // StepText, Validate
+      f.sourceStep(),        // StepBranchSelect, Build, Refresh
+      f.envStep(),           // StepSelect, Summarize
+      f.sourceUpdateStep(),  // StepSelect, Skip → conditional decision
+      f.recapStep(),         // StepRecap, always last, unconditional
+    },
+  }
+}
+```
+
+Field by field, and what each replaces:
+
+| `flow.Step` field | Role | Replaces |
+| -- | -- | -- |
+| `Kind` | `StepText` · `StepSelect` · `StepBranchSelect` · `StepRecap` | the concrete model in `components.Step.Model any` |
+| `Key` | identifies the answer in `Answers`; stable across surfaces | reading `prev[i].Model.(X).Value()` by index |
+| `Skip func(Answers) (skip bool, reason string)` | the step became irrelevant, and why (user-visible ⊘ line) | `ChoiceStep.Decide`'s `apply`/`skipReason` |
+| `Build func(Answers) (StepContent, error)` | re-derive title/description/options from earlier answers, synchronously | `Step.Build func(prev []Step) any` |
+| `Load` + `LoadingMessage` | same, but it does I/O — the host shows a loading state | `OnEnter` + request/done msgs + `UpdateStepModel` |
+| `Resolve func(Answers) (Answer, error)` | how the step answers itself with nobody to ask | the per-command `need*` / `canPrompt` guards |
+| `Validate` | reject a `StepText` value inline | unchanged |
+| `Summarize func(Answer) string` | what the summaries read back when the raw value is not it | `components.Step.Summary` |
+| `Flag` | names the flag a refusal should point at | hardcoded messages |
+| `StepContent.Blockers []flow.Blocker` | the safety refusals gating the step's dangerous option, **one by one** | a bulleted paragraph inside the recap prose |
+
+Rules that carry over unchanged into the flow model:
+
+- **The recap is the last step, always, and unconditional.** It is a `StepRecap` whose
+  `Build` returns the plan as `Description` and the action as its `Options`; the host
+  appends the cancel row (`domain.WizardCancelValue` → `domain.ErrUserAborted`).
+- **Blocking warnings are not gate steps** — a diverged source or an env fallback is a
+  `⚠` line in the recap description, not a question. The single cancellation point is
+  the recap's cancel row (plus `Esc` on step 1).
+- **Blockers are named individually.** `rules.CleanBlockers` → `StepContent.Blockers`
+  lets the CLI print them as a list while the dashboard renders one checkbox each, gating
+  the dangerous option. Never fold a refusal into prose only.
+- **A genuinely post-execution decision stays a `Prompter.Confirm`** — a failed
+  fast-forward, a `sudo` removal, an extract conflict. It cannot be decided upfront, so it
+  is not a session step.
+- **Bypass follows the two-axis taxonomy below.** In the flow model it is `Resolve`; you
+  do not reimplement it.
+
+---
+
+**Non-migrated wizards** keep the `components.Step` shape below. Confirmations belong INSIDE the wizard, never as a trailing standalone (`Esc` on a standalone
 aborts the whole flow instead of stepping back — the LUC-115 defect). LUC-116 further harmonised
 every mutation wizard onto one shape: input/picker steps, then any optional-decision **selects**,
 then a single **recap** as the last step. The rules:
@@ -354,6 +509,9 @@ then a single **recap** as the last step. The rules:
   `skipReason` for parity.
 - Business data shown in a step arrives via an **injected closure** from the command layer (the TUI
   never imports `service`/`output`), e.g. `shared.EnvFallbackDecider`, sync's `PlanPreview`.
+  This detour exists **only** because a TUI package may not call the service — a migrated
+  command has no closures: `flow/` calls the service itself from `Skip`/`Build`/`Load`.
+  Do not add a new one; migrate instead.
 - The breadcrumb denominator is **fixed** (`len(steps)`); an auto-skipped step makes the position
   **jump** (3/5 → 5/5), so the recap reliably reads `n/n`.
 - **One wizard for every interactive entry path.** A command with several entry forms (a picker,
@@ -370,10 +528,6 @@ then a single **recap** as the last step. The rules:
   naming the flag — never a picker.
 
 ### Bypass flags for mutation commands: `--yes` vs `--force` (two axes) — MANDATORY
-
-> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
-> authoritative.** This section describes the model of the commands not yet migrated.
-> Skill rewrite tracked in LUC-181.
 
 Every worktree-mutating command (`create`, `clean`, `sync`, `prune`, `relocate`, `reparent`,
 `extract`, `checkout`) exposes bypass on two **orthogonal** axes. This is the standardized model
@@ -398,7 +552,42 @@ Every worktree-mutating command (`create`, `clean`, `sync`, `prune`, `relocate`,
   re-asking — see `internal/tui/clean/wizard.go` `Force`). JSON mode requires `--yes` (confirmations
   can't run); `--force` alone in JSON is rejected.
 
-**How to wire it (the standard):**
+**How to wire it — migrated commands (`flow/`): you do NOT reimplement the three cases.**
+They live once, in `flow.Unattended.Ask`. Each step declares its own resolution:
+
+| Case | Declaration on the step | Example |
+| -- | -- | -- |
+| 1. Decision/confirmation with a safe default | `Resolve` returns an `Answer` | env → config default; source-update → `ff` only if `--ff`, else `keep`; reparent → `orphan`; every recap → its confirm value |
+| 2. Required selection, no safe default | `Resolve` returns an **error naming the flag** (a `domain` sentinel, or `fmt.Errorf` mentioning `--from`) | create's source for a pre-existing branch; `domain.ErrCleanBranchRequired` |
+| 3. Interactive-only | **omit `Resolve`** | `Unattended` refuses with a message built from `Step.Label` + `Step.Flag`; it cannot open a picker |
+
+```go
+func (Unattended) Ask(session Session) (Answers, error) {
+  answers := session.Presets
+  for _, step := range session.Steps {
+    if _, known := answers.Get(step.Key); known { continue }        // 1a — the flag answered it
+    if step.Skip != nil { /* skip with its reason */ }
+    if step.Resolve == nil { return Answers{}, requiredErr(step) }  // 3 — refuse, naming the flag
+    answer, err := step.Resolve(answers)                            // 1b — safe default, or 2 — error
+    if err != nil { return Answers{}, err }
+    answers = answers.With(step.Key, answer)
+  }
+  return answers, nil
+}
+```
+
+The command then does exactly one thing on this axis:
+
+```go
+interactive := rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd())) && !yes
+Prompter:    flowPrompter(flowPrompterParams{Interactive: interactive}), // Unattended when false
+```
+
+`--force` never goes through `Resolve`: it is a field of the `Request`, read by the flow
+where the refusal is (see `resolveDelete` in `internal/flow/clean/steps.go` — it still runs
+the safety check while answering, so `--yes` alone cannot remove a dirty worktree).
+
+**How to wire it — non-migrated commands (the legacy path):**
 1. Fold `--yes` into the command's interactivity flag once, at entry:
    `interactive := isTTY && rules.IsHumanFormat(format) && !yes`.
 2. Gate every picker/prompt and every `need*` step on that `interactive` flag.
@@ -407,32 +596,69 @@ Every worktree-mutating command (`create`, `clean`, `sync`, `prune`, `relocate`,
    (see `ErrExtractFilesRequired`, `ErrExtractTargetRequired`). Because `--yes` makes `interactive`
    false, the wizard is now unreachable under `--yes`, so its RecapStep is unconditional (no
    `SkipConfirm` flag on the wizard — the recap always shows when the wizard runs at all).
-4. Help-string wording is uniform: `--yes` → *"Skip all prompts; resolve every decision from flags
-   and safe defaults (requires …; errors if a selection is missing)"*; `--force` → *"Lift safety
-   refusals (…); still asks to confirm unless --yes"*.
 
-### Recap completeness: read the step value, else the flag/arg fallback
+**Help-string wording is uniform, both paths:** `--yes` → *"Skip all prompts; resolve every
+decision from flags and safe defaults (requires …; errors if a selection is missing)"*;
+`--force` → *"Lift safety refusals (…); still asks to confirm unless --yes"*.
 
-> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
-> authoritative.** This section describes the model of the commands not yet migrated.
-> Skill rewrite tracked in LUC-181.
+### Recap completeness: a flag must never make a line disappear
 
-A recap builder must name **every** part of the plan, even the parts a flag resolved. Each
-`build*Recap` / `recapStep` reads the value from its wizard step and **falls back to the flag/arg**
-when that step was skipped — a flag must never make a line disappear from the recap. Pattern
-references: `internal/tui/extract` `buildCombinedRecap` (`FixedFiles`/`FixedTarget`/`FixedKeep`),
+A recap builder must name **every** part of the plan, even the parts a flag resolved.
+
+**Migrated commands get this from `Session.Presets`.** A value the `Request` already
+carries is put in `Presets`; the step is then **not asked**, but `Answers` still returns
+it, so the recap builder reads one source and needs no fallback:
+
+```go
+Presets: flow.NewAnswers(map[string]string{   // "" means unanswered, not answered-with-nothing
+  KeyBranch: f.request.Branch,
+  KeySource: f.request.From,
+  KeyEnv:    f.request.EnvFrom,
+}),
+
+func (f *createFlow) recap(answers flow.Answers) string {
+  source := answers.Value(KeySource) // preset or picked — the recap cannot tell, and must not
+  // …
+}
+```
+
+Use `Answers.Answered(key)` (asked, and not skipped — false for a preset, a `Resolve`
+fallback or a skip) only when the flow genuinely needs to know whether a human saw the
+question; never to decide whether to print a recap line.
+Reference: `internal/flow/create/steps.go` (`createFlow.recap`), pinned by
+`TestRecapKeepsEveryLineWhateverAnsweredIt`.
+
+**Non-migrated wizards** still do it by hand: each `build*Recap` / `recapStep` reads the
+value from its wizard step and **falls back to the flag/arg** when that step was skipped.
+References: `internal/tui/extract` `buildCombinedRecap` (`FixedFiles`/`FixedTarget`/`FixedKeep`),
 `internal/tui/newwt` `buildCreateRecap` (`BranchName`/`Source`/`EnvOverride`), `internal/tui/checkout`
 `buildCheckoutRecap` (`FromOverride`/`EnvOverride`), `internal/tui/reparent` `recapBody`
 (`PresetBranches`/`PresetParent`). Add the fallback whenever you add a flag that pre-fills a step.
 
-### Async data in a wizard: `InitCmd` (at start) vs `OnEnter` (per step)
+### Async data in a wizard: `Step.Load` (flow) — `InitCmd` / `OnEnter` (legacy)
 
-> **For a command migrated to `internal/flow/` (`create`, `clean`), CLAUDE.md is
-> authoritative.** This section describes the model of the commands not yet migrated.
-> Skill rewrite tracked in LUC-181.
+Never block the render doing slow I/O.
 
-Never block the render doing slow I/O in a `Build` hook. Two async entry points, by when the data
-is known:
+**Migrated commands say only "this content comes from I/O" and let the host deal with it:**
+
+```go
+step := flow.Step{
+  Kind:           flow.StepRecap,
+  Key:            KeyDelete,
+  LoadingMessage: domain.CleanCheckLoading,
+  Load:           content,  // runs off the render path; the host shows a loading state
+}
+```
+
+`Build` (synchronous) is for fast, local derivation from earlier answers; `Load` is its
+slow sibling. Choosing between them can itself depend on the request — `clean` uses
+`Build` when the branch was given up front (already checked) and `Load` when it was picked
+(checked then and there, over the network): see `internal/flow/clean/steps.go`
+`deleteStep`. The `InitCmd`/`OnEnter`/`UpdateStepModel` plumbing still exists, but it is
+`internal/tui/flowui`'s business, not the command's.
+
+**Non-migrated wizards** wire the two async entry points themselves, by when the data is
+known:
 
 - **`InitCmd` + `Loading`/`LoadingText` + `OnMsg`** — one-shot load at wizard start, for data an
   early step needs that does **not** depend on a later answer (e.g. `checkout` streams open PRs
@@ -458,7 +684,9 @@ Each screen lives in its own package under `internal/tui/`:
 ```
 internal/tui/
   components/     ← shared primitives (wizard, selectlist, multiselect, confirm)
-  newwt/          ← create wizard
+  flowui/         ← runs a flow.Session as the CLI wizard (create, clean)
+  dashboard/      ← `wtm ui`, the second surface over flow/
+  newwt/          ← create wizard (still used by extract's embedded sub-flow)
   checkout/       ← checkout wizard (PR picker → parent → env)
   runpicker/      ← run list / ps pickers
   runwizard/      ← run job / profile wizards
@@ -473,7 +701,11 @@ internal/tui/
 - `Update` is a pure function — no side effects, only return `(tea.Model, tea.Cmd)`
 - Never import `lipgloss` in TUI models — delegate all styling to `styles/`
 - Never import `cobra` or `service` inside a `tui/` model
-- TUI packages may import `domain/` (types) and `styles/` (rendering)
+- TUI packages may import `domain/` (types), `styles/` (rendering) and `flow/` (to run a
+  session — that is what `flowui` and `dashboard` do); a flow never imports a TUI package
+- A surface that runs a flow off the UI goroutine reaches the model **only** through
+  `tea.Msg` — see `internal/tui/dashboard` (`prompter` replies over a channel,
+  `presenter` posts one `OutputLineMsg` per line via `flow.LineWriter`)
 
 ---
 
@@ -592,6 +824,47 @@ func TestRunExportEmpty(t *testing.T) {
 }
 ```
 
+### Flow tests — a whole déroulé, no TUI
+
+A migrated command is tested by calling `<cmd>.Run` (or the unexported flow struct) with
+the doubles for the two seams, from `internal/testutil/flowtest`. No terminal, no
+Bubbletea program, no golden file.
+
+```go
+prompter := &flowtest.ScriptedPrompter{Answers: map[string]string{
+  create.KeyBranch: "feat/x",
+  create.KeySource: "main",
+}}
+recorder := &flowtest.Recorder{}
+```
+
+- **`ScriptedPrompter`** walks the session the way a real host does — honoring `Skip`,
+  `Build` and `Load` — and answers each step from the script. It records `Asked`
+  (`AskedKeys()` gives a one-line assertion on *which questions were put*) and the
+  `StepContent` each step produced, so a test can assert on the recap prose the user
+  would have read. A step with nothing scripted is an **error**: a new question cannot
+  slip into a flow unnoticed. `Abort: true` simulates the user backing out.
+- **`Recorder`** implements `flow.Presenter` and collects `Stages`, `Hooks`, `Notices`,
+  `Statuses`. It runs `Work()` and `Run(sink)` for real, so the service still executes.
+- The **typed conclusion** is not on `Recorder` — embed it and add the one method:
+  `type rec struct{ *flowtest.Recorder; got create.Outcome }` +
+  `func (r *rec) Created(o create.Outcome) error { r.got = o; return nil }`.
+- For the unattended path, `flow.Unattended{}` **is** the double: pass it directly and
+  assert that each required selection refuses naming its flag, and each defaulted decision
+  lands on the safe value (`internal/flow/unattended_test.go`).
+
+### Characterization tests — before you refactor, not after
+
+A refactor that moves a déroulé between packages must not change what a user sees. Pin the
+observable behavior **first**, against the old code, then move the code and run those tests
+unchanged. That is what `internal/tui/newwt/create_flow_test.go`,
+`internal/commands/wt/create_wizard_test.go`, `create_noninteractive_test.go` and
+`integration_test.go` are for: step composition per flag combination, recap completeness,
+the `--yes`/`--force` axes, the JSON reparent default, idempotence on an absent worktree.
+
+Do not "fix" one of them to make a refactor pass — a characterization test that had to be
+edited is a behavior change, and needs to be named as one.
+
 ### Shared test helpers
 
 `internal/testutil/gittest/gittest.go`:
@@ -599,6 +872,9 @@ func TestRunExportEmpty(t *testing.T) {
 gittest.InitRepo(t)           // temp git repo with initial commit
 gittest.CreateBranch(t, dir, name) // create a local branch
 ```
+
+`internal/testutil/flowtest/flowtest.go`: `ScriptedPrompter` (a `flow.Prompter`) and
+`Recorder` (a `flow.Presenter`) — see above.
 
 ---
 
@@ -612,6 +888,9 @@ Before calling `build-validator`, verify manually:
 - [ ] No nested conditionals — early returns throughout
 - [ ] No type assertions without comma-ok
 - [ ] No business logic in `commands/` or `tui/`
+- [ ] A mutation command's déroulé is in `internal/flow/<cmd>/`, not in its runner
+- [ ] `internal/flow/` imports no cobra/bubbletea/lipgloss, no `output`/`tui`/`config`/`commands`
+- [ ] Every `flow.Step` has a deliberate `Resolve` (safe default, flag-naming error, or absent on purpose)
 - [ ] No `lipgloss` imports outside `internal/styles/`
 - [ ] No `cobra` or `bubbletea` imports inside `internal/service/`
 - [ ] Pure functions (no I/O) live in internal/rules/, not in service/
