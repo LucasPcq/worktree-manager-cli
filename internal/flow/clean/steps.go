@@ -151,6 +151,7 @@ func (f *cleanFlow) deleteStep() flow.Step {
 			Title:       domain.CleanDeleteTitle,
 			Description: deleteRecap(check, f.reparentLine(answers)),
 			Options:     deleteOptions(check),
+			Blockers:    blockersOf(check),
 		}, nil
 	}
 
@@ -200,16 +201,21 @@ func deleteOptions(check domain.CleanCheckResult) []flow.Option {
 	return options
 }
 
+// blockersOf carries the refusals to the surface, which decides whether to print
+// them or to ask for each one to be lifted.
+func blockersOf(check domain.CleanCheckResult) []flow.Blocker {
+	refusals := rules.CleanBlockers(check)
+	blockers := make([]flow.Blocker, 0, len(refusals))
+	for _, refusal := range refusals {
+		blockers = append(blockers, flow.Blocker{Key: refusal.Key, Label: refusal.Label})
+	}
+	return blockers
+}
+
 func deleteRecap(check domain.CleanCheckResult, reparentLine string) string {
 	var lines []string
-	if check.IsDirty {
-		lines = append(lines, domain.CleanWarnDirty)
-	}
-	if check.UnpushedCommits > 0 {
-		lines = append(lines, fmt.Sprintf(domain.CleanWarnUnpushedFmt, check.UnpushedCommits))
-	}
-	if check.HasOpenPR {
-		lines = append(lines, domain.CleanWarnOpenPR+check.PRUrl)
+	for _, blocker := range rules.CleanBlockers(check) {
+		lines = append(lines, blocker.Label)
 	}
 	if len(lines) > 0 {
 		lines = append(lines, "")

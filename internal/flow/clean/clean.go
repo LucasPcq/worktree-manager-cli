@@ -45,6 +45,12 @@ type Params struct {
 	Presenter Presenter
 }
 
+// Operation declares how a surface must schedule a clean: it destroys its target,
+// so it holds the surface until it is done rather than running behind its back.
+func Operation() flow.Operation {
+	return flow.Operation{Kind: domain.OpKindClean, Mode: flow.ModeBlocking, TargetKey: KeyWorktree}
+}
+
 func Run(params Params) (Outcome, error) {
 	f := &cleanFlow{
 		ctx:       params.Context,

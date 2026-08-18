@@ -666,6 +666,12 @@ const (
 	CleanWillDeleteBranch   = "  branch    "
 	CleanRecapReparentFmt   = "Then reparent %d child worktree(s) onto %s."
 	CleanRecapOrphanFmt     = "Then leave %d child worktree(s) orphaned."
+	// CleanBlockerDirty, CleanBlockerUnpushed and CleanBlockerOpenPR key the
+	// removal refusals a surface lists one by one (rules.CleanBlockers).
+	CleanBlockerDirty    = "dirty"
+	CleanBlockerUnpushed = "unpushed"
+	CleanBlockerOpenPR   = "open_pr"
+
 	CleanUnsafeDirty        = "has uncommitted changes"
 	CleanUnsafeUnpushedFmt  = "has %d unpushed commit(s)"
 	CleanUnsafeOpenPR       = "has an open pull request"
@@ -705,6 +711,11 @@ const (
 	PinnedSuffixDefault  = " (default)"
 	PinnedSuffixBase     = " (base)"
 	PinnedSuffixDetected = " (detected)"
+
+	// OpKindCreate and OpKindClean name a running flow in a surface that schedules
+	// several of them.
+	OpKindCreate = "create"
+	OpKindClean  = "clean"
 
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"

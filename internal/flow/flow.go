@@ -35,6 +35,16 @@ type StepContent struct {
 	Title       string
 	Description string
 	Options     []Option
+	// Blockers are the refusals the step folds into its Description, named one by
+	// one for a surface that can have each of them lifted separately.
+	Blockers []Blocker
+}
+
+// Blocker is one safety refusal standing in the way of the step's dangerous
+// option, stated on its own so nothing is ever lifted implicitly.
+type Blocker struct {
+	Key   string
+	Label string
 }
 
 type Step struct {
@@ -62,6 +72,24 @@ type Step struct {
 
 	Summarize func(Answer) string
 	Flag      string
+}
+
+// Mode is how long a flow holds the surface that runs it. A background flow gives
+// the surface back and locks its target instead, so nothing else acts on the
+// worktree it is still working on.
+type Mode int
+
+const (
+	ModeBlocking Mode = iota
+	ModeBackground
+)
+
+// Operation is what a surface needs to schedule a flow without knowing what it
+// does: how it holds the surface, and which answer names the worktree it holds.
+type Operation struct {
+	Kind      string
+	Mode      Mode
+	TargetKey string
 }
 
 type Session struct {
