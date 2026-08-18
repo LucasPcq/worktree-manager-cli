@@ -1,5 +1,6 @@
-// Package dashboard renders `wtm ui`: a full-screen, read-only view of the
-// repository's worktrees. It navigates and displays; it never mutates.
+// Package dashboard renders `wtm ui`: a full-screen view of the repository's
+// worktrees, and the surface the create and clean flows are run from. It draws
+// and it asks; what a run does is internal/flow's business, never its own.
 package dashboard
 
 import (
