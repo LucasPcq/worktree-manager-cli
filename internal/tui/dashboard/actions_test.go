@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"io"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -161,5 +162,23 @@ func TestAnAbortedRunLeavesTheOutputPanelUntouched(t *testing.T) {
 
 	if len(model.outputLines) != 0 {
 		t.Errorf("output = %q, want a cancelled run to leave no trace", model.outputLines)
+	}
+}
+
+// sudo prompts for a password on the terminal, which this surface is holding:
+// the run must never be told it may escalate.
+func TestTheDashboardNeverOffersThePrivilegedRemoval(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "feat")
+
+	model, cmd := model.startClean("feat")
+	if cmd == nil {
+		t.Fatal("the removal did not start")
+	}
+
+	model = update(model, opDoneMsg{id: model.ops.running[0].id, err: domain.ErrWorktreeRemoveFailed})
+
+	last := model.outputLines[len(model.outputLines)-1]
+	if !strings.Contains(last, "--force") || !strings.Contains(last, "feat") {
+		t.Errorf("last line = %q, want the way out named: the CLI can hand sudo the terminal", last)
 	}
 }

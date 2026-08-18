@@ -864,6 +864,9 @@ const (
 	DashboardStartedFmt  = "▸ %s %s"
 	DashboardFinishedFmt = "✓ %s %s"
 	DashboardFailedFmt   = "✗ %s: %s"
+	// DashboardPrivilegedHintFmt names the way out of a removal the dashboard
+	// cannot finish: sudo prompts on the terminal the dashboard is holding.
+	DashboardPrivilegedHintFmt = "  run `wtm clean %s --force` in a terminal to remove it with sudo"
 	// DashboardOperationLabel names a failed run in the output panel when the
 	// failure is the run itself rather than one of its phases.
 	DashboardOperationLabel = "operation"

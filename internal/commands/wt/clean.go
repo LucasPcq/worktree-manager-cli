@@ -72,6 +72,8 @@ func runClean(cmd *cobra.Command, args []string) error {
 			Force:            force,
 			ReparentChildren: reparentFlag,
 			BaseBranch:       resolveBase("", config),
+			// The CLI owns the terminal it prompts on, so it can hand it to sudo.
+			AllowPrivileged: true,
 		},
 		// The picker may be reached through the shell wrapper, which consumes stdout.
 		Prompter:  flowPrompter(flowPrompterParams{Interactive: interactive, Stderr: true}),

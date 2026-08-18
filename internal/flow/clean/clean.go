@@ -22,6 +22,10 @@ type Request struct {
 	Force            bool
 	ReparentChildren bool
 	BaseBranch       string
+	// AllowPrivileged lets a failed removal offer the `sudo rm -rf` fallback. The
+	// prompt it opens belongs to sudo and takes the terminal, so only a surface
+	// that can hand it over sets this.
+	AllowPrivileged bool
 }
 
 type Outcome struct {
@@ -249,7 +253,7 @@ type recoverParams struct {
 // failed on files the current user cannot delete (typically root-owned files left by
 // a container). recovered=true resumes the normal post-removal flow.
 func (f *cleanFlow) recoverRemoveFailure(p recoverParams) (bool, error) {
-	if !f.prompter.Interactive() || p.Path == "" {
+	if !f.request.AllowPrivileged || !f.prompter.Interactive() || p.Path == "" {
 		return false, nil
 	}
 

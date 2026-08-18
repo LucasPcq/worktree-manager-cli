@@ -31,8 +31,10 @@ func (m Model) startCreate() (Model, tea.Cmd) {
 	if reason, refused := m.busyReason(""); refused {
 		return m.refuse(reason), nil
 	}
+	// The branch is only known once the wizard is answered; the prompter names it
+	// then, and the run holds it from there on.
 	declared := createflow.Operation()
-	m, id := m.beginOp(declared)
+	m, id := m.beginOp(beginParams{Operation: declared})
 	send := m.sender()
 
 	params := createflow.Params{
@@ -61,7 +63,7 @@ func (m Model) startClean(branch string) (Model, tea.Cmd) {
 		return m.refuse(reason), nil
 	}
 	declared := cleanflow.Operation()
-	m, id := m.beginOp(declared)
+	m, id := m.beginOp(beginParams{Operation: declared, Target: branch})
 	send := m.sender()
 
 	params := cleanflow.Params{
@@ -106,23 +108,39 @@ func (m Model) refuse(text string) Model {
 	return m.appendOutput(OutputLineMsg{Text: text}).reflow()
 }
 
+type beginParams struct {
+	Operation flow.Operation
+	// Target is the worktree the run holds, when the surface already knows it.
+	Target string
+}
+
 // beginOp records the run and opens the output panel: a run whose output is
 // folded away is one the user cannot follow.
-func (m Model) beginOp(declared flow.Operation) (Model, int) {
-	ops, id := m.ops.begin(operation{kind: declared.Kind, mode: declared.Mode})
+func (m Model) beginOp(params beginParams) (Model, int) {
+	declared := params.Operation
+	ops, id := m.ops.begin(operation{kind: declared.Kind, mode: declared.Mode, target: params.Target})
 	m.ops = ops
 	m.outputExpanded = true
 	return m.reflow(), id
 }
 
 func (m Model) finishOp(msg opDoneMsg) Model {
+	op, _ := m.ops.byID(msg.id)
 	m.ops = m.ops.end(msg.id)
 	if msg.err == nil || errors.Is(msg.err, domain.ErrUserAborted) {
 		return m
 	}
-	return m.appendOutput(OutputLineMsg{
+
+	m = m.appendOutput(OutputLineMsg{
 		Text: fmt.Sprintf(domain.DashboardFailedFmt, domain.DashboardOperationLabel, msg.err),
 	})
+
+	// The privileged removal prompts for a password on the terminal this surface
+	// is holding, so it is never offered here — the way to it is named instead.
+	if errors.Is(msg.err, domain.ErrWorktreeRemoveFailed) {
+		return m.appendOutput(OutputLineMsg{Text: fmt.Sprintf(domain.DashboardPrivilegedHintFmt, op.target)})
+	}
+	return m
 }
 
 // applyFlow handles what a running flow posted. Nothing here mutates anything the

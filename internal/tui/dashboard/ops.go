@@ -61,6 +61,15 @@ func (o operations) blocking() (operation, bool) {
 	return operation{}, false
 }
 
+func (o operations) byID(id int) (operation, bool) {
+	for _, op := range o.running {
+		if op.id == id {
+			return op, true
+		}
+	}
+	return operation{}, false
+}
+
 func (o operations) end(id int) operations {
 	running := make([]operation, 0, len(o.running))
 	for _, op := range o.running {
