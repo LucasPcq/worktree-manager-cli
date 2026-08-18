@@ -120,6 +120,7 @@ func RunCleanHooks(params domain.CleanHooksParams) error {
 			Branch:   params.Branch,
 			Root:     mainPath,
 		},
+		Output: params.Output,
 	}); err != nil {
 		return fmt.Errorf("on_clean hooks: %w", err)
 	}

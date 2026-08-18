@@ -1,0 +1,344 @@
+package create
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/flow/decide"
+	"github.com/LucasPcq/wtm/internal/testutil/flowtest"
+	"github.com/LucasPcq/wtm/internal/testutil/gittest"
+)
+
+// newFlow builds a flow over a directory with no git repository, so branch
+// divergence resolves as unknown and the recap tests stay hermetic.
+func newFlow(t *testing.T, request Request, target func(string) domain.BranchTarget) *createFlow {
+	t.Helper()
+	config := domain.Config{}
+	config.Project.Env.Strategy = domain.EnvStrategyExample
+	if target == nil {
+		target = func(string) domain.BranchTarget { return domain.BranchTarget{} }
+	}
+	return &createFlow{
+		ctx:      flow.Context{ProjectDir: t.TempDir(), Config: config},
+		request:  request,
+		prompter: flow.Unattended{},
+		target:   target,
+	}
+}
+
+func existing(branchName string) func(string) domain.BranchTarget {
+	return func(name string) domain.BranchTarget {
+		if name == branchName {
+			return domain.BranchTarget{State: domain.BranchTargetExisting}
+		}
+		return domain.BranchTarget{}
+	}
+}
+
+func answers(values map[string]string) flow.Answers { return flow.NewAnswers(values) }
+
+// A flag resolves a step instead of asking it, and the recap must still name the
+// value — otherwise a line disappears for the users who passed the most flags.
+func TestRecapKeepsEveryLineWhateverAnsweredIt(t *testing.T) {
+	recap := newFlow(t, Request{}, nil).recap(answers(map[string]string{
+		KeyBranch: "feat/x",
+		KeySource: "main",
+		KeyEnv:    "example",
+	}))
+
+	for _, want := range []string{"Branch:  feat/x", "Source:  main", "Env:     example"} {
+		if !strings.Contains(recap, want) {
+			t.Errorf("recap %q should contain %q", recap, want)
+		}
+	}
+}
+
+func TestRecapNamesTheConfigDefaultEnv(t *testing.T) {
+	recap := newFlow(t, Request{}, nil).recap(answers(map[string]string{KeyBranch: "feat/x", KeySource: "main"}))
+	if !strings.Contains(recap, "Env:     config default") {
+		t.Errorf("recap %q should name the empty env choice", recap)
+	}
+}
+
+func TestRecapCallsTheSourceAParentForAReusedBranch(t *testing.T) {
+	recap := newFlow(t, Request{}, existing("feat/x")).recap(answers(map[string]string{
+		KeyBranch: "feat/x",
+		KeySource: "main",
+		KeyEnv:    "example",
+	}))
+
+	if !strings.Contains(recap, "Parent:  main") {
+		t.Errorf("recap %q should label the source as the recorded parent", recap)
+	}
+	if strings.Contains(recap, "Source:  ") {
+		t.Errorf("recap %q must not present the parent as a start-point", recap)
+	}
+	if !strings.Contains(recap, domain.BranchReusedSuffix) {
+		t.Errorf("recap %q should mark the branch as reused", recap)
+	}
+}
+
+// The annotation follows whichever branch is actually moved, so the recap can never
+// claim to move a branch it leaves alone.
+func TestRecapPutsTheFastForwardOnItsSubject(t *testing.T) {
+	given := answers(map[string]string{
+		KeyBranch:       "feat/x",
+		KeySource:       "main",
+		KeyEnv:          "example",
+		KeySourceUpdate: updateFastForward,
+	})
+
+	onSource := newFlow(t, Request{}, nil).recap(given)
+	if !strings.Contains(onSource, "Source:  main (fast-forward to origin)") {
+		t.Errorf("recap %q should annotate the source line", onSource)
+	}
+
+	onBranch := newFlow(t, Request{}, existing("feat/x")).recap(given)
+	if !strings.Contains(onBranch, "fast-forward feat/x to origin") {
+		t.Errorf("recap %q should carry its own update line for the reused branch", onBranch)
+	}
+	if strings.Contains(onBranch, "Parent:  main (fast-forward") {
+		t.Errorf("recap %q must not annotate the parent it does not move", onBranch)
+	}
+}
+
+func TestSessionAsksOnlyWhatIsMissing(t *testing.T) {
+	full := newFlow(t, Request{Branch: "feat/x", From: "main", EnvFrom: "example"}, nil).session()
+	for _, key := range []string{KeyBranch, KeySource, KeyEnv} {
+		if _, preset := full.Presets.Get(key); !preset {
+			t.Errorf("step %q should be answered by the request", key)
+		}
+	}
+
+	bare := newFlow(t, Request{}, nil).session()
+	for _, key := range []string{KeyBranch, KeySource, KeyEnv} {
+		if _, preset := bare.Presets.Get(key); preset {
+			t.Errorf("step %q should be left to be asked", key)
+		}
+	}
+	if len(bare.Steps) != 5 {
+		t.Errorf("declared %d steps, want branch, source, env, source update and recap", len(bare.Steps))
+	}
+}
+
+func TestBranchStepRefusesWithoutABranchName(t *testing.T) {
+	step := newFlow(t, Request{}, nil).branchStep()
+
+	if _, err := step.Resolve(flow.Answers{}); err == nil {
+		t.Fatal("expected a refusal without a branch name")
+	}
+	if err := step.Validate("   "); err == nil {
+		t.Error("a blank branch name should be rejected as it is typed")
+	}
+	if err := step.Validate("feat/x"); err != nil {
+		t.Errorf("a real branch name should validate: %v", err)
+	}
+}
+
+func TestSourceStepRefusesAGuessedParent(t *testing.T) {
+	f := newFlow(t, Request{}, existing("feat/x"))
+	f.ctx.Config.Project.Worktrees.BaseBranch = "main"
+
+	_, err := f.resolveSource(answers(map[string]string{KeyBranch: "feat/x"}))
+	if err == nil {
+		t.Fatal("expected a refusal for a branch whose parent cannot be inferred")
+	}
+	if !strings.Contains(err.Error(), "--"+domain.FlagFrom) {
+		t.Errorf("refusal %q should name the --%s flag", err, domain.FlagFrom)
+	}
+}
+
+// --ff accepts the offer unattended; its absence keeps the branch where it is.
+func TestSourceUpdateResolvesFromTheFlagOnly(t *testing.T) {
+	answer, err := newFlow(t, Request{FastForward: true}, nil).sourceUpdateStep().Resolve(flow.Answers{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if answer.Value != updateFastForward {
+		t.Errorf("answer = %q, want the fast-forward accepted", answer.Value)
+	}
+
+	answer, err = newFlow(t, Request{}, nil).sourceUpdateStep().Resolve(flow.Answers{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if answer.Value != updateKeep {
+		t.Errorf("answer = %q, want the branch left as-is", answer.Value)
+	}
+}
+
+func TestEnvSummaryNamesTheDefault(t *testing.T) {
+	if got := envSummary(flow.Answer{}); got != domain.EnvSummaryConfigDefault {
+		t.Errorf("summary = %q, want the config default named", got)
+	}
+	if got := envSummary(flow.Answer{Value: "main"}); got != "main" {
+		t.Errorf("summary = %q, want the chosen strategy", got)
+	}
+}
+
+type recorder struct {
+	*flowtest.Recorder
+	created *Outcome
+}
+
+func newRecorder() *recorder { return &recorder{Recorder: &flowtest.Recorder{}} }
+
+func (r *recorder) Created(outcome Outcome) error {
+	r.created = &outcome
+	return nil
+}
+
+func testContext(t *testing.T) flow.Context {
+	t.Helper()
+	dir := gittest.InitRepo(t)
+	config := domain.Config{}
+	config.Project.Worktrees.BasePath = filepath.Join(t.TempDir(), "trees")
+	config.Project.Worktrees.BaseBranch = "main"
+	config.Project.Env.Strategy = domain.EnvStrategyExample
+	return flow.Context{ProjectDir: dir, StateDir: filepath.Join(dir, ".git", "wtm"), Config: config}
+}
+
+func TestRunAsksEveryQuestionThenCreates(t *testing.T) {
+	prompter := &flowtest.ScriptedPrompter{Answers: map[string]string{
+		KeyBranch: "feat/w",
+		KeySource: "main",
+		KeyEnv:    "",
+		KeyRecap:  confirmCreate,
+	}}
+	presenter := newRecorder()
+
+	outcome, err := Run(Params{Context: testContext(t), Prompter: prompter, Presenter: presenter})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	want := strings.Join([]string{KeyBranch, KeySource, KeyEnv, KeyRecap}, ",")
+	if prompter.AskedKeys() != want {
+		t.Errorf("asked %q, want %q", prompter.AskedKeys(), want)
+	}
+	if _, asked := prompter.Content[KeySourceUpdate]; asked {
+		t.Error("the source-update step should skip itself when there is nothing to reconcile")
+	}
+
+	recap := prompter.Content[KeyRecap].Description
+	for _, line := range []string{"Branch:  feat/w", "Source:  main", "Env:     config default"} {
+		if !strings.Contains(recap, line) {
+			t.Errorf("recap %q should contain %q", recap, line)
+		}
+	}
+	if presenter.created == nil || presenter.created.Branch != "feat/w" {
+		t.Fatalf("created = %+v, want the new worktree reported", presenter.created)
+	}
+	if outcome.Result.Metadata.SourceBranch != "main" {
+		t.Errorf("source_branch = %q, want the answered source recorded", outcome.Result.Metadata.SourceBranch)
+	}
+	if _, statErr := os.Stat(outcome.Result.Path); statErr != nil {
+		t.Errorf("worktree not on disk: %v", statErr)
+	}
+	if len(presenter.Stages) != 1 {
+		t.Errorf("stages = %v, want just the creation", presenter.Stages)
+	}
+}
+
+func TestRunSkipsTheQuestionsTheRequestAnswers(t *testing.T) {
+	prompter := &flowtest.ScriptedPrompter{Answers: map[string]string{KeyRecap: confirmCreate}}
+
+	if _, err := Run(Params{
+		Context:   testContext(t),
+		Request:   Request{Branch: "feat/flagged", From: "main", EnvFrom: "example"},
+		Prompter:  prompter,
+		Presenter: newRecorder(),
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if prompter.AskedKeys() != KeyRecap {
+		t.Errorf("asked %q, want the recap alone", prompter.AskedKeys())
+	}
+	recap := prompter.Content[KeyRecap].Description
+	for _, line := range []string{"Branch:  feat/flagged", "Source:  main", "Env:     example"} {
+		if !strings.Contains(recap, line) {
+			t.Errorf("recap %q should still contain %q", recap, line)
+		}
+	}
+}
+
+func TestRunAbortedCreatesNothing(t *testing.T) {
+	presenter := newRecorder()
+
+	outcome, err := Run(Params{
+		Context:   testContext(t),
+		Request:   Request{Branch: "feat/nope", From: "main"},
+		Prompter:  &flowtest.ScriptedPrompter{Abort: true},
+		Presenter: presenter,
+	})
+	if err != nil {
+		t.Fatalf("an abort is not an error: %v", err)
+	}
+	if !outcome.Aborted {
+		t.Error("outcome should report the abort")
+	}
+	if len(presenter.Notices) != 1 || presenter.Notices[0].Text != domain.AbortedMessage {
+		t.Errorf("notices = %+v, want a single %q", presenter.Notices, domain.AbortedMessage)
+	}
+	if presenter.created != nil || len(presenter.Stages) != 0 {
+		t.Error("nothing should have been created")
+	}
+}
+
+func TestRunRunsHooksAsTheirOwnPhase(t *testing.T) {
+	ctx := testContext(t)
+	ctx.Config.Project.Hooks.OnCreate = []domain.HookCommand{{Cmd: "echo hooked"}}
+	presenter := newRecorder()
+
+	if _, err := Run(Params{
+		Context: ctx,
+		Request: Request{Branch: "feat/hooked", From: "main"},
+		Prompter: &flowtest.ScriptedPrompter{Answers: map[string]string{
+			KeyEnv:   "",
+			KeyRecap: confirmCreate,
+		}},
+		Presenter: presenter,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(presenter.Hooks) != 1 || presenter.Hooks[0] != domain.HooksTitleOnCreate {
+		t.Errorf("hook phases = %v, want one titled %q", presenter.Hooks, domain.HooksTitleOnCreate)
+	}
+}
+
+func TestRunRefusesABranchHeldElsewhereBeforeAsking(t *testing.T) {
+	ctx := testContext(t)
+	gittest.CreateBranch(t, ctx.ProjectDir, "feat/taken")
+	gittest.Git(t, ctx.ProjectDir, "worktree", "add", filepath.Join(t.TempDir(), "taken"), "feat/taken")
+
+	prompter := &flowtest.ScriptedPrompter{}
+	_, err := Run(Params{
+		Context:   ctx,
+		Request:   Request{Branch: "feat/taken", From: "main"},
+		Prompter:  prompter,
+		Presenter: newRecorder(),
+	})
+	if !errors.Is(err, domain.ErrWorktreeExists) {
+		t.Fatalf("err = %v, want it to wrap ErrWorktreeExists", err)
+	}
+	if len(prompter.Asked) != 0 {
+		t.Errorf("asked %v, want nothing asked before the refusal", prompter.Asked)
+	}
+}
+
+func TestFastForwardSubjectIsSharedWithTheOtherFlows(t *testing.T) {
+	if got := decide.FastForwardSubject(decide.FastForwardSubjectParams{
+		Target:     domain.BranchTarget{State: domain.BranchTargetExisting},
+		FromBranch: "main",
+		Branch:     "feat/x",
+	}); got != "feat/x" {
+		t.Errorf("subject = %q, want the reused branch", got)
+	}
+}

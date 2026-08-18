@@ -62,19 +62,54 @@ go test ./... -race -count=1
 Report: failed tests with package path and test name.
 Flag any data races detected by `-race`.
 
-### Step 6 — Architecture guard (manual check)
+### Step 6 — Architecture guard
 
-Inspect imports to catch layer violations:
+#### 6a — `internal/flow/` import rule (BLOCKER, mechanical)
+
+`internal/flow/` carries the flow of each command independently of the surface that
+runs it. It may import only `internal/service/`, `internal/rules/`, `internal/domain/`
+and the stdlib. Anything else — a UI library, a rendering package, the config loader,
+the command layer — puts a surface back inside the flow and makes the layer
+un-replayable by the dashboard.
 
 ```bash
-# commands/ must not import service business logic directly (only via interface)
-grep -rn "\"service\"" ./internal/commands/ || true
+go list -f '{{$p := .ImportPath}}{{range .Imports}}{{$p}} -> {{.}}
+{{end}}' ./internal/flow/... \
+  | grep -E ' -> (github.com/spf13|github.com/charmbracelet|github.com/LucasPcq/wtm/internal/(output|tui|config|commands|infra))' \
+  || echo "flow imports OK"
+```
 
-# service/ must not import cobra or OS args
-grep -rn "\"github.com/spf13/cobra\"\|\"os\"" ./internal/service/ || true
+Any line other than `flow imports OK` is a **BLOCKER**: report it as
+`<flow package> -> <forbidden import>`.
+
+This checks **direct** imports on purpose. `go list -deps` would be wrong here: `flow/`
+legitimately imports `service/`, which itself reaches `infra/` and `config/`, so the
+transitive graph always contains them. What the rule forbids is `flow/` reaching them
+itself — the fix is a thin wrapper in `service/` (`worktree.FindByBranch`,
+`worktree.ListAll`), never an exception.
+
+Cross-check, which also covers a file that does not compile yet (`go list` skips those)
+and test files:
+
+```bash
+grep -rnE '^[[:space:]]*([a-z_][a-zA-Z0-9]* )?"(github\.com/(spf13|charmbracelet)|github\.com/LucasPcq/wtm/internal/(output|tui|config|commands|infra))' \
+  ./internal/flow/ --include='*.go' || echo "flow imports OK"
+```
+
+It matches import lines only — a doc comment naming `internal/tui/newwt` is not a
+violation.
+
+#### 6b — the other layers
+
+```bash
+# service/ must not import cobra, bubbletea or lipgloss
+grep -rn "spf13/cobra\|charmbracelet/bubbletea\|charmbracelet/lipgloss" ./internal/service/ --include='*.go' || true
 
 # output/ must not import service/
-grep -rn "\"service\"" ./internal/output/ || true
+grep -rn "internal/service" ./internal/output/ --include='*.go' || true
+
+# lipgloss.Style may only be instantiated in styles/
+grep -rn "lipgloss.NewStyle" ./internal/ --include='*.go' | grep -v "/internal/styles/" || true
 ```
 
 Flag any hits as architecture violations.
@@ -104,7 +139,7 @@ After all steps, output a structured report:
 [STEP 3 — go vet]        ✅ clean  |  ⚠️  <N issues>
 [STEP 4 — staticcheck]   ✅ clean  |  ⚠️  <N issues>
 [STEP 5 — tests]         ✅ all pass  |  ❌ <N failed>
-[STEP 6 — architecture]  ✅ clean  |  ❌ <violation list>
+[STEP 6 — architecture]  ✅ clean  |  ❌ <violation list>   (6a flow imports / 6b layers)
 [STEP 7 — magic strings] ✅ clean  |  ⚠️  <N occurrences>
 
 ── Issues ────────────────────────────────────────────────

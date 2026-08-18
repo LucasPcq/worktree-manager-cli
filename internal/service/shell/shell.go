@@ -9,8 +9,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// DetectShell reads $SHELL and returns the matching ShellType.
-// Defaults to ShellZsh if detection fails.
+// DetectShell defaults to ShellZsh when $SHELL says nothing usable.
 func DetectShell() domain.ShellType {
 	shellPath := os.Getenv("SHELL")
 	if shellPath == "" {
@@ -27,4 +26,14 @@ func DetectShell() domain.ShellType {
 	default:
 		return domain.ShellZsh
 	}
+}
+
+// RequestCd asks the shell wrapper to cd into dir when the command exits, through
+// the WTM_GO_FILE bridge (see `wtm shell-init`). A no-op without it.
+func RequestCd(dir string) {
+	goFile := os.Getenv(domain.EnvGoFile)
+	if goFile == "" {
+		return
+	}
+	_ = os.WriteFile(goFile, []byte(dir), 0o644)
 }
