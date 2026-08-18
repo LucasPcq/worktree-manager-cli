@@ -97,6 +97,19 @@ func (m *SelectListModel) SetItems(items []SelectItem) {
 	m.snapToSelectable()
 }
 
+type SetSizeParams struct {
+	Width  int
+	Height int
+}
+
+// SetSize fits the list to the region its host gives it. The wizard sizes its
+// steps directly; a host outside this package (the dashboard modal) goes through
+// here.
+func (m *SelectListModel) SetSize(params SetSizeParams) {
+	m.width, m.height = params.Width, params.Height
+	m.clampOffset()
+}
+
 // Filtering reports whether the list is in inline-filter mode, so a wizard can
 // avoid intercepting typed keys (e.g. the refresh key) as commands.
 func (m SelectListModel) Filtering() bool { return m.filtering }

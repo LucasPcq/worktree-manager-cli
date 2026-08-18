@@ -531,6 +531,11 @@ const (
 	SourceProceedStalePrompt = "Create the worktree from local %s anyway? (behind origin by %d)"
 	// SourceProceedStaleWarning reports why the fast-forward failed (cause).
 	SourceProceedStaleWarning = "Couldn't fast-forward: %v"
+	// SourceUpdateSkip* explain why a run offers no source reconciliation.
+	SourceUpdateSkipNoSource = "no source to check"
+	SourceUpdateSkipRemote   = "source is a remote branch"
+	SourceUpdateSkipUpToDate = "source already up to date"
+	SourceUpdateSkipDiverged = "source diverged from origin — see recap"
 	// SourceFastForwardOptionFmt labels the fast-forward choice on the
 	// source-update step (subject).
 	SourceFastForwardOptionFmt = "Fast-forward %s to origin"
@@ -544,7 +549,42 @@ const (
 	// RecapParentRecordedForSync explains, on the source-update step, that a
 	// reused branch's source is recorded for `wtm sync` rather than being a
 	// git start-point.
-	RecapParentRecordedForSync = "Parent recorded for `wtm sync` — the branch already exists and keeps its commits"
+	RecapParentRecordedForSync     = "Parent recorded for `wtm sync` — the branch already exists and keeps its commits"
+	SourceKeepAsIsOption           = "Keep it as-is"
+	SourceUpdateSummaryFastForward = "fast-forward to origin"
+	SourceUpdateSummaryKeep        = "keep as-is"
+
+	// FlowStepRequired*Fmt refuse a step that has no safe default and cannot be
+	// asked (step label, flag name).
+	FlowStepRequiredFmt     = "%s is required and cannot be asked in this mode"
+	FlowStepRequiredFlagFmt = "%s is required and cannot be asked in this mode: pass --%s"
+
+	// The create flow (internal/flow/create): step prose, option labels, recap
+	// fields and refusals. Format verbs: %s branch, %s env strategy, %s flag name.
+	CreateLoadingFmt               = "Creating worktree %s…"
+	CreateBranchStepDescription    = "Name for the new worktree branch"
+	CreateBranchRequired           = "branch name is required"
+	CreateBranchRequiredUnattended = "branch name is required without the interactive wizard (pass it as an argument)"
+	CreateSourceStepDescription    = "Branch to base the new worktree on"
+	CreateEnvStepDescription       = "How to provision .env files in the new worktree"
+	CreateNoSourceFmt              = "no source branch: pass --%s (no base branch configured)"
+	CreateRecapConfirmOption       = "Yes, create worktree"
+	EnvOptionConfigDefaultFmt      = "Use config default (%s)"
+	EnvOptionExample               = "example — copy .env.example → .env"
+	EnvOptionMain                  = "main — copy .env from main worktree"
+	EnvOptionParent                = "parent — copy .env from source worktree"
+	// EnvSummaryConfigDefault names the empty env choice rather than leaving a
+	// recap line blank.
+	EnvSummaryConfigDefault = "config default"
+
+	// RecapField* are the aligned labels of the create recap body.
+	RecapFieldBranch       = "Branch:  "
+	RecapFieldSource       = "Source:  "
+	RecapFieldParent       = "Parent:  "
+	RecapFieldEnv          = "Env:     "
+	RecapFastForwardSuffix = " (fast-forward to origin)"
+	WarningPrefix          = "⚠ "
+	WizardErrLabel         = "wizard"
 
 	// Existing-branch reuse, shared by create, extract and checkout: a worktree
 	// created on a local branch that already exists checks it out as-is instead of
@@ -604,10 +644,52 @@ const (
 	// CleanForceHintFmt is the refusal shown when a worktree is unsafe to remove
 	// without --force (branch, reason).
 	CleanForceHintFmt = "worktree %s %s; pass --force to remove it anyway"
+	// The clean flow (internal/flow/clean): step prose, option labels, recap body,
+	// refusals and progress messages. Format verbs: %s branch, %s path, %d counts.
+	CleanPickerTitle        = "Select worktree to clean"
+	CleanPickerDescription  = "The parent worktree cannot be cleaned"
+	CleanNothingToClean     = "no worktrees to clean (only the parent worktree exists)"
+	CleanNoOrphanedChildren = "no orphaned children"
+	CleanReparentOptionFmt  = "Reparent onto %s (%d)"
+	CleanOrphanOption       = "Leave orphaned"
+	CleanReparentSummary    = "reparent"
+	CleanOrphanSummary      = "leave orphaned"
+	CleanReparentChildFmt   = "  • %s will rebase onto %s instead of %s"
+	CleanDeleteTitle        = "Proceed with deletion?"
+	CleanDeleteOption       = "Yes, delete"
+	CleanForceDeleteOption  = "Yes, force delete (bypass all checks)"
+	CleanWarnDirty          = "Worktree has uncommitted changes"
+	CleanWarnUnpushedFmt    = "%d commit(s) not pushed to remote"
+	CleanWarnOpenPR         = "Open PR: "
+	CleanWillDelete         = "Will delete:"
+	CleanWillDeleteWorktree = "  worktree  "
+	CleanWillDeleteBranch   = "  branch    "
+	CleanRecapReparentFmt   = "Then reparent %d child worktree(s) onto %s."
+	CleanRecapOrphanFmt     = "Then leave %d child worktree(s) orphaned."
+	// CleanBlockerDirty, CleanBlockerUnpushed and CleanBlockerOpenPR key the
+	// removal refusals a surface lists one by one (rules.CleanBlockers).
+	CleanBlockerDirty    = "dirty"
+	CleanBlockerUnpushed = "unpushed"
+	CleanBlockerOpenPR   = "open_pr"
+
+	CleanUnsafeDirty        = "has uncommitted changes"
+	CleanUnsafeUnpushedFmt  = "has %d unpushed commit(s)"
+	CleanUnsafeOpenPR       = "has an open pull request"
+	CleanCheckLoading       = "Checking worktree…"
+	CleanLoadingFmt         = "Removing worktree %s…"
+	CleanCannotCleanParent  = "Cannot clean the parent worktree."
+	CleanAlreadyAbsentFmt   = "Worktree %s already absent — nothing to clean"
+	CleanedFmt              = "Cleaned worktree and branch %s"
+	CleanReparentedFmt      = "Reparented %s onto %s"
+	CleanStillOrphanedFmt   = "%s still points at the removed parent %s — reparent it with `wtm reparent`"
+	CleanStoppedServicesFmt = "Stopped services on %s"
+	CleanRemovalFailedFmt   = "Removal failed: %s"
+	CleanWizardErrLabel     = "clean wizard"
 	// CleanSudoConfirmFmt is the confirmation title for the privileged `sudo rm -rf`
 	// removal fallback (worktree path).
 	CleanSudoConfirmFmt = "Force-delete %s with `sudo rm -rf`? (you may be prompted for your password)"
 
+	AbortedMessage = "Aborted."
 	// WizardCancelLabel is the constant final option on every wizard recap step —
 	// the single explicit cancellation point (alongside Esc on the first step).
 	// Kept identical across commands so "No, cancel" always reads and sits the same.
@@ -629,6 +711,183 @@ const (
 	PinnedSuffixDefault  = " (default)"
 	PinnedSuffixBase     = " (base)"
 	PinnedSuffixDetected = " (detected)"
+
+	// OpKindCreate and OpKindClean name a running flow in a surface that schedules
+	// several of them.
+	OpKindCreate = "create"
+	OpKindClean  = "clean"
+
+	// CmdUI is the full-screen dashboard command.
+	CmdUI = "ui"
+
+	// DashboardNarrowWidth is the terminal width under which the dashboard drops
+	// the side-by-side detail panel for a list-only view, detail on a key.
+	DashboardNarrowWidth = 100
+	// DashboardPollSeconds paces the local-git poll. `gh` is never polled: PRs load
+	// once asynchronously and refresh only on KeyRefresh.
+	DashboardPollSeconds = 3
+
+	DashboardListWidthPercent = 40
+	DashboardMinListWidth     = 24
+	DashboardMinDetailWidth   = 32
+	DashboardOutputBodyHeight = 8
+	// DashboardChromeHeight is what a panel spends on chrome: its two border rows
+	// plus its title row. DashboardTitleGap is the blank line under that title —
+	// a panel whose body starts against its title reads as one block.
+	DashboardChromeHeight = 3
+	DashboardTitleGap     = 1
+
+	// DashboardHeaderHeight is the top bar: the wordmark and its tabs, then the
+	// rule that underlines the active one.
+	DashboardHeaderHeight = 2
+
+	// DashboardRowHeight is how many lines one worktree takes — its name, then
+	// what its state amounts to — and DashboardRowGap the blank line between two.
+	DashboardRowHeight = 2
+	DashboardRowGap    = 1
+
+	// DashboardMsgBuffer sizes the channel the running flows post on. It only has
+	// to absorb a burst of hook output between two frames.
+	DashboardMsgBuffer = 256
+
+	// DashboardModalChrome is what a modal box spends on its two border rows.
+	DashboardModalChrome       = 2
+	DashboardModalWidthPercent = 60
+	DashboardModalMinWidth     = 40
+	DashboardModalMaxWidth     = 88
+
+	// DashboardWordmark names the product in the header bar.
+	DashboardWordmark    = "wtm"
+	DashboardCountFmt    = "%d worktrees"
+	DashboardCountOneFmt = "%d worktree"
+	// DashboardRuleGlyph carries the header rule, DashboardActiveRuleGlyph the
+	// heavier segment under the active tab.
+	DashboardRuleGlyph       = "─"
+	DashboardActiveRuleGlyph = "━"
+
+	DashboardTabWorktrees = "Worktrees"
+	DashboardListTitle    = "Worktrees"
+	DashboardDetailTitle  = "Detail"
+	DashboardOutputTitle  = "Output"
+
+	DashboardEmptyList      = "No worktrees."
+	DashboardEmptySelection = "No worktree selected."
+	DashboardEmptyOutput    = "No operation output yet."
+	DashboardLoadingPRs     = "loading PRs…"
+	DashboardNoPR           = "none"
+	DashboardNoValue        = "—"
+	// DashboardCreatedFormat renders a worktree's creation date in local time.
+	DashboardCreatedFormat = "2006-01-02 15:04"
+
+	// The detail panel groups its fields under these headings.
+	DashboardSectionWorktree   = "WORKTREE"
+	DashboardSectionDivergence = "DIVERGENCE"
+	DashboardSectionReview     = "REVIEW"
+	// DashboardPRFmt renders a pull request as number, title and state.
+	DashboardPRFmt = "#%d %s (%s)"
+
+	DashboardLabelPath    = "Path"
+	DashboardLabelParent  = "Parent"
+	DashboardLabelState   = "State"
+	DashboardLabelBase    = "Base"
+	DashboardLabelOrigin  = "Origin"
+	DashboardLabelRebase  = "Rebase"
+	DashboardLabelPR      = "PR"
+	DashboardLabelCreated = "Created"
+
+	DashboardRebaseInProgress = "in progress"
+	DashboardUpToDate         = "up to date"
+	DashboardUnknownParent    = "unknown"
+
+	DashboardHelpWide   = "↑↓ select · n new · m actions · tab view · o output · shift+↑↓ scroll output · r refresh · ? help · q quit"
+	DashboardHelpNarrow = "↑↓ select · enter detail · n new · m actions · o output · r refresh · ? help · q quit"
+	DashboardHelpDetail = "esc back · ↑↓ select · o output · r refresh · q quit"
+
+	// DashboardHelpTitle heads the key/mouse reference overlay. Every clickable
+	// zone is listed there with its keyboard equivalent.
+	DashboardHelpTitle = "Keys & mouse"
+
+	// DashboardAddLabel is the list panel's header button, KeyNew its keyboard
+	// equivalent. The long form is used wherever the panel is wide enough.
+	DashboardAddLabel     = "+ New"
+	DashboardAddLabelLong = "+ New worktree"
+
+	// DashboardMetaFromPrefix, DashboardMetaSeparator and DashboardMetaNothing
+	// make up the second line of a worktree row.
+	DashboardMetaFromPrefix = "from "
+	DashboardMetaSeparator  = " · "
+	DashboardMetaNothing    = "—"
+	// DashboardMenuTitle heads the per-worktree context menu and
+	// DashboardMenuDelete is its only entry for now.
+	DashboardMenuDelete = "Delete worktree"
+	// DashboardMenuEmpty stands in for the actions of a worktree that has none.
+	DashboardMenuEmpty = "No actions available"
+	// DashboardMenuChrome is what the menu box spends on its borders and padding.
+	DashboardMenuChrome = 4
+
+	DashboardCreateTitle = "New worktree"
+	DashboardDeleteTitle = "Delete worktree"
+
+	// DashboardBlockersTitle heads the refusals a removal must have lifted, one by
+	// one — the dashboard never offers a blanket bypass.
+	DashboardBlockersTitle = "Lift every refusal to enable the deletion:"
+	DashboardBlockedSuffix = " — lift the refusals above"
+	DashboardConfirmLabel  = "Confirm"
+	// DashboardButtonFmt brackets an action so it reads as one without needing a
+	// block of color behind it.
+	DashboardButtonFmt = "[ %s ]"
+
+	DashboardGlyphChoiceOn  = "◉"
+	DashboardGlyphChoiceOff = "○"
+	DashboardGlyphCheckOn   = "[x]"
+	DashboardGlyphCheckOff  = "[ ]"
+
+	DashboardModalPreparing  = "Preparing…"
+	DashboardStepperHint     = "↑↓ move · / filter · enter confirm · esc back"
+	DashboardStepperTextHint = "enter confirm · esc back"
+	DashboardStepperRowsHint = "↑↓ move · enter confirm · esc back"
+	DashboardFormHint        = "↑↓ move · space toggle · enter confirm · esc cancel"
+	DashboardConfirmHint     = "↑↓ move · enter confirm · esc cancel"
+
+	// DashboardUnsupportedStepFmt refuses a step kind no modal can draw, rather
+	// than guessing a widget for it (step key, kind).
+	DashboardUnsupportedStepFmt = "dashboard: step %q has no renderer for kind %d"
+
+	// DashboardBusyFmt refuses an action on a worktree a background run still
+	// holds (branch, running operation).
+	DashboardBusyFmt = "%s is busy: a %s is still running on it"
+	// DashboardBusyCaptionFmt is the same fact under a menu entry (operation).
+	DashboardBusyCaptionFmt = "a %s is running on it"
+	// DashboardBlockedByFmt refuses to start anything while a blocking run owns
+	// the dashboard (running operation).
+	DashboardBlockedByFmt = "A %s is running — wait for it to finish"
+	// DashboardStartedFmt, DashboardFinishedFmt and DashboardFailedFmt bracket a
+	// run in the output panel (operation, target).
+	DashboardStartedFmt  = "▸ %s %s"
+	DashboardFinishedFmt = "✓ %s %s"
+	DashboardFailedFmt   = "✗ %s: %s"
+	// DashboardPrivilegedHintFmt names the way out of a removal the dashboard
+	// cannot finish: sudo prompts on the terminal the dashboard is holding.
+	DashboardPrivilegedHintFmt = "  run `wtm clean %s --force` in a terminal to remove it with sudo"
+	// DashboardOperationLabel names a failed run in the output panel when the
+	// failure is the run itself rather than one of its phases.
+	DashboardOperationLabel = "operation"
+
+	// KeyNew opens the new-worktree wizard, the keyboard equivalent of the list
+	// header's add button.
+	KeyNew = "n"
+	// KeyMenu opens the selected worktree's context menu. It is not a shortcut for
+	// the right click but its equal: terminals that hand the right button to a
+	// paste action never deliver it.
+	KeyMenu = "m"
+	// KeyToggleOutput folds and unfolds the bottom output panel, the keyboard
+	// equivalent of clicking its header.
+	KeyToggleOutput = "o"
+	// KeyHelp toggles the key reference overlay.
+	KeyHelp = "?"
+	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so
+	// a persistent dashboard is never left by accident.
+	KeyQuit = "q"
 )
 
 // EnvTemplateSuffixes are the committed-schema template suffixes recognized on a

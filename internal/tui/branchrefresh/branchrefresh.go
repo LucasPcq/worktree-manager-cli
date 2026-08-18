@@ -20,9 +20,14 @@ type RefreshedMsg struct {
 
 // Cmd fetches origin and recomputes the branch candidates off the UI thread.
 func Cmd(projectDir string) tea.Cmd {
-	return func() tea.Msg {
-		return RefreshedMsg{Candidates: branch.Refresh(branch.ListParams{ProjectDir: projectDir})}
-	}
+	return CmdFunc(func() []domain.BranchCandidate {
+		return branch.Refresh(branch.ListParams{ProjectDir: projectDir})
+	})
+}
+
+// CmdFunc is Cmd for a caller that already holds the fetch itself.
+func CmdFunc(fetch func() []domain.BranchCandidate) tea.Cmd {
+	return func() tea.Msg { return RefreshedMsg{Candidates: fetch()} }
 }
 
 // HandleParams holds inputs for Handle.
@@ -30,21 +35,39 @@ type HandleParams struct {
 	Wizard     *components.WizardModel
 	Msg        tea.Msg
 	ProjectDir string
+	// Fetch takes precedence over ProjectDir.
+	Fetch func() []domain.BranchCandidate
 	// Holder is the candidate slice the branch steps' Build hooks read from; Handle
 	// overwrites it with the fresh candidates before rebuilding the current step.
 	Holder *[]domain.BranchCandidate
+}
+
+func (p HandleParams) fetch() func() []domain.BranchCandidate {
+	if p.Fetch != nil {
+		return p.Fetch
+	}
+	return func() []domain.BranchCandidate {
+		return branch.Refresh(branch.ListParams{ProjectDir: p.ProjectDir})
+	}
 }
 
 // Handler returns a wizard message handler that wires the refresh key/message for
 // a picker whose branch steps read from holder. Pickers that also handle async
 // messages chain it first — it returns handled=false for messages it does not own.
 func Handler(projectDir string, holder *[]domain.BranchCandidate) components.WizardMsgHandler {
+	return HandlerFunc(func() []domain.BranchCandidate {
+		return branch.Refresh(branch.ListParams{ProjectDir: projectDir})
+	}, holder)
+}
+
+// HandlerFunc is Handler for a caller that already holds the fetch itself.
+func HandlerFunc(fetch func() []domain.BranchCandidate, holder *[]domain.BranchCandidate) components.WizardMsgHandler {
 	return func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
 		return Handle(HandleParams{
-			Wizard:     w,
-			Msg:        msg,
-			ProjectDir: projectDir,
-			Holder:     holder,
+			Wizard: w,
+			Msg:    msg,
+			Fetch:  fetch,
+			Holder: holder,
 		})
 	}
 }
@@ -64,7 +87,7 @@ func Handle(params HandleParams) (tea.Cmd, bool) {
 		if !ok || sl.Filtering() {
 			return nil, false
 		}
-		return tea.Batch(w.StartLoading(domain.LoadingBranchesText), Cmd(params.ProjectDir)), true
+		return tea.Batch(w.StartLoading(domain.LoadingBranchesText), CmdFunc(params.fetch())), true
 	}
 
 	if msg, ok := params.Msg.(RefreshedMsg); ok {

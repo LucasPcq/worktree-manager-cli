@@ -34,4 +34,5 @@ wtm [flags]
 * [wtm switch](wtm_switch.md)	 - Navigate to a worktree and start its services
 * [wtm sync](wtm_sync.md)	 - Rebase selected worktrees onto their parent, in cascade
 * [wtm tree](wtm_tree.md)	 - Show the worktree forest (parent → child)
+* [wtm ui](wtm_ui.md)	 - Open the worktree dashboard
 

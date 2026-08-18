@@ -148,6 +148,7 @@ func RunCreateHooks(params domain.CreateHooksParams) error {
 			Root:       mainPath,
 			FromBranch: params.FromBranch,
 		},
+		Output: params.Output,
 	}); err != nil {
 		return fmt.Errorf("on_create hooks: %w", err)
 	}
