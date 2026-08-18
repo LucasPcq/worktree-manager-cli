@@ -108,3 +108,20 @@ func resolveWorktree(worktrees []domain.GitWorktree, query string) domain.Resolv
 	}
 	return domain.ResolveResult{}
 }
+
+// FindByBranchParams holds inputs for FindByBranch.
+type FindByBranchParams struct {
+	ProjectDir string
+	Branch     string
+}
+
+// FindByBranch returns the worktree checking out an exact branch name. Unlike
+// Resolve it never matches a substring: a caller that already holds a branch name
+// (a flag, a picked row) must not land on a different worktree. Returns
+// domain.ErrWorktreeNotFound when no worktree holds the branch.
+func FindByBranch(params FindByBranchParams) (domain.GitWorktree, error) {
+	return infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
+		ProjectDir: params.ProjectDir,
+		Branch:     params.Branch,
+	})
+}

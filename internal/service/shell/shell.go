@@ -28,3 +28,15 @@ func DetectShell() domain.ShellType {
 		return domain.ShellZsh
 	}
 }
+
+// RequestCd asks the shell wrapper to cd into dir once the command exits, through
+// the WTM_GO_FILE bridge (see `wtm shell-init`). A no-op without the bridge, so a
+// caller can always ask. Errors are ignored: the directory change is a
+// convenience, never the point of the command.
+func RequestCd(dir string) {
+	goFile := os.Getenv(domain.EnvGoFile)
+	if goFile == "" {
+		return
+	}
+	_ = os.WriteFile(goFile, []byte(dir), 0o644)
+}

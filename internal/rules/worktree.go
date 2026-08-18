@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"sort"
@@ -95,4 +96,20 @@ func FilterStatusesByMatches(statuses []domain.WorktreeStatus, matches []domain.
 		}
 	}
 	return out
+}
+
+// CleanUnsafeReason reports why a worktree is unsafe to remove without --force,
+// wording the reason for the refusal. The order is the one a user acts on first:
+// uncommitted work, then unpushed commits, then an open pull request.
+func CleanUnsafeReason(check domain.CleanCheckResult) (string, bool) {
+	if check.IsDirty {
+		return domain.CleanUnsafeDirty, true
+	}
+	if check.UnpushedCommits > 0 {
+		return fmt.Sprintf(domain.CleanUnsafeUnpushedFmt, check.UnpushedCommits), true
+	}
+	if check.HasOpenPR {
+		return domain.CleanUnsafeOpenPR, true
+	}
+	return "", false
 }

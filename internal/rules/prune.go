@@ -154,7 +154,7 @@ type pruneUnsafeParams struct {
 }
 
 // pruneUnsafeReason reports why a worktree is unsafe to remove without --force,
-// mirroring clean's cleanUnsafeReason precedence (dirty → unpushed → open PR).
+// mirroring CleanUnsafeReason's precedence (dirty → unpushed → open PR).
 // An empty string means the worktree is safe to prune.
 func pruneUnsafeReason(params pruneUnsafeParams) string {
 	if params.Status.IsDirty {

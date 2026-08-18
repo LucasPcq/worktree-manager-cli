@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"io"
+	"time"
+)
 
 // Worktree represents a git worktree managed by wtm.
 type Worktree struct {
@@ -110,6 +113,9 @@ type CreateHooksParams struct {
 	Branch       string
 	FromBranch   string
 	Hooks        []HookCommand
+	// Output is where the hooks stream their output, line by line as it is
+	// produced. Nil keeps the engine's default (stderr).
+	Output io.Writer
 }
 
 // CreateResult holds the output of a successful worktree creation.
@@ -154,6 +160,9 @@ type CleanHooksParams struct {
 	WorktreePath string
 	Branch       string
 	Hooks        []HookCommand
+	// Output is where the hooks stream their output, line by line as it is
+	// produced. Nil keeps the engine's default (stderr).
+	Output io.Writer
 }
 
 // ForceCleanParams holds inputs for the forced worktree recovery: delete the
