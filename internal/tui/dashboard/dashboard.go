@@ -77,6 +77,9 @@ type Model struct {
 
 	menuOpen   bool
 	menuCursor int
+	// menuAnchor is the cell the context menu hangs from: the click, or the
+	// selected row when the keyboard opened it.
+	menuAnchor domain.Rect
 
 	// msgs carries what the flow goroutines post; listenCmd is its only reader.
 	msgs  chan tea.Msg
@@ -338,7 +341,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyNew:
 		return m.startCreate()
 	case keyMenu:
-		return m.openMenu(), nil
+		return m.openMenu(m.selectedRowPoint()), nil
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded
 		return m.reflow(), nil
@@ -388,6 +391,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.modal.open {
 		return m.modalMouse(msg)
 	}
+	if m.menuOpen {
+		return m.menuMouse(msg)
+	}
 
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
@@ -404,15 +410,6 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.Button != tea.MouseButtonLeft {
 		return m, nil
-	}
-
-	if m.menuOpen {
-		for index := range m.menuItems() {
-			if m.inZone(menuZone(index), msg) {
-				return m.activateMenu(index)
-			}
-		}
-		m = m.closeMenu()
 	}
 
 	for index := range tabs {
@@ -445,6 +442,23 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// menuMouse gives the menu the mouse while it is up: an entry activates, and
+// anything else — a click beside it, the wheel, the right button again —
+// dismisses it and does nothing more, as a context menu does everywhere.
+func (m Model) menuMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	if msg.Button == tea.MouseButtonLeft {
+		for index := range m.menuItems() {
+			if m.inZone(menuZone(index), msg) {
+				return m.activateMenu(index)
+			}
+		}
+	}
+	return m.closeMenu(), nil
+}
+
 // rightClick opens the context menu on the row it lands on, selecting it first:
 // a menu that acted on another row than the one under the pointer would be a trap.
 func (m Model) rightClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
@@ -453,7 +467,7 @@ func (m Model) rightClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			continue
 		}
 		m.cursor = index
-		return m.reflow().openMenu(), nil
+		return m.reflow().openMenu(domain.Rect{X: msg.X, Y: msg.Y}), nil
 	}
 	return m, nil
 }
@@ -492,9 +506,6 @@ func (m Model) View() string {
 	if m.showHelp {
 		return m.renderHelpOverlay()
 	}
-	if m.modal.open {
-		return m.zones.Scan(m.modal.view(m.zones))
-	}
 
 	layout := m.layout()
 	body := ""
@@ -516,5 +527,19 @@ func (m Model) View() string {
 		}
 	}
 
-	return m.zones.Scan(lipgloss.JoinVertical(lipgloss.Left, sections...))
+	return m.zones.Scan(m.withOverlays(lipgloss.JoinVertical(lipgloss.Left, sections...)))
+}
+
+// withOverlays pastes whatever is open over the frame. Only one of the two ever
+// is: a modal takes the keyboard, and it is opened from the menu, which closes.
+func (m Model) withOverlays(frame string) string {
+	if m.modal.open {
+		box, rect := m.modal.box(m.zones)
+		return overlay(overlayParams{Base: frame, Box: box, At: rect})
+	}
+	if m.menuOpen {
+		box, rect := m.menuBox()
+		return overlay(overlayParams{Base: frame, Box: box, At: rect})
+	}
+	return frame
 }

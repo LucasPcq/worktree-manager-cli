@@ -64,6 +64,15 @@ var (
 	DashboardDanger   = lipgloss.NewStyle().Foreground(ColorDanger).Bold(true)
 	DashboardDisabled = lipgloss.NewStyle().Foreground(ColorMuted).Italic(true)
 
+	// DashboardMenu frames the floating context menu, DashboardMenuTitle names
+	// the worktree it acts on.
+	DashboardMenu = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorPrimary).
+			Padding(0, 1)
+
+	DashboardMenuTitle = lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)
+
 	// DashboardAddButton is the list panel's header button.
 	DashboardAddButton = lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true)
 )

@@ -43,10 +43,10 @@ func (m Model) renderPanel(params panelParams) string {
 	if rightWidth := lipgloss.Width(params.TitleRight); params.TitleRight != "" && rightWidth+1 < textWidth {
 		left := styles.DashboardPanelTitle.Render(truncate(params.Title, textWidth-rightWidth-1))
 		gap := textWidth - lipgloss.Width(left) - rightWidth
-		title = left + strings.Repeat(" ", max(gap, 0)) + m.zones.Mark(params.TitleRightZone, params.TitleRight)
+		title = left + strings.Repeat(" ", max(gap, 0)) + m.marks().Mark(params.TitleRightZone, params.TitleRight)
 	}
 	if params.TitleZone != "" {
-		title = m.zones.Mark(params.TitleZone, title)
+		title = m.marks().Mark(params.TitleZone, title)
 	}
 
 	lines := append([]string{title}, params.Body...)
@@ -59,7 +59,7 @@ func (m Model) renderPanel(params panelParams) string {
 		Height(contentHeight).
 		Render(strings.Join(lines, "\n"))
 
-	return m.zones.Mark(params.Zone, box)
+	return m.marks().Mark(params.Zone, box)
 }
 
 // renderTabs drops whole tabs that do not fit rather than trimming the bar: a
@@ -77,7 +77,7 @@ func (m Model) renderTabs(layout domain.DashboardLayout) string {
 			break
 		}
 		used += lipgloss.Width(tab)
-		rendered = append(rendered, m.zones.Mark(tabZone(index), tab))
+		rendered = append(rendered, m.marks().Mark(tabZone(index), tab))
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
 }

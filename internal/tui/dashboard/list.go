@@ -36,10 +36,7 @@ func (m Model) listBody(layout domain.DashboardLayout) []string {
 	end := min(m.offset+layout.ListRows, len(m.statuses))
 	rows := make([]string, 0, max(end-m.offset, 0))
 	for index := m.offset; index < end; index++ {
-		rows = append(rows, m.zones.Mark(rowZone(index), m.renderRow(index, width)))
-		if m.menuOpen && index == m.cursor {
-			rows = append(rows, m.menuRows(width)...)
-		}
+		rows = append(rows, m.marks().Mark(rowZone(index), m.renderRow(index, width)))
 	}
 	return rows
 }

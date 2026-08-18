@@ -786,11 +786,10 @@ const (
 	// DashboardMenuTitle heads the per-worktree context menu and
 	// DashboardMenuDelete is its only entry for now.
 	DashboardMenuDelete = "Delete worktree…"
-	// DashboardMenuGlyph and DashboardMenuLastGlyph hang the menu off the row it
-	// acts on, DashboardMenuDisabledMark says an entry cannot be used.
-	DashboardMenuGlyph        = "  ├ "
-	DashboardMenuLastGlyph    = "  └ "
-	DashboardMenuDisabledMark = " ✗"
+	// DashboardMenuDisabledMark says an entry cannot be used right now.
+	DashboardMenuDisabledMark = "  ✗"
+	// DashboardMenuChrome is what the menu box spends on its borders and padding.
+	DashboardMenuChrome = 4
 
 	DashboardCreateTitle = "New worktree"
 	DashboardDeleteTitle = "Delete worktree"

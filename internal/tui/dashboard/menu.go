@@ -1,7 +1,10 @@
 package dashboard
 
 import (
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
@@ -33,15 +36,25 @@ func (m Model) menuItems() []menuItem {
 	return []menuItem{item}
 }
 
-// openMenu anchors the menu on a worktree row. The right button is not always
-// delivered — some terminals keep it for their own paste — so KeyMenu opens the
-// very same menu on the selected row.
-func (m Model) openMenu() Model {
+// openMenu hangs the menu off a cell. The right button is not always delivered —
+// some terminals keep it for their own paste — so KeyMenu opens the very same
+// menu on the selected row.
+func (m Model) openMenu(anchor domain.Rect) Model {
 	if _, ok := m.selected(); !ok {
 		return m
 	}
-	m.menuOpen, m.menuCursor = true, 0
+	m.menuOpen, m.menuCursor, m.menuAnchor = true, 0, anchor
 	return m
+}
+
+// selectedRowPoint is where the selected row sits on screen, so the keyboard
+// opens the menu where the mouse would have.
+func (m Model) selectedRowPoint() domain.Rect {
+	layout := m.layout()
+	return domain.Rect{
+		X: layout.List.X + borderWidth,
+		Y: layout.List.Y + domain.DashboardChromeHeight - 1 + m.cursor - m.offset,
+	}
 }
 
 func (m Model) closeMenu() Model {
@@ -76,24 +89,63 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// menuRows draws the menu as a dropdown hanging off its row, inside the list
-// panel: an overlay would have to cut through the rows it covers, and every zone
-// marked in them with it.
-func (m Model) menuRows(width int) []string {
+// menuBox draws the context menu as a floating box: it is anchored on the cell it
+// was opened from, and overlay() pastes it over the frame.
+func (m Model) menuBox() (string, domain.Rect) {
+	selected, ok := m.selected()
+	if !ok {
+		return "", domain.Rect{}
+	}
+
 	items := m.menuItems()
-	rows := make([]string, 0, len(items))
+	inner := menuInnerWidth(menuInnerWidthParams{Items: items, Title: selected.Branch, Screen: m.width})
+	if inner <= 0 {
+		return "", domain.Rect{}
+	}
+
+	lines := make([]string, 0, len(items)+1)
+	lines = append(lines, styles.DashboardMenuTitle.Render(pad(truncate(selected.Branch, inner), inner)))
 	for index, item := range items {
-		label := menuBranchGlyph(index, len(items)) + item.label
-		if item.disabled != "" {
-			label += domain.DashboardMenuDisabledMark
-		}
-		rows = append(rows, m.zones.Mark(menuZone(index), styleMenuRow(menuRowParams{
-			Text:     truncate(label, width),
+		lines = append(lines, m.zones.Mark(menuZone(index), styleMenuRow(menuRowParams{
+			Text:     pad(truncate(menuLabel(item), inner), inner),
 			Focused:  index == m.menuCursor,
 			Disabled: item.disabled != "",
 		})))
 	}
-	return rows
+
+	box := styles.DashboardMenu.Render(strings.Join(lines, "\n"))
+	rect := rules.ComputeMenuRect(rules.MenuRectParams{
+		AnchorX:      m.menuAnchor.X,
+		AnchorY:      m.menuAnchor.Y,
+		Width:        lipgloss.Width(box),
+		Height:       lipgloss.Height(box),
+		ScreenWidth:  m.width,
+		ScreenHeight: m.height,
+	})
+	return box, rect
+}
+
+type menuInnerWidthParams struct {
+	Items  []menuItem
+	Title  string
+	Screen int
+}
+
+// menuInnerWidth sizes the menu on its longest line, then keeps it inside the
+// screen: the box is pasted whole, so it must never need trimming.
+func menuInnerWidth(params menuInnerWidthParams) int {
+	inner := lipgloss.Width(params.Title)
+	for _, item := range params.Items {
+		inner = max(inner, lipgloss.Width(menuLabel(item)))
+	}
+	return min(inner, params.Screen-domain.DashboardMenuChrome)
+}
+
+func menuLabel(item menuItem) string {
+	if item.disabled != "" {
+		return item.label + domain.DashboardMenuDisabledMark
+	}
+	return item.label
 }
 
 type menuRowParams struct {
@@ -110,11 +162,4 @@ func styleMenuRow(params menuRowParams) string {
 		return styles.DashboardRowFocused.Render(params.Text)
 	}
 	return styles.DashboardRow.Render(params.Text)
-}
-
-func menuBranchGlyph(index, total int) string {
-	if index == total-1 {
-		return domain.DashboardMenuLastGlyph
-	}
-	return domain.DashboardMenuGlyph
 }

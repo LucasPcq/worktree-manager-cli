@@ -94,6 +94,37 @@ func ComputeModalRect(params ModalRectParams) domain.Rect {
 	}
 }
 
+type MenuRectParams struct {
+	// AnchorX and AnchorY are the cell the menu was opened from: the click, or
+	// the row the keyboard is on.
+	AnchorX int
+	AnchorY int
+	// Width and Height are the box's outer size, borders included.
+	Width        int
+	Height       int
+	ScreenWidth  int
+	ScreenHeight int
+}
+
+// ComputeMenuRect places a context menu next to the cell it was opened from. It
+// hangs below the anchor and flips above it rather than running off the bottom,
+// which is what every other context menu does — and, like the panels, it is the
+// one reference the renderer draws from and the entries are clickable in.
+func ComputeMenuRect(params MenuRectParams) domain.Rect {
+	width := min(params.Width, params.ScreenWidth)
+	height := min(params.Height, params.ScreenHeight)
+
+	x := max(min(params.AnchorX, params.ScreenWidth-width), 0)
+
+	y := params.AnchorY + 1
+	if y+height > params.ScreenHeight {
+		y = params.AnchorY - height
+	}
+	y = max(min(y, params.ScreenHeight-height), 0)
+
+	return domain.Rect{X: x, Y: y, Width: max(width, 0), Height: max(height, 0)}
+}
+
 // ModalWidth is the width a modal gets on a screen, before its content is known:
 // its widgets need it to lay themselves out.
 func ModalWidth(screenWidth int) int {

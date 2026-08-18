@@ -177,3 +177,54 @@ func TestDashboardScrollOffsetToleratesAnOutOfRangeCursor(t *testing.T) {
 		t.Errorf("offset = %d, want %d — a stale cursor must not scroll past the end", got, want)
 	}
 }
+
+func TestComputeMenuRectHangsUnderItsAnchor(t *testing.T) {
+	rect := ComputeMenuRect(MenuRectParams{
+		AnchorX: 10, AnchorY: 5,
+		Width: 20, Height: 4,
+		ScreenWidth: 120, ScreenHeight: 40,
+	})
+
+	if rect.X != 10 || rect.Y != 6 {
+		t.Errorf("menu at (%d,%d), want it just under the cell it was opened from", rect.X, rect.Y)
+	}
+}
+
+func TestComputeMenuRectFlipsAboveTheAnchorAtTheBottom(t *testing.T) {
+	rect := ComputeMenuRect(MenuRectParams{
+		AnchorX: 4, AnchorY: 38,
+		Width: 20, Height: 4,
+		ScreenWidth: 120, ScreenHeight: 40,
+	})
+
+	if rect.Y+rect.Height > 40 {
+		t.Errorf("menu runs to y=%d, past the screen", rect.Y+rect.Height)
+	}
+	if rect.Y >= 38 {
+		t.Errorf("menu at y=%d, want it flipped above the anchor", rect.Y)
+	}
+}
+
+func TestComputeMenuRectStaysInsideTheRightEdge(t *testing.T) {
+	rect := ComputeMenuRect(MenuRectParams{
+		AnchorX: 115, AnchorY: 2,
+		Width: 20, Height: 4,
+		ScreenWidth: 120, ScreenHeight: 40,
+	})
+
+	if rect.X+rect.Width > 120 {
+		t.Errorf("menu spans to x=%d, past the right edge", rect.X+rect.Width)
+	}
+}
+
+func TestComputeMenuRectSurvivesAScreenSmallerThanTheMenu(t *testing.T) {
+	rect := ComputeMenuRect(MenuRectParams{
+		AnchorX: 2, AnchorY: 2,
+		Width: 40, Height: 10,
+		ScreenWidth: 20, ScreenHeight: 6,
+	})
+
+	if rect.X < 0 || rect.Y < 0 || rect.X+rect.Width > 20 || rect.Y+rect.Height > 6 {
+		t.Errorf("menu = %+v, want it clamped inside a 20x6 screen", rect)
+	}
+}

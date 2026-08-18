@@ -9,6 +9,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 const (
@@ -253,4 +254,55 @@ func arrowFor(delta int) tea.KeyType {
 		return tea.KeyUp
 	}
 	return tea.KeyDown
+}
+
+// The modal is pasted at the rect the rule computes, so a row's cell is derived
+// from that rect and the box's composition (border, then title and its blank
+// line), never read back from the zone manager.
+func formRowPoint(t *testing.T, model Model, index int) (x, y int) {
+	t.Helper()
+	rect := rules.ComputeModalRect(rules.ModalRectParams{
+		ScreenWidth:   testWidth,
+		ScreenHeight:  testHeight,
+		ContentHeight: len(model.modal.body(m0zones{})),
+	})
+	return rect.X + modalBorder + modalPadding/2, rect.Y + modalBorder + modalHeaderRows + index
+}
+
+const (
+	modalBorder     = 1
+	modalHeaderRows = 2
+)
+
+func TestClickingARefusalLiftsThatOneOnly(t *testing.T) {
+	model, _ := openDeleteForm(t, deleteSession(dirtyAndUnpushed()...))
+	blockers := blockerIndexes(model)
+	renderAndWait(t, model, modalRowZone(blockers[0]))
+
+	x, y := formRowPoint(t, model, blockers[0])
+	model = update(model, click(x, y))
+
+	if !model.modal.lifted[domain.CleanBlockerDirty] {
+		t.Fatalf("clicking (%d,%d) lifted %v, want the row it landed on", x, y, model.modal.lifted)
+	}
+	if model.modal.lifted[domain.CleanBlockerUnpushed] {
+		t.Error("one click must lift one refusal, never the rest with it")
+	}
+	if model.modal.blockersLifted() {
+		t.Error("the deletion must stay inert while a refusal stands")
+	}
+}
+
+func TestClickingCancelClosesTheForm(t *testing.T) {
+	model, reply := openDeleteForm(t, deleteSession())
+	cancel := rowIndex(t, model, func(row formRow) bool { return row.kind == formButton && !row.confirm })
+	renderAndWait(t, model, modalRowZone(cancel))
+
+	x, y := formRowPoint(t, model, cancel)
+	model, cmd := updateCmd(model, click(x, y))
+	pump(t, model, cmd)
+
+	if answered := waitReply(t, reply); !errors.Is(answered.err, domain.ErrUserAborted) {
+		t.Errorf("err = %v, want the run aborted", answered.err)
+	}
 }

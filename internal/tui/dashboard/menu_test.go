@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -90,31 +91,66 @@ func TestEscClosesTheMenuAndOtherKeysFallThrough(t *testing.T) {
 	}
 }
 
-func TestTheMenuEntriesHangUnderTheirOwnRow(t *testing.T) {
-	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
-	model = update(model, key("j"))
-	model = update(model, key(domain.KeyMenu))
-	renderAndWait(t, model, menuZone(0), rowZone(2))
-
-	entry := model.zones.Get(menuZone(0))
-	if want := firstRowY + 2; entry.StartY != want {
-		t.Errorf("the first entry sits at y=%d, want %d — right under the row it acts on", entry.StartY, want)
+// menuEntryPoint is where entry i is drawn, derived from the placement rule and
+// the box's own composition (border row, then the title naming the worktree).
+func menuEntryPoint(t *testing.T, model Model, index int) (x, y int) {
+	t.Helper()
+	box, rect := model.menuBox()
+	if box == "" {
+		t.Fatal("the menu has nothing to draw")
 	}
-	if row := model.zones.Get(rowZone(2)); row.StartY != firstRowY+3 {
-		t.Errorf("row 2 sits at y=%d, want %d — the dropdown pushes it down", row.StartY, firstRowY+3)
-	}
-	if entry.EndX > model.layout().List.Width {
-		t.Errorf("the entry reaches x=%d, past the list panel", entry.EndX)
-	}
+	return rect.X + menuBorder + menuPadding, rect.Y + menuBorder + menuTitleRows + index
 }
 
-func TestClickingTheDeleteEntryStartsTheRemoval(t *testing.T) {
+const (
+	menuBorder    = 1
+	menuPadding   = 1
+	menuTitleRows = 1
+)
+
+func TestTheMenuFloatsUnderTheCellItWasOpenedFrom(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
 	model = update(model, key("j"))
 	model = update(model, key(domain.KeyMenu))
 	renderAndWait(t, model, menuZone(0))
 
-	clicked, cmd := updateCmd(model, click(rowTextX+4, firstRowY+2))
+	_, rect := model.menuBox()
+	if rect.Y != model.menuAnchor.Y+1 {
+		t.Errorf("the menu sits at y=%d, want it hanging just under its row (%d)", rect.Y, model.menuAnchor.Y+1)
+	}
+	if want := firstRowY + 1; model.menuAnchor.Y != want {
+		t.Errorf("the keyboard anchored the menu at y=%d, want the selected row %d", model.menuAnchor.Y, want)
+	}
+
+	entry := model.zones.Get(menuZone(0))
+	wantX, wantY := menuEntryPoint(t, model, 0)
+	if entry.StartY != wantY || entry.StartX != wantX {
+		t.Errorf("entry 0 starts at (%d,%d), want (%d,%d) — inside the box the rule placed",
+			entry.StartX, entry.StartY, wantX, wantY)
+	}
+}
+
+func TestTheMenuFlipsAboveTheAnchorRatherThanRunningOffTheBottom(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model = update(model, rightClick(rowTextX, testHeight-1))
+
+	box, rect := model.menuBox()
+	if rect.Y+lipgloss.Height(box) > testHeight {
+		t.Errorf("the menu runs to y=%d, past the last row %d", rect.Y+lipgloss.Height(box), testHeight)
+	}
+	if rect.Y >= testHeight-1 {
+		t.Errorf("the menu sits at y=%d, want it above an anchor on the last row", rect.Y)
+	}
+}
+
+func TestClickingAnEntryStartsTheRemoval(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
+	model = update(model, key("j"))
+	model = update(model, key(domain.KeyMenu))
+	renderAndWait(t, model, menuZone(0))
+	x, y := menuEntryPoint(t, model, 0)
+
+	clicked, cmd := updateCmd(model, click(x, y))
 
 	if cmd == nil {
 		t.Fatal("clicking Delete must start the removal")
@@ -138,23 +174,36 @@ func TestEnterOnTheDeleteEntryStartsTheSameRemoval(t *testing.T) {
 	}
 }
 
-// The menu pushes the rows under it down, so the row drawn one line below the
-// entry is the second one, not the third.
-func TestClickingOffTheMenuClosesItAndSelectsWhatWasDrawnThere(t *testing.T) {
+// The frame under an open menu carries no zone at all, so a click beside the menu
+// dismisses it and nothing else — which is what a context menu does everywhere.
+func TestClickingOffTheMenuOnlyClosesIt(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
+	renderAndWait(t, model, rowZone(2))
 	model = update(model, key(domain.KeyMenu))
-	renderAndWait(t, model, menuZone(0), rowZone(1))
+	renderAndWait(t, model, menuZone(0))
 
-	if row := model.zones.Get(rowZone(1)); row.StartY != firstRowY+2 {
-		t.Fatalf("row 1 sits at y=%d, want %d under the open menu", row.StartY, firstRowY+2)
-	}
-
+	// Right on a row of the frame, whose zone the last unobstructed frame left
+	// behind: the menu still swallows it.
 	model = update(model, click(rowTextX, firstRowY+2))
 
 	if model.menuOpen {
 		t.Fatal("a click elsewhere closes the menu")
 	}
-	if model.cursor != 1 {
-		t.Errorf("cursor = %d, want the row the click landed on", model.cursor)
+	if model.cursor != 0 {
+		t.Errorf("cursor = %d, want the dismissing click to have selected nothing", model.cursor)
+	}
+}
+
+func TestTheFrameIsNotClickableUnderAnOverlay(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
+	renderAndWait(t, model, rowZone(2), zoneAdd)
+
+	model = update(model, key(domain.KeyMenu))
+	model.View()
+
+	// Marking the frame under an overlay would mean cutting through its markers
+	// when the box is pasted over it, and losing the zones they carried.
+	if _, ok := model.marks().(noMarks); !ok {
+		t.Errorf("marks() = %T while the menu is open, want the frame left unmarked", model.marks())
 	}
 }

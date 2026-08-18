@@ -4,14 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 	"github.com/LucasPcq/wtm/internal/tui/components"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // modalPadding is the horizontal padding of the modal box, modalMargin the rows
@@ -360,7 +358,9 @@ func replyCmd(reply chan<- promptReply, answer promptReply) tea.Cmd {
 	}
 }
 
-func (mo modal) view(zones marker) string {
+// box renders the modal and says where it goes; View pastes it over the frame,
+// so the dashboard stays visible around the question.
+func (mo modal) box(zones marker) (string, domain.Rect) {
 	body := mo.body(zones)
 	rect := rules.ComputeModalRect(rules.ModalRectParams{
 		ScreenWidth:   mo.width,
@@ -368,18 +368,16 @@ func (mo modal) view(zones marker) string {
 		ContentHeight: len(body),
 	})
 	if rect.Width <= domain.DashboardModalChrome || rect.Height <= domain.DashboardModalChrome {
-		return ""
+		return "", domain.Rect{}
 	}
 
 	lines := body
 	if height := rect.Height - domain.DashboardModalChrome; len(lines) > height {
 		lines = lines[:height]
 	}
-	box := styles.DashboardModal.
+	return styles.DashboardModal.
 		Width(rect.Width - domain.DashboardModalChrome).
-		Render(strings.Join(lines, "\n"))
-
-	return lipgloss.NewStyle().MarginLeft(rect.X).MarginTop(rect.Y).Render(box)
+		Render(strings.Join(lines, "\n")), rect
 }
 
 func (mo modal) body(zones marker) []string {
