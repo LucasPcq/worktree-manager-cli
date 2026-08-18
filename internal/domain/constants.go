@@ -705,6 +705,68 @@ const (
 	PinnedSuffixDefault  = " (default)"
 	PinnedSuffixBase     = " (base)"
 	PinnedSuffixDetected = " (detected)"
+
+	// CmdUI is the full-screen dashboard command.
+	CmdUI = "ui"
+
+	// DashboardNarrowWidth is the terminal width under which the dashboard drops
+	// the side-by-side detail panel for a list-only view, detail on a key.
+	DashboardNarrowWidth = 100
+	// DashboardPollSeconds paces the local-git poll. `gh` is never polled: PRs load
+	// once asynchronously and refresh only on KeyRefresh.
+	DashboardPollSeconds = 3
+
+	DashboardListWidthPercent = 40
+	DashboardMinListWidth     = 24
+	DashboardMinDetailWidth   = 32
+	DashboardOutputBodyHeight = 8
+	// DashboardChromeHeight is what a panel spends on chrome: its two border rows
+	// plus its title row.
+	DashboardChromeHeight = 3
+
+	DashboardTabWorktrees = "Worktrees"
+	DashboardListTitle    = "Worktrees"
+	DashboardDetailTitle  = "Detail"
+	DashboardOutputTitle  = "Output"
+
+	DashboardEmptyList      = "No worktrees."
+	DashboardEmptySelection = "No worktree selected."
+	DashboardEmptyOutput    = "No operation output yet."
+	DashboardLoadingPRs     = "loading PRs…"
+	DashboardNoPR           = "none"
+	DashboardNoValue        = "—"
+	// DashboardCreatedFormat renders a worktree's creation date in local time.
+	DashboardCreatedFormat = "2006-01-02 15:04"
+
+	DashboardLabelPath    = "Path"
+	DashboardLabelParent  = "Parent"
+	DashboardLabelState   = "State"
+	DashboardLabelBase    = "Base"
+	DashboardLabelOrigin  = "Origin"
+	DashboardLabelRebase  = "Rebase"
+	DashboardLabelPR      = "PR"
+	DashboardLabelCreated = "Created"
+
+	DashboardRebaseInProgress = "in progress"
+	DashboardUpToDate         = "up to date"
+	DashboardUnknownParent    = "unknown"
+
+	DashboardHelpWide   = "↑↓ select · tab view · o output · shift+↑↓ scroll output · r refresh · ? help · q quit"
+	DashboardHelpNarrow = "↑↓ select · enter detail · tab view · o output · r refresh · ? help · q quit"
+	DashboardHelpDetail = "esc back · ↑↓ select · o output · r refresh · q quit"
+
+	// DashboardHelpTitle heads the key/mouse reference overlay. Every clickable
+	// zone is listed there with its keyboard equivalent.
+	DashboardHelpTitle = "Keys & mouse"
+
+	// KeyToggleOutput folds and unfolds the bottom output panel, the keyboard
+	// equivalent of clicking its header.
+	KeyToggleOutput = "o"
+	// KeyHelp toggles the key reference overlay.
+	KeyHelp = "?"
+	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so
+	// a persistent dashboard is never left by accident.
+	KeyQuit = "q"
 )
 
 // EnvTemplateSuffixes are the committed-schema template suffixes recognized on a
