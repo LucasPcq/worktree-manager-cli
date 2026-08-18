@@ -292,6 +292,50 @@ func runClean(cmd *cobra.Command, args []string) error {
   the flow's steps. If you are writing an `if !interactive` in a runner beyond the line
   above, the logic is in the wrong layer.
 
+The other half lives in `internal/flow/<cmd>/<cmd>.go`, and is always this shape:
+
+```go
+type Request struct {  // what the surface already knows — no --yes, no --output
+  Branch string
+  Force  bool          // only if the command has safety refusals to lift
+}
+
+type Outcome struct {  // data, never text
+  Branch  string
+  Result  domain.SplitResult
+  Aborted bool
+}
+
+type Presenter interface {
+  flow.Presenter       // Stage, HookPhase, Notice, Status
+  Split(Outcome) error // the typed conclusion, one per command
+}
+
+type Params struct {
+  Context   flow.Context
+  Request   Request
+  Prompter  flow.Prompter
+  Presenter Presenter
+}
+
+func Run(params Params) (Outcome, error) {
+  f := &splitFlow{ctx: params.Context, request: params.Request,
+    prompter: params.Prompter, presenter: params.Presenter}
+  return f.run()
+}
+
+// Only if a surface may run several at once (the dashboard enforces it, the CLI ignores it):
+func Operation() flow.Operation {
+  return flow.Operation{Kind: domain.OpKindSplit, Mode: flow.ModeBlocking, TargetKey: KeyBranch}
+}
+```
+
+Inside `run()`: guard clauses first, then `f.prompter.Ask(f.session())`, then the work —
+long work through `presenter.Stage`, hooks through `presenter.HookPhase`, a line inside a
+phase through `presenter.Status`. `domain.ErrUserAborted` from `Ask` becomes
+`presenter.Notice(flow.AbortedNotice)` + `Outcome{Aborted: true}, nil`. Every other error
+is **returned**; the flow never prints.
+
 ### State-dir resolution
 
 wtm stores all of its state under `<git-common-dir>/wtm/` (i.e. `.git/wtm/` for a normal clone), so nothing leaks into the user's working tree. Resolution helpers live in `internal/commands/shared/`:
