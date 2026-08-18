@@ -102,7 +102,7 @@ create's Bubbletea wizard as a sub-flow. They go with its migration (LUC-182).
 
 ## What is migrated, and what is not
 
-| Command | Déroulé lives in | Surfaces |
+| Command | Flow lives in | Surfaces |
 | -- | -- | -- |
 | `create` | `internal/flow/create` | CLI wizard, unattended, dashboard |
 | `clean` | `internal/flow/clean` | CLI wizard, unattended, dashboard |

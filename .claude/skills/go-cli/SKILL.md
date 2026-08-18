@@ -129,7 +129,7 @@ internal/
   domain/                     ← types, errors, constants only (no methods, no functions)
   rules/                      ← pure business rules (stdlib + domain only, no I/O)
   config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/
-  flow/                       ← THE DÉROULÉ of a command, surface-independent
+  flow/                       ← THE FLOW of a command, surface-independent
     decide/                   ←   branch/env decisions shared by the create-like flows
     create/                   ←   `wtm create`: the run (create.go) + its questions (steps.go)
     clean/                    ←   `wtm clean`: the run (clean.go) + its questions (steps.go)
