@@ -1,0 +1,69 @@
+package dashboard
+
+import (
+	"fmt"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow"
+	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
+	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+)
+
+// presenter is the dashboard half of flow.Presenter: every phase of a run lands
+// in the bottom output panel, one line at a time.
+type presenter struct {
+	send func(tea.Msg)
+}
+
+func (p presenter) line(text string) { p.send(OutputLineMsg{Text: text}) }
+
+func (p presenter) Stage(params flow.StageParams) error {
+	p.line(params.Message)
+	return params.Work()
+}
+
+// HookPhase streams the hooks as they run: RunHooks writes from this goroutine,
+// so the sink turns its bytes into lines and posts each one as a message rather
+// than touching the model.
+func (p presenter) HookPhase(params flow.HookPhaseParams) error {
+	p.line(params.Title)
+	sink := &flow.LineWriter{Emit: p.line}
+	err := params.Run(sink)
+	sink.Flush()
+	return err
+}
+
+func (p presenter) Notice(notice flow.Notice) { p.line(notice.Text) }
+
+func (p presenter) Status(notice flow.Notice) { p.line(notice.Text) }
+
+type createPresenter struct{ presenter }
+
+func (p createPresenter) Created(outcome createflow.Outcome) error {
+	if outcome.Aborted {
+		return nil
+	}
+	p.line(fmt.Sprintf(domain.DashboardFinishedFmt, domain.OpKindCreate, outcome.Branch))
+	p.send(createdMsg{branch: outcome.Branch})
+	return nil
+}
+
+type cleanPresenter struct{ presenter }
+
+func (p cleanPresenter) Cleaned(outcome cleanflow.Outcome) error {
+	if outcome.AlreadyAbsent {
+		p.line(fmt.Sprintf(domain.CleanAlreadyAbsentFmt, outcome.Branch))
+	} else {
+		p.line(fmt.Sprintf(domain.DashboardFinishedFmt, domain.OpKindClean, outcome.Branch))
+	}
+	for _, child := range outcome.Reparented {
+		p.line(fmt.Sprintf(domain.CleanReparentedFmt, child.Branch, child.NewParent))
+	}
+	for _, child := range outcome.OrphanedChildren {
+		p.line(fmt.Sprintf(domain.CleanStillOrphanedFmt, child.Branch, child.OldParent))
+	}
+	p.send(cleanedMsg{branch: outcome.Branch})
+	return nil
+}

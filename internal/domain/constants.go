@@ -735,6 +735,16 @@ const (
 	// plus its title row.
 	DashboardChromeHeight = 3
 
+	// DashboardMsgBuffer sizes the channel the running flows post on. It only has
+	// to absorb a burst of hook output between two frames.
+	DashboardMsgBuffer = 256
+
+	// DashboardModalChrome is what a modal box spends on its two border rows.
+	DashboardModalChrome       = 2
+	DashboardModalWidthPercent = 60
+	DashboardModalMinWidth     = 40
+	DashboardModalMaxWidth     = 88
+
 	DashboardTabWorktrees = "Worktrees"
 	DashboardListTitle    = "Worktrees"
 	DashboardDetailTitle  = "Detail"
@@ -762,14 +772,65 @@ const (
 	DashboardUpToDate         = "up to date"
 	DashboardUnknownParent    = "unknown"
 
-	DashboardHelpWide   = "↑↓ select · tab view · o output · shift+↑↓ scroll output · r refresh · ? help · q quit"
-	DashboardHelpNarrow = "↑↓ select · enter detail · tab view · o output · r refresh · ? help · q quit"
+	DashboardHelpWide   = "↑↓ select · n new · tab view · o output · shift+↑↓ scroll output · r refresh · ? help · q quit"
+	DashboardHelpNarrow = "↑↓ select · enter detail · n new · o output · r refresh · ? help · q quit"
 	DashboardHelpDetail = "esc back · ↑↓ select · o output · r refresh · q quit"
 
 	// DashboardHelpTitle heads the key/mouse reference overlay. Every clickable
 	// zone is listed there with its keyboard equivalent.
 	DashboardHelpTitle = "Keys & mouse"
 
+	// DashboardAddLabel is the list panel's header button, KeyNew its keyboard
+	// equivalent.
+	DashboardAddLabel = "+ new"
+	// DashboardMenuTitle heads the per-worktree context menu and
+	// DashboardMenuDelete is its only entry for now.
+	DashboardMenuDelete = "Delete worktree…"
+
+	DashboardCreateTitle = "New worktree"
+	DashboardDeleteTitle = "Delete worktree"
+
+	// DashboardBlockersTitle heads the refusals a removal must have lifted, one by
+	// one — the dashboard never offers a blanket bypass.
+	DashboardBlockersTitle = "Lift every refusal to enable the deletion:"
+	DashboardBlockedSuffix = " — lift the refusals above"
+	DashboardConfirmLabel  = "Confirm"
+
+	DashboardGlyphChoiceOn  = "◉"
+	DashboardGlyphChoiceOff = "○"
+	DashboardGlyphCheckOn   = "[x]"
+	DashboardGlyphCheckOff  = "[ ]"
+
+	DashboardModalPreparing = "Preparing…"
+	DashboardStepperHint    = "↑↓ move · enter confirm · esc back"
+	DashboardFormHint       = "↑↓ move · space toggle · enter confirm · esc cancel"
+
+	// DashboardUnsupportedStepFmt refuses a step kind no modal can draw, rather
+	// than guessing a widget for it (step key, kind).
+	DashboardUnsupportedStepFmt = "dashboard: step %q has no renderer for kind %d"
+
+	// DashboardBusyFmt refuses an action on a worktree a background run still
+	// holds (branch, running operation).
+	DashboardBusyFmt = "%s is busy: a %s is still running on it"
+	// DashboardBlockedByFmt refuses to start anything while a blocking run owns
+	// the dashboard (running operation).
+	DashboardBlockedByFmt = "A %s is running — wait for it to finish"
+	// DashboardStartedFmt, DashboardFinishedFmt and DashboardFailedFmt bracket a
+	// run in the output panel (operation, target).
+	DashboardStartedFmt  = "▸ %s %s"
+	DashboardFinishedFmt = "✓ %s %s"
+	DashboardFailedFmt   = "✗ %s: %s"
+	// DashboardOperationLabel names a failed run in the output panel when the
+	// failure is the run itself rather than one of its phases.
+	DashboardOperationLabel = "operation"
+
+	// KeyNew opens the new-worktree wizard, the keyboard equivalent of the list
+	// header's add button.
+	KeyNew = "n"
+	// KeyMenu opens the selected worktree's context menu. It is not a shortcut for
+	// the right click but its equal: terminals that hand the right button to a
+	// paste action never deliver it.
+	KeyMenu = "m"
 	// KeyToggleOutput folds and unfolds the bottom output panel, the keyboard
 	// equivalent of clicking its header.
 	KeyToggleOutput = "o"

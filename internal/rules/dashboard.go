@@ -71,6 +71,37 @@ func dashboardListWidth(width int) int {
 	return min(listWidth, width-domain.DashboardMinDetailWidth)
 }
 
+type ModalRectParams struct {
+	ScreenWidth  int
+	ScreenHeight int
+	// ContentHeight is how many body lines the modal wants to show; the rect adds
+	// the border rows and clamps the whole box to the screen.
+	ContentHeight int
+}
+
+// ComputeModalRect places a modal box over the dashboard. Like
+// ComputeDashboardLayout it is the single reference: the renderer draws the box
+// there and its rows are clickable there.
+func ComputeModalRect(params ModalRectParams) domain.Rect {
+	screenWidth, screenHeight := max(params.ScreenWidth, 0), max(params.ScreenHeight, 0)
+	width := ModalWidth(screenWidth)
+	height := min(max(params.ContentHeight, 1)+domain.DashboardModalChrome, screenHeight)
+	return domain.Rect{
+		X:      max((screenWidth-width)/2, 0),
+		Y:      max((screenHeight-height)/2, 0),
+		Width:  width,
+		Height: max(height, 0),
+	}
+}
+
+// ModalWidth is the width a modal gets on a screen, before its content is known:
+// its widgets need it to lay themselves out.
+func ModalWidth(screenWidth int) int {
+	width := screenWidth * domain.DashboardModalWidthPercent / 100
+	width = max(width, min(domain.DashboardModalMinWidth, screenWidth))
+	return min(width, domain.DashboardModalMaxWidth, screenWidth)
+}
+
 type DashboardScrollParams struct {
 	Cursor  int
 	Total   int

@@ -25,8 +25,8 @@ type RunParams struct {
 	PRLoader   worktreepicker.PRLoaderFunc
 }
 
-// OutputLineMsg appends one line to the bottom output panel. The operation flows
-// write into it; nothing emits it yet.
+// OutputLineMsg appends one line to the bottom output panel. Every phase of a
+// running flow — hook output included — reaches the panel through it.
 type OutputLineMsg struct{ Text string }
 
 type worktreesMsg struct {
@@ -73,6 +73,14 @@ type Model struct {
 
 	detailOpen bool
 	showHelp   bool
+
+	// msgs carries what the flow goroutines post; listenCmd is its only reader.
+	msgs  chan tea.Msg
+	ops   operations
+	modal modal
+	// selectBranch is the worktree a finished run wants selected once the list
+	// catches up with it.
+	selectBranch string
 }
 
 // New builds the dashboard model. Callers outside a program must Close the
@@ -86,6 +94,7 @@ func New(params RunParams) Model {
 			Config:     params.Config,
 		},
 		zones:   zone.New(),
+		msgs:    make(chan tea.Msg, domain.DashboardMsgBuffer),
 		ghConn:  domain.GHConnectionOK,
 		loading: true,
 	}
@@ -106,7 +115,7 @@ func Run(params RunParams) error {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadWorktreesCmd(false), m.loadPRsCmd(), pollCmd())
+	return tea.Batch(m.loadWorktreesCmd(false), m.loadPRsCmd(), pollCmd(), listenCmd(m.msgs))
 }
 
 func pollCmd() tea.Cmd {
@@ -162,6 +171,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.modal = m.modal.resize(msg.Width, msg.Height)
 		return m.reflow(), nil
 
 	case tea.KeyMsg:
@@ -185,9 +195,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.loadWorktreesCmd(false), pollCmd())
 
 	case OutputLineMsg:
-		m.outputLines = append(m.outputLines, msg.Text)
-		m.outputOffset = max(len(m.outputLines)-m.layout().OutputLines, 0)
-		return m, nil
+		return m.appendOutput(msg), nil
+
+	case flowMsg:
+		model, cmd := m.applyFlow(msg.inner)
+		return model, tea.Batch(cmd, listenCmd(m.msgs))
+
+	case opDoneMsg:
+		return m.finishOp(msg), nil
+
+	case modalLoadedMsg, formReadyMsg:
+		return m.updateModal(msg)
 	}
 
 	return m, nil
@@ -203,7 +221,28 @@ func (m Model) applyWorktrees(msg worktreesMsg) Model {
 	}
 	m.statuses, m.parents, m.loaded = msg.statuses, msg.parents, true
 	m.cursor = rules.ClampIndex(m.cursor, len(m.statuses))
-	return m.reflow()
+	return m.selectRequested().reflow()
+}
+
+// selectRequested lands the cursor on the worktree a finished run created, the
+// one time the list comes back holding it.
+func (m Model) selectRequested() Model {
+	if m.selectBranch == "" {
+		return m
+	}
+	for index, status := range m.statuses {
+		if status.Branch == m.selectBranch {
+			m.cursor, m.selectBranch = index, ""
+			return m
+		}
+	}
+	return m
+}
+
+func (m Model) updateModal(msg tea.Msg) (Model, tea.Cmd) {
+	modal, cmd := m.modal.update(msg)
+	m.modal = modal
+	return m, cmd
 }
 
 func (m Model) reflow() Model {
@@ -247,6 +286,15 @@ func (m Model) refresh() (Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
+	// A modal owns the keyboard while it is up: it is a question, and nothing
+	// behind it may be acted on before it is answered.
+	if m.modal.open {
+		if key == keyInterrupt {
+			return m, tea.Quit
+		}
+		return m.updateModal(msg)
+	}
+
 	// The overlay documents "q · ctrl+c quit", so it must not swallow them.
 	if m.showHelp {
 		if key == keyQuit || key == keyInterrupt {
@@ -267,6 +315,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = true
 	case keyRefresh:
 		return m.refresh()
+	case keyNew:
+		return m.startCreate()
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded
 		return m.reflow(), nil
@@ -313,6 +363,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		return m, nil
 	}
+	if m.modal.open {
+		return m.modalMouse(msg)
+	}
 
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
@@ -337,6 +390,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.reflow(), nil
 	}
 
+	if m.inZone(zoneAdd, msg) {
+		return m.startCreate()
+	}
+
 	for index := range m.statuses {
 		if !m.inZone(rowZone(index), msg) {
 			continue
@@ -348,6 +405,23 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.reflow(), nil
 	}
 
+	return m, nil
+}
+
+// modalMouse only ever resolves the modal's own rows: the frame behind it is
+// still on the zone manager from the last frame that drew it.
+func (m Model) modalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return m, nil
+	}
+	for index := range m.modal.rows {
+		if !m.inZone(modalRowZone(index), msg) {
+			continue
+		}
+		modal, cmd := m.modal.activate(index)
+		m.modal = modal
+		return m, cmd
+	}
 	return m, nil
 }
 
@@ -367,6 +441,9 @@ func (m Model) View() string {
 	}
 	if m.showHelp {
 		return m.renderHelpOverlay()
+	}
+	if m.modal.open {
+		return m.zones.Scan(m.modal.view(m.zones))
 	}
 
 	layout := m.layout()

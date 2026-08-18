@@ -21,8 +21,11 @@ type panelParams struct {
 	Title string
 	// TitleZone, when set, makes the whole title row its own clickable zone.
 	TitleZone string
-	Body      []string
-	Zone      string
+	// TitleRight is rendered flush right on the title row. It carries its own zone
+	// marking, so the title beside it must not be marked too.
+	TitleRight string
+	Body       []string
+	Zone       string
 }
 
 // renderPanel draws a titled, bordered box filling Rect exactly and registers it
@@ -35,6 +38,9 @@ func (m Model) renderPanel(params panelParams) string {
 	}
 
 	title := styles.DashboardPanelTitle.Render(pad(truncate(params.Title, textWidth), textWidth))
+	if params.TitleRight != "" {
+		title = spread(styles.DashboardPanelTitle.Render(truncate(params.Title, textWidth)), params.TitleRight, textWidth)
+	}
 	if params.TitleZone != "" {
 		title = m.zones.Mark(params.TitleZone, title)
 	}
@@ -93,6 +99,7 @@ func (m Model) renderHelpOverlay() string {
 		{"g · G", "first · last worktree"},
 		{"pgup · pgdown", "page through the list"},
 		{"wheel", "scroll the list or the output panel"},
+		{"n", "new worktree (or click + new)"},
 		{"tab · shift+tab", "switch view (or click a tab)"},
 		{"enter · →", "open the detail (narrow terminals)"},
 		{"esc · ←", "close the detail"},

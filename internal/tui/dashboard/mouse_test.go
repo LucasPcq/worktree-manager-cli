@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -217,5 +218,46 @@ func TestHelpOverlaySwallowsMouseEvents(t *testing.T) {
 
 	if model.cursor != 0 {
 		t.Error("clicks must not reach the list through the help overlay")
+	}
+}
+
+// titleRowY is the list panel's header row: the border sits on the panel's first
+// row, the title on the next one, and the first worktree right under it.
+const titleRowY = firstRowY - 1
+
+func addButtonBounds(model Model) (startX, endX int) {
+	textWidth := model.layout().List.Width - borderWidth - paddingWidth
+	endX = rowTextX + textWidth - 1
+	return endX - lipgloss.Width(domain.DashboardAddLabel) + 1, endX
+}
+
+func TestTheAddButtonSitsFlushRightOnTheListHeader(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	renderAndWait(t, model, zoneAdd)
+
+	button := model.zones.Get(zoneAdd)
+	wantStartX, wantEndX := addButtonBounds(model)
+
+	if button.StartY != titleRowY {
+		t.Errorf("the add button sits at y=%d, want the list header row %d", button.StartY, titleRowY)
+	}
+	if button.StartX != wantStartX || button.EndX != wantEndX {
+		t.Errorf("the add button spans x=%d..%d, want %d..%d — flush with the right edge of the panel",
+			button.StartX, button.EndX, wantStartX, wantEndX)
+	}
+}
+
+func TestClickingTheAddButtonStartsTheSameRunAsTheKey(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	renderAndWait(t, model, zoneAdd)
+	startX, _ := addButtonBounds(model)
+
+	clicked, cmd := updateCmd(model, click(startX, titleRowY))
+
+	if cmd == nil || len(clicked.ops.running) != 1 {
+		t.Fatalf("clicking the add button started %+v, want one create run", clicked.ops.running)
+	}
+	if clicked.cursor != 0 {
+		t.Error("the add button must not double as a row click")
 	}
 }
