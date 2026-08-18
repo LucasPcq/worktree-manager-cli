@@ -111,6 +111,7 @@ Full flags live in `wtm <command> --help` and [`docs/`](docs/wtm.md). Overview:
 | [`extract`](docs/wtm_extract.md) | Move uncommitted changes to another worktree (split an oversized PR) |
 | [`env`](docs/wtm_env.md) | Detect and fix a worktree's `.env` drift against its template + value source |
 | [`relocate`](docs/wtm_relocate.md) | Move worktrees to align with `base_path` and adopt external ones |
+| [`ui`](docs/wtm_ui.md) | Open the full-screen worktree dashboard: browse state and PRs, create and delete worktrees |
 
 ### Navigate
 

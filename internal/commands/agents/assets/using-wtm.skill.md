@@ -1,6 +1,6 @@
 ---
 name: using-wtm
-description: Use this skill whenever the user wants to create, list, switch, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or check out a GitHub pull request into a worktree — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
+description: Use this skill whenever the user wants to create, list, switch, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or check out a GitHub pull request into a worktree — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker, and never launch the `wtm ui` dashboard.
 ---
 
 # Using wtm
@@ -24,11 +24,17 @@ self-documenting:
 1. **Always pass arguments.** Without one, most commands drop into an interactive picker
    you can't navigate. Get the branch / PR number / profile / job name from a prior
    discovery call (below) first.
-2. **Always add `--output json`** on data commands. JSON goes to stdout; human text and
+2. **Never launch `wtm ui`.** It is a full-screen alt-screen dashboard meant for a human
+   at a keyboard: it takes over the terminal until someone presses `q`, and there is no way
+   for you to read it or get out of it. Treat it exactly like an interactive picker — do not
+   run it to "look at" the worktrees; run `wtm list --output json` (or `wtm tree`) instead.
+   Suggest `wtm ui` to the *user* when they want to browse worktrees themselves. wtm defends
+   itself here (it errors on `--output json` and with no TTY), but don't rely on that.
+3. **Always add `--output json`** on data commands. JSON goes to stdout; human text and
    warnings go to stderr — ignore stderr unless the exit code is non-zero.
-3. **Trust exit codes.** `0` = success. Beyond generic `1`, wtm returns granular codes
+4. **Trust exit codes.** `0` = success. Beyond generic `1`, wtm returns granular codes
    (table below) so you can branch precisely. On failure, surface the stderr text.
-4. **JSON mode requires `--yes` on every mutating command.** JSON is non-interactive, so any
+5. **JSON mode requires `--yes` on every mutating command.** JSON is non-interactive, so any
    command that changes state (`create`, `clean`, `prune`, `sync`, `relocate`, `reparent`,
    `extract`, `checkout`) needs `--yes` — it errors otherwise. Two orthogonal axes: **`--yes`**
    resolves confirmations/decisions from flags and safe defaults; **`--force`** only lifts
@@ -41,13 +47,13 @@ self-documenting:
    needs `--from` when the branch already exists locally (its parent can't be inferred).
    Read-only data commands (`list`, `tree`, `resolve`, `config show`, `run list`/`ps`) take
    `--output json` with no `--yes`. Check `--help` when unsure.
-5. **Operations are idempotent — safe to retry.** `create --if-not-exists` no-ops on an
+6. **Operations are idempotent — safe to retry.** `create --if-not-exists` no-ops on an
    existing worktree (including one holding the branch outside `base_path`, whose path it
    returns — even the **main** worktree's own path, if that's where the branch is checked
    out; it is still `already_exists: true`, just not a directory under `base_path`); `clean`
    no-ops on an absent one; `run up`/`down`/`stop` re-run cleanly. Note the flag is about
    the **worktree**, not the branch: an existing branch with no worktree is still created.
-6. **An existing local branch is not an obstacle.** `create <branch>` and `checkout <number>`
+7. **An existing local branch is not an obstacle.** `create <branch>` and `checkout <number>`
    both check out a same-named local branch as-is, keeping commits that were never pushed —
    they never delete or reset it, so there is no `wtm clean` to run first. The response sets
    `existing_branch: true` and `origin_state`. Only a branch **another worktree already holds**
@@ -161,6 +167,10 @@ flagged; everything else is what the name implies.
   entries:[{key,status,current_value,resolved_value,placeholder,source,export}]}}]}` where
   `status` is `resolved` / `missing_unresolved` / `conflict` / `orphan`. Round-trip is
   preserved: comments, ordering and formatting of the `.env` are kept; only decided keys change.
+- `wtm ui` — the full-screen dashboard (worktree state, divergence, PRs, plus create and
+  delete). **Never invoke it** (see driving rule 2): it holds the terminal until a human
+  quits it. Everything it shows is available to you as JSON via `wtm list` / `wtm tree`, and
+  everything it does via `wtm create` / `wtm clean`.
 - `wtm relocate` — realign worktrees with `base_path` and adopt externally-created ones.
   `--to <path>` sets a new `base_path` non-interactively; the interactive wizard also lets
   the user change it. You can't drive the wizard — in JSON mode pass `--yes` (and `--to` to
@@ -245,6 +255,8 @@ On non-zero exit, read stderr, then:
 ## Escalate to the user when
 
 - A command needs shell integration (`go`/`switch` with no wrapper installed).
+- The user wants to *browse* their worktrees rather than get an answer from you — tell them
+  to run `wtm ui` themselves; never run it for them.
 - A destructive action (`clean`/`prune --force`) wasn't explicitly authorized — don't add
   `--force` on your own initiative.
 - `wtm config edit` is the natural answer — ask the user to run it, or read with `wtm
