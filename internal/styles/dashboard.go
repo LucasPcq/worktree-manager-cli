@@ -13,16 +13,26 @@ var (
 	// DashboardPanelTitle heads a panel body.
 	DashboardPanelTitle = lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)
 
-	// DashboardTabActive and DashboardTabInactive render the tab bar entries.
-	DashboardTabActive = lipgloss.NewStyle().
-				Foreground(ColorSelectedFg).
-				Background(ColorSelectedBg).
-				Bold(true).
-				Padding(0, 2)
+	// DashboardWordmark is the product's name in the header bar: the one place
+	// the dashboard says what it is.
+	DashboardWordmark = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true).Padding(0, 1)
+
+	// DashboardTabActive and DashboardTabInactive render the tab bar entries. The
+	// active one is named by weight and by the rule under it, not by a filled
+	// block: a background that loud belongs to what the user is acting on.
+	DashboardTabActive = lipgloss.NewStyle().Bold(true).Padding(0, 2)
 
 	DashboardTabInactive = lipgloss.NewStyle().
 				Foreground(ColorMuted).
 				Padding(0, 2)
+
+	// DashboardTabRule underlines the active tab, DashboardRule carries it across
+	// the rest of the header.
+	DashboardTabRule = lipgloss.NewStyle().Foreground(ColorPrimary)
+	DashboardRule    = lipgloss.NewStyle().Foreground(ColorMuted)
+
+	// DashboardCount is the header's right-hand count.
+	DashboardCount = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
 
 	// DashboardLabel names a detail field, DashboardValue carries it.
 	DashboardLabel = lipgloss.NewStyle().Foreground(ColorMuted)
@@ -73,6 +83,39 @@ var (
 
 	DashboardMenuTitle = lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)
 
-	// DashboardAddButton is the list panel's header button.
-	DashboardAddButton = lipgloss.NewStyle().Foreground(ColorSuccess).Bold(true)
+	// The dashboard has one button language, used by the header's add button and
+	// by every modal: a padded label on a filled block, the focused one carrying
+	// the accent and a destructive one carrying the danger color.
+	DashboardButton = lipgloss.NewStyle().
+			Foreground(ColorSelectedFg).
+			Background(ColorRowTint).
+			Padding(0, 2)
+
+	DashboardButtonFocused = lipgloss.NewStyle().
+				Foreground(ColorBadgeFg).
+				Background(ColorPrimary).
+				Bold(true).
+				Padding(0, 2)
+
+	DashboardButtonDanger = lipgloss.NewStyle().
+				Foreground(ColorBadgeFg).
+				Background(ColorDanger).
+				Bold(true).
+				Padding(0, 2)
+
+	DashboardButtonDisabled = lipgloss.NewStyle().
+				Foreground(ColorMuted).
+				Background(ColorRowTint).
+				Padding(0, 2)
+
+	// DashboardRowSelected tints the whole selected worktree row. Render plain
+	// (ANSI-free) text through it so the background fills every cell.
+	DashboardRowSelected = lipgloss.NewStyle().
+				Background(ColorRowTint).
+				Foreground(ColorSelectedFg)
+
+	// DashboardRowBar is the accent bar down the left of the selected row, and
+	// DashboardRowMeta the second line of a row that is not selected.
+	DashboardRowBar  = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
+	DashboardRowMeta = lipgloss.NewStyle().Foreground(ColorMuted)
 )

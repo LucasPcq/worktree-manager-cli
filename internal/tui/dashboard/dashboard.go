@@ -518,7 +518,7 @@ func (m Model) View() string {
 	// A panel too small to draw returns nothing; keeping its empty line would push
 	// the frame past the last row and make the alt screen scroll.
 	sections := make([]string, 0, 4)
-	for _, section := range []string{m.renderTabs(layout), body, m.renderOutput(layout), m.renderHelpBar(layout)} {
+	for _, section := range []string{m.renderHeader(layout), body, m.renderOutput(layout), m.renderHelpBar(layout)} {
 		if section != "" {
 			sections = append(sections, section)
 		}

@@ -166,8 +166,14 @@ func (mo modal) show(step flow.Step, content flow.StepContent) (modal, tea.Cmd) 
 		})
 		mo.text.SetWidth(mo.bodyWidth())
 		return mo, mo.text.Init()
-	case flow.StepSelect, flow.StepRecap:
-		mo.list = newSelectList(content, step.Kind == flow.StepRecap)
+	case flow.StepRecap:
+		// A recap is a confirmation, so it is drawn with the buttons every other
+		// confirmation uses rather than as one more list to pick from.
+		mo.rows, _ = formSection(formSectionParams{Step: step, Content: content, Answers: mo.answers, Chosen: mo.answers})
+		mo.focus = clampFocus(mo.rows, 0)
+		return mo, nil
+	case flow.StepSelect:
+		mo.list = newSelectList(content)
 	case flow.StepBranchSelect:
 		mo.list = components.NewSelectList(components.NewSelectListParams{
 			Title:       content.Title,
@@ -221,9 +227,6 @@ func (mo modal) update(msg tea.Msg) (modal, tea.Cmd) {
 		if mo.loading != "" {
 			return mo, nil
 		}
-		if mo.shape == modalForm {
-			return mo.updateForm(msg)
-		}
 		return mo.updateStepper(msg)
 	}
 	return mo, nil
@@ -240,6 +243,9 @@ func (mo modal) applyLoaded(msg modalLoadedMsg) (modal, tea.Cmd) {
 }
 
 func (mo modal) updateStepper(msg tea.KeyMsg) (modal, tea.Cmd) {
+	if mo.usesRows() {
+		return mo.updateForm(msg)
+	}
 	if mo.kind == flow.StepText {
 		var cmd tea.Cmd
 		mo.text, cmd = mo.text.Update(msg)
@@ -271,8 +277,14 @@ func (mo modal) answer(value string) (modal, tea.Cmd) {
 	return mo.advance()
 }
 
-func newSelectList(content flow.StepContent, recap bool) components.SelectListModel {
-	items := make([]components.SelectItem, 0, len(content.Options)+2)
+// usesRows reports whether the modal is showing its own rows rather than a
+// widget: a form always is, a stepper is on its recap.
+func (mo modal) usesRows() bool {
+	return mo.shape == modalForm || mo.kind == flow.StepRecap
+}
+
+func newSelectList(content flow.StepContent) components.SelectListModel {
+	items := make([]components.SelectItem, 0, len(content.Options))
 	for _, option := range content.Options {
 		items = append(items, components.SelectItem{
 			Label:     option.Label,
@@ -280,12 +292,6 @@ func newSelectList(content flow.StepContent, recap bool) components.SelectListMo
 			Separator: option.Separator,
 			Danger:    option.Danger,
 		})
-	}
-	if recap {
-		items = append(items,
-			components.SelectItem{Separator: true},
-			components.SelectItem{Label: domain.WizardCancelLabel, Value: domain.WizardCancelValue},
-		)
 	}
 	return components.NewSelectList(components.NewSelectListParams{
 		Title:       content.Title,
@@ -385,7 +391,7 @@ func (mo modal) body(zones marker) []string {
 	switch {
 	case mo.loading != "":
 		lines = append(lines, styles.DashboardEmpty.Render(truncate(mo.loading, mo.bodyWidth())))
-	case mo.shape == modalForm:
+	case mo.usesRows():
 		lines = append(lines, mo.formBody(zones)...)
 	case mo.kind == flow.StepText:
 		lines = append(lines, mo.stepHeader()...)
@@ -418,8 +424,12 @@ func (mo modal) stepHeader() []string {
 
 func (mo modal) hint() string {
 	switch {
-	case mo.shape == modalForm:
+	case mo.usesRows() && mo.shape == modalStepper:
+		return domain.DashboardStepperRowsHint
+	case mo.usesRows() && mo.hasToggles():
 		return domain.DashboardFormHint
+	case mo.usesRows():
+		return domain.DashboardConfirmHint
 	case mo.kind == flow.StepText:
 		return domain.DashboardStepperTextHint
 	}

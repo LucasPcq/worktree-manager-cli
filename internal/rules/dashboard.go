@@ -21,12 +21,12 @@ const minDashboardBody = 3
 func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout {
 	width, height := max(params.Width, 0), max(params.Height, 0)
 
-	tabs := domain.Rect{X: 0, Y: 0, Width: width, Height: min(1, height)}
+	tabs := domain.Rect{X: 0, Y: 0, Width: width, Height: min(domain.DashboardHeaderHeight, height)}
 	help := domain.Rect{X: 0, Y: max(height-1, 0), Width: width, Height: min(1, max(height-1, 0))}
 
 	outputHeight := domain.DashboardChromeHeight
 	if params.OutputExpanded {
-		outputHeight += domain.DashboardOutputBodyHeight
+		outputHeight += domain.DashboardTitleGap + domain.DashboardOutputBodyHeight
 	}
 	available := height - tabs.Height - help.Height
 	if available-outputHeight < minDashboardBody {
@@ -40,7 +40,7 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 		Tabs:        tabs,
 		Help:        help,
 		Output:      domain.Rect{X: 0, Y: tabs.Height + bodyHeight, Width: width, Height: outputHeight},
-		OutputLines: max(outputHeight-domain.DashboardChromeHeight, 0),
+		OutputLines: max(outputHeight-domain.DashboardChromeHeight-domain.DashboardTitleGap, 0),
 	}
 
 	body := domain.Rect{X: 0, Y: tabs.Height, Width: width, Height: bodyHeight}
@@ -50,7 +50,7 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 			return layout
 		}
 		layout.List, layout.ListVisible = body, true
-		layout.ListRows = max(body.Height-domain.DashboardChromeHeight, 0)
+		layout.ListRows = dashboardListRows(body.Height)
 		return layout
 	}
 
@@ -58,8 +58,18 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 	layout.List = domain.Rect{X: 0, Y: body.Y, Width: listWidth, Height: body.Height}
 	layout.Detail = domain.Rect{X: listWidth, Y: body.Y, Width: width - listWidth, Height: body.Height}
 	layout.ListVisible, layout.DetailVisible = true, true
-	layout.ListRows = max(body.Height-domain.DashboardChromeHeight, 0)
+	layout.ListRows = dashboardListRows(body.Height)
 	return layout
+}
+
+// dashboardListRows is how many worktrees fit in a list body, each taking its
+// own lines plus the gap that separates it from the next one.
+func dashboardListRows(bodyHeight int) int {
+	available := bodyHeight - domain.DashboardChromeHeight - domain.DashboardTitleGap
+	if available < domain.DashboardRowHeight {
+		return 0
+	}
+	return (available + domain.DashboardRowGap) / (domain.DashboardRowHeight + domain.DashboardRowGap)
 }
 
 func dashboardListWidth(width int) int {

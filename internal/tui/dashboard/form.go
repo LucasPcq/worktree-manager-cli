@@ -183,6 +183,7 @@ func blockerRows(content flow.StepContent) []formRow {
 		formRow{
 			kind:    formButton,
 			confirm: true,
+			value:   confirmValue(content),
 			label:   confirmLabel(content),
 			danger:  len(content.Blockers) > 0,
 		},
@@ -265,6 +266,11 @@ func (mo modal) updateForm(msg tea.KeyMsg) (modal, tea.Cmd) {
 	case keySpace, keyEnter:
 		return mo.activate(mo.focus)
 	case keyEscape:
+		// In a stepper the rows are one step among others; backing out of them is
+		// going back a question, not dropping the run.
+		if mo.shape == modalStepper {
+			return mo.back()
+		}
 		return mo.cancel()
 	}
 	return mo, nil
@@ -301,6 +307,9 @@ func (mo modal) activate(index int) (modal, tea.Cmd) {
 		if !mo.blockersLifted() {
 			return mo, nil
 		}
+		if mo.shape == modalStepper {
+			return mo.answer(row.value)
+		}
 		return mo.submit(mo.answers)
 	}
 	return mo, nil
@@ -316,6 +325,17 @@ func (mo modal) lift(key string) modal {
 	lifted[key] = !lifted[key]
 	mo.lifted = lifted
 	return mo
+}
+
+// hasToggles reports whether anything in the form is toggled rather than
+// pressed, which is what the hint line has to teach.
+func (mo modal) hasToggles() bool {
+	for _, row := range mo.rows {
+		if row.kind == formBlocker || row.kind == formChoice {
+			return true
+		}
+	}
+	return false
 }
 
 func (mo modal) blockersLifted() bool {
@@ -340,32 +360,44 @@ func (mo modal) formBody(zones marker) []string {
 }
 
 func (mo modal) renderRow(index int, row formRow) string {
-	width := mo.bodyWidth()
 	switch row.kind {
 	case formText:
-		return truncate(row.label, width)
+		return truncate(row.label, mo.bodyWidth())
+	case formButton:
+		return mo.renderButton(index, row)
 	case formChoice:
-		return mo.decorate(index, glyphChoice(mo.answers.Value(row.stepKey) == row.value)+" "+row.label, row)
-	case formBlocker:
-		return mo.decorate(index, glyphCheck(mo.lifted[row.value])+" "+row.label, row)
+		return mo.renderChoice(index, glyphChoice(mo.answers.Value(row.stepKey) == row.value)+" "+row.label)
 	}
-
-	label := "[ " + row.label + " ]"
-	if row.confirm && !mo.blockersLifted() {
-		return styles.DashboardDisabled.Render(truncate(label+domain.DashboardBlockedSuffix, width))
-	}
-	return mo.decorate(index, label, row)
+	return mo.renderChoice(index, glyphCheck(mo.lifted[row.value])+" "+row.label)
 }
 
-func (mo modal) decorate(index int, text string, row formRow) string {
-	text = truncate(text, mo.bodyWidth())
-	if index == mo.focus {
-		return styles.DashboardRowFocused.Render(text)
+// renderChoice gives a modal row the same focus language as the worktree list:
+// an accent bar and a tinted span, so what the keyboard is on reads the same
+// everywhere.
+func (mo modal) renderChoice(index int, text string) string {
+	inner := max(mo.bodyWidth()-rowBarWidth, 0)
+	if index != mo.focus {
+		return rowIndent + styles.DashboardRow.Render(truncate(text, inner))
 	}
-	if row.danger {
-		return styles.DashboardDanger.Render(text)
+	return styles.DashboardRowBar.Render(rowBar+" ") +
+		styles.DashboardRowSelected.Width(inner).Render(truncate(text, inner))
+}
+
+// renderButton draws the one button the whole dashboard uses: a padded label on
+// a filled block, carrying the accent when the keyboard is on it, the danger
+// color when it destroys something, and dimmed while a refusal stands.
+func (mo modal) renderButton(index int, row formRow) string {
+	label, style := row.label, styles.DashboardButton
+	switch {
+	case row.confirm && !mo.blockersLifted():
+		label, style = label+domain.DashboardBlockedSuffix, styles.DashboardButtonDisabled
+	case index != mo.focus:
+	case row.danger:
+		style = styles.DashboardButtonDanger
+	default:
+		style = styles.DashboardButtonFocused
 	}
-	return styles.DashboardRow.Render(text)
+	return rowIndent + style.Render(truncate(label, max(mo.bodyWidth()-rowBarWidth-buttonPadding, 1)))
 }
 
 func glyphChoice(selected bool) string {

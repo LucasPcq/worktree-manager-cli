@@ -47,13 +47,15 @@ func (m Model) openMenu(anchor domain.Rect) Model {
 	return m
 }
 
-// selectedRowPoint is where the selected row sits on screen, so the keyboard
-// opens the menu where the mouse would have.
+// selectedRowPoint is the last line of the selected row, so the keyboard opens
+// the menu where the mouse would have — under the row, not over its own lines.
 func (m Model) selectedRowPoint() domain.Rect {
 	layout := m.layout()
+	top := layout.List.Y + domain.DashboardChromeHeight - 1 + domain.DashboardTitleGap
+	stride := domain.DashboardRowHeight + domain.DashboardRowGap
 	return domain.Rect{
 		X: layout.List.X + borderWidth,
-		Y: layout.List.Y + domain.DashboardChromeHeight - 1 + m.cursor - m.offset,
+		Y: top + (m.cursor-m.offset)*stride + domain.DashboardRowHeight - 1,
 	}
 }
 

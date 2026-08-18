@@ -17,7 +17,7 @@ func TestRightClickSelectsTheRowAndOpensItsMenu(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
 	renderAndWait(t, model, rowZone(2))
 
-	model = update(model, rightClick(rowTextX+2, firstRowY+2))
+	model = update(model, rightClick(rowTextX+2, rowY(2)))
 
 	if model.cursor != 2 {
 		t.Fatalf("cursor = %d, want the row the menu was opened on", model.cursor)
@@ -118,8 +118,9 @@ func TestTheMenuFloatsUnderTheCellItWasOpenedFrom(t *testing.T) {
 	if rect.Y != model.menuAnchor.Y+1 {
 		t.Errorf("the menu sits at y=%d, want it hanging just under its row (%d)", rect.Y, model.menuAnchor.Y+1)
 	}
-	if want := firstRowY + 1; model.menuAnchor.Y != want {
-		t.Errorf("the keyboard anchored the menu at y=%d, want the selected row %d", model.menuAnchor.Y, want)
+	if want := rowY(1) + domain.DashboardRowHeight - 1; model.menuAnchor.Y != want {
+		t.Errorf("the keyboard anchored the menu at y=%d, want the last line of the selected row %d",
+			model.menuAnchor.Y, want)
 	}
 
 	entry := model.zones.Get(menuZone(0))
@@ -184,7 +185,7 @@ func TestClickingOffTheMenuOnlyClosesIt(t *testing.T) {
 
 	// Right on a row of the frame, whose zone the last unobstructed frame left
 	// behind: the menu still swallows it.
-	model = update(model, click(rowTextX, firstRowY+2))
+	model = update(model, click(rowTextX, rowY(2)))
 
 	if model.menuOpen {
 		t.Fatal("a click elsewhere closes the menu")

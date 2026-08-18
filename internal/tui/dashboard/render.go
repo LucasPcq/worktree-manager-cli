@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -11,10 +12,12 @@ import (
 )
 
 // borderWidth and paddingWidth are what lipgloss adds around a panel's text; the
-// rect a panel is given must account for both.
+// rect a panel is given must account for both. buttonPadding is what the button
+// style adds around its label.
 const (
-	borderWidth  = 2
-	paddingWidth = 2
+	borderWidth   = 2
+	paddingWidth  = 2
+	buttonPadding = 4
 )
 
 type panelParams struct {
@@ -50,7 +53,7 @@ func (m Model) renderPanel(params panelParams) string {
 		title = m.marks().Mark(params.TitleZone, title)
 	}
 
-	lines := append([]string{title}, params.Body...)
+	lines := append([]string{title, ""}, params.Body...)
 	if len(lines) > contentHeight {
 		lines = lines[:contentHeight]
 	}
@@ -63,11 +66,17 @@ func (m Model) renderPanel(params panelParams) string {
 	return m.marks().Mark(params.Zone, box)
 }
 
-// renderTabs drops whole tabs that do not fit rather than trimming the bar: a
-// hard trim would cut through a zone marker and break the tab's hit-testing.
-func (m Model) renderTabs(layout domain.DashboardLayout) string {
-	rendered := make([]string, 0, len(tabs))
-	used := 0
+// renderHeader is the dashboard's top bar: the wordmark, the tabs, and the count
+// of what is listed. The active tab is named by weight and by the rule under it.
+//
+// Whole tabs are dropped rather than the bar trimmed: a hard trim would cut
+// through a zone marker and break that tab's hit-testing.
+func (m Model) renderHeader(layout domain.DashboardLayout) string {
+	wordmark := styles.DashboardWordmark.Render(domain.DashboardWordmark)
+	used := lipgloss.Width(wordmark)
+
+	rendered := []string{wordmark}
+	activeStart, activeWidth := 0, 0
 	for index, title := range tabs {
 		style := styles.DashboardTabInactive
 		if index == m.tab {
@@ -77,10 +86,56 @@ func (m Model) renderTabs(layout domain.DashboardLayout) string {
 		if used+lipgloss.Width(tab) > layout.Tabs.Width {
 			break
 		}
+		if index == m.tab {
+			activeStart, activeWidth = used, lipgloss.Width(tab)
+		}
 		used += lipgloss.Width(tab)
 		rendered = append(rendered, m.marks().Mark(tabZone(index), tab))
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+
+	bar := lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+	if count := m.countLabel(); count != "" && used+lipgloss.Width(count)+1 <= layout.Tabs.Width {
+		bar += strings.Repeat(" ", layout.Tabs.Width-used-lipgloss.Width(count)) + count
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, bar, tabRule(tabRuleParams{
+		Width:       layout.Tabs.Width,
+		ActiveStart: activeStart,
+		ActiveWidth: activeWidth,
+	}))
+}
+
+func (m Model) countLabel() string {
+	if !m.loaded {
+		return ""
+	}
+	format := domain.DashboardCountFmt
+	if len(m.statuses) == 1 {
+		format = domain.DashboardCountOneFmt
+	}
+	return styles.DashboardCount.Render(fmt.Sprintf(format, len(m.statuses)))
+}
+
+type tabRuleParams struct {
+	Width       int
+	ActiveStart int
+	ActiveWidth int
+}
+
+// tabRule underlines the active tab and carries a quieter rule across the rest,
+// which is what separates the header from the panels below it.
+func tabRule(params tabRuleParams) string {
+	if params.Width <= 0 {
+		return ""
+	}
+	if params.ActiveWidth <= 0 {
+		return styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, params.Width))
+	}
+
+	before := styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, params.ActiveStart))
+	under := styles.DashboardTabRule.Render(strings.Repeat(domain.DashboardActiveRuleGlyph, params.ActiveWidth))
+	rest := max(params.Width-params.ActiveStart-params.ActiveWidth, 0)
+	return before + under + styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, rest))
 }
 
 func (m Model) renderHelpBar(layout domain.DashboardLayout) string {

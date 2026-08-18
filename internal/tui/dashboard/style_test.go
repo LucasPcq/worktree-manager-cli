@@ -1,0 +1,151 @@
+package dashboard
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow"
+)
+
+func TestAWorktreeRowIsTwoLinesAndSaysWhatItsStateIs(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model.statuses[1] = domain.WorktreeStatus{Branch: "b", Path: "/tmp/b", IsDirty: true, CommitsAhead: 3}
+	model.parents = map[string]string{"b": "main"}
+	model = update(model, prsMsg{prs: []domain.PRInfo{{Number: 61, Branch: "b"}}})
+
+	lines := model.renderRow(1, model.layout().List.Width-borderWidth-paddingWidth)
+
+	if len(lines) != domain.DashboardRowHeight {
+		t.Fatalf("a row is %d lines, want %d", len(lines), domain.DashboardRowHeight)
+	}
+	if !strings.Contains(lines[0], "b") {
+		t.Error("the first line names the worktree")
+	}
+	for _, want := range []string{"main", "#61", "base"} {
+		if !strings.Contains(lines[1], want) {
+			t.Errorf("the second line is missing %q — that is what it is there for:\n%s", want, lines[1])
+		}
+	}
+	if lipgloss.Width(lines[0]) != lipgloss.Width(lines[1]) {
+		t.Errorf("the two lines are %d and %d wide; a row is one block and its zone covers both",
+			lipgloss.Width(lines[0]), lipgloss.Width(lines[1]))
+	}
+}
+
+func TestTheSelectedRowIsTintedAcrossItsWholeWidth(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	width := model.layout().List.Width - borderWidth - paddingWidth
+
+	selected := model.renderRow(0, width)
+	plain := model.renderRow(1, width)
+
+	if !strings.Contains(selected[0], rowBar) {
+		t.Error("the selected row carries the accent bar")
+	}
+	if strings.Contains(plain[0], rowBar) {
+		t.Error("only the selected row carries the bar")
+	}
+	if selected[0] == plain[0] {
+		t.Error("the selection must be visible on the row itself, not only through the detail panel")
+	}
+	for _, line := range append(selected, plain...) {
+		if lipgloss.Width(line) != width {
+			t.Errorf("row line is %d wide, want the full %d so the block reads as one", lipgloss.Width(line), width)
+		}
+	}
+}
+
+func TestTheHeaderNamesTheProductAndUnderlinesTheActiveTab(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+
+	header := model.renderHeader(model.layout())
+	lines := strings.Split(header, "\n")
+
+	if len(lines) != domain.DashboardHeaderHeight {
+		t.Fatalf("the header is %d lines, want %d", len(lines), domain.DashboardHeaderHeight)
+	}
+	if !strings.Contains(lines[0], domain.DashboardWordmark) || !strings.Contains(lines[0], domain.DashboardTabWorktrees) {
+		t.Errorf("header = %q, want the wordmark and the tabs", lines[0])
+	}
+	if !strings.Contains(lines[0], "2 worktrees") {
+		t.Errorf("header = %q, want the count of what is listed", lines[0])
+	}
+	if !strings.Contains(lines[1], domain.DashboardActiveRuleGlyph) {
+		t.Errorf("rule = %q, want the active tab underlined rather than filled", lines[1])
+	}
+}
+
+func TestTheHeaderCountAgreesWithTheList(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "only")
+
+	if got := model.renderHeader(model.layout()); !strings.Contains(got, "1 worktree ") {
+		t.Errorf("header = %q, want a single worktree named in the singular", got)
+	}
+}
+
+// Points 3 of the style pass: the two confirmations are the same widget, so they
+// cannot drift apart again.
+func TestBothConfirmationsAreDrawnWithTheSameButtons(t *testing.T) {
+	create, _ := openStepper(t, stepperSession())
+	create = typeText(t, create, "feature/new")
+	create = press(t, create, namedKey(13))
+	create = press(t, create, namedKey(13))
+
+	remove, _ := openDeleteForm(t, deleteSession())
+
+	createButtons := buttonLabels(create)
+	removeButtons := buttonLabels(remove)
+	if len(createButtons) != 2 || len(removeButtons) != 2 {
+		t.Fatalf("buttons: create %v, delete %v — both confirm and cancel", createButtons, removeButtons)
+	}
+	if createButtons[1] != removeButtons[1] {
+		t.Errorf("cancel reads %q on a create and %q on a delete", createButtons[1], removeButtons[1])
+	}
+	if create.modal.renderButton(0, formRow{label: "X", confirm: true}) != remove.modal.renderButton(0, formRow{label: "X", confirm: true}) {
+		t.Error("the same button must render the same way in both modals")
+	}
+}
+
+func buttonLabels(model Model) []string {
+	var labels []string
+	for _, row := range model.modal.rows {
+		if row.kind == formButton {
+			labels = append(labels, row.label)
+		}
+	}
+	return labels
+}
+
+func TestARecapStepIsAConfirmationNotAnotherList(t *testing.T) {
+	model, _ := openStepper(t, stepperSession())
+	model = typeText(t, model, "feature/new")
+	model = press(t, model, namedKey(13))
+	model = press(t, model, namedKey(13))
+
+	if !model.modal.usesRows() {
+		t.Fatal("the recap must be drawn as a confirmation")
+	}
+	if got := model.modal.hint(); got != domain.DashboardStepperRowsHint {
+		t.Errorf("hint = %q, want the keys a stepper confirmation takes", got)
+	}
+	if strings.Contains(strings.Join(model.modal.body(m0zones{}), "\n"), domain.WizardCancelValue) {
+		t.Error("the cancel row must read as a button, not carry its wizard value")
+	}
+}
+
+func TestAPlainConfirmSaysNothingAboutToggling(t *testing.T) {
+	session := flow.Session{Steps: []flow.Step{{
+		Kind: flow.StepRecap, Key: keyConfirm, Title: "Sure?",
+		Options: []flow.Option{{Label: "Yes", Value: confirmYes}},
+	}}}
+	model := newTestModel(t, testWidth, testHeight, "a")
+	reply := make(chan promptReply, 1)
+	model = prompt(t, model, promptMsg{shape: modalForm, session: session, reply: reply})
+
+	if got := model.modal.hint(); got != domain.DashboardConfirmHint {
+		t.Errorf("hint = %q, want no mention of toggling in a form with nothing to toggle", got)
+	}
+}

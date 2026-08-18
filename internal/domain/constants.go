@@ -732,8 +732,19 @@ const (
 	DashboardMinDetailWidth   = 32
 	DashboardOutputBodyHeight = 8
 	// DashboardChromeHeight is what a panel spends on chrome: its two border rows
-	// plus its title row.
+	// plus its title row. DashboardTitleGap is the blank line under that title —
+	// a panel whose body starts against its title reads as one block.
 	DashboardChromeHeight = 3
+	DashboardTitleGap     = 1
+
+	// DashboardHeaderHeight is the top bar: the wordmark and its tabs, then the
+	// rule that underlines the active one.
+	DashboardHeaderHeight = 2
+
+	// DashboardRowHeight is how many lines one worktree takes — its name, then
+	// what its state amounts to — and DashboardRowGap the blank line between two.
+	DashboardRowHeight = 2
+	DashboardRowGap    = 1
 
 	// DashboardMsgBuffer sizes the channel the running flows post on. It only has
 	// to absorb a burst of hook output between two frames.
@@ -744,6 +755,15 @@ const (
 	DashboardModalWidthPercent = 60
 	DashboardModalMinWidth     = 40
 	DashboardModalMaxWidth     = 88
+
+	// DashboardWordmark names the product in the header bar.
+	DashboardWordmark    = "wtm"
+	DashboardCountFmt    = "%d worktrees"
+	DashboardCountOneFmt = "%d worktree"
+	// DashboardRuleGlyph carries the header rule, DashboardActiveRuleGlyph the
+	// heavier segment under the active tab.
+	DashboardRuleGlyph       = "─"
+	DashboardActiveRuleGlyph = "━"
 
 	DashboardTabWorktrees = "Worktrees"
 	DashboardListTitle    = "Worktrees"
@@ -781,8 +801,15 @@ const (
 	DashboardHelpTitle = "Keys & mouse"
 
 	// DashboardAddLabel is the list panel's header button, KeyNew its keyboard
-	// equivalent.
-	DashboardAddLabel = "+ new"
+	// equivalent. The long form is used wherever the panel is wide enough.
+	DashboardAddLabel     = "+ New"
+	DashboardAddLabelLong = "+ New worktree"
+
+	// DashboardMetaFromPrefix, DashboardMetaSeparator and DashboardMetaNothing
+	// make up the second line of a worktree row.
+	DashboardMetaFromPrefix = "from "
+	DashboardMetaSeparator  = " · "
+	DashboardMetaNothing    = "—"
 	// DashboardMenuTitle heads the per-worktree context menu and
 	// DashboardMenuDelete is its only entry for now.
 	DashboardMenuDelete = "Delete worktree…"
@@ -808,7 +835,9 @@ const (
 	DashboardModalPreparing  = "Preparing…"
 	DashboardStepperHint     = "↑↓ move · / filter · enter confirm · esc back"
 	DashboardStepperTextHint = "enter confirm · esc back"
+	DashboardStepperRowsHint = "↑↓ move · enter confirm · esc back"
 	DashboardFormHint        = "↑↓ move · space toggle · enter confirm · esc cancel"
+	DashboardConfirmHint     = "↑↓ move · enter confirm · esc cancel"
 
 	// DashboardUnsupportedStepFmt refuses a step kind no modal can draw, rather
 	// than guessing a widget for it (step key, kind).
