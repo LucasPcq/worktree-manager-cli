@@ -136,3 +136,30 @@ func TestAFlowMessageIsDeliveredThroughTheChannelAndRearmsTheListener(t *testing
 		t.Error("handling a flow message must re-arm the listener, or the next one is never read")
 	}
 }
+
+func TestBackingOutOfAQuestionLeavesNothingInTheOutputPanel(t *testing.T) {
+	msgs := make(chan tea.Msg, 4)
+	p := presenter{send: func(msg tea.Msg) { msgs <- msg }}
+
+	p.Notice(flow.AbortedNotice)
+	if len(msgs) != 0 {
+		t.Errorf("an abort posted %d lines, want none: the modal closing already said it", len(msgs))
+	}
+
+	p.Notice(flow.Notice{Kind: flow.NoticeWarning, Text: domain.CleanCannotCleanParent})
+	if len(msgs) != 1 {
+		t.Errorf("a refusal posted %d lines, want it reported", len(msgs))
+	}
+}
+
+func TestAnAbortedRunLeavesTheOutputPanelUntouched(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model, _ = updateCmd(model, key(domain.KeyNew))
+
+	presenter{send: func(msg tea.Msg) { model = update(model, msg) }}.Notice(flow.AbortedNotice)
+	model = update(model, opDoneMsg{id: model.ops.running[0].id, err: domain.ErrUserAborted})
+
+	if len(model.outputLines) != 0 {
+		t.Errorf("output = %q, want a cancelled run to leave no trace", model.outputLines)
+	}
+}

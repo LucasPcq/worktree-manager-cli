@@ -35,7 +35,15 @@ func (p presenter) HookPhase(params flow.HookPhaseParams) error {
 	return err
 }
 
-func (p presenter) Notice(notice flow.Notice) { p.line(notice.Text) }
+// Notice keeps the abort to itself: on a surface where the modal closing is the
+// answer, logging "Aborted." for every question the user backed out of turns the
+// panel into a list of things that did not happen.
+func (p presenter) Notice(notice flow.Notice) {
+	if notice == flow.AbortedNotice {
+		return
+	}
+	p.line(notice.Text)
+}
 
 func (p presenter) Status(notice flow.Notice) { p.line(notice.Text) }
 
