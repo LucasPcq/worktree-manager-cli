@@ -193,13 +193,15 @@ func TestNarrowClickOnARowOpensTheDetail(t *testing.T) {
 	}
 }
 
+// The right button is no longer among them: it opens the context menu, which
+// TestRightClickSelectsTheRowAndOpensItsMenu covers.
 func TestNonLeftMouseEventsAreIgnored(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
 	renderAndWait(t, model, rowZone(2))
 
 	ignored := []tea.MouseMsg{
 		{X: rowTextX, Y: firstRowY + 2, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft},
-		{X: rowTextX, Y: firstRowY + 2, Action: tea.MouseActionPress, Button: tea.MouseButtonRight},
+		{X: rowTextX, Y: firstRowY + 2, Action: tea.MouseActionRelease, Button: tea.MouseButtonRight},
 		{X: rowTextX, Y: firstRowY + 2, Action: tea.MouseActionMotion, Button: tea.MouseButtonNone},
 	}
 	for _, msg := range ignored {

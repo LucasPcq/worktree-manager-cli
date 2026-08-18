@@ -91,14 +91,15 @@ type formSectionParams struct {
 
 // formSection renders one step and reports the answer the later steps must read.
 func formSection(params formSectionParams) ([]formRow, flow.Answer) {
-	rows := heading(params.Content)
-
 	if params.Step.Kind == flow.StepRecap {
+		rows := heading(withoutBlockerLines(params.Content))
 		return append(rows, blockerRows(params.Content)...), flow.Answer{
 			Value: confirmValue(params.Content),
 			Asked: true,
 		}
 	}
+
+	rows := heading(params.Content)
 
 	value := selectedValue(params)
 	for _, option := range params.Content.Options {
@@ -129,6 +130,25 @@ func selectedValue(params formSectionParams) string {
 		}
 	}
 	return ""
+}
+
+// withoutBlockerLines drops from the prose what the acknowledgements below it
+// already state, so a refusal is never read twice.
+func withoutBlockerLines(content flow.StepContent) flow.StepContent {
+	stated := make(map[string]bool, len(content.Blockers))
+	for _, blocker := range content.Blockers {
+		stated[blocker.Label] = true
+	}
+
+	var kept []string
+	for _, line := range strings.Split(content.Description, "\n") {
+		if stated[line] || (len(kept) == 0 && line == "") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	content.Description = strings.Join(kept, "\n")
+	return content
 }
 
 func heading(content flow.StepContent) []formRow {

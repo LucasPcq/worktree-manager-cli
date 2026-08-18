@@ -8,6 +8,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
 )
 
@@ -45,6 +46,36 @@ func (m Model) startCreate() (Model, tea.Cmd) {
 
 	return m, func() tea.Msg {
 		_, err := createflow.Run(params)
+		return opDoneMsg{id: id, err: err}
+	}
+}
+
+// startClean hands the removal to the same flow the CLI runs. The dashboard
+// never presets Force: lifting a refusal is an answer the user gives in the
+// modal, one refusal at a time.
+func (m Model) startClean(branch string) (Model, tea.Cmd) {
+	declared := cleanflow.Operation()
+	m, id := m.beginOp(declared)
+	send := m.sender()
+
+	params := cleanflow.Params{
+		Context: m.flowContext(),
+		Request: cleanflow.Request{
+			Branch:     branch,
+			BaseBranch: m.params.Config.Project.Worktrees.BaseBranch,
+		},
+		Prompter: prompter{
+			send:      send,
+			title:     domain.DashboardDeleteTitle,
+			shape:     modalForm,
+			opID:      id,
+			targetKey: declared.TargetKey,
+		},
+		Presenter: cleanPresenter{presenter{send: send}},
+	}
+
+	return m, func() tea.Msg {
+		_, err := cleanflow.Run(params)
 		return opDoneMsg{id: id, err: err}
 	}
 }

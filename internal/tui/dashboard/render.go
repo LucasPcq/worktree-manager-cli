@@ -100,6 +100,7 @@ func (m Model) renderHelpOverlay() string {
 		{"pgup · pgdown", "page through the list"},
 		{"wheel", "scroll the list or the output panel"},
 		{"n", "new worktree (or click + new)"},
+		{"m", "actions on the selected worktree (or right-click a row)"},
 		{"tab · shift+tab", "switch view (or click a tab)"},
 		{"enter · →", "open the detail (narrow terminals)"},
 		{"esc · ←", "close the detail"},

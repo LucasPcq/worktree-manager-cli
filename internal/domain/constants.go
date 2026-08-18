@@ -772,8 +772,8 @@ const (
 	DashboardUpToDate         = "up to date"
 	DashboardUnknownParent    = "unknown"
 
-	DashboardHelpWide   = "↑↓ select · n new · tab view · o output · shift+↑↓ scroll output · r refresh · ? help · q quit"
-	DashboardHelpNarrow = "↑↓ select · enter detail · n new · o output · r refresh · ? help · q quit"
+	DashboardHelpWide   = "↑↓ select · n new · m actions · tab view · o output · shift+↑↓ scroll output · r refresh · ? help · q quit"
+	DashboardHelpNarrow = "↑↓ select · enter detail · n new · m actions · o output · r refresh · ? help · q quit"
 	DashboardHelpDetail = "esc back · ↑↓ select · o output · r refresh · q quit"
 
 	// DashboardHelpTitle heads the key/mouse reference overlay. Every clickable
@@ -786,6 +786,11 @@ const (
 	// DashboardMenuTitle heads the per-worktree context menu and
 	// DashboardMenuDelete is its only entry for now.
 	DashboardMenuDelete = "Delete worktree…"
+	// DashboardMenuGlyph and DashboardMenuLastGlyph hang the menu off the row it
+	// acts on, DashboardMenuDisabledMark says an entry cannot be used.
+	DashboardMenuGlyph        = "  ├ "
+	DashboardMenuLastGlyph    = "  └ "
+	DashboardMenuDisabledMark = " ✗"
 
 	DashboardCreateTitle = "New worktree"
 	DashboardDeleteTitle = "Delete worktree"

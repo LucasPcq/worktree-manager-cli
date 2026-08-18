@@ -74,6 +74,9 @@ type Model struct {
 	detailOpen bool
 	showHelp   bool
 
+	menuOpen   bool
+	menuCursor int
+
 	// msgs carries what the flow goroutines post; listenCmd is its only reader.
 	msgs  chan tea.Msg
 	ops   operations
@@ -306,6 +309,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// An open menu takes the keys it uses and lets every other one through, after
+	// closing itself: a dropdown must never trap the keyboard.
+	if m.menuOpen {
+		switch key {
+		case keyUp, keyVimUp:
+			return m.moveMenu(-1), nil
+		case keyDown, keyVimDown:
+			return m.moveMenu(1), nil
+		case keyEnter:
+			return m.activateMenu(m.menuCursor)
+		case keyEscape, keyMenu:
+			return m.closeMenu(), nil
+		}
+		m = m.closeMenu()
+	}
+
 	layout := m.layout()
 
 	switch key {
@@ -317,6 +336,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.refresh()
 	case keyNew:
 		return m.startCreate()
+	case keyMenu:
+		return m.openMenu(), nil
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded
 		return m.reflow(), nil
@@ -374,8 +395,23 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.wheel(msg, 1), nil
 	}
 
-	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+	if msg.Action != tea.MouseActionPress {
 		return m, nil
+	}
+	if msg.Button == tea.MouseButtonRight {
+		return m.rightClick(msg)
+	}
+	if msg.Button != tea.MouseButtonLeft {
+		return m, nil
+	}
+
+	if m.menuOpen {
+		for index := range m.menuItems() {
+			if m.inZone(menuZone(index), msg) {
+				return m.activateMenu(index)
+			}
+		}
+		m = m.closeMenu()
 	}
 
 	for index := range tabs {
@@ -405,6 +441,19 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.reflow(), nil
 	}
 
+	return m, nil
+}
+
+// rightClick opens the context menu on the row it lands on, selecting it first:
+// a menu that acted on another row than the one under the pointer would be a trap.
+func (m Model) rightClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	for index := range m.statuses {
+		if !m.inZone(rowZone(index), msg) {
+			continue
+		}
+		m.cursor = index
+		return m.reflow().openMenu(), nil
+	}
 	return m, nil
 }
 
