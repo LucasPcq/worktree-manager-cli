@@ -2,7 +2,7 @@
 
 wtm is a Cobra CLI with two interactive surfaces (an inline wizard and the `wtm ui`
 dashboard) over one set of git operations. The layering exists so that a command's
-*déroulé* — the order of its questions, its safety checks, its service calls — is
+*flow* — the order of its questions, its safety checks, its service calls — is
 written once and can be replayed by either surface.
 
 ## The map
@@ -15,7 +15,7 @@ internal/
   domain/                     types, errors, constants only (no methods, no functions)
   rules/                      pure functions (stdlib + domain only, no I/O)
   config/                     load & validate config.toml + run.toml
-  flow/                       the déroulé of the commands, surface-independent
+  flow/                       the flow of each command, surface-independent
     decide/                     branch/env decisions shared by the create-like flows
     create/                     `wtm create`: the run + its questions
     clean/                      `wtm clean`: the run + its questions
@@ -51,13 +51,13 @@ Every arrow that is *missing* is the point:
 
 | Interdiction | What it buys |
 | -- | -- |
-| `commands/` has no business logic | A command is readable as flags in, one call out. Changing the déroulé never means editing flag parsing. |
+| `commands/` has no business logic | A command is readable as flags in, one call out. Changing the flow never means editing flag parsing. |
 | `domain/` holds types, errors and constants only | Nothing can acquire a dependency by hiding behind a method on a shared type. |
 | `rules/` imports only stdlib + `domain/` | Decisions stay testable with no repo, no network, no temp dir. `rules.DecidePush` is a table test, not an integration test. |
 | `service/` never imports cobra, bubbletea or lipgloss | The git operations are callable from a test, a flow, a daemon — anything that is not a terminal. |
 | `output/` and `tui/` hold no decision logic | Two surfaces can render the same run without disagreeing about what it means. |
 | `styles/` is the only package instantiating `lipgloss.Style` | A theme change is one file. |
-| `flow/` imports only `service/`, `rules/`, `domain/` and the stdlib | The déroulé cannot grow a dependency on the surface that runs it. This is what makes a second surface possible at all — see below. |
+| `flow/` imports only `service/`, `rules/`, `domain/` and the stdlib | The flow cannot grow a dependency on the surface that runs it. This is what makes a second surface possible at all — see below. |
 
 `flow/` cannot reach `infra/` either. When a flow needs something only `infra/` has,
 the fix is a thin `service/` wrapper, not an exception: `worktree.FindByBranch` and
@@ -69,7 +69,7 @@ The `flow/` import rule is checked mechanically by the `build-validator` subagen
 ## The founding observation: seven closures
 
 Before this layering existed, `internal/commands/wt/*.go` did three things at once:
-read the flags, run the déroulé, **and** hand the TUI closures that called back into
+read the flags, run the flow itself, **and** hand the TUI closures that called back into
 the service. The TUI is forbidden from importing `service/`, so the command passed it
 functions instead:
 
@@ -85,7 +85,7 @@ functions instead:
 
 The rule was respected and the architecture was still defeated: the service call
 happened on the TUI's goroutine, at the TUI's whim, with the command as a courier.
-Worse, the déroulé lived on both sides of that boundary — the dashboard could not
+Worse, the flow lived on both sides of that boundary — the dashboard could not
 replay it without duplicating it.
 
 `flow/` **is allowed** to call the service. Those closures become hooks carried by the

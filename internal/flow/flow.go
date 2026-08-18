@@ -1,5 +1,5 @@
-// Package flow carries the déroulé of the wtm commands, independently of the
-// surface that runs them.
+// Package flow carries the run of each wtm command, independently of the
+// surface that drives it.
 package flow
 
 import (

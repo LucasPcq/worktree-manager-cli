@@ -559,7 +559,7 @@ const (
 	FlowStepRequiredFmt     = "%s is required and cannot be asked in this mode"
 	FlowStepRequiredFlagFmt = "%s is required and cannot be asked in this mode: pass --%s"
 
-	// The create déroulé (internal/flow/create): step prose, option labels, recap
+	// The create flow (internal/flow/create): step prose, option labels, recap
 	// fields and refusals. Format verbs: %s branch, %s env strategy, %s flag name.
 	CreateLoadingFmt               = "Creating worktree %s…"
 	CreateBranchStepDescription    = "Name for the new worktree branch"
@@ -644,7 +644,7 @@ const (
 	// CleanForceHintFmt is the refusal shown when a worktree is unsafe to remove
 	// without --force (branch, reason).
 	CleanForceHintFmt = "worktree %s %s; pass --force to remove it anyway"
-	// The clean déroulé (internal/flow/clean): step prose, option labels, recap body,
+	// The clean flow (internal/flow/clean): step prose, option labels, recap body,
 	// refusals and progress messages. Format verbs: %s branch, %s path, %d counts.
 	CleanPickerTitle        = "Select worktree to clean"
 	CleanPickerDescription  = "The parent worktree cannot be cleaned"

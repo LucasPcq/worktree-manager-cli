@@ -1,4 +1,4 @@
-# `internal/flow/` — the déroulé of a command
+# `internal/flow/` — how a command runs
 
 A *flow* is everything a command does between "the flags are parsed" and "the result
 is printed": the questions it asks, in what order, which ones it may skip, the safety
@@ -612,7 +612,7 @@ CLI behavior was pinned by tests written against the *old* code:
 `create_noninteractive_test.go` and `integration_test.go` (the `--yes` / `--force` axes,
 the JSON reparent default, idempotence on an absent worktree). They exist to be run
 unchanged after the refactor. Keep them that way: they are the only thing that proves a
-déroulé that moved packages still reads the same to a user. When you migrate a command,
+flow that moved packages still reads the same to a user. When you migrate a command,
 write its characterization tests first, and do not "fix" one to make a refactor pass.
 
 ## Known gaps

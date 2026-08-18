@@ -1,4 +1,4 @@
-// Package create runs the `wtm create` déroulé.
+// Package create runs the `wtm create` flow.
 package create
 
 import (

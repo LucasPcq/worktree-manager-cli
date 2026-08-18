@@ -1,4 +1,4 @@
-// Package clean runs the `wtm clean` déroulé.
+// Package clean runs the `wtm clean` flow.
 package clean
 
 import (

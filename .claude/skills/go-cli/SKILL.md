@@ -167,7 +167,7 @@ internal/
 - `output/` and `tui/` have zero decision logic — only rendering
 - `styles/` is the only package allowed to instantiate `lipgloss.Style`
 
-**The `flow/` layer — where the déroulé of a mutation command lives.** A command that
+**The `flow/` layer — where the flow of a mutation command lives.** A command that
 mutates worktree state does **not** orchestrate: `commands/` reads the flags, builds a
 `Request`, picks a `Prompter` and a `Presenter`, and calls `<cmd>.Run`. Three seams let a
 second surface replay the same run:
@@ -320,7 +320,7 @@ Two env-var overrides exist for tests / CI:
    **Mutation command** (creates/removes/moves/rewrites worktree state) → it goes
    through `flow/`: declare `Request`/`Outcome`/`Presenter`/`Params`/`Run` in
    `internal/flow/<name>/`, declare its questions as `flow.Step` in `steps.go`, and keep
-   the runner to the shape in "Mutation command" above. Never put the déroulé in
+   the runner to the shape in "Mutation command" above. Never put the flow in
    `commands/`, and never inject a service closure into a TUI package.
 6. Regenerate the reference and update the guide: `make docs` (writes `docs/`, never
    hand-edited) and add the command to the `README.md` overview table. See CLAUDE.md
@@ -824,7 +824,7 @@ func TestRunExportEmpty(t *testing.T) {
 }
 ```
 
-### Flow tests — a whole déroulé, no TUI
+### Flow tests — a whole command run, no TUI
 
 A migrated command is tested by calling `<cmd>.Run` (or the unexported flow struct) with
 the doubles for the two seams, from `internal/testutil/flowtest`. No terminal, no
@@ -855,7 +855,7 @@ recorder := &flowtest.Recorder{}
 
 ### Characterization tests — before you refactor, not after
 
-A refactor that moves a déroulé between packages must not change what a user sees. Pin the
+A refactor that moves a command's flow between packages must not change what a user sees. Pin the
 observable behavior **first**, against the old code, then move the code and run those tests
 unchanged. That is what `internal/tui/newwt/create_flow_test.go`,
 `internal/commands/wt/create_wizard_test.go`, `create_noninteractive_test.go` and
@@ -888,7 +888,7 @@ Before calling `build-validator`, verify manually:
 - [ ] No nested conditionals — early returns throughout
 - [ ] No type assertions without comma-ok
 - [ ] No business logic in `commands/` or `tui/`
-- [ ] A mutation command's déroulé is in `internal/flow/<cmd>/`, not in its runner
+- [ ] A mutation command's flow is in `internal/flow/<cmd>/`, not in its runner
 - [ ] `internal/flow/` imports no cobra/bubbletea/lipgloss, no `output`/`tui`/`config`/`commands`
 - [ ] Every `flow.Step` has a deliberate `Resolve` (safe default, flag-naming error, or absent on purpose)
 - [ ] No `lipgloss` imports outside `internal/styles/`
