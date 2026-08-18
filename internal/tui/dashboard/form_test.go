@@ -306,3 +306,19 @@ func TestClickingCancelClosesTheForm(t *testing.T) {
 		t.Errorf("err = %v, want the run aborted", answered.err)
 	}
 }
+
+func TestASectionTitleIsFollowedByABlankLine(t *testing.T) {
+	model, _ := openDeleteForm(t, deleteSession(dirtyAndUnpushed()...))
+
+	title := rowIndex(t, model, func(row formRow) bool {
+		return row.kind == formText && row.label == domain.CleanDeleteTitle
+	})
+
+	if next := model.modal.rows[title+1]; next.kind != formText || next.label != "" {
+		t.Errorf("the row under %q is %q, want the blank line every title gets",
+			domain.CleanDeleteTitle, next.label)
+	}
+	if body := model.modal.rows[title+2]; body.label == "" {
+		t.Error("one blank line, not two: the section's body follows it")
+	}
+}

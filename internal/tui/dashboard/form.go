@@ -153,10 +153,15 @@ func withoutBlockerLines(content flow.StepContent) flow.StepContent {
 	return content
 }
 
+// heading gives a section's title the same blank line under it that a panel
+// title gets, so the question and what it entails are not one block of text.
 func heading(content flow.StepContent) []formRow {
 	var rows []formRow
 	if content.Title != "" {
 		rows = append(rows, formRow{kind: formText, label: content.Title})
+		if content.Description != "" {
+			rows = append(rows, formRow{kind: formText})
+		}
 	}
 	for _, line := range strings.Split(content.Description, "\n") {
 		rows = append(rows, formRow{kind: formText, label: line})
