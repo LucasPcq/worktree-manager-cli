@@ -17,7 +17,11 @@ stays aligned with the released CLI. Skip purely internal refactors and TUI-only
 changes that don't affect how an agent invokes wtm.
 
 **Docs & README:** the full command reference under `docs/` is **generated** from the
-Cobra command tree by `tools/gendocs` — never hand-edit it. `README.md` is a lean guide
+Cobra command tree by `tools/gendocs` — never hand-edit it. The one exception is
+`docs/dev/`, hand-written developer documentation (architecture, the `flow/` layer, how
+to add a mutation command): gendocs only writes `wtm_*.md` at the root of `docs/`, so
+that subdirectory survives a regeneration. Keep it in step with the code the same way
+this file is. `README.md` is a lean guide
 (concepts + a grouped command-overview table linking into `docs/`), not a flag reference.
 Whenever a command or flag is **added, modified, or removed**:
 1. run `make docs` to regenerate `docs/` (also runs automatically before `make release`);
@@ -141,7 +145,7 @@ internal/
   domain/                     ← types, errors, constants only (no methods, no functions)
   rules/                      ← pure functions (stdlib + domain only, no I/O)
   config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/, plus ~/.config/wtm/config.toml
-  flow/                       ← the déroulé of the commands, surface-independent (see below):
+  flow/                       ← the flow of each command, surface-independent (see below):
                                 the vocabulary (Step, Session, Prompter, Presenter)
     decide/                   ←   branch/env decisions shared by the create-like flows
     create/                   ←   `wtm create`: the run (create.go) + its questions (steps.go)
@@ -184,7 +188,7 @@ machine output (shell-eval: `resolve` success, `shell-init`) are never framed.
 Route on `rules.IsHumanFormat(format)`. See the `go-cli` skill (Output section) for
 the full convention.
 
-**The `flow/` layer (LUC-175).** A command's déroulé lives in `internal/flow/`, not in
+**The `flow/` layer (LUC-175).** A command's flow lives in `internal/flow/`, not in
 `commands/`: `runCreate`/`runClean` read the flags, decide *who may be asked* and
 *where output goes*, then call `create.Run` / `clean.Run`. One package per command,
 each splitting the run from the questions it asks. Three seams let a second surface
@@ -228,6 +232,17 @@ kind rather than guessing. Test doubles for the two seams live in
 `internal/testutil/flowtest`. `create` and `clean` are migrated; `extract`, `sync`,
 `prune` and the other commands still drive their wizard packages directly, and
 `tui/newwt` stays until `extract` (which embeds it) migrates.
+
+**Every new worktree-mutating command goes through `flow/`** — no exception, and no new
+command written on the pre-`flow` model even to match a neighbour that has not migrated
+yet. Concretely: declare `Request`/`Outcome`/`Presenter`/`Params`/`Run` in
+`internal/flow/<cmd>/`, its questions as `flow.Step` in `steps.go`, and keep the runner
+in `commands/` to flags → `Request` → pick the two seams → `<cmd>.Run`. A runner that
+inspects state, orders service calls or gates a picker on `interactive` beyond choosing
+the Prompter has put the flow in the wrong layer, and a service closure injected into a
+`tui/` package is the same mistake in its older form. The developer reference is
+`docs/dev/` (`flow-layer.md`, `adding-a-mutation-command.md`); the import rule above is
+checked mechanically by the `build-validator` subagent.
 
 **Mutation commands — bypass flags (two orthogonal axes):** every worktree-mutating
 command (`create`, `clean`, `sync`, `prune`, `relocate`, `reparent`, `extract`,
