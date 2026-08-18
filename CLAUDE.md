@@ -124,8 +124,8 @@ Write a comment only when the code cannot carry the information:
   guessing — not systematically
 
 Documenting a pattern or an architecture belongs in `docs/` or in this file, not in a
-header comment repeated across files. `internal/flow` (~5% comment lines) is the
-reference for the density to aim for.
+header comment repeated across files. `internal/flow` is the reference for the density
+to aim for: 84 comment lines out of 2261, ~3.7%.
 
 **Migration:** the repo predates this rule, so it is applied as files are touched, not
 in one sweep. When you modify a file, bring the comments **in that file** into line —
@@ -243,7 +243,8 @@ false. See `internal/commands/wt/extract.go` and `internal/commands/wt/sync.go`
 **Recap completeness:** every recap builder reads the value from its wizard step,
 **else falls back to the flag/arg** that resolved it. A flag must never make a line
 disappear from the recap. A migrated command gets this from `Session.Presets` (a preset
-step is not asked but is still read back — see `internal/flow` `createFlow.recap`);
+step is not asked but is still read back — see `internal/flow/create/steps.go`
+`createFlow.recap`);
 the others do it in their recap builder (e.g. `internal/tui/extract`
 `buildCombinedRecap`, `internal/tui/newwt` `buildCreateRecap`, `internal/tui/checkout`
 `buildCheckoutRecap`, `internal/tui/reparent` `recapBody`).

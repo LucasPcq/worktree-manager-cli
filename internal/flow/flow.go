@@ -72,7 +72,6 @@ type Session struct {
 
 type Answer struct {
 	Value      string
-	Values     []string
 	Skipped    bool
 	SkipReason string
 	Asked      bool
@@ -110,8 +109,6 @@ func (a Answers) Get(key string) (Answer, bool) {
 }
 
 func (a Answers) Value(key string) string { return a.byKey[key].Value }
-
-func (a Answers) Values(key string) []string { return a.byKey[key].Values }
 
 // Answered excludes a preset, a Resolve fallback and a skip.
 func (a Answers) Answered(key string) bool {
@@ -167,7 +164,7 @@ var AbortedNotice = Notice{Kind: NoticeMessage, Text: domain.AbortedMessage}
 
 func requiredErr(step Step) error {
 	if step.Flag == "" {
-		return fmt.Errorf("%s is required and cannot be asked in this mode", step.Label)
+		return fmt.Errorf(domain.FlowStepRequiredFmt, step.Label)
 	}
-	return fmt.Errorf("%s is required and cannot be asked in this mode: pass --%s", step.Label, step.Flag)
+	return fmt.Errorf(domain.FlowStepRequiredFlagFmt, step.Label, step.Flag)
 }

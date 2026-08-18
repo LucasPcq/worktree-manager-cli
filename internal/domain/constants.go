@@ -554,6 +554,11 @@ const (
 	SourceUpdateSummaryFastForward = "fast-forward to origin"
 	SourceUpdateSummaryKeep        = "keep as-is"
 
+	// FlowStepRequired*Fmt refuse a step that has no safe default and cannot be
+	// asked (step label, flag name).
+	FlowStepRequiredFmt     = "%s is required and cannot be asked in this mode"
+	FlowStepRequiredFlagFmt = "%s is required and cannot be asked in this mode: pass --%s"
+
 	// The create déroulé (internal/flow/create): step prose, option labels, recap
 	// fields and refusals. Format verbs: %s branch, %s env strategy, %s flag name.
 	CreateLoadingFmt               = "Creating worktree %s…"
