@@ -31,10 +31,18 @@ type menuItem struct {
 
 func (m Model) menuItems() []menuItem {
 	item := menuItem{label: domain.DashboardMenuDelete, action: menuDelete, danger: true}
-	if selected, ok := m.selected(); ok {
-		if reason, busy := m.busyReason(selected.Branch); busy {
-			item.disabled = reason
-		}
+	selected, ok := m.selected()
+	if !ok {
+		return []menuItem{item}
+	}
+	// The parent worktree is refused whatever happens, so the entry says so
+	// rather than opening a modal that can only end in that refusal.
+	if selected.IsParent {
+		item.disabled = domain.CleanCannotCleanParent
+		return []menuItem{item}
+	}
+	if reason, busy := m.busyReason(selected.Branch); busy {
+		item.disabled = reason
 	}
 	return []menuItem{item}
 }

@@ -779,6 +779,13 @@ const (
 	// DashboardCreatedFormat renders a worktree's creation date in local time.
 	DashboardCreatedFormat = "2006-01-02 15:04"
 
+	// The detail panel groups its fields under these headings.
+	DashboardSectionWorktree   = "WORKTREE"
+	DashboardSectionDivergence = "DIVERGENCE"
+	DashboardSectionReview     = "REVIEW"
+	// DashboardPRFmt renders a pull request as number, title and state.
+	DashboardPRFmt = "#%d %s (%s)"
+
 	DashboardLabelPath    = "Path"
 	DashboardLabelParent  = "Parent"
 	DashboardLabelState   = "State"

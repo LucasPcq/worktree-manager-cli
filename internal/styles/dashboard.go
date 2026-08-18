@@ -34,6 +34,9 @@ var (
 	// DashboardCount is the header's right-hand count.
 	DashboardCount = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
 
+	// DashboardSectionTitle heads a group of fields inside a panel.
+	DashboardSectionTitle = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
+
 	// DashboardLabel names a detail field, DashboardValue carries it.
 	DashboardLabel = lipgloss.NewStyle().Foreground(ColorMuted)
 	DashboardValue = lipgloss.NewStyle()

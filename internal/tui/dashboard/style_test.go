@@ -229,3 +229,62 @@ func TestOnlyTheHeaderButtonIsAFilledBlock(t *testing.T) {
 		t.Error("the header button says what it does when there is room for it")
 	}
 }
+
+func TestTheDetailIsGroupedUnderHeadings(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model.statuses[0] = domain.WorktreeStatus{Branch: "a", Path: "/tmp/a", IsDirty: true, CommitsAhead: 2}
+	model = update(model, prsMsg{})
+
+	body := model.detailBody(model.layout())
+	joined := strings.Join(body, "\n")
+
+	for _, heading := range []string{
+		domain.DashboardSectionWorktree, domain.DashboardSectionDivergence, domain.DashboardSectionReview,
+	} {
+		index := lineIndex(body, heading)
+		if index < 0 {
+			t.Fatalf("the detail is missing the %q group", heading)
+		}
+		if body[index-1] != "" || body[index+1] != "" {
+			t.Errorf("%q must stand on its own, with a blank line either side", heading)
+		}
+	}
+	if !strings.Contains(body[0], "a") || !strings.Contains(body[0], "dirty") {
+		t.Errorf("the heading = %q, want the worktree and its state", body[0])
+	}
+	if !strings.Contains(body[1], domain.DashboardRuleGlyph) {
+		t.Error("a rule must separate the heading from the fields, as in the context menu")
+	}
+	if strings.Contains(joined, domain.DashboardLabelState) {
+		t.Error("the working-tree state is the pill in the heading; repeating it as a field says it twice")
+	}
+}
+
+func lineIndex(lines []string, needle string) int {
+	for index, line := range lines {
+		if strings.Contains(line, needle) {
+			return index
+		}
+	}
+	return -1
+}
+
+func TestTheParentWorktreeCannotBeDeletedAndTheMenuSaysSo(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "main", "feature/x")
+	model.statuses[0] = domain.WorktreeStatus{Branch: "main", Path: "/tmp/main", IsParent: true}
+
+	item := model.menuItems()[0]
+	if item.disabled == "" {
+		t.Fatal("the parent worktree is refused whatever happens; the entry must say so up front")
+	}
+	if !strings.Contains(item.disabled, "parent") {
+		t.Errorf("reason = %q, want it to name why", item.disabled)
+	}
+
+	model = update(model, key(domain.KeyMenu))
+	model, cmd := updateCmd(model, namedKey(13))
+
+	if cmd != nil || len(model.ops.running) != 0 {
+		t.Errorf("running = %+v, want the disabled entry to have started nothing", model.ops.running)
+	}
+}
