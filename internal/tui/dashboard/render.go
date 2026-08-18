@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -95,9 +96,10 @@ func (m Model) renderHelpBar(layout domain.DashboardLayout) string {
 	return styles.DashboardHelp.Render(truncate(hint, max(layout.Help.Width-paddingWidth, 0)))
 }
 
-// renderHelpOverlay replaces the frame while `?` is held open: every clickable
-// zone paired with the key that does the same thing.
-func (m Model) renderHelpOverlay() string {
+// helpBox is the key and mouse reference: every clickable zone paired with the
+// key that does the same thing. Like the other overlays it is a box pasted over
+// the frame, sized on its own content.
+func (m Model) helpBox() (string, domain.Rect) {
 	rows := [][2]string{
 		{"↑↓ · j k", "select a worktree (or click a row)"},
 		{"g · G", "first · last worktree"},
@@ -115,14 +117,38 @@ func (m Model) renderHelpOverlay() string {
 		{"q · ctrl+c", "quit"},
 	}
 
-	lines := make([]string, 0, len(rows)+2)
-	lines = append(lines, styles.DashboardBranch.Render(domain.DashboardHelpTitle), "")
-	for _, row := range rows {
-		lines = append(lines, styles.DashboardLabel.Render(pad(row[0], 18))+styles.DashboardValue.Render(row[1]))
+	textWidth := helpTextWidth(rows, m.width)
+	if textWidth <= 0 {
+		return "", domain.Rect{}
 	}
 
-	box := styles.DashboardPanel.Render(strings.Join(lines, "\n"))
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	lines := make([]string, 0, len(rows)+2)
+	lines = append(lines, styles.DashboardModalTitle.Render(truncate(domain.DashboardHelpTitle, textWidth)), "")
+	for _, row := range rows {
+		lines = append(lines, truncate(styles.DashboardLabel.Render(pad(row[0], helpKeyWidth))+
+			styles.DashboardValue.Render(row[1]), textWidth))
+	}
+
+	box := styles.DashboardModal.Width(textWidth + modalPadding).Render(strings.Join(lines, "\n"))
+	return box, rules.CenterRect(rules.CenterRectParams{
+		Width:        lipgloss.Width(box),
+		Height:       lipgloss.Height(box),
+		ScreenWidth:  m.width,
+		ScreenHeight: m.height,
+	})
+}
+
+// helpKeyWidth is the column the descriptions line up on.
+const helpKeyWidth = 18
+
+// helpTextWidth sizes the box on its longest row, then keeps it inside the
+// screen: an overlay is pasted whole, so it must never need trimming.
+func helpTextWidth(rows [][2]string, screenWidth int) int {
+	widest := lipgloss.Width(domain.DashboardHelpTitle)
+	for _, row := range rows {
+		widest = max(widest, helpKeyWidth+lipgloss.Width(row[1]))
+	}
+	return min(widest, screenWidth-domain.DashboardModalChrome-modalPadding)
 }
 
 // truncate clips plain text to a display width, marking the cut with an ellipsis.

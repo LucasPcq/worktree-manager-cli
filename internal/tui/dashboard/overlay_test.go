@@ -87,6 +87,10 @@ func TestTheViewStaysInsideTheTerminalWithAnOverlayOpen(t *testing.T) {
 		model = update(model, key(domain.KeyMenu))
 		assertFits(t, model.View(), size)
 
+		model = update(model, namedKey(tea.KeyEsc))
+		model = update(model, key(domain.KeyHelp))
+		assertFits(t, model.View(), size)
+
 		model, _ = openStepper(t, stepperSession())
 		model = update(model, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		assertFits(t, model.View(), size)
@@ -103,5 +107,27 @@ func assertFits(t *testing.T, view string, size [2]int) {
 		if width := lipgloss.Width(line); width > size[0] {
 			t.Errorf("%dx%d: line %d is %d columns wide", size[0], size[1], index, width)
 		}
+	}
+}
+
+func TestTheHelpFloatsOverTheFrameLikeTheOtherOverlays(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	frame := model.View()
+
+	model = update(model, key(domain.KeyHelp))
+	view := model.View()
+
+	if !strings.Contains(view, domain.DashboardHelpTitle) {
+		t.Fatal("? must show the key reference")
+	}
+	if !strings.Contains(view, domain.DashboardListTitle) || !strings.Contains(view, domain.DashboardOutputTitle) {
+		t.Error("the dashboard must stay visible around the help, as behind any other overlay")
+	}
+	if strings.Count(view, "\n") != strings.Count(frame, "\n") {
+		t.Errorf("the help changed the frame's height: %d lines against %d",
+			strings.Count(view, "\n"), strings.Count(frame, "\n"))
+	}
+	if _, ok := model.marks().(noMarks); !ok {
+		t.Errorf("marks() = %T under the help, want the frame left unmarked", model.marks())
 	}
 }

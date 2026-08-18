@@ -84,13 +84,31 @@ type ModalRectParams struct {
 // there and its rows are clickable there.
 func ComputeModalRect(params ModalRectParams) domain.Rect {
 	screenWidth, screenHeight := max(params.ScreenWidth, 0), max(params.ScreenHeight, 0)
-	width := ModalWidth(screenWidth)
-	height := min(max(params.ContentHeight, 1)+domain.DashboardModalChrome, screenHeight)
+	return CenterRect(CenterRectParams{
+		Width:        ModalWidth(screenWidth),
+		Height:       max(params.ContentHeight, 1) + domain.DashboardModalChrome,
+		ScreenWidth:  screenWidth,
+		ScreenHeight: screenHeight,
+	})
+}
+
+type CenterRectParams struct {
+	Width        int
+	Height       int
+	ScreenWidth  int
+	ScreenHeight int
+}
+
+// CenterRect places a box of a known size in the middle of the screen, clamped
+// to it — for an overlay that sizes itself on its content.
+func CenterRect(params CenterRectParams) domain.Rect {
+	width := max(min(params.Width, params.ScreenWidth), 0)
+	height := max(min(params.Height, params.ScreenHeight), 0)
 	return domain.Rect{
-		X:      max((screenWidth-width)/2, 0),
-		Y:      max((screenHeight-height)/2, 0),
+		X:      max((params.ScreenWidth-width)/2, 0),
+		Y:      max((params.ScreenHeight-height)/2, 0),
 		Width:  width,
-		Height: max(height, 0),
+		Height: height,
 	}
 }
 

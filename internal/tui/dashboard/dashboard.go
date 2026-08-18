@@ -503,9 +503,6 @@ func (m Model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	if m.showHelp {
-		return m.renderHelpOverlay()
-	}
 
 	layout := m.layout()
 	body := ""
@@ -530,9 +527,13 @@ func (m Model) View() string {
 	return m.zones.Scan(m.withOverlays(lipgloss.JoinVertical(lipgloss.Left, sections...)))
 }
 
-// withOverlays pastes whatever is open over the frame. Only one of the two ever
-// is: a modal takes the keyboard, and it is opened from the menu, which closes.
+// withOverlays pastes whatever is open over the frame. Only one ever is: each of
+// them takes the keyboard while it is up.
 func (m Model) withOverlays(frame string) string {
+	if m.showHelp {
+		box, rect := m.helpBox()
+		return overlay(overlayParams{Base: frame, Box: box, At: rect})
+	}
 	if m.modal.open {
 		box, rect := m.modal.box(m.zones)
 		return overlay(overlayParams{Base: frame, Box: box, At: rect})

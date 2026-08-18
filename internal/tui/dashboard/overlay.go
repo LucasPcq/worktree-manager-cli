@@ -67,7 +67,7 @@ func (noMarks) Mark(_, content string) string { return content }
 // marks reports where the frame's clickable regions are registered: nowhere,
 // while an overlay is up.
 func (m Model) marks() marker {
-	if m.modal.open || m.menuOpen {
+	if m.modal.open || m.menuOpen || m.showHelp {
 		return noMarks{}
 	}
 	return m.zones
