@@ -201,8 +201,12 @@ func TestTheContextMenuNamesItsWorktreeAndRulesItOff(t *testing.T) {
 	if !strings.Contains(box, domain.DashboardRuleGlyph) {
 		t.Error("the actions must be ruled off from that name")
 	}
-	if !strings.Contains(box, rowBar) {
-		t.Error("the focused entry carries the same accent bar as a focused row")
+	// Everything in the box hangs off the same left edge: the name, the rule and
+	// the entries, with the focused one marked by the tint alone.
+	for index, line := range lines[1:3] {
+		if indentOf(line) != 0 {
+			t.Errorf("menu line %d starts at column %d, want it flush left", index+1, indentOf(line))
+		}
 	}
 	if rect.Height != len(lines) {
 		t.Errorf("the placement rule reserves %d rows for a box of %d", rect.Height, len(lines))

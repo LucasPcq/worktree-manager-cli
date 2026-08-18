@@ -106,8 +106,8 @@ func menuEntryPoint(t *testing.T, model Model, index int) (x, y int) {
 const (
 	menuBorder  = 1
 	menuPadding = 1
-	// menuHeaderRows is the box's top padding, its title, and the rule under it.
-	menuHeaderRows = 3
+	// menuHeaderRows is the worktree's name and the rule under it.
+	menuHeaderRows = 2
 )
 
 func TestTheMenuFloatsUnderTheCellItWasOpenedFrom(t *testing.T) {

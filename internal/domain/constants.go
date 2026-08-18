@@ -812,7 +812,7 @@ const (
 	DashboardMetaNothing    = "—"
 	// DashboardMenuTitle heads the per-worktree context menu and
 	// DashboardMenuDelete is its only entry for now.
-	DashboardMenuDelete = "Delete worktree…"
+	DashboardMenuDelete = "Delete worktree"
 	// DashboardMenuDisabledMark says an entry cannot be used right now.
 	DashboardMenuDisabledMark = "  ✗"
 	// DashboardMenuChrome is what the menu box spends on its borders and padding.

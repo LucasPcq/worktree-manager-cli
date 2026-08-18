@@ -110,7 +110,7 @@ func (m Model) menuBox() (string, domain.Rect) {
 	}
 
 	lines := []string{
-		rowIndent + styles.DashboardMenuTitle.Render(truncate(selected.Branch, max(inner-rowBarWidth, 0))),
+		styles.DashboardMenuTitle.Render(truncate(selected.Branch, inner)),
 		styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, inner)),
 	}
 	for index, item := range items {
@@ -139,18 +139,16 @@ type menuItemParams struct {
 	Focused bool
 }
 
-// renderMenuItem gives the entries the focus language of the rest of the
-// dashboard: the accent bar and a tinted span, never a flat line that only
-// changes color.
+// renderMenuItem marks the focused entry with the tint the rest of the dashboard
+// uses. It carries no accent bar: everything in this box is flush against the
+// same left edge, and a gutter for the bar would set the entries off from the
+// name they act on.
 func (m Model) renderMenuItem(params menuItemParams) string {
-	label := menuLabel(params.Item)
-	inner := max(params.Inner-rowBarWidth, 0)
-
+	label := truncate(menuLabel(params.Item), params.Inner)
 	if params.Focused {
-		return styles.DashboardRowBar.Render(rowBar+" ") +
-			styles.DashboardRowSelected.Width(inner).Render(truncate(label, inner))
+		return styles.DashboardRowSelected.Width(params.Inner).Render(label)
 	}
-	return rowIndent + menuItemStyle(params.Item).Render(truncate(label, inner))
+	return menuItemStyle(params.Item).Render(label)
 }
 
 func menuItemStyle(item menuItem) lipgloss.Style {
@@ -176,7 +174,7 @@ func menuInnerWidth(params menuInnerWidthParams) int {
 	for _, item := range params.Items {
 		inner = max(inner, lipgloss.Width(menuLabel(item)))
 	}
-	return min(inner+rowBarWidth, params.Screen-domain.DashboardMenuChrome)
+	return min(inner, params.Screen-domain.DashboardMenuChrome)
 }
 
 func menuLabel(item menuItem) string {

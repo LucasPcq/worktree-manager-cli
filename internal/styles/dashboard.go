@@ -77,7 +77,7 @@ var (
 	DashboardMenu = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(ColorPrimary).
-			Padding(1, 1)
+			Padding(0, 1)
 
 	DashboardMenuTitle = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
 
