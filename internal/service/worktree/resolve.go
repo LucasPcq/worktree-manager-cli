@@ -8,7 +8,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/infra"
 )
 
-// ResolveSyncBranchesParams holds inputs for ResolveSyncBranches.
 type ResolveSyncBranchesParams struct {
 	ProjectDir string
 	Queries    []string
@@ -59,9 +58,8 @@ func matchSyncBranch(worktrees []domain.GitWorktree, query string) (string, erro
 	return "", fmt.Errorf("%w: %s", domain.ErrBranchNotFound, query)
 }
 
-// Resolve resolves a branch query to a worktree path.
-// Returns a direct path on exact match, or a list of candidates if ambiguous.
-// An empty query returns all worktrees for the picker.
+// Resolve returns a direct path on an exact match, the candidates when ambiguous,
+// and every worktree for an empty query (the picker).
 func Resolve(params domain.ResolveParams) (domain.ResolveResult, error) {
 	worktrees, err := infra.ListWorktrees(infra.ListWorktreesParams{
 		ProjectDir: params.ProjectDir,
@@ -109,16 +107,13 @@ func resolveWorktree(worktrees []domain.GitWorktree, query string) domain.Resolv
 	return domain.ResolveResult{}
 }
 
-// FindByBranchParams holds inputs for FindByBranch.
 type FindByBranchParams struct {
 	ProjectDir string
 	Branch     string
 }
 
-// FindByBranch returns the worktree checking out an exact branch name. Unlike
-// Resolve it never matches a substring: a caller that already holds a branch name
-// (a flag, a picked row) must not land on a different worktree. Returns
-// domain.ErrWorktreeNotFound when no worktree holds the branch.
+// FindByBranch never matches a substring, unlike Resolve: a caller already holding
+// a branch name must not land on a different worktree.
 func FindByBranch(params FindByBranchParams) (domain.GitWorktree, error) {
 	return infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
 		ProjectDir: params.ProjectDir,

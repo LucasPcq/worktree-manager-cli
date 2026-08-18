@@ -98,9 +98,8 @@ func FilterStatusesByMatches(statuses []domain.WorktreeStatus, matches []domain.
 	return out
 }
 
-// CleanUnsafeReason reports why a worktree is unsafe to remove without --force,
-// wording the reason for the refusal. The order is the one a user acts on first:
-// uncommitted work, then unpushed commits, then an open pull request.
+// CleanUnsafeReason words the refusal, in the order a user acts on: uncommitted
+// work, then unpushed commits, then an open pull request.
 func CleanUnsafeReason(check domain.CleanCheckResult) (string, bool) {
 	if check.IsDirty {
 		return domain.CleanUnsafeDirty, true

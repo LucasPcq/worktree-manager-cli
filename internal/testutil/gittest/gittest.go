@@ -31,7 +31,6 @@ func InitRepo(t testing.TB) string {
 	return dir
 }
 
-// CreateBranch creates a new local branch in the given repo.
 func CreateBranch(t testing.TB, dir, name string) {
 	t.Helper()
 	Git(t, dir, "branch", name)

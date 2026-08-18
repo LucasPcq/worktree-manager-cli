@@ -123,13 +123,12 @@ func worktreeCreatedAt(stateDir, branch, fallbackPath string) time.Time {
 	return info.ModTime()
 }
 
-// ListAllParams holds inputs for ListAll.
 type ListAllParams struct {
 	ProjectDir string
 }
 
-// ListAll returns every git worktree of the repository, unenriched — the raw list
-// a picker needs. Callers wanting metadata, divergence and dirtiness use List.
+// ListAll returns the raw worktrees; List enriches them with metadata, divergence
+// and dirtiness.
 func ListAll(params ListAllParams) ([]domain.GitWorktree, error) {
 	return infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: params.ProjectDir})
 }

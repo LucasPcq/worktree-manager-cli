@@ -25,8 +25,7 @@ func Cmd(projectDir string) tea.Cmd {
 	})
 }
 
-// CmdFunc is Cmd for a caller that already holds the fetch itself — a flow that
-// owns its own service calls and hands the host a closure.
+// CmdFunc is Cmd for a caller that already holds the fetch itself.
 func CmdFunc(fetch func() []domain.BranchCandidate) tea.Cmd {
 	return func() tea.Msg { return RefreshedMsg{Candidates: fetch()} }
 }
@@ -36,16 +35,13 @@ type HandleParams struct {
 	Wizard     *components.WizardModel
 	Msg        tea.Msg
 	ProjectDir string
-	// Fetch re-computes the candidates; it takes precedence over ProjectDir, for a
-	// caller that owns its own service calls.
+	// Fetch takes precedence over ProjectDir.
 	Fetch func() []domain.BranchCandidate
 	// Holder is the candidate slice the branch steps' Build hooks read from; Handle
 	// overwrites it with the fresh candidates before rebuilding the current step.
 	Holder *[]domain.BranchCandidate
 }
 
-// fetch returns the candidate fetch: the injected one, else one built from
-// ProjectDir.
 func (p HandleParams) fetch() func() []domain.BranchCandidate {
 	if p.Fetch != nil {
 		return p.Fetch

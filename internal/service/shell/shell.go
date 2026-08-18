@@ -9,8 +9,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// DetectShell reads $SHELL and returns the matching ShellType.
-// Defaults to ShellZsh if detection fails.
+// DetectShell defaults to ShellZsh when $SHELL says nothing usable.
 func DetectShell() domain.ShellType {
 	shellPath := os.Getenv("SHELL")
 	if shellPath == "" {
@@ -29,10 +28,8 @@ func DetectShell() domain.ShellType {
 	}
 }
 
-// RequestCd asks the shell wrapper to cd into dir once the command exits, through
-// the WTM_GO_FILE bridge (see `wtm shell-init`). A no-op without the bridge, so a
-// caller can always ask. Errors are ignored: the directory change is a
-// convenience, never the point of the command.
+// RequestCd asks the shell wrapper to cd into dir when the command exits, through
+// the WTM_GO_FILE bridge (see `wtm shell-init`). A no-op without it.
 func RequestCd(dir string) {
 	goFile := os.Getenv(domain.EnvGoFile)
 	if goFile == "" {

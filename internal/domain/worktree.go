@@ -113,8 +113,7 @@ type CreateHooksParams struct {
 	Branch       string
 	FromBranch   string
 	Hooks        []HookCommand
-	// Output is where the hooks stream their output, line by line as it is
-	// produced. Nil keeps the engine's default (stderr).
+	// Output receives the hook output as it is produced; nil keeps stderr.
 	Output io.Writer
 }
 
@@ -160,8 +159,7 @@ type CleanHooksParams struct {
 	WorktreePath string
 	Branch       string
 	Hooks        []HookCommand
-	// Output is where the hooks stream their output, line by line as it is
-	// produced. Nil keeps the engine's default (stderr).
+	// Output receives the hook output as it is produced; nil keeps stderr.
 	Output io.Writer
 }
 

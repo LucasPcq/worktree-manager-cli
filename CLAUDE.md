@@ -107,12 +107,29 @@ if !ok {
 }
 ```
 
-## 8. Comments — only when necessary
+## 8. Comments — the exception, not the rule
 
-Do not comment what the code already says. Add comments only for:
-- Non-obvious algorithmic reasoning
-- Workarounds with a reference (issue URL or ticket)
-- Godoc on all exported symbols
+Aim for **near-zero** comments. A well-named function with a typed signature explains
+itself 99% of the time, and a comment that restates the code is noise that buries the
+few that matter. Encode the meaning in names and signatures first: `Skip func(Answers)
+(skip bool, reason string)` needs no prose, and a named result beats a line describing
+the second return value.
+
+Write a comment only when the code cannot carry the information:
+- **Why, never what**: a non-obvious decision, an ordering constraint, an invariant a
+  reader would otherwise break
+- A workaround, with its reference (issue URL or ticket)
+- A package comment (`// Package x …`), one line
+- Godoc on an exported symbol **only** when its name and signature leave a caller
+  guessing — not systematically
+
+Documenting a pattern or an architecture belongs in `docs/` or in this file, not in a
+header comment repeated across files. `internal/flow` (~5% comment lines) is the
+reference for the density to aim for.
+
+**Migration:** the repo predates this rule, so it is applied as files are touched, not
+in one sweep. When you modify a file, bring the comments **in that file** into line —
+delete the ones that restate the code — in the same change.
 
 ## 9. Clean architecture layers
 

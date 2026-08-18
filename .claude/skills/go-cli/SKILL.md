@@ -107,10 +107,15 @@ if !ok {
 }
 ```
 
-### 8. Comments — only when necessary
+### 8. Comments — the exception, not the rule
 
-Godoc on all exported symbols. No inline comments that restate the code.
-Only comment non-obvious decisions or workarounds (with an issue reference).
+Aim for near-zero comments: encode the meaning in names and signatures instead
+(`Skip func(Answers) (skip bool, reason string)` needs no prose). Comment only the
+why the code cannot carry — a non-obvious decision, an ordering constraint, a
+workaround with its issue reference — plus a one-line package comment. Godoc on an
+exported symbol only when its name and signature leave a caller guessing, never
+systematically. When you modify a file, strip the comments in it that restate the
+code, in the same change.
 
 ### 9. Clean architecture layers
 
