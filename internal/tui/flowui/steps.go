@@ -9,9 +9,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// loadRequestMsg asks the message handler to load a step's content; loadDoneMsg
-// carries it back. A step whose content needs I/O is loaded when it is entered,
-// behind the wizard's loading spinner, so the render path never blocks.
 type (
 	loadRequestMsg struct {
 		idx     int
@@ -24,8 +21,6 @@ type (
 	}
 )
 
-// componentStep translates one flow step. conditional marks a step that decides on
-// entry whether it applies at all.
 func (p *plan) componentStep(step flow.Step, conditional bool) (components.Step, error) {
 	if conditional {
 		return p.choiceStep(step), nil
@@ -73,8 +68,6 @@ func (p *plan) selectStep(step flow.Step) (components.Step, error) {
 	return built, nil
 }
 
-// branchStep renders a branch picker: every row carries its divergence from
-// origin, and the whole list can be re-fetched in place.
 func (p *plan) branchStep(step flow.Step) (components.Step, error) {
 	p.candidates = step.Branches
 	p.refresh = step.Refresh
@@ -102,7 +95,7 @@ func (p *plan) branchStep(step flow.Step) (components.Step, error) {
 			rebuilt, buildErr := model(p.answersFrom(prev))
 			if buildErr != nil {
 				p.loadErr = buildErr
-				return components.NewSelectList(components.NewSelectListParams{Title: step.Title})
+				return placeholder(step)
 			}
 			return rebuilt
 		},
@@ -116,8 +109,6 @@ func (p *plan) branchStep(step flow.Step) (components.Step, error) {
 	return built, nil
 }
 
-// branchItems renders the candidates, pinning the suggested default first when it
-// is one of them.
 func (p *plan) branchItems(pinned string) []components.SelectItem {
 	found := ""
 	for _, candidate := range p.candidates {
@@ -133,16 +124,12 @@ func (p *plan) branchItems(pinned string) []components.SelectItem {
 	})
 }
 
-// choiceStep renders a step that decides on entry whether it applies, skipping
-// itself with a reason when it does not. Every option merely advances: going back
-// returns to the previous step, so a choice never cancels the operation.
 func (p *plan) choiceStep(step flow.Step) components.Step {
 	return components.ChoiceStep(components.ChoiceStepParams{
 		Name:    step.Label,
 		Summary: summaryFor(step),
 		Decide: func(prev []components.Step) (bool, string, components.NewSelectListParams) {
-			answers := p.answersFrom(prev)
-			if skip, reason := step.Skip(answers); skip {
+			if skip, reason := step.Skip(p.answersFrom(prev)); skip {
 				return false, reason, components.NewSelectListParams{}
 			}
 			content := p.rebuild(step, prev)
@@ -155,9 +142,6 @@ func (p *plan) choiceStep(step flow.Step) components.Step {
 	})
 }
 
-// recapStep renders the final synthesis, with the constant cancel row appended as
-// the single explicit cancellation point. A recap whose body needs I/O is loaded
-// when it is entered instead of being built inline.
 func (p *plan) recapStep(step flow.Step) components.Step {
 	if step.Load != nil {
 		return p.loadedRecapStep(step)
@@ -200,8 +184,6 @@ func (p *plan) loadedRecapStep(step flow.Step) components.Step {
 	}
 }
 
-// handler routes the messages the translated steps rely on: the branch refresh and
-// the asynchronous step loads.
 func (p *plan) handler() components.WizardMsgHandler {
 	var handlers []components.WizardMsgHandler
 	if p.refresh != nil {
@@ -221,8 +203,6 @@ func (p *plan) loadHandler() components.WizardMsgHandler {
 			if !ok {
 				return nil, false
 			}
-			// Clear whatever a previous answer left, so the spinner is not shown over a
-			// stale body.
 			w.UpdateStepModel(m.idx, func(any) any { return placeholder(step) })
 			return tea.Batch(w.StartLoading(step.LoadingMessage), runLoad(m.idx, step, m.answers)), true
 		case loadDoneMsg:
@@ -243,7 +223,6 @@ func (p *plan) loadHandler() components.WizardMsgHandler {
 	}
 }
 
-// runLoad runs a step's Load off the UI goroutine so the spinner keeps animating.
 func runLoad(idx int, step flow.Step, answers flow.Answers) tea.Cmd {
 	return func() tea.Msg {
 		content, err := step.Load(answers)
@@ -251,7 +230,6 @@ func runLoad(idx int, step flow.Step, answers flow.Answers) tea.Cmd {
 	}
 }
 
-// combine chains message handlers, stopping at the first that consumes the message.
 func combine(handlers ...components.WizardMsgHandler) components.WizardMsgHandler {
 	if len(handlers) == 0 {
 		return nil
@@ -267,7 +245,7 @@ func combine(handlers ...components.WizardMsgHandler) components.WizardMsgHandle
 }
 
 // content merges what a step declares statically with what it derives from the
-// answers: a Build only has to return the parts that actually change.
+// answers, so a Build only returns the parts that change.
 func (p *plan) content(step flow.Step, answers flow.Answers) (flow.StepContent, error) {
 	content := flow.StepContent{Title: step.Title, Description: step.Description, Options: step.Options}
 	if step.Build == nil {
@@ -289,9 +267,6 @@ func (p *plan) content(step flow.Step, answers flow.Answers) (flow.StepContent, 
 	return content, nil
 }
 
-// rebuild derives a step's content from the completed prior steps, falling back to
-// what it declares statically when the derivation fails (the failure is surfaced
-// once the wizard exits).
 func (p *plan) rebuild(step flow.Step, prev []components.Step) flow.StepContent {
 	content, err := p.content(step, p.answersFrom(prev))
 	if err != nil {
@@ -309,7 +284,6 @@ func selectList(content flow.StepContent) components.SelectListModel {
 	})
 }
 
-// recapList renders a recap body plus the constant cancel row.
 func recapList(content flow.StepContent) components.SelectListModel {
 	items := append(toItems(content.Options),
 		components.SelectItem{Separator: true},
@@ -322,7 +296,6 @@ func recapList(content flow.StepContent) components.SelectListModel {
 	})
 }
 
-// placeholder is a step with nothing to choose: Enter is a no-op on it.
 func placeholder(step flow.Step) components.SelectListModel {
 	return components.NewSelectList(components.NewSelectListParams{Title: step.Title})
 }
@@ -340,8 +313,6 @@ func toItems(options []flow.Option) []components.SelectItem {
 	return items
 }
 
-// summaryFor labels a completed step: the flow's own wording when it has one, else
-// the answer as it was given.
 func summaryFor(step flow.Step) func(any) string {
 	if step.Summarize == nil {
 		if step.Kind == flow.StepText {

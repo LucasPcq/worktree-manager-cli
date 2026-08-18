@@ -10,7 +10,8 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/flow"
+	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	"github.com/LucasPcq/wtm/internal/flow/decide"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/branch"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -43,8 +44,6 @@ func newCreateCmd() *cobra.Command {
 	return cmd
 }
 
-// runCreate wires the flags into the create flow: it decides who may be asked and
-// where the output goes, and owns no part of the déroulé itself (internal/flow).
 func runCreate(cmd *cobra.Command, args []string) error {
 	branchName := ""
 	if len(args) > 0 {
@@ -72,13 +71,12 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	// The wizard needs a TTY and is skipped by --yes; a human-format run without a
-	// terminal (piped/scripted) also takes the prompt-free path.
+	// terminal also takes the prompt-free path.
 	interactive := rules.IsHumanFormat(format) && !yes && term.IsTerminal(int(os.Stdin.Fd()))
 
-	presenter := newPresenter(cmd, format)
-	_, err = flow.Create(flow.CreateParams{
+	_, err = createflow.Run(createflow.Params{
 		Context: flowContext(config),
-		Request: flow.CreateRequest{
+		Request: createflow.Request{
 			Branch:      branchName,
 			From:        fromFlag,
 			EnvFrom:     envFromFlag,
@@ -86,23 +84,20 @@ func runCreate(cmd *cobra.Command, args []string) error {
 			IfNotExists: ifNotExists,
 		},
 		Prompter:  flowPrompter(flowPrompterParams{Interactive: interactive}),
-		Presenter: createPresenter{cliPresenter: presenter, config: config},
+		Presenter: createPresenter{cliPresenter: newPresenter(cmd, format), config: config},
 	})
 	return err
 }
 
-// displayPathParams holds inputs for createDisplayPath.
 type displayPathParams struct {
 	Config     domain.Config
 	ProjectDir string
 	Path       string
 }
 
-// createDisplayPath renders the new worktree as base_path/<name>, matching how
-// worktrees are conceptually located, instead of a long absolute path. A worktree
-// that already existed may sit elsewhere (adopted, or holding the branch outside
-// base_path), and recomposing it there would name a directory that does not exist
-// — those keep their real path.
+// createDisplayPath renders the new worktree as base_path/<name>. One that already
+// existed may sit elsewhere (adopted, or holding the branch outside base_path), and
+// recomposing it there would name a directory that does not exist.
 func createDisplayPath(params displayPathParams) string {
 	base := params.Config.Project.Worktrees.BasePath
 	expected := filepath.Join(params.ProjectDir, base, filepath.Base(params.Path))
@@ -112,51 +107,40 @@ func createDisplayPath(params displayPathParams) string {
 	return filepath.Join(base, filepath.Base(params.Path))
 }
 
-// The helpers below are the create decisions `wtm extract` still reaches for: it
-// embeds create's wizard as a sub-flow of its own combined recap, in Bubbletea
-// terms, so it cannot yet call internal/flow. Each one is a thin adapter over the
-// flow decision — the logic lives in one place — and they go away with extract's
-// own migration (LUC-173, lot 4).
+// The helpers below are thin adapters over internal/flow/decide, for `wtm extract`:
+// it embeds create's wizard as a Bubbletea sub-flow, so it cannot call the flow
+// directly yet. They go with its migration (LUC-173, lot 4).
 
-// memoizedTarget caches branch classification for the lifetime of one run.
 func memoizedTarget(projectDir string) func(string) domain.BranchTarget {
-	return flow.MemoizedTarget(projectDir)
+	return decide.MemoizedTarget(projectDir)
 }
 
-// branchCandidates lists the branches offered as worktree start-points.
 func branchCandidates(projectDir string) []domain.BranchCandidate {
-	return flow.BranchCandidates(projectDir)
+	return decide.BranchCandidates(projectDir)
 }
 
-// ffSubjectParams holds inputs for ffSubject.
 type ffSubjectParams struct {
 	Target     domain.BranchTarget
 	FromBranch string
 	Branch     string
 }
 
-// ffSubject names the branch a fast-forward updates.
 func ffSubject(params ffSubjectParams) string {
-	return flow.FastForwardSubject(flow.FastForwardSubjectParams{
+	return decide.FastForwardSubject(decide.FastForwardSubjectParams{
 		Target:     params.Target,
 		FromBranch: params.FromBranch,
 		Branch:     params.Branch,
 	})
 }
 
-// sourceUpdatePromptParams holds inputs for sourceUpdatePrompt.
 type sourceUpdatePromptParams struct {
 	ProjectDir string
-	// Target classifies a branch name; callers with a per-run cache (the wizard)
-	// pass it in rather than hitting git on every re-render.
-	Target func(string) domain.BranchTarget
-	Update newpicker.SourceUpdateParams
+	Target     func(string) domain.BranchTarget
+	Update     newpicker.SourceUpdateParams
 }
 
-// sourceUpdatePrompt classifies the divergence from origin of whichever branch the
-// worktree starts from, in the terms the embedded create wizard speaks.
 func sourceUpdatePrompt(p sourceUpdatePromptParams) newpicker.SourceUpdatePrompt {
-	prompt := flow.SourceUpdate(flow.SourceUpdateParams{
+	prompt := decide.SourceUpdate(decide.SourceUpdateParams{
 		ProjectDir: p.ProjectDir,
 		Target:     p.Target,
 		Branch:     p.Update.Branch,
@@ -176,10 +160,8 @@ func sourceUpdatePrompt(p sourceUpdatePromptParams) newpicker.SourceUpdatePrompt
 	}
 }
 
-// envFallbackPrompt decides the "env source" confirmation: whether the parent env
-// strategy will fall back to copying .env from main, and the prompt to show.
 func envFallbackPrompt(projectDir string, config domain.Config, source, override string) (bool, components.NewConfirmParams) {
-	show, _ := flow.EnvParentFallback(flow.EnvFallbackParams{
+	show, _ := decide.EnvParentFallback(decide.EnvFallbackParams{
 		ProjectDir:  projectDir,
 		Source:      source,
 		Config:      config,
@@ -191,10 +173,8 @@ func envFallbackPrompt(projectDir string, config domain.Config, source, override
 	return true, shared.EnvParentFallbackConfirm(source)
 }
 
-// executeFastForwardSource fast-forwards an accepted behind-only source branch.
-// The fast-forward failing is a runtime outcome, so its recovery prompt ("create
-// from the stale branch anyway?") is a legitimate post-execution standalone.
-// Returns false only when that recovery is declined.
+// executeFastForwardSource returns false only when the post-failure recovery
+// ("create from the stale branch anyway?") is declined.
 func executeFastForwardSource(projectDir, source string) bool {
 	ffErr := components.RunLoading(components.LoadingParams{
 		Message: fmt.Sprintf(domain.SourceFastForwardLoadingFmt, source),
@@ -215,10 +195,8 @@ func executeFastForwardSource(projectDir, source string) bool {
 	return confirmed
 }
 
-// maybeFastForwardSource reconciles a source branch passed via --from, where there
-// is no wizard to host the confirmation — a single standalone prompt is the whole
-// interaction (Esc cancels, which is correct). Returns false only when the user
-// cancels creation (declining the diverged warning, or a failed fast-forward).
+// maybeFastForwardSource reconciles a --from source where no wizard hosts the
+// confirmation. Returns false only when the user cancels creation.
 func maybeFastForwardSource(projectDir, source string) bool {
 	prompt := sourceUpdatePrompt(sourceUpdatePromptParams{
 		ProjectDir: projectDir,

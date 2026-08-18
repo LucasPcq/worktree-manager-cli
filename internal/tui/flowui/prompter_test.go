@@ -12,10 +12,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// These tests cover the translation from a flow's steps to wizard steps and back:
-// which questions are shown, how a preset removes one, how a conditional step that
-// would land first is resolved up front, and how the answers are read out again.
-
 func textStep(key string) flow.Step {
 	return flow.Step{Kind: flow.StepText, Key: key, Label: "Text " + key, Title: "Text"}
 }
@@ -48,8 +44,6 @@ func names(steps []components.Step) []string {
 	return out
 }
 
-// TestBuildSkipsPresetSteps: a value the request already carries is not asked, but
-// it is still returned — that is what keeps a flag from erasing a recap line.
 func TestBuildSkipsPresetSteps(t *testing.T) {
 	session := flow.Session{
 		Presets: flow.NewAnswers(map[string]string{"a": "given"}),
@@ -68,9 +62,6 @@ func TestBuildSkipsPresetSteps(t *testing.T) {
 	}
 }
 
-// TestBuildResolvesAConditionalFirstStepUpFront: the wizard neither builds nor
-// auto-skips its first step, so a conditional step that would land there is decided
-// before the wizard starts — included when it applies, dropped when it does not.
 func TestBuildResolvesAConditionalFirstStepUpFront(t *testing.T) {
 	conditional := func(skip bool) flow.Step {
 		return flow.Step{
@@ -101,14 +92,11 @@ func TestBuildResolvesAConditionalFirstStepUpFront(t *testing.T) {
 	if got := names(kept.steps); strings.Join(got, ",") != "Conditional,Recap" {
 		t.Errorf("steps = %v, want the applicable step kept", got)
 	}
-	// Resolved up front, it must not also auto-skip itself as step 0.
 	if kept.steps[0].AutoSkip != nil {
 		t.Error("a step resolved up front should carry no auto-skip")
 	}
 }
 
-// TestBuildKeepsALaterConditionalStepConditional: with something before it, the
-// step decides on entry — so it re-evaluates against what the user just answered.
 func TestBuildKeepsALaterConditionalStepConditional(t *testing.T) {
 	plan, err := build(flow.Session{Steps: []flow.Step{
 		textStep("a"),
@@ -130,8 +118,7 @@ func TestBuildKeepsALaterConditionalStepConditional(t *testing.T) {
 	}
 }
 
-// TestBuildSurfacesAStepThatCannotBeBuilt: a picker with nothing to offer must
-// refuse before anything is displayed, not show an empty list.
+// A picker with nothing to offer must refuse before anything is displayed.
 func TestBuildSurfacesAStepThatCannotBeBuilt(t *testing.T) {
 	refusal := errors.New("nothing to pick")
 	_, err := build(flow.Session{Steps: []flow.Step{{
@@ -153,8 +140,6 @@ func TestBuildRejectsAKindItCannotRender(t *testing.T) {
 	}
 }
 
-// TestRecapAppendsTheCancelRow: every recap carries the one explicit cancellation
-// point, and choosing it aborts the run.
 func TestRecapAppendsTheCancelRow(t *testing.T) {
 	plan, err := build(flow.Session{Steps: []flow.Step{recapStep("r")}})
 	if err != nil {
@@ -169,8 +154,6 @@ func TestRecapAppendsTheCancelRow(t *testing.T) {
 	}
 }
 
-// TestReadAnswersTheWholeSession drives the wizard headlessly and checks every
-// answer comes back: the typed text, the chosen option, and the recap action.
 func TestReadAnswersTheWholeSession(t *testing.T) {
 	session := flow.Session{
 		Presets: flow.NewAnswers(map[string]string{"preset": "kept"}),
@@ -221,8 +204,6 @@ func TestReadAnswersTheWholeSession(t *testing.T) {
 	}
 }
 
-// TestReadTurnsTheCancelRowIntoAnAbort: choosing "No, cancel" cancels the whole
-// run, wherever it was chosen.
 func TestReadTurnsTheCancelRowIntoAnAbort(t *testing.T) {
 	plan, err := build(flow.Session{Steps: []flow.Step{recapStep("r")}})
 	if err != nil {
@@ -239,8 +220,6 @@ func TestReadTurnsTheCancelRowIntoAnAbort(t *testing.T) {
 	}
 }
 
-// TestAnswersFromFeedsLaterSteps: a step's Build sees what the earlier steps hold,
-// which is how create's source step knows the branch already exists.
 func TestAnswersFromFeedsLaterSteps(t *testing.T) {
 	var seen string
 	session := flow.Session{Steps: []flow.Step{
@@ -270,8 +249,6 @@ func TestAnswersFromFeedsLaterSteps(t *testing.T) {
 	}
 }
 
-// TestSummarizeUsesTheFlowWording: a flow can label an answer in its own words
-// rather than echoing the raw value.
 func TestSummarizeUsesTheFlowWording(t *testing.T) {
 	step := selectStep("a", "ff")
 	step.Summarize = func(answer flow.Answer) string {
@@ -289,8 +266,6 @@ func TestSummarizeUsesTheFlowWording(t *testing.T) {
 	}
 }
 
-// TestInteractivePrompterReportsItself keeps the capability honest: this prompter
-// can ask, so post-execution recoveries may be offered.
 func TestInteractivePrompterReportsItself(t *testing.T) {
 	if !New(Params{}).Interactive() {
 		t.Error("the wizard prompter must report that it can ask")

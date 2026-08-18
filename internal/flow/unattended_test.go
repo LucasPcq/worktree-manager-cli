@@ -6,11 +6,6 @@ import (
 	"testing"
 )
 
-// These tests pin the bypass taxonomy the whole CLI relies on: under --yes (or
-// without a terminal, or in a machine format) every input resolves from a flag,
-// from a documented safe default, or with a refusal naming the flag — and never
-// from a picker.
-
 var errNeedsFlag = errors.New("pass --thing")
 
 func TestUnattendedUsesThePresetValue(t *testing.T) {
@@ -63,12 +58,10 @@ func TestUnattendedRefusesARequiredSelection(t *testing.T) {
 	}
 }
 
-// TestUnattendedRefusesAStepItCannotResolve is the backstop: a step with no
-// fallback must refuse the run, never silently resolve to nothing.
+// The backstop: a step with no fallback refuses the run rather than resolving to
+// nothing or opening a picker.
 func TestUnattendedRefusesAStepItCannotResolve(t *testing.T) {
-	session := Session{Steps: []Step{{Key: "a", Label: "Thing", Flag: "thing"}}}
-
-	_, err := (Unattended{}).Ask(session)
+	_, err := (Unattended{}).Ask(Session{Steps: []Step{{Key: "a", Label: "Thing", Flag: "thing"}}})
 	if err == nil {
 		t.Fatal("expected a refusal")
 	}
@@ -100,8 +93,8 @@ func TestUnattendedSkipsAnIrrelevantStep(t *testing.T) {
 	}
 }
 
-// TestUnattendedResolvesInOrder: a later step's fallback reads the earlier answers,
-// which is how create's source default depends on the branch it was given.
+// A later step's fallback reads the earlier answers, which is how create's source
+// default depends on the branch it was given.
 func TestUnattendedResolvesInOrder(t *testing.T) {
 	session := Session{
 		Presets: NewAnswers(map[string]string{"first": "one"}),
@@ -125,7 +118,7 @@ func TestUnattendedResolvesInOrder(t *testing.T) {
 func TestUnattendedNeverConfirmsAndIsNotInteractive(t *testing.T) {
 	confirmed, err := (Unattended{}).Confirm(ConfirmParams{DefaultYes: true})
 	if err != nil || confirmed {
-		t.Errorf("Confirm = (%v, %v), want (false, nil): there is nobody to ask", confirmed, err)
+		t.Errorf("Confirm = (%v, %v), want (false, nil)", confirmed, err)
 	}
 	if (Unattended{}).Interactive() {
 		t.Error("Interactive must be false")

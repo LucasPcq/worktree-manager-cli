@@ -10,7 +10,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/flow"
+	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
@@ -36,8 +36,6 @@ func newCleanCmd() *cobra.Command {
 	return cmd
 }
 
-// runClean wires the flags into the clean flow: it decides who may be asked and
-// where the output goes, and owns no part of the déroulé itself (internal/flow).
 func runClean(cmd *cobra.Command, args []string) error {
 	force, _ := cmd.Flags().GetBool(domain.FlagForce)
 	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
@@ -63,39 +61,32 @@ func runClean(cmd *cobra.Command, args []string) error {
 		branchName = args[0]
 	}
 
-	// The prompt-capability gate: a human format on a real terminal AND not --yes.
-	// --force is the safety axis, not a confirmation bypass — it still runs the
-	// wizard, with the refusals lifted.
+	// --force is the safety axis, not a confirmation bypass: it still runs the wizard,
+	// with the refusals lifted.
 	interactive := rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd())) && !yes
 
-	presenter := newPresenter(cmd, format)
-	_, err = flow.Clean(flow.CleanParams{
+	_, err = cleanflow.Run(cleanflow.Params{
 		Context: flowContext(config),
-		Request: flow.CleanRequest{
+		Request: cleanflow.Request{
 			Branch:           branchName,
 			Force:            force,
 			ReparentChildren: reparentFlag,
 			BaseBranch:       resolveBase("", config),
 		},
-		// The picker may be reached through the shell wrapper, which consumes stdout,
-		// so the wizard renders on stderr.
+		// The picker may be reached through the shell wrapper, which consumes stdout.
 		Prompter:  flowPrompter(flowPrompterParams{Interactive: interactive, Stderr: true}),
-		Presenter: cleanPresenter{cliPresenter: presenter},
+		Presenter: cleanPresenter{cliPresenter: newPresenter(cmd, format)},
 	})
 	return err
 }
 
 // The helpers below are shared with `wtm prune`, which still removes worktrees on
-// its own. They go away with its migration to internal/flow.
+// its own. They go with its migration to internal/flow.
 
-// redirectToBase asks the shell wrapper to cd into the base repo, avoiding a
-// stale "ghost" directory after removing the worktree we were sitting in.
 func redirectToBase(baseDir string) {
 	shell.RequestCd(baseDir)
 }
 
-// resolveSymlinks returns the canonical path, falling back to the input when it
-// cannot be resolved (e.g. the path no longer exists).
 func resolveSymlinks(path string) string {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		return resolved
@@ -103,8 +94,6 @@ func resolveSymlinks(path string) string {
 	return path
 }
 
-// stopWorktreeServices asks the daemon to stop the jobs running in a worktree
-// about to disappear.
 func stopWorktreeServices(cmd *cobra.Command, projectDir string, branch string) {
 	socketPath := process.SocketPath()
 	if !process.IsDaemonRunning(socketPath) {

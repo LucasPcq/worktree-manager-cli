@@ -123,8 +123,11 @@ internal/
   domain/                     ← types, errors, constants only (no methods, no functions)
   rules/                      ← pure functions (stdlib + domain only, no I/O)
   config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/, plus ~/.config/wtm/config.toml
-  flow/                       ← the déroulé of a command: which questions, which order,
-                                which service calls — surface-independent (see below)
+  flow/                       ← the déroulé of the commands, surface-independent (see below):
+                                the vocabulary (Step, Session, Prompter, Presenter)
+    decide/                   ←   branch/env decisions shared by the create-like flows
+    create/                   ←   `wtm create`: the run (create.go) + its questions (steps.go)
+    clean/                    ←   `wtm clean`: the run (clean.go) + its questions (steps.go)
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
     env/                      ←   .env provisioning (create) + drift reconciliation (`wtm env`, sync.go)
@@ -162,8 +165,9 @@ the full convention.
 
 **The `flow/` layer (LUC-175).** A command's déroulé lives in `internal/flow/`, not in
 `commands/`: `runCreate`/`runClean` read the flags, decide *who may be asked* and
-*where output goes*, then call `flow.Create` / `flow.Clean`. Three seams let a second
-surface (a dashboard) replay the same flow:
+*where output goes*, then call `create.Run` / `clean.Run`. One package per command,
+each splitting the run from the questions it asks. Three seams let a second surface
+(a dashboard) replay the same flow:
 - **`flow.Prompter`** answers the questions: `Ask(Session)` for a whole
   question-and-recap sequence, `Confirm` for a standalone post-execution question,
   `Interactive()` to know whether a decision may be offered at all. Implementations:
@@ -187,7 +191,8 @@ already carries goes in `Session.Presets`: the step is not asked but is still re
 back, which is what keeps a flag from erasing a recap line.
 
 Adding a kind means teaching every surface to render it: `flowui` refuses an unknown
-kind rather than guessing. `create` and `clean` are migrated; `extract`, `sync`,
+kind rather than guessing. Test doubles for the two seams live in
+`internal/testutil/flowtest`. `create` and `clean` are migrated; `extract`, `sync`,
 `prune` and the other commands still drive their wizard packages directly, and
 `tui/newwt` stays until `extract` (which embeds it) migrates.
 

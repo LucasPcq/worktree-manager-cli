@@ -34,9 +34,15 @@ func InitRepo(t testing.TB) string {
 // CreateBranch creates a new local branch in the given repo.
 func CreateBranch(t testing.TB, dir, name string) {
 	t.Helper()
-	cmd := exec.Command("git", "branch", name)
+	Git(t, dir, "branch", name)
+}
+
+// Git runs a git command in dir, failing the test on error.
+func Git(t testing.TB, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git branch %s: %s: %v", name, out, err)
+		t.Fatalf("git %s: %s: %v", strings.Join(args, " "), out, err)
 	}
 }

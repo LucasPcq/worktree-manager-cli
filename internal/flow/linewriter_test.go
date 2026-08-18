@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// TestLineWriterEmitsWholeLines: a surface that consumes output as events must see
-// each line once, whole, however the producer chopped its writes.
+// A surface consuming output as events must see each line once, whole, however the
+// producer chopped its writes.
 func TestLineWriterEmitsWholeLines(t *testing.T) {
 	var got []string
 	w := &LineWriter{Emit: func(line string) { got = append(got, line) }}
@@ -24,8 +24,6 @@ func TestLineWriterEmitsWholeLines(t *testing.T) {
 	}
 }
 
-// TestLineWriterFlushEmitsThePartialLine: a hook whose last line has no newline
-// must not be swallowed.
 func TestLineWriterFlushEmitsThePartialLine(t *testing.T) {
 	var got []string
 	w := &LineWriter{Emit: func(line string) { got = append(got, line) }}
@@ -42,7 +40,6 @@ func TestLineWriterFlushEmitsThePartialLine(t *testing.T) {
 		t.Errorf("lines = %v, want the partial line flushed", got)
 	}
 
-	// Flushing again emits nothing: the buffer is empty.
 	w.Flush()
 	if len(got) != 2 {
 		t.Errorf("lines = %v, want no duplicate on a second flush", got)
