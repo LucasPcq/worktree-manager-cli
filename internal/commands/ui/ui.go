@@ -20,9 +20,10 @@ func NewCmd() *cobra.Command {
 		Use:   domain.CmdUI,
 		Short: "Open the worktree dashboard",
 		Long: "Open a full-screen dashboard of the repository's worktrees.\n" +
-			"Read-only: it lists the worktrees, their git state against both the base branch\n" +
-			"and origin, and their pull requests. Local git state refreshes on a short poll;\n" +
-			"pull requests load once and refresh only on `r`.",
+			"It lists the worktrees, their git state against both the base branch and origin,\n" +
+			"and their pull requests, and it runs the create and clean flows in place. Local\n" +
+			"git state refreshes on a short poll; pull requests load once and refresh only on\n" +
+			"`r`. Press `?` for the key reference.",
 		Args: cobra.NoArgs,
 		RunE: runUI,
 	}
