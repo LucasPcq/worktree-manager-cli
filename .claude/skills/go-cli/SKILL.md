@@ -219,7 +219,7 @@ func newRunStartCmd() *cobra.Command {
     Args:  cobra.ExactArgs(1),
     RunE:  runStart,
   }
-  addOutputFlag(cmd)
+  shared.AddOutputFlag(cmd)
   return cmd
 }
 
@@ -240,7 +240,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 Key conventions:
 - `Use:` always uses `domain.CmdXxx` constants (+ literal arg placeholders)
-- `addOutputFlag(cmd)` instead of duplicating the output flag registration
+- `shared.AddOutputFlag(cmd)` instead of duplicating the output flag registration
 - `shared.LoadConfig(cmd, dir)` resolves the main worktree path **and** the state dir, then loads `<state-dir>/config.toml`. Returns `ConfigResult{Config, ProjectDir, StateDir}`.
 - Unexported constructor (`newRunStartCmd`), registered by the parent group
 
@@ -375,13 +375,15 @@ Full recipe, step by step: [`docs/dev/adding-a-mutation-command.md`](../../../do
 ### Shared flag helpers
 
 ```go
-// internal/commands/helpers.go
+// internal/commands/shared/helpers.go
 
-// addOutputFlag registers the standard --output flag on cmd.
-func addOutputFlag(cmd *cobra.Command) {
+// AddOutputFlag registers the standard --output flag on cmd.
+func AddOutputFlag(cmd *cobra.Command) {
   cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
 }
 ```
+
+Call it as `shared.AddOutputFlag(cmd)` from a command constructor.
 
 ### TUI command — Cobra launches a Bubbletea program
 
@@ -462,7 +464,8 @@ bug: no breadcrumb, and `Esc` quits the whole flow instead of going back.
   It maps `Esc` at step 1 to `domain.ErrUserAborted`; otherwise pull values from
   `final.Steps()[i].Model.(components.SelectListModel).Value()`.
 - Reference implementations: `internal/tui/relocate/wizard.go`, `internal/tui/checkout/wizard.go`,
-  `internal/tui/clean/wizard.go`, `internal/tui/syncpicker/picker.go`.
+  `internal/tui/syncpicker/picker.go`. (`clean`'s wizard is no longer one of them: it is
+  declared in `internal/flow/clean/steps.go` and run through `internal/tui/flowui`.)
 
 Standalone wrappers (`RunStandaloneSelect`/`RunStandaloneConfirm`) are only for a **single**
 one-shot decision where there is no prior step to go back to (e.g. `run up`'s profile picker).
@@ -543,11 +546,14 @@ then a single **recap** as the last step. The rules:
   (plus `Esc` on step 1). Don't reintroduce an `AbortOnDecline` gate.
 - A `ChoiceStep`/`RecapStep` **cannot be the wizard's first step** (the wizard never builds or
   auto-skips index 0). When a conditional select would otherwise be first (e.g. `clean --branch`
-  with no picker), compute it synchronously and add a concrete step only when it applies — see
-  `internal/tui/clean/wizard.go` (`reparentConcreteStep`).
+  with no picker), compute it synchronously and add a concrete step only when it applies. In the
+  flow model this is not the command's problem: the step just carries a `Skip`
+  (`internal/flow/clean/steps.go`, `reparentStep`) and `internal/tui/flowui/prompter.go` decides
+  it against what is already known before the wizard starts.
 - For an **async** recap (safety check, plan preview), keep a hand-built `SelectListModel` step with
   `Recap: true` and swap its model in via `OnMsg`/`UpdateStepModel` (RecapStep's `Build` is sync).
-  See `internal/tui/clean/wizard.go` (delete) and `internal/tui/syncpicker/picker.go` (plan).
+  See `internal/tui/syncpicker/picker.go` (plan). In the flow model it is one field:
+  `Load` + `LoadingMessage` on the step (`internal/flow/clean/steps.go`, `deleteStep`).
 - `ConfirmStep`/`ConfirmModel` stay only for genuine one-shot standalone Yes/No prompts outside a
   wizard (e.g. extract's conflict-marker `ConfirmResolve`). `ConfirmStep.Decide` also returns a
   `skipReason` for parity.
@@ -593,7 +599,8 @@ Every worktree-mutating command (`create`, `clean`, `sync`, `prune`, `relocate`,
 - **`--force` — safety axis, strictly separate.** Only lifts safety refusals (dirty / unpushed /
   open-PR / locked). It does **not** imply `--yes`: `--force` alone still runs the wizard/recap and
   asks to confirm (thread `--force` into the wizard as a preset so it lifts refusals without
-  re-asking — see `internal/tui/clean/wizard.go` `Force`). JSON mode requires `--yes` (confirmations
+  re-asking — in the flow model it is a field of the `Request`, read where the refusal is: see
+  `internal/flow/clean/steps.go`, `resolveDelete`). JSON mode requires `--yes` (confirmations
   can't run); `--force` alone in JSON is rejected.
 
 **How to wire it — migrated commands (`flow/`): you do NOT reimplement the three cases.**
@@ -717,8 +724,9 @@ known:
      `w.SetLoading(false)`.
   Guard against a premature commit while loading: an empty `SelectList` makes `Enter` a no-op
   (`clean`'s delete step); a `ConfirmModel` needs an explicit `if w.Loading() && key=="enter"` swallow
-  in `OnMsg` (`sync`'s confirm step). Refs: `internal/tui/clean/wizard.go` (async safety check),
-  `internal/tui/syncpicker/picker.go` (async plan preview).
+  in `OnMsg` (`sync`'s confirm step). Ref: `internal/tui/syncpicker/picker.go` (async plan
+  preview). The same async safety check, expressed as a flow step:
+  `internal/flow/clean/steps.go`, `deleteStep`.
 - Keep `Build` (synchronous) for **fast, local** derivation — reserve `OnEnter` for genuinely slow
   work; over-using it is needless complexity.
 
@@ -939,7 +947,7 @@ Before calling `build-validator`, verify manually:
 - [ ] No `cobra` or `bubbletea` imports inside `internal/service/`
 - [ ] Pure functions (no I/O) live in internal/rules/, not in service/
 - [ ] All async service calls in TUI wrapped as `tea.Cmd`
-- [ ] `addOutputFlag(cmd)` used instead of manual flag registration
+- [ ] `shared.AddOutputFlag(cmd)` used instead of manual flag registration
 - [ ] `styles.Indent` used instead of literal `"  "` for padding
 - [ ] New/renamed/removed command has a `GroupID`, and `make docs` + README overview were updated
 
