@@ -1,19 +1,23 @@
 package dashboard
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
 // borderWidth and paddingWidth are what lipgloss adds around a panel's text; the
-// rect a panel is given must account for both.
+// rect a panel is given must account for both. buttonPadding is what the button
+// style adds around its label.
 const (
-	borderWidth  = 2
-	paddingWidth = 2
+	borderWidth   = 2
+	paddingWidth  = 2
+	buttonPadding = 4
 )
 
 type panelParams struct {
@@ -21,8 +25,13 @@ type panelParams struct {
 	Title string
 	// TitleZone, when set, makes the whole title row its own clickable zone.
 	TitleZone string
-	Body      []string
-	Zone      string
+	// TitleRight is rendered flush right on the title row, under its own zone. It
+	// is dropped whole when the panel is too narrow for it: trimming it would cut
+	// through its marker and take the zone with it.
+	TitleRight     string
+	TitleRightZone string
+	Body           []string
+	Zone           string
 }
 
 // renderPanel draws a titled, bordered box filling Rect exactly and registers it
@@ -35,11 +44,16 @@ func (m Model) renderPanel(params panelParams) string {
 	}
 
 	title := styles.DashboardPanelTitle.Render(pad(truncate(params.Title, textWidth), textWidth))
+	if rightWidth := lipgloss.Width(params.TitleRight); params.TitleRight != "" && rightWidth+1 < textWidth {
+		left := styles.DashboardPanelTitle.Render(truncate(params.Title, textWidth-rightWidth-1))
+		gap := textWidth - lipgloss.Width(left) - rightWidth
+		title = left + strings.Repeat(" ", max(gap, 0)) + m.marks().Mark(params.TitleRightZone, params.TitleRight)
+	}
 	if params.TitleZone != "" {
-		title = m.zones.Mark(params.TitleZone, title)
+		title = m.marks().Mark(params.TitleZone, title)
 	}
 
-	lines := append([]string{title}, params.Body...)
+	lines := append([]string{title, ""}, params.Body...)
 	if len(lines) > contentHeight {
 		lines = lines[:contentHeight]
 	}
@@ -49,14 +63,20 @@ func (m Model) renderPanel(params panelParams) string {
 		Height(contentHeight).
 		Render(strings.Join(lines, "\n"))
 
-	return m.zones.Mark(params.Zone, box)
+	return m.marks().Mark(params.Zone, box)
 }
 
-// renderTabs drops whole tabs that do not fit rather than trimming the bar: a
-// hard trim would cut through a zone marker and break the tab's hit-testing.
-func (m Model) renderTabs(layout domain.DashboardLayout) string {
-	rendered := make([]string, 0, len(tabs))
-	used := 0
+// renderHeader is the dashboard's top bar: the wordmark, the tabs, and the count
+// of what is listed. The active tab is named by weight and by the rule under it.
+//
+// Whole tabs are dropped rather than the bar trimmed: a hard trim would cut
+// through a zone marker and break that tab's hit-testing.
+func (m Model) renderHeader(layout domain.DashboardLayout) string {
+	wordmark := styles.DashboardWordmark.Render(domain.DashboardWordmark)
+	used := lipgloss.Width(wordmark)
+
+	rendered := []string{wordmark}
+	activeStart, activeWidth := 0, 0
 	for index, title := range tabs {
 		style := styles.DashboardTabInactive
 		if index == m.tab {
@@ -66,10 +86,56 @@ func (m Model) renderTabs(layout domain.DashboardLayout) string {
 		if used+lipgloss.Width(tab) > layout.Tabs.Width {
 			break
 		}
+		if index == m.tab {
+			activeStart, activeWidth = used, lipgloss.Width(tab)
+		}
 		used += lipgloss.Width(tab)
-		rendered = append(rendered, m.zones.Mark(tabZone(index), tab))
+		rendered = append(rendered, m.marks().Mark(tabZone(index), tab))
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+
+	bar := lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+	if count := m.countLabel(); count != "" && used+lipgloss.Width(count)+1 <= layout.Tabs.Width {
+		bar += strings.Repeat(" ", layout.Tabs.Width-used-lipgloss.Width(count)) + count
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, bar, tabRule(tabRuleParams{
+		Width:       layout.Tabs.Width,
+		ActiveStart: activeStart,
+		ActiveWidth: activeWidth,
+	}))
+}
+
+func (m Model) countLabel() string {
+	if !m.loaded {
+		return ""
+	}
+	format := domain.DashboardCountFmt
+	if len(m.statuses) == 1 {
+		format = domain.DashboardCountOneFmt
+	}
+	return styles.DashboardCount.Render(fmt.Sprintf(format, len(m.statuses)))
+}
+
+type tabRuleParams struct {
+	Width       int
+	ActiveStart int
+	ActiveWidth int
+}
+
+// tabRule underlines the active tab and carries a quieter rule across the rest,
+// which is what separates the header from the panels below it.
+func tabRule(params tabRuleParams) string {
+	if params.Width <= 0 {
+		return ""
+	}
+	if params.ActiveWidth <= 0 {
+		return styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, params.Width))
+	}
+
+	before := styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, params.ActiveStart))
+	under := styles.DashboardTabRule.Render(strings.Repeat(domain.DashboardActiveRuleGlyph, params.ActiveWidth))
+	rest := max(params.Width-params.ActiveStart-params.ActiveWidth, 0)
+	return before + under + styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, rest))
 }
 
 func (m Model) renderHelpBar(layout domain.DashboardLayout) string {
@@ -85,14 +151,17 @@ func (m Model) renderHelpBar(layout domain.DashboardLayout) string {
 	return styles.DashboardHelp.Render(truncate(hint, max(layout.Help.Width-paddingWidth, 0)))
 }
 
-// renderHelpOverlay replaces the frame while `?` is held open: every clickable
-// zone paired with the key that does the same thing.
-func (m Model) renderHelpOverlay() string {
+// helpBox is the key and mouse reference: every clickable zone paired with the
+// key that does the same thing. Like the other overlays it is a box pasted over
+// the frame, sized on its own content.
+func (m Model) helpBox() (string, domain.Rect) {
 	rows := [][2]string{
 		{"↑↓ · j k", "select a worktree (or click a row)"},
 		{"g · G", "first · last worktree"},
 		{"pgup · pgdown", "page through the list"},
 		{"wheel", "scroll the list or the output panel"},
+		{"n", "new worktree (or click + new)"},
+		{"m", "actions on the selected worktree (or right-click a row)"},
 		{"tab · shift+tab", "switch view (or click a tab)"},
 		{"enter · →", "open the detail (narrow terminals)"},
 		{"esc · ←", "close the detail"},
@@ -103,14 +172,38 @@ func (m Model) renderHelpOverlay() string {
 		{"q · ctrl+c", "quit"},
 	}
 
-	lines := make([]string, 0, len(rows)+2)
-	lines = append(lines, styles.DashboardBranch.Render(domain.DashboardHelpTitle), "")
-	for _, row := range rows {
-		lines = append(lines, styles.DashboardLabel.Render(pad(row[0], 18))+styles.DashboardValue.Render(row[1]))
+	textWidth := helpTextWidth(rows, m.width)
+	if textWidth <= 0 {
+		return "", domain.Rect{}
 	}
 
-	box := styles.DashboardPanel.Render(strings.Join(lines, "\n"))
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	lines := make([]string, 0, len(rows)+2)
+	lines = append(lines, styles.DashboardModalTitle.Render(truncate(domain.DashboardHelpTitle, textWidth)), "")
+	for _, row := range rows {
+		lines = append(lines, truncate(styles.DashboardLabel.Render(pad(row[0], helpKeyWidth))+
+			styles.DashboardValue.Render(row[1]), textWidth))
+	}
+
+	box := styles.DashboardModal.Width(textWidth + modalPadding).Render(strings.Join(lines, "\n"))
+	return box, rules.CenterRect(rules.CenterRectParams{
+		Width:        lipgloss.Width(box),
+		Height:       lipgloss.Height(box),
+		ScreenWidth:  m.width,
+		ScreenHeight: m.height,
+	})
+}
+
+// helpKeyWidth is the column the descriptions line up on.
+const helpKeyWidth = 18
+
+// helpTextWidth sizes the box on its longest row, then keeps it inside the
+// screen: an overlay is pasted whole, so it must never need trimming.
+func helpTextWidth(rows [][2]string, screenWidth int) int {
+	widest := lipgloss.Width(domain.DashboardHelpTitle)
+	for _, row := range rows {
+		widest = max(widest, helpKeyWidth+lipgloss.Width(row[1]))
+	}
+	return min(widest, screenWidth-domain.DashboardModalChrome-modalPadding)
 }
 
 // truncate clips plain text to a display width, marking the cut with an ellipsis.

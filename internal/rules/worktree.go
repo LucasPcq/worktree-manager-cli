@@ -76,7 +76,33 @@ func IsPathWithin(dir, target string) bool {
 
 // HasWarnings reports whether any condition warrants showing the force option.
 func HasWarnings(result domain.CleanCheckResult) bool {
-	return result.UnpushedCommits > 0 || result.HasOpenPR || result.IsDirty
+	return len(CleanBlockers(result)) > 0
+}
+
+// CleanBlockers names every refusal standing between a worktree and its removal,
+// in the order CleanUnsafeReason ranks them. A surface that can only print folds
+// them into one recap; one that can ask lifts them one by one.
+func CleanBlockers(result domain.CleanCheckResult) []domain.CleanBlocker {
+	var blockers []domain.CleanBlocker
+	if result.IsDirty {
+		blockers = append(blockers, domain.CleanBlocker{
+			Key:   domain.CleanBlockerDirty,
+			Label: domain.CleanWarnDirty,
+		})
+	}
+	if result.UnpushedCommits > 0 {
+		blockers = append(blockers, domain.CleanBlocker{
+			Key:   domain.CleanBlockerUnpushed,
+			Label: fmt.Sprintf(domain.CleanWarnUnpushedFmt, result.UnpushedCommits),
+		})
+	}
+	if result.HasOpenPR {
+		blockers = append(blockers, domain.CleanBlocker{
+			Key:   domain.CleanBlockerOpenPR,
+			Label: domain.CleanWarnOpenPR + result.PRUrl,
+		})
+	}
+	return blockers
 }
 
 // FilterStatusesByMatches returns the subset of statuses whose branch appears in matches.

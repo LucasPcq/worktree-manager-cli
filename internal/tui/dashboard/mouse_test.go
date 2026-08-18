@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -14,18 +15,25 @@ import (
 //
 // At 120x40 with the output panel folded:
 //
-//	y=0            tab bar
-//	y=1            list/detail top border   (list x=0..47, detail x=48..119)
-//	y=2            panel title
-//	y=3+i          worktree row i           (text starts at x=2)
+//	y=0            header bar (wordmark and tabs)
+//	y=1            the rule under the active tab
+//	y=2            list/detail top border   (list x=0..47, detail x=48..119)
+//	y=3            panel title
+//	y=4            the blank line under it
+//	y=5+3i         worktree row i           (two lines, then a gap; text at x=2)
 //	y=36..38       output panel             (title row y=37)
 //	y=39           help bar
 const (
-	firstRowY    = 3
+	titleRowY    = domain.DashboardHeaderHeight + 1
+	firstRowY    = titleRowY + 1 + domain.DashboardTitleGap
+	rowStride    = domain.DashboardRowHeight + domain.DashboardRowGap
 	rowTextX     = 2
 	detailX      = 60
 	outputTitleY = 37
 )
+
+// rowY is the first line of worktree row i.
+func rowY(index int) int { return firstRowY + index*rowStride }
 
 func TestRowZonesAreMarkedWhereTheLayoutPutsThem(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
@@ -40,8 +48,11 @@ func TestRowZonesAreMarkedWhereTheLayoutPutsThem(t *testing.T) {
 	}
 
 	third := model.zones.Get(rowZone(2))
-	if third.StartY != firstRowY+2 {
-		t.Errorf("row 2 sits at y=%d, want %d", third.StartY, firstRowY+2)
+	if third.StartY != rowY(2) {
+		t.Errorf("row 2 sits at y=%d, want %d", third.StartY, rowY(2))
+	}
+	if height := third.EndY - third.StartY + 1; height != domain.DashboardRowHeight {
+		t.Errorf("row 2 is %d lines tall, want %d", height, domain.DashboardRowHeight)
 	}
 }
 
@@ -49,7 +60,7 @@ func TestClickingARowSelectsThatWorktree(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
 	renderAndWait(t, model, rowZone(2))
 
-	model = update(model, click(rowTextX+3, firstRowY+2))
+	model = update(model, click(rowTextX+3, rowY(2)))
 
 	if model.cursor != 2 {
 		t.Fatalf("cursor = %d, want the clicked row 2", model.cursor)
@@ -82,9 +93,9 @@ func TestClickingOutsideTheListLeavesTheSelectionAlone(t *testing.T) {
 	renderAndWait(t, model, rowZone(0), zoneDetail)
 
 	for _, where := range []tea.MouseMsg{
-		click(detailX, firstRowY),     // the detail panel, beside row 0
-		click(rowTextX, firstRowY+10), // below the last row
-		click(rowTextX, 0),            // the tab bar
+		click(detailX, firstRowY), // the detail panel, beside row 0
+		click(rowTextX, rowY(3)),  // below the last row
+		click(rowTextX, 0),        // the header bar
 	} {
 		if got := update(model, where).cursor; got != 0 {
 			t.Errorf("click at (%d,%d) moved the cursor to %d", where.X, where.Y, got)
@@ -182,7 +193,7 @@ func TestNarrowClickOnARowOpensTheDetail(t *testing.T) {
 	model := newTestModel(t, narrowWide, testHeight, "a", "b")
 	renderAndWait(t, model, rowZone(1))
 
-	model = update(model, click(rowTextX, firstRowY+1))
+	model = update(model, click(rowTextX, rowY(1)))
 
 	if model.cursor != 1 {
 		t.Fatalf("cursor = %d, want the clicked row", model.cursor)
@@ -192,14 +203,16 @@ func TestNarrowClickOnARowOpensTheDetail(t *testing.T) {
 	}
 }
 
+// The right button is no longer among them: it opens the context menu, which
+// TestRightClickSelectsTheRowAndOpensItsMenu covers.
 func TestNonLeftMouseEventsAreIgnored(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
 	renderAndWait(t, model, rowZone(2))
 
 	ignored := []tea.MouseMsg{
-		{X: rowTextX, Y: firstRowY + 2, Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft},
-		{X: rowTextX, Y: firstRowY + 2, Action: tea.MouseActionPress, Button: tea.MouseButtonRight},
-		{X: rowTextX, Y: firstRowY + 2, Action: tea.MouseActionMotion, Button: tea.MouseButtonNone},
+		{X: rowTextX, Y: rowY(2), Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft},
+		{X: rowTextX, Y: rowY(2), Action: tea.MouseActionRelease, Button: tea.MouseButtonRight},
+		{X: rowTextX, Y: rowY(2), Action: tea.MouseActionMotion, Button: tea.MouseButtonNone},
 	}
 	for _, msg := range ignored {
 		if got := update(model, msg).cursor; got != 0 {
@@ -213,9 +226,47 @@ func TestHelpOverlaySwallowsMouseEvents(t *testing.T) {
 	renderAndWait(t, model, rowZone(2))
 	model = update(model, key(domain.KeyHelp))
 
-	model = update(model, click(rowTextX, firstRowY+2))
+	model = update(model, click(rowTextX, rowY(2)))
 
 	if model.cursor != 0 {
 		t.Error("clicks must not reach the list through the help overlay")
+	}
+}
+
+func addButtonBounds(model Model) (startX, endX int) {
+	layout := model.layout()
+	textWidth := layout.List.Width - borderWidth - paddingWidth
+	endX = rowTextX + textWidth - 1
+	return endX - lipgloss.Width(model.addButton(layout)) + 1, endX
+}
+
+func TestTheAddButtonSitsFlushRightOnTheListHeader(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	renderAndWait(t, model, zoneAdd)
+
+	button := model.zones.Get(zoneAdd)
+	wantStartX, wantEndX := addButtonBounds(model)
+
+	if button.StartY != titleRowY {
+		t.Errorf("the add button sits at y=%d, want the list header row %d", button.StartY, titleRowY)
+	}
+	if button.StartX != wantStartX || button.EndX != wantEndX {
+		t.Errorf("the add button spans x=%d..%d, want %d..%d — flush with the right edge of the panel",
+			button.StartX, button.EndX, wantStartX, wantEndX)
+	}
+}
+
+func TestClickingTheAddButtonStartsTheSameRunAsTheKey(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	renderAndWait(t, model, zoneAdd)
+	startX, _ := addButtonBounds(model)
+
+	clicked, cmd := updateCmd(model, click(startX, titleRowY))
+
+	if cmd == nil || len(clicked.ops.running) != 1 {
+		t.Fatalf("clicking the add button started %+v, want one create run", clicked.ops.running)
+	}
+	if clicked.cursor != 0 {
+		t.Error("the add button must not double as a row click")
 	}
 }

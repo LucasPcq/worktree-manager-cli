@@ -11,7 +11,16 @@ const (
 	zoneDetail       = "panel:detail"
 	zoneOutput       = "panel:output"
 	zoneOutputToggle = "output:toggle"
+	zoneAdd          = "list:add"
+	zoneMenuPrefix   = "menu:"
+	zoneModalPrefix  = "modal:"
 )
+
+func menuZone(index int) string { return zoneMenuPrefix + strconv.Itoa(index) }
+
+// modalRowZone keys a modal row by its index in the rows the modal drew, so a
+// click answers the very row it landed on.
+func modalRowZone(index int) string { return zoneModalPrefix + strconv.Itoa(index) }
 
 func tabZone(index int) string { return zoneTabPrefix + strconv.Itoa(index) }
 

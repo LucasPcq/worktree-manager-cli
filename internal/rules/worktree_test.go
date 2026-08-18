@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -154,5 +155,40 @@ func TestHasWarnings_MultipleWarnings(t *testing.T) {
 
 	if !HasWarnings(result) {
 		t.Error("expected HasWarnings to return true when multiple warnings are present")
+	}
+}
+
+func TestCleanBlockersNameEveryRefusalSeparately(t *testing.T) {
+	blockers := CleanBlockers(domain.CleanCheckResult{
+		Branch:          "feat",
+		IsDirty:         true,
+		UnpushedCommits: 2,
+		HasOpenPR:       true,
+		PRUrl:           "http://pr/1",
+	})
+
+	if len(blockers) != 3 {
+		t.Fatalf("got %d blockers, want one per refusal: %+v", len(blockers), blockers)
+	}
+	wantKeys := []string{domain.CleanBlockerDirty, domain.CleanBlockerUnpushed, domain.CleanBlockerOpenPR}
+	for i, want := range wantKeys {
+		if blockers[i].Key != want {
+			t.Errorf("blocker %d = %q, want %q — the order CleanUnsafeReason ranks them in", i, blockers[i].Key, want)
+		}
+		if blockers[i].Label == "" {
+			t.Errorf("blocker %q has no label to show", blockers[i].Key)
+		}
+	}
+	if !strings.Contains(blockers[2].Label, "http://pr/1") {
+		t.Errorf("open-PR blocker = %q, want the PR url so the user can go look", blockers[2].Label)
+	}
+}
+
+func TestCleanBlockersAreEmptyForASafeWorktree(t *testing.T) {
+	if blockers := CleanBlockers(domain.CleanCheckResult{Branch: "feat"}); len(blockers) != 0 {
+		t.Errorf("got %+v, want nothing standing in the way", blockers)
+	}
+	if HasWarnings(domain.CleanCheckResult{Branch: "feat"}) {
+		t.Error("a safe worktree must not offer the force option")
 	}
 }

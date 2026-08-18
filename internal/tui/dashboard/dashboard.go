@@ -1,5 +1,6 @@
-// Package dashboard renders `wtm ui`: a full-screen, read-only view of the
-// repository's worktrees. It navigates and displays; it never mutates.
+// Package dashboard renders `wtm ui`: a full-screen view of the repository's
+// worktrees, and the surface the create and clean flows are run from. It draws
+// and it asks; what a run does is internal/flow's business, never its own.
 package dashboard
 
 import (
@@ -25,8 +26,8 @@ type RunParams struct {
 	PRLoader   worktreepicker.PRLoaderFunc
 }
 
-// OutputLineMsg appends one line to the bottom output panel. The operation flows
-// write into it; nothing emits it yet.
+// OutputLineMsg appends one line to the bottom output panel. Every phase of a
+// running flow — hook output included — reaches the panel through it.
 type OutputLineMsg struct{ Text string }
 
 type worktreesMsg struct {
@@ -73,6 +74,20 @@ type Model struct {
 
 	detailOpen bool
 	showHelp   bool
+
+	menuOpen   bool
+	menuCursor int
+	// menuAnchor is the cell the context menu hangs from: the click, or the
+	// selected row when the keyboard opened it.
+	menuAnchor domain.Rect
+
+	// msgs carries what the flow goroutines post; listenCmd is its only reader.
+	msgs  chan tea.Msg
+	ops   operations
+	modal modal
+	// selectBranch is the worktree a finished run wants selected once the list
+	// catches up with it.
+	selectBranch string
 }
 
 // New builds the dashboard model. Callers outside a program must Close the
@@ -86,6 +101,7 @@ func New(params RunParams) Model {
 			Config:     params.Config,
 		},
 		zones:   zone.New(),
+		msgs:    make(chan tea.Msg, domain.DashboardMsgBuffer),
 		ghConn:  domain.GHConnectionOK,
 		loading: true,
 	}
@@ -106,7 +122,7 @@ func Run(params RunParams) error {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadWorktreesCmd(false), m.loadPRsCmd(), pollCmd())
+	return tea.Batch(m.loadWorktreesCmd(false), m.loadPRsCmd(), pollCmd(), listenCmd(m.msgs))
 }
 
 func pollCmd() tea.Cmd {
@@ -162,6 +178,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.modal = m.modal.resize(msg.Width, msg.Height)
 		return m.reflow(), nil
 
 	case tea.KeyMsg:
@@ -185,9 +202,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.loadWorktreesCmd(false), pollCmd())
 
 	case OutputLineMsg:
-		m.outputLines = append(m.outputLines, msg.Text)
-		m.outputOffset = max(len(m.outputLines)-m.layout().OutputLines, 0)
-		return m, nil
+		return m.appendOutput(msg), nil
+
+	case flowMsg:
+		model, cmd := m.applyFlow(msg.inner)
+		return model, tea.Batch(cmd, listenCmd(m.msgs))
+
+	case opDoneMsg:
+		return m.finishOp(msg), nil
+
+	case modalLoadedMsg, formReadyMsg:
+		return m.updateModal(msg)
 	}
 
 	return m, nil
@@ -203,7 +228,28 @@ func (m Model) applyWorktrees(msg worktreesMsg) Model {
 	}
 	m.statuses, m.parents, m.loaded = msg.statuses, msg.parents, true
 	m.cursor = rules.ClampIndex(m.cursor, len(m.statuses))
-	return m.reflow()
+	return m.selectRequested().reflow()
+}
+
+// selectRequested lands the cursor on the worktree a finished run created, the
+// one time the list comes back holding it.
+func (m Model) selectRequested() Model {
+	if m.selectBranch == "" {
+		return m
+	}
+	for index, status := range m.statuses {
+		if status.Branch == m.selectBranch {
+			m.cursor, m.selectBranch = index, ""
+			return m
+		}
+	}
+	return m
+}
+
+func (m Model) updateModal(msg tea.Msg) (Model, tea.Cmd) {
+	modal, cmd := m.modal.update(msg)
+	m.modal = modal
+	return m, cmd
 }
 
 func (m Model) reflow() Model {
@@ -247,6 +293,15 @@ func (m Model) refresh() (Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
+	// A modal owns the keyboard while it is up: it is a question, and nothing
+	// behind it may be acted on before it is answered.
+	if m.modal.open {
+		if key == keyInterrupt {
+			return m, tea.Quit
+		}
+		return m.updateModal(msg)
+	}
+
 	// The overlay documents "q · ctrl+c quit", so it must not swallow them.
 	if m.showHelp {
 		if key == keyQuit || key == keyInterrupt {
@@ -258,6 +313,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// An open menu takes the keys it uses and lets every other one through, after
+	// closing itself: a dropdown must never trap the keyboard.
+	if m.menuOpen {
+		switch key {
+		case keyUp, keyVimUp:
+			return m.moveMenu(-1), nil
+		case keyDown, keyVimDown:
+			return m.moveMenu(1), nil
+		case keyEnter:
+			return m.activateMenu(m.menuCursor)
+		case keyEscape, keyMenu:
+			return m.closeMenu(), nil
+		}
+		m = m.closeMenu()
+	}
+
 	layout := m.layout()
 
 	switch key {
@@ -267,6 +338,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showHelp = true
 	case keyRefresh:
 		return m.refresh()
+	case keyNew:
+		return m.startCreate()
+	case keyMenu:
+		return m.openMenu(m.selectedRowPoint()), nil
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded
 		return m.reflow(), nil
@@ -313,6 +388,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
 		return m, nil
 	}
+	if m.modal.open {
+		return m.modalMouse(msg)
+	}
+	if m.menuOpen {
+		return m.menuMouse(msg)
+	}
 
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
@@ -321,7 +402,13 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.wheel(msg, 1), nil
 	}
 
-	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+	if msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	if msg.Button == tea.MouseButtonRight {
+		return m.rightClick(msg)
+	}
+	if msg.Button != tea.MouseButtonLeft {
 		return m, nil
 	}
 
@@ -337,6 +424,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.reflow(), nil
 	}
 
+	if m.inZone(zoneAdd, msg) {
+		return m.startCreate()
+	}
+
 	for index := range m.statuses {
 		if !m.inZone(rowZone(index), msg) {
 			continue
@@ -348,6 +439,53 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.reflow(), nil
 	}
 
+	return m, nil
+}
+
+// menuMouse gives the menu the mouse while it is up: an entry activates, and
+// anything else — a click beside it, the wheel, the right button again —
+// dismisses it and does nothing more, as a context menu does everywhere.
+func (m Model) menuMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress {
+		return m, nil
+	}
+	if msg.Button == tea.MouseButtonLeft {
+		for index := range m.menuItems() {
+			if m.inZone(menuZone(index), msg) {
+				return m.activateMenu(index)
+			}
+		}
+	}
+	return m.closeMenu(), nil
+}
+
+// rightClick opens the context menu on the row it lands on, selecting it first:
+// a menu that acted on another row than the one under the pointer would be a trap.
+func (m Model) rightClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	for index := range m.statuses {
+		if !m.inZone(rowZone(index), msg) {
+			continue
+		}
+		m.cursor = index
+		return m.reflow().openMenu(domain.Rect{X: msg.X, Y: msg.Y}), nil
+	}
+	return m, nil
+}
+
+// modalMouse only ever resolves the modal's own rows: the frame behind it is
+// still on the zone manager from the last frame that drew it.
+func (m Model) modalMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return m, nil
+	}
+	for index := range m.modal.rows {
+		if !m.inZone(modalRowZone(index), msg) {
+			continue
+		}
+		modal, cmd := m.modal.activate(index)
+		m.modal = modal
+		return m, cmd
+	}
 	return m, nil
 }
 
@@ -365,9 +503,6 @@ func (m Model) View() string {
 	if m.width <= 0 || m.height <= 0 {
 		return ""
 	}
-	if m.showHelp {
-		return m.renderHelpOverlay()
-	}
 
 	layout := m.layout()
 	body := ""
@@ -383,11 +518,29 @@ func (m Model) View() string {
 	// A panel too small to draw returns nothing; keeping its empty line would push
 	// the frame past the last row and make the alt screen scroll.
 	sections := make([]string, 0, 4)
-	for _, section := range []string{m.renderTabs(layout), body, m.renderOutput(layout), m.renderHelpBar(layout)} {
+	for _, section := range []string{m.renderHeader(layout), body, m.renderOutput(layout), m.renderHelpBar(layout)} {
 		if section != "" {
 			sections = append(sections, section)
 		}
 	}
 
-	return m.zones.Scan(lipgloss.JoinVertical(lipgloss.Left, sections...))
+	return m.zones.Scan(m.withOverlays(lipgloss.JoinVertical(lipgloss.Left, sections...)))
+}
+
+// withOverlays pastes whatever is open over the frame. Only one ever is: each of
+// them takes the keyboard while it is up.
+func (m Model) withOverlays(frame string) string {
+	if m.showHelp {
+		box, rect := m.helpBox()
+		return overlay(overlayParams{Base: frame, Box: box, At: rect})
+	}
+	if m.modal.open {
+		box, rect := m.modal.box(m.zones)
+		return overlay(overlayParams{Base: frame, Box: box, At: rect})
+	}
+	if m.menuOpen {
+		box, rect := m.menuBox()
+		return overlay(overlayParams{Base: frame, Box: box, At: rect})
+	}
+	return frame
 }

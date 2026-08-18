@@ -247,3 +247,11 @@ type ResolveResult struct {
 	Ambiguous bool
 	Matches   []GitWorktree
 }
+
+// CleanBlocker names one reason a removal is refused. Listing them one by one is
+// what lets a surface have each lifted on its own, instead of behind a single
+// blanket "force".
+type CleanBlocker struct {
+	Key   string
+	Label string
+}

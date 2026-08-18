@@ -22,6 +22,10 @@ type Request struct {
 	Force            bool
 	ReparentChildren bool
 	BaseBranch       string
+	// AllowPrivileged lets a failed removal offer the `sudo rm -rf` fallback. The
+	// prompt it opens belongs to sudo and takes the terminal, so only a surface
+	// that can hand it over sets this.
+	AllowPrivileged bool
 }
 
 type Outcome struct {
@@ -43,6 +47,12 @@ type Params struct {
 	Request   Request
 	Prompter  flow.Prompter
 	Presenter Presenter
+}
+
+// Operation declares how a surface must schedule a clean: it destroys its target,
+// so it holds the surface until it is done rather than running behind its back.
+func Operation() flow.Operation {
+	return flow.Operation{Kind: domain.OpKindClean, Mode: flow.ModeBlocking, TargetKey: KeyWorktree}
 }
 
 func Run(params Params) (Outcome, error) {
@@ -243,7 +253,7 @@ type recoverParams struct {
 // failed on files the current user cannot delete (typically root-owned files left by
 // a container). recovered=true resumes the normal post-removal flow.
 func (f *cleanFlow) recoverRemoveFailure(p recoverParams) (bool, error) {
-	if !f.prompter.Interactive() || p.Path == "" {
+	if !f.request.AllowPrivileged || !f.prompter.Interactive() || p.Path == "" {
 		return false, nil
 	}
 

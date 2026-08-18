@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"
@@ -20,6 +21,14 @@ func (m Model) renderDetail(layout domain.DashboardLayout) string {
 	})
 }
 
+// detailSection is one group of fields under its own heading. The panel reads as
+// three questions — where it is, where it stands, what is open on it — rather
+// than as one list of nine labels.
+type detailSection struct {
+	title  string
+	fields [][2]string
+}
+
 func (m Model) detailBody(layout domain.DashboardLayout) []string {
 	width := layout.Detail.Width - borderWidth - paddingWidth
 	status, ok := m.selected()
@@ -27,27 +36,46 @@ func (m Model) detailBody(layout domain.DashboardLayout) []string {
 		return []string{styles.DashboardEmpty.Render(truncate(domain.DashboardEmptySelection, width))}
 	}
 
-	fields := [][2]string{
-		{domain.DashboardLabelPath, status.Path},
-		{domain.DashboardLabelParent, m.parentOf(status)},
-		{domain.DashboardLabelState, stateText(status)},
+	lines := []string{
+		spread(styles.DashboardBranch.Render(truncate(status.Branch, width)),
+			worktreepicker.BuildStatus(status).Render(), width),
+		styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, max(width, 0))),
+	}
+	for _, section := range m.detailSections(status) {
+		lines = append(lines, "", styles.DashboardSectionTitle.Render(truncate(section.title, width)), "")
+		for _, field := range section.fields {
+			lines = append(lines, styles.DashboardLabel.Render(pad(field[0], detailLabelWidth))+
+				styles.DashboardValue.Render(truncate(field[1], max(width-detailLabelWidth, 0))))
+		}
+	}
+	return lines
+}
+
+func (m Model) detailSections(status domain.WorktreeStatus) []detailSection {
+	// The working-tree state is the pill in the heading, not a field of its own.
+	state := [][2]string{
 		{domain.DashboardLabelBase, baseText(status)},
 		{domain.DashboardLabelOrigin, originText(status)},
 	}
 	if status.RebaseInProgress {
-		fields = append(fields, [2]string{domain.DashboardLabelRebase, domain.DashboardRebaseInProgress})
+		state = append(state, [2]string{domain.DashboardLabelRebase, domain.DashboardRebaseInProgress})
 	}
-	fields = append(fields,
-		[2]string{domain.DashboardLabelPR, m.prText(status.Branch)},
-		[2]string{domain.DashboardLabelCreated, createdText(status)},
-	)
 
-	lines := []string{styles.DashboardBranch.Render(truncate(status.Branch, width)), ""}
-	for _, field := range fields {
-		label := styles.DashboardLabel.Render(pad(field[0], detailLabelWidth))
-		lines = append(lines, label+styles.DashboardValue.Render(truncate(field[1], max(width-detailLabelWidth, 0))))
+	return []detailSection{
+		{
+			title: domain.DashboardSectionWorktree,
+			fields: [][2]string{
+				{domain.DashboardLabelPath, status.Path},
+				{domain.DashboardLabelParent, m.parentOf(status)},
+				{domain.DashboardLabelCreated, createdText(status)},
+			},
+		},
+		{title: domain.DashboardSectionDivergence, fields: state},
+		{
+			title:  domain.DashboardSectionReview,
+			fields: [][2]string{{domain.DashboardLabelPR, m.prText(status.Branch)}},
+		},
 	}
-	return lines
 }
 
 func (m Model) parentOf(status domain.WorktreeStatus) string {
@@ -58,10 +86,6 @@ func (m Model) parentOf(status domain.WorktreeStatus) string {
 		return domain.DashboardNoValue
 	}
 	return domain.DashboardUnknownParent
-}
-
-func stateText(status domain.WorktreeStatus) string {
-	return worktreepicker.BuildStatus(status).Text
 }
 
 // baseText reports the divergence against the configured base branch, the
@@ -99,7 +123,7 @@ func (m Model) prText(branch string) string {
 	}
 	for _, pr := range m.prs {
 		if pr.Branch == branch {
-			return fmt.Sprintf("#%d %s (%s)", pr.Number, pr.Title, pr.State)
+			return fmt.Sprintf(domain.DashboardPRFmt, pr.Number, pr.Title, pr.State)
 		}
 	}
 	return domain.DashboardNoPR

@@ -41,6 +41,12 @@ type Params struct {
 	Presenter Presenter
 }
 
+// Operation declares how a surface must schedule a create: the hooks can run long,
+// so the run goes to the background and holds the branch it is provisioning.
+func Operation() flow.Operation {
+	return flow.Operation{Kind: domain.OpKindCreate, Mode: flow.ModeBackground, TargetKey: KeyBranch}
+}
+
 func Run(params Params) (Outcome, error) {
 	f := &createFlow{
 		ctx:        params.Context,

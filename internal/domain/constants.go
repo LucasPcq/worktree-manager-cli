@@ -666,6 +666,12 @@ const (
 	CleanWillDeleteBranch   = "  branch    "
 	CleanRecapReparentFmt   = "Then reparent %d child worktree(s) onto %s."
 	CleanRecapOrphanFmt     = "Then leave %d child worktree(s) orphaned."
+	// CleanBlockerDirty, CleanBlockerUnpushed and CleanBlockerOpenPR key the
+	// removal refusals a surface lists one by one (rules.CleanBlockers).
+	CleanBlockerDirty    = "dirty"
+	CleanBlockerUnpushed = "unpushed"
+	CleanBlockerOpenPR   = "open_pr"
+
 	CleanUnsafeDirty        = "has uncommitted changes"
 	CleanUnsafeUnpushedFmt  = "has %d unpushed commit(s)"
 	CleanUnsafeOpenPR       = "has an open pull request"
@@ -706,6 +712,11 @@ const (
 	PinnedSuffixBase     = " (base)"
 	PinnedSuffixDetected = " (detected)"
 
+	// OpKindCreate and OpKindClean name a running flow in a surface that schedules
+	// several of them.
+	OpKindCreate = "create"
+	OpKindClean  = "clean"
+
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"
 
@@ -721,8 +732,38 @@ const (
 	DashboardMinDetailWidth   = 32
 	DashboardOutputBodyHeight = 8
 	// DashboardChromeHeight is what a panel spends on chrome: its two border rows
-	// plus its title row.
+	// plus its title row. DashboardTitleGap is the blank line under that title —
+	// a panel whose body starts against its title reads as one block.
 	DashboardChromeHeight = 3
+	DashboardTitleGap     = 1
+
+	// DashboardHeaderHeight is the top bar: the wordmark and its tabs, then the
+	// rule that underlines the active one.
+	DashboardHeaderHeight = 2
+
+	// DashboardRowHeight is how many lines one worktree takes — its name, then
+	// what its state amounts to — and DashboardRowGap the blank line between two.
+	DashboardRowHeight = 2
+	DashboardRowGap    = 1
+
+	// DashboardMsgBuffer sizes the channel the running flows post on. It only has
+	// to absorb a burst of hook output between two frames.
+	DashboardMsgBuffer = 256
+
+	// DashboardModalChrome is what a modal box spends on its two border rows.
+	DashboardModalChrome       = 2
+	DashboardModalWidthPercent = 60
+	DashboardModalMinWidth     = 40
+	DashboardModalMaxWidth     = 88
+
+	// DashboardWordmark names the product in the header bar.
+	DashboardWordmark    = "wtm"
+	DashboardCountFmt    = "%d worktrees"
+	DashboardCountOneFmt = "%d worktree"
+	// DashboardRuleGlyph carries the header rule, DashboardActiveRuleGlyph the
+	// heavier segment under the active tab.
+	DashboardRuleGlyph       = "─"
+	DashboardActiveRuleGlyph = "━"
 
 	DashboardTabWorktrees = "Worktrees"
 	DashboardListTitle    = "Worktrees"
@@ -738,6 +779,13 @@ const (
 	// DashboardCreatedFormat renders a worktree's creation date in local time.
 	DashboardCreatedFormat = "2006-01-02 15:04"
 
+	// The detail panel groups its fields under these headings.
+	DashboardSectionWorktree   = "WORKTREE"
+	DashboardSectionDivergence = "DIVERGENCE"
+	DashboardSectionReview     = "REVIEW"
+	// DashboardPRFmt renders a pull request as number, title and state.
+	DashboardPRFmt = "#%d %s (%s)"
+
 	DashboardLabelPath    = "Path"
 	DashboardLabelParent  = "Parent"
 	DashboardLabelState   = "State"
@@ -751,14 +799,87 @@ const (
 	DashboardUpToDate         = "up to date"
 	DashboardUnknownParent    = "unknown"
 
-	DashboardHelpWide   = "↑↓ select · tab view · o output · shift+↑↓ scroll output · r refresh · ? help · q quit"
-	DashboardHelpNarrow = "↑↓ select · enter detail · tab view · o output · r refresh · ? help · q quit"
+	DashboardHelpWide   = "↑↓ select · n new · m actions · tab view · o output · shift+↑↓ scroll output · r refresh · ? help · q quit"
+	DashboardHelpNarrow = "↑↓ select · enter detail · n new · m actions · o output · r refresh · ? help · q quit"
 	DashboardHelpDetail = "esc back · ↑↓ select · o output · r refresh · q quit"
 
 	// DashboardHelpTitle heads the key/mouse reference overlay. Every clickable
 	// zone is listed there with its keyboard equivalent.
 	DashboardHelpTitle = "Keys & mouse"
 
+	// DashboardAddLabel is the list panel's header button, KeyNew its keyboard
+	// equivalent. The long form is used wherever the panel is wide enough.
+	DashboardAddLabel     = "+ New"
+	DashboardAddLabelLong = "+ New worktree"
+
+	// DashboardMetaFromPrefix, DashboardMetaSeparator and DashboardMetaNothing
+	// make up the second line of a worktree row.
+	DashboardMetaFromPrefix = "from "
+	DashboardMetaSeparator  = " · "
+	DashboardMetaNothing    = "—"
+	// DashboardMenuTitle heads the per-worktree context menu and
+	// DashboardMenuDelete is its only entry for now.
+	DashboardMenuDelete = "Delete worktree"
+	// DashboardMenuEmpty stands in for the actions of a worktree that has none.
+	DashboardMenuEmpty = "No actions available"
+	// DashboardMenuChrome is what the menu box spends on its borders and padding.
+	DashboardMenuChrome = 4
+
+	DashboardCreateTitle = "New worktree"
+	DashboardDeleteTitle = "Delete worktree"
+
+	// DashboardBlockersTitle heads the refusals a removal must have lifted, one by
+	// one — the dashboard never offers a blanket bypass.
+	DashboardBlockersTitle = "Lift every refusal to enable the deletion:"
+	DashboardBlockedSuffix = " — lift the refusals above"
+	DashboardConfirmLabel  = "Confirm"
+	// DashboardButtonFmt brackets an action so it reads as one without needing a
+	// block of color behind it.
+	DashboardButtonFmt = "[ %s ]"
+
+	DashboardGlyphChoiceOn  = "◉"
+	DashboardGlyphChoiceOff = "○"
+	DashboardGlyphCheckOn   = "[x]"
+	DashboardGlyphCheckOff  = "[ ]"
+
+	DashboardModalPreparing  = "Preparing…"
+	DashboardStepperHint     = "↑↓ move · / filter · enter confirm · esc back"
+	DashboardStepperTextHint = "enter confirm · esc back"
+	DashboardStepperRowsHint = "↑↓ move · enter confirm · esc back"
+	DashboardFormHint        = "↑↓ move · space toggle · enter confirm · esc cancel"
+	DashboardConfirmHint     = "↑↓ move · enter confirm · esc cancel"
+
+	// DashboardUnsupportedStepFmt refuses a step kind no modal can draw, rather
+	// than guessing a widget for it (step key, kind).
+	DashboardUnsupportedStepFmt = "dashboard: step %q has no renderer for kind %d"
+
+	// DashboardBusyFmt refuses an action on a worktree a background run still
+	// holds (branch, running operation).
+	DashboardBusyFmt = "%s is busy: a %s is still running on it"
+	// DashboardBusyCaptionFmt is the same fact under a menu entry (operation).
+	DashboardBusyCaptionFmt = "a %s is running on it"
+	// DashboardBlockedByFmt refuses to start anything while a blocking run owns
+	// the dashboard (running operation).
+	DashboardBlockedByFmt = "A %s is running — wait for it to finish"
+	// DashboardStartedFmt, DashboardFinishedFmt and DashboardFailedFmt bracket a
+	// run in the output panel (operation, target).
+	DashboardStartedFmt  = "▸ %s %s"
+	DashboardFinishedFmt = "✓ %s %s"
+	DashboardFailedFmt   = "✗ %s: %s"
+	// DashboardPrivilegedHintFmt names the way out of a removal the dashboard
+	// cannot finish: sudo prompts on the terminal the dashboard is holding.
+	DashboardPrivilegedHintFmt = "  run `wtm clean %s --force` in a terminal to remove it with sudo"
+	// DashboardOperationLabel names a failed run in the output panel when the
+	// failure is the run itself rather than one of its phases.
+	DashboardOperationLabel = "operation"
+
+	// KeyNew opens the new-worktree wizard, the keyboard equivalent of the list
+	// header's add button.
+	KeyNew = "n"
+	// KeyMenu opens the selected worktree's context menu. It is not a shortcut for
+	// the right click but its equal: terminals that hand the right button to a
+	// paste action never deliver it.
+	KeyMenu = "m"
 	// KeyToggleOutput folds and unfolds the bottom output panel, the keyboard
 	// equivalent of clicking its header.
 	KeyToggleOutput = "o"
