@@ -2,10 +2,12 @@ package rules
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/testutil/pathtest"
 )
 
 func TestValidateEnvFiles(t *testing.T) {
@@ -35,21 +37,21 @@ func TestValidateEnvFiles(t *testing.T) {
 }
 
 func TestValidateSudoDeletePath(t *testing.T) {
-	const home = "/home/dev"
-	const project = "/home/dev/repo"
+	home := pathtest.Abs("home", "dev")
+	project := pathtest.Abs("home", "dev", "repo")
 
 	cases := []struct {
 		name    string
 		path    string
 		wantErr bool
 	}{
-		{"safe worktree under project", "/home/dev/repo/.worktrees/feat", false},
-		{"safe sibling worktree", "/home/dev/worktrees/feat", false},
-		{"filesystem root", "/", true},
+		{"safe worktree under project", pathtest.Abs("home", "dev", "repo", ".worktrees", "feat"), false},
+		{"safe sibling worktree", pathtest.Abs("home", "dev", "worktrees", "feat"), false},
+		{"filesystem root", pathtest.Root(), true},
 		{"home dir", home, true},
 		{"project root", project, true},
-		{"ancestor of project", "/home/dev", true},
-		{"relative path", "repo/.worktrees/feat", true},
+		{"ancestor of project", pathtest.Abs("home", "dev"), true},
+		{"relative path", filepath.Join("repo", ".worktrees", "feat"), true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -78,7 +80,7 @@ func TestValidateRelocateTarget(t *testing.T) {
 		{"relative path", "../.worktrees", false},
 		{"nested relative path", "worktrees/sub", false},
 		{"whitespace only", "   ", true},
-		{"absolute path", "/tmp/worktrees", true},
+		{"absolute path", pathtest.Abs("tmp", "worktrees"), true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -107,7 +109,7 @@ func TestValidateInvalidEnvStrategy(t *testing.T) {
 
 func TestValidateInvalidShellType(t *testing.T) {
 	cfg := validConfig()
-	cfg.Global.Shell = "powershell"
+	cfg.Global.Shell = "nushell"
 
 	err := Validate(cfg)
 	if !errors.Is(err, domain.ErrInvalidShellType) {

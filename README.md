@@ -28,12 +28,16 @@ it. Install and authenticate it to unlock GitHub features: [cli.github.com](http
 brew install LucasPcq/tap/wtm
 ```
 
-**Download binary** — grab the latest [release](https://github.com/LucasPcq/worktree-manager-cli/releases), extract, and move it onto your `PATH`:
+**Download binary** — grab the latest [release](https://github.com/LucasPcq/wtm/releases), extract, and move it onto your `PATH`:
 
 ```bash
-tar -xzf worktree-manager-cli_*_darwin_arm64.tar.gz   # or _darwin_amd64 / _linux_amd64
+tar -xzf wtm_*_darwin_arm64.tar.gz   # or _darwin_amd64 / _linux_amd64
 sudo mv wtm /usr/local/bin/
 ```
+
+**Windows** — download `wtm_*_windows_amd64.zip` (or `_arm64`) from the same
+[release](https://github.com/LucasPcq/wtm/releases) page, extract `wtm.exe`, and put its
+folder on your `PATH`. See [Windows support](#windows-support) for what differs.
 
 **Go install**
 
@@ -46,7 +50,20 @@ go install github.com/LucasPcq/wtm@latest
 ```bash
 # 1. Shell integration — required so `go`/`switch` can cd for you
 echo 'eval "$(wtm shell-init)"' >> ~/.zshrc && source ~/.zshrc
+```
 
+<details>
+<summary>PowerShell</summary>
+
+```powershell
+# wtm shell-init detects PowerShell automatically; pass it explicitly if needed.
+Add-Content $PROFILE 'Invoke-Expression (& wtm shell-init | Out-String)'
+. $PROFILE
+```
+
+</details>
+
+```bash
 # 2. Initialize wtm in your repo
 cd your-repo && wtm init
 
@@ -133,6 +150,9 @@ Per-worktree services + tasks. Functional, but the flow is still stabilizing. Th
 run module is **opt-in**: run `wtm run init` once to set it up (the global `wtm init`
 no longer touches services). Until then, run commands stop with a hint pointing there.
 
+Services are hosted in a pseudo-terminal, so this module is **Unix-only** — see
+[Windows support](#windows-support).
+
 | Command | Purpose |
 |---|---|
 | [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts) |
@@ -158,6 +178,20 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 | [`config`](docs/wtm_config.md) | Inspect or edit the project config |
 | [`agents`](docs/wtm_agents.md) | Install the `using-wtm` skill for LLM agents |
 | [`schema`](docs/wtm_schema.md) | Extract the bundled JSON Schemas |
+
+## Windows support
+
+`wtm` ships native `windows/amd64` and `windows/arm64` binaries. Everything works —
+worktrees, env provisioning, hooks, stacked-branch syncing, navigation, cleanup, the TUI
+— with two differences:
+
+- **Shell integration is PowerShell.** `wtm shell-init` detects it automatically (`$SHELL`
+  is unset outside Git Bash). Under Git Bash or WSL you get the bash wrapper as usual.
+  Force either with `wtm shell-init powershell` / `wtm shell-init bash`.
+- **The `run` module is unavailable.** Jobs run inside a pseudo-terminal, which Windows
+  does not provide. The daemon-backed commands — `run up`, `down`, `start`, `stop`,
+  `logs`, `ps` — exit with a clear message. The config-only ones still work: `run init`,
+  `run list`, `run export`/`import`, `run job` and `run profile`.
 
 ## Machine-readable output
 
@@ -282,10 +316,11 @@ worktree's jobs unless you pass `--all`.
 
 ### Global config — `~/.config/wtm/config.toml`
 
-Created by `wtm init`, personal to each developer.
+Created by `wtm init`, personal to each developer. On Windows it lives at
+`%AppData%\wtm\config.toml`.
 
 ```toml
-shell = "zsh"          # zsh | bash | fish
+shell = "zsh"          # zsh | bash | fish | powershell
 agent = "claude-code"  # claude-code | cursor | none
 ```
 

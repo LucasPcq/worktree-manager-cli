@@ -115,7 +115,7 @@ func ValidateEnvStrategy(s domain.EnvStrategy) error {
 // ValidateShellType returns ErrInvalidShellType if s is not a known value.
 func ValidateShellType(s domain.ShellType) error {
 	switch s {
-	case domain.ShellZsh, domain.ShellBash, domain.ShellFish:
+	case domain.ShellZsh, domain.ShellBash, domain.ShellFish, domain.ShellPowerShell:
 		return nil
 	default:
 		return domain.ErrInvalidShellType

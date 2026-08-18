@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func TestInitGlobalRecap(t *testing.T) {
 	var buf bytes.Buffer
 	InitGlobalRecap(&buf, InitGlobalRecapParams{
 		Fields:    []domain.RecapField{{Label: domain.InitRecapLabelShell, Value: "zsh"}},
-		NextSteps: []string{domain.InitNextStepShell},
+		NextSteps: []string{rules.ShellInitNextStep(domain.ShellZsh)},
 	})
 	out := buf.String()
 

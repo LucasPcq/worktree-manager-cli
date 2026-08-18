@@ -32,7 +32,7 @@ func NewCmd() *cobra.Command {
 	}
 
 	cmd.Flags().Bool(domain.FlagNonInteractive, false, "Bootstrap from flags + auto-detection; never prompt")
-	cmd.Flags().String(domain.FlagShell, "", "Global shell: zsh, bash, or fish")
+	cmd.Flags().String(domain.FlagShell, "", "Global shell: zsh, bash, fish, or powershell")
 	cmd.Flags().String(domain.FlagBasePath, "", "Worktree directory, relative to repo root")
 	cmd.Flags().String(domain.FlagBaseBranch, "", "Default base branch for new worktrees")
 	cmd.Flags().String(domain.FlagEnvStrategy, "", "Env provisioning strategy: example, main, or parent")
@@ -122,7 +122,7 @@ func ensureGlobalConfig(cmd *cobra.Command, flagged bool) error {
 	output.Frame(cmd.OutOrStdout(), func() {
 		output.InitGlobalRecap(cmd.OutOrStdout(), output.InitGlobalRecapParams{
 			Fields:    rules.InitGlobalRecapFields(answers),
-			NextSteps: []string{domain.InitNextStepShell},
+			NextSteps: []string{rules.ShellInitNextStep(answers.Shell)},
 		})
 	})
 

@@ -19,7 +19,7 @@ var (
 	ErrInvalidEnvStrategy = errors.New("invalid env strategy: must be example, main, or parent")
 
 	// ErrInvalidShellType is returned when shell has an unknown value.
-	ErrInvalidShellType = errors.New("invalid shell type: must be zsh, bash, or fish")
+	ErrInvalidShellType = errors.New("invalid shell type: must be zsh, bash, fish, or powershell")
 
 	// ErrUserAborted is returned when the user cancels an interactive prompt.
 	ErrUserAborted = errors.New("user aborted")
@@ -65,6 +65,11 @@ var (
 	// module is initialized — run.toml is absent or declares no job/profile. The
 	// message points at the dedicated setup command.
 	ErrRunNotInitialized = errors.New("run module not initialized — run `wtm run init` first")
+
+	// ErrRunUnsupportedPlatform is returned when a run command needs the job
+	// daemon on a platform that cannot host it. Services are spawned inside a
+	// pseudo-terminal, which Windows does not provide.
+	ErrRunUnsupportedPlatform = errors.New("run module unsupported on Windows — services require a pseudo-terminal")
 
 	// ErrExtractConflict is returned when the selected changes do not apply
 	// cleanly onto the target worktree. The extraction is aborted and the source

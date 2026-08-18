@@ -1,6 +1,10 @@
 package rules
 
-import "github.com/LucasPcq/wtm/internal/domain"
+import (
+	"fmt"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+)
 
 const bashZshTemplate = `wtm() {
   if [ "$1" = "go" ]; then
@@ -98,12 +102,113 @@ const fishTemplate = `function wtm
 end
 `
 
+// PowerShell has no `local` scoping quirk to work around, so the two identical
+// fallback branches of the POSIX templates (no args / with args) collapse into
+// one: splatting an empty @args is a no-op.
+const powershellTemplate = `function wtm {
+  $exe = 'wtm.exe'
+  $rest = @()
+  if ($args.Count -gt 1) { $rest = @($args[1..($args.Count - 1)]) }
+
+  if ($args.Count -ge 1 -and $args[0] -eq 'go') {
+    $dir = & $exe resolve @rest
+    if ($dir) { Set-Location $dir }
+    return
+  }
+
+  if ($args.Count -ge 1 -and $args[0] -eq 'switch') {
+    $flags = @()
+    $branchArgs = @()
+    $i = 0
+    # if/elseif rather than switch: an unlabelled break inside a switch nested in
+    # a loop is ambiguous in PowerShell.
+    while ($i -lt $rest.Count) {
+      $arg = $rest[$i]
+      if ($arg -eq '--profile') {
+        $flags += $arg
+        $i++
+        if ($i -lt $rest.Count) { $flags += $rest[$i] }
+      }
+      elseif ($arg -like '--profile=*' -or $arg -eq '--exclusive' -or $arg -eq '--parallel') {
+        $flags += $arg
+      }
+      else {
+        $branchArgs += $arg
+      }
+      $i++
+    }
+    $dir = & $exe resolve @branchArgs
+    if ($dir) {
+      Set-Location $dir
+      & $exe run up @flags
+    }
+    return
+  }
+
+  $tmpfile = [System.IO.Path]::GetTempFileName()
+  try {
+    $env:WTM_GO_FILE = $tmpfile
+    & $exe @args
+  } finally {
+    Remove-Item Env:\WTM_GO_FILE -ErrorAction SilentlyContinue
+  }
+  if (Test-Path $tmpfile) {
+    $dir = Get-Content -Raw -ErrorAction SilentlyContinue $tmpfile
+    Remove-Item -Force -ErrorAction SilentlyContinue $tmpfile
+    if ($dir) {
+      $dir = $dir.Trim()
+      if ($dir -and (Test-Path -PathType Container $dir)) { Set-Location $dir }
+    }
+  }
+}
+`
+
 // GenerateShellInit returns the shell function wrapper for the given shell type.
 func GenerateShellInit(shell domain.ShellType) string {
 	switch shell {
 	case domain.ShellFish:
 		return fishTemplate
+	case domain.ShellPowerShell:
+		return powershellTemplate
 	default:
 		return bashZshTemplate
 	}
+}
+
+// ParseShell resolves a user-supplied shell name to its ShellType.
+func ParseShell(name string) (domain.ShellType, error) {
+	shell := domain.ShellType(name)
+	if err := ValidateShellType(shell); err != nil {
+		return "", fmt.Errorf("%w: %s", err, name)
+	}
+	return shell, nil
+}
+
+// DefaultShellFor returns the shell to assume when detection finds nothing,
+// given a runtime.GOOS value.
+func DefaultShellFor(goos string) domain.ShellType {
+	if goos == domain.GOOSWindows {
+		return domain.DefaultShellWindows
+	}
+	return domain.DefaultShell
+}
+
+// ShellInitCommand returns the line the user adds to their shell config to load
+// the wtm wrapper. PowerShell has no `eval`.
+func ShellInitCommand(shell domain.ShellType) string {
+	if shell == domain.ShellPowerShell {
+		return domain.ShellInitCommandPowerShell
+	}
+	return domain.ShellInitCommand
+}
+
+// ShellInitHint is the multi-line hint printed when a command needs the shell
+// wrapper but it is not loaded.
+func ShellInitHint(shell domain.ShellType) string {
+	return domain.MsgShellInitHintPrefix + ShellInitCommand(shell)
+}
+
+// ShellInitNextStep is the single-line variant used in the init recap.
+func ShellInitNextStep(shell domain.ShellType) string {
+	return domain.InitNextStepShellPrefix + ShellInitCommand(shell)
 }

@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/creack/pty"
+
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
@@ -33,6 +35,10 @@ type daemonServer struct {
 
 // RunDaemon starts the daemon, listens on the Unix socket, and blocks until shutdown.
 func RunDaemon(params DaemonParams) error {
+	if err := SupportedOnPlatform(); err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(filepath.Dir(params.SocketPath), 0o755); err != nil {
 		return fmt.Errorf("create socket dir: %w", err)
 	}
@@ -247,12 +253,7 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 
 	// Set initial window size if provided
 	if req.Cols > 0 && req.Rows > 0 {
-		syscall.Syscall(
-			syscall.SYS_IOCTL,
-			session.PTY.Fd(),
-			syscall.TIOCSWINSZ,
-			uintptr(unsafeWinsize(req.Cols, req.Rows)),
-		)
+		_ = pty.Setsize(session.PTY, &pty.Winsize{Rows: uint16(req.Rows), Cols: uint16(req.Cols)})
 	}
 
 	// Send OK before switching to raw mode

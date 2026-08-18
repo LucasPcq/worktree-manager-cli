@@ -13,10 +13,16 @@ func InitRepo(t testing.TB) string {
 	t.Helper()
 	dir := t.TempDir()
 
+	// autocrlf/eol are pinned so fixtures written with \n stay byte-identical on
+	// disk. Windows runners default to core.autocrlf=true, which rewrites the
+	// working tree to CRLF and makes `git status` report phantom modifications
+	// on files whose content git considers unchanged (`git diff` stays empty).
 	commands := [][]string{
 		{"git", "init", "-b", "main"},
 		{"git", "config", "user.email", "test@test.com"},
 		{"git", "config", "user.name", "Test"},
+		{"git", "config", "core.autocrlf", "false"},
+		{"git", "config", "core.eol", "lf"},
 		{"git", "commit", "--allow-empty", "-m", "initial"},
 	}
 

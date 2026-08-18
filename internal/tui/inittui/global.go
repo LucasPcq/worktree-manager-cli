@@ -22,6 +22,7 @@ func RunGlobalWizard() (domain.InitGlobalAnswers, error) {
 					{Label: "zsh", Value: string(domain.ShellZsh)},
 					{Label: "bash", Value: string(domain.ShellBash)},
 					{Label: "fish", Value: string(domain.ShellFish)},
+					{Label: "powershell", Value: string(domain.ShellPowerShell)},
 				},
 			}),
 			Summary: func(model any) string {

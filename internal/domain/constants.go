@@ -88,15 +88,26 @@ const (
 	EnvQuoteDouble   = '"'
 	EnvQuoteSingle   = '\''
 
-	// DefaultShell is the default shell for integration.
+	// GOOSWindows is the runtime.GOOS value for Windows.
+	GOOSWindows = "windows"
+
+	// DefaultShell is the default shell for integration on POSIX systems.
 	DefaultShell = ShellZsh
 
-	// ShellInitCommand is the single source of truth for the shell-integration
-	// eval line; both the multi-line hint and the init recap bullet compose it.
-	ShellInitCommand = "eval \"$(wtm shell-init)\""
+	// DefaultShellWindows is the default shell for integration on Windows, used
+	// when $SHELL is absent (i.e. outside Git Bash / WSL).
+	DefaultShellWindows = ShellPowerShell
 
-	// MsgShellInitHint tells the user how to set up shell integration.
-	MsgShellInitHint = "Add this to your shell config:\n\n  " + ShellInitCommand
+	// ShellInitCommand and ShellInitCommandPowerShell are the single source of
+	// truth for the shell-integration eval line; both the multi-line hint and the
+	// init recap bullet compose one of them. See rules.ShellInitCommand.
+	ShellInitCommand           = "eval \"$(wtm shell-init)\""
+	ShellInitCommandPowerShell = "Invoke-Expression (& wtm shell-init | Out-String)"
+
+	// MsgShellInitHintPrefix and InitNextStepShellPrefix precede the eval line in
+	// the two places it is surfaced. See rules.ShellInitHint / ShellInitNextStep.
+	MsgShellInitHintPrefix  = "Add this to your shell config:\n\n  "
+	InitNextStepShellPrefix = "Add to your shell config:  "
 
 	// Lockfile names for package manager detection.
 	LockfilePnpm = "pnpm-lock.yaml"
@@ -389,7 +400,6 @@ const (
 
 	// Next-step bullets printed in the recap. Each is a single line so the
 	// "Next steps" block stays flat (no cascading indentation).
-	InitNextStepShell    = "Add to your shell config:  " + ShellInitCommand
 	InitNextStepCreate   = "wtm create <branch>  — create a worktree to get started"
 	InitNextStepRelocate = "wtm relocate  — adopt & align pre-existing worktrees"
 	InitNextStepRunInit  = "wtm run init  — (experimental) configure per-worktree services"

@@ -370,6 +370,15 @@ func doClean(cmd *cobra.Command, p doCleanParams) error {
 		return hookErr
 	}
 
+	// Windows refuses to delete a directory that is a live process's working
+	// directory, so step out before removal — this command's whole point when
+	// run from inside the worktree is to leave it. Done after the hooks phase so
+	// on_clean hooks still run against a normal environment. A no-op elsewhere:
+	// the redirect below sends the shell to the same place.
+	if insideRemoved {
+		_ = os.Chdir(params.ProjectDir)
+	}
+
 	err := components.RunLoading(components.LoadingParams{
 		Message: fmt.Sprintf("Removing worktree %s…", params.Branch),
 		Animate: human,

@@ -3,6 +3,7 @@ package detect
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -135,9 +136,42 @@ func TestEnvFilesPairsTemplateWithTarget(t *testing.T) {
 	if !ok || root.Template != ".env.example" {
 		t.Errorf("root .env not paired with .env.example: %+v", files)
 	}
-	nested, ok := envFileByTarget(files, filepath.Join("apps", "api", ".env"))
-	if !ok || nested.Template != filepath.Join("apps", "api", ".env.example") {
+	// Slash-separated, not filepath.Join: these land in config.toml and travel
+	// between machines, so the separator is part of the contract.
+	nested, ok := envFileByTarget(files, "apps/api/.env")
+	if !ok || nested.Template != "apps/api/.env.example" {
 		t.Errorf("nested .env not paired with its template: %+v", files)
+	}
+}
+
+// TestEnvFilesTargetsAreSlashSeparated guards the config-path contract on
+// Windows, where filepath would otherwise emit backslashes into config.toml.
+func TestEnvFilesTargetsAreSlashSeparated(t *testing.T) {
+	dir := t.TempDir()
+	touchFile(t, filepath.Join(dir, "apps", "api", ".env"))
+	touchFile(t, filepath.Join(dir, "apps", "api", ".env.example"))
+
+	for _, f := range EnvFiles(dir) {
+		if strings.ContainsRune(f.Target, '\\') || strings.ContainsRune(f.Template, '\\') {
+			t.Errorf("backslash leaked into config path: %+v", f)
+		}
+	}
+}
+
+// TestPnpmWorkspacePackagesAreSlashSeparated guards the same contract for job
+// `cwd` values, which `run export`/`import` moves between machines.
+func TestPnpmWorkspacePackagesAreSlashSeparated(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pnpm-workspace.yaml"), []byte("packages:\n  - \"apps/*\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "apps", "api"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs := PnpmWorkspacePackages(dir)
+	if len(pkgs) != 1 || pkgs[0] != "apps/api" {
+		t.Fatalf("got %v, want [apps/api]", pkgs)
 	}
 }
 

@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/creack/pty"
@@ -125,7 +124,7 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 	// (a stronger guarantee than Setpgid), so they already get their own
 	// process group automatically.
 	if job.Kind == domain.JobKindTask {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		setOwnProcessGroup(cmd)
 	}
 
 	output, err := spawnJob(cmd, job.Kind)
@@ -726,16 +725,8 @@ func (m *Manager) stopWithSignal(job *ManagedJob) error {
 		return nil
 	}
 
-	pid := job.Cmd.Process.Pid
-
-	// A negative PID targets the whole process group, so npm AND every
-	// node child it spawned receive SIGTERM. ESRCH means the group is
-	// already gone, which is fine. Any other failure (e.g. job spawned
-	// without its own group) falls back to signalling just the parent.
-	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
-		if sigErr := job.Cmd.Process.Signal(syscall.SIGTERM); sigErr != nil && !errors.Is(sigErr, os.ErrProcessDone) {
-			return fmt.Errorf("signal %s: %w", job.Name, sigErr)
-		}
+	if err := terminateTree(terminateParams{Process: job.Cmd.Process, Name: job.Name}); err != nil {
+		return err
 	}
 
 	// Wait for actual reaping so the caller never sees "stopped" while a
@@ -745,7 +736,7 @@ func (m *Manager) stopWithSignal(job *ManagedJob) error {
 	select {
 	case <-job.exited:
 	case <-time.After(stopGracePeriod):
-		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		killTree(job.Cmd.Process)
 		<-job.exited
 	}
 

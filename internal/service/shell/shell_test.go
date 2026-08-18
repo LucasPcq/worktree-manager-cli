@@ -2,6 +2,7 @@ package shell
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -85,7 +86,8 @@ func TestDetectShellDefault(t *testing.T) {
 	os.Setenv("SHELL", "")
 	defer os.Unsetenv("SHELL")
 
-	if got := DetectShell(); got != domain.DefaultShell {
-		t.Errorf("expected default %s, got %s", domain.DefaultShell, got)
+	want := rules.DefaultShellFor(runtime.GOOS)
+	if got := DetectShell(); got != want {
+		t.Errorf("expected default %s, got %s", want, got)
 	}
 }

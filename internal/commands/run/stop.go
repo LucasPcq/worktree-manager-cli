@@ -29,6 +29,10 @@ func newStopCmd() *cobra.Command {
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
+	if err := process.SupportedOnPlatform(); err != nil {
+		return err
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)

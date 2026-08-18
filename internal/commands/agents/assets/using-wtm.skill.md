@@ -183,7 +183,11 @@ flagged; everything else is what the name implies.
 **Dev jobs (`wtm run`)** — jobs live in a per-clone `run.toml` (wtm-managed; never edit it
 directly). Each is a `service` (long-running) or `task` (one-shot, blocks the profile,
 non-zero exit aborts it); profiles are named, ordered job groups. The module is **opt-in**
-and **experimental**: the global `wtm init` does not configure it.
+and **experimental**: the global `wtm init` does not configure it. It is also
+**Unix-only** — on Windows, jobs cannot be hosted (no pseudo-terminal), so the
+daemon-backed commands (`run up`/`down`/`start`/`stop`/`logs`/`ps`) exit non-zero with
+"run module unsupported on Windows". `run init`, `run list`, `run export`/`import`,
+`run job` and `run profile` still work there because they only read and write `run.toml`.
 - `run init` sets up `run.toml` from detection (docker-compose + package scripts). It is
   the only entry point that works before the module exists; every other run command exits
   `16` (run module not initialized) until at least one job/profile is declared. Non-TTY it
@@ -232,6 +236,8 @@ On non-zero exit, read stderr, then:
   take conflict markers — `resolve` won't help, pick a different `--to`.
 - `16` (run module not initialized) → run `wtm run init` (or `wtm run init --non-interactive`)
   to create `run.toml`, then re-run the command.
+- `run module unsupported on Windows` → not recoverable and not worth retrying; tell the
+  user that job orchestration needs macOS/Linux (or WSL) and continue without it.
 - `gh: …` → `gh` isn't authenticated; tell the user to run `gh auth login`.
 - A `run up`/`run start` job failed → its captured output is in the JSON error entry; read
   it to see why, fix, and re-run.

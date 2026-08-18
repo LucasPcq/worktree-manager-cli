@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	runpicker "github.com/LucasPcq/wtm/internal/tui/runpicker"
 )
@@ -29,6 +30,10 @@ func newPsCmd() *cobra.Command {
 }
 
 func runPs(cmd *cobra.Command, _ []string) error {
+	if err := process.SupportedOnPlatform(); err != nil {
+		return err
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
