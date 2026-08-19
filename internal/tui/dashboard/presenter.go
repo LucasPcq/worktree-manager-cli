@@ -15,15 +15,19 @@ import (
 )
 
 // presenter is the dashboard half of flow.Presenter: every phase of a run lands
-// in the bottom output panel, one line at a time.
+// in the bottom output panel, one line at a time. id is the operation it runs
+// under, so Stage and HookPhase can also post what a locked row shows in place
+// of its state pill.
 type presenter struct {
 	send func(tea.Msg)
+	id   int
 }
 
 func (p presenter) line(text string) { p.send(OutputLineMsg{Text: text}) }
 
 func (p presenter) Stage(params flow.StageParams) error {
 	p.line(params.Message)
+	p.send(opStageMsg{id: p.id, stage: params.Message})
 	return params.Work()
 }
 
@@ -32,6 +36,7 @@ func (p presenter) Stage(params flow.StageParams) error {
 // than touching the model.
 func (p presenter) HookPhase(params flow.HookPhaseParams) error {
 	p.line(params.Title)
+	p.send(opStageMsg{id: p.id, stage: params.Title})
 	sink := &flow.LineWriter{Emit: p.line}
 	err := params.Run(sink)
 	sink.Flush()

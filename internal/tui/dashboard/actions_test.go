@@ -72,8 +72,10 @@ func TestHooksStreamIntoTheOutputPanelLineByLine(t *testing.T) {
 			if _, writeErr := io.WriteString(sink, "installing\npar"); writeErr != nil {
 				return writeErr
 			}
-			if len(msgs) != 2 {
-				t.Errorf("%d lines posted mid-run, want the title and the first line already out", len(msgs))
+			// Title line + its opStageMsg (the locked row's progress) + the
+			// first line already out.
+			if len(msgs) != 3 {
+				t.Errorf("%d messages posted mid-run, want the title, its stage and the first line already out", len(msgs))
 			}
 			_, writeErr := io.WriteString(sink, "tial tail")
 			return writeErr
@@ -83,17 +85,27 @@ func TestHooksStreamIntoTheOutputPanelLineByLine(t *testing.T) {
 		t.Fatalf("hook phase: %v", err)
 	}
 
-	want := []string{domain.HooksTitleOnCreate, "installing", "partial tail"}
-	if len(msgs) != len(want) {
-		t.Fatalf("%d lines posted, want %d", len(msgs), len(want))
-	}
-	for _, expected := range want {
-		line, ok := (<-msgs).(OutputLineMsg)
-		if !ok {
-			t.Fatalf("the hook sink posted something that is not an output line")
+	var lines []string
+	for len(msgs) > 0 {
+		switch msg := (<-msgs).(type) {
+		case OutputLineMsg:
+			lines = append(lines, msg.Text)
+		case opStageMsg:
+			if msg.stage != domain.HooksTitleOnCreate {
+				t.Errorf("stage = %q, want the hook title", msg.stage)
+			}
+		default:
+			t.Fatalf("the hook sink posted something unexpected: %#v", msg)
 		}
-		if line.Text != expected {
-			t.Errorf("line = %q, want %q", line.Text, expected)
+	}
+
+	want := []string{domain.HooksTitleOnCreate, "installing", "partial tail"}
+	if len(lines) != len(want) {
+		t.Fatalf("%d lines posted, want %d", len(lines), len(want))
+	}
+	for index, expected := range want {
+		if lines[index] != expected {
+			t.Errorf("line %d = %q, want %q", index, lines[index], expected)
 		}
 	}
 }

@@ -48,7 +48,7 @@ func (m Model) startCreate() (Model, tea.Cmd) {
 			opID:      id,
 			targetKey: declared.TargetKey,
 		},
-		Presenter: createPresenter{presenter{send: send}},
+		Presenter: createPresenter{presenter{send: send, id: id}},
 	}
 
 	return m, func() tea.Msg {
@@ -81,7 +81,7 @@ func (m Model) startClean(branch string) (Model, tea.Cmd) {
 			opID:      id,
 			targetKey: declared.TargetKey,
 		},
-		Presenter: cleanPresenter{presenter{send: send}},
+		Presenter: cleanPresenter{presenter{send: send, id: id}},
 	}
 
 	return m, func() tea.Msg {
@@ -109,7 +109,7 @@ func (m Model) startReparent(branch string) (Model, tea.Cmd) {
 			shape: modalStepper,
 			opID:  id,
 		},
-		Presenter: reparentPresenter{presenter{send: send}},
+		Presenter: reparentPresenter{presenter{send: send, id: id}},
 	}
 
 	return m, func() tea.Msg {
@@ -136,7 +136,7 @@ func (m Model) startBatchReparent() (Model, tea.Cmd) {
 			shape: modalStepper,
 			opID:  id,
 		},
-		Presenter: reparentPresenter{presenter{send: send}},
+		Presenter: reparentPresenter{presenter{send: send, id: id}},
 	}
 
 	return m, func() tea.Msg {
@@ -172,7 +172,7 @@ func (m Model) startPrune() (Model, tea.Cmd) {
 			shape: modalStepper,
 			opID:  id,
 		},
-		Presenter: prunePresenter{presenter{send: send}},
+		Presenter: prunePresenter{presenter{send: send, id: id}},
 	}
 
 	return m, func() tea.Msg {
@@ -263,6 +263,9 @@ func (m Model) applyFlow(msg tea.Msg) (Model, tea.Cmd) {
 		return m.appendOutput(msg), nil
 	case opTargetMsg:
 		m.ops = m.ops.retarget(msg.id, msg.target)
+		return m, nil
+	case opStageMsg:
+		m.ops = m.ops.stage(msg.id, msg.stage)
 		return m, nil
 	case createdMsg:
 		m.selectBranch = msg.branch

@@ -47,29 +47,44 @@ func (m Model) listBody(layout domain.DashboardLayout) []string {
 // renderRow draws one worktree over two lines: what it is called and, under it,
 // what its state amounts to. The selected one is tinted across its whole width
 // and carries the accent bar, so the row the keyboard is on reads as a block
-// rather than as a marker.
+// rather than as a marker. The worktree the shell is currently in carries
+// domain.DashboardActiveGlyph, the same marker the header uses. A worktree a
+// background run holds shows its progress instead: the spinner replaces the
+// state pill, and the stage the run posted replaces the meta line — the same
+// vocabulary as the freshness contract, the spinner says "in progress", never
+// "broken".
 func (m Model) renderRow(index, width int) []string {
 	status := m.statuses[index]
 	inner := max(width-rowBarWidth, 0)
+
+	name := status.Branch
+	if status.Branch == m.activeBranch {
+		name = domain.DashboardActiveGlyph + " " + name
+	}
+
 	pill := worktreepicker.BuildStatus(status)
+	pillText, pillRendered := pill.Text, pill.Render()
+	metaPlain, metaColored := m.rowMeta(status, false), m.rowMeta(status, true)
+	if op, locked := m.ops.holding(status.Branch); locked {
+		pillText, pillRendered = m.spinner.View(), m.spinner.View()
+		metaPlain, metaColored = op.stage, op.stage
+	}
 
 	if index == m.cursor {
 		bar := styles.DashboardRowBar.Render(rowBar + " ")
-		name := spread(status.Branch, pill.Text, inner)
-		meta := truncate(m.rowMeta(status, false), inner)
+		line := spread(name, pillText, inner)
 		return []string{
-			bar + styles.DashboardRowSelected.Width(inner).Bold(true).Render(name),
-			bar + styles.DashboardRowSelected.Width(inner).Render(meta),
+			bar + styles.DashboardRowSelected.Width(inner).Bold(true).Render(line),
+			bar + styles.DashboardRowSelected.Width(inner).Render(truncate(metaPlain, inner)),
 		}
 	}
 
-	name := spread(styles.DashboardRowName.Render(status.Branch), pill.Render(), inner)
-	meta := m.rowMeta(status, true)
+	line := spread(styles.DashboardRowName.Render(name), pillRendered, inner)
 	// Both lines are padded to the same width: the row is one clickable block, and
 	// a short second line would cut its zone short.
 	return []string{
-		rowIndent + name,
-		rowIndent + pad(truncateRendered(meta, inner), inner),
+		rowIndent + line,
+		rowIndent + pad(truncateRendered(metaColored, inner), inner),
 	}
 }
 
