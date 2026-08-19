@@ -130,8 +130,13 @@ func TestCursorScrollsTheWindowWhenTheListOverflows(t *testing.T) {
 	for i := range branches {
 		branches[i] = string(rune('a' + i%26))
 	}
-	model := newTestModel(t, testWidth, 12, branches...)
+	// 13 is the shortest height that still fits one full row under the 3-line
+	// header, the panel chrome and the folded output panel.
+	model := newTestModel(t, testWidth, 13, branches...)
 	rows := model.layout().ListRows
+	if rows == 0 {
+		t.Fatal("test setup: no row fits, the scroll assertion below would be vacuous")
+	}
 
 	for range branches {
 		model = update(model, namedKey(tea.KeyDown))
@@ -438,7 +443,9 @@ func TestLayoutMatchesTheDocumentedGeometry(t *testing.T) {
 }
 
 func TestViewNeverOverflowsTheTerminal(t *testing.T) {
-	sizes := [][2]int{{120, 40}, {80, 30}, {100, 10}, {60, 6}, {40, 4}, {200, 3}, {20, 20}}
+	// 4 is the shortest height the 3-line header plus the 1-line help bar can
+	// fit in without overflowing.
+	sizes := [][2]int{{120, 40}, {80, 30}, {100, 10}, {60, 6}, {40, 4}, {200, 4}, {20, 20}}
 
 	for _, size := range sizes {
 		model := newTestModel(t, size[0], size[1], "a", "b", "c")

@@ -103,10 +103,13 @@ func runList(cmd *cobra.Command, _ []string) error {
 		}
 		output.Frame(cmd.OutOrStdout(), func() {
 			fmt.Fprintln(cmd.OutOrStdout(), strings.TrimRight(output.FormatWorktreeList(output.FormatWorktreeListParams{
-				Statuses:     statuses,
-				ActiveBranch: "",
-				PRInfos:      prs,
-				Services:     services,
+				Statuses: statuses,
+				ActiveBranch: rules.ActiveWorktree(rules.ActiveWorktreeParams{
+					Cwd:      dir,
+					Statuses: statuses,
+				}),
+				PRInfos:  prs,
+				Services: services,
 			}), "\n"))
 		})
 		return nil

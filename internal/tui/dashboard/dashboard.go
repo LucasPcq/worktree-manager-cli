@@ -5,6 +5,7 @@ package dashboard
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -13,6 +14,7 @@ import (
 	zone "github.com/lrstanley/bubblezone"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -24,8 +26,12 @@ import (
 type RunParams struct {
 	ProjectDir string
 	StateDir   string
-	Config     domain.Config
-	PRLoader   worktreepicker.PRLoaderFunc
+	// Cwd is the directory the shell was in when it launched `wtm ui` — not
+	// necessarily ProjectDir, which LoadConfig may have resolved upward. It is
+	// what the active-worktree match is run against.
+	Cwd      string
+	Config   domain.Config
+	PRLoader worktreepicker.PRLoaderFunc
 }
 
 // OutputLineMsg appends one line to the bottom output panel. Every phase of a
@@ -33,9 +39,10 @@ type RunParams struct {
 type OutputLineMsg struct{ Text string }
 
 type worktreesMsg struct {
-	statuses []domain.WorktreeStatus
-	parents  map[string]string
-	err      error
+	statuses  []domain.WorktreeStatus
+	parents   map[string]string
+	fetchedAt time.Time
+	err       error
 }
 
 type prsMsg struct {
@@ -80,6 +87,12 @@ type Model struct {
 	// activeBranch is the worktree the cwd is under, deduced from a path-prefix
 	// match — no git call. Empty until a surface computes and sets it.
 	activeBranch string
+	// repoName and baseBranch name the header's context line; both are fixed for
+	// the life of the program. fetchedAt dates the last successful fetch (zero
+	// when the repository has never fetched) and is refreshed on every reload.
+	repoName   string
+	baseBranch string
+	fetchedAt  time.Time
 
 	prs       []domain.PRInfo
 	ghConn    domain.GHConnection
@@ -133,12 +146,14 @@ func New(params RunParams) Model {
 			StateDir:   params.StateDir,
 			Config:     params.Config,
 		},
-		zones:   zone.New(),
-		msgs:    make(chan tea.Msg, domain.DashboardMsgBuffer),
-		ghConn:  domain.GHConnectionOK,
-		loading: true,
-		details: map[string]domain.WorktreeDetail{},
-		spinner: components.MutedSpinner(),
+		zones:      zone.New(),
+		msgs:       make(chan tea.Msg, domain.DashboardMsgBuffer),
+		ghConn:     domain.GHConnectionOK,
+		loading:    true,
+		details:    map[string]domain.WorktreeDetail{},
+		spinner:    components.MutedSpinner(),
+		repoName:   filepath.Base(params.ProjectDir),
+		baseBranch: params.Config.Project.Worktrees.BaseBranch,
 	}
 }
 
@@ -171,7 +186,7 @@ func pollCmd() tea.Cmd {
 // remote (the `r` key); the poll never does, so the origin badges stay a
 // deliberate, user-triggered refresh.
 func (m Model) loadWorktreesCmd(fetch bool) tea.Cmd {
-	listParams, stateDir := m.listParams, m.params.StateDir
+	listParams, stateDir, projectDir := m.listParams, m.params.StateDir, m.params.ProjectDir
 	return func() tea.Msg {
 		list := worktree.List
 		if fetch {
@@ -188,7 +203,8 @@ func (m Model) loadWorktreesCmd(fetch bool) tea.Cmd {
 				Branch:   status.Branch,
 			})
 		}
-		return worktreesMsg{statuses: statuses, parents: parents}
+		fetchedAt := infra.LastFetchAt(infra.LastFetchAtParams{ProjectDir: projectDir})
+		return worktreesMsg{statuses: statuses, parents: parents, fetchedAt: fetchedAt}
 	}
 }
 
@@ -358,6 +374,11 @@ func (m Model) applyWorktrees(msg worktreesMsg) Model {
 		return m
 	}
 	m.statuses, m.parents, m.loaded = msg.statuses, msg.parents, true
+	m.fetchedAt = msg.fetchedAt
+	m.activeBranch = rules.ActiveWorktree(rules.ActiveWorktreeParams{
+		Cwd:      m.params.Cwd,
+		Statuses: m.statuses,
+	})
 	m.cursor = rules.ClampIndex(m.cursor, len(m.statuses))
 	return m.selectRequested().reflow()
 }

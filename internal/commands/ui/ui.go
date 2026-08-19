@@ -55,6 +55,7 @@ func runUI(cmd *cobra.Command, _ []string) error {
 	return dashboard.Run(dashboard.RunParams{
 		ProjectDir: result.ProjectDir,
 		StateDir:   result.StateDir,
+		Cwd:        dir,
 		Config:     result.Config,
 		PRLoader:   func() ([]domain.PRInfo, domain.GHConnection) { return shared.LoadPRs(result.ProjectDir) },
 	})

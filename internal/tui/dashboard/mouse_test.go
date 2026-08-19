@@ -14,15 +14,17 @@ import (
 //
 // At 120x40 with the output panel folded:
 //
-//	y=0            header bar (wordmark and tabs)
-//	y=1            the rule under the active tab
-//	y=2            list/detail top border   (list x=0..47, detail x=48..119)
-//	y=3            panel title
-//	y=4            the blank line under it
-//	y=5+3i         worktree row i           (two lines, then a gap; text at x=2)
+//	y=0            header context line (repo, base branch, active worktree)
+//	y=1            header bar (wordmark and tabs)
+//	y=2            the rule under the active tab
+//	y=3            list/detail top border   (list x=0..47, detail x=48..119)
+//	y=4            panel title
+//	y=5            the blank line under it
+//	y=6+3i         worktree row i           (two lines, then a gap; text at x=2)
 //	y=36..38       output panel             (title row y=37)
 //	y=39           help bar
 const (
+	headerBarY   = domain.DashboardHeaderHeight - 2
 	titleRowY    = domain.DashboardHeaderHeight + 1
 	firstRowY    = titleRowY + 1 + domain.DashboardTitleGap
 	rowStride    = domain.DashboardRowHeight + domain.DashboardRowGap
@@ -75,7 +77,9 @@ func TestClickingAScrolledRowSelectsTheRightWorktree(t *testing.T) {
 	for i := range branches {
 		branches[i] = string(rune('a' + i))
 	}
-	model := newTestModel(t, testWidth, 12, branches...)
+	// 13 is the shortest height that still fits one full row under the 3-line
+	// header, the panel chrome and the folded output panel.
+	model := newTestModel(t, testWidth, 13, branches...)
 	model = update(model, key("G"))
 	renderAndWait(t, model, rowZone(model.offset))
 
@@ -128,14 +132,14 @@ func TestClickingATabActivatesIt(t *testing.T) {
 	renderAndWait(t, model, tabZone(0), tabZone(1))
 
 	second := model.zones.Get(tabZone(1))
-	if second.StartY != 0 {
+	if second.StartY != headerBarY {
 		t.Fatalf("tab 1 sits at y=%d, want the tab bar row", second.StartY)
 	}
 	if first := model.zones.Get(tabZone(0)); second.StartX <= first.EndX {
 		t.Fatalf("tab 1 starts at x=%d but tab 0 ends at x=%d — the tabs overlap", second.StartX, first.EndX)
 	}
 
-	model = update(model, click(second.StartX+1, 0))
+	model = update(model, click(second.StartX+1, headerBarY))
 	if model.tab != 1 {
 		t.Errorf("tab = %d after clicking the second tab, want 1", model.tab)
 	}
@@ -240,7 +244,7 @@ func TestTheHeaderCarriesBothGlobalActions(t *testing.T) {
 
 	add, actions := model.zones.Get(zoneAdd), model.zones.Get(zoneActions)
 
-	if add.StartY != 0 || actions.StartY != 0 {
+	if add.StartY != headerBarY || actions.StartY != headerBarY {
 		t.Errorf("buttons on rows %d and %d, want both on the header bar", add.StartY, actions.StartY)
 	}
 	if add.EndX >= actions.StartX {

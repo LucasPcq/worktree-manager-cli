@@ -35,6 +35,11 @@ var (
 	// DashboardCount is the header's right-hand count.
 	DashboardCount = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
 
+	// DashboardContext renders the header's context line — repo name, base
+	// branch, active worktree, fetch staleness. It is structure, not a state,
+	// so it stays muted like the rest of the chrome.
+	DashboardContext = lipgloss.NewStyle().Foreground(ColorMuted)
+
 	// DashboardSectionTitle heads a group of fields inside a panel. It separates
 	// two groups, it does not accent one: muted, not the navigation color.
 	DashboardSectionTitle = lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)

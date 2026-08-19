@@ -68,14 +68,17 @@ func TestTheHeaderNamesTheProductAndUnderlinesTheActiveTab(t *testing.T) {
 	if len(lines) != domain.DashboardHeaderHeight {
 		t.Fatalf("the header is %d lines, want %d", len(lines), domain.DashboardHeaderHeight)
 	}
-	if !strings.Contains(lines[0], domain.DashboardWordmark) || !strings.Contains(lines[0], domain.DashboardTabWorktrees) {
-		t.Errorf("header = %q, want the wordmark and the tabs", lines[0])
+	if !strings.Contains(lines[0], domain.DashboardWordmark) {
+		t.Errorf("context line = %q, want the wordmark", lines[0])
 	}
-	if !strings.Contains(lines[0], "2 worktrees") {
-		t.Errorf("header = %q, want the count of what is listed", lines[0])
+	if !strings.Contains(lines[1], domain.DashboardWordmark) || !strings.Contains(lines[1], domain.DashboardTabWorktrees) {
+		t.Errorf("header bar = %q, want the wordmark and the tabs", lines[1])
 	}
-	if !strings.Contains(lines[1], domain.DashboardActiveRuleGlyph) {
-		t.Errorf("rule = %q, want the active tab underlined rather than filled", lines[1])
+	if !strings.Contains(lines[1], "2 worktrees") {
+		t.Errorf("header bar = %q, want the count of what is listed", lines[1])
+	}
+	if !strings.Contains(lines[2], domain.DashboardActiveRuleGlyph) {
+		t.Errorf("rule = %q, want the active tab underlined rather than filled", lines[2])
 	}
 }
 

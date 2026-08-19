@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -75,8 +76,11 @@ func (m Model) renderPanel(params panelParams) string {
 	return m.marks().Mark(params.Zone, box)
 }
 
-// renderHeader is the dashboard's top bar: the wordmark, the tabs, and the count
-// of what is listed. The active tab is named by weight and by the rule under it.
+// renderHeader is the dashboard's top bar: the context line (where you are),
+// then the wordmark, the tabs and the count of what is listed. The active tab
+// is named by weight and by the rule under it. No rule sits between the first
+// two lines — the tab rule underneath already separates the header from the
+// body.
 //
 // Whole tabs are dropped rather than the bar trimmed: a hard trim would cut
 // through a zone marker and break that tab's hit-testing.
@@ -107,11 +111,99 @@ func (m Model) renderHeader(layout domain.DashboardLayout) string {
 		bar += strings.Repeat(" ", layout.Tabs.Width-used-lipgloss.Width(right)) + right
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, bar, tabRule(tabRuleParams{
+	return lipgloss.JoinVertical(lipgloss.Left, m.renderContextLine(layout.Tabs.Width), bar, tabRule(tabRuleParams{
 		Width:       layout.Tabs.Width,
 		ActiveStart: activeStart,
 		ActiveWidth: activeWidth,
 	}))
+}
+
+// renderContextLine is the header's "where you are" line: the wordmark, the
+// repo, the base branch and the worktree the shell is currently in, with the
+// fetch-staleness notice flush right when the origin refs have gone stale.
+//
+// Segments drop whole, right to left — fetched, then the active worktree,
+// then base, then the repo — the same variant-list mechanic headerRight uses
+// for its own buttons: a half-drawn label reads as a wrong one, so a segment
+// that does not fit is dropped rather than cut.
+func (m Model) renderContextLine(width int) string {
+	wordmark := styles.DashboardWordmark.Render(domain.DashboardWordmark)
+	fetched := m.fetchedLabel()
+
+	for _, variant := range []struct{ repo, base, active, fetched bool }{
+		{true, true, true, true},
+		{true, true, true, false},
+		{true, true, false, false},
+		{true, false, false, false},
+		{false, false, false, false},
+	} {
+		left := wordmark + m.contextLeft(contextLeftParams{Repo: variant.repo, Base: variant.base, Active: variant.active})
+		right := ""
+		if variant.fetched {
+			right = fetched
+		}
+		if line, ok := fitContextLine(left, right, width); ok {
+			return line
+		}
+	}
+	return wordmark
+}
+
+type contextLeftParams struct {
+	Repo   bool
+	Base   bool
+	Active bool
+}
+
+// contextLeft builds the segments after the wordmark, joined by
+// DashboardContextSep. A segment with no data to show (no repo name resolved,
+// no base configured, cwd outside every known worktree) is skipped rather than
+// printed empty.
+func (m Model) contextLeft(params contextLeftParams) string {
+	segments := make([]string, 0, 3)
+	if params.Repo && m.repoName != "" {
+		segments = append(segments, m.repoName)
+	}
+	if params.Base && m.baseBranch != "" {
+		segments = append(segments, fmt.Sprintf(domain.DashboardBaseFmt, m.baseBranch))
+	}
+	if params.Active && m.activeBranch != "" {
+		segments = append(segments, domain.DashboardActiveGlyph+" "+m.activeBranch)
+	}
+	if len(segments) == 0 {
+		return ""
+	}
+	return styles.DashboardContext.Render(" " + strings.Join(segments, domain.DashboardContextSep))
+}
+
+// fetchedLabel is the header's only non-permanent element: it appears only
+// once the origin refs are stale enough to matter, and it is the view's
+// property, not the selected worktree's — every origin badge in the list is
+// equally old.
+func (m Model) fetchedLabel() string {
+	now := time.Now()
+	if !rules.FetchIsStale(rules.FetchStalenessParams{FetchedAt: m.fetchedAt, Now: now}) {
+		return ""
+	}
+	age := rules.RelativeAge(rules.RelativeAgeParams{At: m.fetchedAt, Now: now})
+	return styles.DashboardContext.Render(strings.TrimSpace(fmt.Sprintf(domain.DashboardFetchedFmt, age)))
+}
+
+// fitContextLine lays the left cluster and the right notice on one row of the
+// given width, keeping both whole. It reports whether they fit at all rather
+// than clipping either one.
+func fitContextLine(left, right string, width int) (string, bool) {
+	if right == "" {
+		if lipgloss.Width(left) <= width {
+			return left, true
+		}
+		return "", false
+	}
+	if lipgloss.Width(left)+1+lipgloss.Width(right) > width {
+		return "", false
+	}
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+	return left + strings.Repeat(" ", gap) + right, true
 }
 
 // headerRight is the bar's right cluster: the two global actions, then the count

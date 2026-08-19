@@ -874,9 +874,11 @@ const (
 	DashboardChromeHeight = 3
 	DashboardTitleGap     = 1
 
-	// DashboardHeaderHeight is the top bar: the wordmark and its tabs, then the
-	// rule that underlines the active one.
-	DashboardHeaderHeight = 2
+	// DashboardHeaderHeight is the top bar: the context line (where you are —
+	// repo, base branch, active worktree), then the wordmark and its tabs, then
+	// the rule that underlines the active one. No rule separates the first two:
+	// the tab rule underneath already does that job.
+	DashboardHeaderHeight = 3
 
 	// DashboardRowHeight is how many lines one worktree takes — its name, then
 	// what its state amounts to — and DashboardRowGap the blank line between two.
@@ -897,7 +899,14 @@ const (
 	DashboardModalMaxWidth     = 88
 
 	// DashboardWordmark names the product in the header bar.
-	DashboardWordmark        = "wtm"
+	DashboardWordmark = "wtm"
+	// DashboardContextSep joins the header context line's segments (repo, base,
+	// active worktree). DashboardFetchedFmt and DashboardBaseFmt are its
+	// individual segments; DashboardActiveGlyph marks the active worktree.
+	DashboardContextSep      = " · "
+	DashboardFetchedFmt      = "fetched %s"
+	DashboardActiveGlyph     = "●"
+	DashboardBaseFmt         = "base %s"
 	DashboardCountFmt        = "%d worktrees"
 	DashboardCountOneFmt     = "%d worktree"
 	DashboardTreeCountFmt    = "%d nodes"
