@@ -89,6 +89,31 @@ qu'il n'avait pas du tout. Le contraste net monte.
 
 ## 5. Le header
 
+> **Révisé après essai sur l'UI construite.** Le header à 3 lignes décrit plus bas
+> a été jugé « trop petit, trop collé aux onglets, on ne le lit pas comme un
+> header ». Il devient un **bloc signature de 6 lignes** au-dessus d'un seuil de
+> hauteur de terminal, et garde la forme à 3 lignes en dessous. Le wordmark
+> dessiné, écarté au §9 faute d'un moment d'accueil qui existe, revient ici comme
+> ancrage permanent — et il **porte** le contexte au lieu de s'y ajouter, ce qui
+> règle du même coup la surcharge de la ligne unique.
+
+**Forme haute (≥ `DashboardHeaderTallThreshold` lignes de terminal) :**
+
+```
+  ╻ ╻ ╺┳╸ ┏┳┓   worktree-manager-cli
+  ┃╻┃  ┃  ┃┃┃   base main · ● feat/ui/improve-design
+  ┗┻┛  ╹  ╹ ╹   4 worktrees · fetched 3 d ago
+
+   Worktrees    Tree                    + New worktree    ⋯ Actions
+  ━━━━━━━━━━━━━━────────────────────────────────────────────────────
+```
+
+La ligne vide avant les onglets n'est pas optionnelle : c'est elle qui fait lire
+l'ensemble comme un header. Le bloc n'a pas de variante partielle — la mise en page
+ne le sélectionne que si ses six lignes tiennent.
+
+**Forme compacte (en dessous du seuil) :**
+
 ```
  wtm  worktree-manager-cli · base main · ● feat/ui/improve-design      fetched 3 d ago
   Worktrees    Tree                             + New worktree   ⋯ Actions   3 worktrees
@@ -100,8 +125,8 @@ trivial : la ligne 1 lâche ses segments de droite à gauche (`fetched` → work
 base → dépôt), la ligne 2 garde la mécanique de variantes existante de `headerRight`.
 
 Pas de règle intermédiaire entre les deux lignes : la règle d'onglet en dessous fait déjà le
-travail de séparation. **Le header passe de 2 à 3 lignes** (`DashboardHeaderHeight`), soit
-une seule ligne de liste sacrifiée.
+travail de séparation. Sous une contrainte de hauteur extrême, la forme compacte lâche ses
+lignes par le bas (la règle, puis la barre) plutôt que d'émettre un nombre fixe de lignes.
 
 **Le worktree actif** se déduit d'un match de préfixe entre le cwd et les `Path` déjà en
 mémoire — aucun appel git. Il est marqué `●` dans le header et dans la ligne de liste
