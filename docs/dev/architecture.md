@@ -95,7 +95,8 @@ the gain that justifies the refactor independently of the dashboard: `create` an
 
 The closures have not all gone yet, because not every command has migrated: `sync`
 still injects `PlanPreview` into `internal/tui/syncpicker`, `checkout` still injects
-`EnvFallback`. And `internal/commands/wt/create.go` still holds `sourceUpdatePrompt`,
+`EnvFallback`. `prune`'s `ReparentPreview` went with its migration — a flow calls
+`rules.FinalizePrunePlan` itself. And `internal/commands/wt/create.go` still holds `sourceUpdatePrompt`,
 `envFallbackPrompt` and `memoizedTarget` as thin adapters over `internal/flow/decide` —
 not for `create`, which no longer uses them, but for `wtm extract`, which embeds
 create's Bubbletea wizard as a sub-flow. They go with its migration (LUC-182).
@@ -107,7 +108,8 @@ create's Bubbletea wizard as a sub-flow. They go with its migration (LUC-182).
 | `create` | `internal/flow/create` | CLI wizard, unattended, dashboard |
 | `clean` | `internal/flow/clean` | CLI wizard, unattended, dashboard |
 | `reparent` | `internal/flow/reparent` | CLI wizard, unattended, dashboard |
-| `extract`, `sync`, `prune`, `relocate`, `checkout`, `env` | `internal/commands/wt/*.go` + their `internal/tui/*` wizard packages | CLI only |
+| `prune` | `internal/flow/prune` | CLI wizard, unattended, dashboard |
+| `extract`, `sync`, `relocate`, `checkout`, `env` | `internal/commands/wt/*.go` + their `internal/tui/*` wizard packages | CLI only |
 
 Unmigrated commands still follow the old model, and the parts of the `go-cli` skill
 that describe `components.Step` wizards still apply to them. A **new** mutation

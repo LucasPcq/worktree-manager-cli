@@ -151,6 +151,7 @@ internal/
     create/                   ←   `wtm create`: the run (create.go) + its questions (steps.go)
     clean/                    ←   `wtm clean`: the run (clean.go) + its questions (steps.go)
     reparent/                 ←   `wtm reparent`: the run (reparent.go) + its questions (steps.go)
+    prune/                    ←   `wtm prune`: the run (prune.go) + its questions (steps.go)
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
     env/                      ←   .env provisioning (create) + drift reconciliation (`wtm env`, sync.go)
@@ -230,9 +231,15 @@ rather than at every action site.
 
 Adding a kind means teaching every surface to render it: `flowui` refuses an unknown
 kind rather than guessing. Test doubles for the two seams live in
-`internal/testutil/flowtest`. `create`, `clean` and `reparent` are migrated; `extract`,
-`sync`, `prune` and the other commands still drive their wizard packages directly, and
+`internal/testutil/flowtest`. `create`, `clean`, `reparent` and `prune` are migrated;
+`extract`, `sync` and the other commands still drive their wizard packages directly, and
 `tui/newwt` stays until `extract` (which embeds it) migrates.
+
+A **non-mutating mode** (`prune --dry-run`) belongs in the `Request`, not in the runner:
+it changes what the run does, not how it reads. The flow returns its `Outcome` before
+asking anything and before touching anything, and any rule that reads `Interactive()`
+must take the mode as an input too — a surface may install an interactive Prompter for a
+preview. See `rules.PruneClassifyForce` and `docs/dev/flow-layer.md`.
 
 **Every new worktree-mutating command goes through `flow/`** — no exception, and no new
 command written on the pre-`flow` model even to match a neighbour that has not migrated
