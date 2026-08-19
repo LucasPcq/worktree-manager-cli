@@ -1,6 +1,8 @@
 // Package domain defines shared types, constants, and errors for the wtm CLI.
 package domain
 
+import "time"
+
 const (
 	// AppName is the canonical name of the CLI binary.
 	AppName = "wtm"
@@ -831,6 +833,17 @@ const (
 
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"
+
+	// FetchStaleAfter est l'âge au-delà duquel les refs origin sont annoncées
+	// périmées dans le header. En dessous, rien ne s'affiche : un marqueur
+	// permanent ne signale plus rien.
+	FetchStaleAfter = 24 * time.Hour
+
+	AgeJustNow = "just now"
+	AgeMinFmt  = "%d min ago"
+	AgeHourFmt = "%d h ago"
+	AgeDayFmt  = "%d d ago"
+	AgeWeekFmt = "%d w ago"
 
 	// DashboardNarrowWidth is the terminal width under which the dashboard drops
 	// the side-by-side detail panel for a list-only view, detail on a key.
