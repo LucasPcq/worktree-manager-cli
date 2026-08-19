@@ -284,8 +284,8 @@ func ActiveWorktree(params ActiveWorktreeParams) string {
 	return branch
 }
 
-// underPath teste l'appartenance sur une frontière de segment, pour que /a/bc ne
-// passe pas pour un enfant de /a/b.
+// underPath tests containment on a segment boundary, so that /a/bc is not taken
+// for a child of /a/b.
 func underPath(cwd, root string) bool {
 	if cwd == root {
 		return true

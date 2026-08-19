@@ -537,6 +537,7 @@ func (m Model) helpBox() (string, domain.Rect) {
 		{"tab · shift+tab", "switch view (or click a tab)"},
 		{"enter · →", "open the detail (narrow terminals)"},
 		{"esc · ←", "close the detail"},
+		{"p", "open the pull request in a browser (or click its line)"},
 		{"o", "fold/unfold the output panel (or click its header)"},
 		{"shift+↑ · shift+↓", "scroll the output panel"},
 		{"r", "refresh worktrees and pull requests"},

@@ -56,7 +56,7 @@ type GlobalConfig struct {
 // key ("nothing wrote here") is distinguishable from an explicit false — see
 // rules.AnimationsEnabled.
 type UIConfig struct {
-	Animations *bool `toml:"animations"`
+	Animations *bool `toml:"animations" json:"animations"`
 }
 
 // Config is the merged, validated configuration used by the service layer.

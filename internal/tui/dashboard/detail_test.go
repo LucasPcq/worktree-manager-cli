@@ -200,3 +200,22 @@ func TestReviewStaysAbsentWhenGHIsFineAndThereIsNoPR(t *testing.T) {
 		t.Error("gh fine and no PR is a legitimate absence: no REVIEW section at all")
 	}
 }
+
+// The keys file states the invariant: every clickable zone has a key, because
+// the mouse is a convenience and the keyboard stays complete. A mouse-only
+// action is unreachable over a plain ssh terminal.
+func TestThePullRequestOpensFromTheKeyboardToo(t *testing.T) {
+	opened := 0
+	model := newTestModel(t, testWidth, testHeight, "main", "feat/a")
+	model.params.PROpener = func(int) error { opened++; return nil }
+	model = update(model, prsMsg{prs: []domain.PRInfo{{Branch: "main", Number: 7}}, conn: domain.GHConnectionOK})
+
+	_, cmd := updateCmd(model, key(domain.KeyOpenPR))
+	if cmd == nil {
+		t.Fatal("the open-PR key must return a command")
+	}
+	cmd()
+	if opened != 1 {
+		t.Errorf("opener called %d times, want 1", opened)
+	}
+}

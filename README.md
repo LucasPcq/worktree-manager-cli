@@ -287,15 +287,13 @@ Created by `wtm init`, personal to each developer.
 
 ```toml
 shell = "zsh"          # zsh | bash | fish
-agent = "claude-code"  # claude-code | cursor | none
 
 [ui]
 animations = true      # false disables every wtm ui animation (tab rule, new-row flash)
 ```
 
-The project config can override `agent`; `shell` is always global. `ui.animations`
-defaults to on when absent — set it to `false` to turn off every `wtm ui` animation at
-once, useful over a slow or laggy connection.
+`ui.animations` defaults to on when absent — set it to `false` to turn off every
+`wtm ui` animation at once, useful over a slow or laggy connection.
 
 ## IDE autocomplete + validation
 

@@ -624,6 +624,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openMenu(m.menuAnchorPoint()), nil
 	case keyActions:
 		return m.openActionsMenu(m.actionsAnchorPoint()), nil
+	case keyOpenPR:
+		return m.openPR()
+
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded
 		return m.reflow(), nil

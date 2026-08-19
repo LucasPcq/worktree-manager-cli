@@ -1127,7 +1127,6 @@ const (
 	// DashboardEmptyList above.
 	DashboardEmptySelection = "Select a worktree to see what's in it."
 	DashboardEmptyOutput    = "Output from create, clean and sync runs appears here."
-	DashboardNoValue        = "—"
 	// DashboardCreatedFormat renders a worktree's creation date in local time.
 	DashboardCreatedFormat = "2006-01-02 15:04"
 
@@ -1283,6 +1282,11 @@ const (
 	// equivalent of clicking its header.
 	KeyToggleOutput = "o"
 	// KeyHelp toggles the key reference overlay.
+	// KeyOpenPR opens the selected worktree's pull request in a browser. The
+	// detail panel's PR line is also clickable; the key is what makes the action
+	// reachable without a mouse and over a plain ssh terminal.
+	KeyOpenPR = "p"
+
 	KeyHelp = "?"
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so
 	// a persistent dashboard is never left by accident.
