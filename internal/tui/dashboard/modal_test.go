@@ -373,3 +373,84 @@ func TestTheModalCarriesPreCheckedAndTaggedOptions(t *testing.T) {
 		t.Errorf("values = %v, want only the pre-checked option", got)
 	}
 }
+
+// Going back and forward must re-ask, not skip. advance() has to tell a preset —
+// answered before the session started, so never a question — from an answer the
+// user gave in this modal, which they are entitled to see again.
+func TestGoingBackThenForwardAsksTheStepAgain(t *testing.T) {
+	session := flow.Session{Steps: []flow.Step{
+		{Kind: flow.StepSelect, Key: "one", Label: "One", Options: []flow.Option{{Label: "a", Value: "a"}}},
+		{Kind: flow.StepSelect, Key: "two", Label: "Two", Options: []flow.Option{{Label: "b", Value: "b"}}},
+		{Kind: flow.StepRecap, Key: "three", Label: "Three", Options: []flow.Option{{Label: "go", Value: "go"}}},
+	}}
+
+	reply := make(chan promptReply, 1)
+	mo, _ := newModal(modalParams{Shape: modalStepper, Session: session, Reply: reply, Width: testWidth, Height: testHeight})
+
+	mo, _ = mo.update(namedKey(tea.KeyEnter)) // answer step one
+	mo, _ = mo.update(namedKey(tea.KeyEnter)) // answer step two
+	if mo.index != 2 {
+		t.Fatalf("index = %d, want to have reached the recap", mo.index)
+	}
+	mo, _ = mo.update(namedKey(tea.KeyEsc)) // back to step two
+	mo, _ = mo.update(namedKey(tea.KeyEsc)) // back to step one
+	if mo.index != 0 {
+		t.Fatalf("index = %d, want to be back on the first step", mo.index)
+	}
+
+	mo, _ = mo.update(namedKey(tea.KeyEnter)) // forward again
+
+	if mo.index != 1 {
+		t.Errorf("index = %d, want the second step asked again rather than skipped", mo.index)
+	}
+}
+
+// A preset is not a question, so it stays skipped however the user navigates.
+func TestAPresetIsNeverAskedOnTheWayForward(t *testing.T) {
+	session := flow.Session{
+		Presets: flow.NewAnswers(map[string]string{"two": "b"}),
+		Steps: []flow.Step{
+			{Kind: flow.StepSelect, Key: "one", Label: "One", Options: []flow.Option{{Label: "a", Value: "a"}}},
+			{Kind: flow.StepSelect, Key: "two", Label: "Two", Options: []flow.Option{{Label: "b", Value: "b"}}},
+			{Kind: flow.StepRecap, Key: "three", Label: "Three", Options: []flow.Option{{Label: "go", Value: "go"}}},
+		},
+	}
+
+	reply := make(chan promptReply, 1)
+	mo, _ := newModal(modalParams{Shape: modalStepper, Session: session, Reply: reply, Width: testWidth, Height: testHeight})
+
+	mo, _ = mo.update(namedKey(tea.KeyEnter))
+
+	if mo.index != 2 {
+		t.Errorf("index = %d, want the preset step passed over", mo.index)
+	}
+}
+
+// Returning to a multi-select must not throw away what the user checked: the
+// step is rebuilt from Build, whose Selected flags are the flow's opening
+// proposal, not the user's edits.
+func TestGoingBackToAMultiSelectKeepsTheEdits(t *testing.T) {
+	session := flow.Session{Steps: []flow.Step{
+		{
+			Kind: flow.StepMultiSelect, Key: "branches", Label: "Worktrees",
+			Build: func(flow.Answers) (flow.StepContent, error) {
+				return flow.StepContent{Options: []flow.Option{
+					{Label: "a", Value: "a", Selected: true},
+					{Label: "b", Value: "b", Selected: true},
+				}}, nil
+			},
+		},
+		{Kind: flow.StepRecap, Key: "recap", Label: "Recap", Options: []flow.Option{{Label: "go", Value: "go"}}},
+	}}
+
+	reply := make(chan promptReply, 1)
+	mo, _ := newModal(modalParams{Shape: modalStepper, Session: session, Reply: reply, Width: testWidth, Height: testHeight})
+
+	mo, _ = mo.update(key(" "))               // uncheck "a"
+	mo, _ = mo.update(namedKey(tea.KeyEnter)) // on to the recap
+	mo, _ = mo.update(namedKey(tea.KeyEsc))   // back to the selection
+
+	if got := mo.multi.Values(); len(got) != 1 || got[0] != "b" {
+		t.Errorf("values = %v, want the edit kept (only b checked)", got)
+	}
+}
