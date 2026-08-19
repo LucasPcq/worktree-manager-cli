@@ -176,3 +176,23 @@ func GetPRDetail(params GetPRDetailParams) (domain.PRInfo, error) {
 
 	return convertGHPR(g), nil
 }
+
+// OpenPRParams holds inputs for opening a pull request in the browser.
+type OpenPRParams struct {
+	ProjectDir string
+	Number     int
+}
+
+// OpenPR opens a pull request in the browser via `gh pr view --web`, run in
+// the project directory: gh already knows the repository and carries its own
+// authentication, which an OS-level URL opener would not.
+func OpenPR(params OpenPRParams) error {
+	if err := ensureAuth(); err != nil {
+		return err
+	}
+	_, err := runGH(params.ProjectDir, "pr", "view", "--web", strconv.Itoa(params.Number))
+	if err != nil {
+		return fmt.Errorf("open PR: %w", err)
+	}
+	return nil
+}

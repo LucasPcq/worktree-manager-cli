@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -59,17 +60,18 @@ func (m Model) detailBody(layout domain.DashboardLayout) []string {
 		}
 	}
 
+	pr := m.prFor(status.Branch)
 	budget := max(panelBodyHeight(layout.Detail)-len(lines), 0)
 	sections := m.detailSections(detailSectionsInput{
 		Status:        status,
 		Detail:        detail,
 		HasDetail:     hasDetail,
 		Parent:        m.parents[status.Branch],
-		PR:            m.prFor(status.Branch),
+		PR:            pr,
 		PRUnavailable: m.prUnavailableReason(),
 		Height:        budget,
 	})
-	return appendSections(lines, sections, width, stale)
+	return m.appendSections(lines, sections, width, stale, pr)
 }
 
 // detailTitleLine carries identity, never state: the working-tree state is a
@@ -202,15 +204,38 @@ func (m Model) detailSections(input detailSectionsInput) []domain.DetailSection 
 
 // appendSections stacks each section as a blank separator, its title row
 // (TitleRight flush right on that same row), a blank row, then its body
-// lines — the spacing rules.DetailSectionChrome already accounts for.
-func appendSections(lines []string, sections []domain.DetailSection, width int, stale bool) []string {
+// lines — the spacing rules.DetailSectionChrome already accounts for. REVIEW's
+// first line (the PR header) gets its own mouse zone when pr is set: the
+// section renders that same line whether the PR is real or a failure
+// placeholder, but only a real PR has anything to open.
+func (m Model) appendSections(lines []string, sections []domain.DetailSection, width int, stale bool, pr *domain.PRInfo) []string {
 	for _, section := range sections {
 		lines = append(lines, "", sectionTitleLine(stale, section, width), "")
-		for _, line := range section.Lines {
-			lines = append(lines, styleText(stale, styles.DashboardValue, truncate(line, width)))
+		for index, line := range section.Lines {
+			rendered := styleText(stale, styles.DashboardValue, truncate(line, width))
+			if pr != nil && section.Key == domain.DetailSectionReview && index == 0 {
+				rendered = m.marks().Mark(zoneDetailPR, rendered)
+			}
+			lines = append(lines, rendered)
 		}
 	}
 	return lines
+}
+
+// openPR launches the selected worktree's PR in the browser, off the UI
+// goroutine: PROpener shells out to gh, and calling it inside Update would
+// freeze the whole program. A failure is reported through openPRMsg, the
+// same route every other operation's output takes — it never crashes the
+// dashboard or blocks it.
+func (m Model) openPR() (Model, tea.Cmd) {
+	pr := m.prFor(m.selectedBranch())
+	if pr == nil || m.params.PROpener == nil {
+		return m, nil
+	}
+	opener, number := m.params.PROpener, pr.Number
+	return m, func() tea.Msg {
+		return openPRMsg{err: opener(number)}
+	}
 }
 
 // sectionTitleLine mirrors panelParams.TitleRight (render.go): TitleRight is

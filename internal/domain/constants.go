@@ -1123,6 +1123,9 @@ const (
 	// DashboardOperationLabel names a failed run in the output panel when the
 	// failure is the run itself rather than one of its phases.
 	DashboardOperationLabel = "operation"
+	// DashboardOpenPRLabel names a failed browser launch for the REVIEW
+	// section's PR line, in the same "✗ <label>: <err>" form.
+	DashboardOpenPRLabel = "open PR"
 
 	// KeyNew opens the new-worktree wizard, the keyboard equivalent of the list
 	// header's add button.

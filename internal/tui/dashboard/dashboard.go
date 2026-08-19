@@ -31,11 +31,20 @@ type RunParams struct {
 	Cwd      string
 	Config   domain.Config
 	PRLoader worktreepicker.PRLoaderFunc
+	// PROpener launches the given PR number in the browser (ghservice.OpenPR,
+	// wired with ProjectDir). Injected the same way PRLoader is, so a test can
+	// exercise the REVIEW section's click without shelling out to a real gh.
+	PROpener func(number int) error
 }
 
 // OutputLineMsg appends one line to the bottom output panel. Every phase of a
 // running flow — hook output included — reaches the panel through it.
 type OutputLineMsg struct{ Text string }
+
+// openPRMsg carries the outcome of launching a PR in the browser. err is nil
+// on success — opening the tab is its own feedback, so nothing is posted to
+// the output panel unless the launch itself failed.
+type openPRMsg struct{ err error }
 
 type worktreesMsg struct {
 	statuses  []domain.WorktreeStatus
@@ -338,6 +347,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case OutputLineMsg:
 		return m.appendOutput(msg), nil
+
+	case openPRMsg:
+		if msg.err == nil {
+			return m, nil
+		}
+		return m.appendOutput(OutputLineMsg{
+			Text: fmt.Sprintf(domain.DashboardFailedFmt, domain.DashboardOpenPRLabel, msg.err),
+		}), nil
 
 	case flowMsg:
 		model, cmd := m.applyFlow(msg.inner)
@@ -727,6 +744,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.inZone(zoneActions, msg) {
 		zone := m.zones.Get(zoneActions)
 		return m.openActionsMenu(domain.Rect{X: zone.StartX, Y: zone.EndY}), nil
+	}
+
+	if m.inZone(zoneDetailPR, msg) {
+		return m.openPR()
 	}
 
 	if model, hit := m.clickRow(msg); hit {

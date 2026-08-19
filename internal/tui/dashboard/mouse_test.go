@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -285,5 +287,70 @@ func TestClickingTheActionsButtonOpensTheGlobalMenu(t *testing.T) {
 	}
 	if opened.menuKind != menuForGlobal {
 		t.Error("the header button opens the global menu, not the row's")
+	}
+}
+
+// prModel builds a model with a PR loaded for the (sole) worktree's branch
+// and an injected PROpener, so a click on the REVIEW line can be exercised
+// without shelling out to a real gh.
+func prModel(t *testing.T, opener func(number int) error) Model {
+	t.Helper()
+	model := New(RunParams{PROpener: opener})
+	t.Cleanup(model.Close)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model = update(model, worktreesMsg{statuses: statuses("feat/x"), parents: map[string]string{}})
+	return update(model, prsMsg{conn: domain.GHConnectionOK, prs: []domain.PRInfo{
+		{Branch: "feat/x", Number: 67, Title: "feat: x", State: "OPEN"},
+	}})
+}
+
+func TestClickingThePRLineOpensItInABrowser(t *testing.T) {
+	var calls int
+	var gotNumber int
+	model := prModel(t, func(number int) error {
+		calls++
+		gotNumber = number
+		return nil
+	})
+	renderAndWait(t, model, zoneDetailPR)
+	x, y := zonePoint(model, zoneDetailPR)
+
+	next, cmd := updateCmd(model, click(x, y))
+	if cmd == nil {
+		t.Fatal("clicking the PR line must return a command — the launch runs off the UI goroutine")
+	}
+	update(next, cmd())
+
+	if calls != 1 {
+		t.Fatalf("PROpener called %d times, want 1", calls)
+	}
+	if gotNumber != 67 {
+		t.Errorf("PROpener got PR #%d, want #67", gotNumber)
+	}
+}
+
+func TestOpenPRFailureGoesToOutputPanel(t *testing.T) {
+	model := prModel(t, func(int) error { return errors.New("gh: not authenticated") })
+	renderAndWait(t, model, zoneDetailPR)
+	x, y := zonePoint(model, zoneDetailPR)
+
+	next, cmd := updateCmd(model, click(x, y))
+	next = update(next, cmd())
+
+	if !strings.Contains(strings.Join(next.outputLines, "\n"), "not authenticated") {
+		t.Error("a failed PR open must say why in the output panel, like every other operation")
+	}
+}
+
+// TestNoPRZoneWhenThereIsNoPR pins that no zone is registered for a line
+// that was never drawn: gh fine, no PR for the branch, no REVIEW section at
+// all — so there is nothing to click.
+func TestNoPRZoneWhenThereIsNoPR(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "feat/x")
+	model = update(model, prsMsg{conn: domain.GHConnectionOK})
+	model.View()
+
+	if !model.zones.Get(zoneDetailPR).IsZero() {
+		t.Error("no PR line was drawn — no zone should exist for it")
 	}
 }

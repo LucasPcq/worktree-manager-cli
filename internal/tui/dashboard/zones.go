@@ -11,6 +11,7 @@ const (
 	zoneTree         = "panel:tree"
 	zoneTreeRowPfx   = "tree:"
 	zoneDetail       = "panel:detail"
+	zoneDetailPR     = "detail:pr"
 	zoneOutput       = "panel:output"
 	zoneOutputToggle = "output:toggle"
 	zoneAdd          = "header:add"
