@@ -21,19 +21,19 @@ type recorder struct {
 
 func (r *recorder) Reparented(outcome Outcome) error { r.outcome = outcome; return nil }
 
-func testContext(t *testing.T) flow.Context {
+func testContext(t *testing.T) domain.ProjectContext {
 	t.Helper()
 	dir := gittest.InitRepo(t)
 	config := domain.Config{}
 	config.Project.Worktrees.BasePath = filepath.Join(t.TempDir(), "trees")
 	config.Project.Worktrees.BaseBranch = "main"
 	config.Project.Env.Strategy = domain.EnvStrategyExample
-	return flow.Context{ProjectDir: dir, StateDir: filepath.Join(dir, ".git", "wtm"), Config: config}
+	return domain.ProjectContext{ProjectDir: dir, StateDir: filepath.Join(dir, ".git", "wtm"), Config: config}
 }
 
 // stack builds main ← feat ← dev-a through the service, so the fixture does not
 // depend on the create flow.
-func stack(t *testing.T, ctx flow.Context) {
+func stack(t *testing.T, ctx domain.ProjectContext) {
 	t.Helper()
 	for _, step := range []struct{ branch, from string }{{"feat", "main"}, {"dev-a", "feat"}} {
 		if _, err := worktree.Create(domain.CreateParams{
@@ -183,7 +183,7 @@ func TestRunAbortsWithoutTouchingAnything(t *testing.T) {
 	}
 }
 
-func parentOf(t *testing.T, ctx flow.Context, branchName string) string {
+func parentOf(t *testing.T, ctx domain.ProjectContext, branchName string) string {
 	t.Helper()
 	nodes, err := worktree.Nodes(worktree.NodesParams{ProjectDir: ctx.ProjectDir, StateDir: ctx.StateDir})
 	if err != nil {

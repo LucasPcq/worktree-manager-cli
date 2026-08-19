@@ -26,7 +26,7 @@ type Presenter interface {
 }
 
 type Params struct {
-	Context   flow.Context
+	Context   domain.ProjectContext
 	Request   Request
 	Prompter  flow.Prompter
 	Presenter Presenter
@@ -51,7 +51,7 @@ func Run(params Params) (Outcome, error) {
 }
 
 type reparentFlow struct {
-	ctx       flow.Context
+	ctx       domain.ProjectContext
 	request   Request
 	prompter  flow.Prompter
 	presenter Presenter

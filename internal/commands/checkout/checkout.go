@@ -52,7 +52,7 @@ func runCheckout(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	result, err := shared.LoadConfig(cmd, dir)
+	result, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ type checkoutOptions struct {
 
 // checkoutByNumber handles `wtm checkout <number>`. The loading box owns its own
 // spacing; the persistent top padding comes from the framed result.
-func checkoutByNumber(cmd *cobra.Command, result shared.ConfigResult, number int, opts checkoutOptions) error {
+func checkoutByNumber(cmd *cobra.Command, result domain.ProjectContext, number int, opts checkoutOptions) error {
 	var p domain.PRInfo
 	err := components.RunLoading(components.LoadingParams{
 		Message: "Fetching PR…",
@@ -138,7 +138,7 @@ func checkoutByNumber(cmd *cobra.Command, result shared.ConfigResult, number int
 
 // checkoutInteractive handles `wtm checkout` with no number: it renders the
 // multi-step wizard instantly and streams open PRs in asynchronously.
-func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts checkoutOptions) error {
+func checkoutInteractive(cmd *cobra.Command, result domain.ProjectContext, opts checkoutOptions) error {
 	if !opts.interactive {
 		return fmt.Errorf("PR number required without an interactive terminal (or when --yes is set)")
 	}
@@ -189,7 +189,7 @@ func checkoutInteractive(cmd *cobra.Command, result shared.ConfigResult, opts ch
 
 // resolveParams holds inputs for resolving parent/env for a known PR.
 type resolveParams struct {
-	result         shared.ConfigResult
+	result         domain.ProjectContext
 	pr             domain.PRInfo
 	parentBranches []domain.BranchCandidate
 	opts           checkoutOptions
@@ -255,7 +255,7 @@ type createFromPRParams struct {
 	envConfirmed bool
 }
 
-func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createFromPRParams) error {
+func createFromPR(cmd *cobra.Command, result domain.ProjectContext, params createFromPRParams) error {
 	p := params.pr
 
 	if params.interactive && !params.envConfirmed {

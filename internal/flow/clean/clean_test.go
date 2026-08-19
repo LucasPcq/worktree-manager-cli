@@ -168,19 +168,19 @@ func (p failingPresenter) Cleaned(Outcome) error {
 	return nil
 }
 
-func testContext(t *testing.T) flow.Context {
+func testContext(t *testing.T) domain.ProjectContext {
 	t.Helper()
 	dir := gittest.InitRepo(t)
 	config := domain.Config{}
 	config.Project.Worktrees.BasePath = filepath.Join(t.TempDir(), "trees")
 	config.Project.Worktrees.BaseBranch = "main"
 	config.Project.Env.Strategy = domain.EnvStrategyExample
-	return flow.Context{ProjectDir: dir, StateDir: filepath.Join(dir, ".git", "wtm"), Config: config}
+	return domain.ProjectContext{ProjectDir: dir, StateDir: filepath.Join(dir, ".git", "wtm"), Config: config}
 }
 
 // makeWorktree creates a worktree through the service, so the fixture does not
 // depend on the create flow.
-func makeWorktree(t *testing.T, ctx flow.Context, branchName string) string {
+func makeWorktree(t *testing.T, ctx domain.ProjectContext, branchName string) string {
 	t.Helper()
 	result, err := worktree.Create(domain.CreateParams{
 		ProjectDir:   ctx.ProjectDir,

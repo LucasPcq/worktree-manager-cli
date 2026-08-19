@@ -42,7 +42,7 @@ type Presenter interface {
 }
 
 type Params struct {
-	Context   flow.Context
+	Context   domain.ProjectContext
 	Request   Request
 	Prompter  flow.Prompter
 	Presenter Presenter
@@ -72,7 +72,7 @@ type checkResult struct {
 }
 
 type cleanFlow struct {
-	ctx       flow.Context
+	ctx       domain.ProjectContext
 	request   Request
 	prompter  flow.Prompter
 	presenter Presenter

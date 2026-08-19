@@ -46,7 +46,7 @@ func runClean(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	config, err := shared.LoadConfig(cmd, dir)
+	config, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func runClean(cmd *cobra.Command, args []string) error {
 	interactive := rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd())) && !yes
 
 	_, err = cleanflow.Run(cleanflow.Params{
-		Context: flowContext(config),
+		Context: config,
 		Request: cleanflow.Request{
 			Branch:           branchName,
 			Force:            force,

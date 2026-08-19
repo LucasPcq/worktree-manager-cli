@@ -14,8 +14,8 @@ import (
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 )
 
-func (m Model) flowContext() flow.Context {
-	return flow.Context{
+func (m Model) flowContext() domain.ProjectContext {
+	return domain.ProjectContext{
 		ProjectDir: m.params.ProjectDir,
 		StateDir:   m.params.StateDir,
 		Config:     m.params.Config,

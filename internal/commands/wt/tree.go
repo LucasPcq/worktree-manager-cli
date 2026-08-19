@@ -43,7 +43,7 @@ func runTree(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	cfg, err := shared.LoadConfig(cmd, dir)
+	cfg, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}

@@ -52,7 +52,7 @@ func runEnv(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	cfg, err := shared.LoadConfig(cmd, dir)
+	cfg, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ type envFlags struct {
 
 // runEnvNonInteractive reconciles a single named worktree without prompting
 // (report / JSON / --yes / --check). The worktree arg is required.
-func runEnvNonInteractive(cmd *cobra.Command, cfg shared.ConfigResult, arg string, f envFlags) error {
+func runEnvNonInteractive(cmd *cobra.Command, cfg domain.ProjectContext, arg string, f envFlags) error {
 	if arg == "" {
 		return domain.ErrEnvWorktreeRequired
 	}
@@ -142,12 +142,8 @@ func runEnvNonInteractive(cmd *cobra.Command, cfg shared.ConfigResult, arg strin
 // runEnvInteractive drives the unified wizard (worktree selection → single-screen
 // resolution → recap), then applies the collected decisions. When a worktree arg is
 // given, the selection step is preset.
-func runEnvInteractive(cmd *cobra.Command, cfg shared.ConfigResult, arg string, f envFlags) error {
-	statuses, err := worktree.List(domain.ListParams{
-		ProjectDir: cfg.ProjectDir,
-		StateDir:   cfg.StateDir,
-		Config:     cfg.Config,
-	})
+func runEnvInteractive(cmd *cobra.Command, cfg domain.ProjectContext, arg string, f envFlags) error {
+	statuses, err := worktree.List(domain.ListParams(cfg))
 	if err != nil {
 		return fmt.Errorf("list worktrees: %w", err)
 	}
@@ -206,7 +202,7 @@ func runEnvInteractive(cmd *cobra.Command, cfg shared.ConfigResult, arg string, 
 }
 
 // computeBranchDiff computes one worktree's drift for the wizard (no write).
-func computeBranchDiff(cfg shared.ConfigResult, statuses []domain.WorktreeStatus, branch string, f envFlags) ([]domain.EnvFileResult, error) {
+func computeBranchDiff(cfg domain.ProjectContext, statuses []domain.WorktreeStatus, branch string, f envFlags) ([]domain.EnvFileResult, error) {
 	ctx := resolveEnvStrategyAndParent(cfg, branch, f.from)
 	return envsvc.ComputeEnvDiff(envsvc.ComputeEnvParams{
 		Branch:             branch,
@@ -277,7 +273,7 @@ type envContext struct {
 
 // resolveEnvStrategyAndParent resolves the strategy (memorized strategy with any
 // --from override, falling back to the config default) and the parent branch + path.
-func resolveEnvStrategyAndParent(cfg shared.ConfigResult, branch, from string) envContext {
+func resolveEnvStrategyAndParent(cfg domain.ProjectContext, branch, from string) envContext {
 	base := cfg.Config.Project.Env.Strategy
 	parentBranch := ""
 	if meta, ok := worktree.Metadata(worktree.ParentBranchParams{StateDir: cfg.StateDir, Branch: branch}); ok {

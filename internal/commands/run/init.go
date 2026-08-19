@@ -46,7 +46,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	res, err := shared.LoadConfig(cmd, dir)
+	res, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}

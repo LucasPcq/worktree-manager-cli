@@ -93,7 +93,7 @@ func emitResolved(cmd *cobra.Command, format string, path string, branch string)
 }
 
 func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []domain.GitWorktree) (domain.WorktreeStatus, error) {
-	cfgResult, err := shared.LoadConfig(cmd, projectDir)
+	cfgResult, err := shared.LoadConfig(projectDir)
 	if err != nil {
 		return domain.WorktreeStatus{}, err
 	}
@@ -116,11 +116,7 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 			wg.Add(2)
 			go func() {
 				defer wg.Done()
-				statuses, listErr = worktree.List(domain.ListParams{
-					ProjectDir: cfgResult.ProjectDir,
-					StateDir:   cfgResult.StateDir,
-					Config:     cfgResult.Config,
-				})
+				statuses, listErr = worktree.List(domain.ListParams(cfgResult))
 			}()
 			go func() {
 				defer wg.Done()

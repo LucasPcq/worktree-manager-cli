@@ -50,7 +50,7 @@ type Presenter interface {
 }
 
 type Params struct {
-	Context   flow.Context
+	Context   domain.ProjectContext
 	Request   Request
 	Prompter  flow.Prompter
 	Presenter Presenter
@@ -156,7 +156,7 @@ func runSplit(cmd *cobra.Command, args []string) error {
 	interactive := rules.IsHumanFormat(format) && !yes && term.IsTerminal(int(os.Stdin.Fd()))
 
 	_, err = splitflow.Run(splitflow.Params{
-		Context:   flowContext(config),
+		Context:   config,
 		Request:   splitflow.Request{Branch: branchName, Into: into, Force: force},
 		Prompter:  flowPrompter(flowPrompterParams{Interactive: interactive}),
 		Presenter: splitPresenter{cliPresenter: newPresenter(cmd, format)},

@@ -83,7 +83,7 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	config, err := shared.LoadConfig(cmd, dir)
+	config, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 	}
 
 	_, err = pruneflow.Run(pruneflow.Params{
-		Context: flowContext(config),
+		Context: config,
 		Request: pruneflow.Request{
 			Merged:           merged,
 			Closed:           closed,

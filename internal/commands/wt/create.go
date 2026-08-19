@@ -65,7 +65,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	config, err := shared.LoadConfig(cmd, dir)
+	config, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	interactive := rules.IsHumanFormat(format) && !yes && term.IsTerminal(int(os.Stdin.Fd()))
 
 	_, err = createflow.Run(createflow.Params{
-		Context: flowContext(config),
+		Context: config,
 		Request: createflow.Request{
 			Branch:      branchName,
 			From:        fromFlag,

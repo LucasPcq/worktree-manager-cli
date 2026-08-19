@@ -48,7 +48,7 @@ func runReparent(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	config, err := shared.LoadConfig(cmd, dir)
+	config, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func runReparent(cmd *cobra.Command, args []string) error {
 	interactive := rules.IsHumanFormat(format) && !yes && term.IsTerminal(int(os.Stdin.Fd()))
 
 	_, err = reparentflow.Run(reparentflow.Params{
-		Context:   flowContext(config),
+		Context:   config,
 		Request:   reparentflow.Request{Branches: args, To: to},
 		Prompter:  flowPrompter(flowPrompterParams{Interactive: interactive, Stderr: true}),
 		Presenter: reparentPresenter{cliPresenter: newPresenter(cmd, format)},

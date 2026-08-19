@@ -13,15 +13,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-// ConfigResult holds the loaded config along with the resolved paths every
-// command needs: the main worktree (for git ops & BasePath resolution) and
-// the state dir (for wtm config / run / metadata files).
-type ConfigResult struct {
-	Config     domain.Config
-	ProjectDir string
-	StateDir   string
-}
-
 // ProjectRoot returns the main worktree path. Works from any worktree —
 // resolves back to the parent repo. WTM_PROJECT_DIR overrides git resolution;
 // useful in tests and CI.
@@ -42,26 +33,26 @@ func ProjectRoot(dir string) (string, error) {
 // the state dir. On failure it returns an error for the caller to propagate so
 // the top-level handler can pick the right exit code (e.g. ExitCodeConfigNotFound
 // when the repo is uninitialized); it does not print anything itself.
-func LoadConfig(cmd *cobra.Command, dir string) (ConfigResult, error) {
+func LoadConfig(dir string) (domain.ProjectContext, error) {
 	root, err := ProjectRoot(dir)
 	if err != nil {
-		return ConfigResult{}, err
+		return domain.ProjectContext{}, err
 	}
 
 	stateDir, err := StateDir(dir)
 	if err != nil {
-		return ConfigResult{}, err
+		return domain.ProjectContext{}, err
 	}
 
 	cfg, err := config.Load(config.LoadParams{StateDir: stateDir})
 	if errors.Is(err, domain.ErrConfigNotFound) {
-		return ConfigResult{}, fmt.Errorf("no wtm config found — run `wtm init` first: %w", domain.ErrConfigNotFound)
+		return domain.ProjectContext{}, fmt.Errorf("no wtm config found — run `wtm init` first: %w", domain.ErrConfigNotFound)
 	}
 	if err != nil {
-		return ConfigResult{}, fmt.Errorf("loading config: %w", err)
+		return domain.ProjectContext{}, fmt.Errorf("loading config: %w", err)
 	}
 
-	return ConfigResult{Config: cfg, ProjectDir: root, StateDir: stateDir}, nil
+	return domain.ProjectContext{Config: cfg, ProjectDir: root, StateDir: stateDir}, nil
 }
 
 // AddOutputFlag registers the standard --output flag on cmd.

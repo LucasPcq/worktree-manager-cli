@@ -59,7 +59,7 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	cfg, err := shared.LoadConfig(cmd, dir)
+	cfg, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}
@@ -156,7 +156,7 @@ func runRelocate(cmd *cobra.Command, _ []string) error {
 }
 
 type runRelocateWizardParams struct {
-	Cfg             shared.ConfigResult
+	Cfg             domain.ProjectContext
 	Plan            domain.RelocatePlan
 	BaseBranch      string
 	CurrentBasePath string
@@ -252,7 +252,7 @@ func renderRelocateAborted(cmd *cobra.Command) error {
 	return nil
 }
 
-func resolveTargetBasePath(to string, cfg shared.ConfigResult) string {
+func resolveTargetBasePath(to string, cfg domain.ProjectContext) string {
 	if to != "" {
 		return to
 	}

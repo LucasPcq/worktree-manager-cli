@@ -83,7 +83,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	cfg, err := shared.LoadConfig(cmd, dir)
+	cfg, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}
@@ -271,7 +271,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func resolveBase(override string, cfg shared.ConfigResult) string {
+func resolveBase(override string, cfg domain.ProjectContext) string {
 	if override != "" {
 		return override
 	}
@@ -286,7 +286,7 @@ type resolveSyncSelectionParams struct {
 	All          bool
 	KeepConflict bool
 	CanPrompt    bool
-	Cfg          shared.ConfigResult
+	Cfg          domain.ProjectContext
 	// PlanPreview and SkipConfirm are forwarded to the interactive picker so its
 	// confirmation step can preview the cascade (see syncpicker).
 	PlanPreview func(syncpicker.PlanPreviewParams) (string, int, error)

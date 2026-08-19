@@ -38,7 +38,7 @@ func runRm(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
 	}
-	res, err := shared.LoadConfig(cmd, wd)
+	res, err := shared.LoadConfig(wd)
 	if err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func runRm(cmd *cobra.Command, args []string) error {
 // rmByNameParams groups inputs for runRmByName.
 type rmByNameParams struct {
 	Cmd    *cobra.Command
-	Res    shared.ConfigResult
+	Res    domain.ProjectContext
 	Config domain.RunConfig
 	Name   string
 	Force  bool
