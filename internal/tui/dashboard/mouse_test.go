@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,18 +14,21 @@ import (
 // the zone manager: a zone marked over the wrong region is exactly the mistake a
 // self-referential assertion would miss.
 //
-// At 120x40 with the output panel folded:
+// At 120x40 (above the tall-header threshold) with the output panel folded:
 //
-//	y=0            header bar (wordmark and tabs)
-//	y=1            the rule under the active tab
-//	y=2            list/detail top border   (list x=0..47, detail x=48..119)
-//	y=3            panel title
-//	y=4            the blank line under it
-//	y=5+3i         worktree row i           (two lines, then a gap; text at x=2)
+//	y=0..2         signature block (drawn wordmark, one context row each)
+//	y=3            the blank line under it
+//	y=4            header bar (tabs and buttons)
+//	y=5            the rule under the active tab
+//	y=6            list/detail top border   (list x=0..47, detail x=48..119)
+//	y=7            panel title
+//	y=8            the blank line under it
+//	y=9+3i         worktree row i           (two lines, then a gap; text at x=2)
 //	y=36..38       output panel             (title row y=37)
 //	y=39           help bar
 const (
-	titleRowY    = domain.DashboardHeaderHeight + 1
+	headerBarY   = domain.DashboardHeaderTallHeight - 2
+	titleRowY    = domain.DashboardHeaderTallHeight + 1
 	firstRowY    = titleRowY + 1 + domain.DashboardTitleGap
 	rowStride    = domain.DashboardRowHeight + domain.DashboardRowGap
 	rowTextX     = 2
@@ -75,7 +80,9 @@ func TestClickingAScrolledRowSelectsTheRightWorktree(t *testing.T) {
 	for i := range branches {
 		branches[i] = string(rune('a' + i))
 	}
-	model := newTestModel(t, testWidth, 12, branches...)
+	// 13 is the shortest height that still fits one full row under the 3-line
+	// header, the panel chrome and the folded output panel.
+	model := newTestModel(t, testWidth, 13, branches...)
 	model = update(model, key("G"))
 	renderAndWait(t, model, rowZone(model.offset))
 
@@ -128,14 +135,14 @@ func TestClickingATabActivatesIt(t *testing.T) {
 	renderAndWait(t, model, tabZone(0), tabZone(1))
 
 	second := model.zones.Get(tabZone(1))
-	if second.StartY != 0 {
+	if second.StartY != headerBarY {
 		t.Fatalf("tab 1 sits at y=%d, want the tab bar row", second.StartY)
 	}
 	if first := model.zones.Get(tabZone(0)); second.StartX <= first.EndX {
 		t.Fatalf("tab 1 starts at x=%d but tab 0 ends at x=%d — the tabs overlap", second.StartX, first.EndX)
 	}
 
-	model = update(model, click(second.StartX+1, 0))
+	model = update(model, click(second.StartX+1, headerBarY))
 	if model.tab != 1 {
 		t.Errorf("tab = %d after clicking the second tab, want 1", model.tab)
 	}
@@ -240,7 +247,7 @@ func TestTheHeaderCarriesBothGlobalActions(t *testing.T) {
 
 	add, actions := model.zones.Get(zoneAdd), model.zones.Get(zoneActions)
 
-	if add.StartY != 0 || actions.StartY != 0 {
+	if add.StartY != headerBarY || actions.StartY != headerBarY {
 		t.Errorf("buttons on rows %d and %d, want both on the header bar", add.StartY, actions.StartY)
 	}
 	if add.EndX >= actions.StartX {
@@ -281,5 +288,70 @@ func TestClickingTheActionsButtonOpensTheGlobalMenu(t *testing.T) {
 	}
 	if opened.menuKind != menuForGlobal {
 		t.Error("the header button opens the global menu, not the row's")
+	}
+}
+
+// prModel builds a model with a PR loaded for the (sole) worktree's branch
+// and an injected PROpener, so a click on the REVIEW line can be exercised
+// without shelling out to a real gh.
+func prModel(t *testing.T, opener func(number int) error) Model {
+	t.Helper()
+	model := New(RunParams{PROpener: opener})
+	t.Cleanup(model.Close)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model = update(model, worktreesMsg{statuses: statuses("feat/x"), parents: map[string]string{}})
+	return update(model, prsMsg{conn: domain.GHConnectionOK, prs: []domain.PRInfo{
+		{Branch: "feat/x", Number: 67, Title: "feat: x", State: "OPEN"},
+	}})
+}
+
+func TestClickingThePRLineOpensItInABrowser(t *testing.T) {
+	var calls int
+	var gotNumber int
+	model := prModel(t, func(number int) error {
+		calls++
+		gotNumber = number
+		return nil
+	})
+	renderAndWait(t, model, zoneDetailPR)
+	x, y := zonePoint(model, zoneDetailPR)
+
+	next, cmd := updateCmd(model, click(x, y))
+	if cmd == nil {
+		t.Fatal("clicking the PR line must return a command — the launch runs off the UI goroutine")
+	}
+	update(next, cmd())
+
+	if calls != 1 {
+		t.Fatalf("PROpener called %d times, want 1", calls)
+	}
+	if gotNumber != 67 {
+		t.Errorf("PROpener got PR #%d, want #67", gotNumber)
+	}
+}
+
+func TestOpenPRFailureGoesToOutputPanel(t *testing.T) {
+	model := prModel(t, func(int) error { return errors.New("gh: not authenticated") })
+	renderAndWait(t, model, zoneDetailPR)
+	x, y := zonePoint(model, zoneDetailPR)
+
+	next, cmd := updateCmd(model, click(x, y))
+	next = update(next, cmd())
+
+	if !strings.Contains(strings.Join(next.outputLines, "\n"), "not authenticated") {
+		t.Error("a failed PR open must say why in the output panel, like every other operation")
+	}
+}
+
+// TestNoPRZoneWhenThereIsNoPR pins that no zone is registered for a line
+// that was never drawn: gh fine, no PR for the branch, no REVIEW section at
+// all — so there is nothing to click.
+func TestNoPRZoneWhenThereIsNoPR(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "feat/x")
+	model = update(model, prsMsg{conn: domain.GHConnectionOK})
+	model.View()
+
+	if !model.zones.Get(zoneDetailPR).IsZero() {
+		t.Error("no PR line was drawn — no zone should exist for it")
 	}
 }

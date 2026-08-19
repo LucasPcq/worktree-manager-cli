@@ -10,7 +10,9 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
+	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/tui/dashboard"
 )
 
@@ -53,10 +55,23 @@ func runUI(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	return dashboard.Run(dashboard.RunParams{
+	return dashboard.Run(buildRunParams(dir, result))
+}
+
+// buildRunParams assembles the dashboard's inputs from the resolved config and
+// the directory `wtm ui` was actually launched from — split out from runUI so
+// the wiring (Cwd in particular: the raw working directory, not ProjectDir,
+// which LoadConfig may have resolved upward) is asserted directly rather than
+// only reachable by running the dashboard itself, which needs a real terminal.
+func buildRunParams(dir string, result shared.ConfigResult) dashboard.RunParams {
+	return dashboard.RunParams{
 		ProjectDir: result.ProjectDir,
 		StateDir:   result.StateDir,
+		Cwd:        infra.ResolvePath(dir),
 		Config:     result.Config,
-		PRLoader:   func() ([]domain.PRInfo, domain.GHConnection) { return shared.LoadPRs(result.ProjectDir) },
-	})
+		PRLoader:   func() ([]domain.PRInfo, domain.GHConnection) { return shared.LoadPRsWithChecks(result.ProjectDir) },
+		PROpener: func(number int) error {
+			return ghservice.OpenPR(ghservice.OpenPRParams{ProjectDir: result.ProjectDir, Number: number})
+		},
+	}
 }

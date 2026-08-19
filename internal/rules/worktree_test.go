@@ -192,3 +192,21 @@ func TestCleanBlockersAreEmptyForASafeWorktree(t *testing.T) {
 		t.Error("a safe worktree must not offer the force option")
 	}
 }
+
+// TestCleanBlockersEmptyForParent pins that the parent worktree never carries
+// a blockers line: it is not "blocked from deletion", it is never deletable
+// at all — a different category the panel must not conflate with a lifted
+// refusal.
+func TestCleanBlockersEmptyForParent(t *testing.T) {
+	blockers := CleanBlockers(domain.CleanCheckResult{
+		Branch:          "main",
+		IsParent:        true,
+		IsDirty:         true,
+		UnpushedCommits: 2,
+		HasOpenPR:       true,
+		PRUrl:           "http://pr/1",
+	})
+	if len(blockers) != 0 {
+		t.Errorf("got %+v, want no blockers for the parent worktree", blockers)
+	}
+}

@@ -5,8 +5,10 @@ package dashboard
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	zone "github.com/lrstanley/bubblezone"
@@ -14,6 +16,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
 
@@ -22,18 +25,32 @@ import (
 type RunParams struct {
 	ProjectDir string
 	StateDir   string
-	Config     domain.Config
-	PRLoader   worktreepicker.PRLoaderFunc
+	// Cwd is the directory the shell was in when it launched `wtm ui` — not
+	// necessarily ProjectDir, which LoadConfig may have resolved upward. It is
+	// what the active-worktree match is run against.
+	Cwd      string
+	Config   domain.Config
+	PRLoader worktreepicker.PRLoaderFunc
+	// PROpener launches the given PR number in the browser (ghservice.OpenPR,
+	// wired with ProjectDir). Injected the same way PRLoader is, so a test can
+	// exercise the REVIEW section's click without shelling out to a real gh.
+	PROpener func(number int) error
 }
 
 // OutputLineMsg appends one line to the bottom output panel. Every phase of a
 // running flow — hook output included — reaches the panel through it.
 type OutputLineMsg struct{ Text string }
 
+// openPRMsg carries the outcome of launching a PR in the browser. err is nil
+// on success — opening the tab is its own feedback, so nothing is posted to
+// the output panel unless the launch itself failed.
+type openPRMsg struct{ err error }
+
 type worktreesMsg struct {
-	statuses []domain.WorktreeStatus
-	parents  map[string]string
-	err      error
+	statuses  []domain.WorktreeStatus
+	parents   map[string]string
+	fetchedAt time.Time
+	err       error
 }
 
 type prsMsg struct {
@@ -42,6 +59,15 @@ type prsMsg struct {
 }
 
 type pollMsg struct{}
+
+// tabSlideTickMsg redraws while the tab rule is sliding. The handler is where
+// the sequence ends: it re-arms only while the slide is still short of its
+// duration, so an idle dashboard schedules no further ticks once it settles.
+type tabSlideTickMsg struct{}
+
+// flashTickMsg redraws while a just-created row's opening beat is lit, the
+// same bounded-sequence shape as tabSlideTickMsg.
+type flashTickMsg struct{}
 
 type treeMsg struct {
 	rows []domain.TreeRow
@@ -75,6 +101,15 @@ type Model struct {
 	loaded   bool
 	loadErr  error
 	loading  bool
+	// activeBranch is the worktree the cwd is under, deduced from a path-prefix
+	// match — no git call. Empty until a surface computes and sets it.
+	activeBranch string
+	// repoName names the header's context line and is fixed for the life of the
+	// program; the base branch it sits beside is read from config through
+	// baseBranch(). fetchedAt dates the last successful fetch (zero when the
+	// repository has never fetched) and is refreshed on every reload.
+	repoName  string
+	fetchedAt time.Time
 
 	prs       []domain.PRInfo
 	ghConn    domain.GHConnection
@@ -94,6 +129,14 @@ type Model struct {
 	detailOpen bool
 	showHelp   bool
 
+	// details caches the last detail loaded per branch, invalidated (never
+	// emptied) by the poll and by a finished operation, so the panel keeps
+	// showing "true a second ago" through a reload instead of going blank.
+	details       map[string]domain.WorktreeDetail
+	detailLoading string
+	detailSince   time.Time
+	spinner       spinner.Model
+
 	menuOpen   bool
 	menuKind   menuKind
 	menuCursor int
@@ -108,6 +151,18 @@ type Model struct {
 	// selectBranch is the worktree a finished run wants selected once the list
 	// catches up with it.
 	selectBranch string
+
+	// tabSlideFrom and tabSlideSince drive the tab rule's slide: the column it
+	// is animating away from, and when that animation started. A zero
+	// tabSlideSince means no slide is in progress — rules.TabSlideStart then
+	// reports the target outright.
+	tabSlideFrom  int
+	tabSlideSince time.Time
+	// flashBranch and flashSince drive a just-created row's opening beat: the
+	// branch selectRequested last landed the cursor on, and when that
+	// happened. A zero flashSince means nothing is flashing.
+	flashBranch string
+	flashSince  time.Time
 }
 
 // New builds the dashboard model. Callers outside a program must Close the
@@ -120,10 +175,13 @@ func New(params RunParams) Model {
 			StateDir:   params.StateDir,
 			Config:     params.Config,
 		},
-		zones:   zone.New(),
-		msgs:    make(chan tea.Msg, domain.DashboardMsgBuffer),
-		ghConn:  domain.GHConnectionOK,
-		loading: true,
+		zones:    zone.New(),
+		msgs:     make(chan tea.Msg, domain.DashboardMsgBuffer),
+		ghConn:   domain.GHConnectionOK,
+		loading:  true,
+		details:  map[string]domain.WorktreeDetail{},
+		spinner:  components.MutedSpinner(),
+		repoName: filepath.Base(params.ProjectDir),
 	}
 }
 
@@ -142,6 +200,9 @@ func Run(params RunParams) error {
 }
 
 func (m Model) Init() tea.Cmd {
+	// The spinner is started on demand, at the point a detail load actually
+	// begins (fireDetailTick, reloadDetailCmd) — not here, or it would tick for
+	// the life of the program whether or not anything is loading.
 	return tea.Batch(m.loadWorktreesCmd(false), m.loadPRsCmd(), pollCmd(), listenCmd(m.msgs))
 }
 
@@ -149,11 +210,19 @@ func pollCmd() tea.Cmd {
 	return tea.Tick(domain.DashboardPollSeconds*time.Second, func(time.Time) tea.Msg { return pollMsg{} })
 }
 
+func tabSlideTickCmd() tea.Cmd {
+	return tea.Tick(domain.DashboardAnimFrame, func(time.Time) tea.Msg { return tabSlideTickMsg{} })
+}
+
+func flashTickCmd() tea.Cmd {
+	return tea.Tick(domain.DashboardAnimFrame, func(time.Time) tea.Msg { return flashTickMsg{} })
+}
+
 // loadWorktreesCmd re-lists the worktrees off the UI thread. fetch reaches the
 // remote (the `r` key); the poll never does, so the origin badges stay a
 // deliberate, user-triggered refresh.
 func (m Model) loadWorktreesCmd(fetch bool) tea.Cmd {
-	listParams, stateDir := m.listParams, m.params.StateDir
+	listParams, stateDir, projectDir := m.listParams, m.params.StateDir, m.params.ProjectDir
 	return func() tea.Msg {
 		list := worktree.List
 		if fetch {
@@ -170,7 +239,8 @@ func (m Model) loadWorktreesCmd(fetch bool) tea.Cmd {
 				Branch:   status.Branch,
 			})
 		}
-		return worktreesMsg{statuses: statuses, parents: parents}
+		fetchedAt := worktree.LastFetchAt(worktree.LastFetchAtParams{ProjectDir: projectDir})
+		return worktreesMsg{statuses: statuses, parents: parents, fetchedAt: fetchedAt}
 	}
 }
 
@@ -228,13 +298,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.reflow(), nil
 
 	case tea.KeyMsg:
-		return m.handleKey(msg)
+		before := m.selectedBranch()
+		model, cmd := m.handleKey(msg)
+		return withDetailTrigger(before, model, cmd)
 
 	case tea.MouseMsg:
-		return m.handleMouse(msg)
+		before := m.selectedBranch()
+		model, cmd := m.handleMouse(msg)
+		return withDetailTrigger(before, model, cmd)
 
 	case worktreesMsg:
-		return m.applyWorktrees(msg), nil
+		before := m.selectedBranch()
+		next, animCmd := m.applyWorktrees(msg)
+		model, detailCmd := next.triggerDetailReload(before)
+		return model, tea.Batch(animCmd, detailCmd)
 
 	case prsMsg:
 		m.prs, m.ghConn, m.prsLoaded = msg.prs, msg.conn, true
@@ -251,26 +328,95 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.tab == tabTree {
 			tree = m.loadTreeCmd()
 		}
-		return m, tea.Batch(m.loadWorktreesCmd(false), tree, pollCmd())
+		// Same reasoning for the detail: five subprocesses every poll to keep a
+		// panel nobody is looking at "fresh" is exactly the jamais-dans-le-poll
+		// rule (§7) would forbid if the panel were on screen — it is spent only
+		// when it is. The poll never clears m.details either way; when it does
+		// reload, old data stays on screen underneath it.
+		detailCmd := tea.Cmd(nil)
+		if m.layout().DetailVisible {
+			m, detailCmd = m.reloadDetailCmd()
+		}
+		return m, tea.Batch(m.loadWorktreesCmd(false), tree, detailCmd, pollCmd())
 
 	case treeMsg:
-		return m.applyTree(msg), nil
+		before := m.selectedBranch()
+		next := m.applyTree(msg)
+		return next.triggerDetailReload(before)
 
 	case OutputLineMsg:
 		return m.appendOutput(msg), nil
+
+	case openPRMsg:
+		if msg.err == nil {
+			return m, nil
+		}
+		return m.appendOutput(OutputLineMsg{
+			Text: fmt.Sprintf(domain.DashboardFailedFmt, domain.DashboardOpenPRLabel, msg.err),
+		}), nil
 
 	case flowMsg:
 		model, cmd := m.applyFlow(msg.inner)
 		return model, tea.Batch(cmd, listenCmd(m.msgs))
 
 	case opDoneMsg:
-		return m.finishOp(msg), nil
+		return m.finishOp(msg)
+
+	case detailMsg:
+		return m.applyDetail(msg), nil
+
+	case detailTickMsg:
+		return m.fireDetailTick(msg)
+
+	case spinner.TickMsg:
+		// Re-arming unconditionally would tick at 12fps for the life of the
+		// program, idle included. The loop runs while either consumer needs it —
+		// a detail load in flight, or a run whose row shows a spinner instead of
+		// its state pill — and dies on its own once neither does.
+		if m.detailLoading == "" && !m.ops.active() {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case tabSlideTickMsg:
+		// Bounded: it only re-arms while the slide is still short of its
+		// duration, and clears tabSlideSince the moment it settles — an idle
+		// dashboard schedules no further ticks once the rule has landed.
+		if m.tabSlideSince.IsZero() || time.Since(m.tabSlideSince) >= domain.DashboardTabSlide {
+			m.tabSlideSince = time.Time{}
+			return m, nil
+		}
+		return m, tabSlideTickCmd()
+
+	case flashTickMsg:
+		// Same bounded shape as tabSlideTickMsg: it stops re-arming, and clears
+		// flashBranch, the moment the flash's duration has elapsed.
+		if m.flashBranch == "" || time.Since(m.flashSince) >= domain.DashboardRowFlash {
+			m.flashBranch = ""
+			return m, nil
+		}
+		return m, flashTickCmd()
 
 	case modalLoadedMsg, formReadyMsg:
 		return m.updateModal(msg)
 	}
 
 	return m, nil
+}
+
+// withDetailTrigger folds a detail-reload check onto whatever a key or mouse
+// event already produced. handleKey and handleMouse return tea.Model because
+// they also field the overlays (modal, menu, help), which are not this Model;
+// the comma-ok keeps a foreign result harmless instead of panicking.
+func withDetailTrigger(before string, next tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	model, ok := next.(Model)
+	if !ok {
+		return next, cmd
+	}
+	model, detailCmd := model.triggerDetailReload(before)
+	return model, tea.Batch(cmd, detailCmd)
 }
 
 func (m Model) applyTree(msg treeMsg) Model {
@@ -284,31 +430,52 @@ func (m Model) applyTree(msg treeMsg) Model {
 }
 
 // applyWorktrees keeps the selection on a valid row: a worktree removed under
-// the poll must not leave the cursor pointing past the end.
-func (m Model) applyWorktrees(msg worktreesMsg) Model {
+// the poll must not leave the cursor pointing past the end. It also starts
+// the just-created row's opening flash, when selectRequested lands on one and
+// ui.animations has not turned that off.
+func (m Model) applyWorktrees(msg worktreesMsg) (Model, tea.Cmd) {
 	m.loading = false
 	m.loadErr = msg.err
 	if msg.err != nil {
-		return m
+		return m, nil
 	}
 	m.statuses, m.parents, m.loaded = msg.statuses, msg.parents, true
+	m.fetchedAt = msg.fetchedAt
+	m.activeBranch = rules.ActiveWorktree(rules.ActiveWorktreeParams{
+		Cwd:      m.params.Cwd,
+		Statuses: m.statuses,
+	})
 	m.cursor = rules.ClampIndex(m.cursor, len(m.statuses))
-	return m.selectRequested().reflow()
+
+	animate := rules.AnimationsEnabled(m.params.Config)
+	next, flashed := m.selectRequested(animate)
+	next = next.reflow()
+	if !flashed {
+		return next, nil
+	}
+	return next, flashTickCmd()
 }
 
 // selectRequested lands the cursor on the worktree a finished run created, the
-// one time the list comes back holding it.
-func (m Model) selectRequested() Model {
+// one time the list comes back holding it. animate arms its opening flash,
+// gated by ui.animations rather than deciding whether the branch itself
+// should flash — a row still gets found and selected either way.
+func (m Model) selectRequested(animate bool) (Model, bool) {
 	if m.selectBranch == "" {
-		return m
+		return m, false
 	}
 	for index, status := range m.statuses {
-		if status.Branch == m.selectBranch {
-			m.cursor, m.selectBranch = index, ""
-			return m
+		if status.Branch != m.selectBranch {
+			continue
 		}
+		m.cursor, m.selectBranch = index, ""
+		if !animate {
+			return m, false
+		}
+		m.flashBranch, m.flashSince = status.Branch, time.Now()
+		return m, true
 	}
-	return m
+	return m, false
 }
 
 func (m Model) updateModal(msg tea.Msg) (Model, tea.Cmd) {
@@ -399,7 +566,8 @@ func (m Model) scrollOutput(delta int) Model {
 func (m Model) refresh() (Model, tea.Cmd) {
 	m.loading, m.prsLoaded = true, false
 	m.treeLoading = m.treeLoaded || m.tab == tabTree
-	return m, tea.Batch(m.loadWorktreesCmd(true), m.loadPRsCmd(), m.treeCmd())
+	next, detailCmd := m.reloadDetailCmd()
+	return next, tea.Batch(next.loadWorktreesCmd(true), next.loadPRsCmd(), next.treeCmd(), detailCmd)
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -456,6 +624,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openMenu(m.menuAnchorPoint()), nil
 	case keyActions:
 		return m.openActionsMenu(m.actionsAnchorPoint()), nil
+	case keyOpenPR:
+		return m.openPR()
+
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded
 		return m.reflow(), nil
@@ -495,14 +666,27 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // selectTab moves to a tab and, the first time the Tree tab is opened, asks for
-// the forest it has never built.
+// the forest it has never built. It also starts the tab rule's slide toward
+// its new position, when ui.animations has not turned that off and the rule
+// actually moves — switching to the tab already active is a no-op either way.
 func (m Model) selectTab(index int) (Model, tea.Cmd) {
+	width := m.layout().Tabs.Width
+	from := tabStart(width, m.tab)
 	m.tab = index
+
+	var slideCmd tea.Cmd
+	if rules.AnimationsEnabled(m.params.Config) {
+		if to := tabStart(width, index); to != from {
+			m.tabSlideFrom, m.tabSlideSince = from, time.Now()
+			slideCmd = tabSlideTickCmd()
+		}
+	}
+
 	if index != tabTree || m.treeLoaded || m.treeLoading {
-		return m.reflow(), nil
+		return m.reflow(), slideCmd
 	}
 	m.treeLoading = true
-	return m.reflow(), m.loadTreeCmd()
+	return m.reflow(), tea.Batch(slideCmd, m.loadTreeCmd())
 }
 
 func (m Model) pageRows(layout domain.DashboardLayout) int {
@@ -562,6 +746,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.inZone(zoneActions, msg) {
 		zone := m.zones.Get(zoneActions)
 		return m.openActionsMenu(domain.Rect{X: zone.StartX, Y: zone.EndY}), nil
+	}
+
+	if m.inZone(zoneDetailPR, msg) {
+		return m.openPR()
 	}
 
 	if model, hit := m.clickRow(msg); hit {

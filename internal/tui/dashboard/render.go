@@ -3,6 +3,7 @@ package dashboard
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -18,7 +19,16 @@ const (
 	borderWidth   = 2
 	paddingWidth  = 2
 	buttonPadding = 4
+	// panelChromeRows is what renderPanel prepends to Body before drawing it:
+	// the title row and the blank row under it.
+	panelChromeRows = 2
 )
+
+// panelBodyHeight is the row budget renderPanel leaves for Body once its own
+// border and chrome rows are accounted for.
+func panelBodyHeight(rect domain.Rect) int {
+	return max(rect.Height-borderWidth-panelChromeRows, 0)
+}
 
 type panelParams struct {
 	Rect  domain.Rect
@@ -53,10 +63,7 @@ func (m Model) renderPanel(params panelParams) string {
 		title = m.marks().Mark(params.TitleZone, title)
 	}
 
-	lines := append([]string{title, ""}, params.Body...)
-	if len(lines) > contentHeight {
-		lines = lines[:contentHeight]
-	}
+	lines := clipRenderedLines(append([]string{title, ""}, params.Body...), contentHeight)
 
 	box := styles.DashboardPanel.
 		Width(params.Rect.Width - borderWidth).
@@ -66,24 +73,140 @@ func (m Model) renderPanel(params panelParams) string {
 	return m.marks().Mark(params.Zone, box)
 }
 
-// renderHeader is the dashboard's top bar: the wordmark, the tabs, and the count
-// of what is listed. The active tab is named by weight and by the rule under it.
-//
-// Whole tabs are dropped rather than the bar trimmed: a hard trim would cut
-// through a zone marker and break that tab's hit-testing.
+// renderHeader dispatches to whichever header ComputeDashboardLayout chose
+// for this frame — the six-row signature block, or the compact three-row
+// fallback below domain.DashboardHeaderTallThreshold rows. It re-derives
+// nothing: layout.HeaderTall is the one place that decision is made.
 func (m Model) renderHeader(layout domain.DashboardLayout) string {
-	wordmark := styles.DashboardWordmark.Render(domain.DashboardWordmark)
-	used := lipgloss.Width(wordmark)
+	// A terminal too short for any header is degenerate — nothing else fits
+	// either — but it must not overflow. ComputeDashboardLayout already
+	// shrinks Tabs.Height to what actually fits.
+	if layout.Tabs.Height <= 0 {
+		return ""
+	}
+	if layout.HeaderTall {
+		return m.renderTallHeader(layout)
+	}
+	return m.renderCompactHeader(layout)
+}
 
-	rendered := []string{wordmark}
-	activeStart, activeWidth := 0, 0
+// No rule between the two lines: the tab rule underneath already separates the
+// header from the body. Whole lines drop from the bottom under a tight budget,
+// rather than emitting a fixed count that would push the frame past the screen.
+func (m Model) renderCompactHeader(layout domain.DashboardLayout) string {
+	context := m.renderContextLine(layout.Tabs.Width)
+	if layout.Tabs.Height == 1 {
+		return context
+	}
+
+	// The wordmark already opens the context line above; the bar starts
+	// directly with the tabs so it is not drawn twice.
+	bar, activeStart, activeWidth := m.renderTabBar(layout.Tabs.Width, m.headerRight)
+	if layout.Tabs.Height == 2 {
+		return lipgloss.JoinVertical(lipgloss.Left, context, bar)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, context, bar, tabRule(tabRuleParams{
+		Width:       layout.Tabs.Width,
+		ActiveStart: m.tabRuleStart(activeStart),
+		ActiveWidth: activeWidth,
+	}))
+}
+
+// The wordmark's three rows hold the context the compact header packs onto one
+// line, so the block costs height it also uses. The blank line before the tabs
+// is not optional — it is what makes this read as a header. No partial variant:
+// the layout only selects this when all six rows fit.
+func (m Model) renderTallHeader(layout domain.DashboardLayout) string {
+	width := layout.Tabs.Width
+	context := [3]string{
+		m.headerRepoLine(),
+		m.headerBaseActiveLine(),
+		m.headerCountLine(),
+	}
+
+	lines := make([]string, 0, domain.DashboardHeaderTallHeight)
+	for index, art := range domain.DashboardWordmarkLines {
+		lines = append(lines, m.wordmarkRow(art, context[index], width))
+	}
+	lines = append(lines, "")
+
+	bar, activeStart, activeWidth := m.renderTabBar(width, m.headerButtons)
+	lines = append(lines, bar, tabRule(tabRuleParams{
+		Width:       width,
+		ActiveStart: m.tabRuleStart(activeStart),
+		ActiveWidth: activeWidth,
+	}))
+	return strings.Join(lines, "\n")
+}
+
+// Hard-truncated rather than dropped in segments: each row already carries a
+// single fact, so there is nothing to drop before the wordmark itself.
+func (m Model) wordmarkRow(art, styledContext string, width int) string {
+	left := styles.DashboardWordmark.Render(art)
+	if styledContext == "" {
+		return truncateRendered(left, width)
+	}
+	return truncateRendered(left+domain.DashboardWordmarkGap+styledContext, width)
+}
+
+// headerRepoLine is the tall header's first row: the repository name alone,
+// styled like the rest of the context text.
+func (m Model) headerRepoLine() string {
+	if m.repoName == "" {
+		return ""
+	}
+	return styles.DashboardContext.Render(m.repoName)
+}
+
+// Built directly rather than through contextLeft, whose leading space belongs to
+// the compact header's inline wordmark and would indent this row out of
+// alignment with the repository name above it.
+func (m Model) headerBaseActiveLine() string {
+	segments := make([]string, 0, 2)
+	if m.baseBranch() != "" {
+		segments = append(segments, fmt.Sprintf(domain.DashboardBaseFmt, m.baseBranch()))
+	}
+	if m.activeBranch != "" {
+		segments = append(segments, domain.DashboardActiveGlyph+" "+m.activeBranch)
+	}
+	if len(segments) == 0 {
+		return ""
+	}
+	return styles.DashboardContext.Render(strings.Join(segments, domain.DashboardContextSep))
+}
+
+// Built from plain text rather than countLabel/fetchedLabel: those carry the
+// compact header's own padding and styling, which would break this row's
+// alignment with the two above it.
+func (m Model) headerCountLine() string {
+	parts := make([]string, 0, 2)
+	if count := m.countText(); count != "" {
+		parts = append(parts, count)
+	}
+	if fetched := m.fetchedText(); fetched != "" {
+		parts = append(parts, fetched)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return styles.DashboardContext.Render(strings.Join(parts, domain.DashboardContextSep))
+}
+
+// renderTabBar draws the tab row shared by both header variants: each tab
+// gets its own zone, and right fills whatever room is left — headerRight
+// (compact header, count included) or headerButtons (tall header, whose
+// count already sits in the signature block).
+func (m Model) renderTabBar(width int, right func(room int) string) (bar string, activeStart, activeWidth int) {
+	rendered := make([]string, 0, len(tabs))
+	used := 0
 	for index, title := range tabs {
 		style := styles.DashboardTabInactive
 		if index == m.tab {
 			style = styles.DashboardTabActive
 		}
 		tab := style.Render(title)
-		if used+lipgloss.Width(tab) > layout.Tabs.Width {
+		if used+lipgloss.Width(tab) > width {
 			break
 		}
 		if index == m.tab {
@@ -93,16 +216,109 @@ func (m Model) renderHeader(layout domain.DashboardLayout) string {
 		rendered = append(rendered, m.marks().Mark(tabZone(index), tab))
 	}
 
-	bar := lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
-	if right := m.headerRight(layout.Tabs.Width - used); right != "" {
-		bar += strings.Repeat(" ", layout.Tabs.Width-used-lipgloss.Width(right)) + right
+	bar = lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+	if r := right(width - used); r != "" {
+		bar += strings.Repeat(" ", width-used-lipgloss.Width(r)) + r
 	}
+	return bar, activeStart, activeWidth
+}
 
-	return lipgloss.JoinVertical(lipgloss.Left, bar, tabRule(tabRuleParams{
-		Width:       layout.Tabs.Width,
-		ActiveStart: activeStart,
-		ActiveWidth: activeWidth,
-	}))
+// Segments drop whole, right to left, on the same variant-list mechanic
+// headerRight uses: a half-drawn label reads as a wrong one, so a segment that
+// does not fit is dropped rather than cut.
+func (m Model) renderContextLine(width int) string {
+	wordmark := styles.DashboardWordmark.Render(domain.DashboardWordmark)
+	fetched := m.fetchedLabel()
+
+	for _, variant := range []struct{ repo, base, active, fetched bool }{
+		{true, true, true, true},
+		{true, true, true, false},
+		{true, true, false, false},
+		{true, false, false, false},
+		{false, false, false, false},
+	} {
+		left := wordmark + m.contextLeft(contextLeftParams{Repo: variant.repo, Base: variant.base, Active: variant.active})
+		right := ""
+		if variant.fetched {
+			right = fetched
+		}
+		if line, ok := fitContextLine(left, right, width); ok {
+			return line
+		}
+	}
+	// The last variant above already tried the bare wordmark alone; if that
+	// did not fit either, nothing will — the line goes empty rather than
+	// overflow the width it was given.
+	return ""
+}
+
+type contextLeftParams struct {
+	Repo   bool
+	Base   bool
+	Active bool
+}
+
+// contextLeft builds the segments after the wordmark, joined by
+// DashboardContextSep. A segment with no data to show (no repo name resolved,
+// no base configured, cwd outside every known worktree) is skipped rather than
+// printed empty.
+func (m Model) contextLeft(params contextLeftParams) string {
+	segments := make([]string, 0, 3)
+	if params.Repo && m.repoName != "" {
+		segments = append(segments, m.repoName)
+	}
+	if params.Base && m.baseBranch() != "" {
+		segments = append(segments, fmt.Sprintf(domain.DashboardBaseFmt, m.baseBranch()))
+	}
+	if params.Active && m.activeBranch != "" {
+		segments = append(segments, domain.DashboardActiveGlyph+" "+m.activeBranch)
+	}
+	if len(segments) == 0 {
+		return ""
+	}
+	return styles.DashboardContext.Render(" " + strings.Join(segments, domain.DashboardContextSep))
+}
+
+// fetchedText is the header's only non-permanent element, in plain text: it
+// appears only once the origin refs are stale enough to matter, and it is
+// the view's property, not the selected worktree's — every origin badge in
+// the list is equally old.
+func (m Model) fetchedText() string {
+	now := time.Now()
+	if !rules.FetchIsStale(rules.FetchStalenessParams{FetchedAt: m.fetchedAt, Now: now}) {
+		return ""
+	}
+	if m.fetchedAt.IsZero() {
+		return domain.DashboardNeverFetched
+	}
+	age := rules.RelativeAge(rules.RelativeAgeParams{At: m.fetchedAt, Now: now})
+	return fmt.Sprintf(domain.DashboardFetchedFmt, age)
+}
+
+// fetchedLabel is fetchedText styled for the compact header's context line.
+func (m Model) fetchedLabel() string {
+	text := m.fetchedText()
+	if text == "" {
+		return ""
+	}
+	return styles.DashboardContext.Render(text)
+}
+
+// fitContextLine lays the left cluster and the right notice on one row of the
+// given width, keeping both whole. It reports whether they fit at all rather
+// than clipping either one.
+func fitContextLine(left, right string, width int) (string, bool) {
+	if right == "" {
+		if lipgloss.Width(left) <= width {
+			return left, true
+		}
+		return "", false
+	}
+	if lipgloss.Width(left)+1+lipgloss.Width(right) > width {
+		return "", false
+	}
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+	return left + strings.Repeat(" ", gap) + right, true
 }
 
 // headerRight is the bar's right cluster: the two global actions, then the count
@@ -133,6 +349,32 @@ func (m Model) headerRight(room int) string {
 	return ""
 }
 
+// headerButtons is the tall header's tab-bar right cluster: the two global
+// actions, no count — the signature block's own third row already carries
+// it. Whole segments are dropped rather than the bar trimmed, the same
+// reasoning headerRight follows.
+func (m Model) headerButtons(room int) string {
+	for _, variant := range []struct{ add, actions string }{
+		{domain.DashboardAddLabelLong, domain.DashboardActionsLabel},
+		{domain.DashboardAddLabel, domain.DashboardActionsLabel},
+		{domain.DashboardAddLabel, domain.DashboardActionsShort},
+		{"", domain.DashboardActionsShort},
+	} {
+		add, actions := "", ""
+		if variant.add != "" {
+			add = m.marks().Mark(zoneAdd, styles.DashboardAddButton.Render(variant.add))
+		}
+		if variant.actions != "" {
+			actions = m.marks().Mark(zoneActions, styles.DashboardHeaderButton.Render(variant.actions))
+		}
+		cluster := joinHeader(add, actions)
+		if lipgloss.Width(cluster)+1 <= room {
+			return cluster
+		}
+	}
+	return ""
+}
+
 func joinHeader(segments ...string) string {
 	parts := make([]string, 0, len(segments))
 	for _, segment := range segments {
@@ -143,9 +385,9 @@ func joinHeader(segments ...string) string {
 	return strings.Join(parts, " ")
 }
 
-// countLabel counts what the active tab lists: worktrees, or the nodes of the
-// forest — which includes the parents that have none.
-func (m Model) countLabel() string {
+// countText counts what the active tab lists, in plain text: worktrees, or
+// the nodes of the forest — which includes the parents that have none.
+func (m Model) countText() string {
 	if m.tab == tabTree {
 		if !m.treeLoaded {
 			return ""
@@ -154,7 +396,7 @@ func (m Model) countLabel() string {
 		if len(m.treeRows) == 1 {
 			format = domain.DashboardTreeCountOneFmt
 		}
-		return styles.DashboardCount.Render(fmt.Sprintf(format, len(m.treeRows)))
+		return fmt.Sprintf(format, len(m.treeRows))
 	}
 	if !m.loaded {
 		return ""
@@ -163,7 +405,48 @@ func (m Model) countLabel() string {
 	if len(m.statuses) == 1 {
 		format = domain.DashboardCountOneFmt
 	}
-	return styles.DashboardCount.Render(fmt.Sprintf(format, len(m.statuses)))
+	return fmt.Sprintf(format, len(m.statuses))
+}
+
+// countLabel is countText styled for the compact header's tab-bar right
+// cluster.
+func (m Model) countLabel() string {
+	text := m.countText()
+	if text == "" {
+		return ""
+	}
+	return styles.DashboardCount.Render(text)
+}
+
+// Both tab styles share the same padding, so the column does not depend on which
+// tab is active — which is what lets the slide animation measure from and to it.
+func tabStart(width, index int) int {
+	used := 0
+	for i, title := range tabs {
+		w := lipgloss.Width(styles.DashboardTabInactive.Render(title))
+		if used+w > width {
+			break
+		}
+		if i == index {
+			return used
+		}
+		used += w
+	}
+	return used
+}
+
+// tabRuleStart interpolates the rule's start column while a slide is in
+// progress (rules.TabSlideStart reports target outright once it either has
+// not started or has finished): the caller always gets somewhere to draw,
+// animating or not.
+func (m Model) tabRuleStart(target int) int {
+	return rules.TabSlideStart(rules.TabSlideParams{
+		From:     m.tabSlideFrom,
+		To:       target,
+		Since:    m.tabSlideSince,
+		Now:      time.Now(),
+		Duration: domain.DashboardTabSlide,
+	})
 }
 
 type tabRuleParams struct {
@@ -189,6 +472,9 @@ func tabRule(params tabRuleParams) string {
 }
 
 func (m Model) renderHelpBar(layout domain.DashboardLayout) string {
+	if layout.Help.Height <= 0 {
+		return ""
+	}
 	hint := domain.DashboardHelpWide
 	switch {
 	case m.loadErr != nil:
@@ -218,6 +504,7 @@ func (m Model) helpBox() (string, domain.Rect) {
 		{"tab · shift+tab", "switch view (or click a tab)"},
 		{"enter · →", "open the detail (narrow terminals)"},
 		{"esc · ←", "close the detail"},
+		{"p", "open the pull request in a browser (or click its line)"},
 		{"o", "fold/unfold the output panel (or click its header)"},
 		{"shift+↑ · shift+↓", "scroll the output panel"},
 		{"r", "refresh worktrees and pull requests"},
@@ -257,6 +544,34 @@ func helpTextWidth(rows [][2]string, screenWidth int) int {
 		widest = max(widest, helpKeyWidth+lipgloss.Width(row[1]))
 	}
 	return min(widest, screenWidth-domain.DashboardModalChrome-modalPadding)
+}
+
+// A body is assembled by counting entries as rows, and an entry carrying its own
+// newlines renders as several — which is how a hook or git failure pasted in
+// verbatim pushes the frame past the terminal and scrolls the alt screen. This
+// clips by rendered rows instead, whatever a caller puts in Body. Entries are
+// kept or dropped whole so a styled one is never cut mid-escape; only an entry
+// that alone overflows is split.
+func clipRenderedLines(lines []string, height int) []string {
+	if height <= 0 {
+		return nil
+	}
+	kept := make([]string, 0, len(lines))
+	used := 0
+	for _, entry := range lines {
+		rows := strings.Count(entry, "\n") + 1
+		if used+rows <= height {
+			kept = append(kept, entry)
+			used += rows
+			continue
+		}
+		if used == 0 {
+			split := strings.SplitN(entry, "\n", height+1)
+			return append(kept, strings.Join(split[:height], "\n"))
+		}
+		break
+	}
+	return kept
 }
 
 // truncate clips plain text to a display width, marking the cut with an ellipsis.

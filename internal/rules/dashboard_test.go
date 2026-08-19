@@ -2,9 +2,48 @@ package rules
 
 import (
 	"testing"
+	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
+
+// TestDashboardHeaderHeightDegradesBelowTheThreshold pins the header's own
+// height rule: the six-row signature block above
+// domain.DashboardHeaderTallThreshold rows, the compact three-row header
+// below it — this is what makes the height terminal-dependent instead of a
+// constant read directly.
+func TestDashboardHeaderHeightDegradesBelowTheThreshold(t *testing.T) {
+	if got := DashboardHeaderHeight(domain.DashboardHeaderTallThreshold); got != domain.DashboardHeaderTallHeight {
+		t.Errorf("DashboardHeaderHeight(%d) = %d, want the tall height %d",
+			domain.DashboardHeaderTallThreshold, got, domain.DashboardHeaderTallHeight)
+	}
+	if got := DashboardHeaderHeight(domain.DashboardHeaderTallThreshold - 1); got != domain.DashboardHeaderCompactHeight {
+		t.Errorf("DashboardHeaderHeight(%d) = %d, want the compact height %d",
+			domain.DashboardHeaderTallThreshold-1, got, domain.DashboardHeaderCompactHeight)
+	}
+}
+
+// TestComputeDashboardLayoutMarksTheTallHeader pins that the layout, not the
+// renderer, decides whether the tall header shows — a magic-threshold
+// comparison re-derived in tui/ is exactly the decision logic that belongs
+// here instead.
+func TestComputeDashboardLayoutMarksTheTallHeader(t *testing.T) {
+	tall := ComputeDashboardLayout(DashboardLayoutParams{Width: 120, Height: 40})
+	if !tall.HeaderTall {
+		t.Error("a 40-row terminal must get the tall header")
+	}
+	if tall.Tabs.Height != domain.DashboardHeaderTallHeight {
+		t.Errorf("Tabs.Height = %d, want the tall height %d", tall.Tabs.Height, domain.DashboardHeaderTallHeight)
+	}
+
+	compact := ComputeDashboardLayout(DashboardLayoutParams{Width: 120, Height: 24})
+	if compact.HeaderTall {
+		t.Error("a 24-row terminal must fall back to the compact header")
+	}
+	if compact.Tabs.Height != domain.DashboardHeaderCompactHeight {
+		t.Errorf("Tabs.Height = %d, want the compact height %d", compact.Tabs.Height, domain.DashboardHeaderCompactHeight)
+	}
+}
 
 func TestComputeDashboardLayoutSplitsWideTerminals(t *testing.T) {
 	layout := ComputeDashboardLayout(DashboardLayoutParams{Width: 120, Height: 40})
@@ -98,7 +137,13 @@ func TestComputeDashboardLayoutShrinksTheOutputPanelBeforeTheBody(t *testing.T) 
 }
 
 func TestComputeDashboardLayoutSurvivesDegenerateSizes(t *testing.T) {
-	for _, size := range [][2]int{{0, 0}, {1, 1}, {10, 2}, {200, 3}} {
+	for _, size := range [][2]int{
+		{0, 0}, {1, 1}, {10, 2}, {200, 1}, {200, 2}, {200, 3},
+		// Around the tall-header threshold: the six-row header must degrade
+		// the same way the three-row one already did, at every size on
+		// either side of the cutover.
+		{200, 29}, {200, 30}, {200, 31}, {200, 6}, {200, 7}, {0, 30}, {1, 30},
+	} {
 		layout := ComputeDashboardLayout(DashboardLayoutParams{Width: size[0], Height: size[1]})
 		for name, rect := range map[string]domain.Rect{
 			"tabs": layout.Tabs, "list": layout.List, "detail": layout.Detail,
@@ -110,6 +155,15 @@ func TestComputeDashboardLayoutSurvivesDegenerateSizes(t *testing.T) {
 		}
 		if layout.ListRows < 0 || layout.OutputLines < 0 {
 			t.Errorf("%dx%d: negative row counts", size[0], size[1])
+		}
+
+		// The header and the help bar must give way to each other on a
+		// terminal too short for both at full size, rather than both
+		// claiming their usual rows and overflowing it between them.
+		body := max(layout.List.Height, layout.Detail.Height)
+		if reserved := layout.Tabs.Height + body + layout.Output.Height + layout.Help.Height; reserved > size[1] {
+			t.Errorf("%dx%d: rows reserved (tabs=%d body=%d output=%d help=%d = %d) exceed the terminal height",
+				size[0], size[1], layout.Tabs.Height, body, layout.Output.Height, layout.Help.Height, reserved)
 		}
 	}
 }
@@ -254,5 +308,94 @@ func TestSplitRecapFieldLeavesHeadingsAndProseWhole(t *testing.T) {
 		if _, _, ok := SplitRecapField(line); ok {
 			t.Errorf("%q must not read as a field", line)
 		}
+	}
+}
+
+func TestActiveWorktree(t *testing.T) {
+	statuses := []domain.WorktreeStatus{
+		{Branch: "main", Path: "/repo"},
+		{Branch: "feat/ui", Path: "/repo.worktrees/feat-ui"},
+		{Branch: "feat/ui-extra", Path: "/repo.worktrees/feat-ui-extra"},
+		{Branch: "nested", Path: "/repo.worktrees/feat-ui/nested"},
+	}
+	cases := []struct {
+		name string
+		cwd  string
+		want string
+	}{
+		{"racine du worktree", "/repo.worktrees/feat-ui", "feat/ui"},
+		{"sous-dossier", "/repo.worktrees/feat-ui/internal/tui", "feat/ui"},
+		{"préfixe voisin non confondu", "/repo.worktrees/feat-ui-extra", "feat/ui-extra"},
+		{"worktree principal", "/repo/internal", "main"},
+		{"le plus profond gagne", "/repo.worktrees/feat-ui/nested/pkg", "nested"},
+		{"hors de tout worktree", "/ailleurs", ""},
+		{"cwd vide", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := ActiveWorktree(ActiveWorktreeParams{Cwd: c.cwd, Statuses: statuses})
+			if got != c.want {
+				t.Errorf("ActiveWorktree(%q) = %q, want %q", c.cwd, got, c.want)
+			}
+		})
+	}
+}
+
+func TestAnimationsEnabledByDefault(t *testing.T) {
+	if !AnimationsEnabled(domain.Config{}) {
+		t.Error("les animations sont actives par défaut : une clé absente n'est pas un refus")
+	}
+}
+
+func TestAnimationsCanBeDisabled(t *testing.T) {
+	off := false
+	cfg := domain.Config{Global: domain.GlobalConfig{UI: domain.UIConfig{Animations: &off}}}
+	if AnimationsEnabled(cfg) {
+		t.Error("ui.animations = false doit tout éteindre")
+	}
+}
+
+func TestNoAnimationExceedsTheCap(t *testing.T) {
+	durations := map[string]time.Duration{
+		"glissement d'onglet": domain.DashboardTabSlide,
+		"fondu de ligne":      domain.DashboardRowFlash,
+	}
+	for name, got := range durations {
+		if got > domain.DashboardAnimationCap {
+			t.Errorf("%s dure %v, plafond %v", name, got, domain.DashboardAnimationCap)
+		}
+	}
+}
+
+func TestTabSlideStartInterpolatesThenSettles(t *testing.T) {
+	since := time.Now()
+
+	if got := TabSlideStart(TabSlideParams{From: 0, To: 40, Since: since, Now: since, Duration: domain.DashboardTabSlide}); got != 0 {
+		t.Errorf("at t=0, got %d, want From (0)", got)
+	}
+	mid := TabSlideStart(TabSlideParams{From: 0, To: 40, Since: since, Now: since.Add(domain.DashboardTabSlide / 2), Duration: domain.DashboardTabSlide})
+	if mid <= 0 || mid >= 40 {
+		t.Errorf("mid-slide, got %d, want strictly between From and To", mid)
+	}
+	if got := TabSlideStart(TabSlideParams{From: 0, To: 40, Since: since, Now: since.Add(domain.DashboardTabSlide), Duration: domain.DashboardTabSlide}); got != 40 {
+		t.Errorf("once the duration has elapsed, got %d, want To (40)", got)
+	}
+	if got := TabSlideStart(TabSlideParams{From: 0, To: 40, Duration: domain.DashboardTabSlide}); got != 40 {
+		t.Errorf("a zero Since means no slide in progress, got %d, want To (40)", got)
+	}
+}
+
+func TestFlashLitFadesWithinItsDuration(t *testing.T) {
+	since := time.Now()
+	duration := domain.DashboardRowFlash
+
+	if !FlashLit(FlashParams{Since: since, Now: since, Duration: duration}) {
+		t.Error("a flash just triggered must be lit")
+	}
+	if FlashLit(FlashParams{Since: since, Now: since.Add(duration), Duration: duration}) {
+		t.Error("a flash whose full duration has elapsed must no longer be lit")
+	}
+	if FlashLit(FlashParams{Since: time.Time{}, Now: since, Duration: duration}) {
+		t.Error("no flash in progress (zero Since) must never read as lit")
 	}
 }

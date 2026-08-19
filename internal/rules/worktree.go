@@ -82,7 +82,14 @@ func HasWarnings(result domain.CleanCheckResult) bool {
 // CleanBlockers names every refusal standing between a worktree and its removal,
 // in the order CleanUnsafeReason ranks them. A surface that can only print folds
 // them into one recap; one that can ask lifts them one by one.
+//
+// The parent worktree never gets a blocker: it is not "blocked from
+// deletion", it is never deletable at all — a different category the caller
+// must not render as a lifted safety refusal.
 func CleanBlockers(result domain.CleanCheckResult) []domain.CleanBlocker {
+	if result.IsParent {
+		return nil
+	}
 	var blockers []domain.CleanBlocker
 	if result.IsDirty {
 		blockers = append(blockers, domain.CleanBlocker{

@@ -4,9 +4,31 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
+
+// buildRunParams is what threads the real working directory into the
+// dashboard as Cwd — distinct from ProjectDir, which LoadConfig may have
+// resolved upward from a nested worktree. dashboard.Run itself needs a real
+// terminal to exercise, so this is the seam that keeps the wiring testable.
+func TestBuildRunParamsThreadsTheWorkingDirectoryAsCwd(t *testing.T) {
+	const cwd = "/repo/wt/feat-a"
+	result := shared.ConfigResult{ProjectDir: "/repo", StateDir: "/repo/.wtm"}
+
+	params := buildRunParams(cwd, result)
+
+	if params.Cwd != cwd {
+		t.Errorf("Cwd = %q, want %q — the directory wtm ui actually ran from", params.Cwd, cwd)
+	}
+	if params.ProjectDir != result.ProjectDir {
+		t.Errorf("ProjectDir = %q, want %q", params.ProjectDir, result.ProjectDir)
+	}
+	if params.StateDir != result.StateDir {
+		t.Errorf("StateDir = %q, want %q", params.StateDir, result.StateDir)
+	}
+}
 
 // The test process has no terminal, so runUI can be driven straight through its
 // two agent-facing refusals.

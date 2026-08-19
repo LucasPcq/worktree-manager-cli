@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -130,8 +131,13 @@ func TestCursorScrollsTheWindowWhenTheListOverflows(t *testing.T) {
 	for i := range branches {
 		branches[i] = string(rune('a' + i%26))
 	}
-	model := newTestModel(t, testWidth, 12, branches...)
+	// 13 is the shortest height that still fits one full row under the 3-line
+	// header, the panel chrome and the folded output panel.
+	model := newTestModel(t, testWidth, 13, branches...)
 	rows := model.layout().ListRows
+	if rows == 0 {
+		t.Fatal("test setup: no row fits, the scroll assertion below would be vacuous")
+	}
 
 	for range branches {
 		model = update(model, namedKey(tea.KeyDown))
@@ -200,9 +206,6 @@ func TestRefreshKeyReloadsBothWorktreesAndPRs(t *testing.T) {
 
 	if !model.loading || model.prsLoaded {
 		t.Errorf("refresh state = loading:%v prsLoaded:%v, want both reloading", model.loading, model.prsLoaded)
-	}
-	if got := model.prText("a"); got != domain.DashboardLoadingPRs {
-		t.Errorf("PR line = %q during a refresh, want %q", got, domain.DashboardLoadingPRs)
 	}
 	if cmd == nil {
 		t.Error("refresh must issue a command")
@@ -366,8 +369,8 @@ func TestPRsArriveAsynchronously(t *testing.T) {
 	if model.prsLoaded {
 		t.Fatal("PRs are not loaded at startup")
 	}
-	if got := model.prText("a"); got != domain.DashboardLoadingPRs {
-		t.Errorf("PR line = %q before the fetch lands, want %q", got, domain.DashboardLoadingPRs)
+	if pr := model.prFor("a"); pr != nil {
+		t.Errorf("PR for %q = %+v before the fetch lands, want nil", "a", pr)
 	}
 
 	model = update(model, prsMsg{prs: []domain.PRInfo{{Number: 42, Title: "Ship it", State: "OPEN", Branch: "a"}}})
@@ -375,11 +378,12 @@ func TestPRsArriveAsynchronously(t *testing.T) {
 	if !model.prsLoaded {
 		t.Fatal("prsMsg must mark the PRs loaded")
 	}
-	if got := model.prText("a"); !strings.Contains(got, "#42") || !strings.Contains(got, "Ship it") {
-		t.Errorf("PR line = %q, want the number and title", got)
+	pr := model.prFor("a")
+	if pr == nil || pr.Number != 42 || pr.Title != "Ship it" {
+		t.Errorf("PR for %q = %+v, want number 42 and title %q", "a", pr, "Ship it")
 	}
-	if got := model.prText("other"); got != domain.DashboardNoPR {
-		t.Errorf("branch without a PR = %q, want %q", got, domain.DashboardNoPR)
+	if model.prFor("other") != nil {
+		t.Error("a branch without a PR resolves to nil")
 	}
 }
 
@@ -399,10 +403,9 @@ func TestDetailShowsBothDivergenceReferentials(t *testing.T) {
 	body := strings.Join(model.detailBody(model.layout()), "\n")
 
 	for _, want := range []string{
-		domain.DashboardLabelBase, domain.BadgeGlyphAhead + "3",
-		domain.DashboardLabelOrigin, domain.BadgeGlyphAhead + "2 " + domain.BadgeGlyphBehind + "5",
-		domain.DashboardLabelPath, "/tmp/a",
-		domain.DashboardLabelCreated, "2026-08-18 14:03",
+		domain.BadgeGlyphAhead + "3",
+		domain.BadgeGlyphAhead + "2 " + domain.BadgeGlyphBehind + "5",
+		domain.DashboardLabelCreated, "/tmp/a",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("detail body is missing %q:\n%s", want, body)
@@ -441,11 +444,26 @@ func TestLayoutMatchesTheDocumentedGeometry(t *testing.T) {
 }
 
 func TestViewNeverOverflowsTheTerminal(t *testing.T) {
-	sizes := [][2]int{{120, 40}, {80, 30}, {100, 10}, {60, 6}, {40, 4}, {200, 3}, {20, 20}}
+	// 1, 2 and 3 pin the degenerate case: a terminal too short for the header
+	// plus the help bar to both fit at full size. ComputeDashboardLayout must
+	// shrink them rather than let the header overflow past what it was given.
+	sizes := [][2]int{
+		{120, 40}, {80, 30}, {100, 10}, {60, 6}, {40, 4},
+		{200, 4}, {200, 3}, {200, 2}, {200, 1},
+		{20, 20},
+	}
+
+	// A multi-line output entry (a hook or git error carrying embedded
+	// newlines) must not push the frame past the terminal height either: a
+	// sweep that only ever appends single-line entries cannot catch that
+	// class of bug. 60 embedded lines outgrows every output panel budget in
+	// the sizes above.
+	multiline := "hook failed:\n" + strings.Repeat("hook output line\n", 60)
 
 	for _, size := range sizes {
 		model := newTestModel(t, size[0], size[1], "a", "b", "c")
 		model = update(model, key(domain.KeyToggleOutput))
+		model = update(model, OutputLineMsg{Text: multiline})
 
 		view := model.View()
 		lines := strings.Split(view, "\n")
@@ -460,13 +478,53 @@ func TestViewNeverOverflowsTheTerminal(t *testing.T) {
 	}
 }
 
-func TestPRLineReportsAnUnavailableGitHubCLI(t *testing.T) {
+// TestMultilineOutputEntryDoesNotOverflowTheTerminal pins the exact bug
+// report: a hook or git failure message appended as one OutputLineMsg with
+// embedded newlines must not grow the frame past the terminal height. This
+// is the assertion that would have caught the original bug — renderPanel and
+// outputBody clipped by slice-entry count, not by rendered row count, so one
+// multi-line entry escaped the panel's own box and scrolled the alt screen.
+func TestMultilineOutputEntryDoesNotOverflowTheTerminal(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a")
+	model = update(model, key(domain.KeyToggleOutput))
+	model = update(model, OutputLineMsg{Text: strings.Repeat("hook output line\n", 30)})
 
-	model = update(model, prsMsg{conn: domain.GHConnectionNotInstalled})
+	view := model.View()
+	lines := strings.Split(view, "\n")
+	if len(lines) > testHeight {
+		t.Fatalf("view is %d lines after a multi-line output entry, want at most %d", len(lines), testHeight)
+	}
+}
 
-	if got := model.prText("a"); got == domain.DashboardNoPR {
-		t.Error("with no gh available the PR line must say so, not claim there is no PR")
+// TestOutputPanelScrollsInternallyRatherThanGrowing pins the fix's intent:
+// once an entry is split into one row each, more entries than the panel can
+// show scroll its own window (offset + OutputLines) instead of growing the
+// frame.
+func TestOutputPanelScrollsInternallyRatherThanGrowing(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model = update(model, key(domain.KeyToggleOutput))
+
+	before := len(strings.Split(model.View(), "\n"))
+
+	for i := 0; i < 50; i++ {
+		model = update(model, OutputLineMsg{Text: fmt.Sprintf("line %d", i)})
+	}
+
+	after := len(strings.Split(model.View(), "\n"))
+	if after != before {
+		t.Errorf("frame height = %d after appending output, want it unchanged at %d", after, before)
+	}
+
+	layout := model.layout()
+	if layout.OutputLines <= 0 {
+		t.Fatal("output panel has no visible rows to assert a window over")
+	}
+	body := model.outputBody(layout, layout.Output.Width-borderWidth-paddingWidth)
+	if len(body) != layout.OutputLines {
+		t.Errorf("output body = %d rows, want exactly the panel's %d visible rows", len(body), layout.OutputLines)
+	}
+	if !strings.Contains(strings.Join(body, "\n"), "line 49") {
+		t.Error("the output panel should show a window ending at the tail of appended lines")
 	}
 }
 

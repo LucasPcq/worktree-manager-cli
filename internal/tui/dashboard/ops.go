@@ -3,12 +3,15 @@ package dashboard
 import "github.com/LucasPcq/wtm/internal/flow"
 
 // operation is a flow the dashboard started and has not seen finish. Its target
-// is the worktree it works on, known only once the session naming it is answered.
+// is the worktree it works on, known only once the session naming it is
+// answered. stage is the presenter's latest Stage/HookPhase message — what the
+// list shows in place of a locked row's state pill.
 type operation struct {
 	id     int
 	kind   string
 	mode   flow.Mode
 	target string
+	stage  string
 }
 
 // operations is what the dashboard has in flight. A run declares how it holds the
@@ -37,6 +40,19 @@ func (o operations) retarget(id int, target string) operations {
 	return o
 }
 
+// stage records the run's latest Stage/HookPhase message — the text a locked
+// row shows in place of its state pill while the operation holding it works.
+func (o operations) stage(id int, text string) operations {
+	running := append([]operation(nil), o.running...)
+	for index := range running {
+		if running[index].id == id {
+			running[index].stage = text
+		}
+	}
+	o.running = running
+	return o
+}
+
 // holding reports the run that owns a worktree. A background run keeps its
 // target to itself: nothing else may act on a worktree still being worked on.
 func (o operations) holding(target string) (operation, bool) {
@@ -50,6 +66,11 @@ func (o operations) holding(target string) (operation, bool) {
 	}
 	return operation{}, false
 }
+
+// active reports whether any run is still in flight. The spinner loop reads it:
+// a locked row's glyph must keep advancing for the whole run, or it reads as
+// hung rather than as busy.
+func (o operations) active() bool { return len(o.running) > 0 }
 
 // blocking reports a run that holds the whole surface, and with it every action.
 func (o operations) blocking() (operation, bool) {

@@ -13,6 +13,11 @@ type Rect struct {
 // reference to agree with.
 type DashboardLayout struct {
 	Narrow bool
+	// HeaderTall reports which header rules.ComputeDashboardLayout chose for
+	// this frame: the six-row signature block when true, the compact
+	// three-row header otherwise. The renderer reads it rather than
+	// re-deriving the choice from Tabs.Height against a threshold of its own.
+	HeaderTall bool
 
 	Tabs   Rect
 	List   Rect

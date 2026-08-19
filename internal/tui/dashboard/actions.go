@@ -3,6 +3,7 @@ package dashboard
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -50,13 +51,13 @@ func (m Model) startCreate() (Model, tea.Cmd) {
 			opID:      id,
 			targetKey: declared.TargetKey,
 		},
-		Presenter: createPresenter{presenter{send: send}},
+		Presenter: createPresenter{presenter{send: send, id: id}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := createflow.Run(params)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 // startClean hands the removal to the same flow the CLI runs. The dashboard
@@ -83,13 +84,13 @@ func (m Model) startClean(branch string) (Model, tea.Cmd) {
 			opID:      id,
 			targetKey: declared.TargetKey,
 		},
-		Presenter: cleanPresenter{presenter{send: send}},
+		Presenter: cleanPresenter{presenter{send: send, id: id}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := cleanflow.Run(params)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 // startReparent changes the parent of the one worktree the menu was opened from.
@@ -111,13 +112,13 @@ func (m Model) startReparent(branch string) (Model, tea.Cmd) {
 			shape: modalStepper,
 			opID:  id,
 		},
-		Presenter: reparentPresenter{presenter{send: send}},
+		Presenter: reparentPresenter{presenter{send: send, id: id}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := reparentflow.Run(params)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 // startBatchReparent runs the same flow with nothing preset, so it asks which
@@ -138,13 +139,13 @@ func (m Model) startBatchReparent() (Model, tea.Cmd) {
 			shape: modalStepper,
 			opID:  id,
 		},
-		Presenter: reparentPresenter{presenter{send: send}},
+		Presenter: reparentPresenter{presenter{send: send, id: id}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := reparentflow.Run(params)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 // startPrune removes every finished worktree in one run. Like the batch
@@ -174,13 +175,13 @@ func (m Model) startPrune() (Model, tea.Cmd) {
 			shape: modalStepper,
 			opID:  id,
 		},
-		Presenter: prunePresenter{presenter{send: send}},
+		Presenter: prunePresenter{presenter{send: send, id: id}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := pruneflow.Run(params)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 // startSync rebases the row and the chain it hangs off: replaying a worktree onto
@@ -257,10 +258,10 @@ func (m Model) runSync(params runSyncParams) (Model, tea.Cmd) {
 		Presenter: syncPresenter{presenter{send: send}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := syncflow.Run(flowParams)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 func (m Model) baseBranch() string { return m.params.Config.Project.Worktrees.BaseBranch }
@@ -333,14 +334,18 @@ func (m Model) beginOp(params beginParams) (Model, int) {
 	return m.reflow(), id
 }
 
-func (m Model) finishOp(msg opDoneMsg) Model {
+// finishOp also invalidates the finished operation's target: its detail, if
+// currently on screen, just went stale under it and is reloaded — the cache is
+// refreshed, never emptied.
+func (m Model) finishOp(msg opDoneMsg) (Model, tea.Cmd) {
 	op, _ := m.ops.byID(msg.id)
 	m.ops = m.ops.end(msg.id)
+	m, detailCmd := m.invalidateDetail(op.target)
 	// ErrAborted is a run that already reported its own failure — a cascade whose
 	// steps each said what became of them. A second, redundant line under them
 	// would name nothing the panel does not already hold.
 	if msg.err == nil || errors.Is(msg.err, domain.ErrUserAborted) || errors.Is(msg.err, domain.ErrAborted) {
-		return m
+		return m, detailCmd
 	}
 
 	m = m.appendOutput(OutputLineMsg{
@@ -350,9 +355,9 @@ func (m Model) finishOp(msg opDoneMsg) Model {
 	// The privileged removal prompts for a password on the terminal this surface
 	// is holding, so it is never offered here — the way to it is named instead.
 	if errors.Is(msg.err, domain.ErrWorktreeRemoveFailed) {
-		return m.appendOutput(OutputLineMsg{Text: fmt.Sprintf(domain.DashboardPrivilegedHintFmt, op.target)})
+		return m.appendOutput(OutputLineMsg{Text: fmt.Sprintf(domain.DashboardPrivilegedHintFmt, op.target)}), detailCmd
 	}
-	return m
+	return m, detailCmd
 }
 
 // applyFlow handles what a running flow posted. Nothing here mutates anything the
@@ -365,6 +370,9 @@ func (m Model) applyFlow(msg tea.Msg) (Model, tea.Cmd) {
 		return m.appendOutput(msg), nil
 	case opTargetMsg:
 		m.ops = m.ops.retarget(msg.id, msg.target)
+		return m, nil
+	case opStageMsg:
+		m.ops = m.ops.stage(msg.id, msg.stage)
 		return m, nil
 	case createdMsg:
 		m.selectBranch = msg.branch
@@ -405,8 +413,21 @@ func (m Model) reload() tea.Cmd {
 	return tea.Batch(m.loadWorktreesCmd(false), m.treeCmd())
 }
 
+// appendOutput splits an incoming entry on its newlines so every stored line
+// is exactly one rendered row: outputBody's window (offset + OutputLines)
+// counts slice entries, and an entry carrying embedded newlines — a hook or
+// git failure message stored verbatim — would otherwise occupy several rows
+// under the guise of one, growing the panel past its budget. A bare \r is
+// dropped rather than kept: left in place it would move the terminal cursor
+// to column 0 mid-row and corrupt whatever is drawn after it.
 func (m Model) appendOutput(msg OutputLineMsg) Model {
-	m.outputLines = append(append([]string(nil), m.outputLines...), msg.Text)
+	m.outputLines = append(append([]string(nil), m.outputLines...), splitOutputLines(msg.Text)...)
 	m.outputOffset = max(len(m.outputLines)-m.layout().OutputLines, 0)
 	return m
+}
+
+func splitOutputLines(text string) []string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "")
+	return strings.Split(text, "\n")
 }

@@ -106,9 +106,10 @@ func Run(params RunParams) (domain.WorktreeStatus, error) {
 				Label: s.Branch,
 				Value: strconv.Itoa(i),
 				Badges: BuildTags(BuildTagsParams{
-					Status:   s,
-					PRs:      lastPRs,
-					Services: params.Services,
+					Status:       s,
+					PRs:          lastPRs,
+					Services:     params.Services,
+					ActiveBranch: params.ActiveBranch,
 				}),
 				Status: &status,
 			})
@@ -147,9 +148,10 @@ func Run(params RunParams) (domain.WorktreeStatus, error) {
 			}
 			lastPRs = loaded.PRs
 			badges := BadgesByValue(BadgesByValueParams{
-				Statuses: *holder,
-				PRs:      loaded.PRs,
-				Services: params.Services,
+				Statuses:     *holder,
+				PRs:          loaded.PRs,
+				Services:     params.Services,
+				ActiveBranch: params.ActiveBranch,
 			})
 			w.UpdateStepModel(0, applyBadges(badges))
 			w.SetLoading(false)
@@ -189,6 +191,9 @@ type BuildTagsParams struct {
 	Status   domain.WorktreeStatus
 	PRs      []domain.PRInfo
 	Services []domain.JobInfo
+	// ActiveBranch is the worktree the shell is currently inside. Empty means
+	// no worktree in this set is marked — a picker invoked outside any worktree.
+	ActiveBranch string
 }
 
 // BuildTags returns the left-column tags for a worktree row (parent, PR,
@@ -228,6 +233,9 @@ func BuildTags(params BuildTagsParams) []components.Badge {
 	}); ok {
 		tags = append(tags, badge)
 	}
+	if params.ActiveBranch != "" && s.Branch == params.ActiveBranch {
+		tags = append(tags, components.Badge{Text: domain.WorktreeActiveTag, Variant: components.BadgeSuccess})
+	}
 	return tags
 }
 
@@ -249,9 +257,10 @@ func BuildStatus(s domain.WorktreeStatus) components.Badge {
 
 // BadgesByValueParams holds the inputs for BadgesByValue.
 type BadgesByValueParams struct {
-	Statuses []domain.WorktreeStatus
-	PRs      []domain.PRInfo
-	Services []domain.JobInfo
+	Statuses     []domain.WorktreeStatus
+	PRs          []domain.PRInfo
+	Services     []domain.JobInfo
+	ActiveBranch string
 }
 
 // BadgesByValue builds the left-column tag sets for a slice of worktree statuses
@@ -262,9 +271,10 @@ func BadgesByValue(params BadgesByValueParams) map[string][]components.Badge {
 	out := make(map[string][]components.Badge, len(params.Statuses))
 	for i, s := range params.Statuses {
 		out[strconv.Itoa(i)] = BuildTags(BuildTagsParams{
-			Status:   s,
-			PRs:      params.PRs,
-			Services: params.Services,
+			Status:       s,
+			PRs:          params.PRs,
+			Services:     params.Services,
+			ActiveBranch: params.ActiveBranch,
 		})
 	}
 	return out

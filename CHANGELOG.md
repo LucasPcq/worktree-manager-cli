@@ -1,5 +1,55 @@
 # Changelog
 
+## v0.26.0 — `wtm ui` : un dashboard pour piloter ses worktrees
+
+Cette version apporte `wtm ui`, un dashboard plein écran d'où se pilotent les commandes
+mutantes, et la couche `internal/flow` qui le rend possible : chaque commande décrit son
+déroulé une seule fois, indépendamment de la surface, et le CLI comme le dashboard le
+rejouent. Aucune commande, aucun flag et aucune charge `--output json` existants n'ont
+changé.
+
+### New features
+
+- **`wtm ui` — le dashboard plein écran.** `create`, `clean`, `reparent`, `prune` et
+  `sync` s'y lancent avec leurs questions, leurs refus de sécurité et leur sortie
+  streamée dans un panneau dédié. Navigation clavier et souris, aide complète sur `?`.
+- **Un onglet Tree** pour voir la forêt de branches empilées, et le reparentage directement
+  depuis le dashboard.
+- **Un panneau détail qui décrit le travail d'un worktree**, pas seulement son
+  emplacement : dernier commit et activité récente, état réel du working tree
+  (`4 modified · 2 untracked · 1 staged` avec son volume de diff), enfants, drift `.env`,
+  ce qui empêche une suppression, et la pull request dépliée avec ses checks CI et sa
+  décision de review. Une section n'apparaît que si elle a quelque chose à dire — le
+  panneau ne récite pas `none` ni `up to date`.
+  Il distingue aussi trois absences qui se ressemblent : une donnée en cours de
+  rechargement, une absence légitime (`not configured`) et une panne
+  (`⚠ unavailable — <raison>`). Un `gh` cassé ne se lit pas « pas de PR ».
+- **La pull request s'ouvre dans le navigateur** depuis le panneau, à la touche `p` ou au
+  clic sur sa ligne.
+- **`wtm list` marque le worktree courant.** Son tag `● active` existait dans le code mais
+  n'était jamais renseigné : il fonctionne désormais, dans la sortie texte comme dans le
+  sélecteur interactif, et `wtm resolve` le montre aussi. Le dashboard le signale de son
+  côté dans son header, sa liste, son arbre et son détail.
+- **`ui.animations`** — nouvelle clé de config globale (`~/.config/wtm/config.toml`). Les
+  animations du dashboard sont actives par défaut ; `false` les éteint toutes d'un coup,
+  utile sur une liaison lente.
+
+### Improvements
+
+- **Nouvelle palette de couleurs**, appliquée à la sortie humaine de **toutes** les
+  commandes, pas seulement au dashboard : accents retravaillés et rôles clarifiés
+  (navigation, identité, état, structure). Les couleurs restent adaptatives clair/sombre
+  et `NO_COLOR` est toujours respecté.
+
+### Bug fixes
+
+- **`wtm sync`** : l'état du parent est affiné et l'étape parent reste visible ; les
+  parents que la cascade ne couvre pas sont désormais rafraîchis.
+- **La configuration globale documentée était invalide.** Le `README` montrait une clé
+  `agent` sous `~/.config/wtm/config.toml`, absente du schéma — et le décodage refusant
+  les clés inconnues, copier le bloc documenté faisait échouer **toutes** les commandes
+  avec `unknown keys in config.toml: agent`.
+
 ## v0.25.0 — Réutiliser une branche locale existante (`create`, `checkout`, `extract`)
 
 ### New features

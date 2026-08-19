@@ -64,6 +64,29 @@ func TestBadgesByValue(t *testing.T) {
 	}
 }
 
+func TestBuildTagsMarksTheActiveWorktree(t *testing.T) {
+	active := BuildTags(BuildTagsParams{
+		Status:       domain.WorktreeStatus{Branch: "feat/a"},
+		ActiveBranch: "feat/a",
+	})
+	if !hasActiveBadge(active) {
+		t.Error("the worktree matching ActiveBranch must carry the active tag")
+	}
+
+	other := BuildTags(BuildTagsParams{
+		Status:       domain.WorktreeStatus{Branch: "feat/b"},
+		ActiveBranch: "feat/a",
+	})
+	if hasActiveBadge(other) {
+		t.Error("a worktree that is not ActiveBranch must not carry the active tag")
+	}
+
+	unset := BuildTags(BuildTagsParams{Status: domain.WorktreeStatus{Branch: "feat/a"}})
+	if hasActiveBadge(unset) {
+		t.Error("an empty ActiveBranch must mark no worktree at all")
+	}
+}
+
 func TestBuildStatus_RebasingPrecedesDirty(t *testing.T) {
 	if pill := BuildStatus(domain.WorktreeStatus{IsDirty: true, RebaseInProgress: true}); pill.Text != "rebasing" {
 		t.Fatalf("status pill = %q, want rebasing (should win over dirty)", pill.Text)
@@ -79,6 +102,15 @@ func TestBuildStatus_RebasingPrecedesDirty(t *testing.T) {
 func hasPRBadge(badges []components.Badge) bool {
 	for _, b := range badges {
 		if strings.HasPrefix(b.Text, "PR #") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasActiveBadge(badges []components.Badge) bool {
+	for _, b := range badges {
+		if b.Text == domain.WorktreeActiveTag {
 			return true
 		}
 	}

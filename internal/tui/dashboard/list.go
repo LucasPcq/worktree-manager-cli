@@ -2,10 +2,12 @@ package dashboard
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
@@ -47,29 +49,48 @@ func (m Model) listBody(layout domain.DashboardLayout) []string {
 // renderRow draws one worktree over two lines: what it is called and, under it,
 // what its state amounts to. The selected one is tinted across its whole width
 // and carries the accent bar, so the row the keyboard is on reads as a block
-// rather than as a marker.
+// rather than as a marker. The worktree the shell is currently in is named by
+// a "you are here" tag on the meta line (rowMeta), the same vocabulary as
+// "from main" or "PR #67" — a bare glyph on the name said nothing on its own.
+// A worktree a background run holds shows its progress instead: the spinner
+// replaces the state pill, and the stage the run posted replaces the meta
+// line — the same vocabulary as the freshness contract, the spinner says
+// "in progress", never "broken".
 func (m Model) renderRow(index, width int) []string {
 	status := m.statuses[index]
 	inner := max(width-rowBarWidth, 0)
+
+	name := status.Branch
+
 	pill := worktreepicker.BuildStatus(status)
+	pillText, pillRendered := pill.Text, pill.Render()
+	metaPlain, metaColored := m.rowMeta(status, false), m.rowMeta(status, true)
+	if op, locked := m.ops.holding(status.Branch); locked {
+		pillText, pillRendered = m.spinner.View(), m.spinner.View()
+		metaPlain, metaColored = op.stage, op.stage
+	}
 
 	if index == m.cursor {
 		bar := styles.DashboardRowBar.Render(rowBar + " ")
-		name := spread(status.Branch, pill.Text, inner)
-		meta := truncate(m.rowMeta(status, false), inner)
+		line := spread(name, pillText, inner)
+		rowStyle := styles.DashboardRowSelected
+		if status.Branch == m.flashBranch && rules.FlashLit(rules.FlashParams{
+			Since: m.flashSince, Now: time.Now(), Duration: domain.DashboardRowFlash,
+		}) {
+			rowStyle = styles.DashboardRowFlashBright
+		}
 		return []string{
-			bar + styles.DashboardRowSelected.Width(inner).Bold(true).Render(name),
-			bar + styles.DashboardRowSelected.Width(inner).Render(meta),
+			bar + rowStyle.Width(inner).Bold(true).Render(line),
+			bar + rowStyle.Width(inner).Render(truncate(metaPlain, inner)),
 		}
 	}
 
-	name := spread(styles.DashboardRowName.Render(status.Branch), pill.Render(), inner)
-	meta := m.rowMeta(status, true)
+	line := spread(styles.DashboardRowName.Render(name), pillRendered, inner)
 	// Both lines are padded to the same width: the row is one clickable block, and
 	// a short second line would cut its zone short.
 	return []string{
-		rowIndent + name,
-		rowIndent + pad(truncateRendered(meta, inner), inner),
+		rowIndent + line,
+		rowIndent + pad(truncateRendered(metaColored, inner), inner),
 	}
 }
 
@@ -91,6 +112,9 @@ func (m Model) rowMeta(status domain.WorktreeStatus, colored bool) string {
 			continue
 		}
 		parts = append(parts, tag.Text)
+	}
+	if status.Branch != "" && status.Branch == m.activeBranch {
+		parts = append(parts, styleMeta(domain.DetailYouAreHere, colored, styles.DashboardRowMeta))
 	}
 	if len(parts) == 0 {
 		return styleMeta(domain.DashboardMetaNothing, colored, styles.DashboardRowMeta)

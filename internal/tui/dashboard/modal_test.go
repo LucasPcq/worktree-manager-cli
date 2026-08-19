@@ -494,7 +494,7 @@ func TestASkippedStepIsReconsideredOnTheWayForward(t *testing.T) {
 	if mo.index != 0 {
 		t.Fatalf("index = %d, want to land back on the selection", mo.index)
 	}
-	mo, _ = mo.update(key(" "))               // uncheck one — a child now survives
+	mo, _ = mo.update(key(" ")) // uncheck one — a child now survives
 	mo, _ = mo.update(namedKey(tea.KeyEnter))
 
 	if mo.index != 1 {

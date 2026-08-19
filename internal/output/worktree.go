@@ -90,7 +90,7 @@ func formatTag(isParent bool, isActive bool) string {
 		tags = styles.Muted.Render("(parent)")
 	}
 	if isActive {
-		active := styles.Success.Render("● active")
+		active := styles.Success.Render(domain.WorktreeActiveTag)
 		if tags != "" {
 			tags += "  " + active
 		} else {

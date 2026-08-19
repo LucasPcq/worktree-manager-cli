@@ -3,6 +3,7 @@ package dashboard
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -59,23 +60,101 @@ func TestTheSelectedRowIsTintedAcrossItsWholeWidth(t *testing.T) {
 	}
 }
 
-func TestTheHeaderNamesTheProductAndUnderlinesTheActiveTab(t *testing.T) {
+// TestTheTallHeaderIsASignatureBlock pins the six-row structure at a
+// comfortably tall terminal (testHeight is above
+// domain.DashboardHeaderTallThreshold): three rows of drawn wordmark, each
+// carrying one piece of context, a blank line (not optional — "too close to
+// the tabs" is one of the three complaints it fixes), the tab bar with its
+// count-free right cluster, and the rule.
+func TestTheTallHeaderIsASignatureBlock(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model.repoName, model.activeBranch = "worktree-manager-cli", "a"
+	model.params.Config.Project.Worktrees.BaseBranch = "main"
 
 	header := model.renderHeader(model.layout())
 	lines := strings.Split(header, "\n")
 
-	if len(lines) != domain.DashboardHeaderHeight {
-		t.Fatalf("the header is %d lines, want %d", len(lines), domain.DashboardHeaderHeight)
+	if len(lines) != domain.DashboardHeaderTallHeight {
+		t.Fatalf("the header is %d lines, want %d", len(lines), domain.DashboardHeaderTallHeight)
 	}
-	if !strings.Contains(lines[0], domain.DashboardWordmark) || !strings.Contains(lines[0], domain.DashboardTabWorktrees) {
-		t.Errorf("header = %q, want the wordmark and the tabs", lines[0])
+	for i := 0; i < 3; i++ {
+		if !strings.Contains(lines[i], domain.DashboardWordmarkLines[i]) {
+			t.Errorf("line %d = %q, want the wordmark row %q", i, lines[i], domain.DashboardWordmarkLines[i])
+		}
 	}
-	if !strings.Contains(lines[0], "2 worktrees") {
-		t.Errorf("header = %q, want the count of what is listed", lines[0])
+	if !strings.Contains(lines[0], "worktree-manager-cli") {
+		t.Errorf("line 0 = %q, want the repository name", lines[0])
 	}
-	if !strings.Contains(lines[1], domain.DashboardActiveRuleGlyph) {
-		t.Errorf("rule = %q, want the active tab underlined rather than filled", lines[1])
+	if !strings.Contains(lines[1], "main") || !strings.Contains(lines[1], "a") {
+		t.Errorf("line 1 = %q, want the base branch and the active worktree", lines[1])
+	}
+	if !strings.Contains(lines[2], "2 worktrees") {
+		t.Errorf("line 2 = %q, want the worktree count", lines[2])
+	}
+	if strings.TrimSpace(lines[3]) != "" {
+		t.Errorf("line 3 = %q, want a blank line separating the block from the tabs", lines[3])
+	}
+	if !strings.Contains(lines[4], domain.DashboardTabWorktrees) {
+		t.Errorf("line 4 = %q, want the tabs", lines[4])
+	}
+	if strings.Contains(lines[4], "2 worktrees") {
+		t.Error("the tab bar must not repeat the count — it already sits in the signature block")
+	}
+	if !strings.Contains(lines[5], domain.DashboardActiveRuleGlyph) {
+		t.Errorf("line 5 = %q, want the active tab underlined rather than filled", lines[5])
+	}
+}
+
+// TestTheSignatureBlockRowsAlignWithTheRepoNameAbove pins that "base main ·
+// ● branch" and "N worktrees · fetched" start at the same column as the
+// repository name on the row above them — no extra indent from a leading
+// space meant for the compact header's inline wordmark text (row 1) or the
+// count's own padding for its place at the end of the compact tab bar
+// (row 2).
+func TestTheSignatureBlockRowsAlignWithTheRepoNameAbove(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model.repoName, model.activeBranch = "worktree-manager-cli", "a"
+	model.params.Config.Project.Worktrees.BaseBranch = "main"
+	model.fetchedAt = time.Now().Add(-72 * time.Hour)
+
+	lines := strings.Split(model.renderHeader(model.layout()), "\n")
+	repoCol := stripANSI(lines[0])[:strings.Index(stripANSI(lines[0]), "worktree-manager-cli")]
+	baseCol := stripANSI(lines[1])[:strings.Index(stripANSI(lines[1]), "base")]
+	countCol := stripANSI(lines[2])[:strings.Index(stripANSI(lines[2]), "2 worktrees")]
+
+	if lipgloss.Width(repoCol) != lipgloss.Width(baseCol) {
+		t.Errorf("repo name starts at column %d, base branch at column %d — they must align",
+			lipgloss.Width(repoCol), lipgloss.Width(baseCol))
+	}
+	if lipgloss.Width(repoCol) != lipgloss.Width(countCol) {
+		t.Errorf("repo name starts at column %d, worktree count at column %d — they must align",
+			lipgloss.Width(repoCol), lipgloss.Width(countCol))
+	}
+}
+
+// TestTheHeaderFallsBackBelowTheTallThreshold pins the degrade rule itself:
+// a terminal too short for the signature block gets the compact header
+// instead — six rows of chrome would be a quarter of a 24-row terminal.
+func TestTheHeaderFallsBackBelowTheTallThreshold(t *testing.T) {
+	model := newTestModel(t, testWidth, domain.DashboardHeaderTallThreshold-1, "a", "b")
+
+	header := model.renderHeader(model.layout())
+	lines := strings.Split(header, "\n")
+
+	if len(lines) != domain.DashboardHeaderCompactHeight {
+		t.Fatalf("the header is %d lines, want the compact %d", len(lines), domain.DashboardHeaderCompactHeight)
+	}
+	if !strings.Contains(lines[0], domain.DashboardWordmark) {
+		t.Errorf("context line = %q, want the plain wordmark", lines[0])
+	}
+	if strings.Contains(header, domain.DashboardWordmarkLines[0]) {
+		t.Error("the drawn wordmark must not appear below the tall threshold")
+	}
+	if !strings.Contains(lines[1], "2 worktrees") {
+		t.Errorf("header bar = %q, want the count of what is listed — the compact header keeps it there", lines[1])
+	}
+	if !strings.Contains(lines[2], domain.DashboardActiveRuleGlyph) {
+		t.Errorf("rule = %q, want the active tab underlined rather than filled", lines[2])
 	}
 }
 
@@ -236,27 +315,22 @@ func TestTheDetailIsGroupedUnderHeadings(t *testing.T) {
 	model = update(model, prsMsg{})
 
 	body := model.detailBody(model.layout())
-	joined := strings.Join(body, "\n")
 
-	for _, heading := range []string{
-		domain.DashboardSectionWorktree, domain.DashboardSectionDivergence, domain.DashboardSectionReview,
-	} {
-		index := lineIndex(body, heading)
-		if index < 0 {
-			t.Fatalf("the detail is missing the %q group", heading)
-		}
-		if body[index-1] != "" || body[index+1] != "" {
-			t.Errorf("%q must stand on its own, with a blank line either side", heading)
-		}
+	index := lineIndex(body, domain.DetailSectionLinks)
+	if index < 0 {
+		t.Fatalf("the detail is missing the %q group", domain.DetailSectionLinks)
 	}
-	if !strings.Contains(body[0], "a") || !strings.Contains(body[0], "dirty") {
-		t.Errorf("the heading = %q, want the worktree and its state", body[0])
+	if body[index-1] != "" || body[index+1] != "" {
+		t.Errorf("%q must stand on its own, with a blank line either side", domain.DetailSectionLinks)
+	}
+	if !strings.Contains(body[0], "a") {
+		t.Errorf("the heading = %q, want the worktree name", body[0])
+	}
+	if strings.Contains(body[0], "dirty") {
+		t.Error("the working-tree state belongs to the vital strip, not the title row")
 	}
 	if !strings.Contains(body[1], domain.DashboardRuleGlyph) {
-		t.Error("a rule must separate the heading from the fields, as in the context menu")
-	}
-	if strings.Contains(joined, domain.DashboardLabelState) {
-		t.Error("the working-tree state is the pill in the heading; repeating it as a field says it twice")
+		t.Error("a rule must separate the heading from the vital strip")
 	}
 }
 

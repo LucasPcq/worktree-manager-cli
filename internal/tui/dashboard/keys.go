@@ -29,6 +29,7 @@ const (
 	keyNew          = domain.KeyNew
 	keyMenu         = domain.KeyMenu
 	keyActions      = domain.KeyActions
+	keyOpenPR       = domain.KeyOpenPR
 	keySpace        = " "
 	keyOutputUp     = "shift+up"
 	keyOutputDown   = "shift+down"

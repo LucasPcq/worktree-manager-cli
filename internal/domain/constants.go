@@ -1,6 +1,8 @@
 // Package domain defines shared types, constants, and errors for the wtm CLI.
 package domain
 
+import "time"
+
 const (
 	// AppName is the canonical name of the CLI binary.
 	AppName = "wtm"
@@ -161,11 +163,12 @@ const (
 	OnConflictResolve = "resolve"
 
 	// Status codes of the XY field of `git status --porcelain`.
-	PorcelainUntracked = "??"
-	PorcelainIgnored   = "!!"
-	PorcelainRename    = "R"
-	PorcelainCopy      = "C"
-	PorcelainDeleted   = "D"
+	PorcelainUntracked  = "??"
+	PorcelainIgnored    = "!!"
+	PorcelainUnmodified = ' '
+	PorcelainRename     = "R"
+	PorcelainCopy       = "C"
+	PorcelainDeleted    = "D"
 
 	// PorcelainFieldSep separates the records of `git status --porcelain -z`.
 	PorcelainFieldSep = "\x00"
@@ -256,9 +259,15 @@ const (
 	FlagWithPRs = "with-prs"
 
 	// GHPRFields is the JSON field set passed to `gh pr list/view --json`. It
-	// holds exactly what wtm consumes: PR identity, head/base branches, url, and
-	// the fork flag (isCrossRepository).
+	// holds exactly what wtm consumes: PR identity, head/base branches, url,
+	// and the fork flag (isCrossRepository).
 	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository,isDraft"
+
+	// GHPRFieldsWithChecks adds the review decision and the CI status-check
+	// rollup. Only the dashboard's REVIEW section renders them, and
+	// statusCheckRollup is resolved per pull request, so every other surface
+	// stays on the narrow set rather than paying for a field it never shows.
+	GHPRFieldsWithChecks = GHPRFields + ",reviewDecision,statusCheckRollup"
 
 	// GHPRFieldsWithState is the field set for the all-states PR listing used by
 	// `wtm tree --with-prs`, which must surface merged/closed PRs (clean
@@ -271,6 +280,38 @@ const (
 	PRStateOpen   = "open"
 	PRStateMerged = "merged"
 	PRStateClosed = "closed"
+
+	// GHCheckConclusion* are the `conclusion` values a statusCheckRollup entry
+	// carries once it has finished running (a modern Checks API CheckRun). A
+	// NEUTRAL or SKIPPED check counts as passed — the least-wrong of three
+	// buckets, disclosed here rather than accidental: it can conflate "ran and
+	// mattered" with "never ran at all". CANCELLED and TIMED_OUT block the PR
+	// the same way FAILURE does. ACTION_REQUIRED is not a failure: the workflow
+	// needs authorization to run (typically a first run from a fork awaiting
+	// approval) — it has not run and broken, it has not started, so it reads
+	// as pending, not ✗.
+	GHCheckConclusionSuccess        = "SUCCESS"
+	GHCheckConclusionFailure        = "FAILURE"
+	GHCheckConclusionNeutral        = "NEUTRAL"
+	GHCheckConclusionSkipped        = "SKIPPED"
+	GHCheckConclusionCancelled      = "CANCELLED"
+	GHCheckConclusionTimedOut       = "TIMED_OUT"
+	GHCheckConclusionActionRequired = "ACTION_REQUIRED"
+
+	// GHCheckState* are the `state` values a legacy StatusContext rollup entry
+	// carries — the Status API, used by integrations that predate the Checks
+	// API (CircleCI, Travis, and similar). A rollup mixes both shapes; an
+	// entry with no `conclusion` is not necessarily still running, it may be
+	// reporting through `state` instead.
+	GHCheckStateSuccess = "SUCCESS"
+	GHCheckStateError   = "ERROR"
+	GHCheckStateFailure = "FAILURE"
+	GHCheckStatePending = "PENDING"
+
+	// GHReviewDecision* are the raw `reviewDecision` values `gh` returns.
+	GHReviewDecisionApproved         = "APPROVED"
+	GHReviewDecisionChangesRequested = "CHANGES_REQUESTED"
+	GHReviewDecisionReviewRequired   = "REVIEW_REQUIRED"
 
 	// Checkout wizard badge texts: a PR whose branch already has a local
 	// worktree ("linked") or that comes from a fork ("fork") is disabled.
@@ -304,6 +345,11 @@ const (
 	// dirty/clean status pill.
 	BadgeGlyphDirty = "⚠"
 	BadgeGlyphClean = "✓"
+
+	// WorktreeActiveTag marks the worktree the shell is currently inside, in
+	// both `wtm list`'s text output and its interactive picker — one wording,
+	// reused rather than restated.
+	WorktreeActiveTag = "● active"
 
 	// SummaryNone stands in for a set answer the user left empty, in a wizard
 	// breadcrumb that must still show the step was reached.
@@ -928,12 +974,52 @@ const (
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"
 
+	// FetchStaleAfter est l'âge au-delà duquel les refs origin sont annoncées
+	// périmées dans le header. En dessous, rien ne s'affiche : un marqueur
+	// permanent ne signale plus rien.
+	FetchStaleAfter = 24 * time.Hour
+
+	AgeJustNow = "just now"
+	AgeMinFmt  = "%d min ago"
+	AgeHourFmt = "%d h ago"
+	AgeDayFmt  = "%d d ago"
+	AgeWeekFmt = "%d w ago"
+
 	// DashboardNarrowWidth is the terminal width under which the dashboard drops
 	// the side-by-side detail panel for a list-only view, detail on a key.
 	DashboardNarrowWidth = 100
 	// DashboardPollSeconds paces the local-git poll. `gh` is never polled: PRs load
 	// once asynchronously and refresh only on KeyRefresh.
 	DashboardPollSeconds = 3
+	// DashboardDetailCommits is the number of commits requested for ACTIVITY.
+	// DashboardDetailChanges is CHANGES' equivalent fixed cap. Both are fixed
+	// maximums, not a budget split with the leftover height: a list either
+	// fits its cap or folds the rest into "… N more", regardless of the other
+	// list's state or how much panel height happens to be free.
+	DashboardDetailCommits = 5
+	DashboardDetailChanges = 5
+	// DashboardDetailDebounce delays a detail load so a fast walk through the
+	// list does not fire one git log per row crossed.
+	DashboardDetailDebounce = 150 * time.Millisecond
+	// DashboardSpinnerGrace is the delay before a loading marker appears: below
+	// it, the data arrives before the marker would.
+	DashboardSpinnerGrace = 200 * time.Millisecond
+
+	DashboardRefreshing   = "refreshing"
+	DashboardLoadingField = "loading…"
+
+	// DashboardAnimationCap is the hard ceiling every dashboard animation is
+	// checked against: nothing the surface draws on its own may run longer.
+	DashboardAnimationCap = 400 * time.Millisecond
+	// DashboardTabSlide is how long the active tab's rule takes to slide to its
+	// new position. DashboardRowFlash is how long a just-created worktree's row
+	// stays lit before it fades back into the ordinary selected look.
+	DashboardTabSlide = 200 * time.Millisecond
+	DashboardRowFlash = 400 * time.Millisecond
+	// DashboardAnimFrame paces the redraw ticks a bounded animation schedules
+	// while it runs — cheap enough to be invisible, coarse enough that it is
+	// never mistaken for real work.
+	DashboardAnimFrame = 50 * time.Millisecond
 
 	DashboardListWidthPercent = 40
 	DashboardMinListWidth     = 24
@@ -945,9 +1031,23 @@ const (
 	DashboardChromeHeight = 3
 	DashboardTitleGap     = 1
 
-	// DashboardHeaderHeight is the top bar: the wordmark and its tabs, then the
-	// rule that underlines the active one.
-	DashboardHeaderHeight = 2
+	// DashboardHeaderCompactHeight is the fallback header — the context line
+	// (where you are: repo, base branch, active worktree), the wordmark and
+	// its tabs, then the rule that underlines the active one — shown below
+	// DashboardHeaderTallThreshold rows. No rule separates the first two: the
+	// tab rule underneath already does that job.
+	//
+	// DashboardHeaderTallHeight is the six-row signature block instead: the
+	// drawn wordmark's three rows (each carrying one piece of the same
+	// context the compact header packs onto one line), a blank line, the tab
+	// bar, and the rule. DashboardHeaderTallThreshold is the terminal height
+	// above which it shows — six rows of chrome on a 24-row terminal is a
+	// quarter of the screen. The choice between the two is made once, in
+	// rules.DashboardHeaderHeight; nothing else reads these two heights
+	// directly.
+	DashboardHeaderCompactHeight = 3
+	DashboardHeaderTallHeight    = 6
+	DashboardHeaderTallThreshold = 30
 
 	// DashboardRowHeight is how many lines one worktree takes — its name, then
 	// what its state amounts to — and DashboardRowGap the blank line between two.
@@ -967,8 +1067,24 @@ const (
 	DashboardModalMinWidth     = 40
 	DashboardModalMaxWidth     = 88
 
-	// DashboardWordmark names the product in the header bar.
-	DashboardWordmark        = "wtm"
+	// DashboardWordmark names the product in the compact fallback header.
+	// DashboardWordmarkGap is the fixed gap between the drawn wordmark block
+	// (DashboardWordmarkLines, below) and the context text beside it in the
+	// tall header, so every row's text starts on the same column regardless
+	// of that row's own content.
+	DashboardWordmark    = "wtm"
+	DashboardWordmarkGap = "   "
+	// DashboardContextSep joins the header context line's segments (repo, base,
+	// active worktree). DashboardFetchedFmt and DashboardBaseFmt are its
+	// individual segments; DashboardActiveGlyph marks the active worktree.
+	// DashboardNeverFetched is its own wording rather than an empty age: a
+	// repository that has never fetched is the most stale case there is, and
+	// saying nothing about its age would read as "fetched recently".
+	DashboardContextSep      = " · "
+	DashboardFetchedFmt      = "fetched %s"
+	DashboardNeverFetched    = "never fetched"
+	DashboardActiveGlyph     = "●"
+	DashboardBaseFmt         = "base %s"
 	DashboardCountFmt        = "%d worktrees"
 	DashboardCountOneFmt     = "%d worktree"
 	DashboardTreeCountFmt    = "%d nodes"
@@ -985,7 +1101,12 @@ const (
 	DashboardDetailTitle  = "Detail"
 	DashboardOutputTitle  = "Output"
 
-	DashboardEmptyList   = "No worktrees."
+	// DashboardEmptyList is shown when the list loaded but came back with
+	// nothing — in a valid repository the main worktree is always present, so
+	// this means the listing itself did not go as expected. Neutral wording on
+	// purpose: naming an action ("press n…") here would be confident advice in
+	// the one state where the surface does not know what is going on.
+	DashboardEmptyList   = "No worktrees found."
 	DashboardEmptyTree   = "No worktrees to lay out."
 	DashboardLoadingTree = "Building the tree…"
 	// DashboardTreeVirtual marks a node standing in for a parent branch that has
@@ -1001,28 +1122,20 @@ const (
 	DashboardTreePRFmt       = "PR #%d"
 	DashboardTreeAheadFmt    = "%s %s%d"
 	DashboardTreeDivergedFmt = "%s %s%d %s%d"
-	DashboardEmptySelection  = "No worktree selected."
-	DashboardEmptyOutput     = "No operation output yet."
-	DashboardLoadingPRs      = "loading PRs…"
-	DashboardNoPR            = "none"
-	DashboardNoValue         = "—"
+	// DashboardEmptySelection and DashboardEmptyOutput name their next action:
+	// both states are genuinely reachable and persistent, unlike
+	// DashboardEmptyList above.
+	DashboardEmptySelection = "Select a worktree to see what's in it."
+	DashboardEmptyOutput    = "Output from create, clean and sync runs appears here."
 	// DashboardCreatedFormat renders a worktree's creation date in local time.
 	DashboardCreatedFormat = "2006-01-02 15:04"
 
-	// The detail panel groups its fields under these headings.
-	DashboardSectionWorktree   = "WORKTREE"
-	DashboardSectionDivergence = "DIVERGENCE"
-	DashboardSectionReview     = "REVIEW"
 	// DashboardPRFmt renders a pull request as number, title and state.
 	DashboardPRFmt = "#%d %s (%s)"
 
 	DashboardLabelPath    = "Path"
 	DashboardLabelParent  = "Parent"
-	DashboardLabelState   = "State"
-	DashboardLabelBase    = "Base"
-	DashboardLabelOrigin  = "Origin"
 	DashboardLabelRebase  = "Rebase"
-	DashboardLabelPR      = "PR"
 	DashboardLabelCreated = "Created"
 
 	DashboardRebaseInProgress = "in progress"
@@ -1151,6 +1264,9 @@ const (
 	// DashboardOperationLabel names a failed run in the output panel when the
 	// failure is the run itself rather than one of its phases.
 	DashboardOperationLabel = "operation"
+	// DashboardOpenPRLabel names a failed browser launch for the REVIEW
+	// section's PR line, in the same "✗ <label>: <err>" form.
+	DashboardOpenPRLabel = "open PR"
 
 	// KeyNew opens the new-worktree wizard, the keyboard equivalent of the list
 	// header's add button.
@@ -1166,10 +1282,138 @@ const (
 	// equivalent of clicking its header.
 	KeyToggleOutput = "o"
 	// KeyHelp toggles the key reference overlay.
+	// KeyOpenPR opens the selected worktree's pull request in a browser. The
+	// detail panel's PR line is also clickable; the key is what makes the action
+	// reachable without a mouse and over a plain ssh terminal.
+	KeyOpenPR = "p"
+
 	KeyHelp = "?"
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so
 	// a persistent dashboard is never left by accident.
 	KeyQuit = "q"
+
+	// GitLogFieldSep separates fields in `git log --format`. The pipe cannot
+	// serve: a commit subject may contain one. The ASCII unit separator can't
+	// appear in ordinary commit text, so it can.
+	GitLogFieldSep = "\x1f"
+	// GitLogFormat feeds `git log --format`: short SHA, subject, author name,
+	// strict ISO 8601 date, separated by GitLogFieldSep.
+	GitLogFormat = "%h" + GitLogFieldSep + "%s" + GitLogFieldSep + "%an" + GitLogFieldSep + "%cI"
+	// GitLogFieldCount is the number of fields GitLogFormat produces.
+	GitLogFieldCount = 4
+	// FetchHeadFileName is the file whose mtime marks the last successful fetch.
+	FetchHeadFileName = "FETCH_HEAD"
+
+	// DetailSection* names the detail panel's four conditional sections. A
+	// section is emitted only when it has something to say, so its position
+	// varies between worktrees — its rank in DetailSectionDropOrder never does.
+	DetailSectionReview   = "REVIEW"
+	DetailSectionChanges  = "CHANGES"
+	DetailSectionActivity = "ACTIVITY"
+	DetailSectionLinks    = "LINKS"
+
+	DetailYouAreHere = "● you are here"
+	DetailMoreFmt    = "…  %d more"
+	// DetailBlockedFmt names a safety refusal, not an impossibility: these
+	// worktrees can be deleted with --force, so the line says what unlocks
+	// deletion instead of claiming it cannot happen. The parent worktree is a
+	// different category — it is never deletable at all — and never renders
+	// this line (rules.CleanBlockers returns nothing for it).
+	DetailBlockedFmt = "⚠ deletion requires --force — %s"
+
+	// Chip* build the vital strip. ChipBaseFmt/ChipOrigin*Fmt reuse
+	// BadgeGlyphAhead/BadgeGlyphBehind so the arrow glyph is defined once.
+	ChipClean             = "clean"
+	ChipDirty             = "dirty"
+	ChipRebasing          = "rebasing"
+	ChipBaseFmt           = "base " + BadgeGlyphAhead + "%d"
+	ChipActiveFmt         = "active %s"
+	ChipOriginAheadFmt    = "origin " + BadgeGlyphAhead + "%d"
+	ChipOriginBehindFmt   = "origin " + BadgeGlyphBehind + "%d"
+	ChipOriginDivergedFmt = "origin " + BadgeGlyphAhead + "%d " + BadgeGlyphBehind + "%d"
+
+	// DetailSectionChrome is what one section spends beyond its body lines: a
+	// blank separator row before its title, the title row itself, and a blank
+	// row under it. Verified against the spec §6 mockup
+	// (docs/superpowers/specs/2026-08-19-wtm-ui-identity-design.md, lines
+	// 130-134): REVIEW spans 5 rows for 2 body lines, so chrome is 5-2=3, not 2.
+	// There is no DetailFixedRows: DetailSections reserves exactly what REVIEW
+	// and LINKS actually cost, computed via sectionsHeight, instead of a
+	// constant that had to secretly agree with every section builder.
+	DetailSectionChrome = 3
+
+	// DetailFieldFmt renders a LINKS field as a padded label followed by its
+	// value ("Parent    main"). DetailListSep joins a list of names into one
+	// field's value.
+	DetailFieldFmt = "%-10s%s"
+	DetailListSep  = ", "
+
+	// DetailListIndent prefixes every body line of every detail section
+	// (CHANGES, ACTIVITY, LINKS, REVIEW's PR header and checks line), so no
+	// section looks misaligned against its neighbours. DetailFileFmt renders
+	// one changed file as its glyph and its path, DetailUntrackedGlyph stands
+	// in for the raw "??" porcelain code. DetailCommitFmt renders one commit
+	// as its short SHA and subject.
+	DetailListIndent     = "  "
+	DetailFileFmt        = "%s  %s"
+	DetailUntrackedGlyph = "?"
+	DetailCommitFmt      = "%s  %s"
+
+	// DetailReviewHeaderFmt renders a PR as its number, title and state.
+	DetailReviewHeaderFmt = "#%d  %s  %s"
+
+	// DetailChecks*Glyph mark a status-check's outcome on the REVIEW checks
+	// line. DetailChecksFmt renders the passed/failed pair, DetailChecksPendingFmt
+	// appends the pending count only when there is one. DetailReviewDecisionFmt
+	// renders the human-readable review decision; the DetailReviewDecision*
+	// labels are what a raw GHReviewDecision* enum value maps to.
+	DetailChecksPassedGlyph  = "✓"
+	DetailChecksFailedGlyph  = "✗"
+	DetailChecksPendingGlyph = "⧗"
+	DetailChecksFmt          = "checks " + DetailChecksPassedGlyph + " %d  " + DetailChecksFailedGlyph + " %d"
+	DetailChecksPendingFmt   = "  " + DetailChecksPendingGlyph + " %d"
+	DetailReviewDecisionFmt  = "review  %s"
+
+	DetailReviewDecisionApproved         = "approved"
+	DetailReviewDecisionChangesRequested = "changes requested"
+	DetailReviewDecisionReviewRequired   = "review required"
+
+	// DashboardLabelChildren and DashboardLabelEnv extend the LINKS field
+	// labels (DashboardLabelParent, DashboardLabelCreated, DashboardLabelPath
+	// already exist for the old WORKTREE section).
+	DashboardLabelChildren = "Children"
+	DashboardLabelEnv      = "Env"
+
+	// Changes*Fmt render the CHANGES section's summary line, one fragment per
+	// porcelain category plus the diff volume, each omitted when zero.
+	// ChangesDeletionGlyph is the minus sign, distinct from an ASCII hyphen so a
+	// deletion count never reads as a negative number.
+	ChangesModifiedFmt   = "%d modified"
+	ChangesUntrackedFmt  = "%d untracked"
+	ChangesStagedFmt     = "%d staged"
+	ChangesDeletionGlyph = "−"
+	ChangesDiffStatFmt   = "+%d " + ChangesDeletionGlyph + "%d"
+
+	// ActivityFilesChangedFmt renders ACTIVITY's title-row file count
+	// alongside its diff volume — the committed-diff counterpart to CHANGES'
+	// porcelain breakdown. `git diff --shortstat` only reports one aggregate
+	// count, not a per-status split, so this is the one fragment ACTIVITY has
+	// to offer where CHANGES has three.
+	ActivityFilesChangedFmt = "%d files changed"
+
+	// Env* render the LINKS "Env" field's drift summary, one fragment per
+	// category, joined with DashboardMetaSeparator when several apply.
+	EnvMissingFmt     = "%d keys missing"
+	EnvConflictingFmt = "%d conflicting"
+	EnvOrphanFmt      = "%d orphan"
+
+	// DashboardNotConfigured names a legitimate absence (no env files declared),
+	// never presented as a success, and stays glyph-free — nothing is wrong.
+	// DashboardUnavailableFmt names a family that failed to read, naming why —
+	// it never goes silently empty, and carries the warning glyph the
+	// legitimate-absence case must not have: that contrast is the point.
+	DashboardNotConfigured  = "not configured"
+	DashboardUnavailableFmt = "⚠ unavailable — %s"
 )
 
 // EnvTemplateSuffixes are the committed-schema template suffixes recognized on a
@@ -1181,4 +1425,14 @@ var EnvTemplateSuffixes = []string{
 	EnvTemplateSuffixSample,
 	EnvTemplateSuffixTemplate,
 	EnvTemplateSuffixTmpl,
+}
+
+// DashboardWordmarkLines is the drawn wordmark's three rows, the tall
+// header's permanent top-left anchor — the letter spacing (one blank column
+// between W, T and M) is deliberate: run together the glyphs are harder to
+// read.
+var DashboardWordmarkLines = [3]string{
+	`╻ ╻ ╺┳╸ ┏┳┓`,
+	`┃╻┃  ┃  ┃┃┃`,
+	`┗┻┛  ╹  ╹ ╹`,
 }
