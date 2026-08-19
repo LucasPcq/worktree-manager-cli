@@ -41,7 +41,7 @@ self-documenting:
    safety refusals and does *not* imply `--yes` (`--force` alone is rejected in JSON). Required
    selections must still be passed explicitly: `clean` needs a branch (add `--force` to also
    remove unsafe worktrees); `sync` needs branch args or `--all` (`--yes` won't push — pass
-   `--push`); `extract` needs the source arg, `--files`, and `--to` (`--yes` defaults
+   `--push` — and won't fast-forward parents — pass `--ff-parents`); `extract` needs the source arg, `--files`, and `--to` (`--yes` defaults
    on-conflict to abort — pass `--on-conflict resolve`); `reparent` needs worktrees and `--to`;
    `checkout` needs the PR `<number>`; `relocate` uses `--to` to change base_path; `create`
    needs `--from` when the branch already exists locally (its parent can't be inferred).
@@ -187,6 +187,23 @@ flagged; everything else is what the name implies.
   recorded parent, in cascade (parents before children), fetching first. A conflict aborts
   that branch's rebase (its descendants are skipped) unless `--keep-conflict` leaves it in
   progress. Local only — in JSON mode pass `--yes` (and `--push` to force-push with lease).
+  A parent **no step covers** — a branch with no worktree, or one left out of the
+  selection — is not refreshed by the cascade. Every run reports what it found about
+  those parents in `parent_updates`: `{branch, status, old_tip, new_tip, behind,
+  children, detail}`, where `behind` counts the commits the local ref lacks and
+  `children` names the worktrees rebased onto it. `status` is one of `behind` (left
+  as is — re-run with `--ff-parents` to refresh it), `fast_forwarded`, `diverged`
+  (no fast-forward exists; reconcile it by hand, the flag will never move it), or
+  `ff_failed` (the refresh was asked for and could not happen — `detail` says why,
+  e.g. a dirty parent worktree; passing the flag again will not help). Pass
+  `--ff-parents` to refresh them first, `--no-ff-parents` to never. `--dry-run`
+  reports them without any network call and never refreshes, so `--ff-parents` is a
+  no-op there.
+  The **base is only involved when it is actually a target**: a step rebases onto it,
+  the selection names it, or the run covers everything (`--all`, which includes the
+  root). Otherwise it is neither fetched nor fast-forwarded and `base_targeted` is
+  `false` — an explicit selection whose every worktree hangs off another parent
+  leaves the base completely alone.
 - `wtm reparent <branch…> --to <parent>` — change the recorded parent of one or more
   worktrees to the same new parent (metadata only; the rebase happens on the next `sync`).
   Use after a middle branch merges. In JSON mode pass `--yes` with the worktrees and `--to`.

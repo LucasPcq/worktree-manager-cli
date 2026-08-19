@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
@@ -25,10 +26,16 @@ const (
 // syncConfirm is the recap step's action value.
 const syncConfirm = "sync"
 
+const (
+	parentModeFF   = "fast-forward"
+	parentModeKeep = "keep"
+)
+
 // Step names, used for construction and value extraction.
 const (
 	stepWorktrees = "Worktrees"
 	stepConflict  = "On conflict"
+	stepParents   = "Parent branches"
 	stepConfirm   = "Confirm"
 )
 
@@ -50,9 +57,17 @@ type RunParams struct {
 	// KeepConflict is the conflict mode used when the on-conflict step is omitted
 	// (SkipConfirm), taken from --keep-conflict.
 	KeepConflict bool
-	// BaseBranch is the branch the cascade rebases onto; shown in the conflict
-	// step's compact counter.
-	BaseBranch string
+	// StaleParents returns, for the worktrees currently checked, the parents the
+	// cascade would rebase onto without refreshing and that a fast-forward would
+	// actually advance. It is injected by the command layer (like PlanPreview) and
+	// must be local-only: it is called synchronously while the wizard builds the
+	// step. A nil hook omits the parent question entirely.
+	StaleParents func([]string) []domain.ParentUpdate
+	// ParentPreset settles the parent question from a flag instead of asking it.
+	// The step is still installed and still appears in the summaries, naming the
+	// flag that answered it — a flag must never make a line disappear from the
+	// recap. nil means ask.
+	ParentPreset *bool
 	// PlanPreview renders the cascade preview shown on the confirmation step. It
 	// is injected by the command layer so the picker (TUI) needs no dependency on
 	// the service/output packages. Given the checked branches it returns the
@@ -69,6 +84,8 @@ type RunParams struct {
 type RunResult struct {
 	Branches     []string
 	KeepConflict bool
+	// FastForwardParents is false when the question was never asked.
+	FastForwardParents bool
 	// Confirmed reports whether the user accepted the plan. It is true when the
 	// confirmation step was elided (SkipConfirm or no PlanPreview).
 	Confirmed bool
@@ -85,6 +102,10 @@ func Run(params RunParams) (RunResult, error) {
 
 	hasSelect := params.Preselected == nil
 
+	// Set when the parent step is installed; it reports whether that step was
+	// actually shown rather than auto-skipped.
+	var parentShown *bool
+
 	var steps []components.Step
 	if hasSelect {
 		steps = append(steps, selectStep(params.Statuses))
@@ -99,8 +120,16 @@ func Run(params RunParams) (RunResult, error) {
 			HasSelect:   hasSelect,
 			Preselected: params.Preselected,
 			DefaultKeep: params.DefaultKeepConflict,
-			BaseBranch:  params.BaseBranch,
 		}))
+		if params.StaleParents != nil {
+			step, shown := parentStep(parentStepParams{
+				Preselected: params.Preselected,
+				Stale:       params.StaleParents,
+				Preset:      params.ParentPreset,
+			})
+			parentShown = shown
+			steps = append(steps, step)
+		}
 	}
 
 	// Nothing to ask (preselected worktrees + confirmation skipped): treat as an
@@ -183,7 +212,12 @@ func Run(params RunParams) (RunResult, error) {
 	result := RunResult{
 		Branches:     branches,
 		KeepConflict: resolveKeep(finalSteps, params.KeepConflict),
-		Confirmed:    true,
+		FastForwardParents: resolveParentAnswer(resolveParentAnswerParams{
+			Steps:  finalSteps,
+			Shown:  parentShown,
+			Preset: params.ParentPreset,
+		}),
+		Confirmed: true,
 	}
 	if showConfirm {
 		if v, ok := stepSelectValue(finalSteps, stepConfirm); ok {
@@ -291,7 +325,6 @@ type conflictStepParams struct {
 	HasSelect   bool
 	Preselected []string
 	DefaultKeep bool
-	BaseBranch  string
 }
 
 // conflictStep builds the on-conflict decision step, deriving its worktree counter
@@ -299,12 +332,11 @@ type conflictStepParams struct {
 func conflictStep(p conflictStepParams) components.Step {
 	step := components.Step{Name: stepConflict, Summary: conflictSummary}
 	if p.HasSelect {
-		step.Model = conflictModeStep(conflictModeStepParams{DefaultKeep: p.DefaultKeep, BaseBranch: p.BaseBranch})
+		step.Model = conflictModeStep(conflictModeStepParams{DefaultKeep: p.DefaultKeep})
 		step.Build = func(prev []components.Step) any {
 			return conflictModeStep(conflictModeStepParams{
 				Selected:    resolveBranches(prev, p.Preselected),
 				DefaultKeep: p.DefaultKeep,
-				BaseBranch:  p.BaseBranch,
 			})
 		}
 		return step
@@ -312,7 +344,6 @@ func conflictStep(p conflictStepParams) components.Step {
 	step.Model = conflictModeStep(conflictModeStepParams{
 		Selected:    p.Preselected,
 		DefaultKeep: p.DefaultKeep,
-		BaseBranch:  p.BaseBranch,
 	})
 	return step
 }
@@ -321,7 +352,6 @@ func conflictStep(p conflictStepParams) components.Step {
 type conflictModeStepParams struct {
 	Selected    []string
 	DefaultKeep bool
-	BaseBranch  string
 }
 
 // conflictModeStep builds the conflict-handling choice. The description shows a
@@ -332,7 +362,7 @@ type conflictModeStepParams struct {
 func conflictModeStep(params conflictModeStepParams) components.SelectListModel {
 	desc := "Choose what happens when a rebase hits a conflict."
 	if len(params.Selected) > 0 {
-		desc = syncCounter(len(params.Selected), params.BaseBranch) + "\n\n" + desc
+		desc = syncCounter(len(params.Selected)) + "\n\n" + desc
 	}
 
 	normalItem := components.SelectItem{
@@ -355,6 +385,126 @@ func conflictModeStep(params conflictModeStepParams) components.SelectListModel 
 		Description: desc,
 		Items:       items,
 	})
+}
+
+type parentStepParams struct {
+	Preselected []string
+	Stale       func([]string) []domain.ParentUpdate
+	// Preset settles the answer from a flag; the step is then shown as a skipped
+	// summary line rather than asked.
+	Preset *bool
+}
+
+// parentStep lives inside the wizard rather than after it, so it gets a
+// breadcrumb and back navigation, and auto-skips when the selection leaves no
+// stale parent. The returned pointer reports whether it was shown: a skipped step
+// keeps the model Build left behind, whose first option would otherwise read back
+// as an answer nobody gave.
+func parentStep(p parentStepParams) (components.Step, *bool) {
+	// Cached across Build → AutoSkip/SkipReason within one advance pass, like
+	// components.ConfirmStep does: buildStep runs Build immediately before AutoSkip.
+	relevant := false
+	build := func(prev []components.Step) any {
+		stale := p.Stale(resolveBranches(prev, p.Preselected))
+		relevant = len(stale) > 0
+		return parentModeStep(stale)
+	}
+
+	// A preset never asks, but it is still listed: a run that will advance a parent
+	// must say so even when a flag decided it.
+	asked := func() bool { return relevant && p.Preset == nil }
+
+	return components.Step{
+		Name:       stepParents,
+		Model:      parentModeStep(nil),
+		Build:      build,
+		AutoSkip:   func(components.WizardModel) bool { return !asked() },
+		SkipReason: func() string { return presetReason(relevant, p.Preset) },
+		Summary:    parentSummary,
+	}, &relevant
+}
+
+// presetReason names the outcome and the flag responsible. Empty when there was
+// nothing to decide, which keeps the step hidden instead of listing a non-question.
+func presetReason(relevant bool, preset *bool) string {
+	if !relevant || preset == nil {
+		return ""
+	}
+	if *preset {
+		return "fast-forward (--" + domain.FlagFFParents + ")"
+	}
+	return "left as they are (--" + domain.FlagNoFFParents + ")"
+}
+
+type resolveParentAnswerParams struct {
+	Steps  []components.Step
+	Shown  *bool
+	Preset *bool
+}
+
+// resolveParentAnswer reads the parent decision: the preset when a flag settled
+// it, the step's own choice when it was asked, and false when nothing was stale.
+func resolveParentAnswer(params resolveParentAnswerParams) bool {
+	if params.Shown == nil || !*params.Shown {
+		return false
+	}
+	if params.Preset != nil {
+		return *params.Preset
+	}
+	return resolveParentFF(params.Steps)
+}
+
+// parentModeStep builds the parent-refresh choice. Like the on-conflict step it
+// leads with the concrete situation — which parent is how far behind, and which
+// worktrees rebase onto it — then offers two explicit outcomes. Refreshing leads:
+// it cannot lose commits, and a stale parent is the outcome being warned about.
+func parentModeStep(stale []domain.ParentUpdate) components.SelectListModel {
+	desc := domain.SyncParentDescription
+	if len(stale) > 0 {
+		desc = parentLines(stale) + "\n\n" + desc
+	}
+
+	return components.NewSelectList(components.NewSelectListParams{
+		Title:       stepParents,
+		Description: desc,
+		Items: []components.SelectItem{
+			{
+				Label: "Fast-forward them — rebase onto the up-to-date parent",
+				Value: parentModeFF,
+			},
+			{
+				Label: "Leave them as they are — rebase onto the parent as it stands today",
+				Value: parentModeKeep,
+			},
+		},
+	})
+}
+
+func parentLines(parents []domain.ParentUpdate) string {
+	lines := make([]string, 0, len(parents))
+	for _, parent := range parents {
+		lines = append(lines, fmt.Sprintf("%s is %s behind %s%s — %s rebase onto it.",
+			parent.Branch, rules.CommitCountLabel(parent.Behind),
+			domain.RemoteBranchPrefix, parent.Branch,
+			strings.Join(parent.Children, ", ")))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func parentSummary(model any) string {
+	sl, ok := model.(components.SelectListModel)
+	if !ok {
+		return ""
+	}
+	if sl.Value() == parentModeFF {
+		return "fast-forward"
+	}
+	return "leave as they are"
+}
+
+func resolveParentFF(steps []components.Step) bool {
+	sl, ok := stepModelByName(steps, stepParents).(components.SelectListModel)
+	return ok && sl.Value() == parentModeFF
 }
 
 // resolveBranches reads the worktrees to sync: the multi-select selection when it
@@ -394,12 +544,11 @@ func stepSelectValue(steps []components.Step, name string) (string, bool) {
 }
 
 // syncCounter renders the compact "About to sync N worktree(s)…" line shown on
-// the conflict step, naming the base when known so the target is unambiguous.
-func syncCounter(count int, base string) string {
-	if base == "" {
-		return fmt.Sprintf("About to sync %d worktree(s).", count)
-	}
-	return fmt.Sprintf("About to sync %d worktree(s) onto %s.", count, base)
+// the conflict step. It names no branch: each worktree is rebased onto its own
+// recorded parent, which the base branch only coincides with at the first level.
+// The base is shown where it is exact, in the plan recap's header.
+func syncCounter(count int) string {
+	return fmt.Sprintf("About to sync %d worktree(s) onto their parent.", count)
 }
 
 // confirmStepParams holds inputs for confirmStep.

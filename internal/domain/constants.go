@@ -212,6 +212,8 @@ const (
 	FlagPush         = "push"
 	FlagNoPush       = "no-push"
 	FlagKeepConflict = "keep-conflict"
+	FlagFFParents    = "ff-parents"
+	FlagNoFFParents  = "no-ff-parents"
 
 	// prune flags — batch removal of finished worktrees.
 	FlagMerged  = "merged"
@@ -527,6 +529,16 @@ const (
 	// SyncPlanComputing is the loading message shown while the sync plan preview is
 	// computed asynchronously on entering the confirmation step.
 	SyncPlanComputing = "Computing sync plan…"
+
+	// SyncParentScanning is the loading message shown while the parents outside the
+	// cascade are checked against their remote.
+	SyncParentScanning = "Checking parent branches…"
+
+	// SyncParentDescription explains why the parent question is asked at all, above
+	// the two choices: these branches have no step of their own, so nothing in the
+	// cascade refreshes them.
+	SyncParentDescription = "These parents have no step of their own, so nothing else refreshes them.\n" +
+		"Choose whether to bring them up to date first."
 
 	// Source-reconciliation and env-fallback prompts shared by the create and
 	// extract flows — used both by the in-wizard confirmation steps and the

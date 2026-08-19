@@ -160,3 +160,80 @@ func TestBuildSyncPlanDeepBeforeShallow(t *testing.T) {
 		t.Fatalf("expected feat < mid < deep ordering: %+v", plan.Steps)
 	}
 }
+
+func TestParentsOutsideCascade(t *testing.T) {
+	// feat is a step, so it refreshes itself; main is the base, refreshed by
+	// updateBase. Only feature — a parent no step covers — is left, carrying the
+	// two steps that depend on it.
+	steps := []domain.SyncStep{
+		{Branch: "feat", SourceBranch: "main"},
+		{Branch: "dev", SourceBranch: "feature"},
+		{Branch: "other", SourceBranch: "feature"},
+		{Branch: "child", SourceBranch: "feat"},
+		{Branch: "orphan", SourceBranch: ""},
+	}
+
+	parents := ParentsOutsideCascade(ParentsOutsideCascadeParams{Steps: steps, BaseBranch: "main"})
+
+	if len(parents) != 1 {
+		t.Fatalf("parents = %+v, want only feature", parents)
+	}
+	if parents[0].Branch != "feature" {
+		t.Fatalf("parent = %q, want feature", parents[0].Branch)
+	}
+	if got := parents[0].Children; len(got) != 2 || got[0] != "dev" || got[1] != "other" {
+		t.Fatalf("children = %v, want [dev other]", got)
+	}
+}
+
+func TestParentsOutsideCascadeEmptyWhenAllCovered(t *testing.T) {
+	steps := []domain.SyncStep{
+		{Branch: "feat", SourceBranch: "main"},
+		{Branch: "dev", SourceBranch: "feat"},
+	}
+	if parents := ParentsOutsideCascade(ParentsOutsideCascadeParams{Steps: steps, BaseBranch: "main"}); len(parents) != 0 {
+		t.Fatalf("parents = %+v, want none", parents)
+	}
+}
+
+func TestParentBranches(t *testing.T) {
+	nodes := []domain.WorktreeNode{
+		{Branch: "main", IsMain: true},
+		{Branch: "feat", SourceBranch: "main"}, // base parent: excluded
+		{Branch: "dev-1", SourceBranch: "feature"},
+		{Branch: "dev-2", SourceBranch: "feature"}, // same parent: deduped
+		{Branch: "orphan", SourceBranch: ""},       // unset parent: excluded
+		{Branch: "deep", SourceBranch: "feat"},
+	}
+
+	got := ParentBranches(ParentBranchesParams{Nodes: nodes, BaseBranch: "main"})
+
+	if len(got) != 2 || got[0] != "feature" || got[1] != "feat" {
+		t.Fatalf("ParentBranches = %v, want [feature feat]", got)
+	}
+}
+
+func TestStaleParentsFor(t *testing.T) {
+	classified := []domain.ParentUpdate{
+		{Branch: "feature", Status: domain.ParentBehind, OldTip: "aaa"},
+		{Branch: "split", Status: domain.ParentDiverged},
+	}
+	uncovered := []domain.ParentUpdate{
+		{Branch: "feature", Children: []string{"dev-1", "dev-2"}},
+		{Branch: "split", Children: []string{"dev-3"}},
+		{Branch: "unknown", Children: []string{"dev-4"}},
+	}
+
+	stale := StaleParentsFor(StaleParentsForParams{Uncovered: uncovered, Classified: classified})
+
+	// Only a parent a fast-forward would actually advance: diverged and unseen are out.
+	if len(stale) != 1 || stale[0].Branch != "feature" {
+		t.Fatalf("StaleParentsFor = %+v, want only feature", stale)
+	}
+	if stale[0].OldTip != "aaa" {
+		t.Errorf("tips should come from the inspection, got %q", stale[0].OldTip)
+	}
+	if got := stale[0].Children; len(got) != 2 || got[0] != "dev-1" {
+		t.Errorf("children should come from the selection, got %v", got)
+	}
+}
