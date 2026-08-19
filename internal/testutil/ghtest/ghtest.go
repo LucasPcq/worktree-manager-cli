@@ -77,21 +77,50 @@ exit 1
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
-// Absent hides `gh` from exec.LookPath by dropping the PATH entries that hold
-// one, rather than by replacing PATH — everything else the test shells out to
-// (git first of all) keeps resolving exactly as it did.
+// Absent hides `gh` from exec.LookPath. A PATH entry that holds a `gh` is not
+// dropped but replaced, in place and in order, by a mirror of itself without it:
+// on a CI runner `gh` and `git` share /usr/bin, so dropping the entry would take
+// git down with it.
 func Absent(t testing.TB) {
 	t.Helper()
 
-	kept := make([]string, 0)
-	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+	entries := filepath.SplitList(os.Getenv("PATH"))
+	sanitized := make([]string, 0, len(entries))
+	for _, dir := range entries {
 		if dir == "" {
 			continue
 		}
-		if info, err := os.Stat(filepath.Join(dir, "gh")); err == nil && !info.IsDir() {
+		if !holdsGH(dir) {
+			sanitized = append(sanitized, dir)
 			continue
 		}
-		kept = append(kept, dir)
+		sanitized = append(sanitized, mirrorWithoutGH(t, dir))
 	}
-	t.Setenv("PATH", strings.Join(kept, string(os.PathListSeparator)))
+	t.Setenv("PATH", strings.Join(sanitized, string(os.PathListSeparator)))
+}
+
+func holdsGH(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, "gh"))
+	return err == nil && !info.IsDir()
+}
+
+// mirrorWithoutGH symlinks everything a directory holds except `gh`, so the rest
+// of it keeps resolving at the same position in PATH.
+func mirrorWithoutGH(t testing.TB, dir string) string {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	mirror := t.TempDir()
+	for _, entry := range entries {
+		if entry.Name() == "gh" {
+			continue
+		}
+		// A name that cannot be mirrored is one the test may need, but it is not
+		// worth failing over: PATH lookup simply falls through to a later entry.
+		_ = os.Symlink(filepath.Join(dir, entry.Name()), filepath.Join(mirror, entry.Name()))
+	}
+	return mirror
 }
