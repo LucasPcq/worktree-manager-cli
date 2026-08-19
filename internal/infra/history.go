@@ -83,6 +83,26 @@ func parseShortstat(out string) domain.DiffStat {
 	return stat
 }
 
+type BranchDiffShortstatParams struct {
+	WorktreePath string
+	Base         string
+	Branch       string
+}
+
+// BranchDiffShortstat measures a branch's committed volume against its base
+// — the merge-base comparison (three dots), not a direct two-dot diff, so a
+// history that has moved on the base side since the branch forked does not
+// get attributed to the branch.
+func BranchDiffShortstat(params BranchDiffShortstatParams) (domain.DiffStat, error) {
+	cmd := exec.Command("git", "-C", params.WorktreePath, "diff",
+		params.Base+"..."+params.Branch, "--shortstat")
+	out, err := cmd.Output()
+	if err != nil {
+		return domain.DiffStat{}, fmt.Errorf("git diff: %w", err)
+	}
+	return parseShortstat(string(out)), nil
+}
+
 type LastFetchAtParams struct {
 	ProjectDir string
 }

@@ -99,11 +99,10 @@ type DetailSectionsParams struct {
 // have something to say: a section's position varies between worktrees, its
 // rank never does.
 //
-// REVIEW and LINKS are built first, at their real size — nothing about them
-// depends on a budget. What's left of Height, after their ACTUAL cost
-// (sectionsHeight), is what CHANGES and ACTIVITY get to split: the reserve
-// can't drift from what the sections really occupy, because it's read off
-// them instead of guessed.
+// CHANGES and ACTIVITY each get a fixed row cap (listBudgets) rather than a
+// share of whatever height happens to be left over: leftover height simply
+// stays empty. FitSections is what reacts to a real height shortage, by
+// dropping whole sections — never by stretching or shrinking a list's cap.
 func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 	var review *domain.DetailSection
 	if params.PR != nil || params.PRUnavailable != "" {
@@ -112,26 +111,16 @@ func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 	}
 	links := linksSection(params)
 
-	fixed := []domain.DetailSection{links}
-	if review != nil {
-		fixed = append(fixed, *review)
-	}
-
 	changesErr := familyFailure(params.Detail.Failures, domain.DetailFamilyChanges)
 	commitsErr := familyFailure(params.Detail.Failures, domain.DetailFamilyCommits)
+	diffErr := familyFailure(params.Detail.Failures, domain.DetailFamilyBranchDiff)
 	wantChanges := changedCount(params.Detail.Changes) > 0 || changesErr != nil
 	wantActivity := len(params.Detail.Commits) > 0 || commitsErr != nil
 	if !params.DetailLoaded {
 		wantChanges, wantActivity = params.Status.IsDirty, true
 	}
 
-	changesBudget, activityBudget := listBudgets(listBudgetsParams{
-		Reserved:     sectionsHeight(fixed),
-		Height:       params.Height,
-		WantChanges:  wantChanges,
-		WantActivity: wantActivity,
-		Dirty:        params.Status.IsDirty,
-	})
+	changesBudget, activityBudget := listBudgets(wantChanges, wantActivity)
 
 	sections := make([]domain.DetailSection, 0, 4)
 	if review != nil {
@@ -145,6 +134,7 @@ func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 	if wantActivity {
 		sections = append(sections, activitySection(activitySectionParams{
 			Commits: params.Detail.Commits, Budget: activityBudget, Now: params.Now, Failure: commitsErr, Loaded: params.DetailLoaded,
+			Diff: params.Detail.BranchDiff, DiffFailure: diffErr,
 		}))
 	}
 	return append(sections, links)
@@ -171,44 +161,24 @@ func changedCount(changes domain.WorkingChanges) int {
 	return changes.Modified + changes.Untracked + changes.Staged
 }
 
-type listBudgetsParams struct {
-	// Reserved is what REVIEW and LINKS actually cost (sectionsHeight), before
-	// either list's own chrome is added.
-	Reserved     int
-	Height       int
-	WantChanges  bool
-	WantActivity bool
-	Dirty        bool
-}
-
-// listBudgets gives CHANGES and ACTIVITY their body-row budget from what
-// genuinely remains after Reserved and each shown list's own chrome: a dirty
-// worktree gives the room to the files (what you're working on), a clean one
-// to the commits (what the branch is). A list shown alone gets all of it.
-// Either way, a shown list keeps at least DetailMinListRows.
-func listBudgets(params listBudgetsParams) (changesBudget, activityBudget int) {
-	reserved := params.Reserved
-	if params.WantChanges {
-		reserved += domain.DetailSectionChrome
+// listBudgets gives each shown list a fixed maximum row count —
+// DashboardDetailChanges for CHANGES, DashboardDetailCommits for ACTIVITY —
+// instead of splitting whatever height happens to be left over between them.
+// The previous rule handed the leftover to CHANGES on a dirty worktree and to
+// ACTIVITY on a clean one, which read as randomness rather than a rule: five
+// commits on a clean worktree, two plus "… 3 more" the moment it turns dirty,
+// with nothing on screen explaining why. A fixed cap is predictable even when
+// its reasoning is invisible; leftover height simply stays empty. A real
+// height shortage is FitSections' job, by dropping a whole section, never by
+// shrinking a list's cap.
+func listBudgets(wantChanges, wantActivity bool) (changesBudget, activityBudget int) {
+	if wantChanges {
+		changesBudget = domain.DashboardDetailChanges
 	}
-	if params.WantActivity {
-		reserved += domain.DetailSectionChrome
+	if wantActivity {
+		activityBudget = domain.DashboardDetailCommits
 	}
-	room := max(params.Height-reserved, 0)
-
-	switch {
-	case params.WantChanges && params.WantActivity:
-		if params.Dirty {
-			return max(room-domain.DetailMinListRows, domain.DetailMinListRows), domain.DetailMinListRows
-		}
-		return domain.DetailMinListRows, max(room-domain.DetailMinListRows, domain.DetailMinListRows)
-	case params.WantChanges:
-		return max(room, domain.DetailMinListRows), 0
-	case params.WantActivity:
-		return 0, max(room, domain.DetailMinListRows)
-	default:
-		return 0, 0
-	}
+	return changesBudget, activityBudget
 }
 
 // splitBudget divides a list of `total` items into what's shown and what's
@@ -241,9 +211,9 @@ func reviewSection(params reviewSectionParams) domain.DetailSection {
 		return domain.DetailSection{Key: domain.DetailSectionReview, Title: domain.DetailSectionReview, Lines: []string{line}}
 	}
 
-	lines := []string{fmt.Sprintf(domain.DetailReviewHeaderFmt, params.PR.Number, params.PR.Title, params.PR.State)}
+	lines := []string{domain.DetailListIndent + fmt.Sprintf(domain.DetailReviewHeaderFmt, params.PR.Number, params.PR.Title, params.PR.State)}
 	if second := reviewChecksLine(params.PR.Checks, params.PR.ReviewDecision); second != "" {
-		lines = append(lines, second)
+		lines = append(lines, domain.DetailListIndent+second)
 	}
 	return domain.DetailSection{Key: domain.DetailSectionReview, Title: domain.DetailSectionReview, Lines: lines}
 }
@@ -330,14 +300,23 @@ func changesSummary(changes domain.WorkingChanges) string {
 	}
 	summary := strings.Join(parts, domain.DashboardMetaSeparator)
 
-	if changes.Insertions == 0 && changes.Deletions == 0 {
+	diff := diffStatText(domain.DiffStat{Insertions: changes.Insertions, Deletions: changes.Deletions})
+	if diff == "" {
 		return summary
 	}
-	diff := fmt.Sprintf(domain.ChangesDiffStatFmt, changes.Insertions, changes.Deletions)
 	if summary == "" {
 		return diff
 	}
 	return summary + domain.DetailListIndent + diff
+}
+
+// diffStatText renders a diff's volume ("+214 −38"), or "" when there is
+// nothing to report — never a fabricated "+0 −0" for an unread diff.
+func diffStatText(stat domain.DiffStat) string {
+	if stat.Insertions == 0 && stat.Deletions == 0 {
+		return ""
+	}
+	return fmt.Sprintf(domain.ChangesDiffStatFmt, stat.Insertions, stat.Deletions)
 }
 
 // fileGlyph reads the porcelain XY code as-is: the worktree column (Y) wins
@@ -365,6 +344,12 @@ type activitySectionParams struct {
 	// Loaded is false on the very first render (§8 state 3): the section
 	// renders a single loading placeholder instead of a guess at its content.
 	Loaded bool
+	// Diff is the branch's committed volume against its base, rendered on the
+	// title row — ACTIVITY's counterpart to CHANGES' uncommitted volume.
+	Diff domain.DiffStat
+	// DiffFailure, when set, replaces Diff on the title row with why it could
+	// not be read: a failed read never fabricates a "+0 −0".
+	DiffFailure error
 }
 
 func activitySection(params activitySectionParams) domain.DetailSection {
@@ -386,8 +371,16 @@ func activitySection(params activitySectionParams) domain.DetailSection {
 	if more > 0 {
 		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailMoreFmt, more))
 	}
+	section.TitleRight = activityDiffText(params.Diff, params.DiffFailure)
 	section.Lines = lines
 	return section
+}
+
+func activityDiffText(stat domain.DiffStat, err error) string {
+	if err != nil {
+		return failureLine(err)
+	}
+	return diffStatText(stat)
 }
 
 // commitLine reuses commit.SHA as-is: infra.RecentCommits already asks git for
@@ -418,19 +411,19 @@ func linksSection(params DetailSectionsParams) domain.DetailSection {
 	var lines []string
 
 	if params.Parent != "" {
-		lines = append(lines, fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelParent, params.Parent))
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelParent, params.Parent))
 	}
 	if len(params.Detail.Children) > 0 {
-		lines = append(lines, fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelChildren,
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelChildren,
 			strings.Join(params.Detail.Children, domain.DetailListSep)))
 	}
 	if age := RelativeAge(RelativeAgeParams{At: params.Status.CreatedAt, Now: params.Now}); age != "" {
-		lines = append(lines, fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelCreated, age))
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelCreated, age))
 	}
 	if env := envLine(params.Detail); env != "" {
-		lines = append(lines, fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelEnv, env))
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelEnv, env))
 	}
-	lines = append(lines, fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelPath, params.Status.Path))
+	lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelPath, params.Status.Path))
 
 	return domain.DetailSection{Key: domain.DetailSectionLinks, Title: domain.DetailSectionLinks, Lines: lines}
 }

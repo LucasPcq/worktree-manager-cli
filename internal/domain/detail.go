@@ -20,10 +20,11 @@ type DiffStat struct {
 type DetailFamily string
 
 const (
-	DetailFamilyCommits  DetailFamily = "commits"
-	DetailFamilyChanges  DetailFamily = "changes"
-	DetailFamilyEnv      DetailFamily = "env"
-	DetailFamilyBlockers DetailFamily = "blockers"
+	DetailFamilyCommits    DetailFamily = "commits"
+	DetailFamilyChanges    DetailFamily = "changes"
+	DetailFamilyEnv        DetailFamily = "env"
+	DetailFamilyBlockers   DetailFamily = "blockers"
+	DetailFamilyBranchDiff DetailFamily = "branch_diff"
 )
 
 // WorkingChanges is the state of the working tree, counted by porcelain column.
@@ -56,7 +57,12 @@ type WorktreeDetail struct {
 	Children []string
 	Blockers []CleanBlocker
 	EnvDrift EnvDriftSummary
-	LoadedAt time.Time
+	// BranchDiff is the branch's committed volume against its base
+	// (`git diff base...branch --shortstat`), ACTIVITY's counterpart to
+	// CHANGES' uncommitted volume. Left zero for the parent worktree, which
+	// has no base to diff against.
+	BranchDiff DiffStat
+	LoadedAt   time.Time
 
 	// Failures names families that could not be read. A family absent from
 	// the map was read successfully, even if empty: this is what distinguishes

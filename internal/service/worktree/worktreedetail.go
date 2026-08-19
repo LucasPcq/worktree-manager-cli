@@ -50,6 +50,17 @@ func Detail(params DetailParams) domain.WorktreeDetail {
 		detail.Failures[domain.DetailFamilyChanges] = err
 	}
 
+	if !params.Status.IsParent {
+		detail.BranchDiff, err = infra.BranchDiffShortstat(infra.BranchDiffShortstatParams{
+			WorktreePath: params.Status.Path,
+			Base:         params.Config.Project.Worktrees.BaseBranch,
+			Branch:       params.Status.Branch,
+		})
+		if err != nil {
+			detail.Failures[domain.DetailFamilyBranchDiff] = err
+		}
+	}
+
 	detail.Blockers = rules.CleanBlockers(domain.CleanCheckResult{
 		WorktreePath:    params.Status.Path,
 		Branch:          params.Status.Branch,

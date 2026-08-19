@@ -400,3 +400,119 @@ func TestEnvLineGuardsNilFailureError(t *testing.T) {
 		t.Errorf("envLine = %q, une erreur nil ne doit jamais être formatée", line)
 	}
 }
+
+// TestListBudgetsAreFixedCapsNotStateDriven pins §the reworked rule: each list
+// gets a fixed maximum row count regardless of dirty/clean state or how much
+// height is actually free — the old split gave the leftover to CHANGES when
+// dirty and to ACTIVITY when clean, which read as randomness because the
+// reasoning was invisible. A dirty and a clean worktree, given the exact same
+// abundant height, must produce the exact same cap for both lists.
+func TestListBudgetsAreFixedCapsNotStateDriven(t *testing.T) {
+	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	files := make([]domain.PorcelainEntry, 20)
+	for i := range files {
+		files[i] = domain.PorcelainEntry{Status: " M", Path: "file.go"}
+	}
+	commits := make([]domain.CommitSummary, 20)
+	for i := range commits {
+		commits[i] = domain.CommitSummary{SHA: "abc1234", Subject: "feat: x", At: now.Add(-time.Hour)}
+	}
+	detail := domain.WorktreeDetail{
+		Commits: commits,
+		Changes: domain.WorkingChanges{Modified: 20, Files: files},
+	}
+
+	for _, dirty := range []bool{true, false} {
+		sections := DetailSections(DetailSectionsParams{
+			Status:       domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x", IsDirty: dirty},
+			Height:       100,
+			Now:          now,
+			Detail:       detail,
+			DetailLoaded: true,
+		})
+
+		var changes, activity domain.DetailSection
+		for _, section := range sections {
+			switch section.Key {
+			case domain.DetailSectionChanges:
+				changes = section
+			case domain.DetailSectionActivity:
+				activity = section
+			}
+		}
+		if len(changes.Lines) != domain.DashboardDetailChanges {
+			t.Errorf("dirty=%v: CHANGES = %d lines, want the fixed cap %d", dirty, len(changes.Lines), domain.DashboardDetailChanges)
+		}
+		if len(activity.Lines) != domain.DashboardDetailCommits {
+			t.Errorf("dirty=%v: ACTIVITY = %d lines, want the fixed cap %d", dirty, len(activity.Lines), domain.DashboardDetailCommits)
+		}
+	}
+}
+
+// TestLinksFieldsAreIndentedLikeTheOtherLists pins that LINKS lines carry the
+// same DetailListIndent prefix CHANGES and ACTIVITY already use, so the
+// section does not look misaligned against its neighbours.
+func TestLinksFieldsAreIndentedLikeTheOtherLists(t *testing.T) {
+	section := linksSection(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
+		Parent: "main",
+	})
+	if len(section.Lines) == 0 {
+		t.Fatal("LINKS a besoin d'au moins une ligne pour ce test")
+	}
+	for _, line := range section.Lines {
+		if !strings.HasPrefix(line, domain.DetailListIndent) {
+			t.Errorf("ligne LINKS = %q, want le préfixe %q comme CHANGES/ACTIVITY", line, domain.DetailListIndent)
+		}
+	}
+}
+
+// TestReviewLinesAreIndentedLikeTheOtherLists pins that REVIEW's PR header
+// line and its checks/review-decision line carry the same DetailListIndent
+// prefix as CHANGES/ACTIVITY/LINKS, so no section looks misaligned against
+// its neighbours.
+func TestReviewLinesAreIndentedLikeTheOtherLists(t *testing.T) {
+	section := reviewSection(reviewSectionParams{
+		PR: &domain.PRInfo{
+			Number: 67, Title: "feat: x", State: "OPEN",
+			Checks:         domain.PRChecks{Passed: 12, Failed: 1},
+			ReviewDecision: domain.GHReviewDecisionApproved,
+		},
+	})
+	if len(section.Lines) != 2 {
+		t.Fatalf("REVIEW lines = %v, want 2 (header + checks)", section.Lines)
+	}
+	for _, line := range section.Lines {
+		if !strings.HasPrefix(line, domain.DetailListIndent) {
+			t.Errorf("ligne REVIEW = %q, want le préfixe %q comme CHANGES/ACTIVITY/LINKS", line, domain.DetailListIndent)
+		}
+	}
+}
+
+// TestActivityTitleRightShowsBranchDiff pins that ACTIVITY mirrors CHANGES:
+// the committed diff volume against the base branch shows on the title row.
+func TestActivityTitleRightShowsBranchDiff(t *testing.T) {
+	section := activitySection(activitySectionParams{
+		Commits: []domain.CommitSummary{{SHA: "abc1234", Subject: "feat: x"}},
+		Budget:  domain.DashboardDetailCommits,
+		Loaded:  true,
+		Diff:    domain.DiffStat{Insertions: 214, Deletions: 38},
+	})
+	if !strings.Contains(section.TitleRight, "214") || !strings.Contains(section.TitleRight, "38") {
+		t.Errorf("ACTIVITY.TitleRight = %q, want the committed diff volume", section.TitleRight)
+	}
+}
+
+// TestActivityTitleRightSaysWhyOnDiffFailure pins that a diff-stat read
+// failure never fabricates a zero: it says why, like every other family.
+func TestActivityTitleRightSaysWhyOnDiffFailure(t *testing.T) {
+	section := activitySection(activitySectionParams{
+		Commits:     []domain.CommitSummary{{SHA: "abc1234", Subject: "feat: x"}},
+		Budget:      domain.DashboardDetailCommits,
+		Loaded:      true,
+		DiffFailure: errors.New("git diff failed"),
+	})
+	if !strings.Contains(section.TitleRight, "git diff failed") {
+		t.Errorf("ACTIVITY.TitleRight = %q, want the failure reason, not a fabricated zero", section.TitleRight)
+	}
+}

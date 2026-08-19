@@ -876,7 +876,12 @@ const (
 	// once asynchronously and refresh only on KeyRefresh.
 	DashboardPollSeconds = 3
 	// DashboardDetailCommits is the number of commits requested for ACTIVITY.
+	// DashboardDetailChanges is CHANGES' equivalent fixed cap. Both are fixed
+	// maximums, not a budget split with the leftover height: a list either
+	// fits its cap or folds the rest into "… N more", regardless of the other
+	// list's state or how much panel height happens to be free.
 	DashboardDetailCommits = 5
+	DashboardDetailChanges = 5
 	// DashboardDetailDebounce delays a detail load so a fast walk through the
 	// list does not fire one git log per row crossed.
 	DashboardDetailDebounce = 150 * time.Millisecond
@@ -1145,7 +1150,12 @@ const (
 
 	DetailYouAreHere = "● you are here"
 	DetailMoreFmt    = "…  %d more"
-	DetailBlockedFmt = "⚠ cannot be deleted — %s"
+	// DetailBlockedFmt names a safety refusal, not an impossibility: these
+	// worktrees can be deleted with --force, so the line says what unlocks
+	// deletion instead of claiming it cannot happen. The parent worktree is a
+	// different category — it is never deletable at all — and never renders
+	// this line (rules.CleanBlockers returns nothing for it).
+	DetailBlockedFmt = "⚠ deletion requires --force — %s"
 
 	// Chip* build the vital strip. ChipBaseFmt/ChipOrigin*Fmt reuse
 	// BadgeGlyphAhead/BadgeGlyphBehind so the arrow glyph is defined once.
@@ -1158,9 +1168,6 @@ const (
 	ChipOriginBehindFmt   = "origin " + BadgeGlyphBehind + "%d"
 	ChipOriginDivergedFmt = "origin " + BadgeGlyphAhead + "%d " + BadgeGlyphBehind + "%d"
 
-	// DetailMinListRows is the floor each shown list (CHANGES/ACTIVITY) keeps
-	// even on a short panel.
-	//
 	// DetailSectionChrome is what one section spends beyond its body lines: a
 	// blank separator row before its title, the title row itself, and a blank
 	// row under it. Verified against the spec §6 mockup
@@ -1169,7 +1176,6 @@ const (
 	// There is no DetailFixedRows: DetailSections reserves exactly what REVIEW
 	// and LINKS actually cost, computed via sectionsHeight, instead of a
 	// constant that had to secretly agree with every section builder.
-	DetailMinListRows   = 3
 	DetailSectionChrome = 3
 
 	// DetailFieldFmt renders a LINKS field as a padded label followed by its
@@ -1178,11 +1184,12 @@ const (
 	DetailFieldFmt = "%-10s%s"
 	DetailListSep  = ", "
 
-	// DetailListIndent prefixes every line of a CHANGES or ACTIVITY list entry;
-	// LINKS fields carry none. DetailFileFmt renders one changed file as its
-	// glyph and its path, DetailUntrackedGlyph stands in for the raw "??"
-	// porcelain code. DetailCommitFmt renders one commit as its short SHA and
-	// subject.
+	// DetailListIndent prefixes every body line of every detail section
+	// (CHANGES, ACTIVITY, LINKS, REVIEW's PR header and checks line), so no
+	// section looks misaligned against its neighbours. DetailFileFmt renders
+	// one changed file as its glyph and its path, DetailUntrackedGlyph stands
+	// in for the raw "??" porcelain code. DetailCommitFmt renders one commit
+	// as its short SHA and subject.
 	DetailListIndent     = "  "
 	DetailFileFmt        = "%s  %s"
 	DetailUntrackedGlyph = "?"

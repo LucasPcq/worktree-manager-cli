@@ -74,6 +74,32 @@ func TestDiffShortstat(t *testing.T) {
 	}
 }
 
+func TestBranchDiffShortstat(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "c.txt"), []byte("l1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gittest.Git(t, dir, "add", ".")
+	gittest.Git(t, dir, "commit", "-m", "seed")
+	gittest.Git(t, dir, "checkout", "-b", "feat/x")
+	if err := os.WriteFile(filepath.Join(dir, "c.txt"), []byte("l1\nl2\nl3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gittest.Git(t, dir, "add", ".")
+	gittest.Git(t, dir, "commit", "-m", "feat: two more lines")
+
+	stat, err := BranchDiffShortstat(BranchDiffShortstatParams{WorktreePath: dir, Base: "main", Branch: "feat/x"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stat.Insertions != 2 {
+		t.Errorf("Insertions = %d, want 2", stat.Insertions)
+	}
+	if stat.Deletions != 0 {
+		t.Errorf("Deletions = %d, want 0", stat.Deletions)
+	}
+}
+
 func TestLastFetchAtWithoutFetchHead(t *testing.T) {
 	dir := gittest.InitRepo(t)
 	if got := LastFetchAt(LastFetchAtParams{ProjectDir: dir}); !got.IsZero() {

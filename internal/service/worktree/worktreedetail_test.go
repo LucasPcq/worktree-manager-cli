@@ -132,3 +132,57 @@ func TestDetailEnvDriftUsesParentPathNotMain(t *testing.T) {
 		t.Errorf("EnvDrift.Missing = %d, want 1: KEY_A must stay unresolved (parent worktree has no KEY_A) instead of silently resolving from main, which would happen if ParentPath were not threaded through", got.EnvDrift.Missing)
 	}
 }
+
+// TestDetailReadsBranchDiffAgainstBase pins that ACTIVITY's title-row diff
+// volume is the branch's committed work against Config's base branch, the
+// merge-base (three-dot) comparison rather than the working tree's
+// uncommitted diff CHANGES already reads.
+func TestDetailReadsBranchDiffAgainstBase(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("un"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gittest.Git(t, dir, "add", ".")
+	gittest.Git(t, dir, "commit", "-m", "seed")
+	gittest.Git(t, dir, "checkout", "-b", "feat/x")
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("deux\ntrois\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gittest.Git(t, dir, "add", ".")
+	gittest.Git(t, dir, "commit", "-m", "feat: ajout")
+
+	cfg := domain.Config{Project: domain.ProjectConfig{Worktrees: domain.WorktreesConfig{BaseBranch: "main"}}}
+
+	got := Detail(DetailParams{
+		ProjectDir: dir,
+		Config:     cfg,
+		Status:     domain.WorktreeStatus{Branch: "feat/x", Path: dir},
+		Commits:    domain.DashboardDetailCommits,
+	})
+
+	if got.BranchDiff.Insertions != 2 {
+		t.Errorf("BranchDiff.Insertions = %d, want 2", got.BranchDiff.Insertions)
+	}
+	if _, failed := got.Failures[domain.DetailFamilyBranchDiff]; failed {
+		t.Errorf("Failures = %v, want no branch_diff failure", got.Failures)
+	}
+}
+
+// TestDetailSkipsBranchDiffForParent pins that the parent worktree never
+// triggers the base-diff read at all — it has no base to diff against — by
+// using a path that would otherwise fail the call and asserting no failure
+// is recorded for it.
+func TestDetailSkipsBranchDiffForParent(t *testing.T) {
+	got := Detail(DetailParams{
+		ProjectDir: t.TempDir(),
+		Status:     domain.WorktreeStatus{Branch: "main", Path: filepath.Join(t.TempDir(), "absent"), IsParent: true},
+		Commits:    domain.DashboardDetailCommits,
+	})
+
+	if _, failed := got.Failures[domain.DetailFamilyBranchDiff]; failed {
+		t.Error("the parent worktree must skip the base-diff read entirely, not fail it")
+	}
+	if got.BranchDiff != (domain.DiffStat{}) {
+		t.Errorf("BranchDiff = %+v, want zero for the parent worktree", got.BranchDiff)
+	}
+}
