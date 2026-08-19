@@ -236,14 +236,50 @@ type reviewSectionParams struct {
 // absence caused by a broken tool must never look like an absence caused by
 // there being nothing.
 func reviewSection(params reviewSectionParams) domain.DetailSection {
-	line := fmt.Sprintf(domain.DashboardUnavailableFmt, params.Unavailable)
-	if params.PR != nil {
-		line = fmt.Sprintf(domain.DetailReviewHeaderFmt, params.PR.Number, params.PR.Title, params.PR.State)
+	if params.PR == nil {
+		line := fmt.Sprintf(domain.DashboardUnavailableFmt, params.Unavailable)
+		return domain.DetailSection{Key: domain.DetailSectionReview, Title: domain.DetailSectionReview, Lines: []string{line}}
 	}
-	return domain.DetailSection{
-		Key:   domain.DetailSectionReview,
-		Title: domain.DetailSectionReview,
-		Lines: []string{line},
+
+	lines := []string{fmt.Sprintf(domain.DetailReviewHeaderFmt, params.PR.Number, params.PR.Title, params.PR.State)}
+	if second := reviewChecksLine(params.PR.Checks, params.PR.ReviewDecision); second != "" {
+		lines = append(lines, second)
+	}
+	return domain.DetailSection{Key: domain.DetailSectionReview, Title: domain.DetailSectionReview, Lines: lines}
+}
+
+// reviewChecksLine renders the REVIEW section's second line: a checks
+// fragment (omitted when no check ever ran) and a review-decision fragment
+// (omitted when nothing has been decided yet), joined only when both apply.
+func reviewChecksLine(checks domain.PRChecks, decision string) string {
+	var fragments []string
+	if checks.Passed+checks.Failed+checks.Pending > 0 {
+		fragments = append(fragments, checksFragment(checks))
+	}
+	if label := reviewDecisionLabel(decision); label != "" {
+		fragments = append(fragments, fmt.Sprintf(domain.DetailReviewDecisionFmt, label))
+	}
+	return strings.Join(fragments, domain.DashboardMetaSeparator)
+}
+
+func checksFragment(checks domain.PRChecks) string {
+	fragment := fmt.Sprintf(domain.DetailChecksFmt, checks.Passed, checks.Failed)
+	if checks.Pending > 0 {
+		fragment += fmt.Sprintf(domain.DetailChecksPendingFmt, checks.Pending)
+	}
+	return fragment
+}
+
+func reviewDecisionLabel(decision string) string {
+	switch decision {
+	case domain.GHReviewDecisionApproved:
+		return domain.DetailReviewDecisionApproved
+	case domain.GHReviewDecisionChangesRequested:
+		return domain.DetailReviewDecisionChangesRequested
+	case domain.GHReviewDecisionReviewRequired:
+		return domain.DetailReviewDecisionReviewRequired
+	default:
+		return ""
 	}
 }
 

@@ -259,9 +259,10 @@ const (
 	FlagWithPRs = "with-prs"
 
 	// GHPRFields is the JSON field set passed to `gh pr list/view --json`. It
-	// holds exactly what wtm consumes: PR identity, head/base branches, url, and
-	// the fork flag (isCrossRepository).
-	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository,isDraft"
+	// holds exactly what wtm consumes: PR identity, head/base branches, url,
+	// the fork flag (isCrossRepository), the review decision and the CI
+	// status-check rollup.
+	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository,isDraft,reviewDecision,statusCheckRollup"
 
 	// GHPRFieldsWithState is the field set for the all-states PR listing used by
 	// `wtm tree --with-prs`, which must surface merged/closed PRs (clean
@@ -274,6 +275,23 @@ const (
 	PRStateOpen   = "open"
 	PRStateMerged = "merged"
 	PRStateClosed = "closed"
+
+	// GHCheckConclusion* are the `conclusion` values a statusCheckRollup entry
+	// carries once it has finished running. A NEUTRAL or SKIPPED check did not
+	// fail; CANCELLED, TIMED_OUT and ACTION_REQUIRED all block the PR the same
+	// way FAILURE does.
+	GHCheckConclusionSuccess        = "SUCCESS"
+	GHCheckConclusionFailure        = "FAILURE"
+	GHCheckConclusionNeutral        = "NEUTRAL"
+	GHCheckConclusionSkipped        = "SKIPPED"
+	GHCheckConclusionCancelled      = "CANCELLED"
+	GHCheckConclusionTimedOut       = "TIMED_OUT"
+	GHCheckConclusionActionRequired = "ACTION_REQUIRED"
+
+	// GHReviewDecision* are the raw `reviewDecision` values `gh` returns.
+	GHReviewDecisionApproved         = "APPROVED"
+	GHReviewDecisionChangesRequested = "CHANGES_REQUESTED"
+	GHReviewDecisionReviewRequired   = "REVIEW_REQUIRED"
 
 	// Checkout wizard badge texts: a PR whose branch already has a local
 	// worktree ("linked") or that comes from a fork ("fork") is disabled.
@@ -1151,6 +1169,22 @@ const (
 
 	// DetailReviewHeaderFmt renders a PR as its number, title and state.
 	DetailReviewHeaderFmt = "#%d  %s  %s"
+
+	// DetailChecks*Glyph mark a status-check's outcome on the REVIEW checks
+	// line. DetailChecksFmt renders the passed/failed pair, DetailChecksPendingFmt
+	// appends the pending count only when there is one. DetailReviewDecisionFmt
+	// renders the human-readable review decision; the DetailReviewDecision*
+	// labels are what a raw GHReviewDecision* enum value maps to.
+	DetailChecksPassedGlyph  = "✓"
+	DetailChecksFailedGlyph  = "✗"
+	DetailChecksPendingGlyph = "⧗"
+	DetailChecksFmt          = "checks " + DetailChecksPassedGlyph + " %d  " + DetailChecksFailedGlyph + " %d"
+	DetailChecksPendingFmt   = "  " + DetailChecksPendingGlyph + " %d"
+	DetailReviewDecisionFmt  = "review  %s"
+
+	DetailReviewDecisionApproved         = "approved"
+	DetailReviewDecisionChangesRequested = "changes requested"
+	DetailReviewDecisionReviewRequired   = "review required"
 
 	// DashboardLabelChildren and DashboardLabelEnv extend the LINKS field
 	// labels (DashboardLabelParent, DashboardLabelCreated, DashboardLabelPath

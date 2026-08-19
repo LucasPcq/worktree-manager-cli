@@ -68,6 +68,49 @@ func TestReviewStaysAbsentWithNoPRAndNoFailure(t *testing.T) {
 	}
 }
 
+func TestReviewSectionShowsChecksAndDecision(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
+		PR: &domain.PRInfo{
+			Number: 67, Title: "feat: x", State: "OPEN",
+			Checks:         domain.PRChecks{Passed: 12, Failed: 1},
+			ReviewDecision: "CHANGES_REQUESTED",
+		},
+	})
+
+	var review domain.DetailSection
+	for _, section := range sections {
+		if section.Key == domain.DetailSectionReview {
+			review = section
+		}
+	}
+	if review.Key == "" {
+		t.Fatal("REVIEW absente alors qu'une PR existe")
+	}
+
+	body := strings.Join(review.Lines, "\n")
+	for _, want := range []string{"#67", "feat: x", "12", "changes requested"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("REVIEW = %q, doit contenir %q", body, want)
+		}
+	}
+}
+
+func TestReviewSectionWithoutChecks(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
+		PR:     &domain.PRInfo{Number: 68, Title: "feat: y", State: "OPEN"},
+	})
+	for _, section := range sections {
+		if section.Key != domain.DetailSectionReview {
+			continue
+		}
+		if strings.Contains(strings.Join(section.Lines, "\n"), "checks") {
+			t.Error("pas de ligne checks quand aucun check n'a tourné")
+		}
+	}
+}
+
 func TestDetailSectionsKeepsFixedOrder(t *testing.T) {
 	sections := DetailSections(DetailSectionsParams{
 		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x", IsDirty: true},
