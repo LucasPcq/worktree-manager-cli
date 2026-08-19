@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
+	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	prunetui "github.com/LucasPcq/wtm/internal/tui/prune"
@@ -139,7 +140,7 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 		Work: func() error {
 			var prs []domain.PRInfo
 			if needPRs {
-				prs, ghConn = shared.LoadPRsAllStates(cfg.ProjectDir)
+				prs, ghConn = ghservice.ListPRsWithConnection(cfg.ProjectDir)
 			}
 			var e error
 			plan, e = worktree.PlanPrune(params, prs)

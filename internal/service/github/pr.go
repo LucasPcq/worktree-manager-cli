@@ -1,6 +1,7 @@
 package github
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -129,6 +130,24 @@ func ListPRsAllStates(projectDir string) ([]domain.PRInfo, error) {
 		})
 	}
 	return prs, nil
+}
+
+// ListPRsWithConnection is ListPRsAllStates with the CLI's availability kept
+// alongside the result, so a caller can tell "gh unavailable" apart from "no
+// PRs" and say so. It lives here rather than in commands/shared because the
+// flow layer needs it and may not reach that far up.
+func ListPRsWithConnection(projectDir string) ([]domain.PRInfo, domain.GHConnection) {
+	prs, err := ListPRsAllStates(projectDir)
+	if err == nil {
+		return prs, domain.GHConnectionOK
+	}
+	if errors.Is(err, domain.ErrGHNotInstalled) {
+		return nil, domain.GHConnectionNotInstalled
+	}
+	if errors.Is(err, domain.ErrGHNotAuthenticated) {
+		return nil, domain.GHConnectionNotAuthenticated
+	}
+	return nil, domain.GHConnectionOK
 }
 
 // GetPRDetailParams holds inputs for fetching a single PR's detail.
