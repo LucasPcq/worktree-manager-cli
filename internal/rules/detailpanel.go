@@ -79,7 +79,16 @@ type DetailSectionsParams struct {
 	// shows, the caller only supplies why the read failed.
 	PRUnavailable string
 	Parent        string
-	Height        int
+	// DetailLoaded is false on the very first render for a branch, before its
+	// WorktreeDetail has ever landed (§8 state 3). CHANGES and ACTIVITY — the
+	// two sections that depend on Detail — render a single "loading…"
+	// placeholder line instead of vanishing, so LINKS does not jump once the
+	// real data arrives. CHANGES is only expected when WorktreeStatus already
+	// says the tree is dirty; ACTIVITY is expected unconditionally, since a
+	// branch with no commit history at all is not a case this panel needs to
+	// special-case.
+	DetailLoaded bool
+	Height       int
 	// Now anchors every relative age this call renders (ACTIVITY's "… ago"), so
 	// the whole panel is reproducible from its inputs instead of reading the
 	// wall clock mid-build.
@@ -108,8 +117,14 @@ func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 		fixed = append(fixed, *review)
 	}
 
-	wantChanges := changedCount(params.Detail.Changes) > 0
-	wantActivity := len(params.Detail.Commits) > 0
+	changesErr := familyFailure(params.Detail.Failures, domain.DetailFamilyChanges)
+	commitsErr := familyFailure(params.Detail.Failures, domain.DetailFamilyCommits)
+	wantChanges := changedCount(params.Detail.Changes) > 0 || changesErr != nil
+	wantActivity := len(params.Detail.Commits) > 0 || commitsErr != nil
+	if !params.DetailLoaded {
+		wantChanges, wantActivity = params.Status.IsDirty, true
+	}
+
 	changesBudget, activityBudget := listBudgets(listBudgetsParams{
 		Reserved:     sectionsHeight(fixed),
 		Height:       params.Height,
@@ -123,12 +138,33 @@ func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 		sections = append(sections, *review)
 	}
 	if wantChanges {
-		sections = append(sections, changesSection(params.Detail.Changes, changesBudget))
+		sections = append(sections, changesSection(changesSectionParams{
+			Changes: params.Detail.Changes, Budget: changesBudget, Failure: changesErr, Loaded: params.DetailLoaded,
+		}))
 	}
 	if wantActivity {
-		sections = append(sections, activitySection(params.Detail.Commits, activityBudget, params.Now))
+		sections = append(sections, activitySection(activitySectionParams{
+			Commits: params.Detail.Commits, Budget: activityBudget, Now: params.Now, Failure: commitsErr, Loaded: params.DetailLoaded,
+		}))
 	}
 	return append(sections, links)
+}
+
+// familyFailure reads a family's failure out of Failures without ever
+// promoting a nil error into a "failed" reading: a family absent from the map,
+// or present with a nil error, was read successfully.
+func familyFailure(failures map[domain.DetailFamily]error, family domain.DetailFamily) error {
+	if err, failed := failures[family]; failed && err != nil {
+		return err
+	}
+	return nil
+}
+
+// failureLine is the shared §8 state 4 form: every family that failed to read
+// says why, in the same words, instead of that family's section going quietly
+// empty.
+func failureLine(err error) string {
+	return fmt.Sprintf(domain.DashboardUnavailableFmt, err)
 }
 
 func changedCount(changes domain.WorkingChanges) int {
@@ -211,23 +247,38 @@ func reviewSection(params reviewSectionParams) domain.DetailSection {
 	}
 }
 
-func changesSection(changes domain.WorkingChanges, budget int) domain.DetailSection {
-	var lines []string
+type changesSectionParams struct {
+	Changes domain.WorkingChanges
+	Budget  int
+	// Failure, when set, replaces the file list with why it could not be read.
+	Failure error
+	// Loaded is false on the very first render (§8 state 3): the section
+	// renders a single loading placeholder instead of a guess at its content.
+	Loaded bool
+}
 
-	shown, more := splitBudget(len(changes.Files), budget)
-	for _, file := range changes.Files[:shown] {
+func changesSection(params changesSectionParams) domain.DetailSection {
+	section := domain.DetailSection{Key: domain.DetailSectionChanges, Title: domain.DetailSectionChanges}
+	switch {
+	case !params.Loaded:
+		section.Lines = []string{domain.DashboardLoadingField}
+		return section
+	case params.Failure != nil:
+		section.Lines = []string{failureLine(params.Failure)}
+		return section
+	}
+
+	var lines []string
+	shown, more := splitBudget(len(params.Changes.Files), params.Budget)
+	for _, file := range params.Changes.Files[:shown] {
 		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFileFmt, fileGlyph(file), file.Path))
 	}
 	if more > 0 {
 		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailMoreFmt, more))
 	}
-
-	return domain.DetailSection{
-		Key:        domain.DetailSectionChanges,
-		Title:      domain.DetailSectionChanges,
-		TitleRight: changesSummary(changes),
-		Lines:      lines,
-	}
+	section.TitleRight = changesSummary(params.Changes)
+	section.Lines = lines
+	return section
 }
 
 func changesSummary(changes domain.WorkingChanges) string {
@@ -269,18 +320,38 @@ func fileGlyph(file domain.PorcelainEntry) string {
 	return string(file.Status[0])
 }
 
-func activitySection(commits []domain.CommitSummary, budget int, now time.Time) domain.DetailSection {
-	shown, more := splitBudget(len(commits), budget)
+type activitySectionParams struct {
+	Commits []domain.CommitSummary
+	Budget  int
+	Now     time.Time
+	// Failure, when set, replaces the commit list with why it could not be read.
+	Failure error
+	// Loaded is false on the very first render (§8 state 3): the section
+	// renders a single loading placeholder instead of a guess at its content.
+	Loaded bool
+}
 
+func activitySection(params activitySectionParams) domain.DetailSection {
+	section := domain.DetailSection{Key: domain.DetailSectionActivity, Title: domain.DetailSectionActivity}
+	switch {
+	case !params.Loaded:
+		section.Lines = []string{domain.DashboardLoadingField}
+		return section
+	case params.Failure != nil:
+		section.Lines = []string{failureLine(params.Failure)}
+		return section
+	}
+
+	shown, more := splitBudget(len(params.Commits), params.Budget)
 	lines := make([]string, 0, shown+1)
-	for _, commit := range commits[:shown] {
-		lines = append(lines, domain.DetailListIndent+commitLine(commit, now))
+	for _, commit := range params.Commits[:shown] {
+		lines = append(lines, domain.DetailListIndent+commitLine(commit, params.Now))
 	}
 	if more > 0 {
 		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailMoreFmt, more))
 	}
-
-	return domain.DetailSection{Key: domain.DetailSectionActivity, Title: domain.DetailSectionActivity, Lines: lines}
+	section.Lines = lines
+	return section
 }
 
 // commitLine reuses commit.SHA as-is: infra.RecentCommits already asks git for
@@ -333,8 +404,8 @@ func linksSection(params DetailSectionsParams) domain.DetailSection {
 // declared) says so without an alert glyph; a configured family with no drift
 // has nothing to say and is omitted, like an up-to-date origin.
 func envLine(detail domain.WorktreeDetail) string {
-	if err, failed := detail.Failures[domain.DetailFamilyEnv]; failed && err != nil {
-		return fmt.Sprintf(domain.DashboardUnavailableFmt, err)
+	if err := familyFailure(detail.Failures, domain.DetailFamilyEnv); err != nil {
+		return failureLine(err)
 	}
 	if !detail.EnvDrift.Configured {
 		return domain.DashboardNotConfigured

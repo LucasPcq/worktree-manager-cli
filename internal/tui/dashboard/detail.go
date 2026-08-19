@@ -54,8 +54,8 @@ func (m Model) detailBody(layout domain.DashboardLayout) []string {
 	}), width, stale)...)
 
 	if hasDetail {
-		if blocker := blockersLine(stale, detail.Blockers); blocker != "" {
-			lines = append(lines, "", truncate(blocker, width))
+		if blocker := blockersLine(stale, detail.Blockers, width); blocker != "" {
+			lines = append(lines, "", blocker)
 		}
 	}
 
@@ -133,20 +133,28 @@ func vitalStripLines(chips []domain.Chip, width int, stale bool) []string {
 
 // renderChip is the vital strip's one deliberate exception to "muted is
 // structure": the working-tree state chip carries the strip's only color.
+// State gates WHETHER a chip is colored at all; Kind only picks WHICH color
+// once State says yes — rules.stateChip is the single source of truth for
+// which chip that is, this never re-derives it from Kind alone.
 func renderChip(chip domain.Chip, stale bool) string {
 	style := styles.DashboardChip
-	switch chip.Kind {
-	case domain.ChipKindClean:
-		style = styles.Success
-	case domain.ChipKindDirty, domain.ChipKindRebasing:
-		style = styles.Warning
+	if chip.State {
+		switch chip.Kind {
+		case domain.ChipKindDirty, domain.ChipKindRebasing:
+			style = styles.Warning
+		default:
+			style = styles.Success
+		}
 	}
 	return styleText(stale, style, chip.Text)
 }
 
 // blockersLine joins every refusal the worktree carries into the one line
 // that answers "why can't I delete this" before the menu is even opened.
-func blockersLine(stale bool, blockers []domain.CleanBlocker) string {
+// Truncated before it is styled, like every other line in this file: trimming
+// runes off an already-styled string eats its trailing reset sequence and
+// bleeds the color into whatever renders after it.
+func blockersLine(stale bool, blockers []domain.CleanBlocker, width int) string {
 	if len(blockers) == 0 {
 		return ""
 	}
@@ -155,7 +163,7 @@ func blockersLine(stale bool, blockers []domain.CleanBlocker) string {
 		labels = append(labels, blocker.Label)
 	}
 	text := fmt.Sprintf(domain.DetailBlockedFmt, strings.Join(labels, domain.DashboardMetaSeparator))
-	return styleText(stale, styles.DashboardBlockers, text)
+	return styleText(stale, styles.DashboardBlockers, truncate(text, width))
 }
 
 // detailSectionsInput gathers what rules.DetailSections needs plus the one
@@ -173,53 +181,23 @@ type detailSectionsInput struct {
 	Height        int
 }
 
-// detailSections composes the real sections when Detail has loaded, or a
-// placeholder shape when it has not (state 3): only the sections that depend
-// on Detail — CHANGES, ACTIVITY — grow a "loading…" placeholder line, sized
-// as one entry rather than guessed at a length no one knows yet. REVIEW does
-// not depend on Detail — the PR list loads separately — so it renders for
-// real immediately, exactly as LINKS' non-Detail fields (Parent, Path) do.
+// detailSections asks rules.DetailSections for the finished stack — which
+// sections exist, their order, and their placeholder or failure lines when
+// Detail has not loaded or a family failed to read — then only fits it to the
+// panel's height. It decides nothing about what is shown: that is rules/'s
+// job end to end.
 func (m Model) detailSections(input detailSectionsInput) []domain.DetailSection {
 	sections := rules.DetailSections(rules.DetailSectionsParams{
 		Status:        input.Status,
 		Detail:        input.Detail,
+		DetailLoaded:  input.HasDetail,
 		PR:            input.PR,
 		PRUnavailable: input.PRUnavailable,
 		Parent:        input.Parent,
 		Height:        input.Height,
 		Now:           time.Now(),
 	})
-	if !input.HasDetail {
-		sections = withLoadingPlaceholders(sections, input.Status)
-	}
 	return rules.FitSections(rules.FitSectionsParams{Sections: sections, Height: input.Height})
-}
-
-// withLoadingPlaceholders inserts a placeholder for each Detail-dependent
-// section expected to land, just above LINKS (always the last section
-// rules.DetailSections returns). CHANGES is expected only when the
-// already-loaded WorktreeStatus already says the tree is dirty; ACTIVITY is
-// expected unconditionally, since a branch with no commit history at all is
-// not a case this panel needs to special-case.
-func withLoadingPlaceholders(sections []domain.DetailSection, status domain.WorktreeStatus) []domain.DetailSection {
-	var placeholders []domain.DetailSection
-	if status.IsDirty {
-		placeholders = append(placeholders, loadingSection(domain.DetailSectionChanges))
-	}
-	placeholders = append(placeholders, loadingSection(domain.DetailSectionActivity))
-
-	if len(sections) == 0 {
-		return placeholders
-	}
-	last := len(sections) - 1
-	out := make([]domain.DetailSection, 0, len(sections)+len(placeholders))
-	out = append(out, sections[:last]...)
-	out = append(out, placeholders...)
-	return append(out, sections[last])
-}
-
-func loadingSection(key string) domain.DetailSection {
-	return domain.DetailSection{Key: key, Title: key, Lines: []string{domain.DashboardLoadingField}}
 }
 
 // appendSections stacks each section as a blank separator, its title row

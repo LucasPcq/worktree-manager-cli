@@ -932,26 +932,16 @@ const (
 	DashboardTreeDivergedFmt = "%s %s%d %s%d"
 	DashboardEmptySelection  = "No worktree selected."
 	DashboardEmptyOutput     = "No operation output yet."
-	DashboardLoadingPRs      = "loading PRs…"
-	DashboardNoPR            = "none"
 	DashboardNoValue         = "—"
 	// DashboardCreatedFormat renders a worktree's creation date in local time.
 	DashboardCreatedFormat = "2006-01-02 15:04"
 
-	// The detail panel groups its fields under these headings.
-	DashboardSectionWorktree   = "WORKTREE"
-	DashboardSectionDivergence = "DIVERGENCE"
-	DashboardSectionReview     = "REVIEW"
 	// DashboardPRFmt renders a pull request as number, title and state.
 	DashboardPRFmt = "#%d %s (%s)"
 
 	DashboardLabelPath    = "Path"
 	DashboardLabelParent  = "Parent"
-	DashboardLabelState   = "State"
-	DashboardLabelBase    = "Base"
-	DashboardLabelOrigin  = "Origin"
 	DashboardLabelRebase  = "Rebase"
-	DashboardLabelPR      = "PR"
 	DashboardLabelCreated = "Created"
 
 	DashboardRebaseInProgress = "in progress"

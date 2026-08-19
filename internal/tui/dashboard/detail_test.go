@@ -7,8 +7,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func detailModel(t *testing.T, status domain.WorktreeStatus) Model {
@@ -69,15 +71,36 @@ func TestDetailOmitsEmptyFields(t *testing.T) {
 	}
 }
 
+// TestVitalStripWrapsChipByChip exercises vitalStripLines directly rather
+// than through model.View(): at narrowWide the layout gives the detail panel
+// a zero-width rect (it is below domain.DashboardNarrowWidth and the detail
+// is not open), so detailBody returns nil and a View()-based assertion would
+// pass on an empty render — proving nothing.
 func TestVitalStripWrapsChipByChip(t *testing.T) {
-	model := detailModel(t, domain.WorktreeStatus{
-		Branch: "feat/x", Path: "/wt/x", IsDirty: true, CommitsAhead: 3,
-		OriginAhead: 2, OriginBehind: 1, OriginState: domain.DivergenceDiverged,
+	chips := rules.VitalChips(rules.VitalChipsParams{
+		Status: domain.WorktreeStatus{
+			Branch: "feat/x", Path: "/wt/x", IsDirty: true, CommitsAhead: 3,
+			OriginAhead: 2, OriginBehind: 1, OriginState: domain.DivergenceDiverged,
+		},
 	})
-	model = update(model, tea.WindowSizeMsg{Width: narrowWide, Height: testHeight})
+	if len(chips) < 3 {
+		t.Fatalf("chips = %v, want at least 3 to make a wrap meaningful", chips)
+	}
 
-	if strings.Contains(model.View(), "↓…") {
-		t.Error("a chip is never cut mid-way: that would be a lie, not a truncation")
+	// Wide enough for the first chip plus its separator, not for the second:
+	// forces an actual wrap rather than merely fitting everything on one line.
+	width := lipgloss.Width(chips[0].Text) + lipgloss.Width(domain.DashboardMetaSeparator) + 1
+
+	lines := vitalStripLines(chips, width, false)
+	if len(lines) < 2 {
+		t.Fatalf("vitalStripLines at width %d = %d line(s), want at least 2 — this proves nothing if it never wraps", width, len(lines))
+	}
+
+	joined := stripANSI(strings.Join(lines, "\n"))
+	for _, chip := range chips {
+		if !strings.Contains(joined, chip.Text) {
+			t.Errorf("chip %q missing from the wrapped strip %q — a chip is never cut mid-way", chip.Text, joined)
+		}
 	}
 }
 
@@ -115,6 +138,10 @@ func TestLegitimateAbsenceIsNotAFailure(t *testing.T) {
 	if strings.Contains(view, "unavailable") {
 		t.Error("a legitimate absence must not read as a failure")
 	}
+	notConfiguredLine := lineContaining(t, strings.Split(view, "\n"), domain.DashboardNotConfigured)
+	if strings.Contains(notConfiguredLine, "⚠") {
+		t.Error("a legitimate absence stays glyph-free — that contrast is what tells the two apart")
+	}
 }
 
 func TestFailureSaysWhy(t *testing.T) {
@@ -127,6 +154,9 @@ func TestFailureSaysWhy(t *testing.T) {
 	view := model.View()
 	if !strings.Contains(view, "unavailable") || !strings.Contains(view, "git error") {
 		t.Error("a family that failed to read must say why: it never goes silently empty")
+	}
+	if !strings.Contains(view, "⚠") {
+		t.Error("a failure carries the warning glyph — the legitimate-absence case never does")
 	}
 }
 

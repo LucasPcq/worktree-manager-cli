@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -18,8 +19,9 @@ func sectionKeys(sections []domain.DetailSection) []string {
 
 func TestDetailSectionsOmitsWhatHasNothingToSay(t *testing.T) {
 	sections := DetailSections(DetailSectionsParams{
-		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
-		Detail: domain.WorktreeDetail{Commits: []domain.CommitSummary{{SHA: "abc1234", Subject: "feat: x"}}},
+		Status:       domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
+		Detail:       domain.WorktreeDetail{Commits: []domain.CommitSummary{{SHA: "abc1234", Subject: "feat: x"}}},
+		DetailLoaded: true,
 	})
 
 	for _, key := range sectionKeys(sections) {
@@ -36,6 +38,7 @@ func TestReviewShowsUnavailableReasonWhenPRDataFailedToLoad(t *testing.T) {
 	sections := DetailSections(DetailSectionsParams{
 		Status:        domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
 		PRUnavailable: "GitHub CLI not found",
+		DetailLoaded:  true,
 	})
 
 	var review *domain.DetailSection
@@ -54,7 +57,8 @@ func TestReviewShowsUnavailableReasonWhenPRDataFailedToLoad(t *testing.T) {
 
 func TestReviewStaysAbsentWithNoPRAndNoFailure(t *testing.T) {
 	sections := DetailSections(DetailSectionsParams{
-		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
+		Status:       domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
+		DetailLoaded: true,
 	})
 
 	for _, key := range sectionKeys(sections) {
@@ -72,6 +76,7 @@ func TestDetailSectionsKeepsFixedOrder(t *testing.T) {
 			Commits: []domain.CommitSummary{{SHA: "abc1234", Subject: "feat: x"}},
 			Changes: domain.WorkingChanges{Modified: 2, Files: []domain.PorcelainEntry{{Status: " M", Path: "a.go"}}},
 		},
+		DetailLoaded: true,
 	})
 
 	want := []string{
@@ -169,6 +174,7 @@ func TestChangesSectionSummaryIsOnTitleRowNotALine(t *testing.T) {
 				},
 			},
 		},
+		DetailLoaded: true,
 	})
 
 	var changes domain.DetailSection
@@ -238,6 +244,7 @@ func TestListBudgetsLeaveRoomForLinksAtHeight30With18Files(t *testing.T) {
 			Children: []string{"chore/deps-bump"},
 			EnvDrift: domain.EnvDriftSummary{Configured: true, Missing: 2},
 		},
+		DetailLoaded: true,
 	}
 
 	fit := FitSections(FitSectionsParams{Sections: DetailSections(params), Height: params.Height})
@@ -249,6 +256,97 @@ func TestListBudgetsLeaveRoomForLinksAtHeight30With18Files(t *testing.T) {
 	}
 	t.Errorf("LINKS absente à Height=30 — le panneau avait de la place pour Path (sections retenues: %v)",
 		sectionKeys(fit))
+}
+
+func TestChangesSectionSaysWhyOnFailure(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status:       domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x", IsDirty: true},
+		Height:       24,
+		DetailLoaded: true,
+		Detail: domain.WorktreeDetail{
+			Failures: map[domain.DetailFamily]error{domain.DetailFamilyChanges: errors.New("git status failed")},
+		},
+	})
+
+	var changes domain.DetailSection
+	for _, section := range sections {
+		if section.Key == domain.DetailSectionChanges {
+			changes = section
+		}
+	}
+	if changes.Key == "" {
+		t.Fatal("git status en échec doit produire une section CHANGES qui dit pourquoi, pas son absence")
+	}
+	if len(changes.Lines) != 1 || !strings.Contains(changes.Lines[0], "git status failed") {
+		t.Errorf("CHANGES = %v, want the failure reason", changes.Lines)
+	}
+}
+
+func TestActivitySectionSaysWhyOnFailure(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status:       domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
+		Height:       24,
+		DetailLoaded: true,
+		Detail: domain.WorktreeDetail{
+			Failures: map[domain.DetailFamily]error{domain.DetailFamilyCommits: errors.New("git log failed")},
+		},
+	})
+
+	var activity domain.DetailSection
+	for _, section := range sections {
+		if section.Key == domain.DetailSectionActivity {
+			activity = section
+		}
+	}
+	if activity.Key == "" {
+		t.Fatal("git log en échec doit produire une section ACTIVITY qui dit pourquoi, pas son absence")
+	}
+	if len(activity.Lines) != 1 || !strings.Contains(activity.Lines[0], "git log failed") {
+		t.Errorf("ACTIVITY = %v, want the failure reason", activity.Lines)
+	}
+}
+
+func TestFirstLoadPlaceholdersOrderedLikeRealSections(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x", IsDirty: true},
+		Height: 40,
+		// DetailLoaded left false: state 3, nothing cached yet.
+	})
+
+	want := []string{domain.DetailSectionChanges, domain.DetailSectionActivity, domain.DetailSectionLinks}
+	got := sectionKeys(sections)
+	if len(got) != len(want) {
+		t.Fatalf("sections = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("section[%d] = %q, want %q — rules/ owns the order, not the renderer", i, got[i], want[i])
+		}
+	}
+	for _, key := range []string{domain.DetailSectionChanges, domain.DetailSectionActivity} {
+		for _, section := range sections {
+			if section.Key != key {
+				continue
+			}
+			if len(section.Lines) != 1 || section.Lines[0] != domain.DashboardLoadingField {
+				t.Errorf("%s placeholder = %v, want a single %q line", key, section.Lines, domain.DashboardLoadingField)
+			}
+		}
+	}
+}
+
+func TestFailureLineCarriesTheGlyphNotConfiguredDoesNot(t *testing.T) {
+	failure := envLine(domain.WorktreeDetail{
+		Failures: map[domain.DetailFamily]error{domain.DetailFamilyEnv: errors.New("git error")},
+	})
+	if !strings.Contains(failure, "⚠") {
+		t.Errorf("envLine failure = %q, want the warning glyph", failure)
+	}
+
+	absent := envLine(domain.WorktreeDetail{EnvDrift: domain.EnvDriftSummary{Configured: false}})
+	if strings.Contains(absent, "⚠") {
+		t.Errorf("envLine legitimate absence = %q, must stay glyph-free — that contrast is the point", absent)
+	}
 }
 
 func TestEnvLineGuardsNilFailureError(t *testing.T) {
