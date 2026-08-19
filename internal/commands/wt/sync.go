@@ -29,8 +29,11 @@ func newSyncCmd() *cobra.Command {
 			"rebased onto its parent in topological order (parents before children). The cascade is\n" +
 			"local; on a conflict the branch is left clean (rebase aborted) and its selected\n" +
 			"descendants are skipped. Pass --keep-conflict to leave a conflicting rebase in progress\n" +
-			"in its worktree for manual resolution instead of aborting. After a successful cascade,\n" +
-			"optionally force-push (with lease) the rebased branches.",
+			"in its worktree for manual resolution instead of aborting. A parent no step covers —\n" +
+			"a branch with no worktree, or one left out of the selection — is never refreshed by the\n" +
+			"cascade; when it is behind its remote you are offered to fast-forward it first\n" +
+			"(--ff-parents / --no-ff-parents). After a successful cascade, optionally force-push\n" +
+			"(with lease) the rebased branches.",
 		Args: cobra.ArbitraryArgs,
 		RunE: runSync,
 	}
@@ -41,6 +44,8 @@ func newSyncCmd() *cobra.Command {
 	cmd.Flags().Bool(domain.FlagPush, false, "Force-push (with lease) rebased branches without prompting")
 	cmd.Flags().Bool(domain.FlagNoPush, false, "Rebase locally only; never push")
 	cmd.Flags().Bool(domain.FlagKeepConflict, false, "Leave a conflicting rebase in progress in its worktree instead of aborting")
+	cmd.Flags().Bool(domain.FlagFFParents, false, "Fast-forward the parents the cascade does not cover (no worktree, or left out of the selection) before rebasing onto them; no-op with --"+domain.FlagDryRun)
+	cmd.Flags().Bool(domain.FlagNoFFParents, false, "Never fast-forward those parents; rebase onto them as they are")
 	cmd.Flags().String(domain.FlagBase, "", "Base branch to sync from (defaults to config or detected base)")
 	shared.AddOutputFlag(cmd)
 
@@ -54,11 +59,16 @@ func runSync(cmd *cobra.Command, args []string) error {
 	push, _ := cmd.Flags().GetBool(domain.FlagPush)
 	noPush, _ := cmd.Flags().GetBool(domain.FlagNoPush)
 	keepConflict, _ := cmd.Flags().GetBool(domain.FlagKeepConflict)
+	ffParents, _ := cmd.Flags().GetBool(domain.FlagFFParents)
+	noFFParents, _ := cmd.Flags().GetBool(domain.FlagNoFFParents)
 	baseOverride, _ := cmd.Flags().GetString(domain.FlagBase)
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	if push && noPush {
 		return fmt.Errorf("--%s and --%s are mutually exclusive", domain.FlagPush, domain.FlagNoPush)
+	}
+	if ffParents && noFFParents {
+		return fmt.Errorf("--%s and --%s are mutually exclusive", domain.FlagFFParents, domain.FlagNoFFParents)
 	}
 	if all && len(args) > 0 {
 		return fmt.Errorf("--%s cannot be combined with branch arguments", domain.FlagAll)
@@ -101,16 +111,60 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return output.SprintSyncPlan(plan), len(plan.Steps), nil
 	}
 
+	// --yes runs fully unattended: it forces the non-interactive path so a missing
+	// worktree selection errors (specify branches or --all) instead of a picker.
+	canPrompt := interactive && term.IsTerminal(int(os.Stdin.Fd())) && !yes
+
+	// The parent question is the wizard's, not a prompt after it — so its inputs
+	// must be ready before the wizard starts. Only the run that would actually ask
+	// pays for the inspection; every other outcome is settled by the flags alone.
+	parentDecision := rules.DecideParentFastForwardParams{
+		FF:          ffParents,
+		NoFF:        noFFParents,
+		Yes:         yes,
+		Interactive: interactive,
+	}
+	settled := rules.ParentFlagsDecision(parentDecision)
+	// The wizard installs the step whenever it could have something to say — even
+	// when a flag already settled it, so the answer still shows up in the recap.
+	inspectParents := canPrompt && !dryRun
+
+	var staleParents func([]string) []domain.ParentUpdate
+	if inspectParents {
+		var classified []domain.ParentUpdate
+		if scanErr := components.RunLoading(components.LoadingParams{
+			Message: domain.SyncParentScanning,
+			Animate: interactive,
+			Work: func() error {
+				var e error
+				classified, e = worktree.ClassifyParents(worktree.ClassifyParentsParams{
+					ProjectDir: cfg.ProjectDir,
+					StateDir:   cfg.StateDir,
+					BaseBranch: baseBranch,
+				})
+				return e
+			},
+		}); scanErr != nil {
+			return scanErr
+		}
+		staleParents = func(branches []string) []domain.ParentUpdate {
+			return worktree.StaleParents(worktree.StaleParentsParams{
+				Sync:       planTemplate,
+				Branches:   branches,
+				Classified: classified,
+			})
+		}
+	}
+
 	selection, err := resolveSyncSelection(resolveSyncSelectionParams{
 		Args:         args,
 		All:          all,
 		KeepConflict: keepConflict,
-		// --yes runs fully unattended: it forces the non-interactive path so a missing
-		// worktree selection errors (specify branches or --all) instead of a picker.
-		CanPrompt: interactive && term.IsTerminal(int(os.Stdin.Fd())) && !yes,
+		CanPrompt:    canPrompt,
 		Cfg:          cfg,
-		BaseBranch:   baseBranch,
 		PlanPreview:  planPreview,
+		StaleParents: staleParents,
+		ParentPreset: parentPreset(settled),
 		SkipConfirm:  dryRun || yes,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
@@ -131,6 +185,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 		DryRun:           dryRun,
 		KeepConflict:     selection.KeepConflict,
 		SelectedBranches: selection.Branches,
+		FastForwardParents: resolveFastForwardParents(resolveFastForwardParentsParams{
+			Settled:   settled,
+			Inspected: inspectParents,
+			Answer:    selection.FastForwardParents,
+			DryRun:    dryRun,
+		}),
 	}
 
 	plan, err := worktree.PlanSync(syncParams)
@@ -227,11 +287,15 @@ type resolveSyncSelectionParams struct {
 	KeepConflict bool
 	CanPrompt    bool
 	Cfg          shared.ConfigResult
-	// BaseBranch, PlanPreview and SkipConfirm are forwarded to the interactive
-	// picker so its confirmation step can preview the cascade (see syncpicker).
-	BaseBranch  string
+	// PlanPreview and SkipConfirm are forwarded to the interactive picker so its
+	// confirmation step can preview the cascade (see syncpicker).
 	PlanPreview func(syncpicker.PlanPreviewParams) (string, int, error)
-	SkipConfirm bool
+	// StaleParents is the wizard's parent question hook (nil when the run never
+	// inspects them). ParentPreset settles that question from a flag while keeping
+	// it listed. See syncpicker.RunParams.
+	StaleParents func([]string) []domain.ParentUpdate
+	ParentPreset *bool
+	SkipConfirm  bool
 }
 
 // syncSelection is the resolved sync target: the branches to rebase (nil means
@@ -239,9 +303,10 @@ type resolveSyncSelectionParams struct {
 // whether the plan was already previewed and confirmed interactively (by the
 // picker) so runSync must not preview/confirm it again.
 type syncSelection struct {
-	Branches      []string
-	KeepConflict  bool
-	PlanConfirmed bool
+	Branches           []string
+	KeepConflict       bool
+	FastForwardParents bool
+	PlanConfirmed      bool
 }
 
 // resolveSyncSelection turns the CLI inputs into the branches to sync and the
@@ -298,8 +363,9 @@ func resolveSyncSelection(params resolveSyncSelectionParams) (syncSelection, err
 		Preselected:         pickerPreselection(needSelect, preselected),
 		DefaultKeepConflict: params.KeepConflict,
 		KeepConflict:        params.KeepConflict,
-		BaseBranch:          params.BaseBranch,
 		PlanPreview:         params.PlanPreview,
+		StaleParents:        params.StaleParents,
+		ParentPreset:        params.ParentPreset,
 		SkipConfirm:         params.SkipConfirm,
 	})
 	if err != nil {
@@ -310,10 +376,39 @@ func resolveSyncSelection(params resolveSyncSelectionParams) (syncSelection, err
 		return syncSelection{}, domain.ErrUserAborted
 	}
 	return syncSelection{
-		Branches:      branchesForSync(params.All, result.Branches),
-		KeepConflict:  result.KeepConflict,
-		PlanConfirmed: !params.SkipConfirm,
+		Branches:           branchesForSync(params.All, result.Branches),
+		KeepConflict:       result.KeepConflict,
+		FastForwardParents: result.FastForwardParents,
+		PlanConfirmed:      !params.SkipConfirm,
 	}, nil
+}
+
+type resolveFastForwardParentsParams struct {
+	Settled   rules.ParentDecision
+	Inspected bool
+	Answer    bool
+	DryRun    bool
+}
+
+// resolveFastForwardParents picks the final answer: the wizard's when it ran (it
+// already folded the flags in as a preset), the flags alone otherwise. Dry-run
+// stays offline, so it never refreshes a parent whatever was asked.
+func resolveFastForwardParents(params resolveFastForwardParentsParams) bool {
+	if params.DryRun {
+		return false
+	}
+	if params.Inspected {
+		return params.Answer
+	}
+	return params.Settled == rules.ParentFastForward
+}
+
+func parentPreset(settled rules.ParentDecision) *bool {
+	if settled == rules.ParentAsk {
+		return nil
+	}
+	value := settled == rules.ParentFastForward
+	return &value
 }
 
 // branchesForSync preserves --all's "sync every worktree" semantics: the service

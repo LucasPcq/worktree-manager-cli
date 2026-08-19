@@ -1,6 +1,10 @@
 package rules
 
-import "github.com/LucasPcq/wtm/internal/domain"
+import (
+	"fmt"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+)
 
 // SyncIncludesBaseParams holds inputs for SyncIncludesBase.
 type SyncIncludesBaseParams struct {
@@ -21,6 +25,31 @@ func SyncIncludesBase(params SyncIncludesBaseParams) bool {
 		}
 	}
 	return false
+}
+
+// BaseIsTargetParams holds inputs for BaseIsTarget.
+type BaseIsTargetParams struct {
+	Steps      []domain.SyncStep
+	Selected   []string
+	BaseBranch string
+}
+
+// BaseIsTarget reports whether the base plays any role in this run. When it does
+// not, fetching and fast-forwarding it would be a side effect on a branch the run
+// was never asked about — which is what a cascade hanging entirely off some other
+// parent produces.
+func BaseIsTarget(params BaseIsTargetParams) bool {
+	for _, step := range params.Steps {
+		if step.SourceBranch == params.BaseBranch {
+			return true
+		}
+	}
+	// No step rebases onto it, so only the selection can bring it in: --all covers
+	// the forest including its root, an explicit selection may name it.
+	return SyncIncludesBase(SyncIncludesBaseParams{
+		Selected:   params.Selected,
+		BaseBranch: params.BaseBranch,
+	})
 }
 
 // PushableCount counts the rebased steps that have a pending push not yet done.
@@ -83,4 +112,69 @@ func DecidePush(params DecidePushParams) PushDecision {
 		return PushSkip
 	}
 	return PushConfirm
+}
+
+// ParentDecision is the resolved action for the parents no step covers.
+type ParentDecision int
+
+const (
+	ParentLeaveAsIs ParentDecision = iota
+	ParentFastForward
+	ParentAsk
+)
+
+// DecideParentFastForwardParams holds inputs for DecideParentFastForward.
+type DecideParentFastForwardParams struct {
+	FF          bool
+	NoFF        bool
+	Interactive bool
+	StaleCount  int
+	// Yes is --yes. Advancing a branch the user never named is a side effect, so
+	// the unattended default is to report it and move on; --ff-parents opts in.
+	Yes bool
+}
+
+// ParentFlagsDecision resolves what the flags alone say, without knowing whether
+// anything is stale — so a surface learns whether it must inspect the parents at
+// all. Only ParentAsk needs the count.
+func ParentFlagsDecision(params DecideParentFastForwardParams) ParentDecision {
+	if params.NoFF {
+		return ParentLeaveAsIs
+	}
+	if params.FF {
+		return ParentFastForward
+	}
+	if params.Yes || !params.Interactive {
+		return ParentLeaveAsIs
+	}
+	return ParentAsk
+}
+
+// DecideParentFastForward is ParentFlagsDecision once the count is known.
+func DecideParentFastForward(params DecideParentFastForwardParams) ParentDecision {
+	if params.StaleCount == 0 {
+		return ParentLeaveAsIs
+	}
+	return ParentFlagsDecision(params)
+}
+
+// StaleParents keeps the parents a fast-forward would actually advance: a
+// diverged one is reported but never actionable.
+func StaleParents(updates []domain.ParentUpdate) []domain.ParentUpdate {
+	stale := make([]domain.ParentUpdate, 0, len(updates))
+	for _, update := range updates {
+		if update.Status == domain.ParentBehind {
+			stale = append(stale, update)
+		}
+	}
+	return stale
+}
+
+// CommitCountLabel renders a commit distance for prose ("1 commit" / "3 commits").
+// It lives here because output/ and tui/ both need it and cannot import each other.
+func CommitCountLabel(n int) string {
+	if n == 1 {
+		return "1 commit"
+	}
+	return fmt.Sprintf("%d commits", n)
 }

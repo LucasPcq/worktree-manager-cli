@@ -165,6 +165,31 @@ func FetchBranch(params FetchBranchParams) error {
 	return nil
 }
 
+// FastForwardRefParams holds inputs for advancing a branch ref that is not
+// checked out anywhere.
+type FastForwardRefParams struct {
+	ProjectDir string
+	Branch     string
+}
+
+// FastForwardRef advances a local branch to its origin counterpart by fetching
+// straight into the ref. The refspec carries no leading '+', so git itself
+// refuses a rewrite: the safety net does not depend on the caller checking first.
+// git 2.36+ also refuses a branch checked out in a worktree — advance those with
+// FastForwardBranch inside their own worktree. Prefer this to
+// UpdateLocalBranchToRemote, which force-moves and can lose commits.
+func FastForwardRef(params FastForwardRefParams) error {
+	refspec := params.Branch + ":" + params.Branch
+	remote := strings.TrimSuffix(domain.RemoteBranchPrefix, "/")
+	cmd := exec.Command("git", "fetch", remote, refspec)
+	cmd.Dir = params.ProjectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git fetch %s %s: %s", remote, refspec, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // FetchPruneParams holds inputs for a pruning fetch.
 type FetchPruneParams struct {
 	ProjectDir string
@@ -254,6 +279,9 @@ type UpdateLocalBranchToRemoteParams struct {
 // via `git branch -f <branch> origin/<branch>`. git refuses this when the branch
 // is checked out in a worktree, so callers must only use it for branches that are
 // not checked out (and after verifying the move is a fast-forward).
+//
+// It force-moves the ref, so the fast-forward is the caller's responsibility.
+// New callers should use FastForwardRef, which makes git enforce it.
 func UpdateLocalBranchToRemote(params UpdateLocalBranchToRemoteParams) error {
 	cmd := exec.Command("git", "branch", "-f", params.Branch, domain.RemoteBranchPrefix+params.Branch)
 	cmd.Dir = params.ProjectDir

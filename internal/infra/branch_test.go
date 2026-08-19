@@ -263,3 +263,84 @@ func TestDeleteLocalBranch(t *testing.T) {
 		}
 	}
 }
+
+// repoWithRemote returns a repo wired to a bare origin, with main pushed.
+func repoWithRemote(t *testing.T) string {
+	t.Helper()
+	dir := gittest.InitRepo(t)
+	remote := t.TempDir()
+	runGit(t, remote, "init", "--bare", "-b", "main")
+	runGit(t, dir, "remote", "add", "origin", remote)
+	runGit(t, dir, "push", "-u", "origin", "main")
+	return dir
+}
+
+// advanceOriginOf pushes one commit onto origin/<branch> from a detached
+// worktree, leaving the local ref behind.
+func advanceOriginOf(t *testing.T, dir, branch string) {
+	t.Helper()
+	tmp := t.TempDir()
+	runGit(t, dir, "worktree", "add", "--detach", tmp, branch)
+	runGit(t, tmp, "commit", "--allow-empty", "-m", "remote-only")
+	runGit(t, tmp, "push", "origin", "HEAD:"+branch)
+	runGit(t, dir, "worktree", "remove", "--force", tmp)
+}
+
+func TestFastForwardRef(t *testing.T) {
+	dir := repoWithRemote(t)
+	runGit(t, dir, "branch", "feat")
+	runGit(t, dir, "push", "-u", "origin", "feat")
+	advanceOriginOf(t, dir, "feat")
+
+	if err := FastForwardRef(FastForwardRefParams{ProjectDir: dir, Branch: "feat"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := revParse(t, dir, "feat"), revParse(t, dir, "origin/feat"); got != want {
+		t.Errorf("feat = %s, want origin/feat = %s", got, want)
+	}
+}
+
+// The refspec carries no leading '+', so git itself refuses a non-fast-forward.
+// This is the safety net the caller's ancestor checks rest on: it holds even if
+// those checks were wrong.
+func TestFastForwardRefRefusesNonFastForward(t *testing.T) {
+	dir := repoWithRemote(t)
+	runGit(t, dir, "branch", "feat")
+	runGit(t, dir, "push", "-u", "origin", "feat")
+	advanceOriginOf(t, dir, "feat")
+
+	// Move the local ref sideways so it can no longer fast-forward.
+	tmp := t.TempDir()
+	runGit(t, dir, "worktree", "add", "--detach", tmp, "feat")
+	runGit(t, tmp, "commit", "--allow-empty", "-m", "local-only")
+	sideways := revParse(t, tmp, "HEAD")
+	runGit(t, dir, "worktree", "remove", "--force", tmp)
+	runGit(t, dir, "branch", "-f", "feat", sideways)
+
+	if err := FastForwardRef(FastForwardRefParams{ProjectDir: dir, Branch: "feat"}); err == nil {
+		t.Fatal("a non-fast-forward update must be refused")
+	}
+	if got := revParse(t, dir, "feat"); got != sideways {
+		t.Errorf("feat moved to %s despite the refusal (was %s)", got, sideways)
+	}
+}
+
+// A branch checked out in a worktree cannot be moved from under it; such parents
+// are advanced with FastForwardBranch inside their own worktree instead.
+func TestFastForwardRefRefusesCheckedOutBranch(t *testing.T) {
+	dir := repoWithRemote(t)
+	runGit(t, dir, "branch", "feat")
+	runGit(t, dir, "push", "-u", "origin", "feat")
+	advanceOriginOf(t, dir, "feat")
+
+	wt := t.TempDir()
+	runGit(t, dir, "worktree", "add", wt, "feat")
+	before := revParse(t, dir, "feat")
+
+	if err := FastForwardRef(FastForwardRefParams{ProjectDir: dir, Branch: "feat"}); err == nil {
+		t.Fatal("git should refuse to fetch into a checked-out branch")
+	}
+	if got := revParse(t, dir, "feat"); got != before {
+		t.Errorf("feat moved to %s despite the refusal (was %s)", got, before)
+	}
+}

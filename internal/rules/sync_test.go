@@ -87,3 +87,136 @@ func TestDecidePush(t *testing.T) {
 		})
 	}
 }
+
+func TestDecideParentFastForward(t *testing.T) {
+	tests := []struct {
+		name string
+		in   DecideParentFastForwardParams
+		want ParentDecision
+	}{
+		{name: "nothing stale", in: DecideParentFastForwardParams{Interactive: true}, want: ParentLeaveAsIs},
+		{name: "no-ff wins", in: DecideParentFastForwardParams{NoFF: true, FF: true, StaleCount: 1}, want: ParentLeaveAsIs},
+		{name: "ff forces", in: DecideParentFastForwardParams{FF: true, StaleCount: 1}, want: ParentFastForward},
+		{name: "ff wins over yes", in: DecideParentFastForwardParams{FF: true, Yes: true, StaleCount: 1}, want: ParentFastForward},
+		{name: "yes leaves as is", in: DecideParentFastForwardParams{Yes: true, Interactive: true, StaleCount: 2}, want: ParentLeaveAsIs},
+		{name: "non-interactive leaves as is", in: DecideParentFastForwardParams{StaleCount: 2}, want: ParentLeaveAsIs},
+		{name: "interactive asks", in: DecideParentFastForwardParams{Interactive: true, StaleCount: 2}, want: ParentAsk},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := DecideParentFastForward(tc.in); got != tc.want {
+				t.Fatalf("DecideParentFastForward(%+v) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStaleParents(t *testing.T) {
+	updates := []domain.ParentUpdate{
+		{Branch: "a", Status: domain.ParentBehind},
+		{Branch: "b", Status: domain.ParentDiverged},
+		{Branch: "c", Status: domain.ParentFastForwarded},
+		{Branch: "d", Status: domain.ParentBehind},
+	}
+	stale := StaleParents(updates)
+	if len(stale) != 2 || stale[0].Branch != "a" || stale[1].Branch != "d" {
+		t.Fatalf("StaleParents = %+v, want the two behind parents", stale)
+	}
+}
+
+func TestCommitCountLabel(t *testing.T) {
+	tests := []struct {
+		n    int
+		want string
+	}{
+		{n: 0, want: "0 commits"},
+		{n: 1, want: "1 commit"},
+		{n: 2, want: "2 commits"},
+	}
+	for _, tc := range tests {
+		if got := CommitCountLabel(tc.n); got != tc.want {
+			t.Errorf("CommitCountLabel(%d) = %q, want %q", tc.n, got, tc.want)
+		}
+	}
+}
+
+func TestBaseIsTarget(t *testing.T) {
+	offBase := []domain.SyncStep{
+		{Branch: "dev-1", SourceBranch: "feature"},
+		{Branch: "dev-2", SourceBranch: "feature"},
+	}
+	onBase := []domain.SyncStep{{Branch: "feat", SourceBranch: "main"}}
+
+	tests := []struct {
+		name string
+		in   BaseIsTargetParams
+		want bool
+	}{
+		{
+			name: "a step rebases onto the base",
+			in:   BaseIsTargetParams{Steps: onBase, Selected: []string{"feat"}, BaseBranch: "main"},
+			want: true,
+		},
+		{
+			// The reported bug: an explicit selection whose every step hangs off
+			// another parent must leave the base completely alone.
+			name: "explicit selection, nothing targets the base",
+			in:   BaseIsTargetParams{Steps: offBase, Selected: []string{"dev-1", "dev-2"}, BaseBranch: "main"},
+			want: false,
+		},
+		{
+			// --all covers the whole forest including its root, even when no
+			// worktree happens to hang off the base.
+			name: "--all with nothing targeting the base",
+			in:   BaseIsTargetParams{Steps: offBase, Selected: nil, BaseBranch: "main"},
+			want: true,
+		},
+		{
+			name: "the selection names the base",
+			in:   BaseIsTargetParams{Steps: offBase, Selected: []string{"dev-1", "main"}, BaseBranch: "main"},
+			want: true,
+		},
+		{
+			name: "no step at all is the base-only refresh",
+			in:   BaseIsTargetParams{Selected: nil, BaseBranch: "main"},
+			want: true,
+		},
+		{
+			name: "no step and a selection that ignores the base",
+			in:   BaseIsTargetParams{Selected: []string{"dev-1"}, BaseBranch: "main"},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := BaseIsTarget(tc.in); got != tc.want {
+				t.Fatalf("BaseIsTarget(%+v) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// ParentFlagsDecision answers without knowing how many parents are stale — that
+// is the whole point: only ParentAsk makes a surface pay for the inspection.
+func TestParentFlagsDecision(t *testing.T) {
+	tests := []struct {
+		name string
+		in   DecideParentFastForwardParams
+		want ParentDecision
+	}{
+		{name: "no flag, interactive", in: DecideParentFastForwardParams{Interactive: true}, want: ParentAsk},
+		{name: "no-ff wins over ff", in: DecideParentFastForwardParams{NoFF: true, FF: true}, want: ParentLeaveAsIs},
+		{name: "ff", in: DecideParentFastForwardParams{FF: true}, want: ParentFastForward},
+		{name: "yes without ff", in: DecideParentFastForwardParams{Yes: true, Interactive: true}, want: ParentLeaveAsIs},
+		{name: "non-interactive", in: DecideParentFastForwardParams{}, want: ParentLeaveAsIs},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ParentFlagsDecision(tc.in); got != tc.want {
+				t.Fatalf("ParentFlagsDecision(%+v) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
