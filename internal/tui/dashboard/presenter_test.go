@@ -8,6 +8,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
+	syncflow "github.com/LucasPcq/wtm/internal/flow/sync"
 )
 
 // collect drains what a presenter posted, without a running model behind it.
@@ -59,5 +60,87 @@ func TestPrunePresenterSaysWhenNothingMatched(t *testing.T) {
 
 	if len(lines) != 1 || lines[0] != domain.PruneNothingToPrune {
 		t.Errorf("lines = %v, want the empty run to say so once", lines)
+	}
+}
+
+// Keeping a conflict is offered here as it is on the CLI, so the panel owes the
+// user the way out: the worktree it was left in, and the two commands that end it.
+func TestSyncPresenterNamesTheWayOutOfAKeptConflict(t *testing.T) {
+	outcome := syncflow.Outcome{Result: domain.SyncResult{Steps: []domain.SyncStepResult{{
+		Branch:         "feat-a",
+		Path:           "/tmp/trees/feat-a",
+		Status:         domain.SyncStatusConflict,
+		KeptInProgress: true,
+	}}}}
+
+	lines := collect(t, func(send func(tea.Msg)) {
+		if err := (syncPresenter{presenter{send: send}}).Synced(outcome); err != nil {
+			t.Fatalf("Synced: %v", err)
+		}
+	})
+
+	body := strings.Join(lines, "\n")
+	if !strings.Contains(body, "/tmp/trees/feat-a") || !strings.Contains(body, "rebase --continue") {
+		t.Errorf("a kept conflict must name its worktree and the way out:\n%s", body)
+	}
+}
+
+func TestSyncPresenterSaysWhenNothingMatched(t *testing.T) {
+	lines := collect(t, func(send func(tea.Msg)) {
+		if err := (syncPresenter{presenter{send: send}}).Synced(syncflow.Outcome{Empty: true}); err != nil {
+			t.Fatalf("Synced: %v", err)
+		}
+	})
+
+	if len(lines) != 1 || lines[0] != domain.SyncNothingToSync {
+		t.Errorf("lines = %v, want the empty run to say so once", lines)
+	}
+}
+
+// A base refresh rebases nothing, so the per-step lines are empty: without the
+// base line the user would watch a run report nothing at all.
+func TestSyncPresenterReportsTheBaseAndEveryStep(t *testing.T) {
+	result := domain.SyncResult{
+		BaseBranch:   "main",
+		BaseTargeted: true,
+		BaseUpdated:  true,
+		Steps: []domain.SyncStepResult{
+			{Branch: "feat-a", Status: domain.SyncStatusSynced},
+			{Branch: "feat-b", Status: domain.SyncStatusSkippedDirty},
+		},
+		ParentUpdates: []domain.ParentUpdate{{Branch: "dev", Status: domain.ParentFastForwarded}},
+	}
+
+	lines := collect(t, func(send func(tea.Msg)) {
+		(syncPresenter{presenter{send: send}}).Rebased(result)
+	})
+
+	body := strings.Join(lines, "\n")
+	for _, want := range []string{"main", domain.SyncBaseLabelFastForwarded, "feat-a", domain.SyncLabelSynced,
+		"feat-b", domain.SyncLabelSkippedDirty, "dev", domain.SyncParentLabelFastForwarded} {
+		if !strings.Contains(body, want) {
+			t.Errorf("output missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestSyncPresenterReportsWhatItPushed(t *testing.T) {
+	outcome := syncflow.Outcome{Result: domain.SyncResult{Steps: []domain.SyncStepResult{
+		{Branch: "feat-a", Status: domain.SyncStatusSynced, Pushed: true},
+		{Branch: "feat-b", Status: domain.SyncStatusSynced},
+	}}}
+
+	lines := collect(t, func(send func(tea.Msg)) {
+		if err := (syncPresenter{presenter{send: send}}).Synced(outcome); err != nil {
+			t.Fatalf("Synced: %v", err)
+		}
+	})
+
+	body := strings.Join(lines, "\n")
+	if !strings.Contains(body, "feat-a") {
+		t.Errorf("a pushed branch must be reported:\n%s", body)
+	}
+	if strings.Contains(body, "feat-b") {
+		t.Errorf("a branch left local must not read as pushed:\n%s", body)
 	}
 }

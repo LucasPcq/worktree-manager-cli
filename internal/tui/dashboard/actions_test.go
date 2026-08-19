@@ -292,3 +292,130 @@ func TestBatchReparentIsRefusedWhileARunHoldsTheSurface(t *testing.T) {
 		t.Error("the refusal must be stated where the user is looking")
 	}
 }
+
+// The forest the subtree pre-check needs is derived from what the model already
+// holds — the statuses and their recorded parents — rather than re-read from
+// disk on a keystroke.
+func TestTheModelDerivesItsForestFromWhatItAlreadyHolds(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight)
+	model = update(model, worktreesMsg{
+		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}, {Branch: "a"}, {Branch: "b"}},
+		parents:  map[string]string{"a": "main", "b": "a"},
+	})
+
+	nodes := model.worktreeNodes()
+
+	if len(nodes) != 3 {
+		t.Fatalf("nodes = %+v, want one per worktree", nodes)
+	}
+	if nodes[2].Branch != "b" || nodes[2].SourceBranch != "a" {
+		t.Errorf("node = %+v, want the recorded parent carried over", nodes[2])
+	}
+	if !nodes[0].IsMain {
+		t.Error("the base worktree must stay the root of the forest")
+	}
+}
+
+// "Sync this worktree" means the cascade it belongs to: rebasing a worktree
+// leaves what hangs under it behind, so that is what arrives checked.
+func TestSyncFromARowPreChecksItsWholeSubtree(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight)
+	model = update(model, worktreesMsg{
+		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}, {Branch: "a"}, {Branch: "b"}, {Branch: "c"}},
+		parents:  map[string]string{"a": "main", "b": "a", "c": "main"},
+	})
+
+	got := model.subtreeOf("a")
+
+	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("pre-checked = %v, want the row and its descendants", got)
+	}
+}
+
+// The full run offers every worktree but leaves out what a cascade would skip:
+// they stay listed, with the tag that says why, and the user can still check them.
+func TestSyncAllLeavesTheUnsyncableUnchecked(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight)
+	model = update(model, worktreesMsg{
+		statuses: []domain.WorktreeStatus{
+			{Branch: "main", IsParent: true},
+			{Branch: "clean"},
+			{Branch: "dirty", IsDirty: true},
+			{Branch: "stuck", RebaseInProgress: true},
+		},
+		parents: map[string]string{},
+	})
+
+	got := model.syncableBranches()
+
+	if len(got) != 1 || got[0] != "clean" {
+		t.Errorf("pre-checked = %v, want only the worktree a cascade would rebase", got)
+	}
+}
+
+// A cascade asks before it writes and rebases several worktrees, so it holds the
+// whole surface and locks none of them in particular.
+func TestSyncBlocksTheSurfaceAndLocksNoWorktree(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+
+	model, cmd := model.startSync("b")
+
+	if cmd == nil {
+		t.Fatal("startSync must hand the run to a bubbletea command")
+	}
+	if len(model.ops.running) != 1 {
+		t.Fatalf("running = %+v, want the run recorded", model.ops.running)
+	}
+	got := model.ops.running[0]
+	if got.kind != domain.OpKindSync || got.mode != flow.ModeBlocking {
+		t.Errorf("operation = %+v, want the mode sync declares", got)
+	}
+	if got.target != "" {
+		t.Errorf("target = %q, want none: the cascade covers several worktrees", got.target)
+	}
+	if !model.outputExpanded {
+		t.Error("a run the user cannot watch is a run they cannot trust: the output panel must open")
+	}
+}
+
+func TestSyncIsRefusedWhileSomethingHoldsTheWorktree(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindCreate, target: "b"})
+
+	refused, cmd := model.startSync("b")
+
+	if cmd != nil {
+		t.Fatal("nothing may rebase a worktree another run is holding")
+	}
+	if len(refused.outputLines) == 0 {
+		t.Error("the refusal must be stated where the user is looking")
+	}
+}
+
+// A cascade rewrites branches and can move the base, so the whole list has to be
+// re-read rather than one row patched.
+func TestAFinishedSyncRefreshesTheList(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+
+	_, cmd := model.applyFlow(syncedMsg{})
+
+	if cmd == nil {
+		t.Error("a finished sync must trigger a reload")
+	}
+}
+
+// A cascade that ends on a conflict reports every step as it goes and then fails:
+// the panel already holds what happened, so the run adds nothing under it.
+func TestARunThatAlreadyReportedItselfAddsNoRedundantFailureLine(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model, _ = model.startSync("b")
+
+	model = update(model, opDoneMsg{id: model.ops.running[0].id, err: domain.ErrAborted})
+
+	if len(model.ops.running) != 0 {
+		t.Fatalf("running = %+v, want the finished run released", model.ops.running)
+	}
+	if len(model.outputLines) != 0 {
+		t.Errorf("output = %q, want nothing: the steps already said what happened", model.outputLines)
+	}
+}

@@ -590,6 +590,26 @@ const (
 	// SyncTag* name what the cascade would skip.
 	SyncTagDirty    = "dirty"
 	SyncTagRebasing = "rebasing"
+	// SyncLabel* say in a few words what became of one branch, for a surface with
+	// one line per step rather than a paragraph (rules.SyncStatusLabel).
+	SyncLabelSynced           = "rebased onto its parent"
+	SyncLabelUpToDate         = "already up to date"
+	SyncLabelSkippedDirty     = "skipped — uncommitted changes"
+	SyncLabelSkippedAncestor  = "skipped — its parent was not synced"
+	SyncLabelDiverged         = "skipped — diverged from origin"
+	SyncLabelRebaseInProgress = "skipped — a rebase is already in progress"
+	SyncLabelConflict         = "conflict"
+	SyncLabelUnknownParent    = "skipped — no recorded parent"
+	SyncLabelError            = "failed"
+	// SyncBaseLabel* and SyncParentLabel* do the same for the two branches a
+	// cascade moves without rebasing them (rules.SyncBaseLabel,
+	// rules.SyncParentStatusLabel).
+	SyncBaseLabelFastForwarded   = "fast-forwarded from origin"
+	SyncBaseLabelUpToDate        = "already up to date"
+	SyncParentLabelFastForwarded = "fast-forwarded from origin"
+	SyncParentLabelBehind        = "left behind origin"
+	SyncParentLabelDiverged      = "diverged from origin — left untouched"
+	SyncParentLabelFFFailed      = "could not be fast-forwarded"
 	// SyncPlanFailedFmt heads the recap of a cascade that could not be planned
 	// (e.g. a cycle in the parent chain).
 	SyncPlanFailedFmt = "Failed to build sync plan: %w"
@@ -1023,6 +1043,18 @@ const (
 	// removes nothing.
 	DashboardMenuPrune  = "Prune finished worktrees"
 	DashboardMenuDelete = "Delete worktree"
+	// DashboardMenuSync leads the row menu: the Tree tab is where a worktree whose
+	// parent moved is flagged, so it is where the rebase has to be reachable from.
+	// It arrives with the row and its descendants checked; the selection stays the
+	// user's to change.
+	DashboardMenuSync = "Sync this worktree"
+	// DashboardMenuRefreshBase is the only entry the base row offers: it hangs off
+	// nothing, so there is no rebase to run on it — only its own fast-forward.
+	DashboardMenuRefreshBase = "Refresh base branch"
+	// DashboardMenuSyncAll rebases every worktree at once. It arrives with the ones
+	// a cascade would skip left unchecked — they stay listed, with the tag saying
+	// why.
+	DashboardMenuSyncAll = "Sync all worktrees"
 	// DashboardMenuEmpty stands in for the actions of a worktree that has none.
 	DashboardMenuEmpty = "No actions available"
 	// DashboardMenuChrome is what the menu box spends on its borders and padding.
@@ -1033,6 +1065,15 @@ const (
 	DashboardReparentTitle      = "Change parent"
 	DashboardReparentBatchTitle = "Reparent worktrees"
 	DashboardPruneTitle         = "Prune finished worktrees"
+	DashboardSyncTitle          = "Sync worktrees"
+	DashboardRefreshBaseTitle   = "Refresh base branch"
+	// DashboardSync*Fmt report a finished cascade in the output panel, one line per
+	// branch it touched. Verbs: branch, then what became of it.
+	DashboardSyncStepFmt   = "%s — %s"
+	DashboardSyncParentFmt = "%s (parent) — %s"
+	DashboardSyncBaseFmt   = "%s (base) — %s"
+	// DashboardSyncPushedFmt reports a branch the run published (branch).
+	DashboardSyncPushedFmt = "↑ %s pushed to origin"
 	// DashboardActionsLabel is the header button that opens the global menu, and
 	// DashboardActionsTitle heads that menu. KeyActions is its keyboard way in.
 	DashboardActionsLabel = "⋯ Actions"

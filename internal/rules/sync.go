@@ -193,3 +193,100 @@ func CommitCountLabel(n int) string {
 	}
 	return fmt.Sprintf("%d commits", n)
 }
+
+// SyncStatusLabel says in a few words what became of one step, for a surface
+// that has one line per branch rather than a paragraph. An unrecognized status
+// reads as itself: a blank line would hide a step that did happen.
+func SyncStatusLabel(status domain.SyncStepStatus) string {
+	switch status {
+	case domain.SyncStatusSynced:
+		return domain.SyncLabelSynced
+	case domain.SyncStatusUpToDate:
+		return domain.SyncLabelUpToDate
+	case domain.SyncStatusSkippedDirty:
+		return domain.SyncLabelSkippedDirty
+	case domain.SyncStatusSkippedAncestor:
+		return domain.SyncLabelSkippedAncestor
+	case domain.SyncStatusDiverged:
+		return domain.SyncLabelDiverged
+	case domain.SyncStatusRebaseInProgress:
+		return domain.SyncLabelRebaseInProgress
+	case domain.SyncStatusConflict:
+		return domain.SyncLabelConflict
+	case domain.SyncStatusUnknownParent:
+		return domain.SyncLabelUnknownParent
+	case domain.SyncStatusError:
+		return domain.SyncLabelError
+	default:
+		return string(status)
+	}
+}
+
+// SyncBaseLabel says what became of the base branch a cascade fetched.
+func SyncBaseLabel(updated bool) string {
+	if updated {
+		return domain.SyncBaseLabelFastForwarded
+	}
+	return domain.SyncBaseLabelUpToDate
+}
+
+// SyncParentStatusLabel says what became of a parent no step covered.
+func SyncParentStatusLabel(status domain.ParentStatus) string {
+	switch status {
+	case domain.ParentFastForwarded:
+		return domain.SyncParentLabelFastForwarded
+	case domain.ParentBehind:
+		return domain.SyncParentLabelBehind
+	case domain.ParentDiverged:
+		return domain.SyncParentLabelDiverged
+	case domain.ParentFFFailed:
+		return domain.SyncParentLabelFFFailed
+	default:
+		return string(status)
+	}
+}
+
+// SyncableBranches lists the worktrees a cascade would actually rebase: the base
+// hangs off nothing, and a dirty or half-rebased worktree is skipped. It is what
+// a surface offering "sync everything" pre-checks — the rest stays listed, and
+// checkable, rather than dropped.
+func SyncableBranches(statuses []domain.WorktreeStatus) []string {
+	branches := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		if status.IsParent || status.IsDirty || status.RebaseInProgress {
+			continue
+		}
+		branches = append(branches, status.Branch)
+	}
+	return branches
+}
+
+// WorktreeNodesParams holds inputs for WorktreeNodes.
+type WorktreeNodesParams struct {
+	Statuses []domain.WorktreeStatus
+	// Parents maps a branch to the branch it was created from.
+	Parents map[string]string
+}
+
+// WorktreeNodes pairs each worktree with its recorded parent: the forest the
+// sync and reparent rules read. A surface that already holds both builds it from
+// them rather than reading the repository again.
+func WorktreeNodes(params WorktreeNodesParams) []domain.WorktreeNode {
+	nodes := make([]domain.WorktreeNode, 0, len(params.Statuses))
+	for _, status := range params.Statuses {
+		// The root hangs off nothing: leftover metadata naming a parent for it would
+		// otherwise close a loop through the whole forest.
+		source := ""
+		if !status.IsParent {
+			source = params.Parents[status.Branch]
+		}
+		nodes = append(nodes, domain.WorktreeNode{
+			Branch:           status.Branch,
+			Path:             status.Path,
+			SourceBranch:     source,
+			IsMain:           status.IsParent,
+			RebaseInProgress: status.RebaseInProgress,
+		})
+	}
+	return nodes
+}

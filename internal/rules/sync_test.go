@@ -242,3 +242,80 @@ func TestSyncSelectsOnlyBase(t *testing.T) {
 		})
 	}
 }
+
+func TestSyncStatusLabelNamesEveryOutcome(t *testing.T) {
+	tests := []struct {
+		status domain.SyncStepStatus
+		want   string
+	}{
+		{domain.SyncStatusSynced, domain.SyncLabelSynced},
+		{domain.SyncStatusUpToDate, domain.SyncLabelUpToDate},
+		{domain.SyncStatusSkippedDirty, domain.SyncLabelSkippedDirty},
+		{domain.SyncStatusSkippedAncestor, domain.SyncLabelSkippedAncestor},
+		{domain.SyncStatusDiverged, domain.SyncLabelDiverged},
+		{domain.SyncStatusRebaseInProgress, domain.SyncLabelRebaseInProgress},
+		{domain.SyncStatusConflict, domain.SyncLabelConflict},
+		{domain.SyncStatusUnknownParent, domain.SyncLabelUnknownParent},
+		{domain.SyncStatusError, domain.SyncLabelError},
+	}
+
+	for _, tc := range tests {
+		if got := SyncStatusLabel(tc.status); got != tc.want {
+			t.Errorf("SyncStatusLabel(%s) = %q, want %q", tc.status, got, tc.want)
+		}
+	}
+}
+
+// An unknown status must still read as something: a blank line in a run recap
+// hides a step that did happen.
+func TestSyncStatusLabelFallsBackToTheStatusItself(t *testing.T) {
+	if got := SyncStatusLabel(domain.SyncStepStatus("weather")); got != "weather" {
+		t.Errorf("SyncStatusLabel(weather) = %q, want the status itself", got)
+	}
+}
+
+func TestSyncBaseAndParentLabels(t *testing.T) {
+	if got := SyncBaseLabel(true); got != domain.SyncBaseLabelFastForwarded {
+		t.Errorf("SyncBaseLabel(true) = %q", got)
+	}
+	if got := SyncBaseLabel(false); got != domain.SyncBaseLabelUpToDate {
+		t.Errorf("SyncBaseLabel(false) = %q", got)
+	}
+	if got := SyncParentStatusLabel(domain.ParentDiverged); got != domain.SyncParentLabelDiverged {
+		t.Errorf("SyncParentStatusLabel(diverged) = %q", got)
+	}
+}
+
+// A surface offering "sync everything" pre-checks what a cascade would actually
+// rebase: the rest stays listed and unchecked rather than silently dropped.
+func TestSyncableBranchesLeavesOutWhatTheCascadeWouldSkip(t *testing.T) {
+	statuses := []domain.WorktreeStatus{
+		{Branch: "main", IsParent: true},
+		{Branch: "clean"},
+		{Branch: "dirty", IsDirty: true},
+		{Branch: "stuck", RebaseInProgress: true},
+	}
+
+	got := SyncableBranches(statuses)
+
+	if len(got) != 1 || got[0] != "clean" {
+		t.Errorf("SyncableBranches = %v, want only the rebasable worktree", got)
+	}
+}
+
+func TestWorktreeNodesPairsEachStatusWithItsRecordedParent(t *testing.T) {
+	nodes := WorktreeNodes(WorktreeNodesParams{
+		Statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}, {Branch: "a", Path: "/wt/a"}},
+		Parents:  map[string]string{"a": "main"},
+	})
+
+	if len(nodes) != 2 {
+		t.Fatalf("nodes = %+v, want one per status", nodes)
+	}
+	if !nodes[0].IsMain || nodes[0].SourceBranch != "" {
+		t.Errorf("root = %+v, want the base carrying no parent", nodes[0])
+	}
+	if nodes[1].SourceBranch != "main" || nodes[1].Path != "/wt/a" {
+		t.Errorf("node = %+v, want the recorded parent and path carried over", nodes[1])
+	}
+}
