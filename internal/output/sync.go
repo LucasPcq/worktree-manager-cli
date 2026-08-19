@@ -14,7 +14,7 @@ import (
 // onto which parent, in execution order. It emits a raw body with no outer blank
 // lines; the caller's frame owns the outer vertical padding.
 func FormatSyncPlan(w io.Writer, plan domain.SyncPlan) {
-	SectionTitle(w, planTitle(plan))
+	SectionTitle(w, rules.SyncPlanTitle(plan))
 	if len(plan.Steps) == 0 {
 		Message(w, styles.Muted.Render("No worktrees to sync."))
 		return
@@ -28,36 +28,10 @@ func FormatSyncPlan(w io.Writer, plan domain.SyncPlan) {
 	}
 }
 
-// SprintSyncPlan returns the cascade preview as a plain (unstyled) string: a
-// header line plus one "branch ← parent" line per step, in execution order.
-// Unlike FormatSyncPlan it emits no ANSI styling, so it can be embedded in a
-// wizard step description that the wizard re-renders in its own muted style.
-// Returns "" when the plan has no rebase steps (e.g. a base-only refresh).
-func SprintSyncPlan(plan domain.SyncPlan) string {
-	if len(plan.Steps) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString(planTitle(plan))
-	for i, step := range plan.Steps {
-		parent := step.SourceBranch
-		if parent == "" {
-			parent = "unknown parent"
-		}
-		fmt.Fprintf(&b, "\n%d. %s ← %s", i+1, step.Branch, parent)
-	}
-	return b.String()
-}
-
-// planTitle names the base only when the cascade actually involves it, so a run
-// whose every step rebases onto another parent does not lead with a branch it
-// never touches.
-func planTitle(plan domain.SyncPlan) string {
-	if !plan.BaseTargeted {
-		return "Sync plan"
-	}
-	return fmt.Sprintf("Sync plan (base: %s)", plan.BaseBranch)
-}
+// SprintSyncPlan renders the plan as plain text. The rendering itself is a pure
+// transform (rules), so a flow can build the same preview without reaching into
+// this package.
+func SprintSyncPlan(plan domain.SyncPlan) string { return rules.SprintSyncPlan(plan) }
 
 // FormatSyncResult prints the detailed recap of a sync run: the base update and
 // one line per branch (parent, target commit, before→after, replayed count).
