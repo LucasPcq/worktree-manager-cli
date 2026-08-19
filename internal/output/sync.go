@@ -28,11 +28,6 @@ func FormatSyncPlan(w io.Writer, plan domain.SyncPlan) {
 	}
 }
 
-// SprintSyncPlan renders the plan as plain text. The rendering itself is a pure
-// transform (rules), so a flow can build the same preview without reaching into
-// this package.
-func SprintSyncPlan(plan domain.SyncPlan) string { return rules.SprintSyncPlan(plan) }
-
 // FormatSyncResult prints the detailed recap of a sync run: the base update and
 // one line per branch (parent, target commit, before→after, replayed count).
 // It is rendered BEFORE the push decision so the user sees what happened before
