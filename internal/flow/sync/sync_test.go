@@ -1,14 +1,61 @@
 package sync
 
 import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/testutil/flowtest"
 	"github.com/LucasPcq/wtm/internal/testutil/gittest"
 )
+
+// oneStackRepo is a base with a single worktree hanging off it — the smallest
+// repository whose cascade has a step, which is what an order assertion about
+// the plan needs.
+func oneStackRepo(t *testing.T) flow.Context {
+	t.Helper()
+	dir := gittest.InitRepo(t)
+	stateDir := filepath.Join(dir, ".git", "wtm")
+
+	run(t, dir, "worktree", "add", "-b", "feat-a", filepath.Join(t.TempDir(), "feat-a"), "main")
+	writeSource(t, stateDir, "feat-a", "main")
+
+	return flow.Context{ProjectDir: dir, StateDir: stateDir}
+}
+
+// baseOnlyRepo has no worktree but its own: a cascade with no step, that still
+// has a base to refresh.
+func baseOnlyRepo(t *testing.T) flow.Context {
+	t.Helper()
+	return flow.Context{ProjectDir: gittest.InitRepo(t), StateDir: t.TempDir()}
+}
+
+func run(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s: %s: %v", strings.Join(args, " "), out, err)
+	}
+}
+
+func writeSource(t *testing.T, stateDir, branch, source string) {
+	t.Helper()
+	metaDir := rules.WorktreeMetaDir(stateDir, branch)
+	if err := os.MkdirAll(metaDir, 0o755); err != nil {
+		t.Fatalf("mkdir meta: %v", err)
+	}
+	data, _ := json.Marshal(domain.WorktreeMetadata{SourceBranch: source})
+	if err := os.WriteFile(filepath.Join(metaDir, domain.MetaFileName), data, 0o644); err != nil {
+		t.Fatalf("write meta: %v", err)
+	}
+}
 
 // recordingPresenter captures the three moments in the order they fall: that
 // order is the CLI output order the migration must preserve.
@@ -134,8 +181,9 @@ func TestNoPushWinsOverAnAnsweredQuestion(t *testing.T) {
 
 // The parent step reads staleParents from Skip and again from Build on every
 // rebuild; the narrowing replans the cascade, so it must be paid once per
-// selection.
-func TestStaleParentsAreMemoizedPerSelection(t *testing.T) {
+// selection. The service call cannot be counted from here, so this covers the
+// read side only: a memo that is never written would still pass.
+func TestStaleParentsReadTheMemoBeforeReplanning(t *testing.T) {
 	f := testFlow(Request{BaseBranch: "main"}, stack)
 	f.classified = []domain.ParentUpdate{{Branch: "main", Behind: 1}}
 	f.stale = map[string][]domain.ParentUpdate{"feat-a": {{Branch: "memoized"}}}
@@ -153,7 +201,7 @@ func TestAnEmptyCascadeConcludesBeforeStagingAnything(t *testing.T) {
 	presenter := &recordingPresenter{}
 
 	outcome, err := Run(Params{
-		Context:   flow.Context{ProjectDir: gittest.InitRepo(t), StateDir: t.TempDir()},
+		Context:   baseOnlyRepo(t),
 		Request:   Request{Branches: []string{"main"}, BaseBranch: "other-base"},
 		Prompter:  flow.Unattended{},
 		Presenter: presenter,
@@ -177,16 +225,44 @@ func TestAnEmptyCascadeConcludesBeforeStagingAnything(t *testing.T) {
 func TestAnUnattendedRunShowsThePlanBeforeItRebases(t *testing.T) {
 	presenter := &recordingPresenter{}
 
-	if _, err := Run(Params{
-		Context:   flow.Context{ProjectDir: gittest.InitRepo(t), StateDir: t.TempDir()},
+	outcome, err := Run(Params{
+		Context:   oneStackRepo(t),
 		Request:   Request{All: true, BaseBranch: "main"},
 		Prompter:  flow.Unattended{},
 		Presenter: presenter,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("run: %v", err)
+	}
+	if len(outcome.Plan.Steps) != 1 {
+		t.Fatalf("the fixture must produce a cascade to show, got %+v", outcome.Plan.Steps)
 	}
 
 	want := "planned,stage:" + domain.SyncRebasing + ",rebased,synced"
+	if got := strings.Join(presenter.order, ","); got != want {
+		t.Fatalf("order = %q, want %q", got, want)
+	}
+}
+
+// A cascade with no step still refreshes the base when the selection covers it —
+// and there is no plan to show, so the plan section must not open at all.
+func TestABaseOnlyRefreshShowsNoPlan(t *testing.T) {
+	presenter := &recordingPresenter{}
+
+	outcome, err := Run(Params{
+		Context:   baseOnlyRepo(t),
+		Request:   Request{All: true, BaseBranch: "main"},
+		Prompter:  flow.Unattended{},
+		Presenter: presenter,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if outcome.Empty || len(outcome.Plan.Steps) != 0 {
+		t.Fatalf("a base-only refresh has no step and is not empty, got %+v", outcome)
+	}
+
+	want := "stage:" + domain.SyncRebasing + ",rebased,synced"
 	if got := strings.Join(presenter.order, ","); got != want {
 		t.Fatalf("order = %q, want %q", got, want)
 	}
@@ -197,22 +273,69 @@ func TestAnUnattendedRunShowsThePlanBeforeItRebases(t *testing.T) {
 func TestAnAskedRunNeverShowsThePlanTwice(t *testing.T) {
 	presenter := &recordingPresenter{}
 	prompter := &flowtest.ScriptedPrompter{
-		Sets:    map[string][]string{KeySelection: {"main"}},
-		Answers: map[string]string{KeyConfirm: confirmSync},
+		Answers: map[string]string{KeyConflict: conflictNormal, KeyConfirm: confirmSync},
 	}
 
-	if _, err := Run(Params{
-		Context:   flow.Context{ProjectDir: gittest.InitRepo(t), StateDir: t.TempDir()},
+	outcome, err := Run(Params{
+		Context:   oneStackRepo(t),
 		Request:   Request{All: true, BaseBranch: "main"},
+		Prompter:  prompter,
+		Presenter: presenter,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(outcome.Plan.Steps) != 1 {
+		t.Fatalf("there must be a plan that could have been shown twice, got %+v", outcome.Plan.Steps)
+	}
+
+	want := "stage:" + domain.SyncParentScanning + ",stage:" + domain.SyncRebasing + ",rebased,synced"
+	if got := strings.Join(presenter.order, ","); got != want {
+		t.Fatalf("order = %q, want %q", got, want)
+	}
+}
+
+// --dry-run confirms nothing, so the recap never runs and the plan takes the
+// same route as an unattended run — even on a surface that could have asked.
+func TestADryRunShowsThePlanAndAsksNothing(t *testing.T) {
+	presenter := &recordingPresenter{}
+	prompter := &flowtest.ScriptedPrompter{}
+
+	if _, err := Run(Params{
+		Context:   oneStackRepo(t),
+		Request:   Request{All: true, DryRun: true, BaseBranch: "main"},
 		Prompter:  prompter,
 		Presenter: presenter,
 	}); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
-	want := "stage:" + domain.SyncParentScanning + ",stage:" + domain.SyncRebasing + ",rebased,synced"
+	if prompter.AskedKeys() != "" {
+		t.Fatalf("a preview asks nothing, got %q", prompter.AskedKeys())
+	}
+	want := "planned,stage:" + domain.SyncRebasing + ",rebased,synced"
 	if got := strings.Join(presenter.order, ","); got != want {
 		t.Fatalf("order = %q, want %q", got, want)
+	}
+}
+
+// A preview with no target still picks: --dry-run skips the confirmation, never
+// the selection. Losing this would make `wtm sync --dry-run` refuse on a
+// terminal where it opens a picker today.
+func TestADryRunWithoutATargetStillPicks(t *testing.T) {
+	prompter := &flowtest.ScriptedPrompter{Sets: map[string][]string{KeySelection: {"feat-a"}}}
+
+	if _, err := Run(Params{
+		Context:   oneStackRepo(t),
+		Request:   Request{DryRun: true, BaseBranch: "main"},
+		Prompter:  prompter,
+		Presenter: &recordingPresenter{},
+	}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	if prompter.AskedKeys() != KeySelection {
+		t.Fatalf("the selection is the one question a preview still asks, got %q", prompter.AskedKeys())
 	}
 }
 

@@ -76,9 +76,6 @@ type syncFlow struct {
 	// selection is what the branch arguments resolved to, kept here rather than
 	// written back over the request.
 	selection []string
-	// plan is the cascade the recap previews; it is rebuilt for the final
-	// selection before the run, because the answers may have narrowed it.
-	plan domain.SyncPlan
 }
 
 func Run(params Params) (Outcome, error) {
@@ -131,9 +128,9 @@ func (f *syncFlow) run() (Outcome, error) {
 		})
 	}
 
-	// A run that could not ask never saw the plan in a recap, so it is shown here
-	// — which is the whole of the former two-confirmation-sites gymnastics.
-	if !f.prompter.Interactive() {
+	// The plan is shown here exactly when the recap did not show it: unattended, or
+	// previewing (--dry-run skips the recap). An empty cascade has none to show.
+	if len(plan.Steps) > 0 && !answers.Answered(KeyConfirm) {
 		f.presenter.Planned(plan)
 	}
 

@@ -136,12 +136,10 @@ func TestConflictStepIsSkippedForABaseOnlyRefresh(t *testing.T) {
 // it); declaring it here would double it.
 func TestRecapLeavesTheCancelRowToTheSurface(t *testing.T) {
 	f := testFlow(Request{BaseBranch: "main"}, stack)
-	f.plan = domain.SyncPlan{BaseBranch: "main", Steps: []domain.SyncStep{{Branch: "feat-a", SourceBranch: "main"}}}
+	plan := domain.SyncPlan{BaseBranch: "main", Steps: []domain.SyncStep{{Branch: "feat-a", SourceBranch: "main"}}}
 
-	content, err := f.confirmStep().Build(flow.Answers{})
-	if err != nil {
-		t.Fatalf("build recap: %v", err)
-	}
+	content := f.confirmContent(plan, flow.Answers{})
+
 	if len(content.Options) != 1 || content.Options[0].Label != domain.SyncConfirmOption {
 		t.Fatalf("the recap declares its own option only, got %+v", content.Options)
 	}
@@ -168,16 +166,14 @@ func TestParentsStepIsSkippedWhenNothingIsStale(t *testing.T) {
 
 func TestRecapDescribesThePlan(t *testing.T) {
 	f := testFlow(Request{BaseBranch: "main"}, stack)
-	f.plan = domain.SyncPlan{
+	plan := domain.SyncPlan{
 		BaseBranch:   "main",
 		BaseTargeted: true,
 		Steps:        []domain.SyncStep{{Branch: "feat-a", SourceBranch: "main"}},
 	}
 
-	content, err := f.confirmStep().Build(flow.Answers{})
-	if err != nil {
-		t.Fatalf("build recap: %v", err)
-	}
+	content := f.confirmContent(plan, flow.Answers{})
+
 	if !strings.Contains(content.Description, "feat-a") {
 		t.Fatalf("the recap must carry the plan, got: %q", content.Description)
 	}

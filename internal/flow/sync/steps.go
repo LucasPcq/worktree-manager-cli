@@ -147,6 +147,9 @@ func (f *syncFlow) conflictStep() flow.Step {
 		Key:   KeyConflict,
 		Label: labelConflict,
 		Skip: func(answers flow.Answers) (bool, string) {
+			if f.request.DryRun {
+				return true, domain.SyncDryRunNoQuestion
+			}
 			if rules.SyncSelectsOnlyBase(rules.SyncIncludesBaseParams{
 				Selected:   answers.Values(KeySelection),
 				BaseBranch: f.request.BaseBranch,
@@ -268,33 +271,32 @@ func (f *syncFlow) presetParents() string {
 
 // confirmStep previews the cascade. Building the plan walks every selected
 // worktree's history, so it goes through Load — off the UI goroutine, behind a
-// spinner — unless the run already computed it for a fixed selection.
+// spinner. A preview never puts it: --dry-run confirms nothing, and the plan
+// then reaches the surface through Planned instead.
 func (f *syncFlow) confirmStep() flow.Step {
-	step := flow.Step{
+	return flow.Step{
 		Kind:           flow.StepRecap,
 		Key:            KeyConfirm,
 		Label:          labelConfirm,
 		Title:          domain.SyncConfirmTitle,
 		LoadingMessage: domain.SyncPlanComputing,
+		Skip: func(flow.Answers) (bool, string) {
+			if f.request.DryRun {
+				return true, domain.SyncDryRunNoQuestion
+			}
+			return false, ""
+		},
+		Load: func(answers flow.Answers) (flow.StepContent, error) {
+			plan, err := f.planFor(answers)
+			if err != nil {
+				return flow.StepContent{}, err
+			}
+			return f.confirmContent(plan, answers), nil
+		},
 		Resolve: func(flow.Answers) (flow.Answer, error) {
 			return flow.Answer{Value: confirmSync}, nil
 		},
 	}
-	if len(f.plan.Steps) > 0 {
-		step.Build = func(answers flow.Answers) (flow.StepContent, error) {
-			return f.confirmContent(f.plan, answers), nil
-		}
-		return step
-	}
-	step.Load = func(answers flow.Answers) (flow.StepContent, error) {
-		plan, err := f.planFor(answers)
-		if err != nil {
-			return flow.StepContent{}, err
-		}
-		f.plan = plan
-		return f.confirmContent(plan, answers), nil
-	}
-	return step
 }
 
 func (f *syncFlow) confirmContent(plan domain.SyncPlan, answers flow.Answers) flow.StepContent {

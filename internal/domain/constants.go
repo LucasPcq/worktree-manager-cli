@@ -577,6 +577,9 @@ const (
 	// the user: nothing is rebased, or no parent is behind its remote.
 	SyncNoRebaseStep  = "nothing to rebase"
 	SyncNoStaleParent = "no parent behind its remote"
+	// SyncDryRunNoQuestion is why a preview asks neither of the two decisions that
+	// only matter once a rebase actually runs.
+	SyncDryRunNoQuestion = "dry run — nothing is rebased"
 	// SyncSelectionRequiredFmt refuses a run that can neither pick nor be told what
 	// to sync. Verbs: --all, --yes, --output, json.
 	SyncSelectionRequiredFmt = "specify one or more worktrees, or pass --%s (no interactive picker under --%s, without a terminal, or in --%s %s mode)"
