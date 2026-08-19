@@ -71,7 +71,7 @@ func runResolve(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%q is ambiguous: narrow the query to a single worktree", query)
 	}
 
-	selected, pickErr := pickAmbiguousWorktree(cmd, root, result.Matches)
+	selected, pickErr := pickAmbiguousWorktree(cmd, dir, root, result.Matches)
 	if errors.Is(pickErr, domain.ErrUserAborted) {
 		return nil
 	}
@@ -92,7 +92,7 @@ func emitResolved(cmd *cobra.Command, format string, path string, branch string)
 	return nil
 }
 
-func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []domain.GitWorktree) (domain.WorktreeStatus, error) {
+func pickAmbiguousWorktree(cmd *cobra.Command, cwd, projectDir string, matches []domain.GitWorktree) (domain.WorktreeStatus, error) {
 	cfgResult, err := shared.LoadConfig(cmd, projectDir)
 	if err != nil {
 		return domain.WorktreeStatus{}, err
@@ -140,12 +140,13 @@ func pickAmbiguousWorktree(cmd *cobra.Command, projectDir string, matches []doma
 	}
 
 	return worktreepicker.Run(worktreepicker.RunParams{
-		Statuses:   filtered,
-		Services:   services,
-		Title:      "Select a worktree",
-		ProjectDir: cfgResult.ProjectDir,
-		StateDir:   cfgResult.StateDir,
-		Config:     cfgResult.Config,
+		Statuses:     filtered,
+		Services:     services,
+		Title:        "Select a worktree",
+		ProjectDir:   cfgResult.ProjectDir,
+		StateDir:     cfgResult.StateDir,
+		Config:       cfgResult.Config,
+		ActiveBranch: rules.ActiveWorktree(rules.ActiveWorktreeParams{Cwd: cwd, Statuses: statuses}),
 		PRLoader: func() ([]domain.PRInfo, domain.GHConnection) {
 			return shared.LoadPRs(cfgResult.ProjectDir)
 		},

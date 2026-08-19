@@ -71,8 +71,11 @@ func TestTheHeaderNamesTheProductAndUnderlinesTheActiveTab(t *testing.T) {
 	if !strings.Contains(lines[0], domain.DashboardWordmark) {
 		t.Errorf("context line = %q, want the wordmark", lines[0])
 	}
-	if !strings.Contains(lines[1], domain.DashboardWordmark) || !strings.Contains(lines[1], domain.DashboardTabWorktrees) {
-		t.Errorf("header bar = %q, want the wordmark and the tabs", lines[1])
+	if got := strings.Count(header, domain.DashboardWordmark); got != 1 {
+		t.Errorf("wordmark appears %d times in %q, want exactly once — the context line, not the bar below it", got, header)
+	}
+	if !strings.Contains(lines[1], domain.DashboardTabWorktrees) {
+		t.Errorf("header bar = %q, want the tabs", lines[1])
 	}
 	if !strings.Contains(lines[1], "2 worktrees") {
 		t.Errorf("header bar = %q, want the count of what is listed", lines[1])

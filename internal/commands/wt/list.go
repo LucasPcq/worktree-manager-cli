@@ -87,6 +87,8 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list worktrees: %w", err)
 	}
 
+	activeBranch := rules.ActiveWorktree(rules.ActiveWorktreeParams{Cwd: dir, Statuses: statuses})
+
 	// Non-interactive (JSON or piped text) behaves identically across formats:
 	// PRs are included only with --with-prs, since a pipe can't stream a loader.
 	if !interactive {
@@ -103,13 +105,10 @@ func runList(cmd *cobra.Command, _ []string) error {
 		}
 		output.Frame(cmd.OutOrStdout(), func() {
 			fmt.Fprintln(cmd.OutOrStdout(), strings.TrimRight(output.FormatWorktreeList(output.FormatWorktreeListParams{
-				Statuses: statuses,
-				ActiveBranch: rules.ActiveWorktree(rules.ActiveWorktreeParams{
-					Cwd:      dir,
-					Statuses: statuses,
-				}),
-				PRInfos:  prs,
-				Services: services,
+				Statuses:     statuses,
+				ActiveBranch: activeBranch,
+				PRInfos:      prs,
+				Services:     services,
 			}), "\n"))
 		})
 		return nil
@@ -123,11 +122,12 @@ func runList(cmd *cobra.Command, _ []string) error {
 	}
 
 	selected, action, prs, err := pickWorktreeAndAction(pickParams{
-		statuses:   statuses,
-		services:   services,
-		projectDir: result.ProjectDir,
-		stateDir:   result.StateDir,
-		config:     result.Config,
+		statuses:     statuses,
+		services:     services,
+		projectDir:   result.ProjectDir,
+		stateDir:     result.StateDir,
+		config:       result.Config,
+		activeBranch: activeBranch,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
@@ -161,11 +161,12 @@ func findPRForBranch(prs []domain.PRInfo, branch string) (domain.PRInfo, bool) {
 
 // pickParams holds the inputs for the worktree/action wizard.
 type pickParams struct {
-	statuses   []domain.WorktreeStatus
-	services   []domain.JobInfo
-	projectDir string
-	stateDir   string
-	config     domain.Config
+	statuses     []domain.WorktreeStatus
+	services     []domain.JobInfo
+	projectDir   string
+	stateDir     string
+	config       domain.Config
+	activeBranch string
 }
 
 // pickWorktreeAndAction renders the worktree picker instantly and streams PRs
@@ -194,9 +195,10 @@ func pickWorktreeAndAction(params pickParams) (domain.WorktreeStatus, string, []
 				Label: s.Branch,
 				Value: strconv.Itoa(i),
 				Badges: worktreepicker.BuildTags(worktreepicker.BuildTagsParams{
-					Status:   s,
-					PRs:      loadedPRs,
-					Services: params.services,
+					Status:       s,
+					PRs:          loadedPRs,
+					Services:     params.services,
+					ActiveBranch: params.activeBranch,
 				}),
 				Status: &status,
 			})
@@ -275,9 +277,10 @@ func pickWorktreeAndAction(params pickParams) (domain.WorktreeStatus, string, []
 			loadedConn = loaded.Conn
 			prsLoaded = true
 			badges := worktreepicker.BadgesByValue(worktreepicker.BadgesByValueParams{
-				Statuses: *holder,
-				PRs:      loaded.PRs,
-				Services: params.services,
+				Statuses:     *holder,
+				PRs:          loaded.PRs,
+				Services:     params.services,
+				ActiveBranch: params.activeBranch,
 			})
 			w.UpdateStepModel(0, func(model any) any {
 				sl, ok := model.(components.SelectListModel)

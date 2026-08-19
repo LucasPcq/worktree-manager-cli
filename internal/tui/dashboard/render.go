@@ -76,11 +76,12 @@ func (m Model) renderPanel(params panelParams) string {
 	return m.marks().Mark(params.Zone, box)
 }
 
-// renderHeader is the dashboard's top bar: the context line (where you are),
-// then the wordmark, the tabs and the count of what is listed. The active tab
-// is named by weight and by the rule under it. No rule sits between the first
-// two lines — the tab rule underneath already separates the header from the
-// body.
+// renderHeader is the dashboard's top bar: the context line (where you are —
+// wordmark included) on top, then the tabs and the count of what is listed,
+// then the rule underlining the active tab. The wordmark appears once, on the
+// context line; the bar below starts directly with the tabs. No rule sits
+// between the first two lines — the tab rule underneath already separates the
+// header from the body.
 //
 // Whole tabs are dropped rather than the bar trimmed: a hard trim would cut
 // through a zone marker and break that tab's hit-testing.
@@ -99,11 +100,10 @@ func (m Model) renderHeader(layout domain.DashboardLayout) string {
 		return context
 	}
 
-	wordmark := styles.DashboardWordmark.Render(domain.DashboardWordmark)
-	used := lipgloss.Width(wordmark)
-
-	rendered := []string{wordmark}
-	activeStart, activeWidth := 0, 0
+	// The wordmark already opens the context line above; the bar starts
+	// directly with the tabs so it is not drawn twice.
+	rendered := make([]string, 0, len(tabs))
+	used, activeStart, activeWidth := 0, 0, 0
 	for index, title := range tabs {
 		style := styles.DashboardTabInactive
 		if index == m.tab {

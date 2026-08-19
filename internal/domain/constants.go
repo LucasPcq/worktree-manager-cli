@@ -308,6 +308,11 @@ const (
 	BadgeGlyphDirty = "⚠"
 	BadgeGlyphClean = "✓"
 
+	// WorktreeActiveTag marks the worktree the shell is currently inside, in
+	// both `wtm list`'s text output and its interactive picker — one wording,
+	// reused rather than restated.
+	WorktreeActiveTag = "● active"
+
 	// SummaryNone stands in for a set answer the user left empty, in a wizard
 	// breadcrumb that must still show the step was reached.
 	SummaryNone = "none"
