@@ -51,6 +51,15 @@ type prsMsg struct {
 
 type pollMsg struct{}
 
+// tabSlideTickMsg redraws while the tab rule is sliding. The handler is where
+// the sequence ends: it re-arms only while the slide is still short of its
+// duration, so an idle dashboard schedules no further ticks once it settles.
+type tabSlideTickMsg struct{}
+
+// flashTickMsg redraws while a just-created row's opening beat is lit, the
+// same bounded-sequence shape as tabSlideTickMsg.
+type flashTickMsg struct{}
+
 type treeMsg struct {
 	rows []domain.TreeRow
 	err  error
@@ -133,6 +142,18 @@ type Model struct {
 	// selectBranch is the worktree a finished run wants selected once the list
 	// catches up with it.
 	selectBranch string
+
+	// tabSlideFrom and tabSlideSince drive the tab rule's slide: the column it
+	// is animating away from, and when that animation started. A zero
+	// tabSlideSince means no slide is in progress — rules.TabSlideStart then
+	// reports the target outright.
+	tabSlideFrom  int
+	tabSlideSince time.Time
+	// flashBranch and flashSince drive a just-created row's opening beat: the
+	// branch selectRequested last landed the cursor on, and when that
+	// happened. A zero flashSince means nothing is flashing.
+	flashBranch string
+	flashSince  time.Time
 }
 
 // New builds the dashboard model. Callers outside a program must Close the
@@ -179,6 +200,14 @@ func (m Model) Init() tea.Cmd {
 
 func pollCmd() tea.Cmd {
 	return tea.Tick(domain.DashboardPollSeconds*time.Second, func(time.Time) tea.Msg { return pollMsg{} })
+}
+
+func tabSlideTickCmd() tea.Cmd {
+	return tea.Tick(domain.DashboardAnimFrame, func(time.Time) tea.Msg { return tabSlideTickMsg{} })
+}
+
+func flashTickCmd() tea.Cmd {
+	return tea.Tick(domain.DashboardAnimFrame, func(time.Time) tea.Msg { return flashTickMsg{} })
 }
 
 // loadWorktreesCmd re-lists the worktrees off the UI thread. fetch reaches the
@@ -272,8 +301,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case worktreesMsg:
 		before := m.selectedBranch()
-		next := m.applyWorktrees(msg)
-		return next.triggerDetailReload(before)
+		next, animCmd := m.applyWorktrees(msg)
+		model, detailCmd := next.triggerDetailReload(before)
+		return model, tea.Batch(animCmd, detailCmd)
 
 	case prsMsg:
 		m.prs, m.ghConn, m.prsLoaded = msg.prs, msg.conn, true
@@ -334,6 +364,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
+	case tabSlideTickMsg:
+		// Bounded: it only re-arms while the slide is still short of its
+		// duration, and clears tabSlideSince the moment it settles — an idle
+		// dashboard schedules no further ticks once the rule has landed.
+		if m.tabSlideSince.IsZero() || time.Since(m.tabSlideSince) >= domain.DashboardTabSlide {
+			m.tabSlideSince = time.Time{}
+			return m, nil
+		}
+		return m, tabSlideTickCmd()
+
+	case flashTickMsg:
+		// Same bounded shape as tabSlideTickMsg: it stops re-arming, and clears
+		// flashBranch, the moment the flash's duration has elapsed.
+		if m.flashBranch == "" || time.Since(m.flashSince) >= domain.DashboardRowFlash {
+			m.flashBranch = ""
+			return m, nil
+		}
+		return m, flashTickCmd()
+
 	case modalLoadedMsg, formReadyMsg:
 		return m.updateModal(msg)
 	}
@@ -365,12 +414,14 @@ func (m Model) applyTree(msg treeMsg) Model {
 }
 
 // applyWorktrees keeps the selection on a valid row: a worktree removed under
-// the poll must not leave the cursor pointing past the end.
-func (m Model) applyWorktrees(msg worktreesMsg) Model {
+// the poll must not leave the cursor pointing past the end. It also starts
+// the just-created row's opening flash, when selectRequested lands on one and
+// ui.animations has not turned that off.
+func (m Model) applyWorktrees(msg worktreesMsg) (Model, tea.Cmd) {
 	m.loading = false
 	m.loadErr = msg.err
 	if msg.err != nil {
-		return m
+		return m, nil
 	}
 	m.statuses, m.parents, m.loaded = msg.statuses, msg.parents, true
 	m.fetchedAt = msg.fetchedAt
@@ -379,22 +430,36 @@ func (m Model) applyWorktrees(msg worktreesMsg) Model {
 		Statuses: m.statuses,
 	})
 	m.cursor = rules.ClampIndex(m.cursor, len(m.statuses))
-	return m.selectRequested().reflow()
+
+	animate := rules.AnimationsEnabled(m.params.Config)
+	next, flashed := m.selectRequested(animate)
+	next = next.reflow()
+	if !flashed {
+		return next, nil
+	}
+	return next, flashTickCmd()
 }
 
 // selectRequested lands the cursor on the worktree a finished run created, the
-// one time the list comes back holding it.
-func (m Model) selectRequested() Model {
+// one time the list comes back holding it. animate arms its opening flash,
+// gated by ui.animations rather than deciding whether the branch itself
+// should flash — a row still gets found and selected either way.
+func (m Model) selectRequested(animate bool) (Model, bool) {
 	if m.selectBranch == "" {
-		return m
+		return m, false
 	}
 	for index, status := range m.statuses {
-		if status.Branch == m.selectBranch {
-			m.cursor, m.selectBranch = index, ""
-			return m
+		if status.Branch != m.selectBranch {
+			continue
 		}
+		m.cursor, m.selectBranch = index, ""
+		if !animate {
+			return m, false
+		}
+		m.flashBranch, m.flashSince = status.Branch, time.Now()
+		return m, true
 	}
-	return m
+	return m, false
 }
 
 func (m Model) updateModal(msg tea.Msg) (Model, tea.Cmd) {
@@ -582,14 +647,27 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // selectTab moves to a tab and, the first time the Tree tab is opened, asks for
-// the forest it has never built.
+// the forest it has never built. It also starts the tab rule's slide toward
+// its new position, when ui.animations has not turned that off and the rule
+// actually moves — switching to the tab already active is a no-op either way.
 func (m Model) selectTab(index int) (Model, tea.Cmd) {
+	width := m.layout().Tabs.Width
+	from := tabStart(width, m.tab)
 	m.tab = index
+
+	var slideCmd tea.Cmd
+	if rules.AnimationsEnabled(m.params.Config) {
+		if to := tabStart(width, index); to != from {
+			m.tabSlideFrom, m.tabSlideSince = from, time.Now()
+			slideCmd = tabSlideTickCmd()
+		}
+	}
+
 	if index != tabTree || m.treeLoaded || m.treeLoading {
-		return m.reflow(), nil
+		return m.reflow(), slideCmd
 	}
 	m.treeLoading = true
-	return m.reflow(), m.loadTreeCmd()
+	return m.reflow(), tea.Batch(slideCmd, m.loadTreeCmd())
 }
 
 func (m Model) pageRows(layout domain.DashboardLayout) int {

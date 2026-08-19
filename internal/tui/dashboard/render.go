@@ -130,7 +130,7 @@ func (m Model) renderHeader(layout domain.DashboardLayout) string {
 
 	return lipgloss.JoinVertical(lipgloss.Left, context, bar, tabRule(tabRuleParams{
 		Width:       layout.Tabs.Width,
-		ActiveStart: activeStart,
+		ActiveStart: m.tabRuleStart(activeStart),
 		ActiveWidth: activeWidth,
 	}))
 }
@@ -288,6 +288,40 @@ func (m Model) countLabel() string {
 		format = domain.DashboardCountOneFmt
 	}
 	return styles.DashboardCount.Render(fmt.Sprintf(format, len(m.statuses)))
+}
+
+// tabStart is the column a tab's own segment starts at, the same measurement
+// the header's own loop draws with — both styles share the same padding, so
+// it does not depend on which tab is active. Reused by selectTab to know
+// where the rule sat before the tab it is animating away from, and by
+// renderHeader through tabRuleStart to know where it is animating from now.
+func tabStart(width, index int) int {
+	used := 0
+	for i, title := range tabs {
+		w := lipgloss.Width(styles.DashboardTabInactive.Render(title))
+		if used+w > width {
+			break
+		}
+		if i == index {
+			return used
+		}
+		used += w
+	}
+	return used
+}
+
+// tabRuleStart interpolates the rule's start column while a slide is in
+// progress (rules.TabSlideStart reports target outright once it either has
+// not started or has finished): the caller always gets somewhere to draw,
+// animating or not.
+func (m Model) tabRuleStart(target int) int {
+	return rules.TabSlideStart(rules.TabSlideParams{
+		From:     m.tabSlideFrom,
+		To:       target,
+		Since:    m.tabSlideSince,
+		Now:      time.Now(),
+		Duration: domain.DashboardTabSlide,
+	})
 }
 
 type tabRuleParams struct {

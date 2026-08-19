@@ -149,4 +149,11 @@ var (
 	DashboardRowBar  = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
 	DashboardRowName = lipgloss.NewStyle().Bold(true)
 	DashboardRowMeta = lipgloss.NewStyle().Foreground(ColorMuted)
+
+	// DashboardRowFlashBright is a just-created row's opening beat: brighter
+	// than the ordinary selected tint, before it settles into
+	// DashboardRowSelected — see rules.FlashLit.
+	DashboardRowFlashBright = lipgloss.NewStyle().
+				Background(ColorFlashTint).
+				Foreground(ColorSelectedFg)
 )

@@ -25,4 +25,9 @@ var (
 	// paired with a colored left border + chevron. Lighter than ColorSelectedBg
 	// so it marks the selection without overpowering the text.
 	ColorRowTint = lipgloss.AdaptiveColor{Light: "#EFEBFD", Dark: "#282341"}
+
+	// ColorFlashTint is the brief highlight a just-created row's cursor lands
+	// on before it settles into ColorRowTint: warmer and brighter, so the eye
+	// finds it without a toast.
+	ColorFlashTint = lipgloss.AdaptiveColor{Light: "#FBE4D8", Dark: "#4A2C1D"}
 )

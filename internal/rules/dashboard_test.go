@@ -2,6 +2,7 @@ package rules
 
 import (
 	"testing"
+	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -293,5 +294,64 @@ func TestActiveWorktree(t *testing.T) {
 				t.Errorf("ActiveWorktree(%q) = %q, want %q", c.cwd, got, c.want)
 			}
 		})
+	}
+}
+
+func TestAnimationsEnabledByDefault(t *testing.T) {
+	if !AnimationsEnabled(domain.Config{}) {
+		t.Error("les animations sont actives par défaut : une clé absente n'est pas un refus")
+	}
+}
+
+func TestAnimationsCanBeDisabled(t *testing.T) {
+	off := false
+	cfg := domain.Config{Global: domain.GlobalConfig{UI: domain.UIConfig{Animations: &off}}}
+	if AnimationsEnabled(cfg) {
+		t.Error("ui.animations = false doit tout éteindre")
+	}
+}
+
+func TestNoAnimationExceedsTheCap(t *testing.T) {
+	durations := map[string]time.Duration{
+		"glissement d'onglet": domain.DashboardTabSlide,
+		"fondu de ligne":      domain.DashboardRowFlash,
+	}
+	for name, got := range durations {
+		if got > domain.DashboardAnimationCap {
+			t.Errorf("%s dure %v, plafond %v", name, got, domain.DashboardAnimationCap)
+		}
+	}
+}
+
+func TestTabSlideStartInterpolatesThenSettles(t *testing.T) {
+	since := time.Now()
+
+	if got := TabSlideStart(TabSlideParams{From: 0, To: 40, Since: since, Now: since, Duration: domain.DashboardTabSlide}); got != 0 {
+		t.Errorf("at t=0, got %d, want From (0)", got)
+	}
+	mid := TabSlideStart(TabSlideParams{From: 0, To: 40, Since: since, Now: since.Add(domain.DashboardTabSlide / 2), Duration: domain.DashboardTabSlide})
+	if mid <= 0 || mid >= 40 {
+		t.Errorf("mid-slide, got %d, want strictly between From and To", mid)
+	}
+	if got := TabSlideStart(TabSlideParams{From: 0, To: 40, Since: since, Now: since.Add(domain.DashboardTabSlide), Duration: domain.DashboardTabSlide}); got != 40 {
+		t.Errorf("once the duration has elapsed, got %d, want To (40)", got)
+	}
+	if got := TabSlideStart(TabSlideParams{From: 0, To: 40, Duration: domain.DashboardTabSlide}); got != 40 {
+		t.Errorf("a zero Since means no slide in progress, got %d, want To (40)", got)
+	}
+}
+
+func TestFlashLitFadesWithinItsDuration(t *testing.T) {
+	since := time.Now()
+	duration := domain.DashboardRowFlash
+
+	if !FlashLit(FlashParams{Since: since, Now: since, Duration: duration}) {
+		t.Error("a flash just triggered must be lit")
+	}
+	if FlashLit(FlashParams{Since: since, Now: since.Add(duration), Duration: duration}) {
+		t.Error("a flash whose full duration has elapsed must no longer be lit")
+	}
+	if FlashLit(FlashParams{Since: time.Time{}, Now: since, Duration: duration}) {
+		t.Error("no flash in progress (zero Since) must never read as lit")
 	}
 }

@@ -3,6 +3,7 @@ package rules
 import (
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -274,4 +275,55 @@ func underPath(cwd, root string) bool {
 		return true
 	}
 	return strings.HasPrefix(cwd, root+string(filepath.Separator))
+}
+
+// AnimationsEnabled: an absent key means on. Only an explicit false in
+// ui.animations turns every dashboard animation off at once.
+func AnimationsEnabled(cfg domain.Config) bool {
+	if cfg.Global.UI.Animations == nil {
+		return true
+	}
+	return *cfg.Global.UI.Animations
+}
+
+type TabSlideParams struct {
+	From, To int
+	Since    time.Time
+	Now      time.Time
+	Duration time.Duration
+}
+
+// TabSlideStart interpolates the tab rule's start column between From and To
+// over Duration. Before the slide began (Since is zero) or once Duration has
+// elapsed, it reports To outright — the animation is over either way.
+func TabSlideStart(params TabSlideParams) int {
+	if params.Duration <= 0 || params.Since.IsZero() {
+		return params.To
+	}
+	elapsed := params.Now.Sub(params.Since)
+	if elapsed >= params.Duration {
+		return params.To
+	}
+	if elapsed <= 0 {
+		return params.From
+	}
+	fraction := float64(elapsed) / float64(params.Duration)
+	return params.From + int(float64(params.To-params.From)*fraction)
+}
+
+type FlashParams struct {
+	Since    time.Time
+	Now      time.Time
+	Duration time.Duration
+}
+
+// FlashLit reports whether a just-created row is still in the lit half of its
+// one-shot flash — the bright opening beat before it fades back into the
+// ordinary selected look.
+func FlashLit(params FlashParams) bool {
+	if params.Duration <= 0 || params.Since.IsZero() {
+		return false
+	}
+	elapsed := params.Now.Sub(params.Since)
+	return elapsed >= 0 && elapsed < params.Duration/2
 }

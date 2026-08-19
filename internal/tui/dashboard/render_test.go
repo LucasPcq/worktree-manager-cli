@@ -157,3 +157,105 @@ func TestHeaderNamesNeverFetchedDistinctlyFromAnAge(t *testing.T) {
 		t.Error("un fetch daté et périmé doit toujours annoncer son âge")
 	}
 }
+
+// TestTabRuleSlidesThenSettles pins the animation's bounded shape: switching
+// tabs starts it, and once its duration has elapsed the next tick both
+// settles it and schedules no further work — an idle dashboard must not keep
+// redrawing forever, the trap an earlier spinner fell into.
+func TestTabRuleSlidesThenSettles(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "main", "feat/a")
+
+	model, cmd := model.selectTab(tabTree)
+	if cmd == nil {
+		t.Fatal("switching to a different tab must start the slide (and load the forest)")
+	}
+	if model.tabSlideSince.IsZero() {
+		t.Fatal("the slide must record when it started")
+	}
+
+	model.tabSlideSince = time.Now().Add(-domain.DashboardTabSlide)
+	model, cmd = updateCmd(model, tabSlideTickMsg{})
+	if cmd != nil {
+		t.Error("a slide whose duration has elapsed must schedule no further ticks")
+	}
+	if !model.tabSlideSince.IsZero() {
+		t.Error("a settled slide must clear its start time")
+	}
+}
+
+func TestTabRuleDoesNotSlideOnAnAlreadyActiveTab(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "main", "feat/a")
+
+	model, cmd := model.selectTab(tabWorktrees)
+	if cmd != nil {
+		t.Error("switching to the tab already active must start nothing")
+	}
+	if !model.tabSlideSince.IsZero() {
+		t.Error("switching to the tab already active must not start a slide")
+	}
+}
+
+func TestTabSlideDisabledWhenAnimationsOff(t *testing.T) {
+	off := false
+	model := New(RunParams{Config: domain.Config{Global: domain.GlobalConfig{UI: domain.UIConfig{Animations: &off}}}})
+	t.Cleanup(model.Close)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model = update(model, worktreesMsg{statuses: statuses("main", "feat/a"), parents: map[string]string{}})
+
+	model, cmd := model.selectTab(tabTree)
+	if !model.tabSlideSince.IsZero() {
+		t.Error("ui.animations = false must start no slide")
+	}
+	// The forest still loads — only the animation is cut, never the action.
+	if cmd == nil {
+		t.Error("ui.animations = false must not swallow the tab switch itself")
+	}
+}
+
+// TestRowFlashLightsThenFadesAndStops pins the same bounded shape for the
+// new-worktree row flash, triggered by the existing selectBranch mechanism.
+func TestRowFlashLightsThenFadesAndStops(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "main")
+	model.selectBranch = "feat/a"
+
+	model, cmd := updateCmd(model, worktreesMsg{
+		statuses: statuses("main", "feat/a"),
+		parents:  map[string]string{},
+	})
+	if cmd == nil {
+		t.Fatal("landing on a newly created row must start its opening flash")
+	}
+	if model.flashBranch != "feat/a" {
+		t.Fatalf("flashBranch = %q, want feat/a", model.flashBranch)
+	}
+
+	model.flashSince = time.Now().Add(-domain.DashboardRowFlash)
+	model, cmd = updateCmd(model, flashTickMsg{})
+	if cmd != nil {
+		t.Error("a flash whose duration has elapsed must schedule no further ticks")
+	}
+	if model.flashBranch != "" {
+		t.Error("a settled flash must clear its branch")
+	}
+}
+
+func TestRowFlashDisabledWhenAnimationsOff(t *testing.T) {
+	off := false
+	model := New(RunParams{Config: domain.Config{Global: domain.GlobalConfig{UI: domain.UIConfig{Animations: &off}}}})
+	t.Cleanup(model.Close)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model.selectBranch = "feat/a"
+
+	// The row-selection cmd (triggerDetailReload) legitimately stays non-nil —
+	// only the animation is cut, never the selection it rides along with.
+	model, _ = updateCmd(model, worktreesMsg{
+		statuses: statuses("main", "feat/a"),
+		parents:  map[string]string{},
+	})
+	if model.flashBranch != "" {
+		t.Error("ui.animations = false must not arm the flash at all")
+	}
+	if model.cursor != 1 {
+		t.Error("the row must still be selected even with animations off")
+	}
+}

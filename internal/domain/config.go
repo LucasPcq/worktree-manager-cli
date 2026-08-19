@@ -49,6 +49,14 @@ type HooksConfig struct {
 // GlobalConfig maps to ~/.config/wtm/config.toml (user-level configuration).
 type GlobalConfig struct {
 	Shell ShellType `toml:"shell"`
+	UI    UIConfig  `toml:"ui"`
+}
+
+// UIConfig groups display preferences. Animations is a pointer so an absent
+// key ("nothing wrote here") is distinguishable from an explicit false — see
+// rules.AnimationsEnabled.
+type UIConfig struct {
+	Animations *bool `toml:"animations"`
 }
 
 // Config is the merged, validated configuration used by the service layer.

@@ -887,6 +887,19 @@ const (
 	DashboardRefreshing   = "refreshing"
 	DashboardLoadingField = "loading…"
 
+	// DashboardAnimationCap is the hard ceiling every dashboard animation is
+	// checked against: nothing the surface draws on its own may run longer.
+	DashboardAnimationCap = 400 * time.Millisecond
+	// DashboardTabSlide is how long the active tab's rule takes to slide to its
+	// new position. DashboardRowFlash is how long a just-created worktree's row
+	// stays lit before it fades back into the ordinary selected look.
+	DashboardTabSlide = 200 * time.Millisecond
+	DashboardRowFlash = 400 * time.Millisecond
+	// DashboardAnimFrame paces the redraw ticks a bounded animation schedules
+	// while it runs — cheap enough to be invisible, coarse enough that it is
+	// never mistaken for real work.
+	DashboardAnimFrame = 50 * time.Millisecond
+
 	DashboardListWidthPercent = 40
 	DashboardMinListWidth     = 24
 	DashboardMinDetailWidth   = 32

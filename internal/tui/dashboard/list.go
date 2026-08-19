@@ -2,10 +2,12 @@ package dashboard
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
@@ -73,9 +75,15 @@ func (m Model) renderRow(index, width int) []string {
 	if index == m.cursor {
 		bar := styles.DashboardRowBar.Render(rowBar + " ")
 		line := spread(name, pillText, inner)
+		rowStyle := styles.DashboardRowSelected
+		if status.Branch == m.flashBranch && rules.FlashLit(rules.FlashParams{
+			Since: m.flashSince, Now: time.Now(), Duration: domain.DashboardRowFlash,
+		}) {
+			rowStyle = styles.DashboardRowFlashBright
+		}
 		return []string{
-			bar + styles.DashboardRowSelected.Width(inner).Bold(true).Render(line),
-			bar + styles.DashboardRowSelected.Width(inner).Render(truncate(metaPlain, inner)),
+			bar + rowStyle.Width(inner).Bold(true).Render(line),
+			bar + rowStyle.Width(inner).Render(truncate(metaPlain, inner)),
 		}
 	}
 
