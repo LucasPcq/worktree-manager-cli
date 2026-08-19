@@ -3,6 +3,7 @@ package wt
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -158,25 +159,46 @@ func syncJSON(t *testing.T, args ...string) domain.SyncResult {
 	return result
 }
 
-// syncJSONAllowFailure is syncJSON's counterpart for a cascade that is expected
-// to conflict: rules.HasSyncFailure then makes the command return
-// domain.ErrAborted after it has already written a valid SyncResult to stdout
-// (see the comment on domain.ErrAborted), so plain syncJSON's "no error" check
-// does not fit here. Unlike the production root command, runWtCmd's ad hoc root
-// (integration_test.go) does not set SilenceUsage, so cobra appends a usage
-// block after the JSON on a returned error; a Decoder reads only the leading
-// JSON value and leaves that trailing text alone.
+// syncJSONAllowFailure is syncJSON's counterpart for a cascade that is
+// expected to conflict: rules.HasSyncFailure makes the command return
+// domain.ErrAborted after it has already written a valid SyncResult to
+// stdout (see the comment on domain.ErrAborted), so plain syncJSON's
+// "no error" check does not fit here. It requires that exact error rather
+// than merely tolerating it, so a refactor that stopped signalling a
+// conflict through the exit code — an observable CLI behavior — fails this
+// suite instead of passing silently.
 func syncJSONAllowFailure(t *testing.T, args ...string) domain.SyncResult {
 	t.Helper()
 	full := append([]string{domain.CmdSync}, args...)
-	full = append(full, "--output", domain.OutputJSON, "--"+domain.FlagYes)
+	full = append(full, "--"+domain.FlagOutput, domain.OutputJSON, "--"+domain.FlagYes)
 	stdout, _, err := runWtCmd(t, full...)
-	if err != nil && !errors.Is(err, domain.ErrAborted) {
-		t.Fatalf("sync %v: %v", args, err)
+	if !errors.Is(err, domain.ErrAborted) {
+		t.Fatalf("sync %v: want %v, got %v", args, domain.ErrAborted, err)
 	}
+	return decodeSoleSyncJSON(t, stdout)
+}
+
+// decodeSoleSyncJSON decodes the one domain.SyncResult a run wrote to stdout
+// and asserts nothing else follows it. Unlike the production root command,
+// runWtCmd's ad hoc root (integration_test.go) does not set SilenceUsage, so
+// cobra appends a usage block to stdout after a returned error; that known,
+// named block is the only trailing content tolerated — anything else,
+// including a second JSON value, fails the assertion.
+func decodeSoleSyncJSON(t *testing.T, stdout string) domain.SyncResult {
+	t.Helper()
+	reader := strings.NewReader(stdout)
+	dec := json.NewDecoder(reader)
 	var result domain.SyncResult
-	if jsonErr := json.NewDecoder(strings.NewReader(stdout)).Decode(&result); jsonErr != nil {
-		t.Fatalf("sync %v: cannot decode %q: %v", args, stdout, jsonErr)
+	if err := dec.Decode(&result); err != nil {
+		t.Fatalf("cannot decode %q: %v", stdout, err)
+	}
+	rest, err := io.ReadAll(io.MultiReader(dec.Buffered(), reader))
+	if err != nil {
+		t.Fatalf("cannot read trailing stdout: %v", err)
+	}
+	before, _, _ := strings.Cut(strings.TrimSpace(string(rest)), "Usage:")
+	if strings.TrimSpace(before) != "" {
+		t.Fatalf("stdout carries more than one JSON value: %q", stdout)
 	}
 	return result
 }
@@ -363,6 +385,18 @@ func TestSyncConflictSkipsSelectedDescendantsOnly(t *testing.T) {
 	if repo.tipOf(t, "solo") == soloBefore {
 		t.Fatal("an independent branch must keep syncing through another branch's conflict")
 	}
+
+	// solo must actually run after feat-a for the assertion above to prove
+	// anything: were it ordered first, its tip would move regardless of
+	// whether the cascade tolerates a sibling's conflict at all.
+	order := make([]string, 0, len(result.Steps))
+	for _, step := range result.Steps {
+		order = append(order, step.Branch)
+	}
+	want := []string{"feat-a", "solo", "feat-b"}
+	if strings.Join(order, ",") != strings.Join(want, ",") {
+		t.Fatalf("step order = %v, want %v (solo after feat-a)", order, want)
+	}
 }
 
 // Without --keep-conflict the rebase is aborted: the worktree is left clean.
@@ -441,7 +475,11 @@ func TestSyncYesPrintsPlanOnStderrThenRecapOnStdout(t *testing.T) {
 	}
 }
 
-func TestSyncDryRunPrintsThePlanAndNoPushSummary(t *testing.T) {
+// --dry-run still prints the recap and its push-readiness summary on stdout
+// (nothing is pushed, but PushPending is still reported) — only the plan on
+// stderr is characterized here; see TestSyncDryRunRebasesNothing for the "no
+// mutation" guarantee.
+func TestSyncDryRunPrintsThePlan(t *testing.T) {
 	repo := setupSync(t, syncSetup{Stack: []string{"feat-a:main"}})
 	repo.commitOn(t, "main", "base.txt", true)
 
