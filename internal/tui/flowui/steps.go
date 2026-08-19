@@ -99,7 +99,7 @@ func multiSelect(step flow.Step, content flow.StepContent) components.MultiSelec
 			Value:    option.Value,
 			Selected: option.Selected,
 			Tag:      option.Tag,
-			Variant:  tagVariant(option.Tone),
+			Variant:  components.TagVariantOf(option.Tone),
 		})
 	}
 	return components.NewMultiSelect(components.NewMultiSelectParams{
@@ -369,17 +369,4 @@ func summaryFor(step flow.Step) func(any) string {
 		return components.SelectSummary
 	}
 	return func(model any) string { return step.Summarize(answerOf(step.Kind, model)) }
-}
-
-// tagVariant maps the tone a step declared onto the component's palette. The
-// flow layer cannot name a colour, so this is where the two meet.
-func tagVariant(tone flow.Tone) components.TagVariant {
-	switch tone {
-	case flow.ToneWarning:
-		return components.TagWarning
-	case flow.ToneDanger:
-		return components.TagDanger
-	default:
-		return components.TagNeutral
-	}
 }

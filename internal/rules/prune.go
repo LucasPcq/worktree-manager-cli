@@ -314,3 +314,29 @@ func survivingAncestor(cands map[string]domain.PruneCandidate, chosen map[string
 	}
 	return cur
 }
+
+// PruneReasonLabel turns a prune reason or skip constant into the short phrase
+// both surfaces show. It maps, it does not decide — a reason it does not know is
+// shown as it is stored rather than swallowed.
+func PruneReasonLabel(reason string) string {
+	switch reason {
+	case domain.PruneReasonPRMerged:
+		return domain.PruneLabelPRMerged
+	case domain.PruneReasonPRClosed:
+		return domain.PruneLabelPRClosed
+	case domain.PruneReasonGone:
+		return domain.PruneLabelGone
+	case domain.PruneSkipBase:
+		return domain.PruneLabelBase
+	case domain.PruneSkipMain:
+		return domain.PruneLabelMain
+	case domain.PruneSkipDirty:
+		return domain.PruneLabelDirty
+	case domain.PruneSkipUnpushed:
+		return domain.PruneLabelUnpushed
+	case domain.PruneSkipOpenPR:
+		return domain.PruneLabelOpenPR
+	default:
+		return reason
+	}
+}

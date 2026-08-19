@@ -1,11 +1,13 @@
 package prune
 
 import (
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/testutil/flowtest"
 )
 
@@ -56,7 +58,7 @@ func TestSelectionPreChecksOnlyTheSafeCandidates(t *testing.T) {
 	if !options[0].Selected || options[0].Tag != domain.PruneTagMerged {
 		t.Errorf("safe candidate = %+v, want it checked and tagged merged", options[0])
 	}
-	if options[1].Selected || options[1].Tag != domain.PruneTagDirty || options[1].Tone != flow.ToneDanger {
+	if options[1].Selected || options[1].Tag != domain.PruneTagDirty || options[1].Tone != domain.ToneDanger {
 		t.Errorf("unsafe candidate = %+v, want it unchecked and tagged dirty in danger", options[1])
 	}
 }
@@ -190,5 +192,77 @@ func TestOperationBlocksWithoutATarget(t *testing.T) {
 	operation := Operation()
 	if operation.Kind != domain.OpKindPrune || operation.Mode != flow.ModeBlocking || operation.TargetKey != "" {
 		t.Errorf("operation = %+v, want a blocking prune with no target", operation)
+	}
+}
+
+// --force is the safety axis and it is not re-asked: once it lifted the refusals
+// for classification, confirming plainly still removes the unsafe worktrees the
+// user checked. This is a change from the pre-flow prune, which read force from
+// the picker's answer alone and so dropped them again — it aligns prune with
+// clean and with the two-axis model in CLAUDE.md. Pinned because it is the one
+// place this migration is deliberately more destructive than what it replaced.
+func TestForceSurvivesAPlainConfirmation(t *testing.T) {
+	plan := domain.PrunePlan{Selected: []domain.PruneCandidate{
+		candidate("merged-wt", domain.PruneReasonPRMerged, "", "main"),
+		candidate("dirty-wt", domain.PruneReasonGone, domain.PruneSkipDirty, "main"),
+	}}
+
+	tests := []struct {
+		name    string
+		request Request
+		confirm string
+		want    string
+	}{
+		{"--force plus a plain confirmation", Request{Force: true}, confirmYes, "dirty-wt,merged-wt"},
+		{"the recap's own force option", Request{}, confirmForce, "dirty-wt,merged-wt"},
+		{"neither: the refusal stands", Request{}, confirmYes, "merged-wt"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := flowWith(plan, tt.request)
+			prompter := &flowtest.ScriptedPrompter{
+				Sets:    map[string][]string{KeySelection: {"merged-wt", "dirty-wt"}},
+				Answers: map[string]string{KeyConfirm: tt.confirm},
+			}
+			answers := ask(t, f, prompter)
+
+			final := rules.FinalizePrunePlan(rules.FinalizePrunePlanParams{
+				Plan:       f.plan,
+				Chosen:     answers.Values(KeySelection),
+				BaseBranch: f.request.BaseBranch,
+				Force:      f.request.Force || answers.Value(KeyConfirm) == confirmForce,
+			})
+
+			kept := make([]string, 0, len(final.Selected))
+			for _, candidate := range final.Selected {
+				kept = append(kept, candidate.Branch)
+			}
+			sort.Strings(kept)
+			if strings.Join(kept, ",") != tt.want {
+				t.Errorf("removed = %v, want %s", kept, tt.want)
+			}
+		})
+	}
+}
+
+// The proposal names each child, where it lands and what it leaves — the recap
+// only ever states a count, so this list is the one place the moves are legible.
+func TestReparentProposalListsEveryMove(t *testing.T) {
+	proposal := reparentProposal([]domain.ReparentResult{
+		{Branch: "child-a", OldParent: "parent-wt", NewParent: "main"},
+		{Branch: "child-b", OldParent: "parent-wt", NewParent: "main"},
+	})
+
+	if !strings.HasPrefix(proposal, domain.PruneReparentIntro) {
+		t.Errorf("proposal must open with its intro:\n%s", proposal)
+	}
+	for _, name := range []string{"child-a", "child-b", "parent-wt", "main"} {
+		if !strings.Contains(proposal, name) {
+			t.Errorf("proposal must name %q:\n%s", name, proposal)
+		}
+	}
+	if lines := strings.Count(proposal, "\n"); lines != 2 {
+		t.Errorf("proposal has %d line breaks, want one line per move under the intro:\n%s", lines, proposal)
 	}
 }

@@ -709,6 +709,17 @@ const (
 	// removal fallback (worktree path).
 	CleanSudoConfirmFmt = "Force-delete %s with `sudo rm -rf`? (you may be prompted for your password)"
 
+	// PruneLabel* are the short phrases a reason or a skip reads as, shared by
+	// every surface that shows one.
+	PruneLabelPRMerged  = "PR merged"
+	PruneLabelPRClosed  = "PR closed"
+	PruneLabelGone      = "remote branch gone"
+	PruneLabelBase      = "base branch"
+	PruneLabelMain      = "main worktree"
+	PruneLabelDirty     = "dirty — pass --force"
+	PruneLabelUnpushed  = "unpushed commits — pass --force"
+	PruneLabelOpenPR    = "open PR — pass --force"
+	PruneSkippedFmt     = "Skipped %s (%s)"
 	PruneWizardErrLabel = "prune wizard"
 	PruneSelectionTitle = "Select worktrees to prune"
 	PruneConfirmTitle   = "Confirm"

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
@@ -35,7 +34,7 @@ type Request struct {
 
 type Outcome struct {
 	Result domain.PruneResult
-	// Plan is what a dry run computed, for a surface that renders the preview
+	// Plan is what a dry run computed, for a surface that renders a preview
 	// differently from a result.
 	Plan domain.PrunePlan
 	// Empty reports that nothing matched, or that nothing survived the selection.
@@ -122,8 +121,7 @@ func (f *pruneFlow) run() (Outcome, error) {
 	return f.remove(answers.Value(KeyReparent) == reparentYes)
 }
 
-// scan gathers the PR states and classifies, as one phase. Classification runs
-// with force whenever someone can still deselect (PruneClassifyForce), so unsafe
+// scan classifies with force whenever someone can still deselect, so unsafe
 // worktrees surface as candidates left unchecked rather than as silent skips.
 func (f *pruneFlow) scan() error {
 	needPRs := f.request.Merged || f.request.Closed || !f.request.Force
@@ -155,9 +153,6 @@ func (f *pruneFlow) scan() error {
 	return nil
 }
 
-// scanMessage tells the user the spinner is fetching, not just scanning, when
-// the phase hits the network — through gh, or through the fetch gone-detection
-// runs first.
 func (f *pruneFlow) scanMessage(needPRs bool) string {
 	if needPRs || (f.request.Gone && !f.request.NoFetch) {
 		return domain.PruneFetchAndScanning
@@ -203,10 +198,9 @@ func (f *pruneFlow) remove(reparentChildren bool) (Outcome, error) {
 	return f.conclude(Outcome{Result: result})
 }
 
-// runHooks runs the on_clean hooks of every selected worktree as one phase
-// before the first removal. A hook failing at rank N aborts before anything is
-// deleted, but 1..N-1 already had their teardown — on_clean hooks must therefore
-// be idempotent. Prune then skips them internally.
+// runHooks hooks every selected worktree before the first removal, which is
+// observable behaviour: a hook failing at rank N aborts with nothing deleted, yet
+// 1..N-1 already had their teardown — hence the idempotence on_clean requires.
 func (f *pruneFlow) runHooks() error {
 	hooks := f.ctx.Config.Project.Hooks.OnClean
 	if len(hooks) == 0 {
@@ -254,20 +248,19 @@ func (f *pruneFlow) stopServices(branchName string) {
 	}
 }
 
-// insidePruned reports whether the cwd sits inside a worktree about to be
-// pruned, so the shell can be redirected afterwards. It must run before the
-// removal: the paths have to exist to canonicalize their symlinks.
+// insidePruned must run before the removal: the paths have to still exist to
+// canonicalize their symlinks.
 func (f *pruneFlow) insidePruned() bool {
 	cwd, err := os.Getwd()
 	if err != nil || cwd == "" {
 		return false
 	}
-	resolvedCwd := resolveSymlinks(cwd)
+	resolvedCwd := flow.ResolveSymlinks(cwd)
 	for _, candidate := range f.plan.Selected {
 		if candidate.Path == "" {
 			continue
 		}
-		if rules.IsPathWithin(resolveSymlinks(candidate.Path), resolvedCwd) {
+		if rules.IsPathWithin(flow.ResolveSymlinks(candidate.Path), resolvedCwd) {
 			return true
 		}
 	}
@@ -295,11 +288,4 @@ func (f *pruneFlow) params() domain.PruneParams {
 		}),
 		DryRun: f.request.DryRun,
 	}
-}
-
-func resolveSymlinks(path string) string {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return resolved
-	}
-	return path
 }

@@ -32,7 +32,7 @@ is implemented yet.
 | Dashboard surface | `internal/tui/dashboard` (`prompter.go`, `presenter.go`, `ops.go`) |
 | Test doubles | `internal/testutil/flowtest` |
 | `extract`, `sync` | **not migrated** — still driven by `internal/commands/wt` plus their wizard packages. The model was validated on paper against them; that is not the same as delivered. `extract` is LUC-182, `sync` is LUC-186. |
-| `StepMultiSelect` | exists since `reparent`, which needed it to keep its no-argument picker. Rendered by both surfaces: `flowui`, and the dashboard's modal since its Actions menu runs the batch reparent. Since `prune`, an `Option` can also arrive pre-checked and tagged (`Selected`, `Tag`, `Tone`). |
+| `StepMultiSelect` | exists since `reparent`, which needed it to keep its no-argument picker. Rendered by both surfaces: `flowui`, and the dashboard's modal since its Actions menu runs the batch reparent. Since `prune`, an `Option` can also arrive pre-checked and tagged (`Selected`, `Tag`, `Tone`). `Tone` is a `domain` enum, not a `flow` one, so `components.TagVariantOf` can hold the one mapping onto the palette without the widget library learning about `flow`. |
 
 ## The shape of a flow
 
@@ -635,6 +635,13 @@ before it asks a single question and before it touches anything. The alternative
 second exported `Plan()` the runner calls instead of `Run()` — would have kept a plan
 computation path in `commands/` and forced the `gh` advisory to be emitted from two
 places.
+
+`--force` is OR'd with the recap's own answer (`request.Force || answer == confirmForce`),
+which is a deliberate change from the pre-`flow` `prune`: it read force from the picker's
+answer alone, so `wtm prune --force` on a TTY followed by a plain "Yes, prune" dropped the
+unsafe worktrees again. The two-axis model says otherwise — `--force` lifts the refusals
+and is not re-asked — and `clean` already behaved this way. Pinned by
+`TestForceSurvivesAPlainConfirmation`.
 
 One trap comes with it, and it is why `rules.PruneClassifyForce` takes `DryRun` as an
 input rather than being a `||` in the flow. A surface may perfectly well install an

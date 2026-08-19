@@ -343,7 +343,7 @@ func TestMultiSelectKeepsPreCheckedOptions(t *testing.T) {
 		Kind: flow.StepMultiSelect, Key: "branches", Label: "Worktrees",
 		Options: []flow.Option{
 			{Label: "merged-wt", Value: "merged-wt", Selected: true},
-			{Label: "dirty-wt", Value: "dirty-wt", Tag: "dirty", Tone: flow.ToneDanger},
+			{Label: "dirty-wt", Value: "dirty-wt", Tag: "dirty", Tone: domain.ToneDanger},
 		},
 	}
 

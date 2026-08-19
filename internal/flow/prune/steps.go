@@ -63,8 +63,8 @@ func (f *pruneFlow) selectionStep() flow.Step {
 	}
 }
 
-// candidateOptions offers every match, the unsafe ones tagged and left
-// unchecked so removing one is always something the user opted into.
+// candidateOptions leaves the unsafe ones unchecked, so removing one is always
+// something the user opted into.
 func (f *pruneFlow) candidateOptions() []flow.Option {
 	options := make([]flow.Option, 0, len(f.plan.Selected))
 	for _, candidate := range f.plan.Selected {
@@ -88,31 +88,27 @@ func (f *pruneFlow) candidateBranches() []string {
 	return branches
 }
 
-// candidateTag labels a candidate with the refusal standing in the way of
-// removing it, or failing that with what made it prunable.
-func candidateTag(candidate domain.PruneCandidate) (string, flow.Tone) {
+func candidateTag(candidate domain.PruneCandidate) (string, domain.Tone) {
 	switch candidate.UnsafeReason {
 	case domain.PruneSkipDirty:
-		return domain.PruneTagDirty, flow.ToneDanger
+		return domain.PruneTagDirty, domain.ToneDanger
 	case domain.PruneSkipUnpushed:
-		return domain.PruneTagUnpushed, flow.ToneDanger
+		return domain.PruneTagUnpushed, domain.ToneDanger
 	case domain.PruneSkipOpenPR:
-		return domain.PruneTagOpenPR, flow.ToneDanger
+		return domain.PruneTagOpenPR, domain.ToneDanger
 	}
 	switch candidate.Reason {
 	case domain.PruneReasonGone:
-		return domain.PruneTagGone, flow.ToneWarning
+		return domain.PruneTagGone, domain.ToneWarning
 	case domain.PruneReasonPRMerged:
-		return domain.PruneTagMerged, flow.ToneNeutral
+		return domain.PruneTagMerged, domain.ToneNeutral
 	case domain.PruneReasonPRClosed:
-		return domain.PruneTagClosed, flow.ToneNeutral
+		return domain.PruneTagClosed, domain.ToneNeutral
 	default:
-		return "", flow.ToneNeutral
+		return "", domain.ToneNeutral
 	}
 }
 
-// summarizeSelection caps the completed-step line at five names so a large
-// selection does not overflow it.
 func summarizeSelection(answer flow.Answer) string {
 	values := answer.Values
 	if len(values) == 0 {
@@ -161,8 +157,6 @@ func (f *pruneFlow) reparentStep() flow.Step {
 	}
 }
 
-// presetReparent answers the step from --reparent-children, so the decision is
-// not asked and the recap still reads it back.
 func (f *pruneFlow) presetReparent() string {
 	if f.request.ReparentChildren {
 		return reparentYes
@@ -170,9 +164,8 @@ func (f *pruneFlow) presetReparent() string {
 	return ""
 }
 
-// orphanPreview derives, from the live selection, the children a prune would
-// otherwise leave pointing at a removed parent. It assumes force so it lists the
-// maximal set; the confirmed force value narrows it back afterwards.
+// orphanPreview assumes force so it lists the maximal set of surviving children;
+// the confirmed force value narrows it back afterwards.
 func (f *pruneFlow) orphanPreview(answers flow.Answers) []domain.ReparentResult {
 	return rules.FinalizePrunePlan(rules.FinalizePrunePlanParams{
 		Plan:       f.plan,
@@ -212,9 +205,8 @@ func (f *pruneFlow) confirmStep() flow.Step {
 	}
 }
 
-// recap states what will be removed, then what becomes of the children — the
-// reparent line reads from the answers, so --reparent-children never makes it
-// vanish.
+// recap reads the reparent line from the answers, so --reparent-children
+// answering the step never makes the line vanish.
 func (f *pruneFlow) recap(answers flow.Answers, selected []string) string {
 	description := domain.PruneNothingSelected
 	if len(selected) > 0 {
@@ -230,9 +222,8 @@ func (f *pruneFlow) recap(answers flow.Answers, selected []string) string {
 	return description + "\n\n" + fmt.Sprintf(domain.PruneRecapOrphanFmt, len(moves))
 }
 
-// confirmOptions offers the danger option only while an unsafe worktree is
-// actually checked: nothing is force-removed by a confirmation that never
-// mentioned it.
+// confirmOptions gates the danger option on a checked unsafe worktree: nothing
+// is force-removed by a confirmation that never mentioned it.
 func (f *pruneFlow) confirmOptions(selected []string) []flow.Option {
 	options := []flow.Option{{Label: domain.PruneConfirmOption, Value: confirmYes}}
 	if len(f.unsafeSelected(selected)) == 0 {
@@ -244,8 +235,6 @@ func (f *pruneFlow) confirmOptions(selected []string) []flow.Option {
 	)
 }
 
-// blockers name the refusals standing in the way, one worktree at a time, for a
-// surface that lifts them individually rather than in one go.
 func (f *pruneFlow) blockers(selected []string) []flow.Blocker {
 	unsafe := f.unsafeSelected(selected)
 	blockers := make([]flow.Blocker, 0, len(unsafe))

@@ -5,6 +5,7 @@ package flow
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -27,15 +28,6 @@ const (
 	StepMultiSelect
 )
 
-// Tone colours a tag without naming a style: the surface maps it to its own.
-type Tone int
-
-const (
-	ToneNeutral Tone = iota
-	ToneWarning
-	ToneDanger
-)
-
 type Option struct {
 	Label     string
 	Value     string
@@ -46,7 +38,7 @@ type Option struct {
 	Selected bool
 	// Tag is a short status word shown before the label, coloured by Tone.
 	Tag  string
-	Tone Tone
+	Tone domain.Tone
 }
 
 type StepContent struct {
@@ -254,6 +246,17 @@ func requiredErr(step Step) error {
 		return fmt.Errorf(domain.FlowStepRequiredFmt, step.Label)
 	}
 	return fmt.Errorf(domain.FlowStepRequiredFlagFmt, step.Label, step.Flag)
+}
+
+// ResolveSymlinks canonicalizes a path when it still exists, and hands it back
+// untouched when it does not. A flow deciding whether the cwd sits inside what it
+// is about to remove has to compare canonical paths, and has to do it before the
+// removal.
+func ResolveSymlinks(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
 }
 
 // KeepBranches drops the excluded names from a candidate list. Both surfaces

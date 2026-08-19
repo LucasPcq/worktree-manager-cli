@@ -348,7 +348,7 @@ func TestTheModalCarriesPreCheckedAndTaggedOptions(t *testing.T) {
 		Title: "Select worktrees",
 		Options: []flow.Option{
 			{Label: "merged-wt", Value: "merged-wt", Selected: true, Tag: "merged"},
-			{Label: "dirty-wt", Value: "dirty-wt", Tag: "dirty", Tone: flow.ToneDanger},
+			{Label: "dirty-wt", Value: "dirty-wt", Tag: "dirty", Tone: domain.ToneDanger},
 		},
 	}}}
 
@@ -452,5 +452,52 @@ func TestGoingBackToAMultiSelectKeepsTheEdits(t *testing.T) {
 
 	if got := mo.multi.Values(); len(got) != 1 || got[0] != "b" {
 		t.Errorf("values = %v, want the edit kept (only b checked)", got)
+	}
+}
+
+// A skipped step is not an answer either — it is the absence of a question,
+// decided from answers the user can still go back and change. Stepping back and
+// forward has to put the question back when the condition that removed it no
+// longer holds, or the run proceeds on a decision nobody was offered.
+func TestASkippedStepIsReconsideredOnTheWayForward(t *testing.T) {
+	session := flow.Session{Steps: []flow.Step{
+		{
+			Kind: flow.StepMultiSelect, Key: "branches", Label: "Worktrees",
+			Build: func(flow.Answers) (flow.StepContent, error) {
+				return flow.StepContent{Options: []flow.Option{
+					{Label: "a", Value: "a", Selected: true},
+					{Label: "b", Value: "b", Selected: true},
+				}}, nil
+			},
+		},
+		{
+			Kind: flow.StepSelect, Key: "reparent", Label: "Reparent children",
+			// Stands in for prune's step: with everything selected nothing
+			// survives to reparent, so the question does not arise.
+			Skip: func(answers flow.Answers) (bool, string) {
+				return len(answers.Values("branches")) == 2, "no children"
+			},
+			Options: []flow.Option{{Label: "Reparent", Value: "reparent"}},
+		},
+		{Kind: flow.StepRecap, Key: "recap", Label: "Recap", Options: []flow.Option{{Label: "go", Value: "go"}}},
+	}}
+
+	reply := make(chan promptReply, 1)
+	mo, _ := newModal(modalParams{Shape: modalStepper, Session: session, Reply: reply, Width: testWidth, Height: testHeight})
+
+	mo, _ = mo.update(namedKey(tea.KeyEnter)) // both checked → reparent skipped
+	if mo.index != 2 {
+		t.Fatalf("index = %d, want the reparent step skipped on the way out", mo.index)
+	}
+
+	mo, _ = mo.update(namedKey(tea.KeyEsc)) // back past the skipped step
+	if mo.index != 0 {
+		t.Fatalf("index = %d, want to land back on the selection", mo.index)
+	}
+	mo, _ = mo.update(key(" "))               // uncheck one — a child now survives
+	mo, _ = mo.update(namedKey(tea.KeyEnter))
+
+	if mo.index != 1 {
+		t.Errorf("index = %d, want the reparent question asked now that it applies", mo.index)
 	}
 }

@@ -124,15 +124,16 @@ func (mo modal) bodyHeight() int {
 	return max(mo.height-domain.DashboardModalChrome-modalMargin, 1)
 }
 
-// answerable steps are the ones this surface has to ask: a preset is already
-// answered and a skipped one is irrelevant, both without a question. An answer
-// the user gave in this modal is neither — going back and forward has to put the
-// question back, so `Asked` is what separates the two here exactly as it does in
-// back().
+// A preset is the only thing this surface may pass over on its own: it was
+// answered before the session started and is not a question. An answer the user
+// gave here is one they may come back to, and a skip is a question the answers
+// removed — both have to be reconsidered on the way forward, since what decided
+// them is exactly what stepping back changes. components.WizardModel.goBack
+// clears its skip flags for the same reason.
 func (mo modal) advance() (modal, tea.Cmd) {
 	for index := mo.index + 1; index < len(mo.session.Steps); index++ {
 		step := mo.session.Steps[index]
-		if answer, known := mo.answers.Get(step.Key); known && !answer.Asked {
+		if answer, known := mo.answers.Get(step.Key); known && !answer.Asked && !answer.Skipped {
 			continue
 		}
 		if step.Skip != nil {
@@ -341,7 +342,7 @@ func newMultiSelect(step flow.Step, content flow.StepContent) components.MultiSe
 			Value:    option.Value,
 			Selected: option.Selected,
 			Tag:      option.Tag,
-			Variant:  tagVariant(option.Tone),
+			Variant:  components.TagVariantOf(option.Tone),
 		})
 	}
 	return components.NewMultiSelect(components.NewMultiSelectParams{
@@ -517,16 +518,4 @@ func (mo modal) hint() string {
 		return domain.DashboardStepperMultiHint
 	}
 	return domain.DashboardStepperHint
-}
-
-// tagVariant maps the tone a step declared onto the component's palette.
-func tagVariant(tone flow.Tone) components.TagVariant {
-	switch tone {
-	case flow.ToneWarning:
-		return components.TagWarning
-	case flow.ToneDanger:
-		return components.TagDanger
-	default:
-		return components.TagNeutral
-	}
 }

@@ -11,6 +11,7 @@ import (
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
 	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // presenter is the dashboard half of flow.Presenter: every phase of a run lands
@@ -113,6 +114,11 @@ func (p prunePresenter) Pruned(outcome pruneflow.Outcome) error {
 	}
 	for _, child := range outcome.Result.Orphaned {
 		p.line(fmt.Sprintf(domain.CleanStillOrphanedFmt, child.Branch, child.OldParent))
+	}
+	// A worktree the user checked and the safety re-gate then dropped has to say
+	// so: without this it simply vanishes from a run the user asked for.
+	for _, skip := range outcome.Result.Skipped {
+		p.line(fmt.Sprintf(domain.PruneSkippedFmt, skip.Branch, rules.PruneReasonLabel(skip.Reason)))
 	}
 	p.send(prunedMsg{})
 	return nil
