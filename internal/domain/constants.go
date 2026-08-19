@@ -721,6 +721,52 @@ const (
 	// removal fallback (worktree path).
 	CleanSudoConfirmFmt = "Force-delete %s with `sudo rm -rf`? (you may be prompted for your password)"
 
+	// PruneLabel* are the short phrases a reason or a skip reads as, shared by
+	// every surface that shows one.
+	PruneLabelPRMerged  = "PR merged"
+	PruneLabelPRClosed  = "PR closed"
+	PruneLabelGone      = "remote branch gone"
+	PruneLabelBase      = "base branch"
+	PruneLabelMain      = "main worktree"
+	PruneLabelDirty     = "dirty — pass --force"
+	PruneLabelUnpushed  = "unpushed commits — pass --force"
+	PruneLabelOpenPR    = "open PR — pass --force"
+	PruneSkippedFmt     = "Skipped %s (%s)"
+	PruneWizardErrLabel = "prune wizard"
+	PruneSelectionTitle = "Select worktrees to prune"
+	PruneConfirmTitle   = "Confirm"
+	// PruneScanning and PruneFetchAndScanning distinguish the two costs of the
+	// planning phase: the second one also hits the network (gh, and the fetch
+	// gone-detection runs first).
+	PruneScanning          = "Scanning worktrees…"
+	PruneFetchAndScanning  = "Fetching remotes and scanning worktrees…"
+	PruneRemoving          = "Pruning worktrees…"
+	PruneNothingToPrune    = "Nothing to prune."
+	PruneConfirmOption     = "Yes, prune"
+	PruneForceOption       = "Yes, force prune (bypass safety checks)"
+	PruneNothingSelected   = "No worktrees selected — nothing will be pruned."
+	PruneWillPruneFmt      = "Will prune %d worktree(s): %s"
+	PruneReparentOptionFmt = "Reparent onto grandparent (%d)"
+	PruneOrphanOption      = "Leave orphaned"
+	PruneReparentChildFmt  = "  • %s will rebase onto %s instead of %s"
+	PruneRecapReparentFmt  = "Then reparent %d child worktree(s) onto their grandparent."
+	PruneRecapOrphanFmt    = "Then leave %d child worktree(s) orphaned."
+	PruneReparentSummary   = "reparent onto grandparent"
+	PruneOrphanSummary     = "leave orphaned"
+	PruneNoChildren        = "no children to reparent"
+	// PruneTag* label a candidate in the picker with what made it prunable, or
+	// with the refusal standing in the way of removing it.
+	PruneTagMerged   = "merged"
+	PruneTagClosed   = "closed"
+	PruneTagGone     = "gone"
+	PruneTagDirty    = "dirty"
+	PruneTagUnpushed = "unpushed"
+	PruneTagOpenPR   = "open PR"
+	// PruneJSONNeedsYes refuses a JSON run that would have to prompt.
+	PruneJSONNeedsYes = "--output json requires --yes or --dry-run (the selection prompt cannot run in JSON mode)"
+	// PruneNeedsTerminal refuses a run that can neither prompt nor resolve.
+	PruneNeedsTerminal = "prune needs a terminal to confirm; pass --yes to run non-interactively"
+
 	ReparentWizardErrLabel       = "reparent wizard"
 	ReparentWorktreesTitle       = "Select worktrees to reparent"
 	ReparentWorktreesDescription = "Choose the worktrees whose parent you want to change"
@@ -781,6 +827,7 @@ const (
 	OpKindCreate   = "create"
 	OpKindClean    = "clean"
 	OpKindReparent = "reparent"
+	OpKindPrune    = "prune"
 
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"
@@ -916,7 +963,11 @@ const (
 	// makes inside the run, which is why it lives in the global menu and not on a
 	// row: a context menu hangs off one worktree.
 	DashboardMenuReparentBatch = "Reparent worktrees"
-	DashboardMenuDelete        = "Delete worktree"
+	// DashboardMenuPrune removes every finished worktree at once. There is no
+	// preview entry beside it: the recap lists what goes, and closing the modal
+	// removes nothing.
+	DashboardMenuPrune  = "Prune finished worktrees"
+	DashboardMenuDelete = "Delete worktree"
 	// DashboardMenuEmpty stands in for the actions of a worktree that has none.
 	DashboardMenuEmpty = "No actions available"
 	// DashboardMenuChrome is what the menu box spends on its borders and padding.
@@ -926,6 +977,7 @@ const (
 	DashboardDeleteTitle        = "Delete worktree"
 	DashboardReparentTitle      = "Change parent"
 	DashboardReparentBatchTitle = "Reparent worktrees"
+	DashboardPruneTitle         = "Prune finished worktrees"
 	// DashboardActionsLabel is the header button that opens the global menu, and
 	// DashboardActionsTitle heads that menu. KeyActions is its keyboard way in.
 	DashboardActionsLabel = "⋯ Actions"

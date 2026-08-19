@@ -9,7 +9,9 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // presenter is the dashboard half of flow.Presenter: every phase of a run lands
@@ -40,13 +42,21 @@ func (p presenter) HookPhase(params flow.HookPhaseParams) error {
 // answer, logging "Aborted." for every question the user backed out of turns the
 // panel into a list of things that did not happen.
 func (p presenter) Notice(notice flow.Notice) {
-	if notice == flow.AbortedNotice {
+	if notice.IsAbort() {
 		return
 	}
 	p.line(notice.Text)
+	for _, line := range notice.Lines {
+		p.line(line)
+	}
 }
 
-func (p presenter) Status(notice flow.Notice) { p.line(notice.Text) }
+func (p presenter) Status(notice flow.Notice) {
+	p.line(notice.Text)
+	for _, line := range notice.Lines {
+		p.line(line)
+	}
+}
 
 type createPresenter struct{ presenter }
 
@@ -86,5 +96,30 @@ func (p reparentPresenter) Reparented(outcome reparentflow.Outcome) error {
 	// The change is metadata only; the rebase is a separate run the user starts.
 	p.line(domain.ReparentSyncHintBare)
 	p.send(reparentedMsg{})
+	return nil
+}
+
+type prunePresenter struct{ presenter }
+
+func (p prunePresenter) Pruned(outcome pruneflow.Outcome) error {
+	if outcome.Empty {
+		p.line(domain.PruneNothingToPrune)
+		return nil
+	}
+	for _, candidate := range outcome.Result.Pruned {
+		p.line(fmt.Sprintf(domain.DashboardFinishedFmt, domain.OpKindPrune, candidate.Branch))
+	}
+	for _, child := range outcome.Result.Reparented {
+		p.line(fmt.Sprintf(domain.CleanReparentedFmt, child.Branch, child.NewParent))
+	}
+	for _, child := range outcome.Result.Orphaned {
+		p.line(fmt.Sprintf(domain.CleanStillOrphanedFmt, child.Branch, child.OldParent))
+	}
+	// A worktree the user checked and the safety re-gate then dropped has to say
+	// so: without this it simply vanishes from a run the user asked for.
+	for _, skip := range outcome.Result.Skipped {
+		p.line(fmt.Sprintf(domain.PruneSkippedFmt, skip.Branch, rules.PruneReasonLabel(skip.Reason)))
+	}
+	p.send(prunedMsg{})
 	return nil
 }

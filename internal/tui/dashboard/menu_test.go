@@ -344,3 +344,34 @@ func TestTheActionsMenuGoesInertWhileARunHoldsTheSurface(t *testing.T) {
 		}
 	}
 }
+
+// prune is the second entry that acts on worktrees picked inside the run, and it
+// destroys them — so it reads as dangerous before it is activated.
+func TestTheActionsMenuOffersPrune(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model = update(model, key(domain.KeyActions))
+
+	index := menuIndexOf(t, model, menuPrune)
+	if item := model.menuItems()[index]; !item.danger || item.label != domain.DashboardMenuPrune {
+		t.Errorf("entry = %+v, want a danger-marked prune entry", item)
+	}
+}
+
+func TestTheActionsMenuStartsThePruneRun(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model = update(model, key(domain.KeyActions))
+
+	started, cmd := model.activateMenu(menuIndexOf(t, model, menuPrune))
+
+	if cmd == nil {
+		t.Fatal("activating the entry must start the run")
+	}
+	if len(started.ops.running) != 1 || started.ops.running[0].kind != domain.OpKindPrune {
+		t.Fatalf("running = %+v, want the prune run recorded", started.ops.running)
+	}
+	// It holds the whole surface and names no target: several worktrees go, so
+	// there is no single one to lock.
+	if got := started.ops.running[0]; got.mode != flow.ModeBlocking || got.target != "" {
+		t.Errorf("operation = %+v, want a blocking run with no target", got)
+	}
+}

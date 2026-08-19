@@ -112,6 +112,30 @@ func pruneMatchReason(st domain.WorktreeStatus, params ClassifyPruneParams) (str
 	return "", false
 }
 
+// PruneClassifyForceParams holds inputs for PruneClassifyForce.
+type PruneClassifyForceParams struct {
+	// Force is the --force flag: the safety axis.
+	Force bool
+	// Interactive reports that someone can still answer for the selection.
+	Interactive bool
+	// DryRun reports a preview: it mutates nothing, so nobody is asked.
+	DryRun bool
+}
+
+// PruneClassifyForce decides whether classification runs with force, which is a
+// different question from whether unsafe worktrees are actually removed.
+// An interactive run classifies with force so dirty, unpushed and open-PR
+// worktrees surface as candidates left unchecked, the confirmation deciding
+// afterwards (FinalizePrunePlan drops them again unless it was forced). A dry
+// run has nobody to decide, so it honours --force as given — classifying it with
+// force would make a preview list worktrees a real run would have skipped.
+func PruneClassifyForce(params PruneClassifyForceParams) bool {
+	if params.Force {
+		return true
+	}
+	return params.Interactive && !params.DryRun
+}
+
 // PruneGHNotice returns the advisory to surface when prune needs GitHub PR data
 // but the gh CLI is unavailable. Because merged/closed detection is GitHub-truth,
 // without gh only --gone applies. show is false when the CLI is reachable.
@@ -289,4 +313,30 @@ func survivingAncestor(cands map[string]domain.PruneCandidate, chosen map[string
 		return base
 	}
 	return cur
+}
+
+// PruneReasonLabel turns a prune reason or skip constant into the short phrase
+// both surfaces show. It maps, it does not decide — a reason it does not know is
+// shown as it is stored rather than swallowed.
+func PruneReasonLabel(reason string) string {
+	switch reason {
+	case domain.PruneReasonPRMerged:
+		return domain.PruneLabelPRMerged
+	case domain.PruneReasonPRClosed:
+		return domain.PruneLabelPRClosed
+	case domain.PruneReasonGone:
+		return domain.PruneLabelGone
+	case domain.PruneSkipBase:
+		return domain.PruneLabelBase
+	case domain.PruneSkipMain:
+		return domain.PruneLabelMain
+	case domain.PruneSkipDirty:
+		return domain.PruneLabelDirty
+	case domain.PruneSkipUnpushed:
+		return domain.PruneLabelUnpushed
+	case domain.PruneSkipOpenPR:
+		return domain.PruneLabelOpenPR
+	default:
+		return reason
+	}
 }

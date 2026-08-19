@@ -94,7 +94,13 @@ func multiSelect(step flow.Step, content flow.StepContent) components.MultiSelec
 		if option.Separator {
 			continue
 		}
-		items = append(items, components.MultiSelectItem{Label: option.Label, Value: option.Value})
+		items = append(items, components.MultiSelectItem{
+			Label:    option.Label,
+			Value:    option.Value,
+			Selected: option.Selected,
+			Tag:      option.Tag,
+			Variant:  components.TagVariantOf(option.Tone),
+		})
 	}
 	return components.NewMultiSelect(components.NewMultiSelectParams{
 		Title:       content.Title,

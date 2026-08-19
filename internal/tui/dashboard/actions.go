@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 )
 
@@ -144,6 +145,42 @@ func (m Model) startBatchReparent() (Model, tea.Cmd) {
 	}
 }
 
+// startPrune removes every finished worktree in one run. Like the batch
+// reparent it holds the whole surface, so it needs no per-worktree lock. It runs
+// the broad default — merged, closed and gone — because there is no flag at the
+// click: the picker tags every candidate with what made it prunable, which is
+// where the user narrows. --dry-run has no equivalent either; the recap already
+// lists what goes, and closing the modal removes nothing.
+func (m Model) startPrune() (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(""); refused {
+		return m.refuse(reason), nil
+	}
+	m, id := m.beginOp(beginParams{Operation: pruneflow.Operation()})
+	send := m.sender()
+
+	params := pruneflow.Params{
+		Context: m.flowContext(),
+		Request: pruneflow.Request{
+			Merged:     true,
+			Closed:     true,
+			Gone:       true,
+			BaseBranch: m.params.Config.Project.Worktrees.BaseBranch,
+		},
+		Prompter: prompter{
+			send:  send,
+			title: domain.DashboardPruneTitle,
+			shape: modalStepper,
+			opID:  id,
+		},
+		Presenter: prunePresenter{presenter{send: send}},
+	}
+
+	return m, func() tea.Msg {
+		_, err := pruneflow.Run(params)
+		return opDoneMsg{id: id, err: err}
+	}
+}
+
 // busyReason states why nothing may act on a worktree right now: a run already
 // holds it, or one holds the whole dashboard. This is where the mode a flow
 // declares is enforced — once, rather than at every action site.
@@ -229,6 +266,8 @@ func (m Model) applyFlow(msg tea.Msg) (Model, tea.Cmd) {
 	case cleanedMsg:
 		return m, m.reload()
 	case reparentedMsg:
+		return m, m.reload()
+	case prunedMsg:
 		return m, m.reload()
 	}
 	return m, nil

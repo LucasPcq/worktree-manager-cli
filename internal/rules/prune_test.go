@@ -357,3 +357,26 @@ func TestPruneGHNotice(t *testing.T) {
 		}
 	}
 }
+
+func TestPruneClassifyForce(t *testing.T) {
+	tests := []struct {
+		name   string
+		params PruneClassifyForceParams
+		want   bool
+	}{
+		{"force always classifies with force", PruneClassifyForceParams{Force: true}, true},
+		{"an interactive run surfaces unsafe candidates unchecked", PruneClassifyForceParams{Interactive: true}, true},
+		{"a prompt-free run honours the flag", PruneClassifyForceParams{}, false},
+		{"a dry run previews what a real run would do, not more", PruneClassifyForceParams{Interactive: true, DryRun: true}, false},
+		{"a forced dry run still previews the forced selection", PruneClassifyForceParams{Force: true, Interactive: true, DryRun: true}, true},
+		{"a forced prompt-free dry run too", PruneClassifyForceParams{Force: true, DryRun: true}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PruneClassifyForce(tt.params); got != tt.want {
+				t.Errorf("PruneClassifyForce(%+v) = %v, want %v", tt.params, got, tt.want)
+			}
+		})
+	}
+}

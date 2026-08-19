@@ -26,12 +26,13 @@ is implemented yet.
 | `wtm create` | migrated — `internal/flow/create` |
 | `wtm clean` | migrated — `internal/flow/clean` |
 | `wtm reparent` | migrated — `internal/flow/reparent` |
+| `wtm prune` | migrated — `internal/flow/prune` |
 | CLI wizard surface | `internal/tui/flowui` |
 | Unattended surface | `flow.Unattended` (in `internal/flow`) |
 | Dashboard surface | `internal/tui/dashboard` (`prompter.go`, `presenter.go`, `ops.go`) |
 | Test doubles | `internal/testutil/flowtest` |
-| `extract`, `sync` | **not migrated** — still driven by `internal/commands/wt` plus their wizard packages. The model was validated on paper against them; that is not the same as delivered. `extract` is LUC-182. |
-| `StepMultiSelect` | exists since `reparent`, which needed it to keep its no-argument picker. Rendered by both surfaces: `flowui`, and the dashboard's modal since its Actions menu runs the batch reparent. |
+| `extract`, `sync` | **not migrated** — still driven by `internal/commands/wt` plus their wizard packages. The model was validated on paper against them; that is not the same as delivered. `extract` is LUC-182, `sync` is LUC-186. |
+| `StepMultiSelect` | exists since `reparent`, which needed it to keep its no-argument picker. Rendered by both surfaces: `flowui`, and the dashboard's modal since its Actions menu runs the batch reparent. Since `prune`, an `Option` can also arrive pre-checked and tagged (`Selected`, `Tag`, `Tone`). `Tone` is a `domain` enum, not a `flow` one, so `components.TagVariantOf` can hold the one mapping onto the palette without the widget library learning about `flow`. |
 
 ## The shape of a flow
 
@@ -611,10 +612,62 @@ directly is how the resolution taxonomy is tested (`internal/flow/unattended_tes
 CLI behavior was pinned by tests written against the *old* code:
 `internal/tui/newwt/create_flow_test.go`, `internal/commands/wt/create_wizard_test.go`,
 `create_noninteractive_test.go` and `integration_test.go` (the `--yes` / `--force` axes,
-the JSON reparent default, idempotence on an absent worktree). They exist to be run
+the JSON reparent default, idempotence on an absent worktree). `prune` got the same
+treatment in `internal/commands/wt/prune_test.go`, which needed two new fixtures to
+reach its core at all: `internal/testutil/ghtest` scripts the GitHub CLI through `PATH`,
+and `gittest.AddOrigin` gives branches a real upstream. They exist to be run
 unchanged after the refactor. Keep them that way: they are the only thing that proves a
 flow that moved packages still reads the same to a user. When you migrate a command,
 write its characterization tests first, and do not "fix" one to make a refactor pass.
+
+## Two decisions worth not re-opening
+
+### A non-mutating mode is a business input (`prune --dry-run`)
+
+`--dry-run` looks like an output mode, and the first instinct is to keep it out of the
+`Request` on the grounds that a request carries business inputs, not presentation. That
+reading is wrong: `--dry-run` does not change *how the run reads*, it changes *what the
+run does* — nothing. It belongs with `--force` on the input side, the way `terraform
+plan` sits beside `apply`.
+
+So `prune.Request.DryRun` exists, and `Run` returns an `Outcome` carrying the plan
+before it asks a single question and before it touches anything. The alternative — a
+second exported `Plan()` the runner calls instead of `Run()` — would have kept a plan
+computation path in `commands/` and forced the `gh` advisory to be emitted from two
+places.
+
+`--force` is OR'd with the recap's own answer (`request.Force || answer == confirmForce`),
+which is a deliberate change from the pre-`flow` `prune`: it read force from the picker's
+answer alone, so `wtm prune --force` on a TTY followed by a plain "Yes, prune" dropped the
+unsafe worktrees again. The two-axis model says otherwise — `--force` lifts the refusals
+and is not re-asked — and `clean` already behaved this way. Pinned by
+`TestForceSurvivesAPlainConfirmation`.
+
+One trap comes with it, and it is why `rules.PruneClassifyForce` takes `DryRun` as an
+input rather than being a `||` in the flow. A surface may perfectly well install an
+interactive Prompter *and* set `DryRun`. Classifying with force because "someone could
+uncheck" would then make a preview list worktrees a real run would have skipped. The
+rule states the three-term condition once, and tests it.
+
+### The three reparent service functions stay three
+
+`worktree.ReparentBatch` (for `wtm reparent`), `worktree.ApplyReparentChildren` (for
+`clean`) and `worktree.ApplyReparents` (for `prune`) all rewrite a worktree's recorded
+parent. `prune` being the last of the three callers to migrate, the question of folding
+them into one was raised deliberately here — and answered: **no.**
+
+- There is **no duplicated logic to remove.** All three funnel into `setSourceBranch`,
+  which is already the single chokepoint for the write.
+- Their contracts genuinely differ. Only `ReparentBatch` validates acyclicity, because
+  only it moves worktrees onto a parent the user chose. The other two reattach children
+  to a grandparent, which cannot close a cycle by construction — giving them the check
+  would be dead validation.
+- Merging them yields one function with behaviour flags (`Validate bool`,
+  `Grandparent bool`) that is harder to read than the three signatures it replaces, and
+  hides which caller is allowed to skip which check.
+
+What is broad is the *exported surface*, not the logic. Three names for one idea is a
+fair price for three honest contracts. Do not consolidate them without a new reason.
 
 ## Known gaps
 
@@ -627,3 +680,5 @@ Deliberately open, tracked, and not to be fixed opportunistically:
 | LUC-182 | `extract` is not migrated; create's step declaration therefore exists twice |
 | LUC-183 | `flow.Step` carries kind-specific fields (`Branches`, `Pinned`, `Refresh`, `Validate`/`ValidateSet`) on every kind. It also means a `StepBranchSelect` reads its candidates from `Step.Branches`, before any answer exists, so it cannot narrow them from an earlier step — `reparent` narrows from what its request already names instead |
 | LUC-184 | Locked worktrees are only taken into account by `relocate`, so "locked" is not among clean's blockers |
+| LUC-188 | `busyReason("")` only sees blocking runs, so a `ModeBackground` run holding a worktree does not stop a `ModeBlocking` run with no target (the batch reparent, `prune`) from acting on it |
+| — | When every prune match is skipped, the run reports an empty result instead of the skips that explain it. Pinned by `TestPruneAllUnsafeReportsNothing` so a refactor cannot change it silently; fixing it is its own decision |

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
@@ -145,7 +144,7 @@ func (f *cleanFlow) remove(p removeParams) (Outcome, error) {
 	// Decided before the removal, while the paths still resolve.
 	cwd, _ := os.Getwd()
 	insideRemoved := worktreePath != "" && cwd != "" &&
-		rules.IsPathWithin(resolveSymlinks(worktreePath), resolveSymlinks(cwd))
+		rules.IsPathWithin(flow.ResolveSymlinks(worktreePath), flow.ResolveSymlinks(cwd))
 
 	f.stopServices(params.Branch)
 
@@ -342,11 +341,4 @@ func (f *cleanFlow) checkCached(branchName string) (domain.CleanCheckResult, err
 	result.check, result.err = worktree.Check(f.cleanParams(branchName, false))
 	f.checks[branchName] = result
 	return result.check, result.err
-}
-
-func resolveSymlinks(path string) string {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return resolved
-	}
-	return path
 }

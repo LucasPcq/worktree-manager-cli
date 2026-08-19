@@ -3,7 +3,6 @@ package wt
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -11,11 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
-	"github.com/LucasPcq/wtm/internal/infra"
-	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
-	"github.com/LucasPcq/wtm/internal/service/process"
-	"github.com/LucasPcq/wtm/internal/service/shell"
 )
 
 // newCleanCmd creates the wtm clean subcommand.
@@ -80,38 +75,4 @@ func runClean(cmd *cobra.Command, args []string) error {
 		Presenter: cleanPresenter{cliPresenter: newPresenter(cmd, format)},
 	})
 	return err
-}
-
-// The helpers below are shared with `wtm prune`, which still removes worktrees on
-// its own. They go with its migration to internal/flow.
-
-func redirectToBase(baseDir string) {
-	shell.RequestCd(baseDir)
-}
-
-func resolveSymlinks(path string) string {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return resolved
-	}
-	return path
-}
-
-func stopWorktreeServices(cmd *cobra.Command, projectDir string, branch string) {
-	socketPath := process.SocketPath()
-	if !process.IsDaemonRunning(socketPath) {
-		return
-	}
-
-	wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
-		ProjectDir: projectDir,
-		Branch:     branch,
-	})
-	if err != nil {
-		return
-	}
-
-	client := process.NewClient(socketPath)
-	if process.StopWorktreeJobs(client, wt.Path) {
-		output.Success(cmd.ErrOrStderr(), fmt.Sprintf(domain.CleanStoppedServicesFmt, branch))
-	}
 }

@@ -123,9 +123,15 @@ flagged; everything else is what the name implies.
   **refuse unsafe worktrees** — dirty, unpushed commits, or an open PR — unless you pass
   `--force`; in JSON/`--yes` mode those are reported under `skipped` (reason `dirty`/
   `unpushed`/`open_pr`) instead of being removed, so committed work is never silently lost.
+  One exception for `prune`: when **every** match is unsafe, nothing survives the
+  selection and the JSON is empty — `pruned: []` and `skipped: []` both. Read an empty
+  result as "nothing was removed", not as "nothing matched".
   Both also run any configured **`on_clean`** hooks in the worktree just before removing it
   (e.g. `docker compose down`); a hook that exits non-zero **aborts the removal** unless its
-  entry sets `continue_on_error`. If `git worktree remove` then fails on undeletable files
+  entry sets `continue_on_error`. For `prune`, every selected worktree is hooked before the
+  first one is removed, so a hook failing partway aborts with nothing deleted — but the
+  worktrees already hooked have had their teardown run, which is why `on_clean` hooks must
+  be idempotent. If `git worktree remove` then fails on undeletable files
   (e.g. root-owned Docker files), interactive runs offer a `sudo rm -rf` fallback — this
   never triggers in JSON/`--yes` mode, where the failure is surfaced as an error.
 - `wtm extract <source> --files <a,b> --to <branch>` — move part of the `<source>`

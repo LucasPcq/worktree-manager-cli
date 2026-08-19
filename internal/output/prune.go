@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // FormatPrunePlan renders the dry-run / preview of a prune: the worktrees that
@@ -16,7 +17,7 @@ func FormatPrunePlan(w io.Writer, plan domain.PrunePlan) {
 	} else {
 		items := make([]AnnounceItem, 0, len(plan.Selected))
 		for _, c := range plan.Selected {
-			items = append(items, AnnounceItem{Label: c.Branch, Value: pruneReasonLabel(c.Reason)})
+			items = append(items, AnnounceItem{Label: c.Branch, Value: rules.PruneReasonLabel(c.Reason)})
 		}
 		Announce(w, fmt.Sprintf("Would prune %d worktree(s):", len(plan.Selected)), items)
 	}
@@ -34,7 +35,7 @@ func FormatPrunePlan(w io.Writer, plan domain.PrunePlan) {
 		Blank(w)
 		items := make([]AnnounceItem, 0, len(plan.Skipped))
 		for _, s := range plan.Skipped {
-			items = append(items, AnnounceItem{Label: s.Branch, Value: pruneReasonLabel(s.Reason)})
+			items = append(items, AnnounceItem{Label: s.Branch, Value: rules.PruneReasonLabel(s.Reason)})
 		}
 		Announce(w, "Skipped:", items)
 	}
@@ -48,7 +49,7 @@ func FormatPruneResult(w io.Writer, result domain.PruneResult) {
 		Message(w, "Nothing to prune.")
 	}
 	for _, c := range result.Pruned {
-		Success(w, fmt.Sprintf("Pruned %s (%s)", c.Branch, pruneReasonLabel(c.Reason)))
+		Success(w, fmt.Sprintf("Pruned %s (%s)", c.Branch, rules.PruneReasonLabel(c.Reason)))
 	}
 	for _, r := range result.Reparented {
 		Success(w, fmt.Sprintf("Reparented %s onto %s", r.Branch, r.NewParent))
@@ -57,7 +58,7 @@ func FormatPruneResult(w io.Writer, result domain.PruneResult) {
 		Warning(w, fmt.Sprintf("%s still points at the removed parent %s — reparent it with `wtm reparent`", o.Branch, o.OldParent))
 	}
 	for _, s := range result.Skipped {
-		Warning(w, fmt.Sprintf("Skipped %s (%s)", s.Branch, pruneReasonLabel(s.Reason)))
+		Warning(w, fmt.Sprintf(domain.PruneSkippedFmt, s.Branch, rules.PruneReasonLabel(s.Reason)))
 	}
 }
 
@@ -77,28 +78,4 @@ func WritePruneResultJSON(w io.Writer, result domain.PruneResult) error {
 		result.Skipped = []domain.PruneSkip{}
 	}
 	return encodeJSON(w, result)
-}
-
-// pruneReasonLabel maps a prune reason/skip constant to a short human phrase.
-func pruneReasonLabel(reason string) string {
-	switch reason {
-	case domain.PruneReasonPRMerged:
-		return "PR merged"
-	case domain.PruneReasonPRClosed:
-		return "PR closed"
-	case domain.PruneReasonGone:
-		return "remote branch gone"
-	case domain.PruneSkipBase:
-		return "base branch"
-	case domain.PruneSkipMain:
-		return "main worktree"
-	case domain.PruneSkipDirty:
-		return "dirty — pass --force"
-	case domain.PruneSkipUnpushed:
-		return "unpushed commits — pass --force"
-	case domain.PruneSkipOpenPR:
-		return "open PR — pass --force"
-	default:
-		return reason
-	}
 }

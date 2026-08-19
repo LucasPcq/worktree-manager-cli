@@ -334,3 +334,23 @@ func TestBuildRefusesAnUnknownKind(t *testing.T) {
 		t.Fatal("an unsupported step kind must refuse the run")
 	}
 }
+
+// The CLI wizard must carry a step's pre-checked options too: prune's picker
+// opens with the safe candidates already checked, and losing that would turn a
+// confirmation into a full re-selection.
+func TestMultiSelectKeepsPreCheckedOptions(t *testing.T) {
+	step := flow.Step{
+		Kind: flow.StepMultiSelect, Key: "branches", Label: "Worktrees",
+		Options: []flow.Option{
+			{Label: "merged-wt", Value: "merged-wt", Selected: true},
+			{Label: "dirty-wt", Value: "dirty-wt", Tag: "dirty", Tone: domain.ToneDanger},
+		},
+	}
+
+	model := multiSelect(step, flow.StepContent{Options: step.Options})
+
+	got := model.Values()
+	if len(got) != 1 || got[0] != "merged-wt" {
+		t.Errorf("values = %v, want only the pre-checked option", got)
+	}
+}

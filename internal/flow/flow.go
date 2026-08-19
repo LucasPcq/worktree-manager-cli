@@ -5,6 +5,7 @@ package flow
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -32,6 +33,12 @@ type Option struct {
 	Value     string
 	Separator bool
 	Danger    bool
+	// Selected pre-checks the option in a StepMultiSelect, so a step can offer a
+	// set it already narrowed rather than an empty one.
+	Selected bool
+	// Tag is a short status word shown before the label, coloured by Tone.
+	Tag  string
+	Tone domain.Tone
 }
 
 type StepContent struct {
@@ -213,6 +220,9 @@ const (
 type Notice struct {
 	Kind NoticeKind
 	Text string
+	// Lines turn the notice into a titled block, Text being its title. Empty
+	// keeps it the single line every other caller emits.
+	Lines []string
 }
 
 type Presenter interface {
@@ -225,11 +235,28 @@ type Presenter interface {
 
 var AbortedNotice = Notice{Kind: NoticeMessage, Text: domain.AbortedMessage}
 
+// IsAbort identifies the notice a flow emits when the user backed out. Notice
+// carries a slice, so it cannot be compared with ==.
+func (n Notice) IsAbort() bool {
+	return n.Kind == AbortedNotice.Kind && n.Text == AbortedNotice.Text
+}
+
 func requiredErr(step Step) error {
 	if step.Flag == "" {
 		return fmt.Errorf(domain.FlowStepRequiredFmt, step.Label)
 	}
 	return fmt.Errorf(domain.FlowStepRequiredFlagFmt, step.Label, step.Flag)
+}
+
+// ResolveSymlinks canonicalizes a path when it still exists, and hands it back
+// untouched when it does not. A flow deciding whether the cwd sits inside what it
+// is about to remove has to compare canonical paths, and has to do it before the
+// removal.
+func ResolveSymlinks(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
 }
 
 // KeepBranches drops the excluded names from a candidate list. Both surfaces

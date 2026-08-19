@@ -124,12 +124,16 @@ func (mo modal) bodyHeight() int {
 	return max(mo.height-domain.DashboardModalChrome-modalMargin, 1)
 }
 
-// answerable steps are the ones this surface has to ask: a preset is already
-// answered and a skipped one is irrelevant, both without a question.
+// A preset is the only thing this surface may pass over on its own: it was
+// answered before the session started and is not a question. An answer the user
+// gave here is one they may come back to, and a skip is a question the answers
+// removed — both have to be reconsidered on the way forward, since what decided
+// them is exactly what stepping back changes. components.WizardModel.goBack
+// clears its skip flags for the same reason.
 func (mo modal) advance() (modal, tea.Cmd) {
 	for index := mo.index + 1; index < len(mo.session.Steps); index++ {
 		step := mo.session.Steps[index]
-		if _, known := mo.answers.Get(step.Key); known {
+		if answer, known := mo.answers.Get(step.Key); known && !answer.Asked && !answer.Skipped {
 			continue
 		}
 		if step.Skip != nil {
@@ -183,7 +187,7 @@ func (mo modal) show(step flow.Step, content flow.StepContent) (modal, tea.Cmd) 
 			Items:       branchItems(step, content),
 		})
 	case flow.StepMultiSelect:
-		mo.multi = newMultiSelect(step, content)
+		mo.multi = newMultiSelect(step, mo.reselect(step, content))
 		mo.multi.SetSize(components.SetSizeParams{Width: mo.bodyWidth(), Height: mo.bodyHeight()})
 		return mo, mo.multi.Init()
 	default:
@@ -306,13 +310,40 @@ func (mo modal) usesRows() bool {
 	return mo.shape == modalForm || mo.kind == flow.StepRecap
 }
 
+// reselect re-applies what the user already checked onto a rebuilt step. The
+// content's own Selected flags are the flow's opening proposal, which must not
+// overwrite an edit made before stepping back — a step re-entered with its boxes
+// reset silently discards the answer the user came back to adjust.
+func (mo modal) reselect(step flow.Step, content flow.StepContent) flow.StepContent {
+	answer, known := mo.answers.Get(step.Key)
+	if !known || !answer.Asked {
+		return content
+	}
+	checked := make(map[string]bool, len(answer.Values))
+	for _, value := range answer.Values {
+		checked[value] = true
+	}
+	options := append([]flow.Option(nil), content.Options...)
+	for index := range options {
+		options[index].Selected = checked[options[index].Value]
+	}
+	content.Options = options
+	return content
+}
+
 func newMultiSelect(step flow.Step, content flow.StepContent) components.MultiSelectModel {
 	items := make([]components.MultiSelectItem, 0, len(content.Options))
 	for _, option := range content.Options {
 		if option.Separator {
 			continue
 		}
-		items = append(items, components.MultiSelectItem{Label: option.Label, Value: option.Value})
+		items = append(items, components.MultiSelectItem{
+			Label:    option.Label,
+			Value:    option.Value,
+			Selected: option.Selected,
+			Tag:      option.Tag,
+			Variant:  components.TagVariantOf(option.Tone),
+		})
 	}
 	return components.NewMultiSelect(components.NewMultiSelectParams{
 		Title:       content.Title,
