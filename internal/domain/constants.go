@@ -163,11 +163,12 @@ const (
 	OnConflictResolve = "resolve"
 
 	// Status codes of the XY field of `git status --porcelain`.
-	PorcelainUntracked = "??"
-	PorcelainIgnored   = "!!"
-	PorcelainRename    = "R"
-	PorcelainCopy      = "C"
-	PorcelainDeleted   = "D"
+	PorcelainUntracked  = "??"
+	PorcelainIgnored    = "!!"
+	PorcelainUnmodified = ' '
+	PorcelainRename     = "R"
+	PorcelainCopy       = "C"
+	PorcelainDeleted    = "D"
 
 	// PorcelainFieldSep separates the records of `git status --porcelain -z`.
 	PorcelainFieldSep = "\x00"
@@ -851,6 +852,8 @@ const (
 	// DashboardPollSeconds paces the local-git poll. `gh` is never polled: PRs load
 	// once asynchronously and refresh only on KeyRefresh.
 	DashboardPollSeconds = 3
+	// DashboardDetailCommits is the number of commits requested for ACTIVITY.
+	DashboardDetailCommits = 5
 
 	DashboardListWidthPercent = 40
 	DashboardMinListWidth     = 24
