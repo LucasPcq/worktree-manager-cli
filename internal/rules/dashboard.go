@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -233,4 +234,38 @@ func SplitRecapField(line string) (label, value string, ok bool) {
 		return "", "", false
 	}
 	return line[:colon+1] + rest[:len(rest)-len(trimmed)], trimmed, true
+}
+
+type ActiveWorktreeParams struct {
+	Cwd      string
+	Statuses []domain.WorktreeStatus
+}
+
+// ActiveWorktree nomme la branche du worktree qui contient Cwd. Quand deux
+// worktrees s'emboîtent, le plus profond l'emporte : c'est celui dans lequel on
+// travaille réellement.
+func ActiveWorktree(params ActiveWorktreeParams) string {
+	if params.Cwd == "" {
+		return ""
+	}
+
+	branch, deepest := "", 0
+	for _, status := range params.Statuses {
+		if status.Path == "" || !underPath(params.Cwd, status.Path) {
+			continue
+		}
+		if length := len(status.Path); length > deepest {
+			branch, deepest = status.Branch, length
+		}
+	}
+	return branch
+}
+
+// underPath teste l'appartenance sur une frontière de segment, pour que /a/bc ne
+// passe pas pour un enfant de /a/b.
+func underPath(cwd, root string) bool {
+	if cwd == root {
+		return true
+	}
+	return strings.HasPrefix(cwd, root+string(filepath.Separator))
 }

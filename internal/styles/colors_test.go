@@ -32,9 +32,9 @@ func hueOf(t *testing.T, hex string) float64 {
 	case r:
 		hue = 60 * (((g - b) / delta) + 6)
 	case g:
-		hue = 60 * (((b-r)/delta) + 2)
+		hue = 60 * (((b - r) / delta) + 2)
 	default:
-		hue = 60 * (((r-g)/delta) + 4)
+		hue = 60 * (((r - g) / delta) + 4)
 	}
 	for hue >= 360 {
 		hue -= 360
@@ -59,8 +59,8 @@ const minWarmSeparation = 25
 
 func TestSignatureAndWarningAreNotConfusable(t *testing.T) {
 	pairs := []struct {
-		theme            string
-		signature, warn  string
+		theme           string
+		signature, warn string
 	}{
 		{"light", ColorSignature.Light, ColorWarning.Light},
 		{"dark", ColorSignature.Dark, ColorWarning.Dark},

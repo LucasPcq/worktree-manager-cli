@@ -256,3 +256,33 @@ func TestSplitRecapFieldLeavesHeadingsAndProseWhole(t *testing.T) {
 		}
 	}
 }
+
+func TestActiveWorktree(t *testing.T) {
+	statuses := []domain.WorktreeStatus{
+		{Branch: "main", Path: "/repo"},
+		{Branch: "feat/ui", Path: "/repo.worktrees/feat-ui"},
+		{Branch: "feat/ui-extra", Path: "/repo.worktrees/feat-ui-extra"},
+		{Branch: "nested", Path: "/repo.worktrees/feat-ui/nested"},
+	}
+	cases := []struct {
+		name string
+		cwd  string
+		want string
+	}{
+		{"racine du worktree", "/repo.worktrees/feat-ui", "feat/ui"},
+		{"sous-dossier", "/repo.worktrees/feat-ui/internal/tui", "feat/ui"},
+		{"préfixe voisin non confondu", "/repo.worktrees/feat-ui-extra", "feat/ui-extra"},
+		{"worktree principal", "/repo/internal", "main"},
+		{"le plus profond gagne", "/repo.worktrees/feat-ui/nested/pkg", "nested"},
+		{"hors de tout worktree", "/ailleurs", ""},
+		{"cwd vide", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := ActiveWorktree(ActiveWorktreeParams{Cwd: c.cwd, Statuses: statuses})
+			if got != c.want {
+				t.Errorf("ActiveWorktree(%q) = %q, want %q", c.cwd, got, c.want)
+			}
+		})
+	}
+}
