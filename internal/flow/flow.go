@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -298,4 +299,18 @@ func KeepBranches(candidates []domain.BranchCandidate, exclude []string) []domai
 		kept = append(kept, candidate)
 	}
 	return kept
+}
+
+// SummarizeSet renders a set answer for a breadcrumb: the names, capped so a
+// large selection does not overflow the line.
+func SummarizeSet(answer Answer) string {
+	values := answer.Values
+	if len(values) == 0 {
+		return domain.SummaryNone
+	}
+	const maxNames = 5
+	if len(values) <= maxNames {
+		return strings.Join(values, ", ")
+	}
+	return strings.Join(values[:maxNames], ", ") + fmt.Sprintf(" +%d", len(values)-maxNames)
 }

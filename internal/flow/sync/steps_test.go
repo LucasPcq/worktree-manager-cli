@@ -31,7 +31,7 @@ func TestSelectionOptionsTagWhatSyncWouldSkip(t *testing.T) {
 	for _, option := range content.Options {
 		byValue[option.Value] = option
 	}
-	if byValue["main"].Label != "main"+domain.SyncBaseSuffix {
+	if byValue["main"].Label != "main"+domain.PinnedSuffixBase {
 		t.Fatalf("the base must be labelled, got %q", byValue["main"].Label)
 	}
 	if byValue["feat-b"].Tag != domain.SyncTagDirty {
@@ -89,12 +89,72 @@ func TestConflictStepDefaultsToAborting(t *testing.T) {
 	}
 }
 
-func TestConflictStepFollowsTheFlagWhenPreset(t *testing.T) {
-	session := testFlow(Request{KeepConflict: true}, stack).session()
+// --keep-conflict reorders the options instead of answering the step: the
+// question stays visible and its other outcome one keystroke away, as the picker
+// had it.
+func TestConflictStepLeadsWithKeepWhenFlagged(t *testing.T) {
+	f := testFlow(Request{KeepConflict: true}, stack)
 
-	answer, _ := session.Presets.Get(KeyConflict)
+	if _, preset := f.session().Presets.Get(KeyConflict); preset {
+		t.Fatal("--keep-conflict must not make the question disappear")
+	}
+	content, err := f.conflictStep().Build(flow.Answers{})
+	if err != nil {
+		t.Fatalf("build conflict: %v", err)
+	}
+	if content.Options[0].Value != conflictKeep {
+		t.Fatalf("--keep-conflict must lead with keep, got %q", content.Options[0].Value)
+	}
+}
+
+func TestConflictStepResolvesToKeepWhenFlagged(t *testing.T) {
+	answer, err := testFlow(Request{KeepConflict: true}, stack).conflictStep().Resolve(flow.Answers{})
+	if err != nil {
+		t.Fatalf("resolve conflict: %v", err)
+	}
 	if answer.Value != conflictKeep {
-		t.Fatalf("--keep-conflict must preset the step, got %q", answer.Value)
+		t.Fatalf("an unattended run must honour --keep-conflict, got %q", answer.Value)
+	}
+}
+
+// The skip reads the selection, never a plan: no git call from a Skip.
+func TestConflictStepIsSkippedForABaseOnlyRefresh(t *testing.T) {
+	f := testFlow(Request{BaseBranch: "main"}, stack)
+
+	skip, reason := f.conflictStep().Skip(flow.Answers{}.WithValues(KeySelection, []string{"main"}))
+	if !skip || reason != domain.SyncNoRebaseStep {
+		t.Fatalf("a base-only refresh has no conflict to have an opinion about, got %v %q", skip, reason)
+	}
+
+	skip, reason = f.conflictStep().Skip(flow.Answers{}.WithValues(KeySelection, []string{"main", "feat-a"}))
+	if skip || reason != "" {
+		t.Fatalf("a rebase step must be asked about, got %v %q", skip, reason)
+	}
+}
+
+// The cancel row belongs to the surface (flowui and the dashboard both append
+// it); declaring it here would double it.
+func TestRecapLeavesTheCancelRowToTheSurface(t *testing.T) {
+	f := testFlow(Request{BaseBranch: "main"}, stack)
+	f.plan = domain.SyncPlan{BaseBranch: "main", Steps: []domain.SyncStep{{Branch: "feat-a", SourceBranch: "main"}}}
+
+	content, err := f.confirmStep().Build(flow.Answers{})
+	if err != nil {
+		t.Fatalf("build recap: %v", err)
+	}
+	if len(content.Options) != 1 || content.Options[0].Label != domain.SyncConfirmOption {
+		t.Fatalf("the recap declares its own option only, got %+v", content.Options)
+	}
+}
+
+// A plan that cannot be built is an error, not an empty cascade.
+func TestRecapSurfacesAPlanFailure(t *testing.T) {
+	f := testFlow(Request{BaseBranch: "main"}, stack)
+	f.ctx = flow.Context{ProjectDir: t.TempDir(), StateDir: t.TempDir()}
+
+	_, err := f.confirmStep().Load(flow.Answers{}.WithValues(KeySelection, []string{"feat-a"}))
+	if err == nil {
+		t.Fatal("a plan that failed to build must not read as nothing to rebase")
 	}
 }
 

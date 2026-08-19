@@ -574,11 +574,12 @@ const (
 	// SyncKeepConflictHintFmt tells the user where a kept conflict was left.
 	// Verbs: branch, worktree path.
 	SyncKeepConflictHintFmt = "%s left mid-rebase in %s — run `git rebase --continue` or `git rebase --abort` there"
-	// SyncBaseSuffix marks the base in the picker; SyncTag* name what the cascade
-	// would skip.
-	SyncBaseSuffix  = " (base)"
+	// SyncTag* name what the cascade would skip.
 	SyncTagDirty    = "dirty"
 	SyncTagRebasing = "rebasing"
+	// SyncPlanFailedFmt heads the recap of a cascade that could not be planned
+	// (e.g. a cycle in the parent chain).
+	SyncPlanFailedFmt = "Failed to build sync plan: %w"
 
 	// Source-reconciliation and env-fallback prompts shared by the create and
 	// extract flows — used both by the in-wizard confirmation steps and the

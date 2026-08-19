@@ -27,6 +27,21 @@ func SyncIncludesBase(params SyncIncludesBaseParams) bool {
 	return false
 }
 
+// SyncSelectsOnlyBase reports that a selection asks for nothing but a base
+// refresh, so the cascade has no rebase step — decidable without planning it. A
+// nil (or empty) selection means "every worktree", which is never base-only.
+func SyncSelectsOnlyBase(params SyncIncludesBaseParams) bool {
+	if len(params.Selected) == 0 {
+		return false
+	}
+	for _, branch := range params.Selected {
+		if branch != params.BaseBranch {
+			return false
+		}
+	}
+	return true
+}
+
 // BaseIsTargetParams holds inputs for BaseIsTarget.
 type BaseIsTargetParams struct {
 	Steps      []domain.SyncStep

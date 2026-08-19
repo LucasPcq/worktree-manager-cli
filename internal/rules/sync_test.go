@@ -220,3 +220,25 @@ func TestParentFlagsDecision(t *testing.T) {
 		})
 	}
 }
+
+func TestSyncSelectsOnlyBase(t *testing.T) {
+	tests := []struct {
+		name     string
+		selected []string
+		want     bool
+	}{
+		{name: "every worktree", selected: nil, want: false},
+		{name: "the base alone", selected: []string{"main"}, want: true},
+		{name: "the base and a worktree", selected: []string{"main", "feat-a"}, want: false},
+		{name: "worktrees only", selected: []string{"feat-a"}, want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SyncSelectsOnlyBase(SyncIncludesBaseParams{Selected: tc.selected, BaseBranch: "main"})
+			if got != tc.want {
+				t.Fatalf("SyncSelectsOnlyBase(%v) = %v, want %v", tc.selected, got, tc.want)
+			}
+		})
+	}
+}

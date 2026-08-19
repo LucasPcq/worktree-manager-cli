@@ -373,3 +373,50 @@ func TestMultiSelectKeepsPreCheckedOptions(t *testing.T) {
 		t.Errorf("values = %v, want only the pre-checked option", got)
 	}
 }
+
+func loadedRecap(key string) flow.Step {
+	return flow.Step{
+		Kind: flow.StepRecap, Key: key, Label: "Recap", Title: "Recap",
+		LoadingMessage: "Computing…",
+		Load: func(flow.Answers) (flow.StepContent, error) {
+			return flow.StepContent{
+				Description: "loaded body",
+				Options:     []flow.Option{{Label: "Yes, do it", Value: "go"}},
+			}, nil
+		},
+	}
+}
+
+// The wizard never runs OnEnter on the step it starts on, so a session that
+// reduces to a single loaded step would otherwise sit on its placeholder.
+func TestALoadedStepLoadsEvenWhenItComesFirst(t *testing.T) {
+	plan, err := build(flow.Session{Steps: []flow.Step{loadedRecap("r")}})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if plan.initCmd == nil {
+		t.Fatal("a load landing first must be fired at init")
+	}
+	if plan.loadingText != "Computing…" {
+		t.Errorf("loadingText = %q, want the step's message", plan.loadingText)
+	}
+
+	wizard := components.NewWizardWithParams(components.WizardParams{Steps: plan.steps})
+	handle := plan.handler()
+
+	cmd, handled := handle(&wizard, plan.initCmd())
+	if !handled {
+		t.Fatal("the load request must be handled")
+	}
+	for _, sub := range cmd().(tea.BatchMsg) {
+		if done, ok := sub().(loadDoneMsg); ok {
+			handle(&wizard, done)
+		}
+	}
+
+	// The placeholder carries no option at all, so the loaded row is the proof.
+	view := wizard.Steps()[0].Model.(components.SelectListModel).View()
+	if !strings.Contains(view, "Yes, do it") {
+		t.Errorf("the first step must show its loaded content, not the placeholder:\n%s", view)
+	}
+}

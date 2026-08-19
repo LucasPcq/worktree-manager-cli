@@ -34,10 +34,7 @@ const (
 )
 
 func (f *syncFlow) session() flow.Session {
-	presets := flow.NewAnswers(map[string]string{
-		KeyConflict: f.presetConflict(),
-		KeyParents:  f.presetParents(),
-	})
+	presets := flow.NewAnswers(map[string]string{KeyParents: f.presetParents()})
 	return flow.Session{
 		ErrLabel: domain.SyncWizardErrLabel,
 		Presets:  presets.WithValues(KeySelection, f.fixedSelection()),
@@ -77,7 +74,7 @@ func (f *syncFlow) selectionStep() flow.Step {
 			return flow.Answer{}, fmt.Errorf(domain.SyncSelectionRequiredFmt,
 				domain.FlagAll, domain.FlagYes, domain.FlagOutput, domain.OutputJSON)
 		},
-		Summarize: summarizeSelection,
+		Summarize: flow.SummarizeSet,
 	}
 }
 
@@ -104,7 +101,7 @@ func (f *syncFlow) selectionOptions() []flow.Option {
 // statusLabel tells the base apart from the worktrees that hang off it.
 func statusLabel(status domain.WorktreeStatus) string {
 	if status.IsParent {
-		return status.Branch + domain.SyncBaseSuffix
+		return status.Branch + domain.PinnedSuffixBase
 	}
 	return status.Branch
 }
@@ -113,24 +110,14 @@ func statusLabel(status domain.WorktreeStatus) string {
 // out for a reason the user can read.
 func statusTag(status domain.WorktreeStatus) (string, domain.Tone) {
 	switch {
+	case status.IsParent:
+		return "", domain.ToneNeutral
 	case status.RebaseInProgress:
 		return domain.SyncTagRebasing, domain.ToneWarning
 	case status.IsDirty:
 		return domain.SyncTagDirty, domain.ToneWarning
 	}
 	return "", domain.ToneNeutral
-}
-
-func summarizeSelection(answer flow.Answer) string {
-	values := answer.Values
-	if len(values) == 0 {
-		return "none"
-	}
-	const maxNames = 5
-	if len(values) <= maxNames {
-		return strings.Join(values, ", ")
-	}
-	return strings.Join(values[:maxNames], ", ") + fmt.Sprintf(" +%d", len(values)-maxNames)
 }
 
 // syncableBranches is the explicit list --all previews. The service still
@@ -154,20 +141,23 @@ func (f *syncFlow) conflictStep() flow.Step {
 		Key:   KeyConflict,
 		Label: labelConflict,
 		Skip: func(answers flow.Answers) (bool, string) {
-			return len(f.planFor(answers).Steps) == 0, domain.SyncNoRebaseStep
+			if rules.SyncSelectsOnlyBase(rules.SyncIncludesBaseParams{
+				Selected:   answers.Values(KeySelection),
+				BaseBranch: f.request.BaseBranch,
+			}) {
+				return true, domain.SyncNoRebaseStep
+			}
+			return false, ""
 		},
 		Build: func(answers flow.Answers) (flow.StepContent, error) {
 			return flow.StepContent{
 				Title:       domain.SyncConflictTitle,
 				Description: conflictDescription(len(answers.Values(KeySelection))),
-				Options: []flow.Option{
-					{Label: domain.SyncConflictNormal, Value: conflictNormal},
-					{Label: domain.SyncConflictKeep, Value: conflictKeep, Danger: true},
-				},
+				Options:     f.conflictOptions(),
 			}, nil
 		},
 		Resolve: func(flow.Answers) (flow.Answer, error) {
-			return flow.Answer{Value: conflictNormal}, nil
+			return flow.Answer{Value: f.conflictDefault()}, nil
 		},
 		Summarize: func(answer flow.Answer) string {
 			if answer.Value == conflictKeep {
@@ -186,11 +176,23 @@ func conflictDescription(count int) string {
 	return fmt.Sprintf(domain.SyncCounterFmt, count) + "\n\n" + domain.SyncConflictIntro
 }
 
-func (f *syncFlow) presetConflict() string {
+// conflictOptions leads with what --keep-conflict asked for rather than
+// answering the step: the question stays visible, and its other outcome stays
+// one keystroke away.
+func (f *syncFlow) conflictOptions() []flow.Option {
+	normal := flow.Option{Label: domain.SyncConflictNormal, Value: conflictNormal}
+	keep := flow.Option{Label: domain.SyncConflictKeep, Value: conflictKeep, Danger: true}
+	if f.request.KeepConflict {
+		return []flow.Option{keep, normal}
+	}
+	return []flow.Option{normal, keep}
+}
+
+func (f *syncFlow) conflictDefault() string {
 	if f.request.KeepConflict {
 		return conflictKeep
 	}
-	return ""
+	return conflictNormal
 }
 
 // parentsStep asks about the parents no step covers. It is skipped when the
@@ -201,7 +203,10 @@ func (f *syncFlow) parentsStep() flow.Step {
 		Key:   KeyParents,
 		Label: labelParents,
 		Skip: func(answers flow.Answers) (bool, string) {
-			return len(f.staleParents(answers)) == 0, domain.SyncNoStaleParent
+			if len(f.staleParents(answers)) == 0 {
+				return true, domain.SyncNoStaleParent
+			}
+			return false, ""
 		},
 		Build: func(answers flow.Answers) (flow.StepContent, error) {
 			return flow.StepContent{
@@ -276,8 +281,12 @@ func (f *syncFlow) confirmStep() flow.Step {
 		return step
 	}
 	step.Load = func(answers flow.Answers) (flow.StepContent, error) {
-		f.plan = f.planFor(answers)
-		return f.confirmContent(f.plan, answers), nil
+		plan, err := f.planFor(answers)
+		if err != nil {
+			return flow.StepContent{}, err
+		}
+		f.plan = plan
+		return f.confirmContent(plan, answers), nil
 	}
 	return step
 }
@@ -286,11 +295,7 @@ func (f *syncFlow) confirmContent(plan domain.SyncPlan, answers flow.Answers) fl
 	return flow.StepContent{
 		Title:       domain.SyncConfirmTitle,
 		Description: confirmDescription(plan, answers.Value(KeyConflict) == conflictKeep),
-		Options: []flow.Option{
-			{Label: domain.SyncConfirmOption, Value: confirmSync},
-			{Separator: true},
-			{Label: domain.WizardCancelLabel, Value: domain.WizardCancelValue},
-		},
+		Options:     []flow.Option{{Label: domain.SyncConfirmOption, Value: confirmSync}},
 	}
 }
 
@@ -332,13 +337,14 @@ func (f *syncFlow) syncParams(input syncParamsInput) worktree.SyncParams {
 }
 
 // planFor previews the cascade for the selection as it stands. Conflict mode does
-// not affect the plan, so it is not read here.
-func (f *syncFlow) planFor(answers flow.Answers) domain.SyncPlan {
+// not affect the plan, so it is not read here. A failure is returned rather than
+// folded into an empty plan, which would read as "nothing to rebase".
+func (f *syncFlow) planFor(answers flow.Answers) (domain.SyncPlan, error) {
 	plan, err := worktree.PlanSync(f.syncParams(syncParamsInput{Selected: answers.Values(KeySelection)}))
 	if err != nil {
-		return domain.SyncPlan{}
+		return domain.SyncPlan{}, fmt.Errorf(domain.SyncPlanFailedFmt, err)
 	}
-	return plan
+	return plan, nil
 }
 
 // staleParents narrows the inspection to the current selection. The scan itself
