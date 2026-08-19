@@ -236,27 +236,22 @@ func TestTheDetailIsGroupedUnderHeadings(t *testing.T) {
 	model = update(model, prsMsg{})
 
 	body := model.detailBody(model.layout())
-	joined := strings.Join(body, "\n")
 
-	for _, heading := range []string{
-		domain.DashboardSectionWorktree, domain.DashboardSectionDivergence, domain.DashboardSectionReview,
-	} {
-		index := lineIndex(body, heading)
-		if index < 0 {
-			t.Fatalf("the detail is missing the %q group", heading)
-		}
-		if body[index-1] != "" || body[index+1] != "" {
-			t.Errorf("%q must stand on its own, with a blank line either side", heading)
-		}
+	index := lineIndex(body, domain.DetailSectionLinks)
+	if index < 0 {
+		t.Fatalf("the detail is missing the %q group", domain.DetailSectionLinks)
 	}
-	if !strings.Contains(body[0], "a") || !strings.Contains(body[0], "dirty") {
-		t.Errorf("the heading = %q, want the worktree and its state", body[0])
+	if body[index-1] != "" || body[index+1] != "" {
+		t.Errorf("%q must stand on its own, with a blank line either side", domain.DetailSectionLinks)
+	}
+	if !strings.Contains(body[0], "a") {
+		t.Errorf("the heading = %q, want the worktree name", body[0])
+	}
+	if strings.Contains(body[0], "dirty") {
+		t.Error("the working-tree state belongs to the vital strip, not the title row")
 	}
 	if !strings.Contains(body[1], domain.DashboardRuleGlyph) {
-		t.Error("a rule must separate the heading from the fields, as in the context menu")
-	}
-	if strings.Contains(joined, domain.DashboardLabelState) {
-		t.Error("the working-tree state is the pill in the heading; repeating it as a field says it twice")
+		t.Error("a rule must separate the heading from the vital strip")
 	}
 }
 

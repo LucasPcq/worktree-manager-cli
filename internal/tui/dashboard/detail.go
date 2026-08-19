@@ -3,14 +3,14 @@ package dashboard
 import (
 	"fmt"
 	"strings"
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
-	"github.com/LucasPcq/wtm/internal/tui/components"
-	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
-
-const detailLabelWidth = 9
 
 func (m Model) renderDetail(layout domain.DashboardLayout) string {
 	return m.renderPanel(panelParams{
@@ -22,117 +22,245 @@ func (m Model) renderDetail(layout domain.DashboardLayout) string {
 	})
 }
 
-// detailSection is one group of fields under its own heading. The panel reads as
-// three questions — where it is, where it stands, what is open on it — rather
-// than as one list of nine labels.
-type detailSection struct {
-	title  string
-	fields [][2]string
-}
-
+// detailBody draws, in priority order: the title row (branch identity, never
+// its state), the rule, the vital strip (state and the other constants —
+// always instantaneous, since it reads WorktreeStatus rather than the lazily
+// loaded WorktreeDetail), the blockers line when there is one, and the
+// composed sections. It decides nothing about what to show — rules/ already
+// did — only how to stack and color it.
 func (m Model) detailBody(layout domain.DashboardLayout) []string {
 	width := layout.Detail.Width - borderWidth - paddingWidth
 	status, ok := m.selected()
 	if !ok {
 		return []string{styles.DashboardEmpty.Render(truncate(domain.DashboardEmptySelection, width))}
 	}
+	if width <= 0 {
+		return nil
+	}
+
+	stale := m.detailIsStale()
+	detail, hasDetail := m.details[status.Branch]
 
 	lines := []string{
-		spread(styles.DashboardBranch.Render(truncate(status.Branch, width)),
-			worktreepicker.BuildStatus(status).Render(), width),
-		styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, max(width, 0))),
+		m.detailTitleLine(stale, status, width),
+		styleText(stale, styles.DashboardRule, strings.Repeat(domain.DashboardRuleGlyph, width)),
+		"",
 	}
-	for _, section := range m.detailSections(status) {
-		lines = append(lines, "", styles.DashboardSectionTitle.Render(truncate(section.title, width)), "")
-		for _, field := range section.fields {
-			lines = append(lines, styles.DashboardLabel.Render(pad(field[0], detailLabelWidth))+
-				styles.DashboardValue.Render(truncate(field[1], max(width-detailLabelWidth, 0))))
+	lines = append(lines, vitalStripLines(rules.VitalChips(rules.VitalChipsParams{
+		Status:       status,
+		LastCommitAt: lastCommitAt(detail),
+		Now:          time.Now(),
+	}), width, stale)...)
+
+	if hasDetail {
+		if blocker := blockersLine(stale, detail.Blockers); blocker != "" {
+			lines = append(lines, "", truncate(blocker, width))
+		}
+	}
+
+	budget := max(panelBodyHeight(layout.Detail)-len(lines), 0)
+	sections := m.detailSections(detailSectionsInput{
+		Status:    status,
+		Detail:    detail,
+		HasDetail: hasDetail,
+		Parent:    m.parents[status.Branch],
+		PR:        m.prFor(status.Branch),
+		Height:    budget,
+	})
+	return appendSections(lines, sections, width, stale)
+}
+
+// detailTitleLine carries identity, never state: the working-tree state is a
+// vital-strip chip, not a title-row pill. DetailYouAreHere is the only thing
+// that may sit to its right, and only for the worktree the cwd is under.
+func (m Model) detailTitleLine(stale bool, status domain.WorktreeStatus, width int) string {
+	branch := styleText(stale, styles.DashboardBranch, truncate(status.Branch, width))
+	marker := m.youAreHereMarker(stale, status.Branch)
+	if marker == "" {
+		return branch
+	}
+	return spread(branch, marker, width)
+}
+
+func (m Model) youAreHereMarker(stale bool, branch string) string {
+	if m.activeBranch == "" || branch != m.activeBranch {
+		return ""
+	}
+	return styleText(stale, styles.DashboardValue, domain.DetailYouAreHere)
+}
+
+func lastCommitAt(detail domain.WorktreeDetail) time.Time {
+	if len(detail.Commits) == 0 {
+		return time.Time{}
+	}
+	return detail.Commits[0].At
+}
+
+// vitalStripLines wraps chip by chip: a chip is never cut mid-way, since a
+// truncated "origin ↑2 ↓…" would read as a lie rather than a truncation. A
+// chip that alone still overflows width is kept whole on its own line, for
+// the same reason.
+func vitalStripLines(chips []domain.Chip, width int, stale bool) []string {
+	if width <= 0 || len(chips) == 0 {
+		return nil
+	}
+	sep := styleText(stale, styles.DashboardChipSep, domain.DashboardMetaSeparator)
+	sepWidth := lipgloss.Width(domain.DashboardMetaSeparator)
+
+	var lines []string
+	var current string
+	currentWidth := 0
+	for _, chip := range chips {
+		chipWidth := lipgloss.Width(chip.Text)
+		rendered := renderChip(chip, stale)
+
+		next := currentWidth + sepWidth + chipWidth
+		if current != "" && next > width {
+			lines = append(lines, current)
+			current, currentWidth = rendered, chipWidth
+			continue
+		}
+		if current == "" {
+			current, currentWidth = rendered, chipWidth
+			continue
+		}
+		current, currentWidth = current+sep+rendered, next
+	}
+	return append(lines, current)
+}
+
+// renderChip is the vital strip's one deliberate exception to "muted is
+// structure": the working-tree state chip carries the strip's only color.
+func renderChip(chip domain.Chip, stale bool) string {
+	style := styles.DashboardChip
+	switch chip.Kind {
+	case domain.ChipKindClean:
+		style = styles.Success
+	case domain.ChipKindDirty, domain.ChipKindRebasing:
+		style = styles.Warning
+	}
+	return styleText(stale, style, chip.Text)
+}
+
+// blockersLine joins every refusal the worktree carries into the one line
+// that answers "why can't I delete this" before the menu is even opened.
+func blockersLine(stale bool, blockers []domain.CleanBlocker) string {
+	if len(blockers) == 0 {
+		return ""
+	}
+	labels := make([]string, 0, len(blockers))
+	for _, blocker := range blockers {
+		labels = append(labels, blocker.Label)
+	}
+	text := fmt.Sprintf(domain.DetailBlockedFmt, strings.Join(labels, domain.DashboardMetaSeparator))
+	return styleText(stale, styles.DashboardBlockers, text)
+}
+
+// detailSectionsInput gathers what rules.DetailSections needs plus the one
+// thing it cannot know: whether Detail has loaded at all yet (state 3, §8).
+type detailSectionsInput struct {
+	Status    domain.WorktreeStatus
+	Detail    domain.WorktreeDetail
+	HasDetail bool
+	Parent    string
+	PR        *domain.PRInfo
+	Height    int
+}
+
+// detailSections composes the real sections when Detail has loaded, or a
+// placeholder shape when it has not (state 3): only the sections that depend
+// on Detail — CHANGES, ACTIVITY — grow a "loading…" placeholder line, sized
+// as one entry rather than guessed at a length no one knows yet. REVIEW does
+// not depend on Detail — the PR list loads separately — so it renders for
+// real immediately, exactly as LINKS' non-Detail fields (Parent, Path) do.
+func (m Model) detailSections(input detailSectionsInput) []domain.DetailSection {
+	sections := rules.DetailSections(rules.DetailSectionsParams{
+		Status: input.Status,
+		Detail: input.Detail,
+		PR:     input.PR,
+		Parent: input.Parent,
+		Height: input.Height,
+		Now:    time.Now(),
+	})
+	if !input.HasDetail {
+		sections = withLoadingPlaceholders(sections, input.Status)
+	}
+	return rules.FitSections(rules.FitSectionsParams{Sections: sections, Height: input.Height})
+}
+
+// withLoadingPlaceholders inserts a placeholder for each Detail-dependent
+// section expected to land, just above LINKS (always the last section
+// rules.DetailSections returns). CHANGES is expected only when the
+// already-loaded WorktreeStatus already says the tree is dirty; ACTIVITY is
+// expected unconditionally, since a branch with no commit history at all is
+// not a case this panel needs to special-case.
+func withLoadingPlaceholders(sections []domain.DetailSection, status domain.WorktreeStatus) []domain.DetailSection {
+	var placeholders []domain.DetailSection
+	if status.IsDirty {
+		placeholders = append(placeholders, loadingSection(domain.DetailSectionChanges))
+	}
+	placeholders = append(placeholders, loadingSection(domain.DetailSectionActivity))
+
+	if len(sections) == 0 {
+		return placeholders
+	}
+	last := len(sections) - 1
+	out := make([]domain.DetailSection, 0, len(sections)+len(placeholders))
+	out = append(out, sections[:last]...)
+	out = append(out, placeholders...)
+	return append(out, sections[last])
+}
+
+func loadingSection(key string) domain.DetailSection {
+	return domain.DetailSection{Key: key, Title: key, Lines: []string{domain.DashboardLoadingField}}
+}
+
+// appendSections stacks each section as a blank separator, its title row
+// (TitleRight flush right on that same row), a blank row, then its body
+// lines — the spacing rules.DetailSectionChrome already accounts for.
+func appendSections(lines []string, sections []domain.DetailSection, width int, stale bool) []string {
+	for _, section := range sections {
+		lines = append(lines, "", sectionTitleLine(stale, section, width), "")
+		for _, line := range section.Lines {
+			lines = append(lines, styleText(stale, styles.DashboardValue, truncate(line, width)))
 		}
 	}
 	return lines
 }
 
-func (m Model) detailSections(status domain.WorktreeStatus) []detailSection {
-	// The working-tree state is the pill in the heading, not a field of its own.
-	state := [][2]string{
-		{domain.DashboardLabelBase, baseText(status)},
-		{domain.DashboardLabelOrigin, originText(status)},
+// sectionTitleLine mirrors panelParams.TitleRight (render.go): TitleRight is
+// dropped whole, never trimmed through, when the panel is too narrow for it.
+func sectionTitleLine(stale bool, section domain.DetailSection, width int) string {
+	if section.TitleRight == "" {
+		return styleText(stale, styles.DashboardSectionTitle, truncate(section.Title, width))
 	}
-	if status.RebaseInProgress {
-		state = append(state, [2]string{domain.DashboardLabelRebase, domain.DashboardRebaseInProgress})
+	rightWidth := lipgloss.Width(section.TitleRight)
+	if rightWidth+1 >= width {
+		return styleText(stale, styles.DashboardSectionTitle, truncate(section.Title, width))
 	}
-
-	return []detailSection{
-		{
-			title: domain.DashboardSectionWorktree,
-			fields: [][2]string{
-				{domain.DashboardLabelPath, status.Path},
-				{domain.DashboardLabelParent, m.parentOf(status)},
-				{domain.DashboardLabelCreated, createdText(status)},
-			},
-		},
-		{title: domain.DashboardSectionDivergence, fields: state},
-		{
-			title:  domain.DashboardSectionReview,
-			fields: [][2]string{{domain.DashboardLabelPR, m.prText(status.Branch)}},
-		},
-	}
+	left := styleText(stale, styles.DashboardSectionTitle, truncate(section.Title, width-rightWidth-1))
+	right := styleText(stale, styles.DashboardValue, section.TitleRight)
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+	return left + strings.Repeat(" ", max(gap, 0)) + right
 }
 
-func (m Model) parentOf(status domain.WorktreeStatus) string {
-	if parent := m.parents[status.Branch]; parent != "" {
-		return parent
+// styleText applies style, unless the panel is stale (§8 state 2): a stale
+// body renders uniformly in DashboardStale instead — old data still on
+// screen, but visibly not the freshest read anymore.
+func styleText(stale bool, style lipgloss.Style, text string) string {
+	if stale {
+		return styles.DashboardStale.Render(text)
 	}
-	if status.IsParent {
-		return domain.DashboardNoValue
-	}
-	return domain.DashboardUnknownParent
+	return style.Render(text)
 }
 
-// baseText reports the divergence against the configured base branch, the
-// referential `list` labels "base".
-func baseText(status domain.WorktreeStatus) string {
-	if status.CommitsAhead <= 0 {
-		return domain.DashboardUpToDate
-	}
-	return fmt.Sprintf("%s%d", domain.BadgeGlyphAhead, status.CommitsAhead)
-}
-
-// originText reports the divergence against the branch's origin counterpart —
-// the second referential, read from cached refs without ever fetching.
-func originText(status domain.WorktreeStatus) string {
-	badge, diverged := components.DivergenceBadge(components.DivergenceBadgeParams{
-		State:  status.OriginState,
-		Ahead:  status.OriginAhead,
-		Behind: status.OriginBehind,
-	})
-	if diverged {
-		return badge.Text
-	}
-	if status.OriginState == domain.DivergenceUnknown {
-		return domain.DashboardNoValue
-	}
-	return domain.DashboardUpToDate
-}
-
-func (m Model) prText(branch string) string {
-	if !m.prsLoaded {
-		return domain.DashboardLoadingPRs
-	}
-	if banner := worktreepicker.GHBanner(m.ghConn); banner.Title != "" {
-		return banner.Title
-	}
-	for _, pr := range m.prs {
-		if pr.Branch == branch {
-			return fmt.Sprintf(domain.DashboardPRFmt, pr.Number, pr.Title, pr.State)
+// prFor matches the selected branch against the already-loaded PR list — no
+// network call, since REVIEW does not depend on the lazily loaded Detail.
+func (m Model) prFor(branch string) *domain.PRInfo {
+	for index := range m.prs {
+		if m.prs[index].Branch == branch {
+			return &m.prs[index]
 		}
 	}
-	return domain.DashboardNoPR
-}
-
-func createdText(status domain.WorktreeStatus) string {
-	if status.CreatedAt.IsZero() {
-		return domain.DashboardNoValue
-	}
-	return status.CreatedAt.Local().Format(domain.DashboardCreatedFormat)
+	return nil
 }

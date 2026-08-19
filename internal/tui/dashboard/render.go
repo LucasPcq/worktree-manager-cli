@@ -18,7 +18,16 @@ const (
 	borderWidth   = 2
 	paddingWidth  = 2
 	buttonPadding = 4
+	// panelChromeRows is what renderPanel prepends to Body before drawing it:
+	// the title row and the blank row under it.
+	panelChromeRows = 2
 )
+
+// panelBodyHeight is the row budget renderPanel leaves for Body once its own
+// border and chrome rows are accounted for.
+func panelBodyHeight(rect domain.Rect) int {
+	return max(rect.Height-borderWidth-panelChromeRows, 0)
+}
 
 type panelParams struct {
 	Rect  domain.Rect

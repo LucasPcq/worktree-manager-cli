@@ -201,9 +201,6 @@ func TestRefreshKeyReloadsBothWorktreesAndPRs(t *testing.T) {
 	if !model.loading || model.prsLoaded {
 		t.Errorf("refresh state = loading:%v prsLoaded:%v, want both reloading", model.loading, model.prsLoaded)
 	}
-	if got := model.prText("a"); got != domain.DashboardLoadingPRs {
-		t.Errorf("PR line = %q during a refresh, want %q", got, domain.DashboardLoadingPRs)
-	}
 	if cmd == nil {
 		t.Error("refresh must issue a command")
 	}
@@ -366,8 +363,8 @@ func TestPRsArriveAsynchronously(t *testing.T) {
 	if model.prsLoaded {
 		t.Fatal("PRs are not loaded at startup")
 	}
-	if got := model.prText("a"); got != domain.DashboardLoadingPRs {
-		t.Errorf("PR line = %q before the fetch lands, want %q", got, domain.DashboardLoadingPRs)
+	if pr := model.prFor("a"); pr != nil {
+		t.Errorf("PR for %q = %+v before the fetch lands, want nil", "a", pr)
 	}
 
 	model = update(model, prsMsg{prs: []domain.PRInfo{{Number: 42, Title: "Ship it", State: "OPEN", Branch: "a"}}})
@@ -375,11 +372,12 @@ func TestPRsArriveAsynchronously(t *testing.T) {
 	if !model.prsLoaded {
 		t.Fatal("prsMsg must mark the PRs loaded")
 	}
-	if got := model.prText("a"); !strings.Contains(got, "#42") || !strings.Contains(got, "Ship it") {
-		t.Errorf("PR line = %q, want the number and title", got)
+	pr := model.prFor("a")
+	if pr == nil || pr.Number != 42 || pr.Title != "Ship it" {
+		t.Errorf("PR for %q = %+v, want number 42 and title %q", "a", pr, "Ship it")
 	}
-	if got := model.prText("other"); got != domain.DashboardNoPR {
-		t.Errorf("branch without a PR = %q, want %q", got, domain.DashboardNoPR)
+	if model.prFor("other") != nil {
+		t.Error("a branch without a PR resolves to nil")
 	}
 }
 
@@ -399,10 +397,9 @@ func TestDetailShowsBothDivergenceReferentials(t *testing.T) {
 	body := strings.Join(model.detailBody(model.layout()), "\n")
 
 	for _, want := range []string{
-		domain.DashboardLabelBase, domain.BadgeGlyphAhead + "3",
-		domain.DashboardLabelOrigin, domain.BadgeGlyphAhead + "2 " + domain.BadgeGlyphBehind + "5",
-		domain.DashboardLabelPath, "/tmp/a",
-		domain.DashboardLabelCreated, "2026-08-18 14:03",
+		domain.BadgeGlyphAhead + "3",
+		domain.BadgeGlyphAhead + "2 " + domain.BadgeGlyphBehind + "5",
+		domain.DashboardLabelCreated, "/tmp/a",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("detail body is missing %q:\n%s", want, body)
@@ -457,16 +454,6 @@ func TestViewNeverOverflowsTheTerminal(t *testing.T) {
 				t.Errorf("%dx%d: line %d is %d columns wide", size[0], size[1], index, width)
 			}
 		}
-	}
-}
-
-func TestPRLineReportsAnUnavailableGitHubCLI(t *testing.T) {
-	model := newTestModel(t, testWidth, testHeight, "a")
-
-	model = update(model, prsMsg{conn: domain.GHConnectionNotInstalled})
-
-	if got := model.prText("a"); got == domain.DashboardNoPR {
-		t.Error("with no gh available the PR line must say so, not claim there is no PR")
 	}
 }
 
