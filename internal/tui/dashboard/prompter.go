@@ -82,7 +82,7 @@ func (p prompter) Confirm(params flow.ConfirmParams) (bool, error) {
 		Key:         keyConfirm,
 		Title:       params.Title,
 		Description: confirmDescription(params),
-		Options:     []flow.Option{{Label: domain.DashboardConfirmLabel, Value: confirmYes}},
+		Options:     confirmOptions(params),
 	}}}
 
 	answers, err := prompter{send: p.send, title: params.Title, shape: modalForm}.Ask(session)
@@ -92,9 +92,23 @@ func (p prompter) Confirm(params flow.ConfirmParams) (bool, error) {
 	return answers.Value(keyConfirm) == confirmYes, nil
 }
 
+// confirmOptions names both outcomes when the caller named them: closing the
+// modal is a way out, not an answer, so a two-outcome decision has to offer both.
+func confirmOptions(params flow.ConfirmParams) []flow.Option {
+	if params.YesLabel == "" {
+		return []flow.Option{{Label: domain.DashboardConfirmLabel, Value: confirmYes}}
+	}
+	return []flow.Option{
+		{Label: params.NoLabel, Value: confirmNo},
+		{Separator: true},
+		{Label: params.YesLabel, Value: confirmYes},
+	}
+}
+
 const (
 	keyConfirm = "dashboard.confirm"
 	confirmYes = "yes"
+	confirmNo  = "no"
 )
 
 func confirmDescription(params flow.ConfirmParams) string {

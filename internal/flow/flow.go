@@ -191,6 +191,12 @@ type ConfirmParams struct {
 	Description string
 	Warning     string
 	DefaultYes  bool
+	// YesLabel and NoLabel name the two outcomes instead of answering yes or no.
+	// A decision whose consequences differ (keeping local vs force-pushing) is
+	// asked this way; empty labels keep the plain confirmation both surfaces
+	// already render.
+	YesLabel string
+	NoLabel  string
 }
 
 type Prompter interface {

@@ -272,6 +272,25 @@ func TestInteractivePrompterReportsItself(t *testing.T) {
 	}
 }
 
+func TestConfirmItemsLeadsWithTheHarmlessOutcome(t *testing.T) {
+	items := confirmItems(flow.ConfirmParams{YesLabel: "Push to origin", NoLabel: "Keep local"})
+
+	if len(items) != 3 {
+		t.Fatalf("a labelled confirm must offer both outcomes, got %d items", len(items))
+	}
+	if items[0].Label != "Keep local" || items[2].Label != "Push to origin" {
+		t.Fatalf("the harmless outcome must lead when DefaultYes is false, got %+v", items)
+	}
+}
+
+func TestConfirmItemsLeadsWithYesWhenItIsTheDefault(t *testing.T) {
+	items := confirmItems(flow.ConfirmParams{YesLabel: "Push to origin", NoLabel: "Keep local", DefaultYes: true})
+
+	if items[0].Label != "Push to origin" || items[2].Label != "Keep local" {
+		t.Fatalf("the default outcome must lead, got %+v", items)
+	}
+}
+
 func update(m components.WizardModel, msg tea.Msg) components.WizardModel {
 	model, _ := m.Update(msg)
 	updated, ok := model.(components.WizardModel)
