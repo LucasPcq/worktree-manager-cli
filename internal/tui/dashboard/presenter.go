@@ -9,6 +9,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 )
 
@@ -94,5 +95,25 @@ func (p reparentPresenter) Reparented(outcome reparentflow.Outcome) error {
 	// The change is metadata only; the rebase is a separate run the user starts.
 	p.line(domain.ReparentSyncHintBare)
 	p.send(reparentedMsg{})
+	return nil
+}
+
+type prunePresenter struct{ presenter }
+
+func (p prunePresenter) Pruned(outcome pruneflow.Outcome) error {
+	if outcome.Empty {
+		p.line(domain.PruneNothingToPrune)
+		return nil
+	}
+	for _, candidate := range outcome.Result.Pruned {
+		p.line(fmt.Sprintf(domain.DashboardFinishedFmt, domain.OpKindPrune, candidate.Branch))
+	}
+	for _, child := range outcome.Result.Reparented {
+		p.line(fmt.Sprintf(domain.CleanReparentedFmt, child.Branch, child.NewParent))
+	}
+	for _, child := range outcome.Result.Orphaned {
+		p.line(fmt.Sprintf(domain.CleanStillOrphanedFmt, child.Branch, child.OldParent))
+	}
+	p.send(prunedMsg{})
 	return nil
 }

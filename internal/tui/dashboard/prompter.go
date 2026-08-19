@@ -40,6 +40,10 @@ type cleanedMsg struct{ branch string }
 // have to be re-read.
 type reparentedMsg struct{}
 
+// prunedMsg says several worktrees are gone at once, so the whole list has to be
+// re-read rather than one row dropped.
+type prunedMsg struct{}
+
 // listenCmd delivers the next message a flow goroutine posted. Update re-arms it
 // on every flowMsg, so there is exactly one reader on the channel at all times.
 func listenCmd(msgs <-chan tea.Msg) tea.Cmd {

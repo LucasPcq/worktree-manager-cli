@@ -940,7 +940,11 @@ const (
 	// makes inside the run, which is why it lives in the global menu and not on a
 	// row: a context menu hangs off one worktree.
 	DashboardMenuReparentBatch = "Reparent worktrees"
-	DashboardMenuDelete        = "Delete worktree"
+	// DashboardMenuPrune removes every finished worktree at once. There is no
+	// preview entry beside it: the recap lists what goes, and closing the modal
+	// removes nothing.
+	DashboardMenuPrune  = "Prune finished worktrees"
+	DashboardMenuDelete = "Delete worktree"
 	// DashboardMenuEmpty stands in for the actions of a worktree that has none.
 	DashboardMenuEmpty = "No actions available"
 	// DashboardMenuChrome is what the menu box spends on its borders and padding.
@@ -950,6 +954,7 @@ const (
 	DashboardDeleteTitle        = "Delete worktree"
 	DashboardReparentTitle      = "Change parent"
 	DashboardReparentBatchTitle = "Reparent worktrees"
+	DashboardPruneTitle         = "Prune finished worktrees"
 	// DashboardActionsLabel is the header button that opens the global menu, and
 	// DashboardActionsTitle heads that menu. KeyActions is its keyboard way in.
 	DashboardActionsLabel = "⋯ Actions"

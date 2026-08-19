@@ -18,6 +18,7 @@ const (
 	menuReparent menuAction = iota
 	menuDelete
 	menuReparentBatch
+	menuPrune
 )
 
 // menuKind is which menu is open: the one hanging off a worktree row, or the
@@ -75,6 +76,7 @@ func (m Model) worktreeMenuItems() []menuItem {
 func (m Model) globalMenuItems() []menuItem {
 	items := []menuItem{
 		{label: domain.DashboardMenuReparentBatch, action: menuReparentBatch},
+		{label: domain.DashboardMenuPrune, action: menuPrune, danger: true},
 	}
 	caption, busy := m.busyCaption("")
 	if !busy {
@@ -184,6 +186,8 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 	switch item.action {
 	case menuReparentBatch:
 		return m.startBatchReparent()
+	case menuPrune:
+		return m.startPrune()
 	case menuReparent:
 		return m.startReparent(selected.Branch)
 	case menuDelete:
