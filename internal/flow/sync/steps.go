@@ -49,7 +49,7 @@ func (f *syncFlow) fixedSelection() []string {
 	if f.request.All {
 		return f.syncableBranches()
 	}
-	return f.request.Branches
+	return f.selection
 }
 
 func (f *syncFlow) selectionStep() flow.Step {
@@ -71,6 +71,12 @@ func (f *syncFlow) selectionStep() flow.Step {
 			return nil
 		},
 		Resolve: func(flow.Answers) (flow.Answer, error) {
+			// --all answers the step even when it lists nothing: the preset only
+			// carries the branches there are to preview, and a stack reduced to its
+			// base still has a base to refresh.
+			if f.request.All {
+				return flow.Answer{}, nil
+			}
 			return flow.Answer{}, fmt.Errorf(domain.SyncSelectionRequiredFmt,
 				domain.FlagAll, domain.FlagYes, domain.FlagOutput, domain.OutputJSON)
 		},
@@ -348,14 +354,26 @@ func (f *syncFlow) planFor(answers flow.Answers) (domain.SyncPlan, error) {
 }
 
 // staleParents narrows the inspection to the current selection. The scan itself
-// ran once, before the session; nil means the run never inspected them.
+// ran once, before the session; nil means the run never inspected them. The
+// narrowing replans the cascade, and the step reads it from both Skip and Build
+// on every rebuild — hence the memo, keyed by the selection it answers for.
 func (f *syncFlow) staleParents(answers flow.Answers) []domain.ParentUpdate {
 	if len(f.classified) == 0 {
 		return nil
 	}
-	return worktree.StaleParents(worktree.StaleParentsParams{
-		Sync:       f.syncParams(syncParamsInput{Selected: answers.Values(KeySelection)}),
-		Branches:   answers.Values(KeySelection),
+	branches := answers.Values(KeySelection)
+	key := strings.Join(branches, "\n")
+	if cached, known := f.stale[key]; known {
+		return cached
+	}
+	parents := worktree.StaleParents(worktree.StaleParentsParams{
+		Sync:       f.syncParams(syncParamsInput{Selected: branches}),
+		Branches:   branches,
 		Classified: f.classified,
 	})
+	if f.stale == nil {
+		f.stale = map[string][]domain.ParentUpdate{}
+	}
+	f.stale[key] = parents
+	return parents
 }

@@ -526,6 +526,16 @@ const (
 	SyncPushWarning = "Force-pushes the rebased branches with --force-with-lease. " +
 		"No or Esc skips the push — branches stay local."
 
+	// SyncPushOption and SyncKeepLocalOption name the two outcomes of the push
+	// question rather than answering it yes or no: force-pushing and keeping the
+	// branches local read nothing alike.
+	SyncPushOption      = "Push to origin"
+	SyncKeepLocalOption = "Keep local"
+
+	// SyncRebasing and SyncPushing head the two phases of a cascade.
+	SyncRebasing = "Rebasing worktrees…"
+	SyncPushing  = "Pushing to origin…"
+
 	// SyncPlanComputing is the loading message shown while the sync plan preview is
 	// computed asynchronously on entering the confirmation step.
 	SyncPlanComputing = "Computing sync plan…"
