@@ -269,3 +269,16 @@ func TestTheTreeBreaksTheGutterBetweenRoots(t *testing.T) {
 		t.Errorf("spacer before a new root = %q, want a blank line", got)
 	}
 }
+
+// TestActiveTreeNodeIsMarked pins that the Tree tab says the same thing about
+// the active worktree the list already does: the same "you are here" tag,
+// not a marker unique to one view.
+func TestActiveTreeNodeIsMarked(t *testing.T) {
+	model := treeModel(t, "main", "feat", "feat-ui")
+	model.activeBranch = "feat"
+
+	body := strings.Join(model.treeBody(model.layout()), "\n")
+	if !strings.Contains(body, domain.DetailYouAreHere) {
+		t.Error("le nœud du worktree actif doit porter le tag \"you are here\", comme la liste")
+	}
+}

@@ -49,20 +49,18 @@ func (m Model) listBody(layout domain.DashboardLayout) []string {
 // renderRow draws one worktree over two lines: what it is called and, under it,
 // what its state amounts to. The selected one is tinted across its whole width
 // and carries the accent bar, so the row the keyboard is on reads as a block
-// rather than as a marker. The worktree the shell is currently in carries
-// domain.DashboardActiveGlyph, the same marker the header uses. A worktree a
-// background run holds shows its progress instead: the spinner replaces the
-// state pill, and the stage the run posted replaces the meta line — the same
-// vocabulary as the freshness contract, the spinner says "in progress", never
-// "broken".
+// rather than as a marker. The worktree the shell is currently in is named by
+// a "you are here" tag on the meta line (rowMeta), the same vocabulary as
+// "from main" or "PR #67" — a bare glyph on the name said nothing on its own.
+// A worktree a background run holds shows its progress instead: the spinner
+// replaces the state pill, and the stage the run posted replaces the meta
+// line — the same vocabulary as the freshness contract, the spinner says
+// "in progress", never "broken".
 func (m Model) renderRow(index, width int) []string {
 	status := m.statuses[index]
 	inner := max(width-rowBarWidth, 0)
 
 	name := status.Branch
-	if status.Branch == m.activeBranch {
-		name = domain.DashboardActiveGlyph + " " + name
-	}
 
 	pill := worktreepicker.BuildStatus(status)
 	pillText, pillRendered := pill.Text, pill.Render()
@@ -114,6 +112,9 @@ func (m Model) rowMeta(status domain.WorktreeStatus, colored bool) string {
 			continue
 		}
 		parts = append(parts, tag.Text)
+	}
+	if status.Branch != "" && status.Branch == m.activeBranch {
+		parts = append(parts, styleMeta(domain.DetailYouAreHere, colored, styles.DashboardRowMeta))
 	}
 	if len(parts) == 0 {
 		return styleMeta(domain.DashboardMetaNothing, colored, styles.DashboardRowMeta)

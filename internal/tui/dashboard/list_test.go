@@ -25,13 +25,28 @@ func lockOperation(t *testing.T, model Model, branch, stage string) Model {
 	return model
 }
 
+// TestActiveRowIsMarked pins that the active worktree is named in the
+// row's meta line, in the same tag vocabulary as "from main" or "PR #67" —
+// not a bare glyph glued to the branch name, which communicated nothing on
+// its own and appeared nowhere else in the row.
 func TestActiveRowIsMarked(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "main", "feat/a")
 	model.activeBranch = "feat/a"
 
-	row := lineContaining(t, strings.Split(model.View(), "\n"), "feat/a")
-	if !strings.Contains(row, domain.DashboardActiveGlyph) {
-		t.Error("la ligne du worktree actif doit porter son marqueur")
+	// listBody isolates the list panel from the header, which carries its own
+	// "● <branch>" segment (untouched here) — a raw model.View() line would
+	// find that one first and prove nothing about the row itself. Each entry
+	// still embeds its own two physical lines joined by "\n", so split again
+	// before searching one line at a time.
+	lines := strings.Split(strings.Join(model.listBody(model.layout()), "\n"), "\n")
+	nameRow := lineContaining(t, lines, "feat/a")
+	if strings.Contains(nameRow, domain.DashboardActiveGlyph) {
+		t.Error("the branch name must not carry a bare glyph — the marker moved to the meta line as a text tag")
+	}
+
+	metaRow := lineContaining(t, lines, domain.DetailYouAreHere)
+	if !strings.Contains(metaRow, domain.DetailYouAreHere) {
+		t.Error("la ligne meta du worktree actif doit porter le tag \"you are here\"")
 	}
 }
 

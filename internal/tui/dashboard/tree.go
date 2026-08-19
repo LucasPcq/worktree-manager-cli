@@ -104,7 +104,20 @@ func (m Model) styleTreeBadges(node domain.TreeNode) string {
 	for _, badge := range rules.TreeBadges(node) {
 		parts = append(parts, styleTreeBadge(badge, m.treeBadgeText(badge, node)))
 	}
+	if tag := m.activeTreeTag(node); tag != "" {
+		parts = append(parts, styles.DashboardRowMeta.Render(tag))
+	}
 	return strings.Join(parts, treeBadgeGap)
+}
+
+// activeTreeTag names the worktree the shell is currently inside, the same
+// "you are here" tag the list already shows on its meta line — so both
+// views say the same thing about the same worktree.
+func (m Model) activeTreeTag(node domain.TreeNode) string {
+	if m.activeBranch == "" || node.Branch != m.activeBranch {
+		return ""
+	}
+	return domain.DetailYouAreHere
 }
 
 // treeBadgeGap keeps the badges apart from one another: run together they read as
@@ -113,9 +126,12 @@ const treeBadgeGap = "  "
 
 func (m Model) treeBadgeTexts(node domain.TreeNode) []string {
 	badges := rules.TreeBadges(node)
-	texts := make([]string, 0, len(badges))
+	texts := make([]string, 0, len(badges)+1)
 	for _, badge := range badges {
 		texts = append(texts, m.treeBadgeText(badge, node))
+	}
+	if tag := m.activeTreeTag(node); tag != "" {
+		texts = append(texts, tag)
 	}
 	return texts
 }
