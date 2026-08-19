@@ -21,11 +21,29 @@ func LoadPRs(projectDir string) ([]domain.PRInfo, domain.GHConnection) {
 	return LoadPRsFiltered(projectDir, domain.PRFilterAll)
 }
 
+// LoadPRsWithChecks is LoadPRs plus the CI rollup and the review decision. Only
+// the dashboard renders those, and asking for them costs a per-pull-request
+// resolution, so the other surfaces stay on the narrow field set.
+func LoadPRsWithChecks(projectDir string) ([]domain.PRInfo, domain.GHConnection) {
+	return loadPRs(loadPRsParams{ProjectDir: projectDir, Filter: domain.PRFilterAll, WithChecks: true})
+}
+
 // LoadPRsFiltered is LoadPRs with an explicit filter (all, mine, review-requested).
 func LoadPRsFiltered(projectDir string, filter domain.PRFilter) ([]domain.PRInfo, domain.GHConnection) {
+	return loadPRs(loadPRsParams{ProjectDir: projectDir, Filter: filter})
+}
+
+type loadPRsParams struct {
+	ProjectDir string
+	Filter     domain.PRFilter
+	WithChecks bool
+}
+
+func loadPRs(params loadPRsParams) ([]domain.PRInfo, domain.GHConnection) {
 	prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
-		ProjectDir: projectDir,
-		Filter:     filter,
+		ProjectDir: params.ProjectDir,
+		Filter:     params.Filter,
+		WithChecks: params.WithChecks,
 	})
 	if err == nil {
 		return prs, domain.GHConnectionOK

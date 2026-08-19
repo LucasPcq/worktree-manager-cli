@@ -1,6 +1,9 @@
 package dashboard
 
 import (
+	"github.com/charmbracelet/bubbles/spinner"
+
+	"github.com/LucasPcq/wtm/internal/flow"
 	"strings"
 	"testing"
 
@@ -98,5 +101,22 @@ func TestEmptyListStaysNeutral(t *testing.T) {
 	}
 	if strings.Contains(body, "press n") {
 		t.Error("une liste vide ne doit pas conseiller une action : on ignore pourquoi elle est vide")
+	}
+}
+
+// A locked row draws the spinner instead of its state pill, so the spinner must
+// keep ticking for the whole run — a frozen glyph reads as hung, which is the
+// opposite of what the marker is for.
+func TestSpinnerKeepsTickingWhileAnOperationRuns(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "main", "feat/a")
+	model.detailLoading = ""
+
+	if _, cmd := updateCmd(model, spinner.TickMsg{}); cmd != nil {
+		t.Fatal("idle: nothing loading and nothing running must stop the loop")
+	}
+
+	model, _ = model.beginOp(beginParams{Operation: flow.Operation{Kind: "create", Mode: flow.ModeBackground}, Target: "feat/a"})
+	if _, cmd := updateCmd(model, spinner.TickMsg{}); cmd == nil {
+		t.Error("a tick while a run is in flight must re-arm, or the locked row's spinner freezes")
 	}
 }

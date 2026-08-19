@@ -370,10 +370,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinner.TickMsg:
 		// Re-arming unconditionally would tick at 12fps for the life of the
-		// program, idle included: the loop only continues while a detail load is
-		// actually in flight, and dies on its own the moment applyDetail clears
-		// detailLoading.
-		if m.detailLoading == "" {
+		// program, idle included. The loop runs while either consumer needs it —
+		// a detail load in flight, or a run whose row shows a spinner instead of
+		// its state pill — and dies on its own once neither does.
+		if m.detailLoading == "" && !m.ops.active() {
 			return m, nil
 		}
 		var cmd tea.Cmd

@@ -260,9 +260,14 @@ const (
 
 	// GHPRFields is the JSON field set passed to `gh pr list/view --json`. It
 	// holds exactly what wtm consumes: PR identity, head/base branches, url,
-	// the fork flag (isCrossRepository), the review decision and the CI
-	// status-check rollup.
-	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository,isDraft,reviewDecision,statusCheckRollup"
+	// and the fork flag (isCrossRepository).
+	GHPRFields = "number,title,author,headRefName,baseRefName,url,isCrossRepository,isDraft"
+
+	// GHPRFieldsWithChecks adds the review decision and the CI status-check
+	// rollup. Only the dashboard's REVIEW section renders them, and
+	// statusCheckRollup is resolved per pull request, so every other surface
+	// stays on the narrow set rather than paying for a field it never shows.
+	GHPRFieldsWithChecks = GHPRFields + ",reviewDecision,statusCheckRollup"
 
 	// GHPRFieldsWithState is the field set for the all-states PR listing used by
 	// `wtm tree --with-prs`, which must surface merged/closed PRs (clean

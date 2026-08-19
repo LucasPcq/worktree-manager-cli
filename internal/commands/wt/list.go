@@ -15,6 +15,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
@@ -87,7 +88,7 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list worktrees: %w", err)
 	}
 
-	activeBranch := rules.ActiveWorktree(rules.ActiveWorktreeParams{Cwd: dir, Statuses: statuses})
+	activeBranch := rules.ActiveWorktree(rules.ActiveWorktreeParams{Cwd: infra.ResolvePath(dir), Statuses: statuses})
 
 	// Non-interactive (JSON or piped text) behaves identically across formats:
 	// PRs are included only with --with-prs, since a pipe can't stream a loader.

@@ -50,6 +50,9 @@ func HasOpenPR(params HasOpenPRParams) (bool, int, string) {
 type ListPRsParams struct {
 	ProjectDir string
 	Filter     domain.PRFilter
+	// WithChecks asks for the CI rollup and review decision, which cost a
+	// per-pull-request resolution. Only a caller that renders them sets it.
+	WithChecks bool
 }
 
 // ListPRs fetches open PRs via gh CLI and filters them.
@@ -58,10 +61,14 @@ func ListPRs(params ListPRsParams) ([]domain.PRInfo, error) {
 		return nil, err
 	}
 
+	fields := domain.GHPRFields
+	if params.WithChecks {
+		fields = domain.GHPRFieldsWithChecks
+	}
 	args := []string{
 		"pr", "list",
 		"--state", "open",
-		"--json", domain.GHPRFields,
+		"--json", fields,
 		"--limit", "50",
 	}
 

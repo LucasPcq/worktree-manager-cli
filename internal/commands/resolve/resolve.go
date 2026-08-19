@@ -11,6 +11,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
@@ -146,7 +147,7 @@ func pickAmbiguousWorktree(cmd *cobra.Command, cwd, projectDir string, matches [
 		ProjectDir:   cfgResult.ProjectDir,
 		StateDir:     cfgResult.StateDir,
 		Config:       cfgResult.Config,
-		ActiveBranch: rules.ActiveWorktree(rules.ActiveWorktreeParams{Cwd: cwd, Statuses: statuses}),
+		ActiveBranch: rules.ActiveWorktree(rules.ActiveWorktreeParams{Cwd: infra.ResolvePath(cwd), Statuses: statuses}),
 		PRLoader: func() ([]domain.PRInfo, domain.GHConnection) {
 			return shared.LoadPRs(cfgResult.ProjectDir)
 		},

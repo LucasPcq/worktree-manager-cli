@@ -54,10 +54,10 @@ func (m Model) startCreate() (Model, tea.Cmd) {
 		Presenter: createPresenter{presenter{send: send, id: id}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := createflow.Run(params)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 // startClean hands the removal to the same flow the CLI runs. The dashboard
@@ -87,10 +87,10 @@ func (m Model) startClean(branch string) (Model, tea.Cmd) {
 		Presenter: cleanPresenter{presenter{send: send, id: id}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := cleanflow.Run(params)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 // startReparent changes the parent of the one worktree the menu was opened from.
@@ -115,10 +115,10 @@ func (m Model) startReparent(branch string) (Model, tea.Cmd) {
 		Presenter: reparentPresenter{presenter{send: send, id: id}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := reparentflow.Run(params)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 // startBatchReparent runs the same flow with nothing preset, so it asks which
@@ -142,10 +142,10 @@ func (m Model) startBatchReparent() (Model, tea.Cmd) {
 		Presenter: reparentPresenter{presenter{send: send, id: id}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := reparentflow.Run(params)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 // startPrune removes every finished worktree in one run. Like the batch
@@ -178,10 +178,10 @@ func (m Model) startPrune() (Model, tea.Cmd) {
 		Presenter: prunePresenter{presenter{send: send, id: id}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := pruneflow.Run(params)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 // startSync rebases the row and the chain it hangs off: replaying a worktree onto
@@ -258,10 +258,10 @@ func (m Model) runSync(params runSyncParams) (Model, tea.Cmd) {
 		Presenter: syncPresenter{presenter{send: send}},
 	}
 
-	return m, func() tea.Msg {
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := syncflow.Run(flowParams)
 		return opDoneMsg{id: id, err: err}
-	}
+	})
 }
 
 func (m Model) baseBranch() string { return m.params.Config.Project.Worktrees.BaseBranch }

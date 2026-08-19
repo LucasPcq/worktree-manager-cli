@@ -10,6 +10,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/tui/dashboard"
@@ -66,9 +67,9 @@ func buildRunParams(dir string, result shared.ConfigResult) dashboard.RunParams 
 	return dashboard.RunParams{
 		ProjectDir: result.ProjectDir,
 		StateDir:   result.StateDir,
-		Cwd:        dir,
+		Cwd:        infra.ResolvePath(dir),
 		Config:     result.Config,
-		PRLoader:   func() ([]domain.PRInfo, domain.GHConnection) { return shared.LoadPRs(result.ProjectDir) },
+		PRLoader:   func() ([]domain.PRInfo, domain.GHConnection) { return shared.LoadPRsWithChecks(result.ProjectDir) },
 		PROpener: func(number int) error {
 			return ghservice.OpenPR(ghservice.OpenPRParams{ProjectDir: result.ProjectDir, Number: number})
 		},

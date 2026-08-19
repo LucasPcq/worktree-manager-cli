@@ -67,6 +67,11 @@ func (o operations) holding(target string) (operation, bool) {
 	return operation{}, false
 }
 
+// active reports whether any run is still in flight. The spinner loop reads it:
+// a locked row's glyph must keep advancing for the whole run, or it reads as
+// hung rather than as busy.
+func (o operations) active() bool { return len(o.running) > 0 }
+
 // blocking reports a run that holds the whole surface, and with it every action.
 func (o operations) blocking() (operation, bool) {
 	for _, op := range o.running {
