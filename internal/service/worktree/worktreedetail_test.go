@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/testutil/gittest"
 )
 
@@ -83,5 +84,51 @@ func TestDetailRecordsFailurePerFamily(t *testing.T) {
 	}
 	if got.Branch != "orpheline" {
 		t.Errorf("Branch = %q — le détail reste exploitable malgré la panne", got.Branch)
+	}
+}
+
+// TestDetailEnvDriftUsesParentPathNotMain pins that DetailParams.ParentPath reaches
+// ComputeEnvParams.ParentWorktreePath: under the "parent" env strategy, the parent
+// worktree's file (present but missing KEY_A) must be read strictly on its own,
+// never silently falling back to main just because ParentPath was left unthreaded.
+func TestDetailEnvDriftUsesParentPathNotMain(t *testing.T) {
+	mainDir := gittest.InitRepo(t)
+	if err := os.WriteFile(filepath.Join(mainDir, ".env"), []byte("KEY_A=main_value\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	childDir := gittest.InitRepo(t)
+	if err := os.WriteFile(filepath.Join(childDir, ".env.example"), []byte("KEY_A=placeholder\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	parentDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(parentDir, ".env"), []byte("KEY_B=parent_other\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stateDir := t.TempDir()
+	if err := writeMetadata(rules.WorktreeMetaDir(stateDir, "feat/x"), domain.WorktreeMetadata{
+		EnvStrategy: domain.EnvStrategyParent,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := domain.Config{Project: domain.ProjectConfig{Env: domain.EnvConfig{
+		Files: []domain.EnvFile{{Target: ".env", Template: ".env.example"}},
+	}}}
+
+	got := Detail(DetailParams{
+		ProjectDir: mainDir,
+		StateDir:   stateDir,
+		Config:     cfg,
+		Status:     domain.WorktreeStatus{Branch: "feat/x", Path: childDir},
+		Parent:     "main",
+		ParentPath: parentDir,
+		Commits:    domain.DashboardDetailCommits,
+	})
+
+	if got.EnvDrift.Missing != 1 {
+		t.Errorf("EnvDrift.Missing = %d, want 1: KEY_A must stay unresolved (parent worktree has no KEY_A) instead of silently resolving from main, which would happen if ParentPath were not threaded through", got.EnvDrift.Missing)
 	}
 }

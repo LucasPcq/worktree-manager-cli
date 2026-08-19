@@ -15,6 +15,11 @@ type DetailParams struct {
 	Config     domain.Config
 	Status     domain.WorktreeStatus
 	Parent     string
+	// ParentPath is the parent's worktree path, which cannot be derived from Parent
+	// (the branch name) alone. The "parent" env strategy reads values from it; empty
+	// means the parent has no local worktree, a legitimate fallback to main, not an
+	// error.
+	ParentPath string
 	Children   []string
 	PRs        []domain.PRInfo
 	Commits    int
@@ -122,13 +127,14 @@ func readEnvDrift(params DetailParams) (domain.EnvDriftSummary, error) {
 	})
 
 	results, err := envsvc.ComputeEnvDiff(envsvc.ComputeEnvParams{
-		Branch:       params.Status.Branch,
-		MainPath:     params.ProjectDir,
-		WorktreePath: params.Status.Path,
-		ParentBranch: params.Parent,
-		Files:        files,
-		Strategy:     meta.EnvStrategy,
-		Mode:         domain.EnvModeAdd,
+		Branch:             params.Status.Branch,
+		MainPath:           params.ProjectDir,
+		WorktreePath:       params.Status.Path,
+		ParentWorktreePath: params.ParentPath,
+		ParentBranch:       params.Parent,
+		Files:              files,
+		Strategy:           meta.EnvStrategy,
+		Mode:               domain.EnvModeAdd,
 	})
 	if err != nil {
 		return domain.EnvDriftSummary{Configured: true}, err
