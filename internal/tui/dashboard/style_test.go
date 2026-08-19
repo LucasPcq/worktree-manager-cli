@@ -225,7 +225,7 @@ func TestOnlyTheHeaderButtonIsAFilledBlock(t *testing.T) {
 	if strings.Contains(button, styles.DashboardAddButton.Render("")) && styles.DashboardAddButton.Render("") != "" {
 		t.Error("the filled block belongs to the header button alone")
 	}
-	if !strings.Contains(model.addButton(model.layout()), domain.DashboardAddLabelLong) {
+	if !strings.Contains(model.headerRight(testWidth), domain.DashboardAddLabelLong) {
 		t.Error("the header button says what it does when there is room for it")
 	}
 }

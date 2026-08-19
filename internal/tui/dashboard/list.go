@@ -17,24 +17,11 @@ const (
 
 func (m Model) renderList(layout domain.DashboardLayout) string {
 	return m.renderPanel(panelParams{
-		Rect:           layout.List,
-		Title:          domain.DashboardListTitle,
-		TitleRight:     m.addButton(layout),
-		TitleRightZone: zoneAdd,
-		Body:           m.listBody(layout),
-		Zone:           zoneList,
+		Rect:  layout.List,
+		Title: domain.DashboardListTitle,
+		Body:  m.listBody(layout),
+		Zone:  zoneList,
 	})
-}
-
-// addButton says out loud what it does when there is room for it to: it is the
-// one way into the create flow that does not need the keyboard.
-func (m Model) addButton(layout domain.DashboardLayout) string {
-	room := layout.List.Width - borderWidth - paddingWidth - lipgloss.Width(domain.DashboardListTitle)
-	label := domain.DashboardAddLabel
-	if lipgloss.Width(domain.DashboardAddLabelLong)+buttonPadding+1 <= room {
-		label = domain.DashboardAddLabelLong
-	}
-	return styles.DashboardAddButton.Render(label)
 }
 
 func (m Model) listBody(layout domain.DashboardLayout) []string {

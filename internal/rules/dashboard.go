@@ -1,6 +1,10 @@
 package rules
 
-import "github.com/LucasPcq/wtm/internal/domain"
+import (
+	"strings"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+)
 
 type DashboardLayoutParams struct {
 	Width          int
@@ -51,6 +55,7 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 		}
 		layout.List, layout.ListVisible = body, true
 		layout.ListRows = dashboardListRows(body.Height)
+		layout.TreeRows = dashboardTreeRows(body.Height)
 		return layout
 	}
 
@@ -59,6 +64,7 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 	layout.Detail = domain.Rect{X: listWidth, Y: body.Y, Width: width - listWidth, Height: body.Height}
 	layout.ListVisible, layout.DetailVisible = true, true
 	layout.ListRows = dashboardListRows(body.Height)
+	layout.TreeRows = dashboardTreeRows(body.Height)
 	return layout
 }
 
@@ -70,6 +76,12 @@ func dashboardListRows(bodyHeight int) int {
 		return 0
 	}
 	return (available + domain.DashboardRowGap) / (domain.DashboardRowHeight + domain.DashboardRowGap)
+}
+
+// dashboardTreeRows is how many tree nodes fit in the same body: one line each,
+// with no gap, so the connector gutters line up down the panel.
+func dashboardTreeRows(bodyHeight int) int {
+	return max(bodyHeight-domain.DashboardChromeHeight-domain.DashboardTitleGap, 0) / domain.DashboardTreeRowHeight
 }
 
 func dashboardListWidth(width int) int {
@@ -203,4 +215,22 @@ func ClampIndex(index, count int) int {
 		return 0
 	}
 	return min(max(index, 0), count-1)
+}
+
+// SplitRecapField reads a recap line written as "Label:" followed by spaces and a
+// value, and reports its two halves so a renderer can weight them differently.
+// Anything else is left whole: a heading ("Will delete:"), prose that happens to
+// contain a colon, and "Label:value" with no gap — the run of spaces is what
+// makes a line a field rather than a sentence.
+func SplitRecapField(line string) (label, value string, ok bool) {
+	colon := strings.Index(line, ":")
+	if colon <= 0 || colon == len(line)-1 {
+		return "", "", false
+	}
+	rest := line[colon+1:]
+	trimmed := strings.TrimLeft(rest, " ")
+	if trimmed == "" || len(trimmed) == len(rest) {
+		return "", "", false
+	}
+	return line[:colon+1] + rest[:len(rest)-len(trimmed)], trimmed, true
 }

@@ -196,3 +196,46 @@ func TestCleanYesTextModeReparentDoesNotPrompt(t *testing.T) {
 		t.Errorf("dev-b parent = %q, want dev-a (orphaned, no prompt under --yes)", got)
 	}
 }
+
+// The JSON payload is what an agent reads, so its shape is part of the contract:
+// the envelope key, the per-result keys, and nothing extra appearing silently.
+func TestReparentJSONShape(t *testing.T) {
+	_, _ = setupStack(t)
+
+	stdout, _, err := runWtCmd(t, domain.CmdReparent, "dev-b", "--to", "feat", "--output", domain.OutputJSON, "--"+domain.FlagYes)
+	if err != nil {
+		t.Fatalf("reparent: %v", err)
+	}
+
+	var payload map[string][]map[string]any
+	if jsonErr := json.Unmarshal([]byte(stdout), &payload); jsonErr != nil {
+		t.Fatalf("unmarshal: %v\n%s", jsonErr, stdout)
+	}
+	results, ok := payload["reparented"]
+	if !ok {
+		t.Fatalf("payload keys = %v, want a \"reparented\" envelope", keysOf(payload))
+	}
+	if len(results) != 1 {
+		t.Fatalf("results = %v, want one", results)
+	}
+
+	want := map[string]any{"branch": "dev-b", "old_parent": "dev-a", "new_parent": "feat"}
+	for key, value := range want {
+		if results[0][key] != value {
+			t.Errorf("result[%q] = %v, want %v", key, results[0][key], value)
+		}
+	}
+	for key := range results[0] {
+		if _, expected := want[key]; !expected {
+			t.Errorf("unexpected key %q in the payload: an agent's parser must not meet a surprise", key)
+		}
+	}
+}
+
+func keysOf[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for key := range m {
+		out = append(out, key)
+	}
+	return out
+}

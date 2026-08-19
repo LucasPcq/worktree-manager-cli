@@ -101,3 +101,36 @@ func ChildrenOf(params ChildrenOfParams) []domain.WorktreeNode {
 	}
 	return children
 }
+
+// ReparentExclusionsParams holds inputs for ReparentExclusions.
+type ReparentExclusionsParams struct {
+	Nodes      []domain.WorktreeNode
+	Branches   []string
+	BaseBranch string
+}
+
+// ReparentExclusions names the branches a selection may not be rebased onto: the
+// selected worktrees themselves, and anything whose parent chain runs through
+// them. Only a member of the forest can be either, so walking the nodes is
+// complete — a branch outside it can never close a cycle.
+//
+// It is stated as an exclusion rather than as an allowed list so a picker can
+// apply it over a candidate list that is still being refreshed underneath.
+func ReparentExclusions(params ReparentExclusionsParams) []string {
+	if len(params.Branches) == 0 {
+		return nil
+	}
+	excluded := make([]string, 0, len(params.Nodes))
+	for _, node := range params.Nodes {
+		err := ValidateReparentBatch(ValidateReparentBatchParams{
+			Nodes:      params.Nodes,
+			Branches:   params.Branches,
+			NewParent:  node.Branch,
+			BaseBranch: params.BaseBranch,
+		})
+		if err != nil {
+			excluded = append(excluded, node.Branch)
+		}
+	}
+	return excluded
+}

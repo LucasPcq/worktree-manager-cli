@@ -113,6 +113,12 @@ var (
 	// ErrReparentSelf is returned when a worktree is asked to become its own parent.
 	ErrReparentSelf = errors.New("a worktree cannot be its own parent")
 
+	// ErrReparentBranchesRequired and ErrReparentParentRequired are the two
+	// selections reparent cannot default: guessing either would rewrite a stack
+	// the user did not ask for.
+	ErrReparentBranchesRequired = errors.New("specify at least one worktree (no interactive picker under --yes, without a terminal, or in --output json mode)")
+	ErrReparentParentRequired   = errors.New("specify the new parent with --to (no interactive picker under --yes, without a terminal, or in --output json mode)")
+
 	// ErrEnvWorktreeRequired is returned when `wtm env` is invoked without a worktree
 	// argument and cannot fall back to the interactive picker (--yes, no terminal, or
 	// --output json).

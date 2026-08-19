@@ -94,8 +94,8 @@ func (m Model) renderHeader(layout domain.DashboardLayout) string {
 	}
 
 	bar := lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
-	if count := m.countLabel(); count != "" && used+lipgloss.Width(count)+1 <= layout.Tabs.Width {
-		bar += strings.Repeat(" ", layout.Tabs.Width-used-lipgloss.Width(count)) + count
+	if right := m.headerRight(layout.Tabs.Width - used); right != "" {
+		bar += strings.Repeat(" ", layout.Tabs.Width-used-lipgloss.Width(right)) + right
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, bar, tabRule(tabRuleParams{
@@ -105,7 +105,57 @@ func (m Model) renderHeader(layout domain.DashboardLayout) string {
 	}))
 }
 
+// headerRight is the bar's right cluster: the two global actions, then the count
+// of what the active tab lists. Whole segments are dropped rather than the bar
+// trimmed — a hard trim would cut through a zone marker and take that button's
+// hit-testing with it.
+func (m Model) headerRight(room int) string {
+	count := m.countLabel()
+	for _, variant := range []struct{ add, actions, count string }{
+		{domain.DashboardAddLabelLong, domain.DashboardActionsLabel, count},
+		{domain.DashboardAddLabel, domain.DashboardActionsLabel, count},
+		{domain.DashboardAddLabel, domain.DashboardActionsShort, count},
+		{domain.DashboardAddLabel, domain.DashboardActionsShort, ""},
+		{"", domain.DashboardActionsShort, ""},
+	} {
+		add, actions := "", ""
+		if variant.add != "" {
+			add = m.marks().Mark(zoneAdd, styles.DashboardAddButton.Render(variant.add))
+		}
+		if variant.actions != "" {
+			actions = m.marks().Mark(zoneActions, styles.DashboardHeaderButton.Render(variant.actions))
+		}
+		cluster := joinHeader(add, actions, variant.count)
+		if lipgloss.Width(cluster)+1 <= room {
+			return cluster
+		}
+	}
+	return ""
+}
+
+func joinHeader(segments ...string) string {
+	parts := make([]string, 0, len(segments))
+	for _, segment := range segments {
+		if segment != "" {
+			parts = append(parts, segment)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// countLabel counts what the active tab lists: worktrees, or the nodes of the
+// forest — which includes the parents that have none.
 func (m Model) countLabel() string {
+	if m.tab == tabTree {
+		if !m.treeLoaded {
+			return ""
+		}
+		format := domain.DashboardTreeCountFmt
+		if len(m.treeRows) == 1 {
+			format = domain.DashboardTreeCountOneFmt
+		}
+		return styles.DashboardCount.Render(fmt.Sprintf(format, len(m.treeRows)))
+	}
 	if !m.loaded {
 		return ""
 	}
@@ -143,6 +193,8 @@ func (m Model) renderHelpBar(layout domain.DashboardLayout) string {
 	switch {
 	case m.loadErr != nil:
 		hint = m.loadErr.Error()
+	case m.tab == tabTree:
+		hint = domain.DashboardHelpTree
 	case layout.Narrow && m.detailOpen:
 		hint = domain.DashboardHelpDetail
 	case layout.Narrow:
@@ -162,6 +214,7 @@ func (m Model) helpBox() (string, domain.Rect) {
 		{"wheel", "scroll the list or the output panel"},
 		{"n", "new worktree (or click + new)"},
 		{"m", "actions on the selected worktree (or right-click a row)"},
+		{"a", "actions on several worktrees (or click ⋯ actions)"},
 		{"tab · shift+tab", "switch view (or click a tab)"},
 		{"enter · →", "open the detail (narrow terminals)"},
 		{"esc · ←", "close the detail"},

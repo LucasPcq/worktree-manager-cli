@@ -8,10 +8,13 @@ const (
 	zoneTabPrefix    = "tab:"
 	zoneRowPrefix    = "row:"
 	zoneList         = "panel:list"
+	zoneTree         = "panel:tree"
+	zoneTreeRowPfx   = "tree:"
 	zoneDetail       = "panel:detail"
 	zoneOutput       = "panel:output"
 	zoneOutputToggle = "output:toggle"
-	zoneAdd          = "list:add"
+	zoneAdd          = "header:add"
+	zoneActions      = "header:actions"
 	zoneMenuPrefix   = "menu:"
 	zoneModalPrefix  = "modal:"
 )
@@ -23,6 +26,10 @@ func menuZone(index int) string { return zoneMenuPrefix + strconv.Itoa(index) }
 func modalRowZone(index int) string { return zoneModalPrefix + strconv.Itoa(index) }
 
 func tabZone(index int) string { return zoneTabPrefix + strconv.Itoa(index) }
+
+// treeRowZone keys a tree row by its index in the flattened forest, so a click
+// resolves the same node at any scroll.
+func treeRowZone(index int) string { return zoneTreeRowPfx + strconv.Itoa(index) }
 
 // rowZone keys a row by its index in the full worktree slice, not by its
 // position on screen, so a click resolves the same worktree at any scroll.

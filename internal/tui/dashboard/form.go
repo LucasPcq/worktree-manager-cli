@@ -9,6 +9,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -369,13 +370,25 @@ func (mo modal) formBody(zones marker) []string {
 func (mo modal) renderRow(index int, row formRow) string {
 	switch row.kind {
 	case formText:
-		return truncate(row.label, mo.bodyWidth())
+		return mo.renderText(row.label)
 	case formButton:
 		return mo.renderButton(index, row)
 	case formChoice:
 		return mo.renderFocusable(index, glyphChoice(mo.answers.Value(row.stepKey) == row.value)+" "+row.label, styles.DashboardRow)
 	}
 	return mo.renderFocusable(index, glyphCheck(mo.lifted[row.value])+" "+row.label, styles.DashboardRow)
+}
+
+// renderText weights a recap field over its label, so a block of them reads as
+// values with names rather than as a paragraph. Anything that is not a field is
+// left exactly as the flow wrote it.
+func (mo modal) renderText(text string) string {
+	label, value, ok := rules.SplitRecapField(text)
+	if !ok {
+		return truncate(text, mo.bodyWidth())
+	}
+	return styles.DashboardLabel.Render(label) +
+		styles.DashboardRecapValue.Render(truncate(value, max(mo.bodyWidth()-lipgloss.Width(label), 0)))
 }
 
 // renderButton keeps an action recognizable by its brackets rather than by a

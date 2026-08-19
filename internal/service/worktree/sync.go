@@ -151,6 +151,18 @@ func PushSynced(params PushSyncedParams) domain.SyncResult {
 	return params.Result
 }
 
+type NodesParams struct {
+	ProjectDir string
+	StateDir   string
+}
+
+// Nodes is the managed worktrees with their recorded parents: the graph the
+// reparent and sync rules are validated against. flow/ cannot reach infra/, so
+// this is where it reads it from.
+func Nodes(params NodesParams) ([]domain.WorktreeNode, error) {
+	return buildNodes(params.ProjectDir, params.StateDir)
+}
+
 func buildNodes(projectDir, stateDir string) ([]domain.WorktreeNode, error) {
 	worktrees, err := infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: projectDir})
 	if err != nil {

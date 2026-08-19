@@ -68,12 +68,12 @@ type WizardModel struct {
 	skipped       []bool
 	skippedReason []string
 	current       int
-	width   int
-	height  int
-	done    bool
-	aborted bool
-	initCmd tea.Cmd
-	onMsg   WizardMsgHandler
+	width         int
+	height        int
+	done          bool
+	aborted       bool
+	initCmd       tea.Cmd
+	onMsg         WizardMsgHandler
 	// Async status banner, rendered under the breadcrumb. While loading, an
 	// animated spinner + loadingText is shown inside the box; once a handler
 	// calls SetLoading(false), the banner (if set) is shown instead.

@@ -2,6 +2,7 @@ package rules
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -170,4 +171,113 @@ func sortSiblings(nodes []ForestNode) {
 	sort.SliceStable(nodes, func(i, j int) bool {
 		return nodes[i].CreatedAt.Before(nodes[j].CreatedAt)
 	})
+}
+
+// FlattenForest walks the forest depth-first into one row per node, each carrying
+// the connector gutter its position earned it. Both `wtm tree` and the dashboard
+// draw from it, so the shape of the tree is decided here rather than once per
+// surface.
+func FlattenForest(forest domain.Forest) []domain.TreeRow {
+	rows := make([]domain.TreeRow, 0, len(forest.Roots))
+	for _, root := range forest.Roots {
+		rows = appendTreeRows(appendTreeRowsParams{Node: root, Rows: rows})
+	}
+	return rows
+}
+
+type appendTreeRowsParams struct {
+	Node domain.TreeNode
+	Rows []domain.TreeRow
+	// Gutter is what the ancestors contribute, Connector this node's own glyph
+	// (empty for a root).
+	Gutter    string
+	Connector string
+	Depth     int
+}
+
+func appendTreeRows(params appendTreeRowsParams) []domain.TreeRow {
+	rows := append(params.Rows, domain.TreeRow{
+		Node:   params.Node,
+		Prefix: params.Gutter + params.Connector,
+		Depth:  params.Depth,
+	})
+
+	childGutter := params.Gutter
+	switch params.Connector {
+	case domain.TreeConnectorBranch:
+		childGutter += domain.TreeGutterPipe
+	case domain.TreeConnectorLast:
+		childGutter += domain.TreeGutterBlank
+	}
+
+	for index, child := range params.Node.Children {
+		connector := domain.TreeConnectorBranch
+		if index == len(params.Node.Children)-1 {
+			connector = domain.TreeConnectorLast
+		}
+		rows = appendTreeRows(appendTreeRowsParams{
+			Node:      child,
+			Rows:      rows,
+			Gutter:    childGutter,
+			Connector: connector,
+			Depth:     params.Depth + 1,
+		})
+	}
+	return rows
+}
+
+// TreeBadges enumerates a node's status annotations in their canonical display
+// order. It is the single source of truth for which badges appear and in what
+// order; the ASCII tree, the Mermaid export and the dashboard differ only in how
+// they style each one, so they cannot drift apart.
+func TreeBadges(node domain.TreeNode) []domain.TreeBadge {
+	badges := make([]domain.TreeBadge, 0, 7)
+	if node.IsVirtual {
+		badges = append(badges, domain.TreeBadgeVirtual)
+	}
+	if node.Status.PR != nil {
+		badges = append(badges, domain.TreeBadgePR)
+	}
+	if node.Status.CommitsAhead > 0 {
+		badges = append(badges, domain.TreeBadgeAhead)
+	}
+	if HasOriginDivergence(node.Status.OriginState) {
+		badges = append(badges, domain.TreeBadgeOrigin)
+	}
+	if node.Status.RebaseInProgress {
+		badges = append(badges, domain.TreeBadgeRebasing)
+	} else if node.Status.IsDirty {
+		badges = append(badges, domain.TreeBadgeDirty)
+	}
+	if node.Status.NeedsSync {
+		badges = append(badges, domain.TreeBadgeNeedsSync)
+	}
+	if node.Status.InCycle {
+		badges = append(badges, domain.TreeBadgeCycle)
+	}
+	return badges
+}
+
+// HasOriginDivergence reports whether an origin state warrants a badge;
+// up-to-date and unknown show none.
+func HasOriginDivergence(state domain.DivergenceState) bool {
+	switch state {
+	case domain.DivergenceBehind, domain.DivergenceAhead, domain.DivergenceDiverged:
+		return true
+	default:
+		return false
+	}
+}
+
+// TreeSpacerPrefix is the gutter of the blank line drawn between two tree rows:
+// the pipe runs down to and past the last sibling, so the structure stays
+// connected while the rows breathe. A row that starts a new root gets a truly
+// blank line, which is what separates one tree from the next.
+func TreeSpacerPrefix(nextPrefix string) string {
+	for _, connector := range []string{domain.TreeConnectorBranch, domain.TreeConnectorLast} {
+		if strings.HasSuffix(nextPrefix, connector) {
+			return nextPrefix[:len(nextPrefix)-len(connector)] + domain.TreeGutterPipe
+		}
+	}
+	return ""
 }

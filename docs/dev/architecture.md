@@ -106,7 +106,8 @@ create's Bubbletea wizard as a sub-flow. They go with its migration (LUC-182).
 | -- | -- | -- |
 | `create` | `internal/flow/create` | CLI wizard, unattended, dashboard |
 | `clean` | `internal/flow/clean` | CLI wizard, unattended, dashboard |
-| `extract`, `sync`, `prune`, `relocate`, `reparent`, `checkout`, `env` | `internal/commands/wt/*.go` + their `internal/tui/*` wizard packages | CLI only |
+| `reparent` | `internal/flow/reparent` | CLI wizard, unattended, dashboard |
+| `extract`, `sync`, `prune`, `relocate`, `checkout`, `env` | `internal/commands/wt/*.go` + their `internal/tui/*` wizard packages | CLI only |
 
 Unmigrated commands still follow the old model, and the parts of the `go-cli` skill
 that describe `components.Step` wizards still apply to them. A **new** mutation

@@ -683,8 +683,8 @@ Reference: `internal/flow/create/steps.go` (`createFlow.recap`), pinned by
 value from its wizard step and **falls back to the flag/arg** when that step was skipped.
 References: `internal/tui/extract` `buildCombinedRecap` (`FixedFiles`/`FixedTarget`/`FixedKeep`),
 `internal/tui/newwt` `buildCreateRecap` (`BranchName`/`Source`/`EnvOverride`), `internal/tui/checkout`
-`buildCheckoutRecap` (`FromOverride`/`EnvOverride`), `internal/tui/reparent` `recapBody`
-(`PresetBranches`/`PresetParent`). Add the fallback whenever you add a flag that pre-fills a step.
+`buildCheckoutRecap` (`FromOverride`/`EnvOverride`). Add the fallback whenever you add a flag
+that pre-fills a step.
 
 ### Async data in a wizard: `Step.Load` (flow) — `InitCmd` / `OnEnter` (legacy)
 

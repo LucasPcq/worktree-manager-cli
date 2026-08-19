@@ -32,6 +32,8 @@ func (p *plan) componentStep(step flow.Step, conditional bool) (components.Step,
 		return p.selectStep(step)
 	case flow.StepBranchSelect:
 		return p.branchStep(step)
+	case flow.StepMultiSelect:
+		return p.multiSelectStep(step)
 	case flow.StepRecap:
 		return p.recapStep(step), nil
 	}
@@ -68,6 +70,40 @@ func (p *plan) selectStep(step flow.Step) (components.Step, error) {
 	return built, nil
 }
 
+func (p *plan) multiSelectStep(step flow.Step) (components.Step, error) {
+	content, err := p.content(step, p.known())
+	if err != nil {
+		return components.Step{}, err
+	}
+	built := components.Step{
+		Name:    step.Label,
+		Model:   multiSelect(step, content),
+		Summary: summaryFor(step),
+	}
+	if step.Build != nil {
+		built.Build = func(prev []components.Step) any {
+			return multiSelect(step, p.rebuild(step, prev))
+		}
+	}
+	return built, nil
+}
+
+func multiSelect(step flow.Step, content flow.StepContent) components.MultiSelectModel {
+	items := make([]components.MultiSelectItem, 0, len(content.Options))
+	for _, option := range content.Options {
+		if option.Separator {
+			continue
+		}
+		items = append(items, components.MultiSelectItem{Label: option.Label, Value: option.Value})
+	}
+	return components.NewMultiSelect(components.NewMultiSelectParams{
+		Title:       content.Title,
+		Description: content.Description,
+		Items:       items,
+		Validate:    step.ValidateSet,
+	})
+}
+
 func (p *plan) branchStep(step flow.Step) (components.Step, error) {
 	p.candidates = step.Branches
 	p.refresh = step.Refresh
@@ -80,7 +116,7 @@ func (p *plan) branchStep(step flow.Step) (components.Step, error) {
 		return components.NewSelectList(components.NewSelectListParams{
 			Title:       content.Title,
 			Description: content.Description,
-			Items:       p.branchItems(step.Pinned),
+			Items:       p.branchItems(step.Pinned, content.ExcludeBranches),
 		}), nil
 	}
 
@@ -109,16 +145,19 @@ func (p *plan) branchStep(step flow.Step) (components.Step, error) {
 	return built, nil
 }
 
-func (p *plan) branchItems(pinned string) []components.SelectItem {
+// branchItems applies the step's exclusions over whatever the refresh last
+// returned, so narrowing and refreshing do not fight over the same list.
+func (p *plan) branchItems(pinned string, exclude []string) []components.SelectItem {
+	candidates := flow.KeepBranches(p.candidates, exclude)
 	found := ""
-	for _, candidate := range p.candidates {
+	for _, candidate := range candidates {
 		if candidate.Name == pinned {
 			found = pinned
 			break
 		}
 	}
 	return components.BranchItems(components.BranchItemsParams{
-		Candidates:   p.candidates,
+		Candidates:   candidates,
 		Pinned:       found,
 		PinnedSuffix: domain.PinnedSuffixDefault,
 	})
@@ -315,8 +354,11 @@ func toItems(options []flow.Option) []components.SelectItem {
 
 func summaryFor(step flow.Step) func(any) string {
 	if step.Summarize == nil {
-		if step.Kind == flow.StepText {
+		switch step.Kind {
+		case flow.StepText:
 			return components.TextSummary
+		case flow.StepMultiSelect:
+			return components.MultiSelectSummary(domain.SummaryNone)
 		}
 		return components.SelectSummary
 	}

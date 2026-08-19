@@ -177,6 +177,10 @@ func answerOf(kind flow.StepKind, model any) flow.Answer {
 		if list, ok := model.(components.SelectListModel); ok {
 			return flow.Answer{Value: list.Value(), Asked: true}
 		}
+	case flow.StepMultiSelect:
+		if list, ok := model.(components.MultiSelectModel); ok {
+			return flow.Answer{Values: list.Values(), Asked: true}
+		}
 	}
 	return flow.Answer{}
 }

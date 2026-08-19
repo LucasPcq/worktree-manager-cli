@@ -25,12 +25,13 @@ is implemented yet.
 | -- | -- |
 | `wtm create` | migrated — `internal/flow/create` |
 | `wtm clean` | migrated — `internal/flow/clean` |
+| `wtm reparent` | migrated — `internal/flow/reparent` |
 | CLI wizard surface | `internal/tui/flowui` |
 | Unattended surface | `flow.Unattended` (in `internal/flow`) |
 | Dashboard surface | `internal/tui/dashboard` (`prompter.go`, `presenter.go`, `ops.go`) |
 | Test doubles | `internal/testutil/flowtest` |
 | `extract`, `sync` | **not migrated** — still driven by `internal/commands/wt` plus their wizard packages. The model was validated on paper against them; that is not the same as delivered. `extract` is LUC-182. |
-| `StepMultiSelect` | **does not exist.** It was in the design, dropped from the first batch for want of a user, and comes back with `extract`. |
+| `StepMultiSelect` | exists since `reparent`, which needed it to keep its no-argument picker. Rendered by both surfaces: `flowui`, and the dashboard's modal since its Actions menu runs the batch reparent. |
 
 ## The shape of a flow
 
@@ -337,7 +338,7 @@ Neither command runs on `flow/` today; both still drive `internal/tui/extract` a
 `internal/tui/syncpicker` from `internal/commands/wt`. The model was validated on paper
 against them before the layer was written, and the diagrams below are that validation —
 what the migration is expected to look like, not what runs. `extract` is tracked by
-**LUC-182**, and it is the migration that brings back `StepMultiSelect` and removes the
+**LUC-182**, and it is the migration that removes the
 temporary duplication of create's step declarations (they exist twice today: as
 `flow.Step` for `wtm create`, and as `components.Step` in `internal/tui/newwt` for the
 sub-flow `extract` embeds).
@@ -623,6 +624,6 @@ Deliberately open, tracked, and not to be fixed opportunistically:
 | -- | -- |
 | LUC-179 | `clean --force` alone without a TTY skips the safety check — pre-existing, made visible by this design |
 | LUC-180 | `flow.Context` duplicates `shared.ConfigResult` (the latter imports cobra, so it cannot be reused as is) |
-| LUC-182 | `extract` is not migrated; create's step declaration therefore exists twice, and `StepMultiSelect` is still missing |
-| LUC-183 | `flow.Step` carries kind-specific fields (`Branches`, `Pinned`, `Refresh`) on every kind |
+| LUC-182 | `extract` is not migrated; create's step declaration therefore exists twice |
+| LUC-183 | `flow.Step` carries kind-specific fields (`Branches`, `Pinned`, `Refresh`, `Validate`/`ValidateSet`) on every kind. It also means a `StepBranchSelect` reads its candidates from `Step.Branches`, before any answer exists, so it cannot narrow them from an earlier step — `reparent` narrows from what its request already names instead |
 | LUC-184 | Locked worktrees are only taken into account by `relocate`, so "locked" is not among clean's blockers |

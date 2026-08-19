@@ -281,3 +281,60 @@ func TestModalLoadsSlowContentInACommandNotOnTheUpdatePath(t *testing.T) {
 type m0zones struct{}
 
 func (m0zones) Mark(_, content string) string { return content }
+
+// The dashboard refused StepMultiSelect until the batch reparent needed it. What
+// matters is that the answer travels as a set: read as a single value it would
+// collapse the whole selection to nothing.
+func TestTheModalAnswersAMultiSelectWithASet(t *testing.T) {
+	session := flow.Session{Steps: []flow.Step{{
+		Kind: flow.StepMultiSelect, Key: "branches", Label: "Worktrees",
+		Title: "Select worktrees",
+		Options: []flow.Option{
+			{Label: "feat", Value: "feat"},
+			{Label: "dev-a", Value: "dev-a"},
+			{Label: "dev-b", Value: "dev-b"},
+		},
+	}}}
+
+	reply := make(chan promptReply, 1)
+	mo, _ := newModal(modalParams{Shape: modalStepper, Session: session, Reply: reply, Width: testWidth, Height: testHeight})
+
+	// Check the first and the third, leaving the second out.
+	mo, _ = mo.update(key(" "))
+	mo, _ = mo.update(namedKey(tea.KeyDown))
+	mo, _ = mo.update(namedKey(tea.KeyDown))
+	mo, _ = mo.update(key(" "))
+	_, cmd := mo.update(namedKey(tea.KeyEnter))
+
+	if cmd == nil {
+		t.Fatal("confirming the last step must answer the session")
+	}
+	cmd()
+	answered := <-reply
+	if answered.err != nil {
+		t.Fatalf("reply: %v", answered.err)
+	}
+	got := answered.answers.Values("branches")
+	if len(got) != 2 || got[0] != "feat" || got[1] != "dev-b" {
+		t.Errorf("values = %v, want the two checked worktrees", got)
+	}
+}
+
+func TestTheModalRendersAMultiSelectBody(t *testing.T) {
+	session := flow.Session{Steps: []flow.Step{{
+		Kind: flow.StepMultiSelect, Key: "branches", Label: "Worktrees",
+		Title:   "Select worktrees",
+		Options: []flow.Option{{Label: "feat", Value: "feat"}},
+	}}}
+
+	reply := make(chan promptReply, 1)
+	mo, _ := newModal(modalParams{Shape: modalStepper, Session: session, Reply: reply, Width: testWidth, Height: testHeight})
+
+	body := strings.Join(mo.body(noMarks{}), "\n")
+	if !strings.Contains(body, "feat") {
+		t.Errorf("the modal must draw the choices:\n%s", body)
+	}
+	if !strings.Contains(body, domain.DashboardStepperMultiHint) {
+		t.Errorf("the footer must name the multi-select controls:\n%s", body)
+	}
+}

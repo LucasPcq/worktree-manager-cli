@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow"
 )
 
 func rightClick(x, y int) tea.MouseMsg {
@@ -146,12 +147,26 @@ func TestTheMenuFlipsAboveTheAnchorRatherThanRunningOffTheBottom(t *testing.T) {
 	}
 }
 
+// menuIndexOf locates an entry by what it does, so a test does not break when
+// the menu gains a neighbour above it.
+func menuIndexOf(t *testing.T, model Model, action menuAction) int {
+	t.Helper()
+	for index, item := range model.menuItems() {
+		if item.action == action {
+			return index
+		}
+	}
+	t.Fatalf("no menu entry for action %v", action)
+	return -1
+}
+
 func TestClickingAnEntryStartsTheRemoval(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
 	model = update(model, key("j"))
 	model = update(model, key(domain.KeyMenu))
-	renderAndWait(t, model, menuZone(0))
-	x, y := menuEntryPoint(t, model, 0)
+	index := menuIndexOf(t, model, menuDelete)
+	renderAndWait(t, model, menuZone(index))
+	x, y := menuEntryPoint(t, model, index)
 
 	clicked, cmd := updateCmd(model, click(x, y))
 
@@ -169,11 +184,60 @@ func TestClickingAnEntryStartsTheRemoval(t *testing.T) {
 func TestEnterOnTheDeleteEntryStartsTheSameRemoval(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b")
 	model = update(model, key(domain.KeyMenu))
+	for range menuIndexOf(t, model, menuDelete) {
+		model = update(model, key("j"))
+	}
 
 	model, cmd := updateCmd(model, namedKey(tea.KeyEnter))
 
 	if cmd == nil || len(model.ops.running) != 1 {
 		t.Fatalf("running = %+v, want enter to start the same run the click does", model.ops.running)
+	}
+	if model.ops.running[0].kind != domain.OpKindClean {
+		t.Errorf("kind = %q, want enter to activate the entry it is on", model.ops.running[0].kind)
+	}
+}
+
+// The context menu acts on the worktree it was opened from, so it starts a
+// reparent already holding that one — the modal only asks for the new parent.
+func TestTheMenuStartsAReparentOnTheSelectedWorktree(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
+	model = update(model, key("j"))
+	model = update(model, key(domain.KeyMenu))
+	index := menuIndexOf(t, model, menuReparent)
+
+	started, cmd := model.activateMenu(index)
+
+	if cmd == nil {
+		t.Fatal("activating the reparent entry must start the run")
+	}
+	if len(started.ops.running) != 1 || started.ops.running[0].kind != domain.OpKindReparent {
+		t.Fatalf("running = %+v, want the reparent run recorded", started.ops.running)
+	}
+	if got := started.ops.running[0].target; got != "b" {
+		t.Errorf("target = %q, want the worktree the menu was opened on", got)
+	}
+}
+
+// A reparent is not destructive, so it must not read as one before it is used.
+func TestTheReparentEntryIsNotMarkedDangerous(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	index := menuIndexOf(t, model, menuReparent)
+
+	if model.menuItems()[index].danger {
+		t.Error("changing a parent destroys nothing")
+	}
+}
+
+// Every entry acts on the same worktree, so one run holding it disables them all.
+func TestARunHoldingTheWorktreeDisablesEveryEntry(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindCreate, target: "a"})
+
+	for _, item := range model.menuItems() {
+		if item.disabled == "" {
+			t.Errorf("entry %q stays usable while a run holds its worktree", item.label)
+		}
 	}
 }
 
@@ -208,5 +272,75 @@ func TestTheFrameIsNotClickableUnderAnOverlay(t *testing.T) {
 	// when the box is pasted over it, and losing the zones they carried.
 	if _, ok := model.marks().(noMarks); !ok {
 		t.Errorf("marks() = %T while the menu is open, want the frame left unmarked", model.marks())
+	}
+}
+
+// The entries sit on adjacent lines, so what keeps a click off the wrong one is
+// that each spans the whole box: the pointer is always unambiguously inside one
+// block, not in the space beside a label.
+func TestEveryMenuEntryIsClickableAcrossTheWholeBox(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	renderAndWait(t, model, rowZone(0))
+	model = update(model, key(domain.KeyMenu))
+	renderAndWait(t, model, menuZone(0), menuZone(1))
+
+	_, rect := model.menuBox()
+	for index := range model.menuItems() {
+		zone := model.zones.Get(menuZone(index))
+		width := zone.EndX - zone.StartX + 1
+		if want := rect.Width - 2*menuBorder - 2*menuPadding; width < want {
+			t.Errorf("entry %d is clickable over %d columns, want the full %d", index, width, want)
+		}
+	}
+}
+
+// The two menus share their box and their keys; what they list is what differs.
+// The global one acts on worktrees picked inside the run, so it must not be
+// keyed off the selected row.
+func TestTheActionsMenuListsGlobalActionsWithNoSelection(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight)
+	model = update(model, worktreesMsg{statuses: nil, parents: map[string]string{}})
+	model = update(model, key(domain.KeyActions))
+
+	if !model.menuOpen || model.menuKind != menuForGlobal {
+		t.Fatal("a on an empty dashboard must still open the global menu")
+	}
+	items := model.menuItems()
+	if len(items) == 0 {
+		t.Fatal("the global menu must offer something with no worktree selected")
+	}
+	if items[0].action != menuReparentBatch {
+		t.Errorf("first entry = %v, want the batch reparent", items[0].action)
+	}
+	if title, ok := model.menuTitle(); !ok || title != domain.DashboardActionsTitle {
+		t.Errorf("title = %q, want the menu to name itself rather than a worktree", title)
+	}
+}
+
+func TestTheActionsMenuStartsTheBatchRun(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model = update(model, key(domain.KeyActions))
+
+	started, cmd := model.activateMenu(menuIndexOf(t, model, menuReparentBatch))
+
+	if cmd == nil {
+		t.Fatal("activating the entry must start the run")
+	}
+	if len(started.ops.running) != 1 || started.ops.running[0].kind != domain.OpKindReparent {
+		t.Fatalf("running = %+v, want the reparent run recorded", started.ops.running)
+	}
+}
+
+// A blocking run holds every action, and the entry has to say so rather than
+// look available.
+func TestTheActionsMenuGoesInertWhileARunHoldsTheSurface(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindClean, mode: flow.ModeBlocking})
+	model = update(model, key(domain.KeyActions))
+
+	for _, item := range model.menuItems() {
+		if item.disabled == "" {
+			t.Errorf("entry %q stays usable while a run holds the dashboard", item.label)
+		}
 	}
 }

@@ -28,6 +28,7 @@ const (
 	keyPageDown     = "pgdown"
 	keyNew          = domain.KeyNew
 	keyMenu         = domain.KeyMenu
+	keyActions      = domain.KeyActions
 	keySpace        = " "
 	keyOutputUp     = "shift+up"
 	keyOutputDown   = "shift+down"
