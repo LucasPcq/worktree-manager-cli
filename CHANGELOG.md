@@ -1,85 +1,54 @@
 # Changelog
 
-## v0.26.0 — `wtm ui` : le dashboard, son identité et un panneau détail qui dit ce qu'il sait
+## v0.26.0 — `wtm ui` : un dashboard pour piloter ses worktrees
 
-Cette version est celle du dashboard. `wtm ui` est apparu, a gagné les commandes
-mutantes une à une (`create`, `clean`, `reparent`, `prune`, `sync`), puis une identité
-visuelle et un panneau détail qui décrit le *travail* d'un worktree plutôt que son
-emplacement. Aucune commande, aucun flag et aucune charge `--output json` n'a changé.
+Cette version apporte `wtm ui`, un dashboard plein écran d'où se pilotent les commandes
+mutantes, et la couche `internal/flow` qui le rend possible : chaque commande décrit son
+déroulé une seule fois, indépendamment de la surface, et le CLI comme le dashboard le
+rejouent. Aucune commande, aucun flag et aucune charge `--output json` existants n'ont
+changé.
 
 ### New features
 
-- **`wtm ui` — le dashboard plein écran**, et la couche `internal/flow` qui le rend
-  possible : chaque commande mutante décrit son déroulé une fois, indépendamment de la
-  surface, et le CLI comme le dashboard le rejouent. `create`, `clean`, `reparent`,
-  `prune` et `sync` s'y lancent, avec leurs questions, leurs refus de sécurité et leur
-  sortie streamée dans le panneau du bas.
-- **Un onglet Tree** et le reparentage depuis le dashboard, pour voir la forêt de
-  branches empilées et la réorganiser sans quitter l'écran.
-- **Le panneau détail répond à « qu'est-ce qu'il y a dedans ? »** — dernier commit et
-  activité récente, état réel du working tree (`4 modified · 2 untracked · 1 staged`
-  avec son volume de diff), enfants du worktree, drift `.env`, blockers de suppression,
-  et la pull request dépliée avec ses checks CI et sa décision de review.
-  **Une section n'apparaît que si elle a quelque chose à dire** : plus de `none`, plus
-  de `—`, plus de `up to date` récités dans le vide.
-- **La pull request s'ouvre dans le navigateur** depuis le panneau, à la touche `p` ou
-  au clic sur sa ligne.
-- **Le produit dit enfin où tu es.** Le worktree contenant le répertoire courant est
-  marqué dans le header, dans la liste, dans l'arbre et dans le panneau détail — et
-  `wtm list` le marque enfin lui aussi : son tag `● active` existait depuis des versions
-  mais n'était jamais renseigné, y compris dans son sélecteur interactif.
-- **Une identité visuelle** : palette duo signature, discipline de couleur à trois rôles
-  (navigation, identité, état, structure), et un header en bloc signature qui porte le
-  dépôt, la branche de base, le worktree actif et l'âge des refs `origin`.
-- **`ui.animations`** — nouvelle clé de config globale (`~/.config/wtm/config.toml`).
-  Les animations du dashboard (glissement de la règle d'onglet, fondu d'une ligne
-  nouvellement créée) sont actives par défaut ; `false` les éteint toutes d'un coup,
+- **`wtm ui` — le dashboard plein écran.** `create`, `clean`, `reparent`, `prune` et
+  `sync` s'y lancent avec leurs questions, leurs refus de sécurité et leur sortie
+  streamée dans un panneau dédié. Navigation clavier et souris, aide complète sur `?`.
+- **Un onglet Tree** pour voir la forêt de branches empilées, et le reparentage directement
+  depuis le dashboard.
+- **Un panneau détail qui décrit le travail d'un worktree**, pas seulement son
+  emplacement : dernier commit et activité récente, état réel du working tree
+  (`4 modified · 2 untracked · 1 staged` avec son volume de diff), enfants, drift `.env`,
+  ce qui empêche une suppression, et la pull request dépliée avec ses checks CI et sa
+  décision de review. Une section n'apparaît que si elle a quelque chose à dire — le
+  panneau ne récite pas `none` ni `up to date`.
+  Il distingue aussi trois absences qui se ressemblent : une donnée en cours de
+  rechargement, une absence légitime (`not configured`) et une panne
+  (`⚠ unavailable — <raison>`). Un `gh` cassé ne se lit pas « pas de PR ».
+- **La pull request s'ouvre dans le navigateur** depuis le panneau, à la touche `p` ou au
+  clic sur sa ligne.
+- **`wtm list` marque le worktree courant.** Son tag `● active` existait dans le code mais
+  n'était jamais renseigné : il fonctionne désormais, dans la sortie texte comme dans le
+  sélecteur interactif, et `wtm resolve` le montre aussi. Le dashboard le signale de son
+  côté dans son header, sa liste, son arbre et son détail.
+- **`ui.animations`** — nouvelle clé de config globale (`~/.config/wtm/config.toml`). Les
+  animations du dashboard sont actives par défaut ; `false` les éteint toutes d'un coup,
   utile sur une liaison lente.
 
 ### Improvements
 
-- **Rien n'est affiché comme vrai sans l'être.** Le panneau distingue trois absences qui
-  se ressemblaient : une donnée en cours de rechargement (l'ancienne reste à l'écran,
-  atténuée, et se déclare), une absence légitime (`not configured`), et une panne
-  (`⚠ unavailable — <raison>`). Un `gh` cassé ne se lit plus « pas de PR », un `git log`
-  en échec ne se lit plus « pas de commits », et les refs `origin` annoncent leur âge
-  au-delà de 24 h au lieu de laisser croire qu'elles sont fraîches.
-- **Les marqueurs n'apparaissent que quand ils signalent quelque chose** : le spinner de
-  rechargement attend 200 ms avant de se montrer, la note de péremption attend 24 h. Un
-  marqueur affiché en permanence ne signale plus rien.
-- **`cannot be deleted` devient une formulation exacte** — la suppression est possible,
-  elle demande `--force` ; et le worktree parent, qui n'est jamais supprimable, ne porte
-  plus de ligne de blocage du tout.
-- **Le chargement du détail est paresseux et débouncé** : il ne se déclenche que sur la
-  sélection, jamais dans le sondage périodique, et n'ajoute aucun appel `gh`. Les checks
-  CI ne sont demandés que par `wtm ui`, la seule surface qui les affiche — `wtm list`,
-  `wtm checkout` et `wtm resolve` gardent la requête étroite.
-- **La palette s'applique à toutes les commandes**, pas seulement au dashboard : la
-  sortie humaine de `wtm` change de couleurs partout.
+- **Nouvelle palette de couleurs**, appliquée à la sortie humaine de **toutes** les
+  commandes, pas seulement au dashboard : accents retravaillés et rôles clarifiés
+  (navigation, identité, état, structure). Les couleurs restent adaptatives clair/sombre
+  et `NO_COLOR` est toujours respecté.
 
 ### Bug fixes
 
-- **Le panneau de sortie ne fait plus défiler toute l'interface.** Une entrée contenant
-  ses propres retours à la ligne — une erreur git ou un échec de hook collé tel quel —
-  occupait plusieurs rangées tout en comptant pour une, poussait la frame au-delà du
-  terminal et emportait les onglets hors de l'écran. Les panneaux découpent désormais sur
-  la hauteur réellement rendue, quel que soit leur contenu.
-- **Une couleur ne bave plus sur le reste du panneau** : une ligne d'avertissement était
-  tronquée après avoir été colorée, ce qui mangeait sa séquence de fermeture ANSI.
-- **Le marqueur de worktree actif ne disparaît plus en silence** sur macOS : le répertoire
-  courant est désormais normalisé à travers les liens symboliques, `/var` et
-  `/private/var` désignant le même endroit.
-- **Le spinner d'une opération en cours ne reste plus figé** — un glyphe immobile se lit
-  « bloqué », l'inverse de ce qu'il annonce.
-- **Les checks CI issus de l'API Status héritée** (CircleCI, Travis, toute intégration
-  hors Checks API) ne sont plus comptés « en attente » indéfiniment. Une vérification en
-  attente d'autorisation (`action_required`) s'affiche comme telle et non comme un échec.
-- **`wtm sync`** : l'état du parent est affiné, l'étape parent reste visible, et les
-  parents que la cascade ne couvre pas sont rafraîchis.
-- **La configuration globale documentée était fausse** — le `README` montrait une clé
-  `agent` qui n'existe ni dans le type ni dans le schéma ; la copier faisait échouer
-  toutes les commandes, le décodage refusant les clés inconnues.
-
+- **`wtm sync`** : l'état du parent est affiné et l'étape parent reste visible ; les
+  parents que la cascade ne couvre pas sont désormais rafraîchis.
+- **La configuration globale documentée était invalide.** Le `README` montrait une clé
+  `agent` sous `~/.config/wtm/config.toml`, absente du schéma — et le décodage refusant
+  les clés inconnues, copier le bloc documenté faisait échouer **toutes** les commandes
+  avec `unknown keys in config.toml: agent`.
 
 ## v0.25.0 — Réutiliser une branche locale existante (`create`, `checkout`, `extract`)
 
