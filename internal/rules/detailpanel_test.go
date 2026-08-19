@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -115,6 +116,45 @@ func TestVitalChipsNeverMentionsCreated(t *testing.T) {
 		}
 		if len(chip.Text) >= 7 && chip.Text[:7] == "created" {
 			t.Error("created appartient à LINKS, pas à la bande vitale")
+		}
+	}
+}
+
+func TestChangesSectionSummaryIsOnTitleRowNotALine(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x", IsDirty: true},
+		Height: 24,
+		Detail: domain.WorktreeDetail{
+			Changes: domain.WorkingChanges{
+				Modified:  2,
+				Untracked: 1,
+				Files: []domain.PorcelainEntry{
+					{Status: " M", Path: "a.go"},
+					{Status: " M", Path: "b.go"},
+					{Status: "??", Path: "c.go"},
+				},
+			},
+		},
+	})
+
+	var changes domain.DetailSection
+	for _, section := range sections {
+		if section.Key == domain.DetailSectionChanges {
+			changes = section
+		}
+	}
+	if changes.Key == "" {
+		t.Fatal("CHANGES absente alors que le worktree est sale")
+	}
+	if !strings.Contains(changes.TitleRight, "2 modified") || !strings.Contains(changes.TitleRight, "1 untracked") {
+		t.Errorf("TitleRight = %q, doit porter le résumé des comptes", changes.TitleRight)
+	}
+	if len(changes.Lines) == 0 || !strings.Contains(changes.Lines[0], "a.go") {
+		t.Errorf("Lines[0] = %q, doit être le premier fichier — le résumé n'est plus une ligne", changes.Lines[0])
+	}
+	for _, line := range changes.Lines {
+		if strings.Contains(line, "modified") {
+			t.Errorf("Lines = %v, le résumé ne doit plus apparaître comme une ligne du corps", changes.Lines)
 		}
 	}
 }

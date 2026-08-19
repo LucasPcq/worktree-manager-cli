@@ -137,7 +137,7 @@ func reviewSection(pr domain.PRInfo) domain.DetailSection {
 }
 
 func changesSection(changes domain.WorkingChanges, budget int) domain.DetailSection {
-	lines := []string{changesSummary(changes)}
+	var lines []string
 
 	shown, more := splitBudget(len(changes.Files), budget)
 	for _, file := range changes.Files[:shown] {
@@ -147,7 +147,12 @@ func changesSection(changes domain.WorkingChanges, budget int) domain.DetailSect
 		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailMoreFmt, more))
 	}
 
-	return domain.DetailSection{Key: domain.DetailSectionChanges, Title: domain.DetailSectionChanges, Lines: lines}
+	return domain.DetailSection{
+		Key:        domain.DetailSectionChanges,
+		Title:      domain.DetailSectionChanges,
+		TitleRight: changesSummary(changes),
+		Lines:      lines,
+	}
 }
 
 func changesSummary(changes domain.WorkingChanges) string {
