@@ -490,16 +490,20 @@ func TestReviewLinesAreIndentedLikeTheOtherLists(t *testing.T) {
 }
 
 // TestActivityTitleRightShowsBranchDiff pins that ACTIVITY mirrors CHANGES:
-// the committed diff volume against the base branch shows on the title row.
+// the committed diff volume against the base branch, plus the file count
+// `git diff --shortstat` reports alongside it, show on the title row.
 func TestActivityTitleRightShowsBranchDiff(t *testing.T) {
 	section := activitySection(activitySectionParams{
 		Commits: []domain.CommitSummary{{SHA: "abc1234", Subject: "feat: x"}},
 		Budget:  domain.DashboardDetailCommits,
 		Loaded:  true,
-		Diff:    domain.DiffStat{Insertions: 214, Deletions: 38},
+		Diff:    domain.DiffStat{FilesChanged: 7, Insertions: 214, Deletions: 38},
 	})
 	if !strings.Contains(section.TitleRight, "214") || !strings.Contains(section.TitleRight, "38") {
 		t.Errorf("ACTIVITY.TitleRight = %q, want the committed diff volume", section.TitleRight)
+	}
+	if !strings.Contains(section.TitleRight, "7 files changed") {
+		t.Errorf("ACTIVITY.TitleRight = %q, want the file count alongside it, like CHANGES", section.TitleRight)
 	}
 }
 

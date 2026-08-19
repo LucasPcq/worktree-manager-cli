@@ -74,6 +74,8 @@ func parseShortstat(out string) domain.DiffStat {
 			continue
 		}
 		switch {
+		case strings.HasPrefix(fields[1], "file"):
+			stat.FilesChanged = count
 		case strings.HasPrefix(fields[1], "insertion"):
 			stat.Insertions = count
 		case strings.HasPrefix(fields[1], "deletion"):

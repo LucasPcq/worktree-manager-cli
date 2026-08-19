@@ -163,6 +163,9 @@ func TestDetailReadsBranchDiffAgainstBase(t *testing.T) {
 	if got.BranchDiff.Insertions != 2 {
 		t.Errorf("BranchDiff.Insertions = %d, want 2", got.BranchDiff.Insertions)
 	}
+	if got.BranchDiff.FilesChanged != 1 {
+		t.Errorf("BranchDiff.FilesChanged = %d, want 1", got.BranchDiff.FilesChanged)
+	}
 	if _, failed := got.Failures[domain.DetailFamilyBranchDiff]; failed {
 		t.Errorf("Failures = %v, want no branch_diff failure", got.Failures)
 	}

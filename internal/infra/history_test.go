@@ -98,6 +98,9 @@ func TestBranchDiffShortstat(t *testing.T) {
 	if stat.Deletions != 0 {
 		t.Errorf("Deletions = %d, want 0", stat.Deletions)
 	}
+	if stat.FilesChanged != 1 {
+		t.Errorf("FilesChanged = %d, want 1", stat.FilesChanged)
+	}
 }
 
 func TestLastFetchAtWithoutFetchHead(t *testing.T) {

@@ -1230,6 +1230,13 @@ const (
 	ChangesDeletionGlyph = "−"
 	ChangesDiffStatFmt   = "+%d " + ChangesDeletionGlyph + "%d"
 
+	// ActivityFilesChangedFmt renders ACTIVITY's title-row file count
+	// alongside its diff volume — the committed-diff counterpart to CHANGES'
+	// porcelain breakdown. `git diff --shortstat` only reports one aggregate
+	// count, not a per-status split, so this is the one fragment ACTIVITY has
+	// to offer where CHANGES has three.
+	ActivityFilesChangedFmt = "%d files changed"
+
 	// Env* render the LINKS "Env" field's drift summary, one fragment per
 	// category, joined with DashboardMetaSeparator when several apply.
 	EnvMissingFmt     = "%d keys missing"

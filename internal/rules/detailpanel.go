@@ -380,7 +380,15 @@ func activityDiffText(stat domain.DiffStat, err error) string {
 	if err != nil {
 		return failureLine(err)
 	}
-	return diffStatText(stat)
+	if stat.FilesChanged == 0 {
+		return diffStatText(stat)
+	}
+	files := fmt.Sprintf(domain.ActivityFilesChangedFmt, stat.FilesChanged)
+	diff := diffStatText(stat)
+	if diff == "" {
+		return files
+	}
+	return files + domain.DetailListIndent + diff
 }
 
 // commitLine reuses commit.SHA as-is: infra.RecentCommits already asks git for

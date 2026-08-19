@@ -10,10 +10,13 @@ type CommitSummary struct {
 	At      time.Time
 }
 
-// DiffStat is the volume of a diff, without the per-file breakdown.
+// DiffStat is the volume of a diff, without the per-file breakdown. It comes
+// straight off `git diff --shortstat`, so FilesChanged is one aggregate
+// count, not the per-status split WorkingChanges.Files carries.
 type DiffStat struct {
-	Insertions int
-	Deletions  int
+	FilesChanged int
+	Insertions   int
+	Deletions    int
 }
 
 // DetailFamily names a group of data in the detail view that can fail independently.
