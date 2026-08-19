@@ -154,7 +154,10 @@ func Run(params RunParams) error {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadWorktreesCmd(false), m.loadPRsCmd(), pollCmd(), listenCmd(m.msgs), m.spinner.Tick)
+	// The spinner is started on demand, at the point a detail load actually
+	// begins (fireDetailTick, reloadDetailCmd) — not here, or it would tick for
+	// the life of the program whether or not anything is loading.
+	return tea.Batch(m.loadWorktreesCmd(false), m.loadPRsCmd(), pollCmd(), listenCmd(m.msgs))
 }
 
 func pollCmd() tea.Cmd {
@@ -269,10 +272,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.tab == tabTree {
 			tree = m.loadTreeCmd()
 		}
-		// The poll never clears m.details — only the list is its business — but it
-		// does relaunch a fresh detail load for whichever branch is selected.
-		next, detailCmd := m.reloadDetailCmd()
-		return next, tea.Batch(next.loadWorktreesCmd(false), tree, detailCmd, pollCmd())
+		// Same reasoning for the detail: five subprocesses every poll to keep a
+		// panel nobody is looking at "fresh" is exactly the jamais-dans-le-poll
+		// rule (§7) would forbid if the panel were on screen — it is spent only
+		// when it is. The poll never clears m.details either way; when it does
+		// reload, old data stays on screen underneath it.
+		detailCmd := tea.Cmd(nil)
+		if m.layout().DetailVisible {
+			m, detailCmd = m.reloadDetailCmd()
+		}
+		return m, tea.Batch(m.loadWorktreesCmd(false), tree, detailCmd, pollCmd())
 
 	case treeMsg:
 		before := m.selectedBranch()
@@ -296,6 +305,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.fireDetailTick(msg)
 
 	case spinner.TickMsg:
+		// Re-arming unconditionally would tick at 12fps for the life of the
+		// program, idle included: the loop only continues while a detail load is
+		// actually in flight, and dies on its own the moment applyDetail clears
+		// detailLoading.
+		if m.detailLoading == "" {
+			return m, nil
+		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
