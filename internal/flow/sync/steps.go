@@ -37,19 +37,21 @@ func (f *syncFlow) session() flow.Session {
 	presets := flow.NewAnswers(map[string]string{KeyParents: f.presetParents()})
 	return flow.Session{
 		ErrLabel: domain.SyncWizardErrLabel,
-		Presets:  presets.WithValues(KeySelection, f.fixedSelection()),
+		Presets:  f.presetSelection(presets),
 		Steps:    []flow.Step{f.selectionStep(), f.conflictStep(), f.parentsStep(), f.confirmStep()},
 	}
 }
 
-// fixedSelection is what args or --all already settled. --all previews the
-// resolved list; the service still receives nil, which is what "every worktree"
-// means to it (see rules.SyncIncludesBase).
-func (f *syncFlow) fixedSelection() []string {
+// presetSelection settles the selection when args or --all already did. --all
+// presets even when it names nothing — a stack reduced to its base still has a
+// base to refresh, and an unset preset would open the picker the flag exists to
+// answer. The preset only previews the resolved list; the service still receives
+// nil, which is what "every worktree" means to it (see rules.SyncIncludesBase).
+func (f *syncFlow) presetSelection(presets flow.Answers) flow.Answers {
 	if f.request.All {
-		return f.syncableBranches()
+		return presets.With(KeySelection, flow.Answer{Values: rules.SyncAllBranches(f.statuses)})
 	}
-	return f.selection
+	return presets.WithValues(KeySelection, f.selection)
 }
 
 func (f *syncFlow) selectionStep() flow.Step {
@@ -126,22 +128,6 @@ func statusTag(status domain.WorktreeStatus) (string, domain.Tone) {
 	return "", domain.ToneNeutral
 }
 
-// syncableBranches is the explicit list --all previews. The service still
-// receives nil, which is what "every worktree" means to it. It leaves out the
-// base and nothing else: --all is an answer, so it covers a dirty worktree too
-// and lets the run report why it was skipped (rules.RebasableBranches, which a
-// surface pre-checks with, is the narrower one).
-func (f *syncFlow) syncableBranches() []string {
-	branches := make([]string, 0, len(f.statuses))
-	for _, status := range f.statuses {
-		if status.IsParent {
-			continue
-		}
-		branches = append(branches, status.Branch)
-	}
-	return branches
-}
-
 // conflictStep is skipped when nothing is rebased: a base-only refresh has no
 // conflict to have an opinion about.
 func (f *syncFlow) conflictStep() flow.Step {
@@ -153,10 +139,7 @@ func (f *syncFlow) conflictStep() flow.Step {
 			if f.request.DryRun {
 				return true, domain.SyncDryRunNoQuestion
 			}
-			if rules.SyncSelectsOnlyBase(rules.SyncIncludesBaseParams{
-				Selected:   answers.Values(KeySelection),
-				BaseBranch: f.request.BaseBranch,
-			}) {
+			if f.nothingToRebase(answers) {
 				return true, domain.SyncNoRebaseStep
 			}
 			return false, ""
@@ -179,6 +162,20 @@ func (f *syncFlow) conflictStep() flow.Step {
 		},
 		Flag: domain.FlagKeepConflict,
 	}
+}
+
+// nothingToRebase decides from the selection alone — no git call from a Skip. An
+// --all that covers nothing reads back as no selection at all, which everywhere
+// else means "every worktree", so it is answered from the worktrees --all would
+// have named rather than from what came back.
+func (f *syncFlow) nothingToRebase(answers flow.Answers) bool {
+	if f.request.All {
+		return len(rules.SyncAllBranches(f.statuses)) == 0
+	}
+	return rules.SyncSelectsOnlyBase(rules.SyncIncludesBaseParams{
+		Selected:   answers.Values(KeySelection),
+		BaseBranch: f.request.BaseBranch,
+	})
 }
 
 func conflictDescription(count int) string {
@@ -304,18 +301,26 @@ func (f *syncFlow) confirmStep() flow.Step {
 
 func (f *syncFlow) confirmContent(plan domain.SyncPlan, answers flow.Answers) flow.StepContent {
 	return flow.StepContent{
-		Title:       domain.SyncConfirmTitle,
-		Description: confirmDescription(plan, answers.Value(KeyConflict) == conflictKeep),
-		Options:     []flow.Option{{Label: domain.SyncConfirmOption, Value: confirmSync}},
+		Title: domain.SyncConfirmTitle,
+		Description: confirmDescription(confirmDescriptionParams{
+			Plan:         plan,
+			KeepConflict: answers.Value(KeyConflict) == conflictKeep,
+		}),
+		Options: []flow.Option{{Label: domain.SyncConfirmOption, Value: confirmSync}},
 	}
 }
 
-func confirmDescription(plan domain.SyncPlan, keepConflict bool) string {
-	description := confirmQuestion(plan)
-	if text := rules.SprintSyncPlan(plan); text != "" {
+type confirmDescriptionParams struct {
+	Plan         domain.SyncPlan
+	KeepConflict bool
+}
+
+func confirmDescription(params confirmDescriptionParams) string {
+	description := confirmQuestion(params.Plan)
+	if text := rules.SprintSyncPlan(params.Plan); text != "" {
 		description = text + "\n\n" + description
 	}
-	if keepConflict {
+	if params.KeepConflict {
 		description += "\n\n" + domain.SyncKeepConflictWarning
 	}
 	return description

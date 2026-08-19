@@ -220,7 +220,7 @@ func SprintSyncPlan(plan domain.SyncPlan) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString(SyncPlanTitle(plan))
+	b.WriteString(domain.SyncPlanHeader)
 	for i, step := range plan.Steps {
 		parent := step.SourceBranch
 		if parent == "" {
@@ -229,13 +229,4 @@ func SprintSyncPlan(plan domain.SyncPlan) string {
 		fmt.Fprintf(&b, "\n%d. %s ← %s", i+1, step.Branch, parent)
 	}
 	return b.String()
-}
-
-// SyncPlanTitle is constant: a header that gains and loses a "(base: x)" suffix
-// depending on whether the cascade happens to touch the base reads as two
-// different sections to whoever meets it twice, and the plan's own lines already
-// name every branch involved. Exported so output.FormatSyncPlan's styled header
-// shares the same wording as SprintSyncPlan's plain one instead of duplicating it.
-func SyncPlanTitle(domain.SyncPlan) string {
-	return domain.SyncPlanHeader
 }

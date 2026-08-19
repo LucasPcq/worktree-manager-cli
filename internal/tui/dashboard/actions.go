@@ -191,7 +191,7 @@ func (m Model) startPrune() (Model, tea.Cmd) {
 // it inside the run.
 func (m Model) startSync(branch string) (Model, tea.Cmd) {
 	return m.runSync(runSyncParams{
-		Title:    domain.DashboardSyncTitle,
+		Title:    domain.DashboardSyncRowTitle,
 		Row:      branch,
 		Precheck: m.ancestryOf(branch),
 	})

@@ -96,10 +96,14 @@ type formSectionParams struct {
 func formSection(params formSectionParams) ([]formRow, flow.Answer) {
 	if params.Step.Kind == flow.StepRecap {
 		rows := heading(withoutBlockerLines(params.Content))
-		return append(rows, blockerRows(params.Content)...), flow.Answer{
-			Value: confirmValue(params.Content),
-			Asked: true,
-		}
+		rows = append(rows, blockerRows(params.Content)...)
+		buttons := confirmButtons(confirmButtonsParams{
+			StepKey: params.Step.Key,
+			Content: params.Content,
+		})
+		// The leading button is what the recap answers with until one is pressed, so
+		// a submit that went through no button confirms what the form leads with.
+		return append(rows, buttons...), flow.Answer{Value: buttons[0].value, Asked: true}
 	}
 
 	rows := heading(params.Content)
@@ -171,12 +175,12 @@ func heading(content flow.StepContent) []formRow {
 }
 
 // blockerRows turns each refusal into its own acknowledgement. Nothing is ticked
-// for the user, and the button below them stays inert until they all are.
+// for the user, and the buttons below them stay inert until they all are.
 func blockerRows(content flow.StepContent) []formRow {
-	var rows []formRow
-	if len(content.Blockers) > 0 {
-		rows = append(rows, formRow{kind: formText, label: domain.DashboardBlockersTitle})
+	if len(content.Blockers) == 0 {
+		return nil
 	}
+	rows := []formRow{{kind: formText, label: domain.DashboardBlockersTitle}}
 	for _, blocker := range content.Blockers {
 		rows = append(rows, formRow{
 			kind:  formBlocker,
@@ -184,49 +188,50 @@ func blockerRows(content flow.StepContent) []formRow {
 			label: blocker.Label,
 		})
 	}
-	if len(rows) > 0 {
-		rows = append(rows, formRow{kind: formText})
+	return append(rows, formRow{kind: formText})
+}
+
+type confirmButtonsParams struct {
+	StepKey string
+	Content flow.StepContent
+}
+
+// confirmButtons gives every outcome a recap names its own button, so a decision
+// between two of them (keep local / force-push) can be taken either way — folding
+// them into one button answers for the user and throws the rest away. Blockers
+// are the one exception: they stand in the way of the dangerous outcome, which is
+// then the only way through, and a harmless button beside it would confirm
+// something else than what was acknowledged.
+func confirmButtons(params confirmButtonsParams) []formRow {
+	options := params.Content.Options
+	blocked := len(params.Content.Blockers) > 0
+	if option, ok := dangerOption(params.Content); ok && blocked {
+		options = []flow.Option{option}
 	}
-	return append(rows,
-		formRow{
+
+	rows := make([]formRow, 0, len(options)+1)
+	for _, option := range options {
+		if option.Separator {
+			continue
+		}
+		rows = append(rows, formRow{
 			kind:    formButton,
 			confirm: true,
-			value:   confirmValue(content),
-			label:   confirmLabel(content),
-			danger:  len(content.Blockers) > 0,
-		},
-		formRow{kind: formButton, label: domain.WizardCancelLabel},
-	)
-}
-
-// confirmValue is the option the blockers stand in the way of: with something to
-// lift, confirming means the dangerous one — there is no other way through.
-func confirmValue(content flow.StepContent) string {
-	if len(content.Blockers) > 0 {
-		if option, ok := dangerOption(content); ok {
-			return option.Value
-		}
+			stepKey: params.StepKey,
+			value:   option.Value,
+			label:   option.Label,
+			danger:  option.Danger || blocked,
+		})
 	}
-	for _, option := range content.Options {
-		if !option.Separator {
-			return option.Value
-		}
+	if len(rows) == 0 {
+		rows = append(rows, formRow{
+			kind:    formButton,
+			confirm: true,
+			stepKey: params.StepKey,
+			label:   domain.DashboardConfirmLabel,
+		})
 	}
-	return ""
-}
-
-func confirmLabel(content flow.StepContent) string {
-	if len(content.Blockers) > 0 {
-		if option, ok := dangerOption(content); ok {
-			return option.Label
-		}
-	}
-	for _, option := range content.Options {
-		if !option.Separator {
-			return option.Label
-		}
-	}
-	return domain.DashboardConfirmLabel
+	return append(rows, formRow{kind: formButton, label: domain.WizardCancelLabel})
 }
 
 func dangerOption(content flow.StepContent) (flow.Option, bool) {
@@ -318,7 +323,9 @@ func (mo modal) activate(index int) (modal, tea.Cmd) {
 		if mo.shape == modalStepper {
 			return mo.answer(row.value)
 		}
-		return mo.submit(mo.answers)
+		// A recap offers one button per outcome, so the whole form is submitted
+		// answered with the one that was pressed — never with the one it led with.
+		return mo.submit(mo.answers.With(row.stepKey, flow.Answer{Value: row.value, Asked: true}))
 	}
 	return mo, nil
 }

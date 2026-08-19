@@ -3,7 +3,6 @@ package sync
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,7 +22,7 @@ func oneStackRepo(t *testing.T) flow.Context {
 	dir := gittest.InitRepo(t)
 	stateDir := filepath.Join(dir, ".git", "wtm")
 
-	run(t, dir, "worktree", "add", "-b", "feat-a", filepath.Join(t.TempDir(), "feat-a"), "main")
+	gittest.Git(t, dir, "worktree", "add", "-b", "feat-a", filepath.Join(t.TempDir(), "feat-a"), "main")
 	writeSource(t, stateDir, "feat-a", "main")
 
 	return flow.Context{ProjectDir: dir, StateDir: stateDir}
@@ -34,15 +33,6 @@ func oneStackRepo(t *testing.T) flow.Context {
 func baseOnlyRepo(t *testing.T) flow.Context {
 	t.Helper()
 	return flow.Context{ProjectDir: gittest.InitRepo(t), StateDir: t.TempDir()}
-}
-
-func run(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %s: %s: %v", strings.Join(args, " "), out, err)
-	}
 }
 
 func writeSource(t *testing.T, stateDir, branch, source string) {

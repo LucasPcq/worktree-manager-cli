@@ -287,6 +287,36 @@ func TestSyncBaseAndParentLabels(t *testing.T) {
 	}
 }
 
+// --all is an answer, not an offer: it covers every worktree, including the ones
+// the cascade will skip, so the run reports why each was skipped instead of
+// silently leaving them out. Only the base is excluded — it is fast-forwarded,
+// never rebased.
+func TestSyncAllBranchesCoverEveryWorktreeButTheBase(t *testing.T) {
+	statuses := []domain.WorktreeStatus{
+		{Branch: "main", IsParent: true},
+		{Branch: "clean"},
+		{Branch: "dirty", IsDirty: true},
+		{Branch: "stuck", RebaseInProgress: true},
+	}
+
+	got := SyncAllBranches(statuses)
+
+	if strings.Join(got, ",") != "clean,dirty,stuck" {
+		t.Errorf("SyncAllBranches = %v, want [clean dirty stuck]", got)
+	}
+}
+
+// A repository whose only worktree is the base has nothing to rebase, and says
+// so with an empty list rather than with nil, which the sync flow reads as
+// "the selection was never made".
+func TestSyncAllBranchesIsEmptyWhenOnlyTheBaseExists(t *testing.T) {
+	got := SyncAllBranches([]domain.WorktreeStatus{{Branch: "main", IsParent: true}})
+
+	if got == nil || len(got) != 0 {
+		t.Errorf("SyncAllBranches = %#v, want an empty list, never nil", got)
+	}
+}
+
 // A surface offering "sync everything" pre-checks what the run can act on: the
 // base is in — it gets fast-forwarded, and every chain below it wants it fresh —
 // while what the cascade would skip stays listed and unchecked rather than

@@ -14,7 +14,7 @@ import (
 // onto which parent, in execution order. It emits a raw body with no outer blank
 // lines; the caller's frame owns the outer vertical padding.
 func FormatSyncPlan(w io.Writer, plan domain.SyncPlan) {
-	SectionTitle(w, rules.SyncPlanTitle(plan))
+	SectionTitle(w, domain.SyncPlanHeader)
 	if len(plan.Steps) == 0 {
 		Message(w, styles.Muted.Render("No worktrees to sync."))
 		return

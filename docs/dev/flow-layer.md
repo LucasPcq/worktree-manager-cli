@@ -742,12 +742,20 @@ a preview until it is confirmed.
 ### The no-terminal refusal
 
 Human output, no TTY, neither `--yes` nor `--dry-run` → refuse, naming `--yes`
-(`domain.SyncNeedsTerminal`), aligned with `prune`. This is the only CLI-observable
-behavior change of the migration, and it closes a real gap rather than tidying one:
-before it, `wtm sync feat-a | cat` launched a TUI confirm on a non-TTY and the failure
-*was* the safety net — no confirm, nothing ran. `flow.Unattended` has no such accident
-to fall back on, so without the guard that path would have **mutated** where it used
-to abort.
+(`domain.SyncNeedsTerminal`), aligned with `prune`. It is one of the migration's **two**
+CLI-observable behavior changes (the other is the plan header, below), and it closes a
+real gap rather than tidying one: before it, `wtm sync feat-a | cat` launched a TUI
+confirm on a non-TTY and the failure *was* the safety net — no confirm, nothing ran.
+`flow.Unattended` has no such accident to fall back on, so without the guard that path
+would have **mutated** where it used to abort.
+
+The second is the cascade preview's header, now the constant `domain.SyncPlanHeader`
+("Sync plan"): it no longer gains and loses a `(base: x)` suffix depending on whether
+the cascade happens to touch the base. A header that comes and goes reads as two
+different sections to whoever meets it twice, and the plan's own lines already name
+every branch involved. It reaches the user through `Planned` — on stderr, where the
+plan has always been written — on every run that saw no recap: `--dry-run`, `--yes`,
+or no TTY.
 
 One nuance keeps the condition from being a copy of `prune`'s: `sync`'s `interactive`
 deliberately omits `!dryRun`, because `--dry-run` on a TTY still needs the picker to

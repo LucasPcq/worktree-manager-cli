@@ -81,19 +81,21 @@ func (p prompter) Ask(session flow.Session) (flow.Answers, error) {
 // Confirm is a standalone decision, asked as a one-question form: a flow reaches
 // it after an execution, when there is no session left to join.
 func (p prompter) Confirm(params flow.ConfirmParams) (bool, error) {
-	session := flow.Session{Steps: []flow.Step{{
+	answers, err := prompter{send: p.send, title: params.Title, shape: modalForm}.Ask(confirmSession(params))
+	if err != nil {
+		return false, err
+	}
+	return answers.Value(keyConfirm) == confirmYes, nil
+}
+
+func confirmSession(params flow.ConfirmParams) flow.Session {
+	return flow.Session{Steps: []flow.Step{{
 		Kind:        flow.StepRecap,
 		Key:         keyConfirm,
 		Title:       params.Title,
 		Description: flow.ConfirmDescription(params),
 		Options:     confirmOptions(params),
 	}}}
-
-	answers, err := prompter{send: p.send, title: params.Title, shape: modalForm}.Ask(session)
-	if err != nil {
-		return false, err
-	}
-	return answers.Value(keyConfirm) == confirmYes, nil
 }
 
 // confirmOptions names both outcomes when the caller named them: closing the

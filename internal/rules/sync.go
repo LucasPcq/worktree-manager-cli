@@ -262,13 +262,27 @@ func SyncParentStatusLabel(status domain.ParentStatus) string {
 	}
 }
 
+// SyncAllBranches lists what --all covers: every worktree but the base, which is
+// fast-forwarded from its remote rather than rebased. It excludes nothing else —
+// a dirty or half-rebased worktree stays in so the run reports why it skipped it.
+func SyncAllBranches(statuses []domain.WorktreeStatus) []string {
+	branches := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		if status.IsParent {
+			continue
+		}
+		branches = append(branches, status.Branch)
+	}
+	return branches
+}
+
 // SyncReadyBranches lists the worktrees a cascade can act on today: the base is
-// in — it is fast-forwarded from its remote, not rebased, and every chain below
-// it wants it fresh — while a dirty or half-rebased worktree is left out because
-// the run would skip it anyway. It is what a surface offering "sync everything"
-// pre-checks; the rest stays listed, and checkable, rather than dropped. It is
-// deliberately narrower than what --all covers (see the sync flow's
-// syncableBranches): a pre-check is an offer, --all is an answer.
+// among them — it is fast-forwarded from its remote, not rebased, and every chain
+// below it wants it fresh — while a dirty or half-rebased worktree is left out,
+// base included, because the run would skip it anyway. It is what a surface
+// offering "sync everything" pre-checks; the rest stays listed, and checkable,
+// rather than dropped. It is deliberately narrower than SyncAllBranches: a
+// pre-check is an offer, --all is an answer.
 func SyncReadyBranches(statuses []domain.WorktreeStatus) []string {
 	branches := make([]string, 0, len(statuses))
 	for _, status := range statuses {

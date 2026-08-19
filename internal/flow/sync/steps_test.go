@@ -178,3 +178,60 @@ func TestRecapDescribesThePlan(t *testing.T) {
 		t.Fatalf("the recap must carry the plan, got: %q", content.Description)
 	}
 }
+
+// --all answers the selection even on a stack reduced to its base: an unset
+// preset would open the picker the flag exists to skip, and the multi-select
+// would then refuse a run that has a base to refresh.
+func TestAllPresetsTheSelectionWhenItNamesNothing(t *testing.T) {
+	baseOnly := []domain.WorktreeStatus{{Branch: "main", IsParent: true}}
+
+	answer, preset := testFlow(Request{All: true}, baseOnly).session().Presets.Get(KeySelection)
+
+	if !preset {
+		t.Fatal("--all must answer the selection, whatever it resolves to")
+	}
+	if len(answer.Values) != 0 {
+		t.Fatalf("nothing hangs off the base, got %+v", answer.Values)
+	}
+}
+
+// The preset is what the recap reads the selection back from, so --all previews
+// the resolved list rather than an empty one.
+func TestAllPresetsEveryWorktreeButTheBase(t *testing.T) {
+	answer, preset := testFlow(Request{All: true}, stack).session().Presets.Get(KeySelection)
+
+	if !preset {
+		t.Fatal("--all must answer the selection")
+	}
+	if strings.Join(answer.Values, ",") != "feat-a,feat-b,feat-c" {
+		t.Fatalf("--all covers every worktree, the ones it will skip included, got %+v", answer.Values)
+	}
+}
+
+// A run with neither args nor --all leaves the step open: an empty preset would
+// pass for an answer and skip the picker.
+func TestAnUnsetSelectionIsNotPreset(t *testing.T) {
+	if _, preset := testFlow(Request{}, stack).session().Presets.Get(KeySelection); preset {
+		t.Fatal("with nothing to preset the selection must stay a question")
+	}
+}
+
+// --all on a base-only repository rebases nothing, so the conflict question has
+// no situation to have an opinion about — the preset reads back empty, and the
+// step must not take that for "every worktree".
+func TestConflictStepIsSkippedWhenAllCoversNothing(t *testing.T) {
+	f := testFlow(Request{All: true, BaseBranch: "main"}, []domain.WorktreeStatus{{Branch: "main", IsParent: true}})
+
+	skip, reason := f.conflictStep().Skip(f.session().Presets)
+	if !skip || reason != domain.SyncNoRebaseStep {
+		t.Fatalf("nothing to rebase, yet the conflict question is put: %v %q", skip, reason)
+	}
+}
+
+func TestConflictStepIsAskedWhenAllCoversAWorktree(t *testing.T) {
+	f := testFlow(Request{All: true, BaseBranch: "main"}, stack)
+
+	if skip, reason := f.conflictStep().Skip(f.session().Presets); skip {
+		t.Fatalf("--all over a stack rebases, so the question stands: skipped %q", reason)
+	}
+}

@@ -1087,7 +1087,10 @@ const (
 	DashboardReparentBatchTitle = "Reparent worktrees"
 	DashboardPruneTitle         = "Prune finished worktrees"
 	DashboardSyncTitle          = "Sync worktrees"
-	DashboardRefreshBaseTitle   = "Refresh base branch"
+	// DashboardSyncRowTitle heads the same run started from a row: a modal that
+	// renamed the entry the user just picked reads as a different action.
+	DashboardSyncRowTitle     = "Sync this worktree"
+	DashboardRefreshBaseTitle = "Refresh base branch"
 	// DashboardSync*Fmt report a finished cascade in the output panel, one line per
 	// branch it touched. Verbs: branch, then what became of it.
 	DashboardSyncStepFmt   = "%s — %s"
