@@ -3,6 +3,7 @@ package dashboard
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -412,8 +413,21 @@ func (m Model) reload() tea.Cmd {
 	return tea.Batch(m.loadWorktreesCmd(false), m.treeCmd())
 }
 
+// appendOutput splits an incoming entry on its newlines so every stored line
+// is exactly one rendered row: outputBody's window (offset + OutputLines)
+// counts slice entries, and an entry carrying embedded newlines — a hook or
+// git failure message stored verbatim — would otherwise occupy several rows
+// under the guise of one, growing the panel past its budget. A bare \r is
+// dropped rather than kept: left in place it would move the terminal cursor
+// to column 0 mid-row and corrupt whatever is drawn after it.
 func (m Model) appendOutput(msg OutputLineMsg) Model {
-	m.outputLines = append(append([]string(nil), m.outputLines...), msg.Text)
+	m.outputLines = append(append([]string(nil), m.outputLines...), splitOutputLines(msg.Text)...)
 	m.outputOffset = max(len(m.outputLines)-m.layout().OutputLines, 0)
 	return m
+}
+
+func splitOutputLines(text string) []string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "")
+	return strings.Split(text, "\n")
 }

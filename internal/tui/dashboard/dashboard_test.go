@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -452,9 +453,17 @@ func TestViewNeverOverflowsTheTerminal(t *testing.T) {
 		{20, 20},
 	}
 
+	// A multi-line output entry (a hook or git error carrying embedded
+	// newlines) must not push the frame past the terminal height either: a
+	// sweep that only ever appends single-line entries cannot catch that
+	// class of bug. 60 embedded lines outgrows every output panel budget in
+	// the sizes above.
+	multiline := "hook failed:\n" + strings.Repeat("hook output line\n", 60)
+
 	for _, size := range sizes {
 		model := newTestModel(t, size[0], size[1], "a", "b", "c")
 		model = update(model, key(domain.KeyToggleOutput))
+		model = update(model, OutputLineMsg{Text: multiline})
 
 		view := model.View()
 		lines := strings.Split(view, "\n")
@@ -466,6 +475,56 @@ func TestViewNeverOverflowsTheTerminal(t *testing.T) {
 				t.Errorf("%dx%d: line %d is %d columns wide", size[0], size[1], index, width)
 			}
 		}
+	}
+}
+
+// TestMultilineOutputEntryDoesNotOverflowTheTerminal pins the exact bug
+// report: a hook or git failure message appended as one OutputLineMsg with
+// embedded newlines must not grow the frame past the terminal height. This
+// is the assertion that would have caught the original bug — renderPanel and
+// outputBody clipped by slice-entry count, not by rendered row count, so one
+// multi-line entry escaped the panel's own box and scrolled the alt screen.
+func TestMultilineOutputEntryDoesNotOverflowTheTerminal(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model = update(model, key(domain.KeyToggleOutput))
+	model = update(model, OutputLineMsg{Text: strings.Repeat("hook output line\n", 30)})
+
+	view := model.View()
+	lines := strings.Split(view, "\n")
+	if len(lines) > testHeight {
+		t.Fatalf("view is %d lines after a multi-line output entry, want at most %d", len(lines), testHeight)
+	}
+}
+
+// TestOutputPanelScrollsInternallyRatherThanGrowing pins the fix's intent:
+// once an entry is split into one row each, more entries than the panel can
+// show scroll its own window (offset + OutputLines) instead of growing the
+// frame.
+func TestOutputPanelScrollsInternallyRatherThanGrowing(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model = update(model, key(domain.KeyToggleOutput))
+
+	before := len(strings.Split(model.View(), "\n"))
+
+	for i := 0; i < 50; i++ {
+		model = update(model, OutputLineMsg{Text: fmt.Sprintf("line %d", i)})
+	}
+
+	after := len(strings.Split(model.View(), "\n"))
+	if after != before {
+		t.Errorf("frame height = %d after appending output, want it unchanged at %d", after, before)
+	}
+
+	layout := model.layout()
+	if layout.OutputLines <= 0 {
+		t.Fatal("output panel has no visible rows to assert a window over")
+	}
+	body := model.outputBody(layout, layout.Output.Width-borderWidth-paddingWidth)
+	if len(body) != layout.OutputLines {
+		t.Errorf("output body = %d rows, want exactly the panel's %d visible rows", len(body), layout.OutputLines)
+	}
+	if !strings.Contains(strings.Join(body, "\n"), "line 49") {
+		t.Error("the output panel should show a window ending at the tail of appended lines")
 	}
 }
 

@@ -63,10 +63,7 @@ func (m Model) renderPanel(params panelParams) string {
 		title = m.marks().Mark(params.TitleZone, title)
 	}
 
-	lines := append([]string{title, ""}, params.Body...)
-	if len(lines) > contentHeight {
-		lines = lines[:contentHeight]
-	}
+	lines := clipRenderedLines(append([]string{title, ""}, params.Body...), contentHeight)
 
 	box := styles.DashboardPanel.
 		Width(params.Rect.Width - borderWidth).
@@ -579,6 +576,39 @@ func helpTextWidth(rows [][2]string, screenWidth int) int {
 		widest = max(widest, helpKeyWidth+lipgloss.Width(row[1]))
 	}
 	return min(widest, screenWidth-domain.DashboardModalChrome-modalPadding)
+}
+
+// clipRenderedLines keeps the leading run of entries whose combined rendered
+// row count fits height, dropping whole entries once it does not — a panel
+// body is assembled by counting slice entries as rows, and an entry carrying
+// its own newlines (a hook or git failure embedded verbatim) breaks that
+// assumption: it renders as several rows, not one, and can push the panel's
+// box past the rect it was given and the frame past the terminal. This is
+// the invariant that keeps that from happening regardless of what a caller
+// puts in Body. Only the one entry that would overflow with nothing kept yet
+// is itself split on its newlines, so a single oversized entry still cannot
+// grow past the budget; every other entry is kept or dropped whole, so a
+// styled (ANSI) entry is never cut mid-escape.
+func clipRenderedLines(lines []string, height int) []string {
+	if height <= 0 {
+		return nil
+	}
+	kept := make([]string, 0, len(lines))
+	used := 0
+	for _, entry := range lines {
+		rows := strings.Count(entry, "\n") + 1
+		if used+rows <= height {
+			kept = append(kept, entry)
+			used += rows
+			continue
+		}
+		if used == 0 {
+			split := strings.SplitN(entry, "\n", height+1)
+			return append(kept, strings.Join(split[:height], "\n"))
+		}
+		break
+	}
+	return kept
 }
 
 // truncate clips plain text to a display width, marking the cut with an ellipsis.
