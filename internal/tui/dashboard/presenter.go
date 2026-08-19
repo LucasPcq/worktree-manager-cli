@@ -11,6 +11,7 @@ import (
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
 	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
+	syncflow "github.com/LucasPcq/wtm/internal/flow/sync"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
@@ -121,5 +122,46 @@ func (p prunePresenter) Pruned(outcome pruneflow.Outcome) error {
 		p.line(fmt.Sprintf(domain.PruneSkippedFmt, skip.Branch, rules.PruneReasonLabel(skip.Reason)))
 	}
 	p.send(prunedMsg{})
+	return nil
+}
+
+type syncPresenter struct{ presenter }
+
+// Planned is what a run that could not ask prints instead of a recap. The
+// dashboard always asks, so it never reaches this; the plan the user reads is
+// the recap of the session itself.
+func (p syncPresenter) Planned(domain.SyncPlan) {}
+
+func (p syncPresenter) Rebased(result domain.SyncResult) {
+	// A base-only refresh rebases nothing: without this line the run would report
+	// nothing at all.
+	if result.BaseTargeted {
+		p.line(fmt.Sprintf(domain.DashboardSyncBaseFmt, result.BaseBranch, rules.SyncBaseLabel(result.BaseUpdated)))
+	}
+	for _, update := range result.ParentUpdates {
+		p.line(fmt.Sprintf(domain.DashboardSyncParentFmt, update.Branch, rules.SyncParentStatusLabel(update.Status)))
+	}
+	for _, step := range result.Steps {
+		p.line(fmt.Sprintf(domain.DashboardSyncStepFmt, step.Branch, rules.SyncStepLabel(step)))
+	}
+}
+
+func (p syncPresenter) Synced(outcome syncflow.Outcome) error {
+	if outcome.Empty {
+		p.line(domain.SyncNothingToSync)
+		return nil
+	}
+	for _, step := range outcome.Result.Steps {
+		if step.Pushed {
+			p.line(fmt.Sprintf(domain.DashboardSyncPushedFmt, step.Branch))
+		}
+		// A rebase left in progress cannot be resolved from this surface, so the
+		// worktree it was left in and the two commands that end it are named — the
+		// same gesture as the privileged removal.
+		if step.KeptInProgress {
+			p.line(fmt.Sprintf(domain.SyncKeepConflictHintFmt, step.Branch, step.Path))
+		}
+	}
+	p.send(syncedMsg{})
 	return nil
 }

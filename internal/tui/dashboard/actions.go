@@ -12,6 +12,8 @@ import (
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
 	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
+	syncflow "github.com/LucasPcq/wtm/internal/flow/sync"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func (m Model) flowContext() flow.Context {
@@ -72,7 +74,7 @@ func (m Model) startClean(branch string) (Model, tea.Cmd) {
 		Context: m.flowContext(),
 		Request: cleanflow.Request{
 			Branch:     branch,
-			BaseBranch: m.params.Config.Project.Worktrees.BaseBranch,
+			BaseBranch: m.baseBranch(),
 		},
 		Prompter: prompter{
 			send:      send,
@@ -164,7 +166,7 @@ func (m Model) startPrune() (Model, tea.Cmd) {
 			Merged:     true,
 			Closed:     true,
 			Gone:       true,
-			BaseBranch: m.params.Config.Project.Worktrees.BaseBranch,
+			BaseBranch: m.baseBranch(),
 		},
 		Prompter: prompter{
 			send:  send,
@@ -179,6 +181,107 @@ func (m Model) startPrune() (Model, tea.Cmd) {
 		_, err := pruneflow.Run(params)
 		return opDoneMsg{id: id, err: err}
 	}
+}
+
+// startSync rebases the row and the chain it hangs off: replaying a worktree onto
+// a parent nobody refreshed is the stale-parent problem the run otherwise has to
+// ask about, so the gesture offers the whole ancestry, base included. Descendants
+// are left out — they are their own gesture, made from their own row. Only the
+// pre-check changes: the selection stays the user's, and nothing is deduced from
+// it inside the run.
+func (m Model) startSync(branch string) (Model, tea.Cmd) {
+	return m.runSync(runSyncParams{
+		Title:    domain.DashboardSyncRowTitle,
+		Row:      branch,
+		Precheck: m.ancestryOf(branch),
+	})
+}
+
+// startSyncAll offers every worktree, base included, and leaves the ones a cascade
+// would skip unchecked: they stay listed, with the tag saying why, one keystroke
+// from being included.
+func (m Model) startSyncAll() (Model, tea.Cmd) {
+	return m.runSync(runSyncParams{
+		Title:    domain.DashboardSyncTitle,
+		Precheck: m.syncReadyBranches(),
+	})
+}
+
+// startRefreshBase fetches the row it was opened on and nothing else. It names
+// that branch rather than the configured base: a context menu acts on the line it
+// hangs off, even on a main worktree parked on some other branch. The selection is
+// fixed and holds a single root, so the flow finds no rebase step in it and asks
+// neither about conflicts nor about parents.
+func (m Model) startRefreshBase(branch string) (Model, tea.Cmd) {
+	return m.runSync(runSyncParams{
+		Title:    domain.DashboardRefreshBaseTitle,
+		Row:      branch,
+		Base:     branch,
+		Branches: []string{branch},
+	})
+}
+
+type runSyncParams struct {
+	Title string
+	// Row is the worktree the gesture was made on, when it was made on one:
+	// nothing may rebase a worktree another run is holding.
+	Row string
+	// Base overrides the branch the cascade treats as its root, for a gesture made
+	// on that root itself. Empty means the configured base.
+	Base string
+	// Branches fixes the selection; Precheck only says what arrives checked.
+	Branches []string
+	Precheck []string
+}
+
+func (m Model) runSync(params runSyncParams) (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(params.Row); refused {
+		return m.refuse(reason), nil
+	}
+	m, id := m.beginOp(beginParams{Operation: syncflow.Operation()})
+	send := m.sender()
+
+	flowParams := syncflow.Params{
+		Context: m.flowContext(),
+		Request: syncflow.Request{
+			Branches:   params.Branches,
+			Precheck:   params.Precheck,
+			BaseBranch: m.syncBase(params.Base),
+		},
+		Prompter: prompter{
+			send:  send,
+			title: params.Title,
+			shape: modalStepper,
+			opID:  id,
+		},
+		Presenter: syncPresenter{presenter{send: send}},
+	}
+
+	return m, func() tea.Msg {
+		_, err := syncflow.Run(flowParams)
+		return opDoneMsg{id: id, err: err}
+	}
+}
+
+func (m Model) baseBranch() string { return m.params.Config.Project.Worktrees.BaseBranch }
+
+func (m Model) syncBase(override string) string {
+	if override != "" {
+		return override
+	}
+	return m.baseBranch()
+}
+
+func (m Model) ancestryOf(branch string) []string {
+	return rules.SyncAncestry(rules.SyncAncestryParams{Nodes: m.worktreeNodes(), Leaf: branch})
+}
+
+func (m Model) syncReadyBranches() []string { return rules.SyncReadyBranches(m.statuses) }
+
+// worktreeNodes is the forest the sync rules read, built from the two things the
+// model already holds: a re-read from disk on a keystroke would buy nothing.
+func (m Model) worktreeNodes() []domain.WorktreeNode {
+	return rules.WorktreeNodes(rules.WorktreeNodesParams{Statuses: m.statuses, Parents: m.parents})
 }
 
 // busyReason states why nothing may act on a worktree right now: a run already
@@ -233,7 +336,10 @@ func (m Model) beginOp(params beginParams) (Model, int) {
 func (m Model) finishOp(msg opDoneMsg) Model {
 	op, _ := m.ops.byID(msg.id)
 	m.ops = m.ops.end(msg.id)
-	if msg.err == nil || errors.Is(msg.err, domain.ErrUserAborted) {
+	// ErrAborted is a run that already reported its own failure — a cascade whose
+	// steps each said what became of them. A second, redundant line under them
+	// would name nothing the panel does not already hold.
+	if msg.err == nil || errors.Is(msg.err, domain.ErrUserAborted) || errors.Is(msg.err, domain.ErrAborted) {
 		return m
 	}
 
@@ -268,6 +374,8 @@ func (m Model) applyFlow(msg tea.Msg) (Model, tea.Cmd) {
 	case reparentedMsg:
 		return m, m.reload()
 	case prunedMsg:
+		return m, m.reload()
+	case syncedMsg:
 		return m, m.reload()
 	}
 	return m, nil

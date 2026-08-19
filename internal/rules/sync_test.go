@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -218,5 +219,168 @@ func TestParentFlagsDecision(t *testing.T) {
 				t.Fatalf("ParentFlagsDecision(%+v) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSyncSelectsOnlyBase(t *testing.T) {
+	tests := []struct {
+		name     string
+		selected []string
+		want     bool
+	}{
+		{name: "every worktree", selected: nil, want: false},
+		{name: "the base alone", selected: []string{"main"}, want: true},
+		{name: "the base and a worktree", selected: []string{"main", "feat-a"}, want: false},
+		{name: "worktrees only", selected: []string{"feat-a"}, want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SyncSelectsOnlyBase(SyncIncludesBaseParams{Selected: tc.selected, BaseBranch: "main"})
+			if got != tc.want {
+				t.Fatalf("SyncSelectsOnlyBase(%v) = %v, want %v", tc.selected, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSyncStatusLabelNamesEveryOutcome(t *testing.T) {
+	tests := []struct {
+		status domain.SyncStepStatus
+		want   string
+	}{
+		{domain.SyncStatusSynced, domain.SyncLabelSynced},
+		{domain.SyncStatusUpToDate, domain.SyncLabelUpToDate},
+		{domain.SyncStatusSkippedDirty, domain.SyncLabelSkippedDirty},
+		{domain.SyncStatusSkippedAncestor, domain.SyncLabelSkippedAncestor},
+		{domain.SyncStatusDiverged, domain.SyncLabelDiverged},
+		{domain.SyncStatusRebaseInProgress, domain.SyncLabelRebaseInProgress},
+		{domain.SyncStatusConflict, domain.SyncLabelConflict},
+		{domain.SyncStatusUnknownParent, domain.SyncLabelUnknownParent},
+		{domain.SyncStatusError, domain.SyncLabelError},
+	}
+
+	for _, tc := range tests {
+		if got := SyncStatusLabel(tc.status); got != tc.want {
+			t.Errorf("SyncStatusLabel(%s) = %q, want %q", tc.status, got, tc.want)
+		}
+	}
+}
+
+// An unknown status must still read as something: a blank line in a run recap
+// hides a step that did happen.
+func TestSyncStatusLabelFallsBackToTheStatusItself(t *testing.T) {
+	if got := SyncStatusLabel(domain.SyncStepStatus("weather")); got != "weather" {
+		t.Errorf("SyncStatusLabel(weather) = %q, want the status itself", got)
+	}
+}
+
+func TestSyncBaseAndParentLabels(t *testing.T) {
+	if got := SyncBaseLabel(true); got != domain.SyncBaseLabelFastForwarded {
+		t.Errorf("SyncBaseLabel(true) = %q", got)
+	}
+	if got := SyncBaseLabel(false); got != domain.SyncBaseLabelUpToDate {
+		t.Errorf("SyncBaseLabel(false) = %q", got)
+	}
+	if got := SyncParentStatusLabel(domain.ParentDiverged); got != domain.SyncParentLabelDiverged {
+		t.Errorf("SyncParentStatusLabel(diverged) = %q", got)
+	}
+}
+
+// --all is an answer, not an offer: it covers every worktree, including the ones
+// the cascade will skip, so the run reports why each was skipped instead of
+// silently leaving them out. Only the base is excluded — it is fast-forwarded,
+// never rebased.
+func TestSyncAllBranchesCoverEveryWorktreeButTheBase(t *testing.T) {
+	statuses := []domain.WorktreeStatus{
+		{Branch: "main", IsParent: true},
+		{Branch: "clean"},
+		{Branch: "dirty", IsDirty: true},
+		{Branch: "stuck", RebaseInProgress: true},
+	}
+
+	got := SyncAllBranches(statuses)
+
+	if strings.Join(got, ",") != "clean,dirty,stuck" {
+		t.Errorf("SyncAllBranches = %v, want [clean dirty stuck]", got)
+	}
+}
+
+// A repository whose only worktree is the base has nothing to rebase, and says
+// so with an empty list rather than with nil, which the sync flow reads as
+// "the selection was never made".
+func TestSyncAllBranchesIsEmptyWhenOnlyTheBaseExists(t *testing.T) {
+	got := SyncAllBranches([]domain.WorktreeStatus{{Branch: "main", IsParent: true}})
+
+	if got == nil || len(got) != 0 {
+		t.Errorf("SyncAllBranches = %#v, want an empty list, never nil", got)
+	}
+}
+
+// A surface offering "sync everything" pre-checks what the run can act on: the
+// base is in — it gets fast-forwarded, and every chain below it wants it fresh —
+// while what the cascade would skip stays listed and unchecked rather than
+// silently dropped.
+func TestSyncReadyBranchesKeepTheBaseAndDropWhatWouldBeSkipped(t *testing.T) {
+	statuses := []domain.WorktreeStatus{
+		{Branch: "main", IsParent: true},
+		{Branch: "clean"},
+		{Branch: "dirty", IsDirty: true},
+		{Branch: "stuck", RebaseInProgress: true},
+	}
+
+	got := SyncReadyBranches(statuses)
+
+	if len(got) != 2 || got[0] != "main" || got[1] != "clean" {
+		t.Errorf("SyncReadyBranches = %v, want [main clean]", got)
+	}
+}
+
+func TestWorktreeNodesPairsEachStatusWithItsRecordedParent(t *testing.T) {
+	nodes := WorktreeNodes(WorktreeNodesParams{
+		Statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}, {Branch: "a", Path: "/wt/a"}},
+		Parents:  map[string]string{"a": "main"},
+	})
+
+	if len(nodes) != 2 {
+		t.Fatalf("nodes = %+v, want one per status", nodes)
+	}
+	if !nodes[0].IsMain || nodes[0].SourceBranch != "" {
+		t.Errorf("root = %+v, want the base carrying no parent", nodes[0])
+	}
+	if nodes[1].SourceBranch != "main" || nodes[1].Path != "/wt/a" {
+		t.Errorf("node = %+v, want the recorded parent and path carried over", nodes[1])
+	}
+}
+
+// "failed" alone sends the user looking for a cause the run already knows.
+func TestSyncStepLabelCarriesTheCauseOfAFailure(t *testing.T) {
+	label := SyncStepLabel(domain.SyncStepResult{
+		Status: domain.SyncStatusError,
+		Detail: "could not read HEAD",
+	})
+
+	if !strings.Contains(label, "could not read HEAD") {
+		t.Errorf("SyncStepLabel = %q, want the cause named", label)
+	}
+}
+
+func TestSyncStepLabelFallsBackWhenAFailureCarriesNoCause(t *testing.T) {
+	if got := SyncStepLabel(domain.SyncStepResult{Status: domain.SyncStatusError}); got != domain.SyncLabelError {
+		t.Errorf("SyncStepLabel = %q, want the bare failure label", got)
+	}
+}
+
+// The two conflict modes leave the worktree in opposite states: one has a rebase
+// to finish, the other has nothing to clean up.
+func TestSyncStepLabelTellsTheTwoConflictModesApart(t *testing.T) {
+	kept := SyncStepLabel(domain.SyncStepResult{Status: domain.SyncStatusConflict, KeptInProgress: true})
+	aborted := SyncStepLabel(domain.SyncStepResult{Status: domain.SyncStatusConflict})
+
+	if kept == aborted {
+		t.Fatalf("both conflict modes read %q, want them told apart", kept)
+	}
+	if got := SyncStepLabel(domain.SyncStepResult{Status: domain.SyncStatusSynced}); got != domain.SyncLabelSynced {
+		t.Errorf("SyncStepLabel(synced) = %q, want the plain status label", got)
 	}
 }

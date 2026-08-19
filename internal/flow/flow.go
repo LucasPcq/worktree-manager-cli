@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -191,6 +192,26 @@ type ConfirmParams struct {
 	Description string
 	Warning     string
 	DefaultYes  bool
+	// YesLabel and NoLabel name the two outcomes instead of answering yes or no.
+	// A decision whose consequences differ (keeping local vs force-pushing) is
+	// asked this way; empty labels keep the plain confirmation both surfaces
+	// already render.
+	YesLabel string
+	NoLabel  string
+}
+
+// ConfirmDescription folds Warning into Description, for a surface whose
+// confirmation widget has no separate slot for it (a labelled select has none;
+// a plain Yes/No renders Warning on its own). Both surfaces read it, so neither
+// grows its own concatenation.
+func ConfirmDescription(params ConfirmParams) string {
+	if params.Warning == "" {
+		return params.Description
+	}
+	if params.Description == "" {
+		return params.Warning
+	}
+	return params.Description + "\n" + params.Warning
 }
 
 type Prompter interface {
@@ -278,4 +299,18 @@ func KeepBranches(candidates []domain.BranchCandidate, exclude []string) []domai
 		kept = append(kept, candidate)
 	}
 	return kept
+}
+
+// SummarizeSet renders a set answer for a breadcrumb: the names, capped so a
+// large selection does not overflow the line.
+func SummarizeSet(answer Answer) string {
+	values := answer.Values
+	if len(values) == 0 {
+		return domain.SummaryNone
+	}
+	const maxNames = 5
+	if len(values) <= maxNames {
+		return strings.Join(values, ", ")
+	}
+	return strings.Join(values[:maxNames], ", ") + fmt.Sprintf(" +%d", len(values)-maxNames)
 }

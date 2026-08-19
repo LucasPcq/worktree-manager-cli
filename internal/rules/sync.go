@@ -27,6 +27,21 @@ func SyncIncludesBase(params SyncIncludesBaseParams) bool {
 	return false
 }
 
+// SyncSelectsOnlyBase reports that a selection asks for nothing but a base
+// refresh, so the cascade has no rebase step — decidable without planning it. A
+// nil (or empty) selection means "every worktree", which is never base-only.
+func SyncSelectsOnlyBase(params SyncIncludesBaseParams) bool {
+	if len(params.Selected) == 0 {
+		return false
+	}
+	for _, branch := range params.Selected {
+		if branch != params.BaseBranch {
+			return false
+		}
+	}
+	return true
+}
+
 // BaseIsTargetParams holds inputs for BaseIsTarget.
 type BaseIsTargetParams struct {
 	Steps      []domain.SyncStep
@@ -177,4 +192,134 @@ func CommitCountLabel(n int) string {
 		return "1 commit"
 	}
 	return fmt.Sprintf("%d commits", n)
+}
+
+// SyncStatusLabel says in a few words what became of one step, for a surface
+// that has one line per branch rather than a paragraph. An unrecognized status
+// reads as itself: a blank line would hide a step that did happen.
+func SyncStatusLabel(status domain.SyncStepStatus) string {
+	switch status {
+	case domain.SyncStatusSynced:
+		return domain.SyncLabelSynced
+	case domain.SyncStatusUpToDate:
+		return domain.SyncLabelUpToDate
+	case domain.SyncStatusSkippedDirty:
+		return domain.SyncLabelSkippedDirty
+	case domain.SyncStatusSkippedAncestor:
+		return domain.SyncLabelSkippedAncestor
+	case domain.SyncStatusDiverged:
+		return domain.SyncLabelDiverged
+	case domain.SyncStatusRebaseInProgress:
+		return domain.SyncLabelRebaseInProgress
+	case domain.SyncStatusConflict:
+		return domain.SyncLabelConflict
+	case domain.SyncStatusUnknownParent:
+		return domain.SyncLabelUnknownParent
+	case domain.SyncStatusError:
+		return domain.SyncLabelError
+	default:
+		return string(status)
+	}
+}
+
+// SyncStepLabel is SyncStatusLabel plus what the status alone cannot carry: the
+// cause of a failure, and which of the two conflict modes ran — a run that says
+// only "conflict" leaves the user unsure whether a worktree is still mid-rebase.
+func SyncStepLabel(step domain.SyncStepResult) string {
+	if step.Status == domain.SyncStatusError && step.Detail != "" {
+		return fmt.Sprintf(domain.SyncLabelErrorFmt, step.Detail)
+	}
+	if step.Status != domain.SyncStatusConflict {
+		return SyncStatusLabel(step.Status)
+	}
+	if step.KeptInProgress {
+		return domain.SyncLabelConflictKept
+	}
+	return domain.SyncLabelConflictAborted
+}
+
+// SyncBaseLabel says what became of the base branch a cascade fetched.
+func SyncBaseLabel(updated bool) string {
+	if updated {
+		return domain.SyncBaseLabelFastForwarded
+	}
+	return domain.SyncBaseLabelUpToDate
+}
+
+// SyncParentStatusLabel says what became of a parent no step covered.
+func SyncParentStatusLabel(status domain.ParentStatus) string {
+	switch status {
+	case domain.ParentFastForwarded:
+		return domain.SyncParentLabelFastForwarded
+	case domain.ParentBehind:
+		return domain.SyncParentLabelBehind
+	case domain.ParentDiverged:
+		return domain.SyncParentLabelDiverged
+	case domain.ParentFFFailed:
+		return domain.SyncParentLabelFFFailed
+	default:
+		return string(status)
+	}
+}
+
+// SyncAllBranches lists what --all covers: every worktree but the base, which is
+// fast-forwarded from its remote rather than rebased. It excludes nothing else —
+// a dirty or half-rebased worktree stays in so the run reports why it skipped it.
+func SyncAllBranches(statuses []domain.WorktreeStatus) []string {
+	branches := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		if status.IsParent {
+			continue
+		}
+		branches = append(branches, status.Branch)
+	}
+	return branches
+}
+
+// SyncReadyBranches lists the worktrees a cascade can act on today: the base is
+// among them — it is fast-forwarded from its remote, not rebased, and every chain
+// below it wants it fresh — while a dirty or half-rebased worktree is left out,
+// base included, because the run would skip it anyway. It is what a surface
+// offering "sync everything" pre-checks; the rest stays listed, and checkable,
+// rather than dropped. It is deliberately narrower than SyncAllBranches: a
+// pre-check is an offer, --all is an answer.
+func SyncReadyBranches(statuses []domain.WorktreeStatus) []string {
+	branches := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		if status.IsDirty || status.RebaseInProgress {
+			continue
+		}
+		branches = append(branches, status.Branch)
+	}
+	return branches
+}
+
+// WorktreeNodesParams holds inputs for WorktreeNodes.
+type WorktreeNodesParams struct {
+	Statuses []domain.WorktreeStatus
+	// Parents maps a branch to the branch it was created from.
+	Parents map[string]string
+}
+
+// WorktreeNodes pairs each worktree with its recorded parent: the forest the
+// sync and reparent rules read. A surface that already holds both builds it from
+// them rather than reading the repository again.
+func WorktreeNodes(params WorktreeNodesParams) []domain.WorktreeNode {
+	nodes := make([]domain.WorktreeNode, 0, len(params.Statuses))
+	for _, status := range params.Statuses {
+		// The root hangs off nothing: leftover metadata naming a parent for it would
+		// otherwise close a loop through the whole forest.
+		source := ""
+		if !status.IsParent {
+			source = params.Parents[status.Branch]
+		}
+		nodes = append(nodes, domain.WorktreeNode{
+			Branch:           status.Branch,
+			Path:             status.Path,
+			SourceBranch:     source,
+			IsMain:           status.IsParent,
+			RebaseInProgress: status.RebaseInProgress,
+		})
+	}
+	return nodes
 }

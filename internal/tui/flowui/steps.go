@@ -145,8 +145,10 @@ func (p *plan) branchStep(step flow.Step) (components.Step, error) {
 		Summary:    summaryFor(step),
 	}
 	if step.Refresh != nil {
-		p.initCmd = branchrefresh.CmdFunc(step.Refresh)
-		p.loadingText = domain.LoadingBranchesText
+		p.initCmd = tea.Batch(p.initCmd, branchrefresh.CmdFunc(step.Refresh))
+		if p.loadingText == "" {
+			p.loadingText = domain.LoadingBranchesText
+		}
 	}
 	return built, nil
 }
@@ -216,6 +218,16 @@ func (p *plan) loadedRecapStep(step flow.Step) components.Step {
 		p.loads = map[int]flow.Step{}
 	}
 	p.loads[idx] = step
+
+	// The wizard runs OnEnter on every step it advances to, but never on the one it
+	// starts on, so a load landing first is fired from the init command instead —
+	// otherwise the run would sit on the placeholder for ever.
+	if idx == 0 {
+		p.initCmd = tea.Batch(p.initCmd, func() tea.Msg {
+			return loadRequestMsg{idx: idx, answers: p.known()}
+		})
+		p.loadingText = step.LoadingMessage
+	}
 
 	return components.Step{
 		Name:    step.Label,

@@ -162,8 +162,8 @@ func TestAVirtualNodeSelectsNothingAndOffersNothing(t *testing.T) {
 }
 
 // The main worktree has no recorded parent to change and cannot be deleted, so
-// it carries no actions on either tab.
-func TestTheMainWorktreeOffersNoActionsFromTheTree(t *testing.T) {
+// on either tab its row offers nothing but its own refresh.
+func TestTheMainWorktreeOffersOnlyTheBaseRefreshFromTheTree(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight)
 	model = update(model, worktreesMsg{
 		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}},
@@ -172,8 +172,9 @@ func TestTheMainWorktreeOffersNoActionsFromTheTree(t *testing.T) {
 	model, _ = model.selectTab(tabTree)
 	model = update(model, treeMsg{rows: rules.FlattenForest(sampleForest())})
 
-	if items := model.menuItems(); len(items) != 0 {
-		t.Errorf("menu = %+v, want nothing offered on the main worktree", items)
+	items := model.menuItems()
+	if len(items) != 1 || items[0].action != menuRefreshBase {
+		t.Errorf("menu = %+v, want the base refresh alone on the main worktree", items)
 	}
 }
 

@@ -501,3 +501,35 @@ func TestASkippedStepIsReconsideredOnTheWayForward(t *testing.T) {
 		t.Errorf("index = %d, want the reparent question asked now that it applies", mo.index)
 	}
 }
+
+// A session that reduces to a single loaded step must still load: the modal
+// enters its first step like any other, rather than starting on it.
+func TestTheModalLoadsAStepThatComesFirst(t *testing.T) {
+	session := flow.Session{Steps: []flow.Step{{
+		Kind: flow.StepRecap, Key: "confirm", Label: "Confirm", Title: "Confirm",
+		LoadingMessage: "Computing…",
+		Load: func(flow.Answers) (flow.StepContent, error) {
+			return flow.StepContent{
+				Description: "loaded body",
+				Options:     []flow.Option{{Label: "Yes, do it", Value: "go"}},
+			}, nil
+		},
+	}}}
+
+	reply := make(chan promptReply, 1)
+	mo, cmd := newModal(modalParams{Shape: modalStepper, Session: session, Reply: reply, Width: testWidth, Height: testHeight})
+	if cmd == nil {
+		t.Fatal("entering a loaded step must fire its load")
+	}
+
+	loaded, ok := cmd().(modalLoadedMsg)
+	if !ok {
+		t.Fatalf("the modal must ask for its content, got %T", cmd())
+	}
+	mo, _ = mo.update(loaded)
+
+	body := strings.Join(mo.body(noMarks{}), "\n")
+	if !strings.Contains(body, "loaded body") {
+		t.Errorf("the modal must draw the loaded content:\n%s", body)
+	}
+}

@@ -511,11 +511,21 @@ const (
 	// interactive picker's confirmation step and the non-picker confirm prompt.
 	SyncConfirmPrompt = "Rebase %d worktree(s) onto their parents?"
 
-	// SyncKeepConflictWarning explains the consequence of keeping conflicting
-	// rebases in progress; shown on the sync confirmation when --keep-conflict is
-	// active.
-	SyncKeepConflictWarning = "On conflict the rebase is left in progress in its worktree (not aborted). " +
-		"Several worktrees may be left mid-rebase; resolve each with git rebase --continue."
+	// SyncConfirmBaseFmt replaces it when the run rebases nothing: counting the
+	// worktrees of a base-only refresh announces a cascade that will not happen.
+	SyncConfirmBaseFmt = "Fetch %s and fast-forward it to its remote?"
+
+	// SyncPlanHeader titles the cascade preview. It carries no branch: the plan's
+	// own lines name every branch involved, and a header that gains and loses a
+	// suffix reads as two different sections.
+	SyncPlanHeader = "Sync plan"
+
+	// SyncKeepConflictWarning is the consequence line on the sync confirmation when
+	// conflicts are kept. It breaks itself in two: the surfaces truncate a row that
+	// does not fit rather than wrapping it, so a single long line loses its tail to
+	// an ellipsis — and the tail is the part naming the way out.
+	SyncKeepConflictWarning = "⚠ Conflicting rebases are left in their worktree.\n" +
+		"  Resolve each with git rebase --continue."
 
 	// SyncPushPrompt is the push confirmation question shown after a successful
 	// cascade, formatted with the number of pushable branches.
@@ -525,6 +535,16 @@ const (
 	// No or Esc leaves the rebased branches local.
 	SyncPushWarning = "Force-pushes the rebased branches with --force-with-lease. " +
 		"No or Esc skips the push — branches stay local."
+
+	// SyncPushOption and SyncKeepLocalOption name the two outcomes of the push
+	// question rather than answering it yes or no: force-pushing and keeping the
+	// branches local read nothing alike.
+	SyncPushOption      = "Push to origin"
+	SyncKeepLocalOption = "Keep local"
+
+	// SyncRebasing and SyncPushing head the two phases of a cascade.
+	SyncRebasing = "Rebasing worktrees…"
+	SyncPushing  = "Pushing to origin…"
 
 	// SyncPlanComputing is the loading message shown while the sync plan preview is
 	// computed asynchronously on entering the confirmation step.
@@ -539,6 +559,81 @@ const (
 	// cascade refreshes them.
 	SyncParentDescription = "These parents have no step of their own, so nothing else refreshes them.\n" +
 		"Choose whether to bring them up to date first."
+
+	SyncWizardErrLabel = "sync wizard"
+	// SyncSelectionTitle heads the worktree multi-select; SyncConflictTitle and
+	// SyncParentsTitle head the two decisions that follow.
+	SyncSelectionTitle   = "Select worktrees to sync"
+	SyncConflictTitle    = "On conflict"
+	SyncParentsTitle     = "Parent branches"
+	SyncConfirmTitle     = "Confirm"
+	SyncSelectAtLeastOne = "select at least one worktree"
+	// SyncConflictNormal and SyncConflictKeep stay short enough to sit on one line
+	// in a narrow terminal: an option that wraps loses its shape, and what each one
+	// entails is spelled out by SyncConflictIntro right above them.
+	SyncConflictNormal = "Abort the rebase"
+	SyncConflictKeep   = "Keep the conflict"
+	SyncConflictIntro  = "Choose what happens when a rebase hits a conflict.\n" +
+		"Aborting rewinds it and leaves the worktree clean.\n" +
+		"Keeping it leaves the rebase there for you to resolve."
+	// SyncCounterFmt names no branch: each worktree is rebased onto its own
+	// recorded parent, which the base only coincides with at the first level.
+	SyncCounterFmt            = "About to sync %d worktree(s) onto their parent."
+	SyncConflictNormalSummary = "sync normally"
+	SyncConflictKeepSummary   = "keep conflicts in progress"
+	SyncParentFFOption        = "Fast-forward them first"
+	SyncParentKeepOption      = "Leave them as they are"
+	SyncParentFFSummary       = "fast-forward"
+	SyncParentKeepSummary     = "leave as they are"
+	SyncParentLineFmt         = "%s is %s behind %s%s — %s rebase onto it."
+	SyncConfirmOption         = "Yes, sync"
+	SyncNothingToSync         = "No worktrees to sync."
+	// SyncNoRebaseStep and SyncNoStaleParent are why a decision was never put to
+	// the user: nothing is rebased, or no parent is behind its remote.
+	SyncNoRebaseStep  = "nothing to rebase"
+	SyncNoStaleParent = "no parent behind its remote"
+	// SyncDryRunNoQuestion is why a preview asks neither of the two decisions that
+	// only matter once a rebase actually runs.
+	SyncDryRunNoQuestion = "dry run — nothing is rebased"
+	// SyncSelectionRequiredFmt refuses a run that can neither pick nor be told what
+	// to sync. Verbs: --all, --yes, --output, json.
+	SyncSelectionRequiredFmt = "specify one or more worktrees, or pass --%s (no interactive picker under --%s, without a terminal, or in --%s %s mode)"
+	SyncNeedsTerminal        = "sync needs a terminal to confirm the cascade; pass --yes to run unattended or --dry-run to preview"
+	// SyncKeepConflictHintFmt tells the user where a kept conflict was left.
+	// Verbs: branch, worktree path.
+	SyncKeepConflictHintFmt = "%s left mid-rebase in %s — run `git rebase --continue` or `git rebase --abort` there"
+	// SyncTag* name what the cascade would skip.
+	SyncTagDirty    = "dirty"
+	SyncTagRebasing = "rebasing"
+	// SyncLabel* say in a few words what became of one branch, for a surface with
+	// one line per step rather than a paragraph (rules.SyncStatusLabel).
+	SyncLabelSynced           = "rebased onto its parent"
+	SyncLabelUpToDate         = "already up to date"
+	SyncLabelSkippedDirty     = "skipped — uncommitted changes"
+	SyncLabelSkippedAncestor  = "skipped — an ancestor was not synced"
+	SyncLabelDiverged         = "skipped — diverged from origin"
+	SyncLabelRebaseInProgress = "skipped — a rebase is already in progress"
+	SyncLabelConflict         = "conflict"
+	SyncLabelUnknownParent    = "skipped — no recorded parent"
+	SyncLabelError            = "failed"
+	// SyncLabelConflictKept, SyncLabelConflictAborted and SyncLabelErrorFmt say what
+	// the bare status cannot: which of the two conflict modes ran — and so whether
+	// there is anything left to clean up — and why a step failed (cause).
+	SyncLabelConflictKept    = "conflict — rebase left in progress"
+	SyncLabelConflictAborted = "conflict — rebase aborted, worktree left clean"
+	SyncLabelErrorFmt        = "failed — %s"
+	// SyncBaseLabel* and SyncParentLabel* do the same for the two branches a
+	// cascade moves without rebasing them (rules.SyncBaseLabel,
+	// rules.SyncParentStatusLabel).
+	SyncBaseLabelFastForwarded   = "fast-forwarded from origin"
+	SyncBaseLabelUpToDate        = "already up to date"
+	SyncParentLabelFastForwarded = "fast-forwarded from origin"
+	SyncParentLabelBehind        = "left behind origin"
+	SyncParentLabelDiverged      = "diverged from origin — left untouched"
+	SyncParentLabelFFFailed      = "could not be fast-forwarded"
+	// SyncPlanFailedFmt heads the recap of a cascade that could not be planned
+	// (e.g. a cycle in the parent chain).
+	SyncPlanFailedFmt = "Failed to build sync plan: %w"
 
 	// Source-reconciliation and env-fallback prompts shared by the create and
 	// extract flows — used both by the in-wizard confirmation steps and the
@@ -828,6 +923,7 @@ const (
 	OpKindClean    = "clean"
 	OpKindReparent = "reparent"
 	OpKindPrune    = "prune"
+	OpKindSync     = "sync"
 
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"
@@ -968,6 +1064,18 @@ const (
 	// removes nothing.
 	DashboardMenuPrune  = "Prune finished worktrees"
 	DashboardMenuDelete = "Delete worktree"
+	// DashboardMenuSync leads the row menu: the Tree tab is where a worktree whose
+	// parent moved is flagged, so it is where the rebase has to be reachable from.
+	// It arrives with the row and its descendants checked; the selection stays the
+	// user's to change.
+	DashboardMenuSync = "Sync this worktree"
+	// DashboardMenuRefreshBase is the only entry the base row offers: it hangs off
+	// nothing, so there is no rebase to run on it — only its own fast-forward.
+	DashboardMenuRefreshBase = "Refresh base branch"
+	// DashboardMenuSyncAll rebases every worktree at once. It arrives with the ones
+	// a cascade would skip left unchecked — they stay listed, with the tag saying
+	// why.
+	DashboardMenuSyncAll = "Sync worktrees"
 	// DashboardMenuEmpty stands in for the actions of a worktree that has none.
 	DashboardMenuEmpty = "No actions available"
 	// DashboardMenuChrome is what the menu box spends on its borders and padding.
@@ -978,6 +1086,18 @@ const (
 	DashboardReparentTitle      = "Change parent"
 	DashboardReparentBatchTitle = "Reparent worktrees"
 	DashboardPruneTitle         = "Prune finished worktrees"
+	DashboardSyncTitle          = "Sync worktrees"
+	// DashboardSyncRowTitle heads the same run started from a row: a modal that
+	// renamed the entry the user just picked reads as a different action.
+	DashboardSyncRowTitle     = "Sync this worktree"
+	DashboardRefreshBaseTitle = "Refresh base branch"
+	// DashboardSync*Fmt report a finished cascade in the output panel, one line per
+	// branch it touched. Verbs: branch, then what became of it.
+	DashboardSyncStepFmt   = "%s — %s"
+	DashboardSyncParentFmt = "%s (parent) — %s"
+	DashboardSyncBaseFmt   = "%s (base) — %s"
+	// DashboardSyncPushedFmt reports a branch the run published (branch).
+	DashboardSyncPushedFmt = "↑ %s pushed to origin"
 	// DashboardActionsLabel is the header button that opens the global menu, and
 	// DashboardActionsTitle heads that menu. KeyActions is its keyboard way in.
 	DashboardActionsLabel = "⋯ Actions"

@@ -269,12 +269,15 @@ func lineIndex(lines []string, needle string) int {
 	return -1
 }
 
-func TestTheParentWorktreeIsOfferedNothingToDo(t *testing.T) {
+// The base has no parent to be moved to and cannot be deleted, so the only thing
+// its row offers is catching up with its own remote.
+func TestTheParentWorktreeIsOfferedOnlyItsOwnRefresh(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "main", "feature/x")
 	model.statuses[0] = domain.WorktreeStatus{Branch: "main", Path: "/tmp/main", IsParent: true}
 
-	if items := model.menuItems(); len(items) != 0 {
-		t.Fatalf("items = %+v, want none: a removal that could never apply is not an entry", items)
+	items := model.menuItems()
+	if len(items) != 1 || items[0].action != menuRefreshBase {
+		t.Fatalf("items = %+v, want the base refresh alone: nothing else could ever apply", items)
 	}
 
 	model = update(model, key(domain.KeyMenu))
@@ -283,13 +286,16 @@ func TestTheParentWorktreeIsOfferedNothingToDo(t *testing.T) {
 	if !strings.Contains(box, "main") {
 		t.Error("the menu still names the worktree it was opened on")
 	}
-	if !strings.Contains(box, domain.DashboardMenuEmpty) {
-		t.Errorf("menu = %q, want it to say there is nothing to do rather than show a dead entry", box)
+	if !strings.Contains(box, domain.DashboardMenuRefreshBase) {
+		t.Errorf("menu = %q, want the one action it does offer", box)
 	}
 
 	model, cmd := updateCmd(model, namedKey(13))
-	if cmd != nil || len(model.ops.running) != 0 {
-		t.Errorf("running = %+v, want enter on an empty menu to start nothing", model.ops.running)
+	if cmd == nil || len(model.ops.running) != 1 {
+		t.Fatalf("running = %+v, want enter to start the refresh", model.ops.running)
+	}
+	if model.ops.running[0].kind != domain.OpKindSync {
+		t.Errorf("kind = %q, want the refresh run through the sync flow", model.ops.running[0].kind)
 	}
 }
 

@@ -29,13 +29,38 @@ func New(params Params) Prompter { return Prompter{params: params} }
 func (Prompter) Interactive() bool { return true }
 
 func (Prompter) Confirm(params flow.ConfirmParams) (bool, error) {
-	return components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
+	if params.YesLabel == "" {
+		return components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
+			Title:       params.Title,
+			Description: params.Description,
+			Warning:     params.Warning,
+			DefaultYes:  params.DefaultYes,
+		}))
+	}
+	choice, err := components.RunStandaloneSelect(components.NewSelectList(components.NewSelectListParams{
 		Title:       params.Title,
-		Description: params.Description,
-		Warning:     params.Warning,
-		DefaultYes:  params.DefaultYes,
+		Description: flow.ConfirmDescription(params),
+		Items:       confirmItems(params),
 	}))
+	return err == nil && choice == confirmYesValue, err
 }
+
+// confirmItems leads with the outcome that changes nothing unless the caller
+// asked for the opposite: a decision with a destructive side is never the
+// highlighted default.
+func confirmItems(params flow.ConfirmParams) []components.SelectItem {
+	yes := components.SelectItem{Label: params.YesLabel, Value: confirmYesValue}
+	no := components.SelectItem{Label: params.NoLabel, Value: confirmNoValue}
+	if params.DefaultYes {
+		return []components.SelectItem{yes, {Separator: true}, no}
+	}
+	return []components.SelectItem{no, {Separator: true}, yes}
+}
+
+const (
+	confirmYesValue = "yes"
+	confirmNoValue  = "no"
+)
 
 func (p Prompter) Ask(session flow.Session) (flow.Answers, error) {
 	if p.params.Stderr {

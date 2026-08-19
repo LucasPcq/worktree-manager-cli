@@ -68,44 +68,6 @@ func TestFormatSyncResult_KeptConflictShowsFooter(t *testing.T) {
 	}
 }
 
-func TestSprintSyncPlan_EmptyPlan(t *testing.T) {
-	if got := SprintSyncPlan(domain.SyncPlan{BaseBranch: "main"}); got != "" {
-		t.Fatalf("empty plan should render empty, got %q", got)
-	}
-}
-
-func TestSprintSyncPlan_ListsStepsPlain(t *testing.T) {
-	plan := domain.SyncPlan{
-		BaseBranch:   "main",
-		BaseTargeted: true,
-		Steps: []domain.SyncStep{
-			{Branch: "feat/a", SourceBranch: "main"},
-			{Branch: "feat/b", SourceBranch: "feat/a"},
-		},
-	}
-
-	got := SprintSyncPlan(plan)
-
-	want := "Sync plan (base: main)\n1. feat/a ← main\n2. feat/b ← feat/a"
-	if got != want {
-		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
-	}
-	// Plain output: no ANSI escapes, so it can be re-styled inside a wizard desc.
-	if strings.Contains(got, "\x1b[") {
-		t.Errorf("expected plain (unstyled) output, got ANSI escapes: %q", got)
-	}
-}
-
-func TestSprintSyncPlan_UnknownParent(t *testing.T) {
-	plan := domain.SyncPlan{
-		BaseBranch: "main",
-		Steps:      []domain.SyncStep{{Branch: "feat/a"}},
-	}
-	if got := SprintSyncPlan(plan); !strings.Contains(got, "unknown parent") {
-		t.Fatalf("expected 'unknown parent' fallback, got %q", got)
-	}
-}
-
 func TestFormatWorktreeState_RebasingPrecedesDirty(t *testing.T) {
 	rebasing := formatWorktreeState(domain.WorktreeStatus{IsDirty: true, RebaseInProgress: true})
 	if !strings.Contains(rebasing, "rebasing") {
@@ -192,23 +154,9 @@ func TestFormatSyncResultNoParentUpdatesPrintsNothingExtra(t *testing.T) {
 }
 
 // A cascade where every step rebases onto some other parent never touches the
-// base, so neither the plan header nor the recap may name it.
-func TestSyncPlanAndResultOmitUntargetedBase(t *testing.T) {
-	plan := domain.SyncPlan{
-		BaseBranch: "main",
-		Steps: []domain.SyncStep{
-			{Branch: "dev-1", SourceBranch: "feature"},
-			{Branch: "dev-2", SourceBranch: "feature"},
-		},
-	}
-	got := SprintSyncPlan(plan)
-	if strings.Contains(got, "main") {
-		t.Errorf("plan header must not name an untargeted base, got:\n%s", got)
-	}
-	if !strings.HasPrefix(got, "Sync plan\n") {
-		t.Errorf("plan should still be titled, got:\n%s", got)
-	}
-
+// base, so the recap may not name it. The plan-header half of this guarantee is
+// covered by rules.TestSprintSyncPlanOmitsUntargetedBase.
+func TestSyncResultOmitsUntargetedBase(t *testing.T) {
 	var buf bytes.Buffer
 	FormatSyncResult(&buf, domain.SyncResult{
 		BaseBranch: "main",

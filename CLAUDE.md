@@ -152,6 +152,7 @@ internal/
     clean/                    ←   `wtm clean`: the run (clean.go) + its questions (steps.go)
     reparent/                 ←   `wtm reparent`: the run (reparent.go) + its questions (steps.go)
     prune/                    ←   `wtm prune`: the run (prune.go) + its questions (steps.go)
+    sync/                     ←   `wtm sync`: the run (sync.go) + its questions (steps.go)
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
     env/                      ←   .env provisioning (create) + drift reconciliation (`wtm env`, sync.go)
@@ -231,9 +232,9 @@ rather than at every action site.
 
 Adding a kind means teaching every surface to render it: `flowui` refuses an unknown
 kind rather than guessing. Test doubles for the two seams live in
-`internal/testutil/flowtest`. `create`, `clean`, `reparent` and `prune` are migrated;
-`extract`, `sync` and the other commands still drive their wizard packages directly, and
-`tui/newwt` stays until `extract` (which embeds it) migrates.
+`internal/testutil/flowtest`. `create`, `clean`, `reparent`, `prune` and `sync` are
+migrated; `extract` and the other commands still drive their wizard packages
+directly, and `tui/newwt` stays until `extract` (which embeds it) migrates.
 
 A **non-mutating mode** (`prune --dry-run`) belongs in the `Request`, not in the runner:
 it changes what the run does, not how it reads. The flow returns its `Outcome` before
@@ -275,9 +276,10 @@ and [clig.dev](https://clig.dev)); every new or refactored mutation command MUST
 Implementation rule: fold `--yes` into the command's `interactive` boolean
 (`interactive := isTTY && IsHumanFormat(format) && !yes`); every picker/prompt gates on
 `interactive`, and each required-selection guard returns a sentinel error when it is
-false. See `internal/commands/wt/extract.go` and `internal/commands/wt/sync.go`
-(`resolveSyncSelection`). Route decision defaults through a pure rule where one exists
-(`rules.DecidePush` takes a `Yes` field).
+false. See `internal/commands/wt/extract.go`, and — for a migrated command —
+`internal/flow/sync/steps.go` (`selectionStep`'s `Resolve`, which names `--all` instead
+of falling back to a picker). Route decision defaults through a pure rule where one
+exists (`rules.DecidePush` takes a `Yes` field).
 
 **Recap completeness:** every recap builder reads the value from its wizard step,
 **else falls back to the flag/arg** that resolved it. A flag must never make a line

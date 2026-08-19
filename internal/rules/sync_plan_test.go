@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -210,6 +211,63 @@ func TestParentBranches(t *testing.T) {
 
 	if len(got) != 2 || got[0] != "feature" || got[1] != "feat" {
 		t.Fatalf("ParentBranches = %v, want [feature feat]", got)
+	}
+}
+
+func TestSprintSyncPlan_EmptyPlan(t *testing.T) {
+	if got := SprintSyncPlan(domain.SyncPlan{BaseBranch: "main"}); got != "" {
+		t.Fatalf("empty plan should render empty, got %q", got)
+	}
+}
+
+func TestSprintSyncPlan_ListsStepsPlain(t *testing.T) {
+	plan := domain.SyncPlan{
+		BaseBranch:   "main",
+		BaseTargeted: true,
+		Steps: []domain.SyncStep{
+			{Branch: "feat/a", SourceBranch: "main"},
+			{Branch: "feat/b", SourceBranch: "feat/a"},
+		},
+	}
+
+	got := SprintSyncPlan(plan)
+
+	want := "Sync plan\n1. feat/a ← main\n2. feat/b ← feat/a"
+	if got != want {
+		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
+	}
+	// Plain output: no ANSI escapes, so it can be re-styled inside a wizard desc.
+	if strings.Contains(got, "\x1b[") {
+		t.Errorf("expected plain (unstyled) output, got ANSI escapes: %q", got)
+	}
+}
+
+func TestSprintSyncPlan_UnknownParent(t *testing.T) {
+	plan := domain.SyncPlan{
+		BaseBranch: "main",
+		Steps:      []domain.SyncStep{{Branch: "feat/a"}},
+	}
+	if got := SprintSyncPlan(plan); !strings.Contains(got, "unknown parent") {
+		t.Fatalf("expected 'unknown parent' fallback, got %q", got)
+	}
+}
+
+// A cascade where every step rebases onto some other parent never touches the
+// base, so the header may not name it.
+func TestSprintSyncPlanOmitsUntargetedBase(t *testing.T) {
+	plan := domain.SyncPlan{
+		BaseBranch: "main",
+		Steps: []domain.SyncStep{
+			{Branch: "dev-1", SourceBranch: "feature"},
+			{Branch: "dev-2", SourceBranch: "feature"},
+		},
+	}
+	got := SprintSyncPlan(plan)
+	if strings.Contains(got, "main") {
+		t.Errorf("plan header must not name an untargeted base, got:\n%s", got)
+	}
+	if !strings.HasPrefix(got, "Sync plan\n") {
+		t.Errorf("plan should still be titled, got:\n%s", got)
 	}
 }
 
