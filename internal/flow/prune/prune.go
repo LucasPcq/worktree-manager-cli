@@ -1,0 +1,305 @@
+// Package prune runs the `wtm prune` flow.
+package prune
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/github"
+	"github.com/LucasPcq/wtm/internal/service/process"
+	"github.com/LucasPcq/wtm/internal/service/shell"
+	"github.com/LucasPcq/wtm/internal/service/worktree"
+)
+
+type Request struct {
+	// Merged, Closed and Gone are the reason filters. At least one is always set:
+	// the surface widens to all three when none was asked for.
+	Merged  bool
+	Closed  bool
+	Gone    bool
+	NoFetch bool
+	// Force is the safety axis: it lifts the dirty/unpushed/open-PR refusals.
+	Force            bool
+	ReparentChildren bool
+	// DryRun previews the plan and mutates nothing. It is a business input, not
+	// an output mode: it changes what the run does, not how it reads.
+	DryRun     bool
+	BaseBranch string
+}
+
+type Outcome struct {
+	Result domain.PruneResult
+	// Plan is what a dry run computed, for a surface that renders the preview
+	// differently from a result.
+	Plan domain.PrunePlan
+	// Empty reports that nothing matched, or that nothing survived the selection.
+	Empty   bool
+	Aborted bool
+}
+
+type Presenter interface {
+	flow.Presenter
+	Pruned(Outcome) error
+}
+
+type Params struct {
+	Context   flow.Context
+	Request   Request
+	Prompter  flow.Prompter
+	Presenter Presenter
+}
+
+// Operation declares how a surface must schedule a prune: it removes several
+// worktrees and asks first, so it holds the surface for its whole run. It names
+// no target — holding everything, it needs no per-worktree lock.
+func Operation() flow.Operation {
+	return flow.Operation{Kind: domain.OpKindPrune, Mode: flow.ModeBlocking}
+}
+
+func Run(params Params) (Outcome, error) {
+	f := &pruneFlow{
+		ctx:       params.Context,
+		request:   params.Request,
+		prompter:  params.Prompter,
+		presenter: params.Presenter,
+	}
+	return f.run()
+}
+
+type pruneFlow struct {
+	ctx       flow.Context
+	request   Request
+	prompter  flow.Prompter
+	presenter Presenter
+
+	plan domain.PrunePlan
+}
+
+func (f *pruneFlow) run() (Outcome, error) {
+	if err := f.scan(); err != nil {
+		return Outcome{}, err
+	}
+	if len(f.plan.Selected) == 0 {
+		return f.conclude(Outcome{Empty: true})
+	}
+	if f.request.DryRun {
+		return f.conclude(Outcome{
+			Plan: f.plan,
+			Result: domain.PruneResult{
+				Pruned:     f.plan.Selected,
+				Reparented: f.plan.Reparents,
+				Skipped:    f.plan.Skipped,
+				DryRun:     true,
+			},
+		})
+	}
+
+	answers, err := f.prompter.Ask(f.session())
+	if errors.Is(err, domain.ErrUserAborted) {
+		f.presenter.Notice(flow.AbortedNotice)
+		return Outcome{Aborted: true}, nil
+	}
+	if err != nil {
+		return Outcome{}, err
+	}
+
+	f.plan = rules.FinalizePrunePlan(rules.FinalizePrunePlanParams{
+		Plan:       f.plan,
+		Chosen:     answers.Values(KeySelection),
+		BaseBranch: f.request.BaseBranch,
+		Force:      f.request.Force || answers.Value(KeyConfirm) == confirmForce,
+	})
+	if len(f.plan.Selected) == 0 {
+		return f.conclude(Outcome{Empty: true})
+	}
+
+	return f.remove(answers.Value(KeyReparent) == reparentYes)
+}
+
+// scan gathers the PR states and classifies, as one phase. Classification runs
+// with force whenever someone can still deselect (PruneClassifyForce), so unsafe
+// worktrees surface as candidates left unchecked rather than as silent skips.
+func (f *pruneFlow) scan() error {
+	needPRs := f.request.Merged || f.request.Closed || !f.request.Force
+
+	var connection domain.GHConnection
+	err := f.presenter.Stage(flow.StageParams{
+		Message: f.scanMessage(needPRs),
+		Work: func() error {
+			var prs []domain.PRInfo
+			if needPRs {
+				prs, connection = github.ListPRsWithConnection(f.ctx.ProjectDir)
+			}
+			var planErr error
+			f.plan, planErr = worktree.PlanPrune(f.params(), prs)
+			return planErr
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	// prune reads "done" from GitHub, so say so when the CLI is unavailable:
+	// merged/closed detection is then inert and only --gone applies.
+	if needPRs {
+		if title, lines, show := rules.PruneGHNotice(connection); show {
+			f.presenter.Status(flow.Notice{Kind: flow.NoticeWarning, Text: title, Lines: lines})
+		}
+	}
+	return nil
+}
+
+// scanMessage tells the user the spinner is fetching, not just scanning, when
+// the phase hits the network — through gh, or through the fetch gone-detection
+// runs first.
+func (f *pruneFlow) scanMessage(needPRs bool) string {
+	if needPRs || (f.request.Gone && !f.request.NoFetch) {
+		return domain.PruneFetchAndScanning
+	}
+	return domain.PruneScanning
+}
+
+func (f *pruneFlow) remove(reparentChildren bool) (Outcome, error) {
+	orphaned := f.plan.Reparents
+	if reparentChildren {
+		orphaned = nil
+	} else {
+		f.plan.Reparents = nil
+	}
+
+	// Decided before the removal, while the paths still resolve their symlinks.
+	insidePruned := f.insidePruned()
+
+	for _, candidate := range f.plan.Selected {
+		f.stopServices(candidate.Branch)
+	}
+	if err := f.runHooks(); err != nil {
+		return Outcome{}, err
+	}
+
+	var result domain.PruneResult
+	err := f.presenter.Stage(flow.StageParams{
+		Message: domain.PruneRemoving,
+		Work: func() error {
+			var pruneErr error
+			result, pruneErr = worktree.Prune(f.params(), f.plan)
+			return pruneErr
+		},
+	})
+	if err != nil {
+		return Outcome{}, err
+	}
+	result.Orphaned = orphaned
+
+	if insidePruned {
+		shell.RequestCd(f.ctx.ProjectDir)
+	}
+	return f.conclude(Outcome{Result: result})
+}
+
+// runHooks runs the on_clean hooks of every selected worktree as one phase
+// before the first removal. A hook failing at rank N aborts before anything is
+// deleted, but 1..N-1 already had their teardown — on_clean hooks must therefore
+// be idempotent. Prune then skips them internally.
+func (f *pruneFlow) runHooks() error {
+	hooks := f.ctx.Config.Project.Hooks.OnClean
+	if len(hooks) == 0 {
+		return nil
+	}
+	return f.presenter.HookPhase(flow.HookPhaseParams{
+		Title: domain.HooksTitleOnClean,
+		Run: func(sink io.Writer) error {
+			for _, candidate := range f.plan.Selected {
+				if candidate.Path == "" {
+					continue
+				}
+				if err := worktree.RunCleanHooks(domain.CleanHooksParams{
+					ProjectDir:   f.ctx.ProjectDir,
+					WorktreePath: candidate.Path,
+					Branch:       candidate.Branch,
+					Hooks:        hooks,
+					Output:       sink,
+				}); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	})
+}
+
+func (f *pruneFlow) stopServices(branchName string) {
+	socket := process.SocketPath()
+	if !process.IsDaemonRunning(socket) {
+		return
+	}
+	wt, err := worktree.FindByBranch(worktree.FindByBranchParams{
+		ProjectDir: f.ctx.ProjectDir,
+		Branch:     branchName,
+	})
+	if err != nil {
+		return
+	}
+	if process.StopWorktreeJobs(process.NewClient(socket), wt.Path) {
+		f.presenter.Status(flow.Notice{
+			Kind: flow.NoticeSuccess,
+			Text: fmt.Sprintf(domain.CleanStoppedServicesFmt, branchName),
+		})
+	}
+}
+
+// insidePruned reports whether the cwd sits inside a worktree about to be
+// pruned, so the shell can be redirected afterwards. It must run before the
+// removal: the paths have to exist to canonicalize their symlinks.
+func (f *pruneFlow) insidePruned() bool {
+	cwd, err := os.Getwd()
+	if err != nil || cwd == "" {
+		return false
+	}
+	resolvedCwd := resolveSymlinks(cwd)
+	for _, candidate := range f.plan.Selected {
+		if candidate.Path == "" {
+			continue
+		}
+		if rules.IsPathWithin(resolveSymlinks(candidate.Path), resolvedCwd) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *pruneFlow) conclude(outcome Outcome) (Outcome, error) {
+	return outcome, f.presenter.Pruned(outcome)
+}
+
+func (f *pruneFlow) params() domain.PruneParams {
+	return domain.PruneParams{
+		ProjectDir: f.ctx.ProjectDir,
+		StateDir:   f.ctx.StateDir,
+		Config:     f.ctx.Config,
+		BaseBranch: f.request.BaseBranch,
+		Merged:     f.request.Merged,
+		Closed:     f.request.Closed,
+		Gone:       f.request.Gone,
+		NoFetch:    f.request.NoFetch,
+		Force: rules.PruneClassifyForce(rules.PruneClassifyForceParams{
+			Force:       f.request.Force,
+			Interactive: f.prompter.Interactive(),
+			DryRun:      f.request.DryRun,
+		}),
+		DryRun: f.request.DryRun,
+	}
+}
+
+func resolveSymlinks(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	return path
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
@@ -148,6 +149,41 @@ func (p cleanPresenter) Cleaned(outcome cleanflow.Outcome) error {
 		for _, child := range outcome.OrphanedChildren {
 			output.Warning(p.cmd.OutOrStdout(), fmt.Sprintf(domain.CleanStillOrphanedFmt, child.Branch, child.OldParent))
 		}
+	})
+	return nil
+}
+
+type prunePresenter struct {
+	cliPresenter
+}
+
+// Pruned renders the three shapes a prune run concludes in: nothing matched, a
+// dry-run preview, or a result. The frame goes on exactly once per branch, and
+// never in JSON.
+func (p prunePresenter) Pruned(outcome pruneflow.Outcome) error {
+	if outcome.Empty {
+		if p.format == domain.OutputJSON {
+			return output.WritePruneResultJSON(p.cmd.OutOrStdout(), domain.PruneResult{})
+		}
+		output.Frame(p.cmd.OutOrStdout(), func() {
+			output.Message(p.cmd.OutOrStdout(), domain.PruneNothingToPrune)
+		})
+		return nil
+	}
+
+	if p.format == domain.OutputJSON {
+		return output.WritePruneResultJSON(p.cmd.OutOrStdout(), outcome.Result)
+	}
+
+	if outcome.Result.DryRun {
+		output.Frame(p.cmd.OutOrStdout(), func() {
+			output.FormatPrunePlan(p.cmd.OutOrStdout(), outcome.Plan)
+		})
+		return nil
+	}
+
+	output.Frame(p.cmd.OutOrStdout(), func() {
+		output.FormatPruneResult(p.cmd.OutOrStdout(), outcome.Result)
 	})
 	return nil
 }
