@@ -353,6 +353,8 @@ func (f *syncFlow) syncParams(input syncParamsInput) worktree.SyncParams {
 func (f *syncFlow) planFor(answers flow.Answers) (domain.SyncPlan, error) {
 	plan, err := worktree.PlanSync(f.syncParams(syncParamsInput{Selected: answers.Values(KeySelection)}))
 	if err != nil {
+		//lint:ignore ST1005 domain.SyncPlanFailedFmt reproduces the old picker's
+		//text verbatim; a lowercase rewrite would change observable output.
 		return domain.SyncPlan{}, fmt.Errorf(domain.SyncPlanFailedFmt, err)
 	}
 	return plan, nil

@@ -187,6 +187,9 @@ flagged; everything else is what the name implies.
   recorded parent, in cascade (parents before children), fetching first. A conflict aborts
   that branch's rebase (its descendants are skipped) unless `--keep-conflict` leaves it in
   progress. Local only — in JSON mode pass `--yes` (and `--push` to force-push with lease).
+  Without a TTY, in plain output, with neither `--yes` nor `--dry-run`, it refuses naming
+  `--yes` instead of trying to open a picker (same rule as `prune`) — another reason to
+  always pass `--output json --yes` (driving rule 5) rather than relying on a terminal.
   A parent **no step covers** — a branch with no worktree, or one left out of the
   selection — is not refreshed by the cascade. Every run reports what it found about
   those parents in `parent_updates`: `{branch, status, old_tip, new_tip, behind,

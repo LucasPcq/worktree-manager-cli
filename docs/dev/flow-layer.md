@@ -17,6 +17,7 @@ is implemented yet.
 - [Unattended resolution and the two axes](#unattended-resolution-and-the-two-axes)
 - [Hook output, from the service writer to the dashboard panel](#hook-output-from-the-service-writer-to-the-dashboard-panel)
 - [Testing a flow](#testing-a-flow)
+- [sync — the decisions this migration settled](#sync--the-decisions-this-migration-settled)
 - [Known gaps](#known-gaps)
 
 ## What is delivered today
@@ -27,11 +28,12 @@ is implemented yet.
 | `wtm clean` | migrated — `internal/flow/clean` |
 | `wtm reparent` | migrated — `internal/flow/reparent` |
 | `wtm prune` | migrated — `internal/flow/prune` |
+| `wtm sync` | migrated — `internal/flow/sync` |
 | CLI wizard surface | `internal/tui/flowui` |
 | Unattended surface | `flow.Unattended` (in `internal/flow`) |
 | Dashboard surface | `internal/tui/dashboard` (`prompter.go`, `presenter.go`, `ops.go`) |
 | Test doubles | `internal/testutil/flowtest` |
-| `extract`, `sync` | **not migrated** — still driven by `internal/commands/wt` plus their wizard packages. The model was validated on paper against them; that is not the same as delivered. `extract` is LUC-182, `sync` is LUC-186. |
+| `extract` | **not migrated** — still driven by `internal/commands/wt` plus its wizard package (`internal/tui/extract`). The model was validated on paper against it; that is not the same as delivered. Tracked as LUC-182. |
 | `StepMultiSelect` | exists since `reparent`, which needed it to keep its no-argument picker. Rendered by both surfaces: `flowui`, and the dashboard's modal since its Actions menu runs the batch reparent. Since `prune`, an `Option` can also arrive pre-checked and tagged (`Selected`, `Tag`, `Tone`). `Tone` is a `domain` enum, not a `flow` one, so `components.TagVariantOf` can hold the one mapping onto the palette without the widget library learning about `flow`. |
 
 ## The shape of a flow
@@ -333,16 +335,59 @@ flowchart TD
 the flag lifts the refusals up front, or the user lifts them in the recap by choosing
 the dangerous option. Both routes converge on one value.
 
-### `wtm extract` and `wtm sync` — projected, not delivered
+### `wtm sync` (delivered)
 
-Neither command runs on `flow/` today; both still drive `internal/tui/extract` and
-`internal/tui/syncpicker` from `internal/commands/wt`. The model was validated on paper
-against them before the layer was written, and the diagrams below are that validation —
-what the migration is expected to look like, not what runs. `extract` is tracked by
-**LUC-182**, and it is the migration that removes the
-temporary duplication of create's step declarations (they exist twice today: as
-`flow.Step` for `wtm create`, and as `components.Step` in `internal/tui/newwt` for the
-sub-flow `extract` embeds).
+```mermaid
+flowchart TD
+  A["sync.Run"] --> L0["load: worktree.List, resolve branch args"]
+  L0 --> L1{"interactive and not --dry-run?"}
+  L1 -- yes --> L2["Stage: scan stale parents (ClassifyParents)"]
+  L1 -- no --> D
+  L2 --> D["Prompter.Ask(session)"]
+  D --> D1["worktrees — StepMultiSelect, preset by args/--all, Precheck for the dashboard"]
+  D1 --> D2["on conflict — StepSelect, skipped when the plan has no rebase step"]
+  D2 --> D3["fast-forward parents — StepSelect, skipped when nothing is behind"]
+  D3 --> D4["recap — StepRecap, Load rebuilds the plan behind a spinner"]
+  D4 --> E{"aborted?"}
+  E -- yes --> F["Notice aborted, then Outcome aborted with a nil error"]
+  E -- no --> G["rebuild the plan for the answered selection"]
+  G --> H{"plan empty and base not included?"}
+  H -- yes --> I["Synced: Empty outcome, nothing rebased"]
+  H -- no --> J{"recap was skipped (dry-run or unattended)?"}
+  J -- yes --> K["Presenter.Planned(plan)"]
+  J -- no --> M
+  K --> M["Stage: worktree.Sync — rebase the cascade"]
+  M --> N["Presenter.Rebased(result)"]
+  N --> O{"--dry-run, or nothing pushable?"}
+  O -- yes --> Q["Presenter.Synced(outcome)"]
+  O -- no --> P["rules.DecidePush"]
+  P -- PushForce --> P1["push"]
+  P -- PushConfirm --> P2["Confirm, then push"]
+  P -- PushSkip --> P3["nothing pushed"]
+  P1 --> Q
+  P2 --> Q
+  P3 --> Q
+```
+
+`sync` is why the conclusion is a Presenter method and not only a return value: its
+recap must be shown *before* the push prompt, and an unattended or `--dry-run` run
+never reaches the recap at all — `Planned` is what prints the plan on those two paths,
+reproducing the pre-migration double output path (recap vs. `FrameStart` on stderr)
+without a branch anywhere reading "am I unattended".
+
+See [sync — the decisions this migration settled](#sync--the-decisions-this-migration-settled)
+below for the choices specific to this command: the dashboard's three entries, the
+`--keep-conflict` debate, and the no-terminal refusal.
+
+### `wtm extract` — projected, not delivered
+
+`extract` does not run on `flow/` yet; it still drives `internal/tui/extract` from
+`internal/commands/wt`. The model was validated on paper against it before the layer
+was written, and the diagram below is that validation — what the migration is expected
+to look like, not what runs. It is tracked by **LUC-182**, and it is the migration that
+removes the temporary duplication of create's step declarations (they exist twice
+today: as `flow.Step` for `wtm create`, and as `components.Step` in
+`internal/tui/newwt` for the sub-flow `extract` embeds).
 
 ```mermaid
 flowchart TD
@@ -366,22 +411,6 @@ flowchart TD
 The on-conflict decision stays *outside* the session on purpose: the conflict list
 depends on the selection **and** on the state of the disk, so it can only be asked
 after the recap — a post-execution `Confirm`, like create's failed fast-forward.
-
-```mermaid
-flowchart TD
-  A["sync.Run — projected"] --> B["Ask: worktrees — StepMultiSelect, preset by args or --all"]
-  B --> C["Ask: on conflict — StepSelect"]
-  C --> D["Ask: recap — StepRecap whose Load is the sync plan"]
-  D --> E["service: rebase the selection"]
-  E --> F["Presenter: the plan, then what was rebased"]
-  F --> G["rules.DecidePush"]
-  G -- PushForce --> H["push"]
-  G -- PushConfirm --> I["Confirm, then push"]
-  G -- PushSkip --> J["done, nothing pushed"]
-```
-
-`sync` is also why the conclusion is a Presenter method and not only a return value:
-its recap must be shown *before* the push prompt.
 
 ## One flow, three surfaces
 
@@ -668,6 +697,133 @@ them into one was raised deliberately here — and answered: **no.**
 
 What is broad is the *exported surface*, not the logic. Three names for one idea is a
 fair price for three honest contracts. Do not consolidate them without a new reason.
+
+## sync — the decisions this migration settled
+
+LUC-186 migrated `sync` and gave it three dashboard entries. It also settled a
+handful of choices that are easy to re-litigate later without the reasoning below.
+
+### `--keep-conflict` from the dashboard: offered, and the exit named
+
+The dashboard poses the on-conflict step exactly as the CLI does — `Sync normally` /
+`Keep conflicts in progress`, danger tagged. The decision stays the user's; the
+dashboard hides none of the options the CLI exposes. In return, when a conflict is
+kept, the output panel names, per branch, the worktree path and the `git rebase
+--continue` / `git rebase --abort` to run there (`domain.SyncKeepConflictHintFmt`,
+rendered by `syncPresenter` in `internal/tui/dashboard/presenter.go`) — the same
+gesture as `domain.DashboardPrivilegedHintFmt` for a privileged removal: the
+dashboard cannot finish the job itself, so it tells the user exactly where to finish
+it.
+
+Two alternatives were considered and rejected:
+
+- **Not offering `--keep-conflict` at all.** This amputates an option the CLI
+  exposes and forces the user back to a terminal to re-run the whole cascade with the
+  flag — a strictly worse dashboard than the surface it is supposed to match.
+- **Exiting the dashboard on a conflict**, the way a shell integration might hand
+  control back to a prompt. This depends on a shell integration the dashboard does not
+  have, and it throws the user out of a surface they just opened, for the one outcome
+  (a conflict) where staying and reading the hint matters most.
+
+**Known limit, accepted rather than solved:** `ModeBlocking` protects the worktree
+only for the duration of the run — nothing stops another operation from touching a
+worktree left mid-rebase once the run has ended. It is the `⟳ rebasing` badge on the
+next refresh, not a lock, that surfaces a worktree someone kept a conflict in and
+walked away from.
+
+### `--dry-run`: no dashboard entry, aligned with `prune`
+
+`prune` has no `--dry-run` equivalent at the click either (see the comment on
+`startPrune` in `internal/tui/dashboard/actions.go`): the recap **is** the plan, and
+closing the modal without confirming rebases nothing. `sync`'s recap is built from
+`rules.SprintSyncPlan`, exactly what `--dry-run` prints on the CLI, so a dry run is
+structurally already available from the dashboard without a flag — every dashboard
+sync gesture *is* a preview until the user confirms it. Adding a `--dry-run`-flavored
+entry would duplicate a capability the modal already has.
+
+### `Precheck` vs. the fixed selection
+
+`sync.Request` carries two selection-shaped fields that answer different questions:
+
+- **`Branches` / `All`** *fix* the selection. When either is set, the worktrees step
+  is not asked at all — it becomes a preset, still read back by the recap (the same
+  mechanism `create` uses for `--from`).
+- **`Precheck`** only says which boxes arrive **checked** when the step *is* asked. It
+  changes nothing about what the user may select or submit.
+
+The CLI never passes `Precheck`: it has no notion of "this worktree is probably the
+one" the way a dashboard row-click or `⋯ Actions` menu does, so its picker opens empty
+— exactly as `syncpicker` did before the migration. Only the dashboard's three entries
+populate it (`m.subtreeOf`, `m.rebasableBranches`, or nothing at all for
+`Refresh base branch`, which fixes the selection instead and never shows the step).
+
+### The assumed divergence of "Sync all"
+
+`--all` on the CLI checks every worktree — the service reads a `nil` selection as
+"every worktree", so nothing is ever excluded by the flag itself. The dashboard's
+`Sync all worktrees` entry (`⋯ Actions`) instead **leaves `dirty` and `rebasing`
+worktrees unchecked**: they stay listed, tagged with why, one keystroke from being
+included, but a plain confirm skips them. This is a deliberate divergence from
+`--all`, not an oversight — write it down so nobody "fixes" one to match the other.
+
+The two dashboard entries also diverge from **each other**, on purpose:
+
+- **`Sync this worktree`** pre-checks the row and its whole subtree
+  (`rules.SyncSubtree`) even when a descendant is `dirty` — the user explicitly
+  pointed at this worktree, so the gesture should include exactly what they asked
+  for, and let them uncheck it if they want less.
+- **`Sync all worktrees`** leaves `dirty`/`rebasing` worktrees unchecked — it is a
+  broad sweep, and unchecking what a cascade would skip anyway is a service to
+  someone who is not looking at any one worktree in particular.
+
+This is the same explicit-vs-batch logic `prune` established: an action aimed at one
+named thing defaults to including it, an action aimed at everything defaults to
+excluding what would need extra care. The badge on the row names the fact in both
+cases, so nothing is hidden — only the starting checkbox state differs.
+
+### The no-terminal refusal
+
+Sourced from the design's D7. Today, `wtm sync feat-a | cat` prints the plan and then
+launches a TUI confirm on a non-TTY, which fails and prints "Aborted." — a refusal by
+accident. The flow makes it a refusal on purpose, aligned with `prune`
+(`domain.PruneNeedsTerminal`): human output, no TTY, neither `--yes` nor `--dry-run`
+→ refuse, naming `--yes` (`domain.SyncNeedsTerminal`, raised in
+`internal/commands/wt/sync.go` before `syncflow.Run` is even called — the same
+placement as `prune`'s guard).
+
+This is the **only** CLI-observable behavior change in the whole migration, and it is
+not cosmetic: it closes a real gap. The old picker's failure on a non-TTY was itself
+the safety net — no picker, no confirm, nothing runs. `flow.Unattended` has no such
+accident to fall back on: every step it cannot resolve either has a safe default or an
+explicit error. Without D7's guard, a `sync` piped through `cat` without `--yes` would
+have **mutated** — rebased and possibly pushed — exactly where the pre-migration
+command used to abort. The guard is what keeps that path a refusal instead of turning
+a former crash into a successful run.
+
+One nuance keeps the guard's condition from being a copy-paste of `prune`'s: `prune`
+folds `!DryRun` into its `interactive` gate, so a dry run never shows its picker.
+`sync` does not — `interactive := rules.IsHumanFormat(format) && term.IsTerminal(...) &&
+!yes` deliberately omits `!dryRun`, because `--dry-run` on a TTY still needs the
+worktree picker to choose *what* to preview (ruling recorded against Task 6). The
+refusal clause itself, `!interactive && !yes && !dryRun`, is identical to `prune`'s.
+
+### Two interactive-picker rendering gaps
+
+Neither is covered by the 18 frozen characterization tests, which all run without a
+TTY and therefore never render the interactive picker:
+
+- **Dirty/rebasing tags render as a badge, not a suffix.** The old `syncpicker`
+  appended `" (dirty)"` / `" (rebasing)"` to a worktree's label; the flow step instead
+  sets `flow.Option{Tag, Tone}`, the same colored-badge vocabulary `prune` introduced.
+  Both surfaces — CLI wizard and dashboard modal — read a `flow.Step` the same way, so
+  they need to speak the same vocabulary; a bare string suffix would have meant one
+  more one-off rendering rule per surface.
+- **The "On conflict" question is now skipped when no rebase will happen.** A
+  `Refresh base branch` run (or any selection whose plan has no rebase step) used to
+  be asked "Sync normally / Keep conflicts in progress" regardless — a question about
+  a situation that structurally cannot occur. The step's `Skip` now reads a pure rule
+  (the selection contains only the base) instead of asking about conflicts nobody can
+  hit.
 
 ## Known gaps
 
