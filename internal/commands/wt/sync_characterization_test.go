@@ -2,6 +2,7 @@ package wt
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -107,6 +108,27 @@ func (r syncRepo) commitOn(t *testing.T, branch, file string, push bool) {
 	}
 }
 
+// commitContent writes an explicit content to a file on a branch and commits it,
+// unlike commitOn (task 1) whose content is derived from the file name alone —
+// two commitOn calls on the same file are byte-identical (same tree, same
+// parent, same message) and git collapses them into one object, so they can
+// never conflict. commitContent lets two branches diverge on the same line.
+func (r syncRepo) commitContent(t *testing.T, branch, file, content string, push bool) {
+	t.Helper()
+	dir := r.paths[branch]
+	if dir == "" {
+		dir = r.dir
+	}
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", file, err)
+	}
+	gittest.Git(t, dir, "add", file)
+	gittest.Git(t, dir, "commit", "-m", "edit "+file)
+	if push {
+		gittest.PushBranch(t, dir, branch)
+	}
+}
+
 func (r syncRepo) tipOf(t *testing.T, branch string) string {
 	t.Helper()
 	dir := r.paths[branch]
@@ -131,6 +153,29 @@ func syncJSON(t *testing.T, args ...string) domain.SyncResult {
 	}
 	var result domain.SyncResult
 	if jsonErr := json.Unmarshal([]byte(stdout), &result); jsonErr != nil {
+		t.Fatalf("sync %v: cannot decode %q: %v", args, stdout, jsonErr)
+	}
+	return result
+}
+
+// syncJSONAllowFailure is syncJSON's counterpart for a cascade that is expected
+// to conflict: rules.HasSyncFailure then makes the command return
+// domain.ErrAborted after it has already written a valid SyncResult to stdout
+// (see the comment on domain.ErrAborted), so plain syncJSON's "no error" check
+// does not fit here. Unlike the production root command, runWtCmd's ad hoc root
+// (integration_test.go) does not set SilenceUsage, so cobra appends a usage
+// block after the JSON on a returned error; a Decoder reads only the leading
+// JSON value and leaves that trailing text alone.
+func syncJSONAllowFailure(t *testing.T, args ...string) domain.SyncResult {
+	t.Helper()
+	full := append([]string{domain.CmdSync}, args...)
+	full = append(full, "--output", domain.OutputJSON, "--"+domain.FlagYes)
+	stdout, _, err := runWtCmd(t, full...)
+	if err != nil && !errors.Is(err, domain.ErrAborted) {
+		t.Fatalf("sync %v: %v", args, err)
+	}
+	var result domain.SyncResult
+	if jsonErr := json.NewDecoder(strings.NewReader(stdout)).Decode(&result); jsonErr != nil {
 		t.Fatalf("sync %v: cannot decode %q: %v", args, stdout, jsonErr)
 	}
 	return result
@@ -269,5 +314,161 @@ func TestSyncNoPushNeverPushes(t *testing.T) {
 		if step.Pushed {
 			t.Fatalf("--no-push must never push; %s was pushed", step.Branch)
 		}
+	}
+}
+
+func TestSyncCascadeKeepsTopologicalOrder(t *testing.T) {
+	repo := setupSync(t, syncSetup{Stack: []string{"feat-a:main", "feat-b:feat-a", "feat-c:feat-b"}})
+	repo.commitOn(t, "main", "base.txt", true)
+
+	result := syncJSON(t, "--"+domain.FlagAll)
+
+	order := make([]string, 0, len(result.Steps))
+	for _, step := range result.Steps {
+		order = append(order, step.Branch)
+	}
+	want := []string{"feat-a", "feat-b", "feat-c"}
+	if strings.Join(order, ",") != strings.Join(want, ",") {
+		t.Fatalf("cascade order = %v, want %v (parents before children)", order, want)
+	}
+}
+
+// A conflict skips the SELECTED descendants of the offending node, not every
+// branch: an independent branch keeps syncing.
+func TestSyncConflictSkipsSelectedDescendantsOnly(t *testing.T) {
+	repo := setupSync(t, syncSetup{Stack: nil})
+	repo.commitContent(t, "main", "shared.txt", "line one\n", true)
+	repo.create(t, "feat-a", "main")
+	repo.create(t, "feat-b", "feat-a")
+	repo.create(t, "solo", "main")
+	soloBefore := repo.tipOf(t, "solo")
+
+	// Both sides then edit the SAME line differently: a real conflict, not two
+	// identical commits that git would collapse into the same object.
+	repo.commitContent(t, "main", "shared.txt", "line one from main\n", true)
+	repo.commitContent(t, "feat-a", "shared.txt", "line one from feat-a\n", false)
+
+	result := syncJSONAllowFailure(t, "--"+domain.FlagAll)
+
+	byBranch := map[string]domain.SyncStepResult{}
+	for _, step := range result.Steps {
+		byBranch[step.Branch] = step
+	}
+	if byBranch["feat-a"].Status != domain.SyncStatusConflict {
+		t.Fatalf("feat-a must conflict, got %+v", byBranch["feat-a"])
+	}
+	if byBranch["feat-b"].Status != domain.SyncStatusSkippedAncestor {
+		t.Fatalf("feat-b (descendant of the conflict) must be skipped, got %+v", byBranch["feat-b"])
+	}
+	if repo.tipOf(t, "solo") == soloBefore {
+		t.Fatal("an independent branch must keep syncing through another branch's conflict")
+	}
+}
+
+// Without --keep-conflict the rebase is aborted: the worktree is left clean.
+func TestSyncConflictAbortsAndLeavesWorktreeClean(t *testing.T) {
+	repo := setupSync(t, syncSetup{Stack: nil})
+	repo.commitContent(t, "main", "shared.txt", "line one\n", true)
+	repo.create(t, "feat-a", "main")
+	repo.commitContent(t, "main", "shared.txt", "line one from main\n", true)
+	repo.commitContent(t, "feat-a", "shared.txt", "line one from feat-a\n", false)
+
+	syncJSONAllowFailure(t, "--"+domain.FlagAll)
+
+	if _, err := os.Stat(filepath.Join(repo.paths["feat-a"], ".git")); err != nil {
+		t.Fatalf("feat-a worktree must survive the aborted rebase: %v", err)
+	}
+	if inRebase(t, repo.paths["feat-a"]) {
+		t.Fatal("without --keep-conflict the rebase must be aborted, not left in progress")
+	}
+}
+
+func TestSyncKeepConflictLeavesRebaseInProgress(t *testing.T) {
+	repo := setupSync(t, syncSetup{Stack: nil})
+	repo.commitContent(t, "main", "shared.txt", "line one\n", true)
+	repo.create(t, "feat-a", "main")
+	repo.commitContent(t, "main", "shared.txt", "line one from main\n", true)
+	repo.commitContent(t, "feat-a", "shared.txt", "line one from feat-a\n", false)
+
+	syncJSONAllowFailure(t, "--"+domain.FlagAll, "--"+domain.FlagKeepConflict)
+
+	if !inRebase(t, repo.paths["feat-a"]) {
+		t.Fatal("--keep-conflict must leave the rebase in progress in its worktree")
+	}
+}
+
+// inRebase reads a worktree's rebase state through the directory git leaves
+// behind.
+func inRebase(t *testing.T, path string) bool {
+	t.Helper()
+	out, err := exec.Command("git", "-C", path, "rev-parse", "--git-path", "rebase-merge").Output()
+	if err != nil {
+		t.Fatalf("rev-parse --git-path: %v", err)
+	}
+	dir := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(path, dir)
+	}
+	_, statErr := os.Stat(dir)
+	return statErr == nil
+}
+
+// The no-picker path (--yes) prints the plan on stderr BEFORE the recap, which
+// goes on stdout. This is the order the migration must reproduce byte for byte.
+func TestSyncYesPrintsPlanOnStderrThenRecapOnStdout(t *testing.T) {
+	repo := setupSync(t, syncSetup{Stack: []string{"feat-a:main"}})
+	repo.commitOn(t, "main", "base.txt", true)
+
+	stdout, stderr, err := runWtCmd(t, domain.CmdSync, "--"+domain.FlagAll, "--"+domain.FlagYes)
+	if err != nil {
+		t.Fatalf("sync --all --yes: %v", err)
+	}
+	if !strings.Contains(stderr, "Sync plan") {
+		t.Fatalf("the plan must be printed on stderr, got: %q", stderr)
+	}
+	if strings.Contains(stdout, "Sync plan") {
+		t.Fatalf("the plan must not reach stdout, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "feat-a") {
+		t.Fatalf("the recap must name the synced branch on stdout, got: %q", stdout)
+	}
+	// The recap is preceded by exactly one blank line.
+	if !strings.HasPrefix(stdout, "\n") {
+		t.Fatalf("the recap must keep its single leading blank line, got: %q", stdout)
+	}
+	if strings.HasPrefix(stdout, "\n\n") {
+		t.Fatalf("the recap must not stack two blank lines, got: %q", stdout)
+	}
+}
+
+func TestSyncDryRunPrintsThePlanAndNoPushSummary(t *testing.T) {
+	repo := setupSync(t, syncSetup{Stack: []string{"feat-a:main"}})
+	repo.commitOn(t, "main", "base.txt", true)
+
+	_, stderr, err := runWtCmd(t, domain.CmdSync, "--"+domain.FlagAll, "--"+domain.FlagDryRun)
+	if err != nil {
+		t.Fatalf("sync --dry-run: %v", err)
+	}
+	if !strings.Contains(stderr, "Sync plan") {
+		t.Fatalf("--dry-run must print the plan, got: %q", stderr)
+	}
+}
+
+// The empty-plan message only fires when the selection excludes the base: with
+// --all the service always receives a nil selection, which SyncIncludesBase
+// reads as "covers the whole forest including its root" — so --all alone never
+// takes this path. Naming the main worktree's own branch under a --base that
+// does not match it is the one selection that both empties the plan (the main
+// worktree is always excluded from steps) and excludes the base.
+func TestSyncNothingToSyncReportsIt(t *testing.T) {
+	setupSync(t, syncSetup{Stack: nil})
+
+	stdout, _, err := runWtCmd(t, domain.CmdSync, "main",
+		"--"+domain.FlagBase, "other-base", "--"+domain.FlagYes)
+	if err != nil {
+		t.Fatalf("sync main --base other-base: %v", err)
+	}
+	if !strings.Contains(stdout, "No worktrees to sync") {
+		t.Fatalf("an empty plan must say so, got: %q", stdout)
 	}
 }
