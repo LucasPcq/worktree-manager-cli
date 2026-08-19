@@ -60,7 +60,7 @@ func runExtract(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	cfg, err := shared.LoadConfig(cmd, dir)
+	cfg, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}
@@ -93,11 +93,7 @@ func runExtract(cmd *cobra.Command, args []string) error {
 		return domain.ErrExtractSourceRequired
 	}
 
-	statuses, err := worktree.List(domain.ListParams{
-		ProjectDir: cfg.ProjectDir,
-		StateDir:   cfg.StateDir,
-		Config:     cfg.Config,
-	})
+	statuses, err := worktree.List(domain.ListParams(cfg))
 	if err != nil {
 		return fmt.Errorf("list worktrees: %w", err)
 	}
@@ -220,7 +216,7 @@ type extractSource struct {
 type resolveSourceParams struct {
 	sourceArg  string
 	needSource bool
-	cfg        shared.ConfigResult
+	cfg        domain.ProjectContext
 	statuses   []domain.WorktreeStatus
 }
 
@@ -367,7 +363,7 @@ func listExtractFiles(sourcePath string) ([]domain.ExtractFile, error) {
 
 type resolveParams struct {
 	cmd        *cobra.Command
-	cfg        shared.ConfigResult
+	cfg        domain.ProjectContext
 	statuses   []domain.WorktreeStatus
 	source     extractSource
 	needSource bool
@@ -416,11 +412,11 @@ func resolveSelectionAndTarget(p resolveParams) (extractSelection, error) {
 	}
 
 	wizard, err := runWizard(runWizardParams{
-		cmd:         p.cmd,
-		cfg:         p.cfg,
-		statuses:    p.statuses,
-		source:      p.source,
-		loadFiles:   p.loadFiles,
+		cmd:        p.cmd,
+		cfg:        p.cfg,
+		statuses:   p.statuses,
+		source:     p.source,
+		loadFiles:  p.loadFiles,
 		needSource: p.needSource,
 		needFiles:  needFiles,
 		needTarget: needTarget,
@@ -486,7 +482,7 @@ func resolveSelectionAndTarget(p resolveParams) (extractSelection, error) {
 
 type runWizardParams struct {
 	cmd        *cobra.Command
-	cfg        shared.ConfigResult
+	cfg        domain.ProjectContext
 	statuses   []domain.WorktreeStatus
 	source     extractSource
 	loadFiles  func(branch string) []domain.ExtractFile
@@ -537,7 +533,7 @@ func runWizard(params runWizardParams) (extracttui.RunResult, error) {
 // at the config default. The deciders guard against an empty source — the create
 // steps are auto-skipped (and their source is "") when the target is an existing
 // worktree.
-func extractCreateParams(cfg shared.ConfigResult, sourceBranch string) newpicker.WizardParams {
+func extractCreateParams(cfg domain.ProjectContext, sourceBranch string) newpicker.WizardParams {
 	// Cached per branch name for the run, like create's own wizard: the recap and
 	// the source-update step both classify the same branch repeatedly.
 	cachedTarget := memoizedTarget(cfg.ProjectDir)
@@ -576,7 +572,7 @@ type extractTarget struct {
 
 type resolveTargetParams struct {
 	cmd          *cobra.Command
-	cfg          shared.ConfigResult
+	cfg          domain.ProjectContext
 	sourceBranch string
 	choice       extracttui.TargetChoice
 	// create holds the new-worktree answers collected in the combined wizard, used
@@ -661,7 +657,7 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 }
 
 type defaultParentParams struct {
-	cfg          shared.ConfigResult
+	cfg          domain.ProjectContext
 	sourceBranch string
 	override     string
 }
@@ -685,7 +681,7 @@ func defaultParent(params defaultParentParams) string {
 type createTargetParams struct {
 	cmd        *cobra.Command
 	showHeader bool
-	cfg        shared.ConfigResult
+	cfg        domain.ProjectContext
 	branch     string
 	fromBranch string
 }

@@ -10,12 +10,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-type Context struct {
-	ProjectDir string
-	StateDir   string
-	Config     domain.Config
-}
-
 type StepKind int
 
 const (

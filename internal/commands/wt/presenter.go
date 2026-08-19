@@ -74,7 +74,7 @@ func (p cliPresenter) Status(notice flow.Notice) {
 
 type createPresenter struct {
 	cliPresenter
-	config shared.ConfigResult
+	config domain.ProjectContext
 }
 
 func (p createPresenter) Created(outcome createflow.Outcome) error {
@@ -213,15 +213,6 @@ func reparentSyncHint(results []domain.ReparentResult) string {
 		return fmt.Sprintf(domain.ReparentSyncHintFmt, results[0].Branch)
 	}
 	return domain.ReparentSyncHintBare
-}
-
-// flowContext: the flow cannot load the config itself, which reads cobra flags.
-func flowContext(config shared.ConfigResult) flow.Context {
-	return flow.Context{
-		ProjectDir: config.ProjectDir,
-		StateDir:   config.StateDir,
-		Config:     config.Config,
-	}
 }
 
 type flowPrompterParams struct {

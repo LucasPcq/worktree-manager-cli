@@ -43,7 +43,7 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("get working directory: %w", err)
 	}
 
-	result, err := shared.LoadConfig(cmd, dir)
+	result, err := shared.LoadConfig(dir)
 	if err != nil {
 		return err
 	}
@@ -69,11 +69,7 @@ func runList(cmd *cobra.Command, _ []string) error {
 			wg.Add(2)
 			go func() {
 				defer wg.Done()
-				statuses, listErr = worktree.List(domain.ListParams{
-					ProjectDir: result.ProjectDir,
-					StateDir:   result.StateDir,
-					Config:     result.Config,
-				})
+				statuses, listErr = worktree.List(domain.ListParams(result))
 			}()
 			go func() {
 				defer wg.Done()
@@ -366,7 +362,7 @@ func buildActionItems(params buildActionItemsParams) []components.SelectItem {
 	}
 }
 
-func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.WorktreeStatus, prs []domain.PRInfo, result shared.ConfigResult) error {
+func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.WorktreeStatus, prs []domain.PRInfo, result domain.ProjectContext) error {
 	bin, err := os.Executable()
 	if err != nil {
 		return err

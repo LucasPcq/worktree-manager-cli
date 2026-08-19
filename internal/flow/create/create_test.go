@@ -24,7 +24,7 @@ func newFlow(t *testing.T, request Request, target func(string) domain.BranchTar
 		target = func(string) domain.BranchTarget { return domain.BranchTarget{} }
 	}
 	return &createFlow{
-		ctx:      flow.Context{ProjectDir: t.TempDir(), Config: config},
+		ctx:      domain.ProjectContext{ProjectDir: t.TempDir(), Config: config},
 		request:  request,
 		prompter: flow.Unattended{},
 		target:   target,
@@ -193,14 +193,14 @@ func (r *recorder) Created(outcome Outcome) error {
 	return nil
 }
 
-func testContext(t *testing.T) flow.Context {
+func testContext(t *testing.T) domain.ProjectContext {
 	t.Helper()
 	dir := gittest.InitRepo(t)
 	config := domain.Config{}
 	config.Project.Worktrees.BasePath = filepath.Join(t.TempDir(), "trees")
 	config.Project.Worktrees.BaseBranch = "main"
 	config.Project.Env.Strategy = domain.EnvStrategyExample
-	return flow.Context{ProjectDir: dir, StateDir: filepath.Join(dir, ".git", "wtm"), Config: config}
+	return domain.ProjectContext{ProjectDir: dir, StateDir: filepath.Join(dir, ".git", "wtm"), Config: config}
 }
 
 func TestRunAsksEveryQuestionThenCreates(t *testing.T) {

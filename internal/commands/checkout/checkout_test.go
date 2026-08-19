@@ -56,7 +56,7 @@ func repoWithRemote(t *testing.T) string {
 	return work
 }
 
-func loadResult(t *testing.T, projectDir string) shared.ConfigResult {
+func loadResult(t *testing.T, projectDir string) domain.ProjectContext {
 	t.Helper()
 	stateDir := filepath.Join(projectDir, ".git", "wtm")
 	t.Setenv("WTM_PROJECT_DIR", projectDir)
@@ -81,8 +81,7 @@ on_create = []
 		t.Fatalf("write config: %v", err)
 	}
 
-	cmd := &cobra.Command{}
-	result, err := shared.LoadConfig(cmd, projectDir)
+	result, err := shared.LoadConfig(projectDir)
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}

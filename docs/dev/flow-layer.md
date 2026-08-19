@@ -49,7 +49,7 @@ error:
 
 ```go
 type Params struct {
-	Context   flow.Context   // ProjectDir, StateDir, Config
+	Context   domain.ProjectContext   // ProjectDir, StateDir, Config
 	Request   Request        // what the surface already knows
 	Prompter  flow.Prompter  // who answers the questions
 	Presenter Presenter      // where the phases go
@@ -676,7 +676,6 @@ Deliberately open, tracked, and not to be fixed opportunistically:
 | Ticket | Gap |
 | -- | -- |
 | LUC-179 | `clean --force` alone without a TTY skips the safety check — pre-existing, made visible by this design |
-| LUC-180 | `flow.Context` duplicates `shared.ConfigResult` (the latter imports cobra, so it cannot be reused as is) |
 | LUC-182 | `extract` is not migrated; create's step declaration therefore exists twice |
 | LUC-183 | `flow.Step` carries kind-specific fields (`Branches`, `Pinned`, `Refresh`, `Validate`/`ValidateSet`) on every kind. It also means a `StepBranchSelect` reads its candidates from `Step.Branches`, before any answer exists, so it cannot narrow them from an earlier step — `reparent` narrows from what its request already names instead |
 | LUC-184 | Locked worktrees are only taken into account by `relocate`, so "locked" is not among clean's blockers |
