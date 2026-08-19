@@ -199,6 +199,20 @@ type ConfirmParams struct {
 	NoLabel  string
 }
 
+// ConfirmDescription folds Warning into Description, for a surface whose
+// confirmation widget has no separate slot for it (a labelled select has none;
+// a plain Yes/No renders Warning on its own). Both surfaces read it, so neither
+// grows its own concatenation.
+func ConfirmDescription(params ConfirmParams) string {
+	if params.Warning == "" {
+		return params.Description
+	}
+	if params.Description == "" {
+		return params.Warning
+	}
+	return params.Description + "\n" + params.Warning
+}
+
 type Prompter interface {
 	Ask(Session) (Answers, error)
 	Confirm(ConfirmParams) (bool, error)

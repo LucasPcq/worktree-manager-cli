@@ -39,7 +39,7 @@ func (Prompter) Confirm(params flow.ConfirmParams) (bool, error) {
 	}
 	choice, err := components.RunStandaloneSelect(components.NewSelectList(components.NewSelectListParams{
 		Title:       params.Title,
-		Description: params.Description,
+		Description: flow.ConfirmDescription(params),
 		Items:       confirmItems(params),
 	}))
 	return err == nil && choice == confirmYesValue, err

@@ -24,3 +24,11 @@ func TestConfirmOptionsStayPlainWithoutLabels(t *testing.T) {
 		t.Fatalf("an unlabelled confirm must keep its single option, got %+v", options)
 	}
 }
+
+func TestConfirmOptionsLeadsWithYesWhenItIsTheDefault(t *testing.T) {
+	options := confirmOptions(flow.ConfirmParams{YesLabel: "Push to origin", NoLabel: "Keep local", DefaultYes: true})
+
+	if options[0].Label != "Push to origin" || options[2].Label != "Keep local" {
+		t.Fatalf("the default outcome must lead, got %+v", options)
+	}
+}

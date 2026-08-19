@@ -81,7 +81,7 @@ func (p prompter) Confirm(params flow.ConfirmParams) (bool, error) {
 		Kind:        flow.StepRecap,
 		Key:         keyConfirm,
 		Title:       params.Title,
-		Description: confirmDescription(params),
+		Description: flow.ConfirmDescription(params),
 		Options:     confirmOptions(params),
 	}}}
 
@@ -94,15 +94,18 @@ func (p prompter) Confirm(params flow.ConfirmParams) (bool, error) {
 
 // confirmOptions names both outcomes when the caller named them: closing the
 // modal is a way out, not an answer, so a two-outcome decision has to offer both.
+// It leads with the outcome DefaultYes names, the same rule flowui.confirmItems
+// applies, so the two surfaces never disagree on which side a caller highlighted.
 func confirmOptions(params flow.ConfirmParams) []flow.Option {
 	if params.YesLabel == "" {
 		return []flow.Option{{Label: domain.DashboardConfirmLabel, Value: confirmYes}}
 	}
-	return []flow.Option{
-		{Label: params.NoLabel, Value: confirmNo},
-		{Separator: true},
-		{Label: params.YesLabel, Value: confirmYes},
+	yes := flow.Option{Label: params.YesLabel, Value: confirmYes}
+	no := flow.Option{Label: params.NoLabel, Value: confirmNo}
+	if params.DefaultYes {
+		return []flow.Option{yes, {Separator: true}, no}
 	}
+	return []flow.Option{no, {Separator: true}, yes}
 }
 
 const (
@@ -110,13 +113,3 @@ const (
 	confirmYes = "yes"
 	confirmNo  = "no"
 )
-
-func confirmDescription(params flow.ConfirmParams) string {
-	if params.Warning == "" {
-		return params.Description
-	}
-	if params.Description == "" {
-		return params.Warning
-	}
-	return params.Description + "\n" + params.Warning
-}
