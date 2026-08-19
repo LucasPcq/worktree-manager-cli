@@ -262,16 +262,17 @@ func SyncParentStatusLabel(status domain.ParentStatus) string {
 	}
 }
 
-// RebasableBranches lists the worktrees a cascade would actually rebase: the base
-// hangs off nothing, and a dirty or half-rebased worktree is skipped. It is what
-// a surface offering "sync everything" pre-checks — the rest stays listed, and
-// checkable, rather than dropped. It is deliberately narrower than what --all
-// covers (see the sync flow's syncableBranches, which only leaves out the base):
-// a pre-check is an offer, --all is an answer.
-func RebasableBranches(statuses []domain.WorktreeStatus) []string {
+// SyncReadyBranches lists the worktrees a cascade can act on today: the base is
+// in — it is fast-forwarded from its remote, not rebased, and every chain below
+// it wants it fresh — while a dirty or half-rebased worktree is left out because
+// the run would skip it anyway. It is what a surface offering "sync everything"
+// pre-checks; the rest stays listed, and checkable, rather than dropped. It is
+// deliberately narrower than what --all covers (see the sync flow's
+// syncableBranches): a pre-check is an offer, --all is an answer.
+func SyncReadyBranches(statuses []domain.WorktreeStatus) []string {
 	branches := make([]string, 0, len(statuses))
 	for _, status := range statuses {
-		if status.IsParent || status.IsDirty || status.RebaseInProgress {
+		if status.IsDirty || status.RebaseInProgress {
 			continue
 		}
 		branches = append(branches, status.Branch)

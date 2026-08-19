@@ -183,25 +183,27 @@ func (m Model) startPrune() (Model, tea.Cmd) {
 	}
 }
 
-// startSync rebases the row and what hangs under it: rebasing a worktree alone
-// leaves its descendants behind their parent, so the cascade is what the gesture
-// offers. Only the pre-check changes — the selection stays the user's, and
-// nothing is deduced from it inside the run.
+// startSync rebases the row and the chain it hangs off: replaying a worktree onto
+// a parent nobody refreshed is the stale-parent problem the run otherwise has to
+// ask about, so the gesture offers the whole ancestry, base included. Descendants
+// are left out — they are their own gesture, made from their own row. Only the
+// pre-check changes: the selection stays the user's, and nothing is deduced from
+// it inside the run.
 func (m Model) startSync(branch string) (Model, tea.Cmd) {
 	return m.runSync(runSyncParams{
 		Title:    domain.DashboardSyncTitle,
 		Row:      branch,
-		Precheck: m.subtreeOf(branch),
+		Precheck: m.ancestryOf(branch),
 	})
 }
 
-// startSyncAll offers every worktree and leaves the ones a cascade would skip
-// unchecked: they stay listed, with the tag saying why, one keystroke from being
-// included.
+// startSyncAll offers every worktree, base included, and leaves the ones a cascade
+// would skip unchecked: they stay listed, with the tag saying why, one keystroke
+// from being included.
 func (m Model) startSyncAll() (Model, tea.Cmd) {
 	return m.runSync(runSyncParams{
 		Title:    domain.DashboardSyncTitle,
-		Precheck: m.rebasableBranches(),
+		Precheck: m.syncReadyBranches(),
 	})
 }
 
@@ -270,11 +272,11 @@ func (m Model) syncBase(override string) string {
 	return m.baseBranch()
 }
 
-func (m Model) subtreeOf(branch string) []string {
-	return rules.SyncSubtree(rules.SyncSubtreeParams{Nodes: m.worktreeNodes(), Root: branch})
+func (m Model) ancestryOf(branch string) []string {
+	return rules.SyncAncestry(rules.SyncAncestryParams{Nodes: m.worktreeNodes(), Leaf: branch})
 }
 
-func (m Model) rebasableBranches() []string { return rules.RebasableBranches(m.statuses) }
+func (m Model) syncReadyBranches() []string { return rules.SyncReadyBranches(m.statuses) }
 
 // worktreeNodes is the forest the sync rules read, built from the two things the
 // model already holds: a re-read from disk on a keystroke would buy nothing.

@@ -511,6 +511,15 @@ const (
 	// interactive picker's confirmation step and the non-picker confirm prompt.
 	SyncConfirmPrompt = "Rebase %d worktree(s) onto their parents?"
 
+	// SyncConfirmBaseFmt replaces it when the run rebases nothing: counting the
+	// worktrees of a base-only refresh announces a cascade that will not happen.
+	SyncConfirmBaseFmt = "Fetch %s and fast-forward it to its remote?"
+
+	// SyncPlanHeader titles the cascade preview. It carries no branch: the plan's
+	// own lines name every branch involved, and a header that gains and loses a
+	// suffix reads as two different sections.
+	SyncPlanHeader = "Sync plan"
+
 	// SyncKeepConflictWarning explains the consequence of keeping conflicting
 	// rebases in progress; shown on the sync confirmation when --keep-conflict is
 	// active.
@@ -558,16 +567,21 @@ const (
 	SyncParentsTitle     = "Parent branches"
 	SyncConfirmTitle     = "Confirm"
 	SyncSelectAtLeastOne = "select at least one worktree"
-	SyncConflictNormal   = "Sync normally — abort & keep worktrees clean on conflict"
-	SyncConflictKeep     = "Keep conflicts in progress — leave the rebase in its worktree for manual resolution"
-	SyncConflictIntro    = "Choose what happens when a rebase hits a conflict."
+	// SyncConflictNormal and SyncConflictKeep stay short enough to sit on one line
+	// in a narrow terminal: an option that wraps loses its shape, and what each one
+	// entails is spelled out by SyncConflictIntro right above them.
+	SyncConflictNormal = "Abort the rebase"
+	SyncConflictKeep   = "Keep the conflict"
+	SyncConflictIntro  = "Choose what happens when a rebase hits a conflict.\n" +
+		"Aborting rewinds it and leaves the worktree clean; keeping it leaves the rebase\n" +
+		"in progress there for you to resolve by hand."
 	// SyncCounterFmt names no branch: each worktree is rebased onto its own
 	// recorded parent, which the base only coincides with at the first level.
 	SyncCounterFmt            = "About to sync %d worktree(s) onto their parent."
 	SyncConflictNormalSummary = "sync normally"
 	SyncConflictKeepSummary   = "keep conflicts in progress"
-	SyncParentFFOption        = "Fast-forward them — rebase onto the up-to-date parent"
-	SyncParentKeepOption      = "Leave them as they are — rebase onto the parent as it stands today"
+	SyncParentFFOption        = "Fast-forward them first"
+	SyncParentKeepOption      = "Leave them as they are"
 	SyncParentFFSummary       = "fast-forward"
 	SyncParentKeepSummary     = "leave as they are"
 	SyncParentLineFmt         = "%s is %s behind %s%s — %s rebase onto it."
@@ -1060,7 +1074,7 @@ const (
 	// DashboardMenuSyncAll rebases every worktree at once. It arrives with the ones
 	// a cascade would skip left unchecked — they stay listed, with the tag saying
 	// why.
-	DashboardMenuSyncAll = "Sync all worktrees"
+	DashboardMenuSyncAll = "Sync worktrees"
 	// DashboardMenuEmpty stands in for the actions of a worktree that has none.
 	DashboardMenuEmpty = "No actions available"
 	// DashboardMenuChrome is what the menu box spends on its borders and padding.

@@ -287,9 +287,11 @@ func TestSyncBaseAndParentLabels(t *testing.T) {
 	}
 }
 
-// A surface offering "sync everything" pre-checks what a cascade would actually
-// rebase: the rest stays listed and unchecked rather than silently dropped.
-func TestRebasableBranchesLeavesOutWhatTheCascadeWouldSkip(t *testing.T) {
+// A surface offering "sync everything" pre-checks what the run can act on: the
+// base is in — it gets fast-forwarded, and every chain below it wants it fresh —
+// while what the cascade would skip stays listed and unchecked rather than
+// silently dropped.
+func TestSyncReadyBranchesKeepTheBaseAndDropWhatWouldBeSkipped(t *testing.T) {
 	statuses := []domain.WorktreeStatus{
 		{Branch: "main", IsParent: true},
 		{Branch: "clean"},
@@ -297,10 +299,10 @@ func TestRebasableBranchesLeavesOutWhatTheCascadeWouldSkip(t *testing.T) {
 		{Branch: "stuck", RebaseInProgress: true},
 	}
 
-	got := RebasableBranches(statuses)
+	got := SyncReadyBranches(statuses)
 
-	if len(got) != 1 || got[0] != "clean" {
-		t.Errorf("RebasableBranches = %v, want only the rebasable worktree", got)
+	if len(got) != 2 || got[0] != "main" || got[1] != "clean" {
+		t.Errorf("SyncReadyBranches = %v, want [main clean]", got)
 	}
 }
 

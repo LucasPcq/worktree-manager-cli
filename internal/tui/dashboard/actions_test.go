@@ -316,24 +316,30 @@ func TestTheModelDerivesItsForestFromWhatItAlreadyHolds(t *testing.T) {
 	}
 }
 
-// "Sync this worktree" means the cascade it belongs to: rebasing a worktree
-// leaves what hangs under it behind, so that is what arrives checked.
-func TestSyncFromARowPreChecksItsWholeSubtree(t *testing.T) {
+// "Sync this worktree" means the chain it hangs off: replaying it onto a parent
+// nobody refreshed is the stale-parent problem, so the ancestry arrives checked —
+// base first — and what hangs under it does not.
+func TestSyncFromARowPreChecksItsAncestryAndNotItsChildren(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight)
 	model = update(model, worktreesMsg{
 		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}, {Branch: "a"}, {Branch: "b"}, {Branch: "c"}},
 		parents:  map[string]string{"a": "main", "b": "a", "c": "main"},
 	})
 
-	got := model.subtreeOf("a")
+	got := model.ancestryOf("b")
 
-	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
-		t.Errorf("pre-checked = %v, want the row and its descendants", got)
+	if len(got) != 3 || got[0] != "main" || got[1] != "a" || got[2] != "b" {
+		t.Errorf("pre-checked = %v, want [main a b]", got)
+	}
+	// The same gesture on the parent stops there: the child is its own row.
+	if parent := model.ancestryOf("a"); len(parent) != 2 || parent[1] != "a" {
+		t.Errorf("pre-checked from the parent = %v, want [main a]", parent)
 	}
 }
 
-// The full run offers every worktree but leaves out what a cascade would skip:
-// they stay listed, with the tag that says why, and the user can still check them.
+// The full run offers every worktree, base included, but leaves out what a cascade
+// would skip: they stay listed, with the tag that says why, and the user can still
+// check them.
 func TestSyncAllLeavesTheUnsyncableUnchecked(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight)
 	model = update(model, worktreesMsg{
@@ -346,10 +352,10 @@ func TestSyncAllLeavesTheUnsyncableUnchecked(t *testing.T) {
 		parents: map[string]string{},
 	})
 
-	got := model.rebasableBranches()
+	got := model.syncReadyBranches()
 
-	if len(got) != 1 || got[0] != "clean" {
-		t.Errorf("pre-checked = %v, want only the worktree a cascade would rebase", got)
+	if len(got) != 2 || got[0] != "main" || got[1] != "clean" {
+		t.Errorf("pre-checked = %v, want [main clean]", got)
 	}
 }
 

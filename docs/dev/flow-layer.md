@@ -754,32 +754,45 @@ entry would duplicate a capability the modal already has.
 The CLI never passes `Precheck`: it has no notion of "this worktree is probably the
 one" the way a dashboard row-click or `⋯ Actions` menu does, so its picker opens empty
 — exactly as `syncpicker` did before the migration. Only the dashboard's three entries
-populate it (`m.subtreeOf`, `m.rebasableBranches`, or nothing at all for
+populate it (`m.ancestryOf`, `m.syncReadyBranches`, or nothing at all for
 `Refresh base branch`, which fixes the selection instead and never shows the step).
 
-### The assumed divergence of "Sync all"
+### What a row-level sync pre-checks: the ancestry, not the subtree
+
+`Sync this worktree` pre-checks the row **and the chain it hangs off** — its managed
+ancestors up to and including the base (`rules.SyncAncestry`) — and nothing that
+hangs under it.
+
+The reason is the cascade itself. A worktree is rebased **onto its parent**, so
+replaying one whose parent nobody refreshed lands it on a stale ref; that is the
+exact problem the `Parent branches` question exists to rescue after the fact.
+Pre-checking the ancestry removes the problem instead of asking about it. The base is
+in the chain even though it is never a rebase step: it is fast-forwarded from its
+remote, and every chain below it wants it fresh.
+
+Descendants are deliberately **out**. They are their own gesture, made from their own
+row, and dragging them in makes the same menu entry mean "one worktree" from a leaf
+and "four" from a root — an asymmetry nobody can predict from the label. What the
+gesture pre-checks now reads the same way from any row: *this worktree and what it
+depends on*.
+
+### The assumed divergence of "Sync worktrees"
 
 `--all` on the CLI checks every worktree — the service reads a `nil` selection as
 "every worktree", so nothing is ever excluded by the flag itself. The dashboard's
-`Sync all worktrees` entry (`⋯ Actions`) instead **leaves `dirty` and `rebasing`
+`Sync worktrees` entry (`⋯ Actions`) instead **leaves `dirty` and `rebasing`
 worktrees unchecked**: they stay listed, tagged with why, one keystroke from being
 included, but a plain confirm skips them. This is a deliberate divergence from
 `--all`, not an oversight — write it down so nobody "fixes" one to match the other.
 
-The two dashboard entries also diverge from **each other**, on purpose:
+It is the same explicit-vs-batch logic `prune` established: an action aimed at one
+named thing includes what it names, an action aimed at everything excludes what would
+need extra care. The badge on the row names the fact either way, so nothing is
+hidden — only the starting checkbox state differs.
 
-- **`Sync this worktree`** pre-checks the row and its whole subtree
-  (`rules.SyncSubtree`) even when a descendant is `dirty` — the user explicitly
-  pointed at this worktree, so the gesture should include exactly what they asked
-  for, and let them uncheck it if they want less.
-- **`Sync all worktrees`** leaves `dirty`/`rebasing` worktrees unchecked — it is a
-  broad sweep, and unchecking what a cascade would skip anyway is a service to
-  someone who is not looking at any one worktree in particular.
-
-This is the same explicit-vs-batch logic `prune` established: an action aimed at one
-named thing defaults to including it, an action aimed at everything defaults to
-excluding what would need extra care. The badge on the row names the fact in both
-cases, so nothing is hidden — only the starting checkbox state differs.
+The entry is named `Sync worktrees`, not `Sync all worktrees`, for the same reason:
+it opens a selection, and a label promising "all" reads as a sweep with no way out.
+It sits next to `Reparent worktrees`, which opens the same kind of choice.
 
 ### The no-terminal refusal
 

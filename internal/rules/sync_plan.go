@@ -231,13 +231,11 @@ func SprintSyncPlan(plan domain.SyncPlan) string {
 	return b.String()
 }
 
-// SyncPlanTitle names the base only when the cascade actually involves it, so a
-// run whose every step rebases onto another parent does not lead with a branch it
-// never touches. Exported so output.FormatSyncPlan's styled header shares the same
-// wording as SprintSyncPlan's plain one instead of duplicating it.
-func SyncPlanTitle(plan domain.SyncPlan) string {
-	if !plan.BaseTargeted {
-		return "Sync plan"
-	}
-	return fmt.Sprintf("Sync plan (base: %s)", plan.BaseBranch)
+// SyncPlanTitle is constant: a header that gains and loses a "(base: x)" suffix
+// depending on whether the cascade happens to touch the base reads as two
+// different sections to whoever meets it twice, and the plan's own lines already
+// name every branch involved. Exported so output.FormatSyncPlan's styled header
+// shares the same wording as SprintSyncPlan's plain one instead of duplicating it.
+func SyncPlanTitle(domain.SyncPlan) string {
+	return domain.SyncPlanHeader
 }

@@ -183,3 +183,33 @@ Le badge `⚠ needs sync` reste inerte : le menu contextuel de la ligne suffit.
 - [ ] Le débat `--keep-conflict` tranché et sa raison écrite dans `docs/dev/`.
 - [ ] `internal/flow/` toujours sans import interdit ; subagent `build-validator` vert.
 - [ ] `make docs` rejoué et `using-wtm.skill.md` mis à jour si la surface CLI bouge.
+
+---
+
+## Amendement — revue UI/UX après livraison (2026-08-19)
+
+Cinq retours faits en manipulant le dashboard livré, tous appliqués. Ils corrigent
+la conception ci-dessus sur trois points ; le reste de la spec tient.
+
+- **D10 est révisée** : `Sync this worktree` pré-coche l'**ascendance** de la ligne
+  (ses parents gérés, base incluse) et **non** ses descendants. Le sous-arbre faisait
+  dire à la même entrée « une worktree » depuis une feuille et « quatre » depuis une
+  racine, asymétrie qu'aucun libellé ne laisse prévoir. L'ascendance se lit
+  identiquement depuis n'importe quelle ligne — *cette worktree et ce dont elle
+  dépend* — et elle supprime le problème du parent périmé au lieu de le rattraper
+  après coup par la question `Parent branches`. `rules.SyncSubtree` devient
+  `rules.SyncAncestry`. Le raisonnement complet est dans `docs/dev/flow-layer.md`.
+- **L'entrée `⋯ Actions` s'appelle `Sync worktrees`**, pas `Sync all worktrees` :
+  elle ouvre une sélection, et un libellé promettant « all » se lit comme un balayage
+  sans échappatoire. Elle voisine `Reparent worktrees`, qui ouvre le même genre de
+  choix. Son pré-cochage inclut désormais la base, par cohérence avec la révision
+  ci-dessus.
+- **Le titre du plan est constant** (`Sync plan`), sans le suffixe `(base: x)` qui
+  apparaissait selon que la cascade touchait la base : un en-tête qui change de forme
+  se lit comme deux sections différentes, et les lignes du plan nomment déjà chaque
+  branche concernée.
+- Un rafraîchissement de base seule pose sa propre question (`Fetch %s and
+  fast-forward it to its remote?`) au lieu d'annoncer « Rebase 0 worktree(s) onto
+  their parents? », qui décrivait une cascade n'ayant pas lieu.
+- Les options de `On conflict` et de `Parent branches` sont raccourcies pour tenir sur
+  une ligne ; ce qu'elles impliquent est énoncé dans la question au-dessus d'elles.

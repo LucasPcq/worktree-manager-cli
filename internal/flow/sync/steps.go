@@ -311,7 +311,7 @@ func (f *syncFlow) confirmContent(plan domain.SyncPlan, answers flow.Answers) fl
 }
 
 func confirmDescription(plan domain.SyncPlan, keepConflict bool) string {
-	description := fmt.Sprintf(domain.SyncConfirmPrompt, len(plan.Steps))
+	description := confirmQuestion(plan)
 	if text := rules.SprintSyncPlan(plan); text != "" {
 		description = text + "\n\n" + description
 	}
@@ -319,6 +319,16 @@ func confirmDescription(plan domain.SyncPlan, keepConflict bool) string {
 		description += "\n\n⚠ " + domain.SyncKeepConflictWarning
 	}
 	return description
+}
+
+// confirmQuestion asks about what the run will actually do. A selection holding
+// only the root rebases nothing, so counting worktrees there would announce a
+// cascade that never comes and name a parent nothing hangs off.
+func confirmQuestion(plan domain.SyncPlan) string {
+	if len(plan.Steps) > 0 {
+		return fmt.Sprintf(domain.SyncConfirmPrompt, len(plan.Steps))
+	}
+	return fmt.Sprintf(domain.SyncConfirmBaseFmt, plan.BaseBranch)
 }
 
 type syncParamsInput struct {

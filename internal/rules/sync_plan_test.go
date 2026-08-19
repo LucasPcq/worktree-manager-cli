@@ -232,7 +232,7 @@ func TestSprintSyncPlan_ListsStepsPlain(t *testing.T) {
 
 	got := SprintSyncPlan(plan)
 
-	want := "Sync plan (base: main)\n1. feat/a ← main\n2. feat/b ← feat/a"
+	want := "Sync plan\n1. feat/a ← main\n2. feat/b ← feat/a"
 	if got != want {
 		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
 	}
