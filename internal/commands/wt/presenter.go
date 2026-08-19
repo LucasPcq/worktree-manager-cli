@@ -59,6 +59,10 @@ func (p cliPresenter) Notice(notice flow.Notice) {
 }
 
 func (p cliPresenter) Status(notice flow.Notice) {
+	if len(notice.Lines) > 0 {
+		output.Callout(p.cmd.ErrOrStderr(), notice.Text, notice.Lines)
+		return
+	}
 	switch notice.Kind {
 	case flow.NoticeWarning:
 		output.Warning(p.cmd.ErrOrStderr(), notice.Text)

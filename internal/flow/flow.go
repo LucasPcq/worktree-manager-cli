@@ -27,11 +27,26 @@ const (
 	StepMultiSelect
 )
 
+// Tone colours a tag without naming a style: the surface maps it to its own.
+type Tone int
+
+const (
+	ToneNeutral Tone = iota
+	ToneWarning
+	ToneDanger
+)
+
 type Option struct {
 	Label     string
 	Value     string
 	Separator bool
 	Danger    bool
+	// Selected pre-checks the option in a StepMultiSelect, so a step can offer a
+	// set it already narrowed rather than an empty one.
+	Selected bool
+	// Tag is a short status word shown before the label, coloured by Tone.
+	Tag  string
+	Tone Tone
 }
 
 type StepContent struct {
@@ -213,6 +228,9 @@ const (
 type Notice struct {
 	Kind NoticeKind
 	Text string
+	// Lines turn the notice into a titled block, Text being its title. Empty
+	// keeps it the single line every other caller emits.
+	Lines []string
 }
 
 type Presenter interface {
@@ -224,6 +242,12 @@ type Presenter interface {
 }
 
 var AbortedNotice = Notice{Kind: NoticeMessage, Text: domain.AbortedMessage}
+
+// IsAbort identifies the notice a flow emits when the user backed out. Notice
+// carries a slice, so it cannot be compared with ==.
+func (n Notice) IsAbort() bool {
+	return n.Kind == AbortedNotice.Kind && n.Text == AbortedNotice.Text
+}
 
 func requiredErr(step Step) error {
 	if step.Flag == "" {

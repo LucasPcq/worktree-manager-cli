@@ -338,3 +338,38 @@ func TestTheModalRendersAMultiSelectBody(t *testing.T) {
 		t.Errorf("the footer must name the multi-select controls:\n%s", body)
 	}
 }
+
+// A step that pre-checks part of its set — prune offers the safe candidates
+// checked and the unsafe ones tagged and left out — must reach the component
+// with both, or the surface silently changes what the flow proposed.
+func TestTheModalCarriesPreCheckedAndTaggedOptions(t *testing.T) {
+	session := flow.Session{Steps: []flow.Step{{
+		Kind: flow.StepMultiSelect, Key: "branches", Label: "Worktrees",
+		Title: "Select worktrees",
+		Options: []flow.Option{
+			{Label: "merged-wt", Value: "merged-wt", Selected: true, Tag: "merged"},
+			{Label: "dirty-wt", Value: "dirty-wt", Tag: "dirty", Tone: flow.ToneDanger},
+		},
+	}}}
+
+	reply := make(chan promptReply, 1)
+	mo, _ := newModal(modalParams{Shape: modalStepper, Session: session, Reply: reply, Width: testWidth, Height: testHeight})
+
+	body := strings.Join(mo.body(noMarks{}), "\n")
+	for _, tag := range []string{"merged", "dirty"} {
+		if !strings.Contains(body, tag) {
+			t.Errorf("the modal must draw the %q tag:\n%s", tag, body)
+		}
+	}
+
+	_, cmd := mo.update(namedKey(tea.KeyEnter))
+	if cmd == nil {
+		t.Fatal("confirming the only step must answer the session")
+	}
+	cmd()
+	answered := <-reply
+	got := answered.answers.Values("branches")
+	if len(got) != 1 || got[0] != "merged-wt" {
+		t.Errorf("values = %v, want only the pre-checked option", got)
+	}
+}

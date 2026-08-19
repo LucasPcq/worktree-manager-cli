@@ -40,13 +40,21 @@ func (p presenter) HookPhase(params flow.HookPhaseParams) error {
 // answer, logging "Aborted." for every question the user backed out of turns the
 // panel into a list of things that did not happen.
 func (p presenter) Notice(notice flow.Notice) {
-	if notice == flow.AbortedNotice {
+	if notice.IsAbort() {
 		return
 	}
 	p.line(notice.Text)
+	for _, line := range notice.Lines {
+		p.line(line)
+	}
 }
 
-func (p presenter) Status(notice flow.Notice) { p.line(notice.Text) }
+func (p presenter) Status(notice flow.Notice) {
+	p.line(notice.Text)
+	for _, line := range notice.Lines {
+		p.line(line)
+	}
+}
 
 type createPresenter struct{ presenter }
 

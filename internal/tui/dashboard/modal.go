@@ -312,7 +312,13 @@ func newMultiSelect(step flow.Step, content flow.StepContent) components.MultiSe
 		if option.Separator {
 			continue
 		}
-		items = append(items, components.MultiSelectItem{Label: option.Label, Value: option.Value})
+		items = append(items, components.MultiSelectItem{
+			Label:    option.Label,
+			Value:    option.Value,
+			Selected: option.Selected,
+			Tag:      option.Tag,
+			Variant:  tagVariant(option.Tone),
+		})
 	}
 	return components.NewMultiSelect(components.NewMultiSelectParams{
 		Title:       content.Title,
@@ -487,4 +493,16 @@ func (mo modal) hint() string {
 		return domain.DashboardStepperMultiHint
 	}
 	return domain.DashboardStepperHint
+}
+
+// tagVariant maps the tone a step declared onto the component's palette.
+func tagVariant(tone flow.Tone) components.TagVariant {
+	switch tone {
+	case flow.ToneWarning:
+		return components.TagWarning
+	case flow.ToneDanger:
+		return components.TagDanger
+	default:
+		return components.TagNeutral
+	}
 }
