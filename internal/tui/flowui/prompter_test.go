@@ -280,3 +280,57 @@ func update(m components.WizardModel, msg tea.Msg) components.WizardModel {
 	}
 	return updated
 }
+
+func multiSelectStep(key string, values ...string) flow.Step {
+	options := make([]flow.Option, 0, len(values))
+	for _, value := range values {
+		options = append(options, flow.Option{Label: value, Value: value})
+	}
+	return flow.Step{Kind: flow.StepMultiSelect, Key: key, Label: "Multi " + key, Options: options}
+}
+
+func TestBuildRendersAMultiSelectStep(t *testing.T) {
+	session := flow.Session{Steps: []flow.Step{multiSelectStep("a", "one", "two"), recapStep("r")}}
+
+	plan, err := build(session)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	model, ok := plan.steps[0].Model.(components.MultiSelectModel)
+	if !ok {
+		t.Fatalf("model = %T, want a MultiSelectModel", plan.steps[0].Model)
+	}
+	if got := model.Values(); len(got) != 0 {
+		t.Errorf("values = %v, want nothing checked before the user answers", got)
+	}
+}
+
+// A set answer travels in Answer.Values; reading it as a single value would
+// silently collapse the selection to nothing.
+func TestAnswerOfReadsAMultiSelectAsASet(t *testing.T) {
+	model := components.NewMultiSelect(components.NewMultiSelectParams{
+		Items: []components.MultiSelectItem{
+			{Label: "one", Value: "one", Selected: true},
+			{Label: "two", Value: "two"},
+			{Label: "three", Value: "three", Selected: true},
+		},
+	})
+
+	answer := answerOf(flow.StepMultiSelect, model)
+	if len(answer.Values) != 2 || answer.Values[0] != "one" || answer.Values[1] != "three" {
+		t.Errorf("values = %v, want the checked items", answer.Values)
+	}
+	if !answer.Asked {
+		t.Error("an answered step must read as asked")
+	}
+}
+
+// The dashboard's modal refuses an unknown kind rather than guessing; the CLI
+// wizard must do the same, so a new kind is heard about immediately.
+func TestBuildRefusesAnUnknownKind(t *testing.T) {
+	session := flow.Session{Steps: []flow.Step{{Kind: flow.StepKind(99), Key: "a", Label: "Mystery"}}}
+
+	if _, err := build(session); err == nil {
+		t.Fatal("an unsupported step kind must refuse the run")
+	}
+}

@@ -43,3 +43,28 @@ type TreeNode struct {
 type Forest struct {
 	Roots []TreeNode `json:"roots"`
 }
+
+// TreeRow is one node of a forest flattened depth-first, carrying the connector
+// gutter its position earned it. It is what a renderer draws, so the shape of
+// the tree is decided once and never re-derived per surface.
+type TreeRow struct {
+	Node   TreeNode
+	Prefix string
+	Depth  int
+}
+
+// TreeBadge is one status annotation of a tree node, in the canonical display
+// order rules.TreeBadges emits. Every renderer draws the same badges in the same
+// order and differs only in how it styles them.
+type TreeBadge int
+
+const (
+	TreeBadgeVirtual TreeBadge = iota
+	TreeBadgePR
+	TreeBadgeAhead
+	TreeBadgeOrigin
+	TreeBadgeRebasing
+	TreeBadgeDirty
+	TreeBadgeNeedsSync
+	TreeBadgeCycle
+)

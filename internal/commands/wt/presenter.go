@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -145,6 +146,33 @@ func (p cleanPresenter) Cleaned(outcome cleanflow.Outcome) error {
 		}
 	})
 	return nil
+}
+
+type reparentPresenter struct {
+	cliPresenter
+}
+
+func (p reparentPresenter) Reparented(outcome reparentflow.Outcome) error {
+	if p.format == domain.OutputJSON {
+		return output.WriteReparentJSON(p.cmd.OutOrStdout(), outcome.Results)
+	}
+
+	output.Frame(p.cmd.OutOrStdout(), func() {
+		for _, result := range outcome.Results {
+			output.Success(p.cmd.OutOrStdout(), fmt.Sprintf(domain.ReparentedFmt, result.Branch, result.OldParent, result.NewParent))
+		}
+		output.Message(p.cmd.OutOrStdout(), reparentSyncHint(outcome.Results))
+	})
+	return nil
+}
+
+// reparentSyncHint tells the user how to apply the recorded change. A single
+// worktree names it in the suggested command; several point at a bare `wtm sync`.
+func reparentSyncHint(results []domain.ReparentResult) string {
+	if len(results) == 1 {
+		return fmt.Sprintf(domain.ReparentSyncHintFmt, results[0].Branch)
+	}
+	return domain.ReparentSyncHintBare
 }
 
 // flowContext: the flow cannot load the config itself, which reads cobra flags.

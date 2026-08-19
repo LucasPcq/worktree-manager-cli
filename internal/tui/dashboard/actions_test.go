@@ -9,6 +9,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 )
 
 // The create command itself is not run here: startCreate hands the flow to a
@@ -180,5 +181,114 @@ func TestTheDashboardNeverOffersThePrivilegedRemoval(t *testing.T) {
 	last := model.outputLines[len(model.outputLines)-1]
 	if !strings.Contains(last, "--force") || !strings.Contains(last, "feat") {
 		t.Errorf("last line = %q, want the way out named: the CLI can hand sudo the terminal", last)
+	}
+}
+
+// A reparent asks before it writes, so it holds the whole surface — and it holds
+// the worktree the menu named, which the flow itself never gets to declare.
+func TestReparentHoldsTheSurfaceAndItsWorktree(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+
+	model, cmd := model.startReparent("b")
+
+	if cmd == nil {
+		t.Fatal("startReparent must hand the run to a bubbletea command")
+	}
+	if len(model.ops.running) != 1 {
+		t.Fatalf("running = %+v, want the run recorded", model.ops.running)
+	}
+	got := model.ops.running[0]
+	if got.kind != domain.OpKindReparent || got.mode != flow.ModeBlocking {
+		t.Errorf("operation = %+v, want the mode reparent declares", got)
+	}
+	if got.target != "b" {
+		t.Errorf("target = %q, want the worktree the menu named", got.target)
+	}
+}
+
+func TestReparentIsRefusedWhileSomethingHoldsTheWorktree(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindCreate, target: "b"})
+
+	refused, cmd := model.startReparent("b")
+
+	if cmd != nil {
+		t.Fatal("nothing may act on a worktree another run is holding")
+	}
+	if len(refused.outputLines) == 0 {
+		t.Error("the refusal must be stated where the user is looking")
+	}
+}
+
+// The parent metadata is what the "from <x>" line of a row reads, so the list has
+// to be re-read once it changes.
+func TestAReparentedRunRefreshesTheList(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+
+	_, cmd := model.applyFlow(reparentedMsg{})
+
+	if cmd == nil {
+		t.Error("a finished reparent must trigger a reload")
+	}
+}
+
+func TestReparentPresenterStatesEveryMoveAndHowToApplyIt(t *testing.T) {
+	msgs := make(chan tea.Msg, 8)
+	p := reparentPresenter{presenter{send: func(msg tea.Msg) { msgs <- msg }}}
+
+	if err := p.Reparented(reparentflow.Outcome{Results: []domain.ReparentResult{
+		{Branch: "b", OldParent: "feat", NewParent: "main"},
+	}}); err != nil {
+		t.Fatalf("Reparented: %v", err)
+	}
+
+	var lines []string
+	for len(msgs) > 0 {
+		if line, ok := (<-msgs).(OutputLineMsg); ok {
+			lines = append(lines, line.Text)
+		}
+	}
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{"b", "feat", "main", "wtm sync"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("output missing %q:\n%s", want, joined)
+		}
+	}
+}
+
+// The batch run asks which worktrees to move before it asks where to, so it
+// starts with nothing preset and nothing to lock: it blocks the whole surface
+// for its run, which is what keeps anything else from starting.
+func TestBatchReparentBlocksTheSurfaceAndPresetsNothing(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+
+	model, cmd := model.startBatchReparent()
+
+	if cmd == nil {
+		t.Fatal("startBatchReparent must hand the run to a bubbletea command")
+	}
+	if len(model.ops.running) != 1 {
+		t.Fatalf("running = %+v, want the run recorded", model.ops.running)
+	}
+	got := model.ops.running[0]
+	if got.kind != domain.OpKindReparent || got.mode != flow.ModeBlocking {
+		t.Errorf("operation = %+v, want the mode reparent declares", got)
+	}
+	if got.target != "" {
+		t.Errorf("target = %q, want none: the worktrees are chosen inside the run", got.target)
+	}
+}
+
+func TestBatchReparentIsRefusedWhileARunHoldsTheSurface(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindClean, mode: flow.ModeBlocking})
+
+	refused, cmd := model.startBatchReparent()
+
+	if cmd != nil {
+		t.Fatal("nothing may start while a blocking run holds the dashboard")
+	}
+	if len(refused.outputLines) == 0 {
+		t.Error("the refusal must be stated where the user is looking")
 	}
 }

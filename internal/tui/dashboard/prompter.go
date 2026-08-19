@@ -36,6 +36,10 @@ type createdMsg struct{ branch string }
 
 type cleanedMsg struct{ branch string }
 
+// reparentedMsg says the parent metadata changed, so the rows showing "from <x>"
+// have to be re-read.
+type reparentedMsg struct{}
+
 // listenCmd delivers the next message a flow goroutine posted. Update re-arms it
 // on every flowMsg, so there is exactly one reader on the channel at all times.
 func listenCmd(msgs <-chan tea.Msg) tea.Cmd {

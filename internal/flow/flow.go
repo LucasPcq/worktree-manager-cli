@@ -22,6 +22,9 @@ const (
 	StepSelect
 	StepBranchSelect
 	StepRecap
+	// StepMultiSelect asks for a set rather than a value; its answer is carried by
+	// Answer.Values.
+	StepMultiSelect
 )
 
 type Option struct {
@@ -38,6 +41,11 @@ type StepContent struct {
 	// Blockers are the refusals the step folds into its Description, named one by
 	// one for a surface that can have each of them lifted separately.
 	Blockers []Blocker
+	// ExcludeBranches drops candidates from a StepBranchSelect by name. A step
+	// narrows this way rather than by handing over a list, so the background
+	// refresh stays authoritative on what exists — the exclusion is applied on top
+	// of whatever it last returned.
+	ExcludeBranches []string
 }
 
 // Blocker is one safety refusal standing in the way of the step's dangerous
@@ -60,8 +68,10 @@ type Step struct {
 	Refresh  func() []domain.BranchCandidate
 
 	Validate func(value string) error
-	Skip     func(Answers) (skip bool, reason string)
-	Build    func(Answers) (StepContent, error)
+	// ValidateSet is Validate for a StepMultiSelect step.
+	ValidateSet func(values []string) error
+	Skip        func(Answers) (skip bool, reason string)
+	Build       func(Answers) (StepContent, error)
 
 	Load           func(Answers) (StepContent, error)
 	LoadingMessage string
@@ -99,7 +109,10 @@ type Session struct {
 }
 
 type Answer struct {
-	Value      string
+	Value string
+	// Values is the answer of a StepMultiSelect step; every other kind leaves it
+	// nil and answers with Value.
+	Values     []string
 	Skipped    bool
 	SkipReason string
 	Asked      bool
@@ -137,6 +150,28 @@ func (a Answers) Get(key string) (Answer, bool) {
 }
 
 func (a Answers) Value(key string) string { return a.byKey[key].Value }
+
+// Values reads a set answer. A single-valued answer reads back as a set of one,
+// so a caller that wants a list never has to know which kind produced it.
+func (a Answers) Values(key string) []string {
+	answer := a.byKey[key]
+	if len(answer.Values) > 0 {
+		return answer.Values
+	}
+	if answer.Value == "" {
+		return nil
+	}
+	return []string{answer.Value}
+}
+
+// WithValues answers a StepMultiSelect step. An empty set means unanswered, as
+// an empty string does for a single-valued one.
+func (a Answers) WithValues(key string, values []string) Answers {
+	if len(values) == 0 {
+		return a
+	}
+	return a.With(key, Answer{Values: values})
+}
 
 // Answered excludes a preset, a Resolve fallback and a skip.
 func (a Answers) Answered(key string) bool {
@@ -195,4 +230,25 @@ func requiredErr(step Step) error {
 		return fmt.Errorf(domain.FlowStepRequiredFmt, step.Label)
 	}
 	return fmt.Errorf(domain.FlowStepRequiredFlagFmt, step.Label, step.Flag)
+}
+
+// KeepBranches drops the excluded names from a candidate list. Both surfaces
+// rendering a StepBranchSelect apply the step's exclusions this way, so the two
+// cannot disagree on what a narrowed picker shows.
+func KeepBranches(candidates []domain.BranchCandidate, exclude []string) []domain.BranchCandidate {
+	if len(exclude) == 0 {
+		return candidates
+	}
+	dropped := make(map[string]bool, len(exclude))
+	for _, name := range exclude {
+		dropped[name] = true
+	}
+	kept := make([]domain.BranchCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if dropped[candidate.Name] {
+			continue
+		}
+		kept = append(kept, candidate)
+	}
+	return kept
 }

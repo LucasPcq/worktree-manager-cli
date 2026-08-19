@@ -6,15 +6,8 @@ import (
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
-)
-
-// Tree connector glyphs for the ASCII forest.
-const (
-	treeBranch = "├─ "
-	treeLast   = "└─ "
-	treePipe   = "│  "
-	treeBlank  = "   "
 )
 
 // FormatTree renders the worktree forest as a coloured ASCII tree. The returned
@@ -24,9 +17,14 @@ func FormatTree(forest domain.Forest) string {
 		return "No worktrees found."
 	}
 
-	lines := make([]treeLine, 0)
-	for _, root := range forest.Roots {
-		appendTreeLines(&root, "", "", &lines)
+	lines := make([]treeLine, 0, len(forest.Roots))
+	for _, row := range rules.FlattenForest(forest) {
+		lines = append(lines, treeLine{
+			prefix:      row.Prefix,
+			branch:      row.Node.Branch,
+			styled:      styleBranch(&row.Node),
+			annotations: formatTreeAnnotations(&row.Node),
+		})
 	}
 
 	labelWidth := 0
@@ -64,34 +62,6 @@ func (l treeLine) render(labelWidth int) string {
 	return styles.Indent + line + strings.Repeat(" ", pad) + l.annotations
 }
 
-// appendTreeLines walks the forest depth-first, building one treeLine per node.
-// prefix is the gutter inherited from ancestors; connector is this node's own
-// glyph ("" for a root).
-func appendTreeLines(node *domain.TreeNode, prefix, connector string, out *[]treeLine) {
-	*out = append(*out, treeLine{
-		prefix:      prefix + connector,
-		branch:      node.Branch,
-		styled:      styleBranch(node),
-		annotations: formatTreeAnnotations(node),
-	})
-
-	childPrefix := prefix
-	switch connector {
-	case treeBranch:
-		childPrefix += treePipe
-	case treeLast:
-		childPrefix += treeBlank
-	}
-
-	for i := range node.Children {
-		glyph := treeBranch
-		if i == len(node.Children)-1 {
-			glyph = treeLast
-		}
-		appendTreeLines(&node.Children[i], childPrefix, glyph, out)
-	}
-}
-
 func styleBranch(node *domain.TreeNode) string {
 	if node.IsVirtual {
 		return styles.Muted.Render(node.Branch)
@@ -99,86 +69,30 @@ func styleBranch(node *domain.TreeNode) string {
 	return styles.Bold.Render(node.Branch)
 }
 
-// treeAnnotation enumerates a node's status badges in their canonical display
-// order. nodeAnnotations is the single source of truth for which badges appear
-// and in what order; the ASCII (formatTreeAnnotations) and Mermaid (mermaidLabel)
-// renderers differ only in how they style each one, so they can't drift apart.
-type treeAnnotation int
-
-const (
-	annVirtual treeAnnotation = iota
-	annPR
-	annAhead
-	annOrigin
-	annRebasing
-	annDirty
-	annNeedsSync
-	annCycle
-)
-
-func nodeAnnotations(node *domain.TreeNode) []treeAnnotation {
-	kinds := make([]treeAnnotation, 0, 7)
-	if node.IsVirtual {
-		kinds = append(kinds, annVirtual)
-	}
-	if node.Status.PR != nil {
-		kinds = append(kinds, annPR)
-	}
-	if node.Status.CommitsAhead > 0 {
-		kinds = append(kinds, annAhead)
-	}
-	if hasOriginDivergence(node.Status.OriginState) {
-		kinds = append(kinds, annOrigin)
-	}
-	if node.Status.RebaseInProgress {
-		kinds = append(kinds, annRebasing)
-	} else if node.Status.IsDirty {
-		kinds = append(kinds, annDirty)
-	}
-	if node.Status.NeedsSync {
-		kinds = append(kinds, annNeedsSync)
-	}
-	if node.Status.InCycle {
-		kinds = append(kinds, annCycle)
-	}
-	return kinds
-}
-
 // formatTreeAnnotations builds the styled trailing status string for an ASCII node.
 func formatTreeAnnotations(node *domain.TreeNode) string {
 	parts := make([]string, 0, 6)
-	for _, kind := range nodeAnnotations(node) {
-		switch kind {
-		case annVirtual:
-			parts = append(parts, styles.Muted.Render("(no worktree)"))
-		case annPR:
+	for _, badge := range rules.TreeBadges(*node) {
+		switch badge {
+		case domain.TreeBadgeVirtual:
+			parts = append(parts, styles.Muted.Render(domain.TreeBadgeVirtualText))
+		case domain.TreeBadgePR:
 			parts = append(parts, formatTreePR(node.Status.PR))
-		case annAhead:
+		case domain.TreeBadgeAhead:
 			parts = append(parts, styles.Muted.Render(fmt.Sprintf("%s %s%d", domain.BadgeTextBase, domain.BadgeGlyphAhead, node.Status.CommitsAhead)))
-		case annOrigin:
+		case domain.TreeBadgeOrigin:
 			parts = append(parts, styleOriginAnnotation(node.Status))
-		case annRebasing:
-			parts = append(parts, styles.Warning.Render("⚠ rebasing"))
-		case annDirty:
-			parts = append(parts, styles.Warning.Render("⚠ dirty"))
-		case annNeedsSync:
-			parts = append(parts, styles.Warning.Render("⚠ needs sync"))
-		case annCycle:
-			parts = append(parts, styles.Warning.Render("⚠ cycle"))
+		case domain.TreeBadgeRebasing:
+			parts = append(parts, styles.Warning.Render(domain.TreeBadgeRebasingText))
+		case domain.TreeBadgeDirty:
+			parts = append(parts, styles.Warning.Render(domain.TreeBadgeDirtyText))
+		case domain.TreeBadgeNeedsSync:
+			parts = append(parts, styles.Warning.Render(domain.TreeBadgeNeedsSyncText))
+		case domain.TreeBadgeCycle:
+			parts = append(parts, styles.Warning.Render(domain.TreeBadgeCycleText))
 		}
 	}
 	return strings.Join(parts, "  ")
-}
-
-// hasOriginDivergence reports whether an origin state warrants an annotation
-// (behind, ahead, or diverged) — up-to-date and unknown show none.
-func hasOriginDivergence(state domain.DivergenceState) bool {
-	switch state {
-	case domain.DivergenceBehind, domain.DivergenceAhead, domain.DivergenceDiverged:
-		return true
-	default:
-		return false
-	}
 }
 
 // originAnnotationText renders the plain "origin ↑a ↓b" label (Mermaid form).
@@ -272,28 +186,28 @@ func mermaidID(branch string) string {
 
 func mermaidLabel(node *domain.TreeNode) string {
 	parts := []string{strings.ReplaceAll(node.Branch, `"`, "'")}
-	for _, kind := range nodeAnnotations(node) {
-		switch kind {
-		case annVirtual:
-			parts = append(parts, "(no worktree)")
-		case annPR:
+	for _, badge := range rules.TreeBadges(*node) {
+		switch badge {
+		case domain.TreeBadgeVirtual:
+			parts = append(parts, domain.TreeBadgeVirtualText)
+		case domain.TreeBadgePR:
 			label := fmt.Sprintf("PR #%d", node.Status.PR.Number)
 			if node.Status.PR.State == domain.PRStateMerged || node.Status.PR.State == domain.PRStateClosed {
 				label += " " + node.Status.PR.State
 			}
 			parts = append(parts, label)
-		case annAhead:
+		case domain.TreeBadgeAhead:
 			parts = append(parts, fmt.Sprintf("%s %s%d", domain.BadgeTextBase, domain.BadgeGlyphAhead, node.Status.CommitsAhead))
-		case annOrigin:
+		case domain.TreeBadgeOrigin:
 			parts = append(parts, originAnnotationText(node.Status))
-		case annRebasing:
-			parts = append(parts, "⚠ rebasing")
-		case annDirty:
-			parts = append(parts, "⚠ dirty")
-		case annNeedsSync:
-			parts = append(parts, "⚠ needs sync")
-		case annCycle:
-			parts = append(parts, "⚠ cycle")
+		case domain.TreeBadgeRebasing:
+			parts = append(parts, domain.TreeBadgeRebasingText)
+		case domain.TreeBadgeDirty:
+			parts = append(parts, domain.TreeBadgeDirtyText)
+		case domain.TreeBadgeNeedsSync:
+			parts = append(parts, domain.TreeBadgeNeedsSyncText)
+		case domain.TreeBadgeCycle:
+			parts = append(parts, domain.TreeBadgeCycleText)
 		}
 	}
 	return strings.Join(parts, " ")

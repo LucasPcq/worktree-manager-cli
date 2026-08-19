@@ -5,6 +5,9 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/LucasPcq/wtm/internal/styles"
 )
 
 func pressKey(m MultiSelectModel, key string) MultiSelectModel {
@@ -188,5 +191,56 @@ func TestMultiSelectBackspaceEmptyReturnsToNormalMode(t *testing.T) {
 	m, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace}) // space must toggle, not type
 	if got := m.Values(); len(got) != 1 {
 		t.Fatalf("expected space to toggle in normal mode, got %v", got)
+	}
+}
+
+// The focused row wears the same accent bar and subtle tint as every other list
+// in the product; the heavy ColorSelectedBg highlight this list was left on read
+// as a different component.
+func TestMultiSelectFocusUsesTheSharedRowTint(t *testing.T) {
+	m := NewMultiSelect(NewMultiSelectParams{Items: []MultiSelectItem{
+		{Label: "feat", Value: "feat"},
+		{Label: "dev-a", Value: "dev-a"},
+	}})
+	m.SetSize(SetSizeParams{Width: 40, Height: 10})
+
+	view := m.View()
+
+	if !strings.Contains(view, styles.SelectedMarker.Render("▌ ")) {
+		t.Error("the focused row must carry the accent bar")
+	}
+	if heavy := styles.ListItemSelected.Render(""); heavy != "" && strings.Contains(view, heavy) {
+		t.Error("the focused row must not use the heavy list highlight")
+	}
+}
+
+// Both states start their checkbox at the same column: the bar takes exactly the
+// indent an unselected row has.
+func TestMultiSelectKeepsTheCheckboxesInOneColumn(t *testing.T) {
+	m := NewMultiSelect(NewMultiSelectParams{Items: []MultiSelectItem{
+		{Label: "feat", Value: "feat"},
+		{Label: "dev-a", Value: "dev-a"},
+	}})
+	m.SetSize(SetSizeParams{Width: 40, Height: 10})
+
+	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	var columns []int
+	for _, line := range lines {
+		// Only the item rows; the filter prompt above them has brackets of its own.
+		for _, box := range []string{"[ ]", "[✓]"} {
+			if index := strings.Index(line, box); index >= 0 {
+				// Columns, not bytes: the accent bar is a three-byte rune one cell wide.
+				columns = append(columns, PrintableWidth(line[:index]))
+				break
+			}
+		}
+	}
+	if len(columns) < 2 {
+		t.Fatalf("expected a checkbox per row, got %v in:\n%s", columns, strings.Join(lines, "\n"))
+	}
+	for _, column := range columns[1:] {
+		if column != columns[0] {
+			t.Errorf("checkbox columns = %v, want them aligned", columns)
+		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 )
 
 // presenter is the dashboard half of flow.Presenter: every phase of a run lands
@@ -73,5 +74,17 @@ func (p cleanPresenter) Cleaned(outcome cleanflow.Outcome) error {
 		p.line(fmt.Sprintf(domain.CleanStillOrphanedFmt, child.Branch, child.OldParent))
 	}
 	p.send(cleanedMsg{branch: outcome.Branch})
+	return nil
+}
+
+type reparentPresenter struct{ presenter }
+
+func (p reparentPresenter) Reparented(outcome reparentflow.Outcome) error {
+	for _, result := range outcome.Results {
+		p.line(fmt.Sprintf(domain.ReparentedFmt, result.Branch, result.OldParent, result.NewParent))
+	}
+	// The change is metadata only; the rebase is a separate run the user starts.
+	p.line(domain.ReparentSyncHintBare)
+	p.send(reparentedMsg{})
 	return nil
 }

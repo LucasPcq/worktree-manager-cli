@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 )
 
 func (m Model) flowContext() flow.Context {
@@ -84,6 +85,61 @@ func (m Model) startClean(branch string) (Model, tea.Cmd) {
 
 	return m, func() tea.Msg {
 		_, err := cleanflow.Run(params)
+		return opDoneMsg{id: id, err: err}
+	}
+}
+
+// startReparent changes the parent of the one worktree the menu was opened from.
+// The flow's own worktree step is preset by the request, so the modal only asks
+// what is left: the new parent, then the recap.
+func (m Model) startReparent(branch string) (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(branch); refused {
+		return m.refuse(reason), nil
+	}
+	m, id := m.beginOp(beginParams{Operation: reparentflow.Operation(), Target: branch})
+	send := m.sender()
+
+	params := reparentflow.Params{
+		Context: m.flowContext(),
+		Request: reparentflow.Request{Branches: []string{branch}},
+		Prompter: prompter{
+			send:  send,
+			title: domain.DashboardReparentTitle,
+			shape: modalStepper,
+			opID:  id,
+		},
+		Presenter: reparentPresenter{presenter{send: send}},
+	}
+
+	return m, func() tea.Msg {
+		_, err := reparentflow.Run(params)
+		return opDoneMsg{id: id, err: err}
+	}
+}
+
+// startBatchReparent runs the same flow with nothing preset, so it asks which
+// worktrees to move before it asks where to. It blocks the surface for its whole
+// run, which is why it needs no per-worktree lock: nothing else can start.
+func (m Model) startBatchReparent() (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(""); refused {
+		return m.refuse(reason), nil
+	}
+	m, id := m.beginOp(beginParams{Operation: reparentflow.Operation()})
+	send := m.sender()
+
+	params := reparentflow.Params{
+		Context: m.flowContext(),
+		Prompter: prompter{
+			send:  send,
+			title: domain.DashboardReparentBatchTitle,
+			shape: modalStepper,
+			opID:  id,
+		},
+		Presenter: reparentPresenter{presenter{send: send}},
+	}
+
+	return m, func() tea.Msg {
+		_, err := reparentflow.Run(params)
 		return opDoneMsg{id: id, err: err}
 	}
 }
@@ -169,9 +225,11 @@ func (m Model) applyFlow(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 	case createdMsg:
 		m.selectBranch = msg.branch
-		return m, m.loadWorktreesCmd(false)
+		return m, m.reload()
 	case cleanedMsg:
-		return m, m.loadWorktreesCmd(false)
+		return m, m.reload()
+	case reparentedMsg:
+		return m, m.reload()
 	}
 	return m, nil
 }
@@ -192,6 +250,12 @@ func (m Model) openModal(msg promptMsg) (Model, tea.Cmd) {
 	})
 	m.modal = modal
 	return m, cmd
+}
+
+// reload re-reads what a finished run changed: the worktrees, and the forest
+// when it has ever been built — a run creates, removes or reparents a node.
+func (m Model) reload() tea.Cmd {
+	return tea.Batch(m.loadWorktreesCmd(false), m.treeCmd())
 }
 
 func (m Model) appendOutput(msg OutputLineMsg) Model {

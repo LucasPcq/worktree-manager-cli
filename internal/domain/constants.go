@@ -303,6 +303,26 @@ const (
 	BadgeGlyphDirty = "⚠"
 	BadgeGlyphClean = "✓"
 
+	// SummaryNone stands in for a set answer the user left empty, in a wizard
+	// breadcrumb that must still show the step was reached.
+	SummaryNone = "none"
+
+	// Tree badge texts: what a node's status annotations read as, shared by the
+	// ASCII tree, the Mermaid export and the dashboard's Tree tab.
+	TreeBadgeVirtualText   = "(no worktree)"
+	TreeBadgeRebasingText  = "⚠ rebasing"
+	TreeBadgeDirtyText     = "⚠ dirty"
+	TreeBadgeNeedsSyncText = "⚠ needs sync"
+	TreeBadgeCycleText     = "⚠ cycle"
+
+	// Tree connector glyphs: the gutter a flattened forest row carries. They are
+	// part of the shape rules.FlattenForest decides, not of one renderer's style,
+	// which is why both the CLI tree and the dashboard draw from the same values.
+	TreeConnectorBranch = "├─ "
+	TreeConnectorLast   = "└─ "
+	TreeGutterPipe      = "│  "
+	TreeGutterBlank     = "   "
+
 	// KeyRefresh is the picker key that re-fetches origin and recomputes the
 	// branch divergence badges.
 	KeyRefresh = "r"
@@ -689,6 +709,39 @@ const (
 	// removal fallback (worktree path).
 	CleanSudoConfirmFmt = "Force-delete %s with `sudo rm -rf`? (you may be prompted for your password)"
 
+	ReparentWizardErrLabel       = "reparent wizard"
+	ReparentWorktreesTitle       = "Select worktrees to reparent"
+	ReparentWorktreesDescription = "Choose the worktrees whose parent you want to change"
+	ReparentSelectAtLeastOne     = "select at least one worktree"
+	ReparentNoWorktrees          = "no worktrees to reparent"
+	ReparentParentTitle          = "Select the new parent"
+	// ReparentParentSingleFmt names what one worktree is rebased onto today, and
+	// ReparentParentNoneFmt stands in when its recorded parent is gone (merged then
+	// cleaned) — surfaced as text, never as a badge that would silently vanish.
+	ReparentParentSingleFmt = "%s is currently rebased onto %s"
+	ReparentParentNoneFmt   = "%s has no recorded parent"
+	ReparentParentBatchFmt  = "New parent for the %d selected worktrees"
+	// ReparentParentExcluded explains why a worktree in the selection, and anything
+	// that would close a parent cycle, is missing from the candidate list.
+	ReparentParentExcluded = "Branches that would close a parent cycle are not listed"
+	ReparentRecapLabel     = "Confirm & reparent"
+	ReparentRecapOption    = "Yes, reparent"
+	ReparentRecapWorktrees = "Worktrees:   "
+	ReparentRecapNewParent = "New parent:  "
+	ReparentRecapWorktree  = "Worktree:    "
+	ReparentRecapParent    = "Parent:      "
+	// ReparentRecapMoveFmt reads old → new.
+	ReparentRecapMoveFmt = "%s  →  %s"
+	// ReparentNoParent stands where a recap would name the current parent of a
+	// worktree that has none recorded.
+	ReparentNoParent     = "(none)"
+	ReparentStageMessage = "Recording the new parent…"
+	ReparentedFmt        = "Reparented %s: %s → %s"
+	// ReparentSyncHintFmt and ReparentSyncHintBare tell the user how the recorded
+	// change is applied: reparent only rewrites metadata, the rebase is `wtm sync`.
+	ReparentSyncHintFmt  = "Run `wtm sync %s` to rebase onto the new parent."
+	ReparentSyncHintBare = "Run `wtm sync` to rebase the reparented worktrees onto their new parent."
+
 	AbortedMessage = "Aborted."
 	// WizardCancelLabel is the constant final option on every wizard recap step —
 	// the single explicit cancellation point (alongside Esc on the first step).
@@ -712,10 +765,10 @@ const (
 	PinnedSuffixBase     = " (base)"
 	PinnedSuffixDetected = " (detected)"
 
-	// OpKindCreate and OpKindClean name a running flow in a surface that schedules
-	// several of them.
-	OpKindCreate = "create"
-	OpKindClean  = "clean"
+	// OpKind* names a running flow in a surface that schedules several of them.
+	OpKindCreate   = "create"
+	OpKindClean    = "clean"
+	OpKindReparent = "reparent"
 
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"
@@ -745,6 +798,9 @@ const (
 	// what its state amounts to — and DashboardRowGap the blank line between two.
 	DashboardRowHeight = 2
 	DashboardRowGap    = 1
+	// DashboardTreeRowHeight is a node and the line under it: the spacer carries
+	// the gutter on down, so the rows breathe without the tree coming apart.
+	DashboardTreeRowHeight = 2
 
 	// DashboardMsgBuffer sizes the channel the running flows post on. It only has
 	// to absorb a burst of hook output between two frames.
@@ -757,25 +813,44 @@ const (
 	DashboardModalMaxWidth     = 88
 
 	// DashboardWordmark names the product in the header bar.
-	DashboardWordmark    = "wtm"
-	DashboardCountFmt    = "%d worktrees"
-	DashboardCountOneFmt = "%d worktree"
+	DashboardWordmark        = "wtm"
+	DashboardCountFmt        = "%d worktrees"
+	DashboardCountOneFmt     = "%d worktree"
+	DashboardTreeCountFmt    = "%d nodes"
+	DashboardTreeCountOneFmt = "%d node"
 	// DashboardRuleGlyph carries the header rule, DashboardActiveRuleGlyph the
 	// heavier segment under the active tab.
 	DashboardRuleGlyph       = "─"
 	DashboardActiveRuleGlyph = "━"
 
 	DashboardTabWorktrees = "Worktrees"
+	DashboardTabTree      = "Tree"
 	DashboardListTitle    = "Worktrees"
+	DashboardTreeTitle    = "Worktree tree"
 	DashboardDetailTitle  = "Detail"
 	DashboardOutputTitle  = "Output"
 
-	DashboardEmptyList      = "No worktrees."
-	DashboardEmptySelection = "No worktree selected."
-	DashboardEmptyOutput    = "No operation output yet."
-	DashboardLoadingPRs     = "loading PRs…"
-	DashboardNoPR           = "none"
-	DashboardNoValue        = "—"
+	DashboardEmptyList   = "No worktrees."
+	DashboardEmptyTree   = "No worktrees to lay out."
+	DashboardLoadingTree = "Building the tree…"
+	// DashboardTreeVirtual marks a node standing in for a parent branch that has
+	// no worktree, so a row nothing can be done to says why.
+	DashboardTreeVirtual = "no worktree"
+	// DashboardTreeNodeGlyph marks a node that has a worktree and
+	// DashboardTreeVirtualGlyph one standing in for a branch without one, so the
+	// two read apart before their badges are read at all.
+	DashboardTreeNodeGlyph    = "●"
+	DashboardTreeVirtualGlyph = "○"
+	// The Tree tab's badge formats: a PR number, a one-sided divergence count
+	// ("base ↑3", "origin ↓2") and a two-sided one ("origin ↑1 ↓4").
+	DashboardTreePRFmt       = "PR #%d"
+	DashboardTreeAheadFmt    = "%s %s%d"
+	DashboardTreeDivergedFmt = "%s %s%d %s%d"
+	DashboardEmptySelection  = "No worktree selected."
+	DashboardEmptyOutput     = "No operation output yet."
+	DashboardLoadingPRs      = "loading PRs…"
+	DashboardNoPR            = "none"
+	DashboardNoValue         = "—"
 	// DashboardCreatedFormat renders a worktree's creation date in local time.
 	DashboardCreatedFormat = "2006-01-02 15:04"
 
@@ -799,8 +874,11 @@ const (
 	DashboardUpToDate         = "up to date"
 	DashboardUnknownParent    = "unknown"
 
-	DashboardHelpWide   = "↑↓ select · n new · m actions · tab view · o output · shift+↑↓ scroll output · r refresh · ? help · q quit"
-	DashboardHelpNarrow = "↑↓ select · enter detail · n new · m actions · o output · r refresh · ? help · q quit"
+	DashboardHelpWide = "↑↓ select · n new · m actions · a bulk · tab view · o output · r refresh · ? help · q quit"
+	// DashboardHelpTree drops "n new": the Tree tab lays out what exists, and a new
+	// worktree is created from the list it would appear in.
+	DashboardHelpTree   = "↑↓ select · m actions · a bulk · tab view · o output · r refresh · ? help · q quit"
+	DashboardHelpNarrow = "↑↓ select · enter detail · n new · m actions · a bulk · o output · r refresh · ? help · q quit"
 	DashboardHelpDetail = "esc back · ↑↓ select · o output · r refresh · q quit"
 
 	// DashboardHelpTitle heads the key/mouse reference overlay. Every clickable
@@ -818,15 +896,29 @@ const (
 	DashboardMetaSeparator  = " · "
 	DashboardMetaNothing    = "—"
 	// DashboardMenuTitle heads the per-worktree context menu and
-	// DashboardMenuDelete is its only entry for now.
-	DashboardMenuDelete = "Delete worktree"
+	// DashboardMenuReparent and DashboardMenuDelete are its entries. The context
+	// menu acts on the worktree it was opened from, so reparent is offered here
+	// for that one alone; changing several at once is `wtm reparent`.
+	DashboardMenuReparent = "Change parent"
+	// DashboardMenuReparentBatch is the same change over a selection the user
+	// makes inside the run, which is why it lives in the global menu and not on a
+	// row: a context menu hangs off one worktree.
+	DashboardMenuReparentBatch = "Reparent worktrees"
+	DashboardMenuDelete        = "Delete worktree"
 	// DashboardMenuEmpty stands in for the actions of a worktree that has none.
 	DashboardMenuEmpty = "No actions available"
 	// DashboardMenuChrome is what the menu box spends on its borders and padding.
 	DashboardMenuChrome = 4
 
-	DashboardCreateTitle = "New worktree"
-	DashboardDeleteTitle = "Delete worktree"
+	DashboardCreateTitle        = "New worktree"
+	DashboardDeleteTitle        = "Delete worktree"
+	DashboardReparentTitle      = "Change parent"
+	DashboardReparentBatchTitle = "Reparent worktrees"
+	// DashboardActionsLabel is the header button that opens the global menu, and
+	// DashboardActionsTitle heads that menu. KeyActions is its keyboard way in.
+	DashboardActionsLabel = "⋯ Actions"
+	DashboardActionsShort = "⋯"
+	DashboardActionsTitle = "Actions"
 
 	// DashboardBlockersTitle heads the refusals a removal must have lifted, one by
 	// one — the dashboard never offers a blanket bypass.
@@ -845,9 +937,12 @@ const (
 	DashboardModalPreparing  = "Preparing…"
 	DashboardStepperHint     = "↑↓ move · / filter · enter confirm · esc back"
 	DashboardStepperTextHint = "enter confirm · esc back"
-	DashboardStepperRowsHint = "↑↓ move · enter confirm · esc back"
-	DashboardFormHint        = "↑↓ move · space toggle · enter confirm · esc cancel"
-	DashboardConfirmHint     = "↑↓ move · enter confirm · esc cancel"
+	// DashboardStepperMultiHint is the multi-select footer, worded like the CLI
+	// wizard's so the same controls read the same on both surfaces.
+	DashboardStepperMultiHint = "↑↓ move · space toggle · a all · / filter · enter confirm · esc back"
+	DashboardStepperRowsHint  = "↑↓ move · enter confirm · esc back"
+	DashboardFormHint         = "↑↓ move · space toggle · enter confirm · esc cancel"
+	DashboardConfirmHint      = "↑↓ move · enter confirm · esc cancel"
 
 	// DashboardUnsupportedStepFmt refuses a step kind no modal can draw, rather
 	// than guessing a widget for it (step key, kind).
@@ -880,6 +975,9 @@ const (
 	// the right click but its equal: terminals that hand the right button to a
 	// paste action never deliver it.
 	KeyMenu = "m"
+	// KeyActions opens the header's global menu, the one that acts on a selection
+	// made inside the run rather than on the row under the cursor.
+	KeyActions = "a"
 	// KeyToggleOutput folds and unfolds the bottom output panel, the keyboard
 	// equivalent of clicking its header.
 	KeyToggleOutput = "o"

@@ -11,12 +11,23 @@ import (
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
-// menuAction is what a context menu entry does. One entry today; the list is
-// what a second one plugs into.
+// menuAction is what a menu entry does.
 type menuAction int
 
 const (
-	menuDelete menuAction = iota
+	menuReparent menuAction = iota
+	menuDelete
+	menuReparentBatch
+)
+
+// menuKind is which menu is open: the one hanging off a worktree row, or the
+// one hanging off the header's Actions button. They share their box, their keys
+// and their mouse handling; only what they list differs.
+type menuKind int
+
+const (
+	menuForWorktree menuKind = iota
+	menuForGlobal
 )
 
 type menuItem struct {
@@ -29,31 +40,90 @@ type menuItem struct {
 	disabled string
 }
 
-// menuItems is what can be done to the selected worktree. An action that could
-// never apply is not listed at all; one that cannot apply right now is listed
-// with what is in its way, and is inert until that clears.
+// menuItems is what the open menu lists. An action that could never apply is not
+// listed at all; one that cannot apply right now is listed with what is in its
+// way, and is inert until that clears.
 func (m Model) menuItems() []menuItem {
+	if m.menuKind == menuForGlobal {
+		return m.globalMenuItems()
+	}
+	return m.worktreeMenuItems()
+}
+
+func (m Model) worktreeMenuItems() []menuItem {
 	selected, ok := m.selected()
 	if !ok || selected.IsParent {
 		return nil
 	}
 
-	item := menuItem{label: domain.DashboardMenuDelete, action: menuDelete, danger: true}
-	if caption, busy := m.busyCaption(selected.Branch); busy {
-		item.disabled = caption
+	items := []menuItem{
+		{label: domain.DashboardMenuReparent, action: menuReparent},
+		{label: domain.DashboardMenuDelete, action: menuDelete, danger: true},
 	}
-	return []menuItem{item}
+	caption, busy := m.busyCaption(selected.Branch)
+	if !busy {
+		return items
+	}
+	for index := range items {
+		items[index].disabled = caption
+	}
+	return items
 }
 
-// openMenu hangs the menu off a cell. The right button is not always delivered —
-// some terminals keep it for their own paste — so KeyMenu opens the very same
-// menu on the selected row.
+// globalMenuItems act on worktrees the user picks inside the run, not on the
+// selected row, so nothing here is keyed off the selection.
+func (m Model) globalMenuItems() []menuItem {
+	items := []menuItem{
+		{label: domain.DashboardMenuReparentBatch, action: menuReparentBatch},
+	}
+	caption, busy := m.busyCaption("")
+	if !busy {
+		return items
+	}
+	for index := range items {
+		items[index].disabled = caption
+	}
+	return items
+}
+
+// openMenu hangs the worktree menu off a cell. The right button is not always
+// delivered — some terminals keep it for their own paste — so KeyMenu opens the
+// very same menu on the selected row.
 func (m Model) openMenu(anchor domain.Rect) Model {
 	if _, ok := m.selected(); !ok {
 		return m
 	}
-	m.menuOpen, m.menuCursor, m.menuAnchor = true, firstEnabled(m.menuItems()), anchor
+	return m.open(menuForWorktree, anchor)
+}
+
+// openActionsMenu hangs the global menu off the header button. It needs no
+// selection: what it acts on is chosen inside the run it starts.
+func (m Model) openActionsMenu(anchor domain.Rect) Model {
+	return m.open(menuForGlobal, anchor)
+}
+
+func (m Model) open(kind menuKind, anchor domain.Rect) Model {
+	m.menuKind, m.menuAnchor, m.menuOpen = kind, anchor, true
+	m.menuCursor = firstEnabled(m.menuItems())
 	return m
+}
+
+// menuAnchorPoint is where the keyboard hangs the menu from: under the selected
+// row of whichever tab is showing.
+func (m Model) menuAnchorPoint() domain.Rect {
+	if m.tab == tabTree {
+		return m.treeRowPoint()
+	}
+	return m.selectedRowPoint()
+}
+
+// actionsAnchorPoint hangs the global menu under the header button, where the
+// mouse would have opened it.
+func (m Model) actionsAnchorPoint() domain.Rect {
+	if zone := m.zones.Get(zoneActions); !zone.IsZero() {
+		return domain.Rect{X: zone.StartX, Y: zone.EndY}
+	}
+	return domain.Rect{X: 0, Y: domain.DashboardHeaderHeight - 1}
 }
 
 // selectedRowPoint is the last line of the selected row, so the keyboard opens
@@ -108,10 +178,14 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 	m = m.closeMenu()
 
 	selected, ok := m.selected()
-	if !ok {
+	if !ok && m.menuKind == menuForWorktree {
 		return m, nil
 	}
 	switch item.action {
+	case menuReparentBatch:
+		return m.startBatchReparent()
+	case menuReparent:
+		return m.startReparent(selected.Branch)
 	case menuDelete:
 		return m.startClean(selected.Branch)
 	}
@@ -122,19 +196,19 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 // was opened from, and overlay() pastes it over the frame. It names the worktree
 // it acts on, then rules that off from the actions themselves.
 func (m Model) menuBox() (string, domain.Rect) {
-	selected, ok := m.selected()
+	title, ok := m.menuTitle()
 	if !ok {
 		return "", domain.Rect{}
 	}
 
 	items := m.menuItems()
-	inner := menuInnerWidth(menuInnerWidthParams{Items: items, Title: selected.Branch, Screen: m.width})
+	inner := menuInnerWidth(menuInnerWidthParams{Items: items, Title: title, Screen: m.width})
 	if inner <= 0 {
 		return "", domain.Rect{}
 	}
 
 	lines := []string{
-		styles.DashboardMenuTitle.Render(truncate(selected.Branch, inner)),
+		styles.DashboardMenuTitle.Render(truncate(title, inner)),
 		styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, inner)),
 	}
 	if len(items) == 0 {
@@ -162,6 +236,18 @@ func (m Model) menuBox() (string, domain.Rect) {
 	return box, rect
 }
 
+// menuTitle names what the menu acts on: one worktree, or the dashboard itself.
+func (m Model) menuTitle() (string, bool) {
+	if m.menuKind == menuForGlobal {
+		return domain.DashboardActionsTitle, true
+	}
+	selected, ok := m.selected()
+	if !ok {
+		return "", false
+	}
+	return selected.Branch, true
+}
+
 type menuItemParams struct {
 	Item    menuItem
 	Inner   int
@@ -169,20 +255,27 @@ type menuItemParams struct {
 }
 
 // menuItemLines draws one entry: its label, and under it what stands in its way
-// when something does. The focused entry carries the tint the rest of the
-// dashboard uses.
+// when something does. Every entry spans the whole box, so what separates two
+// actions is the edge of the block the pointer is over rather than empty space —
+// the same accent bar and tint the worktree list uses for the row it is on.
 func (m Model) menuItemLines(params menuItemParams) []string {
-	label := truncate(params.Item.label, params.Inner)
+	inner := max(params.Inner-rowBarWidth, 0)
+	label := truncate(params.Item.label, inner)
 	if params.Item.disabled != "" {
+		// The caption hangs under its own entry: at the same indent it would read as
+		// a fourth peer in a menu of two.
+		caption := max(inner-rowBarWidth, 0)
 		return []string{
-			styles.DashboardDisabled.Render(label),
-			rowIndent + styles.DashboardRowMeta.Render(truncate(params.Item.disabled, max(params.Inner-rowBarWidth, 0))),
+			rowIndent + styles.DashboardDisabled.Render(pad(label, inner)),
+			rowIndent + rowIndent + styles.DashboardRowMeta.Render(truncate(params.Item.disabled, caption)),
 		}
 	}
 	if params.Focused {
-		return []string{styles.DashboardRowSelected.Width(params.Inner).Render(label)}
+		return []string{
+			styles.DashboardRowBar.Render(rowBar+" ") + styles.DashboardRowSelected.Width(inner).Render(label),
+		}
 	}
-	return []string{menuItemStyle(params.Item).Render(label)}
+	return []string{rowIndent + menuItemStyle(params.Item).Render(pad(label, inner))}
 }
 
 func menuItemStyle(item menuItem) lipgloss.Style {
@@ -203,9 +296,10 @@ type menuInnerWidthParams struct {
 func menuInnerWidth(params menuInnerWidthParams) int {
 	inner := max(lipgloss.Width(params.Title), lipgloss.Width(domain.DashboardMenuEmpty))
 	for _, item := range params.Items {
-		inner = max(inner, lipgloss.Width(item.label))
+		// Every entry carries the focus gutter, whether or not it is the focused one.
+		inner = max(inner, lipgloss.Width(item.label)+rowBarWidth)
 		if item.disabled != "" {
-			inner = max(inner, lipgloss.Width(item.disabled)+rowBarWidth)
+			inner = max(inner, lipgloss.Width(item.disabled)+2*rowBarWidth)
 		}
 	}
 	return min(inner, params.Screen-domain.DashboardMenuChrome)

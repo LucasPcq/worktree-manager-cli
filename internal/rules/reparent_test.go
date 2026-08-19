@@ -127,3 +127,68 @@ func TestChildrenOf(t *testing.T) {
 		t.Fatalf("expected no children for leaf dev/b, got %+v", got)
 	}
 }
+
+func exclusionSet(t *testing.T, branches []string) map[string]bool {
+	t.Helper()
+	// main ← feat ← dev-a ← dev-b
+	nodes := []domain.WorktreeNode{
+		{Branch: "main", IsMain: true},
+		{Branch: "feat", SourceBranch: "main"},
+		{Branch: "dev-a", SourceBranch: "feat"},
+		{Branch: "dev-b", SourceBranch: "dev-a"},
+	}
+	set := make(map[string]bool)
+	for _, name := range ReparentExclusions(ReparentExclusionsParams{
+		Nodes:      nodes,
+		Branches:   branches,
+		BaseBranch: "main",
+	}) {
+		set[name] = true
+	}
+	return set
+}
+
+func TestReparentExclusionsDropTheSelectionAndItsDescendants(t *testing.T) {
+	excluded := exclusionSet(t, []string{"feat"})
+
+	if excluded["main"] {
+		t.Error("main should stay a legal parent for feat")
+	}
+	if !excluded["feat"] {
+		t.Error("a worktree cannot be offered as its own parent")
+	}
+	// feat is an ancestor of both, so either would close a cycle.
+	if !excluded["dev-a"] || !excluded["dev-b"] {
+		t.Errorf("descendants of the selection must be excluded: %v", excluded)
+	}
+}
+
+// The hole the picker regression went through: with nothing selected there is
+// nothing to exclude, and every branch is legal — including the ones that stop
+// being legal the moment the user checks a box.
+func TestReparentExclusionsAreEmptyWithNoSelection(t *testing.T) {
+	if excluded := exclusionSet(t, nil); len(excluded) != 0 {
+		t.Errorf("excluded = %v, want nothing before a selection exists", excluded)
+	}
+}
+
+func TestReparentExclusionsCoverEverySelectedWorktree(t *testing.T) {
+	excluded := exclusionSet(t, []string{"feat", "dev-b"})
+
+	for _, name := range []string{"feat", "dev-a", "dev-b"} {
+		if !excluded[name] {
+			t.Errorf("%s must be excluded for the batch, got %v", name, excluded)
+		}
+	}
+	if excluded["main"] {
+		t.Error("main is still a legal parent for the whole batch")
+	}
+}
+
+// A branch outside the forest cannot be a worktree's descendant, so it is never
+// excluded — which is what keeps origin/* selectable.
+func TestReparentExclusionsIgnoreBranchesOutsideTheForest(t *testing.T) {
+	if excluded := exclusionSet(t, []string{"feat"}); excluded["origin/staging"] {
+		t.Error("a branch with no worktree can never close a cycle")
+	}
+}

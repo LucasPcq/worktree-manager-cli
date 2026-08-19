@@ -43,7 +43,19 @@ type prsMsg struct {
 
 type pollMsg struct{}
 
-var tabs = []string{domain.DashboardTabWorktrees}
+type treeMsg struct {
+	rows []domain.TreeRow
+	err  error
+}
+
+var tabs = []string{domain.DashboardTabWorktrees, domain.DashboardTabTree}
+
+// tabTree is the index of the Tree tab in tabs; the renderer and the loader both
+// key off it rather than off its title.
+const (
+	tabWorktrees = iota
+	tabTree
+)
 
 // Model is the dashboard's root Bubbletea model. It owns its own zone manager
 // so hit-testing is per-program state rather than a package global.
@@ -72,10 +84,18 @@ type Model struct {
 	outputOffset   int
 	outputExpanded bool
 
+	treeRows    []domain.TreeRow
+	treeCursor  int
+	treeOffset  int
+	treeLoaded  bool
+	treeLoading bool
+	treeErr     error
+
 	detailOpen bool
 	showHelp   bool
 
 	menuOpen   bool
+	menuKind   menuKind
 	menuCursor int
 	// menuAnchor is the cell the context menu hangs from: the click, or the
 	// selected row when the keyboard opened it.
@@ -154,6 +174,32 @@ func (m Model) loadWorktreesCmd(fetch bool) tea.Cmd {
 	}
 }
 
+// loadTreeCmd builds the forest off the UI thread. It costs a rev-list per node,
+// which is why it is only ever asked for once the Tree tab has been opened.
+func (m Model) loadTreeCmd() tea.Cmd {
+	listParams := m.listParams
+	return func() tea.Msg {
+		forest, err := worktree.BuildTree(worktree.BuildTreeParams{
+			ProjectDir: listParams.ProjectDir,
+			StateDir:   listParams.StateDir,
+			Config:     listParams.Config,
+		})
+		if err != nil {
+			return treeMsg{err: err}
+		}
+		return treeMsg{rows: rules.FlattenForest(forest)}
+	}
+}
+
+// treeCmd asks for a rebuild only when the tab has been opened at least once: a
+// user who never looks at the tree never pays for it.
+func (m Model) treeCmd() tea.Cmd {
+	if !m.treeLoaded && m.tab != tabTree {
+		return nil
+	}
+	return m.loadTreeCmd()
+}
+
 func (m Model) loadPRsCmd() tea.Cmd {
 	loader := m.params.PRLoader
 	if loader == nil {
@@ -199,7 +245,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, pollCmd()
 		}
 		m.loading = true
-		return m, tea.Batch(m.loadWorktreesCmd(false), pollCmd())
+		// The tree only refreshes on the poll while it is on screen; rebuilding a
+		// panel nobody is looking at costs a rev-list per node for nothing.
+		tree := tea.Cmd(nil)
+		if m.tab == tabTree {
+			tree = m.loadTreeCmd()
+		}
+		return m, tea.Batch(m.loadWorktreesCmd(false), tree, pollCmd())
+
+	case treeMsg:
+		return m.applyTree(msg), nil
 
 	case OutputLineMsg:
 		return m.appendOutput(msg), nil
@@ -216,6 +271,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) applyTree(msg treeMsg) Model {
+	m.treeLoading, m.treeErr = false, msg.err
+	if msg.err != nil {
+		return m
+	}
+	m.treeRows, m.treeLoaded = msg.rows, true
+	m.treeCursor = rules.ClampIndex(m.treeCursor, len(m.treeRows))
+	return m.reflow()
 }
 
 // applyWorktrees keeps the selection on a valid row: a worktree removed under
@@ -260,6 +325,12 @@ func (m Model) reflow() Model {
 		Visible: layout.ListRows,
 		Offset:  m.offset,
 	})
+	m.treeOffset = rules.DashboardScrollOffset(rules.DashboardScrollParams{
+		Cursor:  m.treeCursor,
+		Total:   len(m.treeRows),
+		Visible: layout.TreeRows,
+		Offset:  m.treeOffset,
+	})
 	m.outputOffset = rules.DashboardClampOffset(rules.DashboardOffsetParams{
 		Offset:  m.outputOffset,
 		Total:   len(m.outputLines),
@@ -268,16 +339,56 @@ func (m Model) reflow() Model {
 	return m
 }
 
+// selected is the worktree the current tab is pointing at. On the Tree tab a row
+// is a node, and a virtual node stands for a branch with no worktree — so it
+// selects nothing, and everything keyed off the selection (the detail panel, the
+// context menu) correctly finds there is nothing to act on.
 func (m Model) selected() (domain.WorktreeStatus, bool) {
+	if m.tab == tabTree {
+		return m.selectedTreeWorktree()
+	}
 	if m.cursor < 0 || m.cursor >= len(m.statuses) {
 		return domain.WorktreeStatus{}, false
 	}
 	return m.statuses[m.cursor], true
 }
 
+func (m Model) selectedTreeNode() (domain.TreeNode, bool) {
+	if m.treeCursor < 0 || m.treeCursor >= len(m.treeRows) {
+		return domain.TreeNode{}, false
+	}
+	return m.treeRows[m.treeCursor].Node, true
+}
+
+func (m Model) selectedTreeWorktree() (domain.WorktreeStatus, bool) {
+	node, ok := m.selectedTreeNode()
+	if !ok || node.IsVirtual {
+		return domain.WorktreeStatus{}, false
+	}
+	for _, status := range m.statuses {
+		if status.Branch == node.Branch {
+			return status, true
+		}
+	}
+	return domain.WorktreeStatus{}, false
+}
+
 func (m Model) moveCursor(delta int) Model {
+	if m.tab == tabTree {
+		m.treeCursor = rules.ClampIndex(m.treeCursor+delta, len(m.treeRows))
+		return m.reflow()
+	}
 	m.cursor = rules.ClampIndex(m.cursor+delta, len(m.statuses))
 	return m.reflow()
+}
+
+// rowCount is how many rows the current tab holds, for the keys that jump by a
+// page or to an end.
+func (m Model) rowCount() int {
+	if m.tab == tabTree {
+		return len(m.treeRows)
+	}
+	return len(m.statuses)
 }
 
 func (m Model) scrollOutput(delta int) Model {
@@ -287,7 +398,8 @@ func (m Model) scrollOutput(delta int) Model {
 
 func (m Model) refresh() (Model, tea.Cmd) {
 	m.loading, m.prsLoaded = true, false
-	return m, tea.Batch(m.loadWorktreesCmd(true), m.loadPRsCmd())
+	m.treeLoading = m.treeLoaded || m.tab == tabTree
+	return m, tea.Batch(m.loadWorktreesCmd(true), m.loadPRsCmd(), m.treeCmd())
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -341,26 +453,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyNew:
 		return m.startCreate()
 	case keyMenu:
-		return m.openMenu(m.selectedRowPoint()), nil
+		return m.openMenu(m.menuAnchorPoint()), nil
+	case keyActions:
+		return m.openActionsMenu(m.actionsAnchorPoint()), nil
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded
 		return m.reflow(), nil
 	case keyTab:
-		m.tab = (m.tab + 1) % len(tabs)
+		return m.selectTab((m.tab + 1) % len(tabs))
 	case keyShiftTab:
-		m.tab = (m.tab + len(tabs) - 1) % len(tabs)
+		return m.selectTab((m.tab + len(tabs) - 1) % len(tabs))
 	case keyUp, keyVimUp:
 		return m.moveCursor(-1), nil
 	case keyDown, keyVimDown:
 		return m.moveCursor(1), nil
 	case keyPageUp:
-		return m.moveCursor(-max(layout.ListRows, 1)), nil
+		return m.moveCursor(-max(m.pageRows(layout), 1)), nil
 	case keyPageDown:
-		return m.moveCursor(max(layout.ListRows, 1)), nil
+		return m.moveCursor(max(m.pageRows(layout), 1)), nil
 	case keyTop:
-		return m.moveCursor(-len(m.statuses)), nil
+		return m.moveCursor(-m.rowCount()), nil
 	case keyBottom:
-		return m.moveCursor(len(m.statuses)), nil
+		return m.moveCursor(m.rowCount()), nil
 	case keyOutputUp:
 		return m.scrollOutput(-1), nil
 	case keyOutputDown:
@@ -378,6 +492,24 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// selectTab moves to a tab and, the first time the Tree tab is opened, asks for
+// the forest it has never built.
+func (m Model) selectTab(index int) (Model, tea.Cmd) {
+	m.tab = index
+	if index != tabTree || m.treeLoaded || m.treeLoading {
+		return m.reflow(), nil
+	}
+	m.treeLoading = true
+	return m.reflow(), m.loadTreeCmd()
+}
+
+func (m Model) pageRows(layout domain.DashboardLayout) int {
+	if m.tab == tabTree {
+		return layout.TreeRows
+	}
+	return layout.ListRows
 }
 
 func (m Model) inZone(id string, msg tea.MouseMsg) bool {
@@ -414,8 +546,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	for index := range tabs {
 		if m.inZone(tabZone(index), msg) {
-			m.tab = index
-			return m, nil
+			return m.selectTab(index)
 		}
 	}
 
@@ -428,6 +559,30 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.startCreate()
 	}
 
+	if m.inZone(zoneActions, msg) {
+		zone := m.zones.Get(zoneActions)
+		return m.openActionsMenu(domain.Rect{X: zone.StartX, Y: zone.EndY}), nil
+	}
+
+	if model, hit := m.clickRow(msg); hit {
+		return model, nil
+	}
+
+	return m, nil
+}
+
+// clickRow selects the row under the pointer on whichever tab is showing.
+func (m Model) clickRow(msg tea.MouseMsg) (Model, bool) {
+	if m.tab == tabTree {
+		for index := range m.treeRows {
+			if !m.inZone(treeRowZone(index), msg) {
+				continue
+			}
+			m.treeCursor = index
+			return m.reflow(), true
+		}
+		return m, false
+	}
 	for index := range m.statuses {
 		if !m.inZone(rowZone(index), msg) {
 			continue
@@ -436,10 +591,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if m.layout().Narrow {
 			m.detailOpen = true
 		}
-		return m.reflow(), nil
+		return m.reflow(), true
 	}
-
-	return m, nil
+	return m, false
 }
 
 // menuMouse gives the menu the mouse while it is up: an entry activates, and
@@ -462,14 +616,11 @@ func (m Model) menuMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // rightClick opens the context menu on the row it lands on, selecting it first:
 // a menu that acted on another row than the one under the pointer would be a trap.
 func (m Model) rightClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	for index := range m.statuses {
-		if !m.inZone(rowZone(index), msg) {
-			continue
-		}
-		m.cursor = index
-		return m.reflow().openMenu(domain.Rect{X: msg.X, Y: msg.Y}), nil
+	model, hit := m.clickRow(msg)
+	if !hit {
+		return m, nil
 	}
-	return m, nil
+	return model.openMenu(domain.Rect{X: msg.X, Y: msg.Y}), nil
 }
 
 // modalMouse only ever resolves the modal's own rows: the frame behind it is
@@ -493,7 +644,7 @@ func (m Model) wheel(msg tea.MouseMsg, delta int) Model {
 	if m.outputExpanded && m.inZone(zoneOutput, msg) {
 		return m.scrollOutput(delta)
 	}
-	if m.inZone(zoneList, msg) {
+	if m.inZone(zoneList, msg) || m.inZone(zoneTree, msg) {
 		return m.moveCursor(delta)
 	}
 	return m
@@ -508,11 +659,11 @@ func (m Model) View() string {
 	body := ""
 	switch {
 	case layout.DetailVisible && layout.ListVisible:
-		body = lipgloss.JoinHorizontal(lipgloss.Top, m.renderList(layout), m.renderDetail(layout))
+		body = lipgloss.JoinHorizontal(lipgloss.Top, m.renderMain(layout), m.renderDetail(layout))
 	case layout.DetailVisible:
 		body = m.renderDetail(layout)
 	default:
-		body = m.renderList(layout)
+		body = m.renderMain(layout)
 	}
 
 	// A panel too small to draw returns nothing; keeping its empty line would push
@@ -525,6 +676,16 @@ func (m Model) View() string {
 	}
 
 	return m.zones.Scan(m.withOverlays(lipgloss.JoinVertical(lipgloss.Left, sections...)))
+}
+
+// renderMain draws whichever tab owns the main panel. The Tree tab takes the
+// list's place rather than the whole body, so the detail stays beside it and a
+// node keeps leading somewhere.
+func (m Model) renderMain(layout domain.DashboardLayout) string {
+	if m.tab == tabTree {
+		return m.renderTree(layout)
+	}
+	return m.renderList(layout)
 }
 
 // withOverlays pastes whatever is open over the frame. Only one ever is: each of

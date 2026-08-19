@@ -151,3 +151,153 @@ func TestBuildForestStatusPreserved(t *testing.T) {
 		t.Fatalf("status not preserved: %+v", feat.Status)
 	}
 }
+
+// flattenSample mirrors the forest output/tree_test.go renders, so the shape the
+// two surfaces share is pinned where it is now decided.
+func flattenSample() domain.Forest {
+	return domain.Forest{
+		Roots: []domain.TreeNode{
+			{
+				Branch: "main", IsMain: true,
+				Children: []domain.TreeNode{
+					{
+						Branch: "feat",
+						Children: []domain.TreeNode{
+							{Branch: "feat-ui"},
+							{Branch: "feat-api"},
+						},
+					},
+					{Branch: "billing"},
+				},
+			},
+			{Branch: "dev", IsVirtual: true},
+		},
+	}
+}
+
+func TestFlattenForestOrdersDepthFirst(t *testing.T) {
+	rows := FlattenForest(flattenSample())
+
+	got := make([]string, 0, len(rows))
+	for _, row := range rows {
+		got = append(got, row.Node.Branch)
+	}
+	want := []string{"main", "feat", "feat-ui", "feat-api", "billing", "dev"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d rows %v, want %d", len(got), got, len(want))
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Errorf("row %d = %q, want %q", index, got[index], want[index])
+		}
+	}
+}
+
+func TestFlattenForestPrefixes(t *testing.T) {
+	prefixes := make(map[string]string)
+	depths := make(map[string]int)
+	for _, row := range FlattenForest(flattenSample()) {
+		prefixes[row.Node.Branch] = row.Prefix
+		depths[row.Node.Branch] = row.Depth
+	}
+
+	cases := []struct {
+		branch string
+		prefix string
+		depth  int
+	}{
+		{"main", "", 0},
+		{"feat", domain.TreeConnectorBranch, 1},
+		// A non-last parent keeps the pipe running down its children's gutter.
+		{"feat-ui", domain.TreeGutterPipe + domain.TreeConnectorBranch, 2},
+		{"feat-api", domain.TreeGutterPipe + domain.TreeConnectorLast, 2},
+		{"billing", domain.TreeConnectorLast, 1},
+		{"dev", "", 0},
+	}
+	for _, tc := range cases {
+		if prefixes[tc.branch] != tc.prefix {
+			t.Errorf("%s prefix = %q, want %q", tc.branch, prefixes[tc.branch], tc.prefix)
+		}
+		if depths[tc.branch] != tc.depth {
+			t.Errorf("%s depth = %d, want %d", tc.branch, depths[tc.branch], tc.depth)
+		}
+	}
+}
+
+func TestFlattenForestEmpty(t *testing.T) {
+	if rows := FlattenForest(domain.Forest{}); len(rows) != 0 {
+		t.Errorf("an empty forest should flatten to no rows, got %d", len(rows))
+	}
+}
+
+func TestTreeBadgesFollowTheCanonicalOrder(t *testing.T) {
+	node := domain.TreeNode{
+		IsVirtual: true,
+		Status: domain.TreeNodeStatus{
+			PR:           &domain.WorktreeListPR{Number: 7},
+			CommitsAhead: 2,
+			OriginState:  domain.DivergenceAhead,
+			IsDirty:      true,
+			NeedsSync:    true,
+			InCycle:      true,
+		},
+	}
+
+	got := TreeBadges(node)
+	want := []domain.TreeBadge{
+		domain.TreeBadgeVirtual,
+		domain.TreeBadgePR,
+		domain.TreeBadgeAhead,
+		domain.TreeBadgeOrigin,
+		domain.TreeBadgeDirty,
+		domain.TreeBadgeNeedsSync,
+		domain.TreeBadgeCycle,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("badges = %v, want %v", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Errorf("badge %d = %v, want %v", index, got[index], want[index])
+		}
+	}
+}
+
+// A paused rebase is the more precise signal, so it replaces "dirty" rather than
+// stacking with it.
+func TestTreeBadgesPreferRebasingOverDirty(t *testing.T) {
+	node := domain.TreeNode{Status: domain.TreeNodeStatus{RebaseInProgress: true, IsDirty: true}}
+
+	got := TreeBadges(node)
+	if len(got) != 1 || got[0] != domain.TreeBadgeRebasing {
+		t.Errorf("badges = %v, want the rebase alone", got)
+	}
+}
+
+func TestTreeBadgesAreEmptyForACleanNode(t *testing.T) {
+	if got := TreeBadges(domain.TreeNode{Branch: "main", IsMain: true}); len(got) != 0 {
+		t.Errorf("badges = %v, want none", got)
+	}
+}
+
+func TestTreeSpacerPrefixKeepsTheGutterRunning(t *testing.T) {
+	cases := []struct {
+		name       string
+		nextPrefix string
+		want       string
+	}{
+		{"first child of a root", domain.TreeConnectorBranch, domain.TreeGutterPipe},
+		// The pipe runs down to and past the last sibling, or the line breaks just
+		// above it.
+		{"last sibling", domain.TreeConnectorLast, domain.TreeGutterPipe},
+		{"nested", domain.TreeGutterPipe + domain.TreeConnectorBranch, domain.TreeGutterPipe + domain.TreeGutterPipe},
+		{"a new root carries nothing", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := TreeSpacerPrefix(tc.nextPrefix); got != tc.want {
+				t.Errorf("spacer = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

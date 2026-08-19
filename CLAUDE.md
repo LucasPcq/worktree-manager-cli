@@ -150,6 +150,7 @@ internal/
     decide/                   ←   branch/env decisions shared by the create-like flows
     create/                   ←   `wtm create`: the run (create.go) + its questions (steps.go)
     clean/                    ←   `wtm clean`: the run (clean.go) + its questions (steps.go)
+    reparent/                 ←   `wtm reparent`: the run (reparent.go) + its questions (steps.go)
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
     env/                      ←   .env provisioning (create) + drift reconciliation (`wtm env`, sync.go)
@@ -229,8 +230,8 @@ rather than at every action site.
 
 Adding a kind means teaching every surface to render it: `flowui` refuses an unknown
 kind rather than guessing. Test doubles for the two seams live in
-`internal/testutil/flowtest`. `create` and `clean` are migrated; `extract`, `sync`,
-`prune` and the other commands still drive their wizard packages directly, and
+`internal/testutil/flowtest`. `create`, `clean` and `reparent` are migrated; `extract`,
+`sync`, `prune` and the other commands still drive their wizard packages directly, and
 `tui/newwt` stays until `extract` (which embeds it) migrates.
 
 **Every new worktree-mutating command goes through `flow/`** — no exception, and no new
@@ -278,7 +279,7 @@ step is not asked but is still read back — see `internal/flow/create/steps.go`
 `createFlow.recap`);
 the others do it in their recap builder (e.g. `internal/tui/extract`
 `buildCombinedRecap`, `internal/tui/newwt` `buildCreateRecap`, `internal/tui/checkout`
-`buildCheckoutRecap`, `internal/tui/reparent` `recapBody`).
+`buildCheckoutRecap`).
 
 ## 10. Validate before commit
 

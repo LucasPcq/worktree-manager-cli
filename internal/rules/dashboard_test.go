@@ -228,3 +228,31 @@ func TestComputeMenuRectSurvivesAScreenSmallerThanTheMenu(t *testing.T) {
 		t.Errorf("menu = %+v, want it clamped inside a 20x6 screen", rect)
 	}
 }
+
+func TestSplitRecapFieldSeparatesLabelFromValue(t *testing.T) {
+	label, value, ok := SplitRecapField("Parent:      feat → main")
+	if !ok {
+		t.Fatal("a recap field must split")
+	}
+	if label != "Parent:      " {
+		t.Errorf("label = %q, want the label and the run of spaces after it", label)
+	}
+	if value != "feat → main" {
+		t.Errorf("value = %q", value)
+	}
+}
+
+// A heading is not a field: it must be left exactly as the flow wrote it.
+func TestSplitRecapFieldLeavesHeadingsAndProseWhole(t *testing.T) {
+	for _, line := range []string{
+		"Will delete:",
+		"dev-a is currently rebased onto feat",
+		"",
+		":no label",
+		"Label:no gap",
+	} {
+		if _, _, ok := SplitRecapField(line); ok {
+			t.Errorf("%q must not read as a field", line)
+		}
+	}
+}

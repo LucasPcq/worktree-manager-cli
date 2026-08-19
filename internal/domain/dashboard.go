@@ -23,8 +23,10 @@ type DashboardLayout struct {
 	ListVisible   bool
 	DetailVisible bool
 
-	// ListRows is how many worktree rows fit in the list body, OutputLines how
-	// many lines fit in the output body (0 when it is folded).
+	// ListRows is how many worktree rows fit in the list body, TreeRows how many
+	// tree nodes fit in the same space (one line each), OutputLines how many lines
+	// fit in the output body (0 when it is folded).
 	ListRows    int
+	TreeRows    int
 	OutputLines int
 }

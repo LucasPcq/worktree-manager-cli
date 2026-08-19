@@ -11,7 +11,9 @@ import (
 )
 
 type ScriptedPrompter struct {
-	Answers   map[string]string
+	Answers map[string]string
+	// Sets answers a StepMultiSelect step, whose answer is a set rather than a value.
+	Sets      map[string][]string
 	Abort     bool
 	Confirmed bool
 
@@ -46,9 +48,26 @@ func (p *ScriptedPrompter) Ask(session flow.Session) (flow.Answers, error) {
 		}
 		p.Content[step.Key] = content
 
+		if values, scripted := p.Sets[step.Key]; scripted {
+			// A real host refuses to advance on a failed validation; a double that
+			// skipped it would let a flow ship a rule nothing ever runs.
+			if step.ValidateSet != nil {
+				if err := step.ValidateSet(values); err != nil {
+					return flow.Answers{}, err
+				}
+			}
+			p.Asked = append(p.Asked, step.Key)
+			answers = answers.With(step.Key, flow.Answer{Values: values, Asked: true})
+			continue
+		}
 		value, scripted := p.Answers[step.Key]
 		if !scripted {
 			return flow.Answers{}, fmt.Errorf("nothing scripted for step %q", step.Key)
+		}
+		if step.Validate != nil {
+			if err := step.Validate(value); err != nil {
+				return flow.Answers{}, err
+			}
 		}
 		p.Asked = append(p.Asked, step.Key)
 		answers = answers.With(step.Key, flow.Answer{Value: value, Asked: true})

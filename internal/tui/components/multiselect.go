@@ -96,6 +96,13 @@ func (m MultiSelectModel) Values() []string {
 	return vals
 }
 
+// SetSize fits the list to the region its host gives it, as SelectListModel does.
+// The wizard reaches the fields directly; a host outside this package cannot.
+func (m *MultiSelectModel) SetSize(params SetSizeParams) {
+	m.width, m.height = params.Width, params.Height
+	m.clampOffset()
+}
+
 // Init satisfies tea.Model.
 func (m MultiSelectModel) Init() tea.Cmd { return nil }
 
@@ -234,6 +241,10 @@ func (m *MultiSelectModel) refreshValidation() {
 	}
 }
 
+// selectedMarkerWidth is what the accent bar takes before the tinted span begins.
+// It matches the indent of an unselected row, so the checkboxes stay one column.
+const selectedMarkerWidth = 2
+
 // View renders the checkbox list, including the filter prompt when filtering.
 func (m MultiSelectModel) View() string {
 	if len(m.items) == 0 {
@@ -273,12 +284,14 @@ func (m MultiSelectModel) View() string {
 		}
 
 		if selected {
-			line := "▸ " + check + " " + plainTag(item.Tag) + item.Label
-			pad := m.width - PrintableWidth(line)
-			if pad > 0 {
-				line += strings.Repeat(" ", pad)
+			// The same focus language as SelectListModel: an accent bar and the
+			// subtle row tint, not the heavy highlight this list was left on. Plain
+			// (ANSI-free) content so the tint fills every cell.
+			block := check + " " + plainTag(item.Tag) + item.Label
+			if pad := m.width - selectedMarkerWidth - PrintableWidth(block); pad > 0 {
+				block += strings.Repeat(" ", pad)
 			}
-			b.WriteString(styles.ListItemSelected.Render(line))
+			b.WriteString(styles.SelectedMarker.Render("▌ ") + styles.ListItemTinted.Render(block))
 		} else {
 			line := styles.Indent + check + " " + coloredTag(item.Tag, item.Variant) + item.Label
 			b.WriteString(styles.ListItemNormal.Render(line))

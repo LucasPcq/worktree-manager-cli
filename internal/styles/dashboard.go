@@ -93,6 +93,11 @@ var (
 				Bold(true).
 				Padding(0, 3)
 
+	// DashboardHeaderButton is a secondary header action: it sits next to the
+	// filled call to action, so it is outlined by its own tint rather than filled
+	// too, which would make the bar read as two equal calls.
+	DashboardHeaderButton = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true).Padding(0, 2)
+
 	// DashboardDisabled renders what cannot be activated yet.
 	DashboardDisabled = lipgloss.NewStyle().Foreground(ColorMuted).Italic(true)
 
@@ -101,6 +106,20 @@ var (
 	DashboardRowSelected = lipgloss.NewStyle().
 				Background(ColorRowTint).
 				Foreground(ColorSelectedFg)
+
+	// DashboardRecapValue weights the value of a recap field over its label.
+	DashboardRecapValue = lipgloss.NewStyle().Bold(true)
+
+	// DashboardTreeGutter draws the connector run down the Tree tab, quieter than
+	// anything it connects; DashboardTreeVirtual renders a node standing in for a
+	// branch with no worktree, and DashboardTreeWarn its warning badges.
+	DashboardTreeGutter  = lipgloss.NewStyle().Foreground(ColorMuted)
+	DashboardTreeVirtual = lipgloss.NewStyle().Foreground(ColorMuted).Italic(true)
+	// DashboardTreeRoot weights the repository's own worktree, the one every tree
+	// hangs from; DashboardTreeNode tints the bullet of the others.
+	DashboardTreeRoot = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
+	DashboardTreeNode = lipgloss.NewStyle().Foreground(ColorPrimary)
+	DashboardTreeWarn = lipgloss.NewStyle().Foreground(ColorWarning)
 
 	// DashboardRowBar is the accent bar down the left of the selected row,
 	// DashboardRowName the worktree's own name — the heaviest thing in the list —

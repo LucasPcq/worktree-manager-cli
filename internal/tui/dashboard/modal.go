@@ -67,6 +67,7 @@ type modal struct {
 	content flow.StepContent
 	text    components.TextInputModel
 	list    components.SelectListModel
+	multi   components.MultiSelectModel
 
 	rows   []formRow
 	focus  int
@@ -108,6 +109,7 @@ func newModal(params modalParams) (modal, tea.Cmd) {
 func (mo modal) resize(width, height int) modal {
 	mo.width, mo.height = width, height
 	mo.list.SetSize(components.SetSizeParams{Width: mo.bodyWidth(), Height: mo.bodyHeight()})
+	mo.multi.SetSize(components.SetSizeParams{Width: mo.bodyWidth(), Height: mo.bodyHeight()})
 	mo.text.SetWidth(mo.bodyWidth())
 	return mo
 }
@@ -178,8 +180,12 @@ func (mo modal) show(step flow.Step, content flow.StepContent) (modal, tea.Cmd) 
 		mo.list = components.NewSelectList(components.NewSelectListParams{
 			Title:       content.Title,
 			Description: content.Description,
-			Items:       branchItems(step),
+			Items:       branchItems(step, content),
 		})
+	case flow.StepMultiSelect:
+		mo.multi = newMultiSelect(step, content)
+		mo.multi.SetSize(components.SetSizeParams{Width: mo.bodyWidth(), Height: mo.bodyHeight()})
+		return mo, mo.multi.Init()
 	default:
 		return mo.fail(fmt.Errorf(domain.DashboardUnsupportedStepFmt, step.Key, step.Kind))
 	}
@@ -246,6 +252,18 @@ func (mo modal) updateStepper(msg tea.KeyMsg) (modal, tea.Cmd) {
 	if mo.usesRows() {
 		return mo.updateForm(msg)
 	}
+	if mo.kind == flow.StepMultiSelect {
+		var cmd tea.Cmd
+		mo.multi, cmd = mo.multi.Update(msg)
+		switch {
+		case mo.multi.Aborted():
+			return mo.back()
+		case mo.multi.Done():
+			return mo.answerValues(mo.multi.Values())
+		}
+		return mo, cmd
+	}
+
 	if mo.kind == flow.StepText {
 		var cmd tea.Cmd
 		mo.text, cmd = mo.text.Update(msg)
@@ -277,10 +295,31 @@ func (mo modal) answer(value string) (modal, tea.Cmd) {
 	return mo.advance()
 }
 
+func (mo modal) answerValues(values []string) (modal, tea.Cmd) {
+	mo.answers = mo.answers.With(mo.session.Steps[mo.index].Key, flow.Answer{Values: values, Asked: true})
+	return mo.advance()
+}
+
 // usesRows reports whether the modal is showing its own rows rather than a
 // widget: a form always is, a stepper is on its recap.
 func (mo modal) usesRows() bool {
 	return mo.shape == modalForm || mo.kind == flow.StepRecap
+}
+
+func newMultiSelect(step flow.Step, content flow.StepContent) components.MultiSelectModel {
+	items := make([]components.MultiSelectItem, 0, len(content.Options))
+	for _, option := range content.Options {
+		if option.Separator {
+			continue
+		}
+		items = append(items, components.MultiSelectItem{Label: option.Label, Value: option.Value})
+	}
+	return components.NewMultiSelect(components.NewMultiSelectParams{
+		Title:       content.Title,
+		Description: content.Description,
+		Items:       items,
+		Validate:    step.ValidateSet,
+	})
 }
 
 func newSelectList(content flow.StepContent) components.SelectListModel {
@@ -300,16 +339,20 @@ func newSelectList(content flow.StepContent) components.SelectListModel {
 	})
 }
 
-func branchItems(step flow.Step) []components.SelectItem {
+// branchItems applies the content's exclusions over the step's candidates, the
+// same way flowui does — a narrowed picker must show the same list on both
+// surfaces.
+func branchItems(step flow.Step, content flow.StepContent) []components.SelectItem {
+	candidates := flow.KeepBranches(step.Branches, content.ExcludeBranches)
 	pinned := ""
-	for _, candidate := range step.Branches {
+	for _, candidate := range candidates {
 		if candidate.Name == step.Pinned {
 			pinned = step.Pinned
 			break
 		}
 	}
 	return components.BranchItems(components.BranchItemsParams{
-		Candidates:   step.Branches,
+		Candidates:   candidates,
 		Pinned:       pinned,
 		PinnedSuffix: domain.PinnedSuffixDefault,
 	})
@@ -396,6 +439,9 @@ func (mo modal) body(zones marker) []string {
 	case mo.kind == flow.StepText:
 		lines = append(lines, mo.stepHeader()...)
 		lines = append(lines, strings.Split(mo.text.View(), "\n")...)
+	case mo.kind == flow.StepMultiSelect:
+		lines = append(lines, mo.stepHeader()...)
+		lines = append(lines, strings.Split(mo.multi.View(), "\n")...)
 	default:
 		lines = append(lines, mo.stepHeader()...)
 		lines = append(lines, strings.Split(mo.list.View(), "\n")...)
@@ -409,6 +455,11 @@ func (mo modal) stepHeader() []string {
 	var lines []string
 	if mo.content.Title != "" && mo.content.Title != mo.title {
 		lines = append(lines, styles.Bold.Render(truncate(mo.content.Title, mo.bodyWidth())))
+		// The question and what it entails are two different things to read; run
+		// together they read as one wrapped sentence.
+		if mo.content.Description != "" {
+			lines = append(lines, "")
+		}
 	}
 	for _, line := range strings.Split(mo.content.Description, "\n") {
 		if mo.content.Description == "" {
@@ -432,6 +483,8 @@ func (mo modal) hint() string {
 		return domain.DashboardConfirmHint
 	case mo.kind == flow.StepText:
 		return domain.DashboardStepperTextHint
+	case mo.kind == flow.StepMultiSelect:
+		return domain.DashboardStepperMultiHint
 	}
 	return domain.DashboardStepperHint
 }
