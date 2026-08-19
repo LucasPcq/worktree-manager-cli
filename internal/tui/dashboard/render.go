@@ -187,8 +187,8 @@ func (m Model) headerRepoLine() string {
 // this row one column past the repository name on the row above it.
 func (m Model) headerBaseActiveLine() string {
 	segments := make([]string, 0, 2)
-	if m.baseBranch != "" {
-		segments = append(segments, fmt.Sprintf(domain.DashboardBaseFmt, m.baseBranch))
+	if m.baseBranch() != "" {
+		segments = append(segments, fmt.Sprintf(domain.DashboardBaseFmt, m.baseBranch()))
 	}
 	if m.activeBranch != "" {
 		segments = append(segments, domain.DashboardActiveGlyph+" "+m.activeBranch)
@@ -300,8 +300,8 @@ func (m Model) contextLeft(params contextLeftParams) string {
 	if params.Repo && m.repoName != "" {
 		segments = append(segments, m.repoName)
 	}
-	if params.Base && m.baseBranch != "" {
-		segments = append(segments, fmt.Sprintf(domain.DashboardBaseFmt, m.baseBranch))
+	if params.Base && m.baseBranch() != "" {
+		segments = append(segments, fmt.Sprintf(domain.DashboardBaseFmt, m.baseBranch()))
 	}
 	if params.Active && m.activeBranch != "" {
 		segments = append(segments, domain.DashboardActiveGlyph+" "+m.activeBranch)

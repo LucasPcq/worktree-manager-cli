@@ -19,6 +19,9 @@ const (
 	menuDelete
 	menuReparentBatch
 	menuPrune
+	menuSync
+	menuSyncAll
+	menuRefreshBase
 )
 
 // menuKind is which menu is open: the one hanging off a worktree row, or the
@@ -53,14 +56,11 @@ func (m Model) menuItems() []menuItem {
 
 func (m Model) worktreeMenuItems() []menuItem {
 	selected, ok := m.selected()
-	if !ok || selected.IsParent {
+	if !ok {
 		return nil
 	}
 
-	items := []menuItem{
-		{label: domain.DashboardMenuReparent, action: menuReparent},
-		{label: domain.DashboardMenuDelete, action: menuDelete, danger: true},
-	}
+	items := worktreeActions(selected)
 	caption, busy := m.busyCaption(selected.Branch)
 	if !busy {
 		return items
@@ -71,11 +71,26 @@ func (m Model) worktreeMenuItems() []menuItem {
 	return items
 }
 
+// worktreeActions is what a row offers. The base row hangs off nothing, so it
+// has neither a parent to be moved to nor a rebase to run: all it can do is
+// catch up with its own remote.
+func worktreeActions(selected domain.WorktreeStatus) []menuItem {
+	if selected.IsParent {
+		return []menuItem{{label: domain.DashboardMenuRefreshBase, action: menuRefreshBase}}
+	}
+	return []menuItem{
+		{label: domain.DashboardMenuSync, action: menuSync},
+		{label: domain.DashboardMenuReparent, action: menuReparent},
+		{label: domain.DashboardMenuDelete, action: menuDelete, danger: true},
+	}
+}
+
 // globalMenuItems act on worktrees the user picks inside the run, not on the
 // selected row, so nothing here is keyed off the selection.
 func (m Model) globalMenuItems() []menuItem {
 	items := []menuItem{
 		{label: domain.DashboardMenuReparentBatch, action: menuReparentBatch},
+		{label: domain.DashboardMenuSyncAll, action: menuSyncAll},
 		{label: domain.DashboardMenuPrune, action: menuPrune, danger: true},
 	}
 	caption, busy := m.busyCaption("")
@@ -188,10 +203,16 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 		return m.startBatchReparent()
 	case menuPrune:
 		return m.startPrune()
+	case menuSyncAll:
+		return m.startSyncAll()
 	case menuReparent:
 		return m.startReparent(selected.Branch)
 	case menuDelete:
 		return m.startClean(selected.Branch)
+	case menuSync:
+		return m.startSync(selected.Branch)
+	case menuRefreshBase:
+		return m.startRefreshBase(selected.Branch)
 	}
 	return m, nil
 }

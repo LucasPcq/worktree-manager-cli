@@ -59,7 +59,7 @@ func (f *pruneFlow) selectionStep() flow.Step {
 		Resolve: func(flow.Answers) (flow.Answer, error) {
 			return flow.Answer{Values: f.candidateBranches()}, nil
 		},
-		Summarize: summarizeSelection,
+		Summarize: flow.SummarizeSet,
 	}
 }
 
@@ -107,18 +107,6 @@ func candidateTag(candidate domain.PruneCandidate) (string, domain.Tone) {
 	default:
 		return "", domain.ToneNeutral
 	}
-}
-
-func summarizeSelection(answer flow.Answer) string {
-	values := answer.Values
-	if len(values) == 0 {
-		return "none"
-	}
-	const maxNames = 5
-	if len(values) <= maxNames {
-		return strings.Join(values, ", ")
-	}
-	return strings.Join(values[:maxNames], ", ") + fmt.Sprintf(" +%d", len(values)-maxNames)
 }
 
 func (f *pruneFlow) reparentStep() flow.Step {

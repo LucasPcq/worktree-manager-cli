@@ -51,6 +51,10 @@ type reparentedMsg struct{}
 // re-read rather than one row dropped.
 type prunedMsg struct{}
 
+// syncedMsg says a cascade rewrote branches and may have moved the base, so
+// every row's state against its parent and its remote is stale.
+type syncedMsg struct{}
+
 // listenCmd delivers the next message a flow goroutine posted. Update re-arms it
 // on every flowMsg, so there is exactly one reader on the channel at all times.
 func listenCmd(msgs <-chan tea.Msg) tea.Cmd {
@@ -84,32 +88,41 @@ func (p prompter) Ask(session flow.Session) (flow.Answers, error) {
 // Confirm is a standalone decision, asked as a one-question form: a flow reaches
 // it after an execution, when there is no session left to join.
 func (p prompter) Confirm(params flow.ConfirmParams) (bool, error) {
-	session := flow.Session{Steps: []flow.Step{{
-		Kind:        flow.StepRecap,
-		Key:         keyConfirm,
-		Title:       params.Title,
-		Description: confirmDescription(params),
-		Options:     []flow.Option{{Label: domain.DashboardConfirmLabel, Value: confirmYes}},
-	}}}
-
-	answers, err := prompter{send: p.send, title: params.Title, shape: modalForm}.Ask(session)
+	answers, err := prompter{send: p.send, title: params.Title, shape: modalForm}.Ask(confirmSession(params))
 	if err != nil {
 		return false, err
 	}
 	return answers.Value(keyConfirm) == confirmYes, nil
 }
 
+func confirmSession(params flow.ConfirmParams) flow.Session {
+	return flow.Session{Steps: []flow.Step{{
+		Kind:        flow.StepRecap,
+		Key:         keyConfirm,
+		Title:       params.Title,
+		Description: flow.ConfirmDescription(params),
+		Options:     confirmOptions(params),
+	}}}
+}
+
+// confirmOptions names both outcomes when the caller named them: closing the
+// modal is a way out, not an answer, so a two-outcome decision has to offer both.
+// It leads with the outcome DefaultYes names, the same rule flowui.confirmItems
+// applies, so the two surfaces never disagree on which side a caller highlighted.
+func confirmOptions(params flow.ConfirmParams) []flow.Option {
+	if params.YesLabel == "" {
+		return []flow.Option{{Label: domain.DashboardConfirmLabel, Value: confirmYes}}
+	}
+	yes := flow.Option{Label: params.YesLabel, Value: confirmYes}
+	no := flow.Option{Label: params.NoLabel, Value: confirmNo}
+	if params.DefaultYes {
+		return []flow.Option{yes, {Separator: true}, no}
+	}
+	return []flow.Option{no, {Separator: true}, yes}
+}
+
 const (
 	keyConfirm = "dashboard.confirm"
 	confirmYes = "yes"
+	confirmNo  = "no"
 )
-
-func confirmDescription(params flow.ConfirmParams) string {
-	if params.Warning == "" {
-		return params.Description
-	}
-	if params.Description == "" {
-		return params.Warning
-	}
-	return params.Description + "\n" + params.Warning
-}

@@ -375,3 +375,97 @@ func TestTheActionsMenuStartsThePruneRun(t *testing.T) {
 		t.Errorf("operation = %+v, want a blocking run with no target", got)
 	}
 }
+
+// The Tree tab flags a worktree whose parent moved; the row menu is where that
+// is acted on, so the rebase leads it.
+func TestTheRowMenuLeadsWithSync(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+
+	items := model.worktreeMenuItems()
+
+	if len(items) == 0 || items[0].action != menuSync {
+		t.Fatalf("items = %+v, want the row menu to lead with the sync", items)
+	}
+	if items[0].label != domain.DashboardMenuSync || items[0].danger {
+		t.Errorf("entry = %+v, want the sync named and not marked dangerous", items[0])
+	}
+}
+
+// The base row had no menu at all: it hangs off nothing, so there is nothing to
+// rebase it onto — only its own refresh.
+func TestTheBaseRowOffersTheBaseRefreshAlone(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight)
+	model = update(model, worktreesMsg{
+		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}},
+		parents:  map[string]string{},
+	})
+
+	items := model.worktreeMenuItems()
+
+	if len(items) != 1 || items[0].action != menuRefreshBase {
+		t.Fatalf("items = %+v, want exactly the base refresh", items)
+	}
+	if items[0].label != domain.DashboardMenuRefreshBase {
+		t.Errorf("label = %q, want the refresh named", items[0].label)
+	}
+}
+
+func TestTheActionsMenuOffersSyncAll(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model = update(model, key(domain.KeyActions))
+
+	item := model.menuItems()[menuIndexOf(t, model, menuSyncAll)]
+	if item.label != domain.DashboardMenuSyncAll {
+		t.Errorf("label = %q, want the entry named %q", item.label, domain.DashboardMenuSyncAll)
+	}
+	if item.danger {
+		t.Error("a rebase destroys nothing: it must not read as dangerous")
+	}
+}
+
+func TestTheActionsMenuStartsTheSyncRun(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model = update(model, key(domain.KeyActions))
+
+	started, cmd := model.activateMenu(menuIndexOf(t, model, menuSyncAll))
+
+	if cmd == nil {
+		t.Fatal("activating the entry must start the run")
+	}
+	if len(started.ops.running) != 1 || started.ops.running[0].kind != domain.OpKindSync {
+		t.Fatalf("running = %+v, want the sync run recorded", started.ops.running)
+	}
+}
+
+func TestTheRowMenuStartsTheSyncOnItsWorktree(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model = update(model, key("j"))
+	model = update(model, key(domain.KeyMenu))
+
+	started, cmd := model.activateMenu(menuIndexOf(t, model, menuSync))
+
+	if cmd == nil {
+		t.Fatal("activating the sync entry must start the run")
+	}
+	if len(started.ops.running) != 1 || started.ops.running[0].kind != domain.OpKindSync {
+		t.Fatalf("running = %+v, want the sync run recorded", started.ops.running)
+	}
+}
+
+func TestTheBaseRowStartsTheBaseRefresh(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight)
+	model = update(model, worktreesMsg{
+		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}},
+		parents:  map[string]string{},
+	})
+	model = update(model, key(domain.KeyMenu))
+
+	started, cmd := model.activateMenu(menuIndexOf(t, model, menuRefreshBase))
+
+	if cmd == nil {
+		t.Fatal("activating the refresh entry must start the run")
+	}
+	if len(started.ops.running) != 1 || started.ops.running[0].kind != domain.OpKindSync {
+		t.Fatalf("running = %+v, want the sync run recorded", started.ops.running)
+	}
+}

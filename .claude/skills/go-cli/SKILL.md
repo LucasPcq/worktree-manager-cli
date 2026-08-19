@@ -463,9 +463,9 @@ bug: no breadcrumb, and `Esc` quits the whole flow instead of going back.
   OnMsg, InitCmd, Loading, LoadingText})` — it centralises the program/assertion/abort boilerplate.
   It maps `Esc` at step 1 to `domain.ErrUserAborted`; otherwise pull values from
   `final.Steps()[i].Model.(components.SelectListModel).Value()`.
-- Reference implementations: `internal/tui/relocate/wizard.go`, `internal/tui/checkout/wizard.go`,
-  `internal/tui/syncpicker/picker.go`. (`clean`'s wizard is no longer one of them: it is
-  declared in `internal/flow/clean/steps.go` and run through `internal/tui/flowui`.)
+- Reference implementations: `internal/tui/relocate/wizard.go`, `internal/tui/checkout/wizard.go`.
+  (`clean` and `sync` are no longer among them: their steps are declared in
+  `internal/flow/<cmd>/steps.go` and run through `internal/tui/flowui`.)
 
 Standalone wrappers (`RunStandaloneSelect`/`RunStandaloneConfirm`) are only for a **single**
 one-shot decision where there is no prior step to go back to (e.g. `run up`'s profile picker).
@@ -552,8 +552,9 @@ then a single **recap** as the last step. The rules:
   it against what is already known before the wizard starts.
 - For an **async** recap (safety check, plan preview), keep a hand-built `SelectListModel` step with
   `Recap: true` and swap its model in via `OnMsg`/`UpdateStepModel` (RecapStep's `Build` is sync).
-  See `internal/tui/syncpicker/picker.go` (plan). In the flow model it is one field:
-  `Load` + `LoadingMessage` on the step (`internal/flow/clean/steps.go`, `deleteStep`).
+  In the flow model it is one field instead: `Load` + `LoadingMessage` on the step
+  (`internal/flow/clean/steps.go` `deleteStep`, `internal/flow/sync/steps.go` `confirmStep`
+  for the cascade preview).
 - `ConfirmStep`/`ConfirmModel` stay only for genuine one-shot standalone Yes/No prompts outside a
   wizard (e.g. extract's conflict-marker `ConfirmResolve`). `ConfirmStep.Decide` also returns a
   `skipReason` for parity.
@@ -568,8 +569,8 @@ then a single **recap** as the last step. The rules:
   positional args, `--all`) routes them all through the *same* wizard, skipping the steps a form
   already fixes (e.g. `sync <branches>`/`--all` skip the multi-select but keep the on-conflict
   choice and the recap). Don't leave one path on a standalone confirm while another gets the
-  wizard — see `internal/tui/syncpicker/picker.go` + `internal/commands/wt/sync.go`
-  (`resolveSyncSelection`). A genuinely post-execution decision that reacts to a runtime outcome
+  wizard — see `internal/flow/sync/steps.go`, where the fixed selection becomes a preset the
+  recap still reads back. A genuinely post-execution decision that reacts to a runtime outcome
   (sync's push after the rebase, a failed fast-forward, an extract conflict) legitimately stays a
   standalone prompt after the run — it can't be decided upfront.
 - Bypass flags follow the two-axis taxonomy below (`--yes` = confirmations/decisions,
@@ -724,9 +725,9 @@ known:
      `w.SetLoading(false)`.
   Guard against a premature commit while loading: an empty `SelectList` makes `Enter` a no-op
   (`clean`'s delete step); a `ConfirmModel` needs an explicit `if w.Loading() && key=="enter"` swallow
-  in `OnMsg` (`sync`'s confirm step). Ref: `internal/tui/syncpicker/picker.go` (async plan
-  preview). The same async safety check, expressed as a flow step:
-  `internal/flow/clean/steps.go`, `deleteStep`.
+  in `OnMsg`. Expressed as a flow step, the async work is a `Load` and the guard comes free —
+  the host holds `Enter` while it runs: `internal/flow/clean/steps.go` `deleteStep` (safety
+  check), `internal/flow/sync/steps.go` `confirmStep` (cascade preview).
 - Keep `Build` (synchronous) for **fast, local** derivation — reserve `OnEnter` for genuinely slow
   work; over-using it is needless complexity.
 

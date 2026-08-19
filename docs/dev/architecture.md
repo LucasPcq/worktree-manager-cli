@@ -93,10 +93,11 @@ step declaration itself (`Skip`, `Build`, `Load`) and the courier disappears. Th
 the gain that justifies the refactor independently of the dashboard: `create` and
 `clean` inject nothing today.
 
-The closures have not all gone yet, because not every command has migrated: `sync`
-still injects `PlanPreview` into `internal/tui/syncpicker`, `checkout` still injects
-`EnvFallback`. `prune`'s `ReparentPreview` went with its migration — a flow calls
-`rules.FinalizePrunePlan` itself. And `internal/commands/wt/create.go` still holds `sourceUpdatePrompt`,
+The closures have not all gone yet, because not every command has migrated:
+`checkout` still injects `EnvFallback`. `prune`'s `ReparentPreview` and `sync`'s
+`PlanPreview` both went with their migration — a flow calls `rules.FinalizePrunePlan`
+and `rules.SprintSyncPlan` directly, and `internal/tui/syncpicker` (the package
+`PlanPreview` was injected into) no longer exists. And `internal/commands/wt/create.go` still holds `sourceUpdatePrompt`,
 `envFallbackPrompt` and `memoizedTarget` as thin adapters over `internal/flow/decide` —
 not for `create`, which no longer uses them, but for `wtm extract`, which embeds
 create's Bubbletea wizard as a sub-flow. They go with its migration (LUC-182).
@@ -109,7 +110,8 @@ create's Bubbletea wizard as a sub-flow. They go with its migration (LUC-182).
 | `clean` | `internal/flow/clean` | CLI wizard, unattended, dashboard |
 | `reparent` | `internal/flow/reparent` | CLI wizard, unattended, dashboard |
 | `prune` | `internal/flow/prune` | CLI wizard, unattended, dashboard |
-| `extract`, `sync`, `relocate`, `checkout`, `env` | `internal/commands/wt/*.go` + their `internal/tui/*` wizard packages | CLI only |
+| `sync` | `internal/flow/sync` | CLI wizard, unattended, dashboard |
+| `extract`, `relocate`, `checkout`, `env` | `internal/commands/wt/*.go` + their `internal/tui/*` wizard packages | CLI only |
 
 Unmigrated commands still follow the old model, and the parts of the `go-cli` skill
 that describe `components.Step` wizards still apply to them. A **new** mutation

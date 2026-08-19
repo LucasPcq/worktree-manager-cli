@@ -3,6 +3,7 @@ package rules
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -207,4 +208,25 @@ func StaleParentsFor(params StaleParentsForParams) []domain.ParentUpdate {
 		stale = append(stale, found)
 	}
 	return stale
+}
+
+// SprintSyncPlan returns the cascade preview as a plain (unstyled) string: a
+// header line plus one "branch ← parent" line per step, in execution order.
+// Unlike a styled render it emits no ANSI, so it can be embedded in a wizard step
+// description that re-renders it in its own muted style.
+// Returns "" when the plan has no rebase steps (e.g. a base-only refresh).
+func SprintSyncPlan(plan domain.SyncPlan) string {
+	if len(plan.Steps) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(domain.SyncPlanHeader)
+	for i, step := range plan.Steps {
+		parent := step.SourceBranch
+		if parent == "" {
+			parent = "unknown parent"
+		}
+		fmt.Fprintf(&b, "\n%d. %s ← %s", i+1, step.Branch, parent)
+	}
+	return b.String()
 }

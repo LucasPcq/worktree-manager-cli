@@ -100,6 +100,16 @@ func confirmIndex(t *testing.T, model Model) int {
 	return rowIndex(t, model, func(row formRow) bool { return row.kind == formButton && row.confirm })
 }
 
+func confirmButtonRows(model Model) []formRow {
+	var buttons []formRow
+	for _, row := range model.modal.rows {
+		if row.kind == formButton && row.confirm {
+			buttons = append(buttons, row)
+		}
+	}
+	return buttons
+}
+
 func blockerIndexes(model Model) []int {
 	var indexes []int
 	for index, row := range model.modal.rows {
@@ -169,6 +179,21 @@ func TestDeleteStaysInertUntilEveryRefusalIsLifted(t *testing.T) {
 	}
 	if got := answered.answers.Value("delete"); got != deleteForce {
 		t.Errorf("delete = %q, want the refusals lifted explicitly, one by one", got)
+	}
+}
+
+// A refusal standing is the one case where the outcomes are not all offered: the
+// plain removal would fail on what was just acknowledged, so forcing is the only
+// way through and nothing beside it may be pressed by mistake.
+func TestABlockedRecapOffersOnlyTheDangerousWayThrough(t *testing.T) {
+	model, _ := openDeleteForm(t, deleteSession(dirtyAndUnpushed()...))
+
+	buttons := confirmButtonRows(model)
+	if len(buttons) != 1 {
+		t.Fatalf("%d confirm button(s) while a refusal stands, want the dangerous one alone", len(buttons))
+	}
+	if buttons[0].value != deleteForce || !buttons[0].danger {
+		t.Fatalf("the only way through must be the dangerous option, got %+v", buttons[0])
 	}
 }
 

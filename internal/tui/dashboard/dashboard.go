@@ -104,12 +104,12 @@ type Model struct {
 	// activeBranch is the worktree the cwd is under, deduced from a path-prefix
 	// match — no git call. Empty until a surface computes and sets it.
 	activeBranch string
-	// repoName and baseBranch name the header's context line; both are fixed for
-	// the life of the program. fetchedAt dates the last successful fetch (zero
-	// when the repository has never fetched) and is refreshed on every reload.
-	repoName   string
-	baseBranch string
-	fetchedAt  time.Time
+	// repoName names the header's context line and is fixed for the life of the
+	// program; the base branch it sits beside is read from config through
+	// baseBranch(). fetchedAt dates the last successful fetch (zero when the
+	// repository has never fetched) and is refreshed on every reload.
+	repoName  string
+	fetchedAt time.Time
 
 	prs       []domain.PRInfo
 	ghConn    domain.GHConnection
@@ -175,14 +175,13 @@ func New(params RunParams) Model {
 			StateDir:   params.StateDir,
 			Config:     params.Config,
 		},
-		zones:      zone.New(),
-		msgs:       make(chan tea.Msg, domain.DashboardMsgBuffer),
-		ghConn:     domain.GHConnectionOK,
-		loading:    true,
-		details:    map[string]domain.WorktreeDetail{},
-		spinner:    components.MutedSpinner(),
-		repoName:   filepath.Base(params.ProjectDir),
-		baseBranch: params.Config.Project.Worktrees.BaseBranch,
+		zones:    zone.New(),
+		msgs:     make(chan tea.Msg, domain.DashboardMsgBuffer),
+		ghConn:   domain.GHConnectionOK,
+		loading:  true,
+		details:  map[string]domain.WorktreeDetail{},
+		spinner:  components.MutedSpinner(),
+		repoName: filepath.Base(params.ProjectDir),
 	}
 }
 

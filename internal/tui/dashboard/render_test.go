@@ -68,7 +68,7 @@ func TestHeaderIsWiredThroughTheRealPath(t *testing.T) {
 func TestHeaderCarriesRepoAndActiveWorktree(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "main", "feat/a")
 	model.repoName = "worktree-manager-cli"
-	model.baseBranch = "main"
+	model.params.Config.Project.Worktrees.BaseBranch = "main"
 	model.activeBranch = "feat/a"
 
 	header := model.renderHeader(model.layout())
@@ -100,7 +100,7 @@ func TestHeaderAnnouncesStaleFetchOnlyPastTheThreshold(t *testing.T) {
 func TestHeaderDropsSegmentsRightToLeftWhenNarrow(t *testing.T) {
 	model := newTestModel(t, narrowWide, domain.DashboardHeaderTallThreshold-1, "main")
 	model.repoName = "un-nom-de-depot-vraiment-tres-long"
-	model.baseBranch = "main"
+	model.params.Config.Project.Worktrees.BaseBranch = "main"
 	model.activeBranch = "feat/une-branche-au-nom-interminable"
 	model.fetchedAt = time.Now().Add(-72 * time.Hour)
 
@@ -119,7 +119,8 @@ func TestHeaderDropsSegmentsRightToLeftWhenNarrow(t *testing.T) {
 	// and drop active, never the reverse.
 	order := New(RunParams{})
 	t.Cleanup(order.Close)
-	order.repoName, order.baseBranch, order.activeBranch = "demo-repo", "trunk", "wip"
+	order.repoName, order.activeBranch = "demo-repo", "wip"
+	order.params.Config.Project.Worktrees.BaseBranch = "trunk"
 
 	const (
 		widthDropsActiveOnly = 32 // " wtm  demo-repo · base trunk" (28) fits; the +active variant (36) does not.
