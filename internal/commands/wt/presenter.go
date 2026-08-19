@@ -12,6 +12,7 @@ import (
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
 	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
+	syncflow "github.com/LucasPcq/wtm/internal/flow/sync"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -185,6 +186,45 @@ func (p prunePresenter) Pruned(outcome pruneflow.Outcome) error {
 	output.Frame(p.cmd.OutOrStdout(), func() {
 		output.FormatPruneResult(p.cmd.OutOrStdout(), outcome.Result)
 	})
+	return nil
+}
+
+type syncPresenter struct {
+	cliPresenter
+}
+
+// Planned prints the cascade a run that could not ask never saw in a recap. It
+// opens the frame on stderr, where the plan has always been written.
+func (p syncPresenter) Planned(plan domain.SyncPlan) {
+	if !p.human {
+		return
+	}
+	output.FrameStart(p.cmd.ErrOrStderr())
+	output.FormatSyncPlan(p.cmd.ErrOrStderr(), plan)
+}
+
+// Rebased is the recap the user reads BEFORE being asked to push. Its single
+// leading blank separates the plan/spinner section (stderr) from the recap.
+func (p syncPresenter) Rebased(result domain.SyncResult) {
+	if !p.human {
+		return
+	}
+	output.Blank(p.cmd.OutOrStdout())
+	output.FormatSyncResult(p.cmd.OutOrStdout(), result)
+}
+
+func (p syncPresenter) Synced(outcome syncflow.Outcome) error {
+	if p.format == domain.OutputJSON {
+		return output.WriteSyncResultJSON(p.cmd.OutOrStdout(), outcome.Result)
+	}
+	if outcome.Empty {
+		output.Frame(p.cmd.OutOrStdout(), func() {
+			output.Message(p.cmd.OutOrStdout(), domain.SyncNothingToSync)
+		})
+		return nil
+	}
+	output.FormatSyncPushSummary(p.cmd.OutOrStdout(), outcome.Result.Steps)
+	output.FrameEnd(p.cmd.OutOrStdout())
 	return nil
 }
 
