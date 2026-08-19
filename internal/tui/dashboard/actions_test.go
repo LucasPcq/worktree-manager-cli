@@ -346,7 +346,7 @@ func TestSyncAllLeavesTheUnsyncableUnchecked(t *testing.T) {
 		parents: map[string]string{},
 	})
 
-	got := model.syncableBranches()
+	got := model.rebasableBranches()
 
 	if len(got) != 1 || got[0] != "clean" {
 		t.Errorf("pre-checked = %v, want only the worktree a cascade would rebase", got)
@@ -417,5 +417,31 @@ func TestARunThatAlreadyReportedItselfAddsNoRedundantFailureLine(t *testing.T) {
 	}
 	if len(model.outputLines) != 0 {
 		t.Errorf("output = %q, want nothing: the steps already said what happened", model.outputLines)
+	}
+}
+
+// The base refresh is a context-menu entry: it acts on the row it hangs off, not
+// on whatever the config calls the base.
+func TestTheBaseRefreshActsOnTheRowItWasOpenedFrom(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight)
+	model = update(model, worktreesMsg{
+		statuses: []domain.WorktreeStatus{{Branch: "trunk", IsParent: true}},
+		parents:  map[string]string{},
+	})
+	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindCreate, target: "trunk"})
+
+	refused, cmd := model.startRefreshBase("trunk")
+
+	if cmd != nil {
+		t.Fatal("the run must be refused: it acts on a worktree another run is holding")
+	}
+	if len(refused.outputLines) == 0 {
+		t.Error("the refusal must be stated where the user is looking")
+	}
+	if got := model.syncBase("trunk"); got != "trunk" {
+		t.Errorf("base = %q, want the row's own branch to root the cascade", got)
+	}
+	if got := model.syncBase(""); got != model.baseBranch() {
+		t.Errorf("base = %q, want the configured base when no row names one", got)
 	}
 }

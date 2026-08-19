@@ -201,16 +201,21 @@ func (m Model) startSync(branch string) (Model, tea.Cmd) {
 func (m Model) startSyncAll() (Model, tea.Cmd) {
 	return m.runSync(runSyncParams{
 		Title:    domain.DashboardSyncTitle,
-		Precheck: m.syncableBranches(),
+		Precheck: m.rebasableBranches(),
 	})
 }
 
-// startRefreshBase fetches the base alone. The selection is fixed, so the flow
-// finds no rebase step in it and asks neither about conflicts nor about parents.
-func (m Model) startRefreshBase() (Model, tea.Cmd) {
+// startRefreshBase fetches the row it was opened on and nothing else. It names
+// that branch rather than the configured base: a context menu acts on the line it
+// hangs off, even on a main worktree parked on some other branch. The selection is
+// fixed and holds a single root, so the flow finds no rebase step in it and asks
+// neither about conflicts nor about parents.
+func (m Model) startRefreshBase(branch string) (Model, tea.Cmd) {
 	return m.runSync(runSyncParams{
 		Title:    domain.DashboardRefreshBaseTitle,
-		Branches: []string{m.baseBranch()},
+		Row:      branch,
+		Base:     branch,
+		Branches: []string{branch},
 	})
 }
 
@@ -219,6 +224,9 @@ type runSyncParams struct {
 	// Row is the worktree the gesture was made on, when it was made on one:
 	// nothing may rebase a worktree another run is holding.
 	Row string
+	// Base overrides the branch the cascade treats as its root, for a gesture made
+	// on that root itself. Empty means the configured base.
+	Base string
 	// Branches fixes the selection; Precheck only says what arrives checked.
 	Branches []string
 	Precheck []string
@@ -236,7 +244,7 @@ func (m Model) runSync(params runSyncParams) (Model, tea.Cmd) {
 		Request: syncflow.Request{
 			Branches:   params.Branches,
 			Precheck:   params.Precheck,
-			BaseBranch: m.baseBranch(),
+			BaseBranch: m.syncBase(params.Base),
 		},
 		Prompter: prompter{
 			send:  send,
@@ -255,11 +263,18 @@ func (m Model) runSync(params runSyncParams) (Model, tea.Cmd) {
 
 func (m Model) baseBranch() string { return m.params.Config.Project.Worktrees.BaseBranch }
 
+func (m Model) syncBase(override string) string {
+	if override != "" {
+		return override
+	}
+	return m.baseBranch()
+}
+
 func (m Model) subtreeOf(branch string) []string {
 	return rules.SyncSubtree(rules.SyncSubtreeParams{Nodes: m.worktreeNodes(), Root: branch})
 }
 
-func (m Model) syncableBranches() []string { return rules.SyncableBranches(m.statuses) }
+func (m Model) rebasableBranches() []string { return rules.RebasableBranches(m.statuses) }
 
 // worktreeNodes is the forest the sync rules read, built from the two things the
 // model already holds: a re-read from disk on a keystroke would buy nothing.

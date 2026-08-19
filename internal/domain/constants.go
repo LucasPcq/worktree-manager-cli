@@ -595,12 +595,18 @@ const (
 	SyncLabelSynced           = "rebased onto its parent"
 	SyncLabelUpToDate         = "already up to date"
 	SyncLabelSkippedDirty     = "skipped — uncommitted changes"
-	SyncLabelSkippedAncestor  = "skipped — its parent was not synced"
+	SyncLabelSkippedAncestor  = "skipped — an ancestor was not synced"
 	SyncLabelDiverged         = "skipped — diverged from origin"
 	SyncLabelRebaseInProgress = "skipped — a rebase is already in progress"
 	SyncLabelConflict         = "conflict"
 	SyncLabelUnknownParent    = "skipped — no recorded parent"
 	SyncLabelError            = "failed"
+	// SyncLabelConflictKept, SyncLabelConflictAborted and SyncLabelErrorFmt say what
+	// the bare status cannot: which of the two conflict modes ran — and so whether
+	// there is anything left to clean up — and why a step failed (cause).
+	SyncLabelConflictKept    = "conflict — rebase left in progress"
+	SyncLabelConflictAborted = "conflict — rebase aborted, worktree left clean"
+	SyncLabelErrorFmt        = "failed — %s"
 	// SyncBaseLabel* and SyncParentLabel* do the same for the two branches a
 	// cascade moves without rebasing them (rules.SyncBaseLabel,
 	// rules.SyncParentStatusLabel).

@@ -127,7 +127,10 @@ func statusTag(status domain.WorktreeStatus) (string, domain.Tone) {
 }
 
 // syncableBranches is the explicit list --all previews. The service still
-// receives nil, which is what "every worktree" means to it.
+// receives nil, which is what "every worktree" means to it. It leaves out the
+// base and nothing else: --all is an answer, so it covers a dirty worktree too
+// and lets the run report why it was skipped (rules.RebasableBranches, which a
+// surface pre-checks with, is the narrower one).
 func (f *syncFlow) syncableBranches() []string {
 	branches := make([]string, 0, len(f.statuses))
 	for _, status := range f.statuses {

@@ -212,7 +212,7 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 	case menuSync:
 		return m.startSync(selected.Branch)
 	case menuRefreshBase:
-		return m.startRefreshBase()
+		return m.startRefreshBase(selected.Branch)
 	}
 	return m, nil
 }

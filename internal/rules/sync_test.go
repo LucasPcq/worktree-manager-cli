@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -288,7 +289,7 @@ func TestSyncBaseAndParentLabels(t *testing.T) {
 
 // A surface offering "sync everything" pre-checks what a cascade would actually
 // rebase: the rest stays listed and unchecked rather than silently dropped.
-func TestSyncableBranchesLeavesOutWhatTheCascadeWouldSkip(t *testing.T) {
+func TestRebasableBranchesLeavesOutWhatTheCascadeWouldSkip(t *testing.T) {
 	statuses := []domain.WorktreeStatus{
 		{Branch: "main", IsParent: true},
 		{Branch: "clean"},
@@ -296,10 +297,10 @@ func TestSyncableBranchesLeavesOutWhatTheCascadeWouldSkip(t *testing.T) {
 		{Branch: "stuck", RebaseInProgress: true},
 	}
 
-	got := SyncableBranches(statuses)
+	got := RebasableBranches(statuses)
 
 	if len(got) != 1 || got[0] != "clean" {
-		t.Errorf("SyncableBranches = %v, want only the rebasable worktree", got)
+		t.Errorf("RebasableBranches = %v, want only the rebasable worktree", got)
 	}
 }
 
@@ -317,5 +318,37 @@ func TestWorktreeNodesPairsEachStatusWithItsRecordedParent(t *testing.T) {
 	}
 	if nodes[1].SourceBranch != "main" || nodes[1].Path != "/wt/a" {
 		t.Errorf("node = %+v, want the recorded parent and path carried over", nodes[1])
+	}
+}
+
+// "failed" alone sends the user looking for a cause the run already knows.
+func TestSyncStepLabelCarriesTheCauseOfAFailure(t *testing.T) {
+	label := SyncStepLabel(domain.SyncStepResult{
+		Status: domain.SyncStatusError,
+		Detail: "could not read HEAD",
+	})
+
+	if !strings.Contains(label, "could not read HEAD") {
+		t.Errorf("SyncStepLabel = %q, want the cause named", label)
+	}
+}
+
+func TestSyncStepLabelFallsBackWhenAFailureCarriesNoCause(t *testing.T) {
+	if got := SyncStepLabel(domain.SyncStepResult{Status: domain.SyncStatusError}); got != domain.SyncLabelError {
+		t.Errorf("SyncStepLabel = %q, want the bare failure label", got)
+	}
+}
+
+// The two conflict modes leave the worktree in opposite states: one has a rebase
+// to finish, the other has nothing to clean up.
+func TestSyncStepLabelTellsTheTwoConflictModesApart(t *testing.T) {
+	kept := SyncStepLabel(domain.SyncStepResult{Status: domain.SyncStatusConflict, KeptInProgress: true})
+	aborted := SyncStepLabel(domain.SyncStepResult{Status: domain.SyncStatusConflict})
+
+	if kept == aborted {
+		t.Fatalf("both conflict modes read %q, want them told apart", kept)
+	}
+	if got := SyncStepLabel(domain.SyncStepResult{Status: domain.SyncStatusSynced}); got != domain.SyncLabelSynced {
+		t.Errorf("SyncStepLabel(synced) = %q, want the plain status label", got)
 	}
 }

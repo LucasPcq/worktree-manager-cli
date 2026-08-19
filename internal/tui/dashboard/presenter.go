@@ -142,7 +142,7 @@ func (p syncPresenter) Rebased(result domain.SyncResult) {
 		p.line(fmt.Sprintf(domain.DashboardSyncParentFmt, update.Branch, rules.SyncParentStatusLabel(update.Status)))
 	}
 	for _, step := range result.Steps {
-		p.line(fmt.Sprintf(domain.DashboardSyncStepFmt, step.Branch, rules.SyncStatusLabel(step.Status)))
+		p.line(fmt.Sprintf(domain.DashboardSyncStepFmt, step.Branch, rules.SyncStepLabel(step)))
 	}
 }
 

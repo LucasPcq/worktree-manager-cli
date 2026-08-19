@@ -222,6 +222,22 @@ func SyncStatusLabel(status domain.SyncStepStatus) string {
 	}
 }
 
+// SyncStepLabel is SyncStatusLabel plus what the status alone cannot carry: the
+// cause of a failure, and which of the two conflict modes ran — a run that says
+// only "conflict" leaves the user unsure whether a worktree is still mid-rebase.
+func SyncStepLabel(step domain.SyncStepResult) string {
+	if step.Status == domain.SyncStatusError && step.Detail != "" {
+		return fmt.Sprintf(domain.SyncLabelErrorFmt, step.Detail)
+	}
+	if step.Status != domain.SyncStatusConflict {
+		return SyncStatusLabel(step.Status)
+	}
+	if step.KeptInProgress {
+		return domain.SyncLabelConflictKept
+	}
+	return domain.SyncLabelConflictAborted
+}
+
 // SyncBaseLabel says what became of the base branch a cascade fetched.
 func SyncBaseLabel(updated bool) string {
 	if updated {
@@ -246,11 +262,13 @@ func SyncParentStatusLabel(status domain.ParentStatus) string {
 	}
 }
 
-// SyncableBranches lists the worktrees a cascade would actually rebase: the base
+// RebasableBranches lists the worktrees a cascade would actually rebase: the base
 // hangs off nothing, and a dirty or half-rebased worktree is skipped. It is what
 // a surface offering "sync everything" pre-checks — the rest stays listed, and
-// checkable, rather than dropped.
-func SyncableBranches(statuses []domain.WorktreeStatus) []string {
+// checkable, rather than dropped. It is deliberately narrower than what --all
+// covers (see the sync flow's syncableBranches, which only leaves out the base):
+// a pre-check is an offer, --all is an answer.
+func RebasableBranches(statuses []domain.WorktreeStatus) []string {
 	branches := make([]string, 0, len(statuses))
 	for _, status := range statuses {
 		if status.IsParent || status.IsDirty || status.RebaseInProgress {

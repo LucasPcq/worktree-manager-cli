@@ -144,3 +144,26 @@ func TestSyncPresenterReportsWhatItPushed(t *testing.T) {
 		t.Errorf("a branch left local must not read as pushed:\n%s", body)
 	}
 }
+
+// A run whose steps only say "failed" leaves the panel with no trace of why —
+// and the run itself reports nothing more, having already said its piece.
+func TestSyncPresenterNamesWhyAStepFailed(t *testing.T) {
+	result := domain.SyncResult{Steps: []domain.SyncStepResult{
+		{Branch: "feat-a", Status: domain.SyncStatusError, Detail: "could not read HEAD"},
+		{Branch: "feat-b", Status: domain.SyncStatusConflict},
+	}}
+
+	lines := collect(t, func(send func(tea.Msg)) {
+		(syncPresenter{presenter{send: send}}).Rebased(result)
+	})
+
+	body := strings.Join(lines, "\n")
+	if !strings.Contains(body, "could not read HEAD") {
+		t.Errorf("a failed step must name its cause:\n%s", body)
+	}
+	// An aborted conflict left nothing behind; saying so is what keeps the user
+	// from going to look for a half-rebased worktree.
+	if !strings.Contains(body, domain.SyncLabelConflictAborted) {
+		t.Errorf("an aborted conflict must say the worktree was left clean:\n%s", body)
+	}
+}
