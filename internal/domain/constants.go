@@ -1063,6 +1063,18 @@ const (
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so
 	// a persistent dashboard is never left by accident.
 	KeyQuit = "q"
+
+	// GitLogFieldSep separates fields in `git log --format`. The pipe cannot
+	// serve: a commit subject may contain one. The ASCII unit separator can't
+	// appear in ordinary commit text, so it can.
+	GitLogFieldSep = "\x1f"
+	// GitLogFormat feeds `git log --format`: short SHA, subject, author name,
+	// strict ISO 8601 date, separated by GitLogFieldSep.
+	GitLogFormat = "%h" + GitLogFieldSep + "%s" + GitLogFieldSep + "%an" + GitLogFieldSep + "%cI"
+	// GitLogFieldCount is the number of fields GitLogFormat produces.
+	GitLogFieldCount = 4
+	// FetchHeadFileName is the file whose mtime marks the last successful fetch.
+	FetchHeadFileName = "FETCH_HEAD"
 )
 
 // EnvTemplateSuffixes are the committed-schema template suffixes recognized on a
