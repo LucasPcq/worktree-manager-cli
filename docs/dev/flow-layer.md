@@ -375,10 +375,6 @@ never reaches the recap at all — `Planned` is what prints the plan on those tw
 reproducing the pre-migration double output path (recap vs. `FrameStart` on stderr)
 without a branch anywhere reading "am I unattended".
 
-See [sync — the decisions this migration settled](#sync--the-decisions-this-migration-settled)
-below for the choices specific to this command: the dashboard's three entries, the
-`--keep-conflict` debate, and the no-terminal refusal.
-
 ### `wtm extract` — projected, not delivered
 
 `extract` does not run on `flow/` yet; it still drives `internal/tui/extract` from
@@ -698,145 +694,70 @@ them into one was raised deliberately here — and answered: **no.**
 What is broad is the *exported surface*, not the logic. Three names for one idea is a
 fair price for three honest contracts. Do not consolidate them without a new reason.
 
-## sync — the decisions this migration settled
-
-LUC-186 migrated `sync` and gave it three dashboard entries. It also settled a
-handful of choices that are easy to re-litigate later without the reasoning below.
+## sync — what this migration settled
 
 ### `--keep-conflict` from the dashboard: offered, and the exit named
 
-The dashboard poses the on-conflict step exactly as the CLI does — `Sync normally` /
-`Keep conflicts in progress`, danger tagged. The decision stays the user's; the
-dashboard hides none of the options the CLI exposes. In return, when a conflict is
-kept, the output panel names, per branch, the worktree path and the `git rebase
---continue` / `git rebase --abort` to run there (`domain.SyncKeepConflictHintFmt`,
-rendered by `syncPresenter` in `internal/tui/dashboard/presenter.go`) — the same
-gesture as `domain.DashboardPrivilegedHintFmt` for a privileged removal: the
-dashboard cannot finish the job itself, so it tells the user exactly where to finish
-it.
+The dashboard poses the on-conflict step exactly as the CLI does: the decision stays
+the user's, and the dashboard hides none of the options the CLI exposes. In return,
+when a conflict is kept, the output panel names — per branch — the worktree path and
+the `git rebase --continue` / `--abort` to run there
+(`domain.SyncKeepConflictHintFmt`). Same gesture as `DashboardPrivilegedHintFmt` for a
+privileged removal: the surface cannot finish the job, so it says where to finish it.
 
-Two alternatives were considered and rejected:
+Not offering the option was rejected — it amputates something the CLI exposes and
+sends the user back to a terminal to re-run the whole cascade. Exiting the dashboard
+on a conflict was rejected too: it needs a shell integration the dashboard does not
+have, and throws the user out of a surface they just opened, for the one outcome where
+reading the hint matters most.
 
-- **Not offering `--keep-conflict` at all.** This amputates an option the CLI
-  exposes and forces the user back to a terminal to re-run the whole cascade with the
-  flag — a strictly worse dashboard than the surface it is supposed to match.
-- **Exiting the dashboard on a conflict**, the way a shell integration might hand
-  control back to a prompt. This depends on a shell integration the dashboard does not
-  have, and it throws the user out of a surface they just opened, for the one outcome
-  (a conflict) where staying and reading the hint matters most.
+Accepted limit: `ModeBlocking` protects a worktree for the duration of the run only.
+Nothing stops another operation from touching one left mid-rebase afterwards — the
+`⟳ rebasing` badge, not a lock, is what surfaces it.
 
-**Known limit, accepted rather than solved:** `ModeBlocking` protects the worktree
-only for the duration of the run — nothing stops another operation from touching a
-worktree left mid-rebase once the run has ended. It is the `⟳ rebasing` badge on the
-next refresh, not a lock, that surfaces a worktree someone kept a conflict in and
-walked away from.
+### What the dashboard pre-checks
 
-### `--dry-run`: no dashboard entry, aligned with `prune`
+`Branches`/`All` *fix* the selection, so the step becomes a preset the recap still
+reads back. `Precheck` only says which boxes arrive **checked** when the step is
+asked. The CLI never passes it — its picker opens empty, as `syncpicker` did — and
+only the dashboard entries populate it.
 
-`prune` has no `--dry-run` equivalent at the click either (see the comment on
-`startPrune` in `internal/tui/dashboard/actions.go`): the recap **is** the plan, and
-closing the modal without confirming rebases nothing. `sync`'s recap is built from
-`rules.SprintSyncPlan`, exactly what `--dry-run` prints on the CLI, so a dry run is
-structurally already available from the dashboard without a flag — every dashboard
-sync gesture *is* a preview until the user confirms it. Adding a `--dry-run`-flavored
-entry would duplicate a capability the modal already has.
+`Sync this worktree` pre-checks the row's **ancestry**, base included
+(`rules.SyncAncestry`), not its subtree. A worktree is rebased onto its parent, so
+replaying one whose parent nobody refreshed lands it on a stale ref — the very problem
+the `Parent branches` question exists to rescue after the fact. Pre-checking the chain
+removes it instead of asking about it. Descendants are left out: dragging them in
+makes the same entry mean one worktree from a leaf and four from a root, an asymmetry
+no label lets you predict.
 
-### `Precheck` vs. the fixed selection
-
-`sync.Request` carries two selection-shaped fields that answer different questions:
-
-- **`Branches` / `All`** *fix* the selection. When either is set, the worktrees step
-  is not asked at all — it becomes a preset, still read back by the recap (the same
-  mechanism `create` uses for `--from`).
-- **`Precheck`** only says which boxes arrive **checked** when the step *is* asked. It
-  changes nothing about what the user may select or submit.
-
-The CLI never passes `Precheck`: it has no notion of "this worktree is probably the
-one" the way a dashboard row-click or `⋯ Actions` menu does, so its picker opens empty
-— exactly as `syncpicker` did before the migration. Only the dashboard's three entries
-populate it (`m.ancestryOf`, `m.syncReadyBranches`, or nothing at all for
-`Refresh base branch`, which fixes the selection instead and never shows the step).
-
-### What a row-level sync pre-checks: the ancestry, not the subtree
-
-`Sync this worktree` pre-checks the row **and the chain it hangs off** — its managed
-ancestors up to and including the base (`rules.SyncAncestry`) — and nothing that
-hangs under it.
-
-The reason is the cascade itself. A worktree is rebased **onto its parent**, so
-replaying one whose parent nobody refreshed lands it on a stale ref; that is the
-exact problem the `Parent branches` question exists to rescue after the fact.
-Pre-checking the ancestry removes the problem instead of asking about it. The base is
-in the chain even though it is never a rebase step: it is fast-forwarded from its
-remote, and every chain below it wants it fresh.
-
-Descendants are deliberately **out**. They are their own gesture, made from their own
-row, and dragging them in makes the same menu entry mean "one worktree" from a leaf
-and "four" from a root — an asymmetry nobody can predict from the label. What the
-gesture pre-checks now reads the same way from any row: *this worktree and what it
-depends on*.
-
-### The assumed divergence of "Sync worktrees"
-
-`--all` on the CLI checks every worktree — the service reads a `nil` selection as
-"every worktree", so nothing is ever excluded by the flag itself. The dashboard's
-`Sync worktrees` entry (`⋯ Actions`) instead **leaves `dirty` and `rebasing`
-worktrees unchecked**: they stay listed, tagged with why, one keystroke from being
-included, but a plain confirm skips them. This is a deliberate divergence from
-`--all`, not an oversight — write it down so nobody "fixes" one to match the other.
-
-It is the same explicit-vs-batch logic `prune` established: an action aimed at one
-named thing includes what it names, an action aimed at everything excludes what would
-need extra care. The badge on the row names the fact either way, so nothing is
-hidden — only the starting checkbox state differs.
-
-The entry is named `Sync worktrees`, not `Sync all worktrees`, for the same reason:
-it opens a selection, and a label promising "all" reads as a sweep with no way out.
-It sits next to `Reparent worktrees`, which opens the same kind of choice.
+`Sync worktrees` (`⋯ Actions`) pre-checks everything except `dirty` and `rebasing`
+worktrees, which stay listed and tagged, one keystroke from being included — a
+deliberate divergence from `--all`, which excludes nothing, and the same
+explicit-vs-batch logic `prune` established. It is named `Sync worktrees` rather than
+`Sync all worktrees` because it opens a selection; a label promising "all" reads as a
+sweep with no way out. `--dry-run` gets no entry, as in `prune`: the recap **is** the
+plan and closing the modal rebases nothing, so every dashboard sync gesture is already
+a preview until it is confirmed.
 
 ### The no-terminal refusal
 
-Sourced from the design's D7. Today, `wtm sync feat-a | cat` prints the plan and then
-launches a TUI confirm on a non-TTY, which fails and prints "Aborted." — a refusal by
-accident. The flow makes it a refusal on purpose, aligned with `prune`
-(`domain.PruneNeedsTerminal`): human output, no TTY, neither `--yes` nor `--dry-run`
-→ refuse, naming `--yes` (`domain.SyncNeedsTerminal`, raised in
-`internal/commands/wt/sync.go` before `syncflow.Run` is even called — the same
-placement as `prune`'s guard).
+Human output, no TTY, neither `--yes` nor `--dry-run` → refuse, naming `--yes`
+(`domain.SyncNeedsTerminal`), aligned with `prune`. This is the only CLI-observable
+behavior change of the migration, and it closes a real gap rather than tidying one:
+before it, `wtm sync feat-a | cat` launched a TUI confirm on a non-TTY and the failure
+*was* the safety net — no confirm, nothing ran. `flow.Unattended` has no such accident
+to fall back on, so without the guard that path would have **mutated** where it used
+to abort.
 
-This is the **only** CLI-observable behavior change in the whole migration, and it is
-not cosmetic: it closes a real gap. The old picker's failure on a non-TTY was itself
-the safety net — no picker, no confirm, nothing runs. `flow.Unattended` has no such
-accident to fall back on: every step it cannot resolve either has a safe default or an
-explicit error. Without D7's guard, a `sync` piped through `cat` without `--yes` would
-have **mutated** — rebased and possibly pushed — exactly where the pre-migration
-command used to abort. The guard is what keeps that path a refusal instead of turning
-a former crash into a successful run.
+One nuance keeps the condition from being a copy of `prune`'s: `sync`'s `interactive`
+deliberately omits `!dryRun`, because `--dry-run` on a TTY still needs the picker to
+choose *what* to preview. The refusal clause itself is identical.
 
-One nuance keeps the guard's condition from being a copy-paste of `prune`'s: `prune`
-folds `!DryRun` into its `interactive` gate, so a dry run never shows its picker.
-`sync` does not — `interactive := rules.IsHumanFormat(format) && term.IsTerminal(...) &&
-!yes` deliberately omits `!dryRun`, because `--dry-run` on a TTY still needs the
-worktree picker to choose *what* to preview (ruling recorded against Task 6). The
-refusal clause itself, `!interactive && !yes && !dryRun`, is identical to `prune`'s.
-
-### Two interactive-picker rendering gaps
-
-Neither is covered by the 18 frozen characterization tests, which all run without a
-TTY and therefore never render the interactive picker:
-
-- **Dirty/rebasing tags render as a badge, not a suffix.** The old `syncpicker`
-  appended `" (dirty)"` / `" (rebasing)"` to a worktree's label; the flow step instead
-  sets `flow.Option{Tag, Tone}`, the same colored-badge vocabulary `prune` introduced.
-  Both surfaces — CLI wizard and dashboard modal — read a `flow.Step` the same way, so
-  they need to speak the same vocabulary; a bare string suffix would have meant one
-  more one-off rendering rule per surface.
-- **The "On conflict" question is now skipped when no rebase will happen.** A
-  `Refresh base branch` run (or any selection whose plan has no rebase step) used to
-  be asked "Sync normally / Keep conflicts in progress" regardless — a question about
-  a situation that structurally cannot occur. The step's `Skip` now reads a pure rule
-  (the selection contains only the base) instead of asking about conflicts nobody can
-  hit.
+Two picker renderings changed with no test to catch them, the frozen characterization
+tests all running without a TTY: `dirty`/`rebasing` worktrees carry a
+`flow.Option{Tag, Tone}` badge instead of a `" (dirty)"` label suffix, so both surfaces
+read one step vocabulary; and the on-conflict question is skipped when the plan holds
+no rebase step, instead of asking about a situation that cannot occur.
 
 ## Known gaps
 

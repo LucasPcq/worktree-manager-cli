@@ -520,11 +520,10 @@ const (
 	// suffix reads as two different sections.
 	SyncPlanHeader = "Sync plan"
 
-	// SyncKeepConflictWarning explains the consequence of keeping conflicting
-	// rebases in progress; shown on the sync confirmation when --keep-conflict is
-	// active.
-	SyncKeepConflictWarning = "On conflict the rebase is left in progress in its worktree (not aborted). " +
-		"Several worktrees may be left mid-rebase; resolve each with git rebase --continue."
+	// SyncKeepConflictWarning is the consequence line on the sync confirmation when
+	// conflicts are kept. It stays one sentence: the option above it already says
+	// what was chosen, this only says what it leaves behind.
+	SyncKeepConflictWarning = "Conflicting rebases are left in their worktree — resolve each with git rebase --continue."
 
 	// SyncPushPrompt is the push confirmation question shown after a successful
 	// cascade, formatted with the number of pushable branches.
