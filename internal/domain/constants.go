@@ -854,6 +854,15 @@ const (
 	DashboardPollSeconds = 3
 	// DashboardDetailCommits is the number of commits requested for ACTIVITY.
 	DashboardDetailCommits = 5
+	// DashboardDetailDebounce delays a detail load so a fast walk through the
+	// list does not fire one git log per row crossed.
+	DashboardDetailDebounce = 150 * time.Millisecond
+	// DashboardSpinnerGrace is the delay before a loading marker appears: below
+	// it, the data arrives before the marker would.
+	DashboardSpinnerGrace = 200 * time.Millisecond
+
+	DashboardRefreshing   = "refreshing"
+	DashboardLoadingField = "loading…"
 
 	DashboardListWidthPercent = 40
 	DashboardMinListWidth     = 24

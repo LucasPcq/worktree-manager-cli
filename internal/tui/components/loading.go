@@ -26,6 +26,10 @@ func newMutedSpinner() spinner.Model {
 	return sp
 }
 
+// MutedSpinner is the project's standard spinner, for surfaces that animate
+// their own wait rather than going through RunLoading.
+func MutedSpinner() spinner.Model { return newMutedSpinner() }
+
 // LoadingParams configures RunLoading.
 type LoadingParams struct {
 	// Message is the text shown next to the spinner.

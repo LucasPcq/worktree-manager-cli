@@ -14,10 +14,11 @@ const detailLabelWidth = 9
 
 func (m Model) renderDetail(layout domain.DashboardLayout) string {
 	return m.renderPanel(panelParams{
-		Rect:  layout.Detail,
-		Title: domain.DashboardDetailTitle,
-		Body:  m.detailBody(layout),
-		Zone:  zoneDetail,
+		Rect:       layout.Detail,
+		Title:      domain.DashboardDetailTitle,
+		TitleRight: m.detailFreshnessMarker(),
+		Body:       m.detailBody(layout),
+		Zone:       zoneDetail,
 	})
 }
 

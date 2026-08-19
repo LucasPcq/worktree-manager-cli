@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	zone "github.com/lrstanley/bubblezone"
@@ -14,6 +15,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
 
@@ -94,6 +96,14 @@ type Model struct {
 	detailOpen bool
 	showHelp   bool
 
+	// details caches the last detail loaded per branch, invalidated (never
+	// emptied) by the poll and by a finished operation, so the panel keeps
+	// showing "true a second ago" through a reload instead of going blank.
+	details       map[string]domain.WorktreeDetail
+	detailLoading string
+	detailSince   time.Time
+	spinner       spinner.Model
+
 	menuOpen   bool
 	menuKind   menuKind
 	menuCursor int
@@ -124,6 +134,8 @@ func New(params RunParams) Model {
 		msgs:    make(chan tea.Msg, domain.DashboardMsgBuffer),
 		ghConn:  domain.GHConnectionOK,
 		loading: true,
+		details: map[string]domain.WorktreeDetail{},
+		spinner: components.MutedSpinner(),
 	}
 }
 
@@ -142,7 +154,7 @@ func Run(params RunParams) error {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadWorktreesCmd(false), m.loadPRsCmd(), pollCmd(), listenCmd(m.msgs))
+	return tea.Batch(m.loadWorktreesCmd(false), m.loadPRsCmd(), pollCmd(), listenCmd(m.msgs), m.spinner.Tick)
 }
 
 func pollCmd() tea.Cmd {
@@ -228,13 +240,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.reflow(), nil
 
 	case tea.KeyMsg:
-		return m.handleKey(msg)
+		before := m.selectedBranch()
+		model, cmd := m.handleKey(msg)
+		return withDetailTrigger(before, model, cmd)
 
 	case tea.MouseMsg:
-		return m.handleMouse(msg)
+		before := m.selectedBranch()
+		model, cmd := m.handleMouse(msg)
+		return withDetailTrigger(before, model, cmd)
 
 	case worktreesMsg:
-		return m.applyWorktrees(msg), nil
+		before := m.selectedBranch()
+		next := m.applyWorktrees(msg)
+		return next.triggerDetailReload(before)
 
 	case prsMsg:
 		m.prs, m.ghConn, m.prsLoaded = msg.prs, msg.conn, true
@@ -251,10 +269,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.tab == tabTree {
 			tree = m.loadTreeCmd()
 		}
-		return m, tea.Batch(m.loadWorktreesCmd(false), tree, pollCmd())
+		// The poll never clears m.details — only the list is its business — but it
+		// does relaunch a fresh detail load for whichever branch is selected.
+		next, detailCmd := m.reloadDetailCmd()
+		return next, tea.Batch(next.loadWorktreesCmd(false), tree, detailCmd, pollCmd())
 
 	case treeMsg:
-		return m.applyTree(msg), nil
+		before := m.selectedBranch()
+		next := m.applyTree(msg)
+		return next.triggerDetailReload(before)
 
 	case OutputLineMsg:
 		return m.appendOutput(msg), nil
@@ -264,13 +287,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return model, tea.Batch(cmd, listenCmd(m.msgs))
 
 	case opDoneMsg:
-		return m.finishOp(msg), nil
+		return m.finishOp(msg)
+
+	case detailMsg:
+		return m.applyDetail(msg), nil
+
+	case detailTickMsg:
+		return m.fireDetailTick(msg)
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 
 	case modalLoadedMsg, formReadyMsg:
 		return m.updateModal(msg)
 	}
 
 	return m, nil
+}
+
+// withDetailTrigger folds a detail-reload check onto whatever a key or mouse
+// event already produced. handleKey and handleMouse return tea.Model because
+// they also field the overlays (modal, menu, help), which are not this Model;
+// the comma-ok keeps a foreign result harmless instead of panicking.
+func withDetailTrigger(before string, next tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	model, ok := next.(Model)
+	if !ok {
+		return next, cmd
+	}
+	model, detailCmd := model.triggerDetailReload(before)
+	return model, tea.Batch(cmd, detailCmd)
 }
 
 func (m Model) applyTree(msg treeMsg) Model {
@@ -399,7 +446,8 @@ func (m Model) scrollOutput(delta int) Model {
 func (m Model) refresh() (Model, tea.Cmd) {
 	m.loading, m.prsLoaded = true, false
 	m.treeLoading = m.treeLoaded || m.tab == tabTree
-	return m, tea.Batch(m.loadWorktreesCmd(true), m.loadPRsCmd(), m.treeCmd())
+	next, detailCmd := m.reloadDetailCmd()
+	return next, tea.Batch(next.loadWorktreesCmd(true), next.loadPRsCmd(), next.treeCmd(), detailCmd)
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

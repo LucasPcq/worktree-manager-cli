@@ -230,11 +230,15 @@ func (m Model) beginOp(params beginParams) (Model, int) {
 	return m.reflow(), id
 }
 
-func (m Model) finishOp(msg opDoneMsg) Model {
+// finishOp also invalidates the finished operation's target: its detail, if
+// currently on screen, just went stale under it and is reloaded — the cache is
+// refreshed, never emptied.
+func (m Model) finishOp(msg opDoneMsg) (Model, tea.Cmd) {
 	op, _ := m.ops.byID(msg.id)
 	m.ops = m.ops.end(msg.id)
+	m, detailCmd := m.invalidateDetail(op.target)
 	if msg.err == nil || errors.Is(msg.err, domain.ErrUserAborted) {
-		return m
+		return m, detailCmd
 	}
 
 	m = m.appendOutput(OutputLineMsg{
@@ -244,9 +248,9 @@ func (m Model) finishOp(msg opDoneMsg) Model {
 	// The privileged removal prompts for a password on the terminal this surface
 	// is holding, so it is never offered here — the way to it is named instead.
 	if errors.Is(msg.err, domain.ErrWorktreeRemoveFailed) {
-		return m.appendOutput(OutputLineMsg{Text: fmt.Sprintf(domain.DashboardPrivilegedHintFmt, op.target)})
+		return m.appendOutput(OutputLineMsg{Text: fmt.Sprintf(domain.DashboardPrivilegedHintFmt, op.target)}), detailCmd
 	}
-	return m
+	return m, detailCmd
 }
 
 // applyFlow handles what a running flow posted. Nothing here mutates anything the
