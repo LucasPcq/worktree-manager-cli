@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
+
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
@@ -143,10 +145,14 @@ func TestPollSkipsDetailReloadWhenPanelHidden(t *testing.T) {
 	}
 }
 
-// TestDebounceIsNotCountedAgainstTheGraceDelay pins that detailSince is set
-// when the load actually starts (fireDetailTick), not when it is merely
-// scheduled: otherwise the 150 ms debounce eats most of the 200 ms grace
-// budget, and an ordinary git log flashes the spinner it was meant to avoid.
+// TestDebounceIsNotCountedAgainstTheGraceDelay pins the field semantics that
+// fully determine when the grace delay starts, rather than timing behaviour:
+// a real-elapsed-time assertion cannot tell "grace measured from load start"
+// apart from "grace measured from schedule time", since 150 ms of debounce
+// plus a fast git log both land well under 200 ms in a test run either way.
+// Each assertion below is chosen to fail against the bug it pins: the first
+// against detailSince set at schedule time, the second against a missing
+// IsZero guard in detailIsStale.
 func TestDebounceIsNotCountedAgainstTheGraceDelay(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "main", "feat/a")
 
@@ -154,16 +160,53 @@ func TestDebounceIsNotCountedAgainstTheGraceDelay(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("changer de sélection doit programmer un chargement de détail")
 	}
+	// detailSince stays the zero value while only scheduled — a structural
+	// guarantee, not a timing one: IsZero is checked by detailIsStale, so it
+	// stays false regardless of how much real time the debounce or the test
+	// itself takes, without needing to fake elapsed time to prove it.
+	if !model.detailSince.IsZero() {
+		t.Fatal("detailSince must stay zero while only scheduled: it must not be set at debounce time")
+	}
 	if model.detailIsStale() {
-		t.Fatal("detailIsStale must be false the instant a load is only scheduled, not started")
+		t.Fatal("detailIsStale must be false while only scheduled, no matter how much time has notionally passed")
 	}
 
 	model = update(model, detailTickMsg{branch: "feat/a"})
 	if model.detailSince.IsZero() {
 		t.Fatal("detailSince must be set once the debounce lands and the load actually starts")
 	}
+
+	model.detailSince = time.Now().Add(-domain.DashboardSpinnerGrace - time.Second)
+	if !model.detailIsStale() {
+		t.Error("detailIsStale must be true once the load has run longer than the grace delay")
+	}
+	model.detailSince = time.Now()
 	if model.detailIsStale() {
-		t.Error("the grace delay must restart at the actual load, not be pre-consumed by the debounce")
+		t.Error("detailIsStale must be false the instant the load starts")
+	}
+}
+
+// TestSpinnerTicksOnlyWhileLoading pins the spinner lifecycle end to end: the
+// loop must terminate once nothing is loading (or it ticks at 12fps for the
+// life of the program, idle included), and it must still be running while a
+// load actually is in flight (or the marker freezes the moment it appears —
+// this second assertion is what stops a future "fix" from silencing the tick
+// loop by never starting it).
+func TestSpinnerTicksOnlyWhileLoading(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "main")
+	// newTestModel's own worktreesMsg already schedules a load for the first
+	// selection: reset to the genuinely idle state this assertion is about.
+	model.detailLoading = ""
+
+	_, idleCmd := updateCmd(model, spinner.TickMsg{})
+	if idleCmd != nil {
+		t.Error("a spinner tick while nothing is loading must not re-arm: the loop must terminate")
+	}
+
+	model.detailLoading = "main"
+	_, loadingCmd := updateCmd(model, spinner.TickMsg{})
+	if loadingCmd == nil {
+		t.Error("a spinner tick while a load is in flight must re-arm, or the marker freezes")
 	}
 }
 
