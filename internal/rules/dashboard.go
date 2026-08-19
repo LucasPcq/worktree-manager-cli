@@ -21,6 +21,20 @@ type DashboardLayoutParams struct {
 // output panel gives up its rows before the body does.
 const minDashboardBody = 3
 
+// DashboardHeaderHeight is the header's row budget for a terminal this tall:
+// the six-row signature block (domain.DashboardHeaderTallHeight) above
+// domain.DashboardHeaderTallThreshold rows, the compact three-row header
+// (domain.DashboardHeaderCompactHeight) below it — six rows of chrome on a
+// short terminal is a quarter of the screen. This is the one place that
+// makes the call; ComputeDashboardLayout reads it, the renderer reads the
+// layout's own HeaderTall rather than re-deriving the choice.
+func DashboardHeaderHeight(height int) int {
+	if height >= domain.DashboardHeaderTallThreshold {
+		return domain.DashboardHeaderTallHeight
+	}
+	return domain.DashboardHeaderCompactHeight
+}
+
 // ComputeDashboardLayout places every dashboard panel for one frame. It is the
 // single reference the renderer draws from and the mouse zones are marked
 // against, so a panel cannot drift from the region it is clickable in.
@@ -32,7 +46,8 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 	// which is what let the header silently overflow before it deferred to
 	// this budget.
 	helpHeight := min(1, max(height-1, 0))
-	tabsHeight := min(domain.DashboardHeaderHeight, max(height-helpHeight, 0))
+	headerHeight := DashboardHeaderHeight(height)
+	tabsHeight := min(headerHeight, max(height-helpHeight, 0))
 	tabs := domain.Rect{X: 0, Y: 0, Width: width, Height: tabsHeight}
 	help := domain.Rect{X: 0, Y: max(height-1, 0), Width: width, Height: helpHeight}
 
@@ -49,6 +64,7 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 
 	layout := domain.DashboardLayout{
 		Narrow:      width < domain.DashboardNarrowWidth,
+		HeaderTall:  headerHeight == domain.DashboardHeaderTallHeight,
 		Tabs:        tabs,
 		Help:        help,
 		Output:      domain.Rect{X: 0, Y: tabs.Height + bodyHeight, Width: width, Height: outputHeight},

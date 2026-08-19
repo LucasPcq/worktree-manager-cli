@@ -7,6 +7,44 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
+// TestDashboardHeaderHeightDegradesBelowTheThreshold pins the header's own
+// height rule: the six-row signature block above
+// domain.DashboardHeaderTallThreshold rows, the compact three-row header
+// below it — this is what makes the height terminal-dependent instead of a
+// constant read directly.
+func TestDashboardHeaderHeightDegradesBelowTheThreshold(t *testing.T) {
+	if got := DashboardHeaderHeight(domain.DashboardHeaderTallThreshold); got != domain.DashboardHeaderTallHeight {
+		t.Errorf("DashboardHeaderHeight(%d) = %d, want the tall height %d",
+			domain.DashboardHeaderTallThreshold, got, domain.DashboardHeaderTallHeight)
+	}
+	if got := DashboardHeaderHeight(domain.DashboardHeaderTallThreshold - 1); got != domain.DashboardHeaderCompactHeight {
+		t.Errorf("DashboardHeaderHeight(%d) = %d, want the compact height %d",
+			domain.DashboardHeaderTallThreshold-1, got, domain.DashboardHeaderCompactHeight)
+	}
+}
+
+// TestComputeDashboardLayoutMarksTheTallHeader pins that the layout, not the
+// renderer, decides whether the tall header shows — a magic-threshold
+// comparison re-derived in tui/ is exactly the decision logic that belongs
+// here instead.
+func TestComputeDashboardLayoutMarksTheTallHeader(t *testing.T) {
+	tall := ComputeDashboardLayout(DashboardLayoutParams{Width: 120, Height: 40})
+	if !tall.HeaderTall {
+		t.Error("a 40-row terminal must get the tall header")
+	}
+	if tall.Tabs.Height != domain.DashboardHeaderTallHeight {
+		t.Errorf("Tabs.Height = %d, want the tall height %d", tall.Tabs.Height, domain.DashboardHeaderTallHeight)
+	}
+
+	compact := ComputeDashboardLayout(DashboardLayoutParams{Width: 120, Height: 24})
+	if compact.HeaderTall {
+		t.Error("a 24-row terminal must fall back to the compact header")
+	}
+	if compact.Tabs.Height != domain.DashboardHeaderCompactHeight {
+		t.Errorf("Tabs.Height = %d, want the compact height %d", compact.Tabs.Height, domain.DashboardHeaderCompactHeight)
+	}
+}
+
 func TestComputeDashboardLayoutSplitsWideTerminals(t *testing.T) {
 	layout := ComputeDashboardLayout(DashboardLayoutParams{Width: 120, Height: 40})
 
@@ -99,7 +137,13 @@ func TestComputeDashboardLayoutShrinksTheOutputPanelBeforeTheBody(t *testing.T) 
 }
 
 func TestComputeDashboardLayoutSurvivesDegenerateSizes(t *testing.T) {
-	for _, size := range [][2]int{{0, 0}, {1, 1}, {10, 2}, {200, 1}, {200, 2}, {200, 3}} {
+	for _, size := range [][2]int{
+		{0, 0}, {1, 1}, {10, 2}, {200, 1}, {200, 2}, {200, 3},
+		// Around the tall-header threshold: the six-row header must degrade
+		// the same way the three-row one already did, at every size on
+		// either side of the cutover.
+		{200, 29}, {200, 30}, {200, 31}, {200, 6}, {200, 7}, {0, 30}, {1, 30},
+	} {
 		layout := ComputeDashboardLayout(DashboardLayoutParams{Width: size[0], Height: size[1]})
 		for name, rect := range map[string]domain.Rect{
 			"tabs": layout.Tabs, "list": layout.List, "detail": layout.Detail,

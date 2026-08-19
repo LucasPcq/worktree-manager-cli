@@ -38,15 +38,18 @@ func TestHeaderIsWiredThroughTheRealPath(t *testing.T) {
 		fetchedAt: time.Now().Add(-72 * time.Hour),
 	})
 
-	first := strings.Split(model.View(), "\n")[0]
-	if !strings.Contains(first, "worktree-manager-cli") {
-		t.Errorf("context line = %q, want the repo name New() derives from ProjectDir", first)
+	// The tall header spreads repo, active worktree and fetch age over three
+	// rows (§ the tall header's own tests pin exactly which); this one only
+	// has to prove the wiring reached the render somewhere in the block.
+	header := model.renderHeader(model.layout())
+	if !strings.Contains(header, "worktree-manager-cli") {
+		t.Errorf("header = %q, want the repo name New() derives from ProjectDir", header)
 	}
-	if !strings.Contains(first, "feat/a") {
-		t.Errorf("context line = %q, want the worktree Cwd falls under, via rules.ActiveWorktree in applyWorktrees", first)
+	if !strings.Contains(header, "feat/a") {
+		t.Errorf("header = %q, want the worktree Cwd falls under, via rules.ActiveWorktree in applyWorktrees", header)
 	}
-	if !strings.Contains(first, "3 d ago") {
-		t.Errorf("context line = %q, want the age carried on worktreesMsg.fetchedAt", first)
+	if !strings.Contains(header, "3 d ago") {
+		t.Errorf("header = %q, want the age carried on worktreesMsg.fetchedAt", header)
 	}
 
 	// r re-runs loadWorktreesCmd, which re-reads the fetch time; applyWorktrees
@@ -57,7 +60,7 @@ func TestHeaderIsWiredThroughTheRealPath(t *testing.T) {
 		parents:   map[string]string{},
 		fetchedAt: time.Now(),
 	})
-	if strings.Contains(model.View(), "fetched") {
+	if strings.Contains(model.renderHeader(model.layout()), "fetched") {
 		t.Error("a fresh fetchedAt from a later worktreesMsg must clear the staleness marker")
 	}
 }
@@ -68,10 +71,10 @@ func TestHeaderCarriesRepoAndActiveWorktree(t *testing.T) {
 	model.baseBranch = "main"
 	model.activeBranch = "feat/a"
 
-	first := strings.Split(model.View(), "\n")[0]
-	for _, want := range []string{"wtm", "worktree-manager-cli", "main", "feat/a"} {
-		if !strings.Contains(first, want) {
-			t.Errorf("ligne 1 du header = %q, doit contenir %q", first, want)
+	header := model.renderHeader(model.layout())
+	for _, want := range []string{domain.DashboardWordmarkLines[0], "worktree-manager-cli", "main", "feat/a"} {
+		if !strings.Contains(header, want) {
+			t.Errorf("header = %q, doit contenir %q", header, want)
 		}
 	}
 }
@@ -90,8 +93,12 @@ func TestHeaderAnnouncesStaleFetchOnlyPastTheThreshold(t *testing.T) {
 	}
 }
 
+// This exercises the compact header specifically (a height below the tall
+// threshold): its single packed context line is the one thing that still
+// drops segments by width. The tall header spreads the same facts over
+// three rows instead and does not need the same mechanic.
 func TestHeaderDropsSegmentsRightToLeftWhenNarrow(t *testing.T) {
-	model := newTestModel(t, narrowWide, testHeight, "main")
+	model := newTestModel(t, narrowWide, domain.DashboardHeaderTallThreshold-1, "main")
 	model.repoName = "un-nom-de-depot-vraiment-tres-long"
 	model.baseBranch = "main"
 	model.activeBranch = "feat/une-branche-au-nom-interminable"

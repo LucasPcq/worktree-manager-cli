@@ -125,7 +125,7 @@ func (m Model) actionsAnchorPoint() domain.Rect {
 	if zone := m.zones.Get(zoneActions); !zone.IsZero() {
 		return domain.Rect{X: zone.StartX, Y: zone.EndY}
 	}
-	return domain.Rect{X: 0, Y: domain.DashboardHeaderHeight - 1}
+	return domain.Rect{X: 0, Y: m.layout().Tabs.Height - 1}
 }
 
 // selectedRowPoint is the last line of the selected row, so the keyboard opens

@@ -930,11 +930,23 @@ const (
 	DashboardChromeHeight = 3
 	DashboardTitleGap     = 1
 
-	// DashboardHeaderHeight is the top bar: the context line (where you are —
-	// repo, base branch, active worktree), then the wordmark and its tabs, then
-	// the rule that underlines the active one. No rule separates the first two:
-	// the tab rule underneath already does that job.
-	DashboardHeaderHeight = 3
+	// DashboardHeaderCompactHeight is the fallback header — the context line
+	// (where you are: repo, base branch, active worktree), the wordmark and
+	// its tabs, then the rule that underlines the active one — shown below
+	// DashboardHeaderTallThreshold rows. No rule separates the first two: the
+	// tab rule underneath already does that job.
+	//
+	// DashboardHeaderTallHeight is the six-row signature block instead: the
+	// drawn wordmark's three rows (each carrying one piece of the same
+	// context the compact header packs onto one line), a blank line, the tab
+	// bar, and the rule. DashboardHeaderTallThreshold is the terminal height
+	// above which it shows — six rows of chrome on a 24-row terminal is a
+	// quarter of the screen. The choice between the two is made once, in
+	// rules.DashboardHeaderHeight; nothing else reads these two heights
+	// directly.
+	DashboardHeaderCompactHeight = 3
+	DashboardHeaderTallHeight    = 6
+	DashboardHeaderTallThreshold = 30
 
 	// DashboardRowHeight is how many lines one worktree takes — its name, then
 	// what its state amounts to — and DashboardRowGap the blank line between two.
@@ -954,8 +966,13 @@ const (
 	DashboardModalMinWidth     = 40
 	DashboardModalMaxWidth     = 88
 
-	// DashboardWordmark names the product in the header bar.
-	DashboardWordmark = "wtm"
+	// DashboardWordmark names the product in the compact fallback header.
+	// DashboardWordmarkGap is the fixed gap between the drawn wordmark block
+	// (DashboardWordmarkLines, below) and the context text beside it in the
+	// tall header, so every row's text starts on the same column regardless
+	// of that row's own content.
+	DashboardWordmark    = "wtm"
+	DashboardWordmarkGap = "   "
 	// DashboardContextSep joins the header context line's segments (repo, base,
 	// active worktree). DashboardFetchedFmt and DashboardBaseFmt are its
 	// individual segments; DashboardActiveGlyph marks the active worktree.
@@ -1279,4 +1296,14 @@ var EnvTemplateSuffixes = []string{
 	EnvTemplateSuffixSample,
 	EnvTemplateSuffixTemplate,
 	EnvTemplateSuffixTmpl,
+}
+
+// DashboardWordmarkLines is the drawn wordmark's three rows, the tall
+// header's permanent top-left anchor — the letter spacing (one blank column
+// between W, T and M) is deliberate: run together the glyphs are harder to
+// read.
+var DashboardWordmarkLines = [3]string{
+	`╻ ╻ ╺┳╸ ┏┳┓`,
+	`┃╻┃  ┃  ┃┃┃`,
+	`┗┻┛  ╹  ╹ ╹`,
 }

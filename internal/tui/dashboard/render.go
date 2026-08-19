@@ -76,25 +76,34 @@ func (m Model) renderPanel(params panelParams) string {
 	return m.marks().Mark(params.Zone, box)
 }
 
-// renderHeader is the dashboard's top bar: the context line (where you are —
-// wordmark included) on top, then the tabs and the count of what is listed,
-// then the rule underlining the active tab. The wordmark appears once, on the
-// context line; the bar below starts directly with the tabs. No rule sits
-// between the first two lines — the tab rule underneath already separates the
-// header from the body.
-//
-// Whole tabs are dropped rather than the bar trimmed: a hard trim would cut
-// through a zone marker and break that tab's hit-testing.
+// renderHeader dispatches to whichever header ComputeDashboardLayout chose
+// for this frame — the six-row signature block, or the compact three-row
+// fallback below domain.DashboardHeaderTallThreshold rows. It re-derives
+// nothing: layout.HeaderTall is the one place that decision is made.
 func (m Model) renderHeader(layout domain.DashboardLayout) string {
-	// A terminal too short for the full 3-line header is degenerate — nothing
-	// else fits either — but it must not overflow. ComputeDashboardLayout
-	// already shrinks Tabs.Height to what actually fits; the renderer honors
-	// it by dropping whole lines from the bottom (rule, then bar) rather than
-	// emitting a fixed line count regardless of the budget, mirroring how
-	// renderPanel returns "" rather than drawing past its own Rect.
+	// A terminal too short for any header is degenerate — nothing else fits
+	// either — but it must not overflow. ComputeDashboardLayout already
+	// shrinks Tabs.Height to what actually fits.
 	if layout.Tabs.Height <= 0 {
 		return ""
 	}
+	if layout.HeaderTall {
+		return m.renderTallHeader(layout)
+	}
+	return m.renderCompactHeader(layout)
+}
+
+// renderCompactHeader is the context line (where you are — wordmark
+// included) on top, then the tabs and the count of what is listed, then the
+// rule underlining the active tab. The wordmark appears once, on the context
+// line; the bar below starts directly with the tabs. No rule sits between
+// the first two lines — the tab rule underneath already separates the header
+// from the body.
+//
+// Whole lines are dropped from the bottom (rule, then bar) rather than
+// emitting a fixed line count regardless of the budget, mirroring how
+// renderPanel returns "" rather than drawing past its own Rect.
+func (m Model) renderCompactHeader(layout domain.DashboardLayout) string {
 	context := m.renderContextLine(layout.Tabs.Width)
 	if layout.Tabs.Height == 1 {
 		return context
@@ -102,28 +111,7 @@ func (m Model) renderHeader(layout domain.DashboardLayout) string {
 
 	// The wordmark already opens the context line above; the bar starts
 	// directly with the tabs so it is not drawn twice.
-	rendered := make([]string, 0, len(tabs))
-	used, activeStart, activeWidth := 0, 0, 0
-	for index, title := range tabs {
-		style := styles.DashboardTabInactive
-		if index == m.tab {
-			style = styles.DashboardTabActive
-		}
-		tab := style.Render(title)
-		if used+lipgloss.Width(tab) > layout.Tabs.Width {
-			break
-		}
-		if index == m.tab {
-			activeStart, activeWidth = used, lipgloss.Width(tab)
-		}
-		used += lipgloss.Width(tab)
-		rendered = append(rendered, m.marks().Mark(tabZone(index), tab))
-	}
-
-	bar := lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
-	if right := m.headerRight(layout.Tabs.Width - used); right != "" {
-		bar += strings.Repeat(" ", layout.Tabs.Width-used-lipgloss.Width(right)) + right
-	}
+	bar, activeStart, activeWidth := m.renderTabBar(layout.Tabs.Width, m.headerRight)
 	if layout.Tabs.Height == 2 {
 		return lipgloss.JoinVertical(lipgloss.Left, context, bar)
 	}
@@ -133,6 +121,134 @@ func (m Model) renderHeader(layout domain.DashboardLayout) string {
 		ActiveStart: m.tabRuleStart(activeStart),
 		ActiveWidth: activeWidth,
 	}))
+}
+
+// renderTallHeader draws the six-row signature block: the drawn wordmark
+// permanently anchoring the top-left corner, spread across its three rows
+// with the same context the compact header packs onto one line — repository
+// name, base branch and active worktree, worktree count and the
+// fetch-staleness note — a blank line (the header sitting too close to the
+// tabs was one of the three complaints this fixes, so the blank line is not
+// optional), then the tab bar and its rule, identical to the compact
+// header's own. ComputeDashboardLayout only ever hands this
+// domain.DashboardHeaderTallHeight rows at once — the threshold that selects
+// it leaves no room for a partial signature block — so there is no shorter
+// variant to degrade into, unlike the compact header.
+func (m Model) renderTallHeader(layout domain.DashboardLayout) string {
+	width := layout.Tabs.Width
+	context := [3]string{
+		m.headerRepoLine(),
+		m.headerBaseActiveLine(),
+		m.headerCountLine(),
+	}
+
+	lines := make([]string, 0, domain.DashboardHeaderTallHeight)
+	for index, art := range domain.DashboardWordmarkLines {
+		lines = append(lines, m.wordmarkRow(art, context[index], width))
+	}
+	lines = append(lines, "")
+
+	bar, activeStart, activeWidth := m.renderTabBar(width, m.headerButtons)
+	lines = append(lines, bar, tabRule(tabRuleParams{
+		Width:       width,
+		ActiveStart: m.tabRuleStart(activeStart),
+		ActiveWidth: activeWidth,
+	}))
+	return strings.Join(lines, "\n")
+}
+
+// wordmarkRow draws one row of the signature block: one line of the drawn
+// wordmark, then the piece of context this row carries (already styled, or
+// "" when this row has nothing to say — the wordmark alone, not a trailing
+// gap). Hard-truncated rather than dropped in segments: unlike the compact
+// header's single packed line, each row here already carries one fact, so
+// there is nothing left to drop before the wordmark itself would go.
+func (m Model) wordmarkRow(art, styledContext string, width int) string {
+	left := styles.DashboardWordmark.Render(art)
+	if styledContext == "" {
+		return truncateRendered(left, width)
+	}
+	return truncateRendered(left+domain.DashboardWordmarkGap+styledContext, width)
+}
+
+// headerRepoLine is the tall header's first row: the repository name alone,
+// styled like the rest of the context text.
+func (m Model) headerRepoLine() string {
+	if m.repoName == "" {
+		return ""
+	}
+	return styles.DashboardContext.Render(m.repoName)
+}
+
+// headerBaseActiveLine is the tall header's second row: base branch and
+// active worktree. Built directly rather than through contextLeft, which
+// bakes in a leading space meant to sit right after the compact header's
+// inline wordmark text — carried into the signature block, it would indent
+// this row one column past the repository name on the row above it.
+func (m Model) headerBaseActiveLine() string {
+	segments := make([]string, 0, 2)
+	if m.baseBranch != "" {
+		segments = append(segments, fmt.Sprintf(domain.DashboardBaseFmt, m.baseBranch))
+	}
+	if m.activeBranch != "" {
+		segments = append(segments, domain.DashboardActiveGlyph+" "+m.activeBranch)
+	}
+	if len(segments) == 0 {
+		return ""
+	}
+	return styles.DashboardContext.Render(strings.Join(segments, domain.DashboardContextSep))
+}
+
+// headerCountLine is the tall header's third row: the count of what the
+// active tab lists, plus the fetch-staleness note when the origin refs have
+// gone stale — the same two facts the compact header's tab bar and context
+// line carry separately, joined here since they share this row instead.
+// Built from the plain (unstyled) text of each rather than countLabel/
+// fetchedLabel: those bake in the compact header's own styling — countLabel
+// in particular pads itself for its place at the end of the tab bar, which
+// would indent this row out of alignment with the ones above it.
+func (m Model) headerCountLine() string {
+	parts := make([]string, 0, 2)
+	if count := m.countText(); count != "" {
+		parts = append(parts, count)
+	}
+	if fetched := m.fetchedText(); fetched != "" {
+		parts = append(parts, fetched)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return styles.DashboardContext.Render(strings.Join(parts, domain.DashboardContextSep))
+}
+
+// renderTabBar draws the tab row shared by both header variants: each tab
+// gets its own zone, and right fills whatever room is left — headerRight
+// (compact header, count included) or headerButtons (tall header, whose
+// count already sits in the signature block).
+func (m Model) renderTabBar(width int, right func(room int) string) (bar string, activeStart, activeWidth int) {
+	rendered := make([]string, 0, len(tabs))
+	used := 0
+	for index, title := range tabs {
+		style := styles.DashboardTabInactive
+		if index == m.tab {
+			style = styles.DashboardTabActive
+		}
+		tab := style.Render(title)
+		if used+lipgloss.Width(tab) > width {
+			break
+		}
+		if index == m.tab {
+			activeStart, activeWidth = used, lipgloss.Width(tab)
+		}
+		used += lipgloss.Width(tab)
+		rendered = append(rendered, m.marks().Mark(tabZone(index), tab))
+	}
+
+	bar = lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+	if r := right(width - used); r != "" {
+		bar += strings.Repeat(" ", width-used-lipgloss.Width(r)) + r
+	}
+	return bar, activeStart, activeWidth
 }
 
 // renderContextLine is the header's "where you are" line: the wordmark, the
@@ -196,20 +312,29 @@ func (m Model) contextLeft(params contextLeftParams) string {
 	return styles.DashboardContext.Render(" " + strings.Join(segments, domain.DashboardContextSep))
 }
 
-// fetchedLabel is the header's only non-permanent element: it appears only
-// once the origin refs are stale enough to matter, and it is the view's
-// property, not the selected worktree's — every origin badge in the list is
-// equally old.
-func (m Model) fetchedLabel() string {
+// fetchedText is the header's only non-permanent element, in plain text: it
+// appears only once the origin refs are stale enough to matter, and it is
+// the view's property, not the selected worktree's — every origin badge in
+// the list is equally old.
+func (m Model) fetchedText() string {
 	now := time.Now()
 	if !rules.FetchIsStale(rules.FetchStalenessParams{FetchedAt: m.fetchedAt, Now: now}) {
 		return ""
 	}
 	if m.fetchedAt.IsZero() {
-		return styles.DashboardContext.Render(domain.DashboardNeverFetched)
+		return domain.DashboardNeverFetched
 	}
 	age := rules.RelativeAge(rules.RelativeAgeParams{At: m.fetchedAt, Now: now})
-	return styles.DashboardContext.Render(fmt.Sprintf(domain.DashboardFetchedFmt, age))
+	return fmt.Sprintf(domain.DashboardFetchedFmt, age)
+}
+
+// fetchedLabel is fetchedText styled for the compact header's context line.
+func (m Model) fetchedLabel() string {
+	text := m.fetchedText()
+	if text == "" {
+		return ""
+	}
+	return styles.DashboardContext.Render(text)
 }
 
 // fitContextLine lays the left cluster and the right notice on one row of the
@@ -257,6 +382,32 @@ func (m Model) headerRight(room int) string {
 	return ""
 }
 
+// headerButtons is the tall header's tab-bar right cluster: the two global
+// actions, no count — the signature block's own third row already carries
+// it. Whole segments are dropped rather than the bar trimmed, the same
+// reasoning headerRight follows.
+func (m Model) headerButtons(room int) string {
+	for _, variant := range []struct{ add, actions string }{
+		{domain.DashboardAddLabelLong, domain.DashboardActionsLabel},
+		{domain.DashboardAddLabel, domain.DashboardActionsLabel},
+		{domain.DashboardAddLabel, domain.DashboardActionsShort},
+		{"", domain.DashboardActionsShort},
+	} {
+		add, actions := "", ""
+		if variant.add != "" {
+			add = m.marks().Mark(zoneAdd, styles.DashboardAddButton.Render(variant.add))
+		}
+		if variant.actions != "" {
+			actions = m.marks().Mark(zoneActions, styles.DashboardHeaderButton.Render(variant.actions))
+		}
+		cluster := joinHeader(add, actions)
+		if lipgloss.Width(cluster)+1 <= room {
+			return cluster
+		}
+	}
+	return ""
+}
+
 func joinHeader(segments ...string) string {
 	parts := make([]string, 0, len(segments))
 	for _, segment := range segments {
@@ -267,9 +418,9 @@ func joinHeader(segments ...string) string {
 	return strings.Join(parts, " ")
 }
 
-// countLabel counts what the active tab lists: worktrees, or the nodes of the
-// forest — which includes the parents that have none.
-func (m Model) countLabel() string {
+// countText counts what the active tab lists, in plain text: worktrees, or
+// the nodes of the forest — which includes the parents that have none.
+func (m Model) countText() string {
 	if m.tab == tabTree {
 		if !m.treeLoaded {
 			return ""
@@ -278,7 +429,7 @@ func (m Model) countLabel() string {
 		if len(m.treeRows) == 1 {
 			format = domain.DashboardTreeCountOneFmt
 		}
-		return styles.DashboardCount.Render(fmt.Sprintf(format, len(m.treeRows)))
+		return fmt.Sprintf(format, len(m.treeRows))
 	}
 	if !m.loaded {
 		return ""
@@ -287,7 +438,17 @@ func (m Model) countLabel() string {
 	if len(m.statuses) == 1 {
 		format = domain.DashboardCountOneFmt
 	}
-	return styles.DashboardCount.Render(fmt.Sprintf(format, len(m.statuses)))
+	return fmt.Sprintf(format, len(m.statuses))
+}
+
+// countLabel is countText styled for the compact header's tab-bar right
+// cluster.
+func (m Model) countLabel() string {
+	text := m.countText()
+	if text == "" {
+		return ""
+	}
+	return styles.DashboardCount.Render(text)
 }
 
 // tabStart is the column a tab's own segment starts at, the same measurement

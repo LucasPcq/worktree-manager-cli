@@ -14,20 +14,21 @@ import (
 // the zone manager: a zone marked over the wrong region is exactly the mistake a
 // self-referential assertion would miss.
 //
-// At 120x40 with the output panel folded:
+// At 120x40 (above the tall-header threshold) with the output panel folded:
 //
-//	y=0            header context line (repo, base branch, active worktree)
-//	y=1            header bar (wordmark and tabs)
-//	y=2            the rule under the active tab
-//	y=3            list/detail top border   (list x=0..47, detail x=48..119)
-//	y=4            panel title
-//	y=5            the blank line under it
-//	y=6+3i         worktree row i           (two lines, then a gap; text at x=2)
+//	y=0..2         signature block (drawn wordmark, one context row each)
+//	y=3            the blank line under it
+//	y=4            header bar (tabs and buttons)
+//	y=5            the rule under the active tab
+//	y=6            list/detail top border   (list x=0..47, detail x=48..119)
+//	y=7            panel title
+//	y=8            the blank line under it
+//	y=9+3i         worktree row i           (two lines, then a gap; text at x=2)
 //	y=36..38       output panel             (title row y=37)
 //	y=39           help bar
 const (
-	headerBarY   = domain.DashboardHeaderHeight - 2
-	titleRowY    = domain.DashboardHeaderHeight + 1
+	headerBarY   = domain.DashboardHeaderTallHeight - 2
+	titleRowY    = domain.DashboardHeaderTallHeight + 1
 	firstRowY    = titleRowY + 1 + domain.DashboardTitleGap
 	rowStride    = domain.DashboardRowHeight + domain.DashboardRowGap
 	rowTextX     = 2
