@@ -90,16 +90,9 @@ func (m Model) renderHeader(layout domain.DashboardLayout) string {
 	return m.renderCompactHeader(layout)
 }
 
-// renderCompactHeader is the context line (where you are — wordmark
-// included) on top, then the tabs and the count of what is listed, then the
-// rule underlining the active tab. The wordmark appears once, on the context
-// line; the bar below starts directly with the tabs. No rule sits between
-// the first two lines — the tab rule underneath already separates the header
-// from the body.
-//
-// Whole lines are dropped from the bottom (rule, then bar) rather than
-// emitting a fixed line count regardless of the budget, mirroring how
-// renderPanel returns "" rather than drawing past its own Rect.
+// No rule between the two lines: the tab rule underneath already separates the
+// header from the body. Whole lines drop from the bottom under a tight budget,
+// rather than emitting a fixed count that would push the frame past the screen.
 func (m Model) renderCompactHeader(layout domain.DashboardLayout) string {
 	context := m.renderContextLine(layout.Tabs.Width)
 	if layout.Tabs.Height == 1 {
@@ -120,17 +113,10 @@ func (m Model) renderCompactHeader(layout domain.DashboardLayout) string {
 	}))
 }
 
-// renderTallHeader draws the six-row signature block: the drawn wordmark
-// permanently anchoring the top-left corner, spread across its three rows
-// with the same context the compact header packs onto one line — repository
-// name, base branch and active worktree, worktree count and the
-// fetch-staleness note — a blank line (the header sitting too close to the
-// tabs was one of the three complaints this fixes, so the blank line is not
-// optional), then the tab bar and its rule, identical to the compact
-// header's own. ComputeDashboardLayout only ever hands this
-// domain.DashboardHeaderTallHeight rows at once — the threshold that selects
-// it leaves no room for a partial signature block — so there is no shorter
-// variant to degrade into, unlike the compact header.
+// The wordmark's three rows hold the context the compact header packs onto one
+// line, so the block costs height it also uses. The blank line before the tabs
+// is not optional — it is what makes this read as a header. No partial variant:
+// the layout only selects this when all six rows fit.
 func (m Model) renderTallHeader(layout domain.DashboardLayout) string {
 	width := layout.Tabs.Width
 	context := [3]string{
@@ -154,12 +140,8 @@ func (m Model) renderTallHeader(layout domain.DashboardLayout) string {
 	return strings.Join(lines, "\n")
 }
 
-// wordmarkRow draws one row of the signature block: one line of the drawn
-// wordmark, then the piece of context this row carries (already styled, or
-// "" when this row has nothing to say — the wordmark alone, not a trailing
-// gap). Hard-truncated rather than dropped in segments: unlike the compact
-// header's single packed line, each row here already carries one fact, so
-// there is nothing left to drop before the wordmark itself would go.
+// Hard-truncated rather than dropped in segments: each row already carries a
+// single fact, so there is nothing to drop before the wordmark itself.
 func (m Model) wordmarkRow(art, styledContext string, width int) string {
 	left := styles.DashboardWordmark.Render(art)
 	if styledContext == "" {
@@ -177,11 +159,9 @@ func (m Model) headerRepoLine() string {
 	return styles.DashboardContext.Render(m.repoName)
 }
 
-// headerBaseActiveLine is the tall header's second row: base branch and
-// active worktree. Built directly rather than through contextLeft, which
-// bakes in a leading space meant to sit right after the compact header's
-// inline wordmark text — carried into the signature block, it would indent
-// this row one column past the repository name on the row above it.
+// Built directly rather than through contextLeft, whose leading space belongs to
+// the compact header's inline wordmark and would indent this row out of
+// alignment with the repository name above it.
 func (m Model) headerBaseActiveLine() string {
 	segments := make([]string, 0, 2)
 	if m.baseBranch() != "" {
@@ -196,14 +176,9 @@ func (m Model) headerBaseActiveLine() string {
 	return styles.DashboardContext.Render(strings.Join(segments, domain.DashboardContextSep))
 }
 
-// headerCountLine is the tall header's third row: the count of what the
-// active tab lists, plus the fetch-staleness note when the origin refs have
-// gone stale — the same two facts the compact header's tab bar and context
-// line carry separately, joined here since they share this row instead.
-// Built from the plain (unstyled) text of each rather than countLabel/
-// fetchedLabel: those bake in the compact header's own styling — countLabel
-// in particular pads itself for its place at the end of the tab bar, which
-// would indent this row out of alignment with the ones above it.
+// Built from plain text rather than countLabel/fetchedLabel: those carry the
+// compact header's own padding and styling, which would break this row's
+// alignment with the two above it.
 func (m Model) headerCountLine() string {
 	parts := make([]string, 0, 2)
 	if count := m.countText(); count != "" {
@@ -248,14 +223,9 @@ func (m Model) renderTabBar(width int, right func(room int) string) (bar string,
 	return bar, activeStart, activeWidth
 }
 
-// renderContextLine is the header's "where you are" line: the wordmark, the
-// repo, the base branch and the worktree the shell is currently in, with the
-// fetch-staleness notice flush right when the origin refs have gone stale.
-//
-// Segments drop whole, right to left — fetched, then the active worktree,
-// then base, then the repo — the same variant-list mechanic headerRight uses
-// for its own buttons: a half-drawn label reads as a wrong one, so a segment
-// that does not fit is dropped rather than cut.
+// Segments drop whole, right to left, on the same variant-list mechanic
+// headerRight uses: a half-drawn label reads as a wrong one, so a segment that
+// does not fit is dropped rather than cut.
 func (m Model) renderContextLine(width int) string {
 	wordmark := styles.DashboardWordmark.Render(domain.DashboardWordmark)
 	fetched := m.fetchedLabel()
@@ -448,11 +418,8 @@ func (m Model) countLabel() string {
 	return styles.DashboardCount.Render(text)
 }
 
-// tabStart is the column a tab's own segment starts at, the same measurement
-// the header's own loop draws with — both styles share the same padding, so
-// it does not depend on which tab is active. Reused by selectTab to know
-// where the rule sat before the tab it is animating away from, and by
-// renderHeader through tabRuleStart to know where it is animating from now.
+// Both tab styles share the same padding, so the column does not depend on which
+// tab is active — which is what lets the slide animation measure from and to it.
 func tabStart(width, index int) int {
 	used := 0
 	for i, title := range tabs {
@@ -579,17 +546,12 @@ func helpTextWidth(rows [][2]string, screenWidth int) int {
 	return min(widest, screenWidth-domain.DashboardModalChrome-modalPadding)
 }
 
-// clipRenderedLines keeps the leading run of entries whose combined rendered
-// row count fits height, dropping whole entries once it does not — a panel
-// body is assembled by counting slice entries as rows, and an entry carrying
-// its own newlines (a hook or git failure embedded verbatim) breaks that
-// assumption: it renders as several rows, not one, and can push the panel's
-// box past the rect it was given and the frame past the terminal. This is
-// the invariant that keeps that from happening regardless of what a caller
-// puts in Body. Only the one entry that would overflow with nothing kept yet
-// is itself split on its newlines, so a single oversized entry still cannot
-// grow past the budget; every other entry is kept or dropped whole, so a
-// styled (ANSI) entry is never cut mid-escape.
+// A body is assembled by counting entries as rows, and an entry carrying its own
+// newlines renders as several — which is how a hook or git failure pasted in
+// verbatim pushes the frame past the terminal and scrolls the alt screen. This
+// clips by rendered rows instead, whatever a caller puts in Body. Entries are
+// kept or dropped whole so a styled one is never cut mid-escape; only an entry
+// that alone overflows is split.
 func clipRenderedLines(lines []string, height int) []string {
 	if height <= 0 {
 		return nil

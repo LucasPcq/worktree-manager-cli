@@ -24,12 +24,9 @@ func (m Model) renderDetail(layout domain.DashboardLayout) string {
 	})
 }
 
-// detailBody draws, in priority order: the title row (branch identity, never
-// its state), the rule, the vital strip (state and the other constants —
-// always instantaneous, since it reads WorktreeStatus rather than the lazily
-// loaded WorktreeDetail), the blockers line when there is one, and the
-// composed sections. It decides nothing about what to show — rules/ already
-// did — only how to stack and color it.
+// The vital strip is instantaneous: it reads WorktreeStatus, not the lazily
+// loaded WorktreeDetail, so it holds the panel while the rest arrives. Nothing
+// here decides what to show — rules/ did — only how to stack and color it.
 func (m Model) detailBody(layout domain.DashboardLayout) []string {
 	width := layout.Detail.Width - borderWidth - paddingWidth
 	status, ok := m.selected()
@@ -74,9 +71,8 @@ func (m Model) detailBody(layout domain.DashboardLayout) []string {
 	return m.appendSections(lines, sections, width, stale, pr)
 }
 
-// detailTitleLine carries identity, never state: the working-tree state is a
-// vital-strip chip, not a title-row pill. DetailYouAreHere is the only thing
-// that may sit to its right, and only for the worktree the cwd is under.
+// The title row carries identity, never state: the working-tree state is a
+// vital-strip chip, not a title-row pill.
 func (m Model) detailTitleLine(stale bool, status domain.WorktreeStatus, width int) string {
 	branch := styleText(stale, styles.DashboardBranch, truncate(status.Branch, width))
 	marker := m.youAreHereMarker(stale, status.Branch)
@@ -100,10 +96,8 @@ func lastCommitAt(detail domain.WorktreeDetail) time.Time {
 	return detail.Commits[0].At
 }
 
-// vitalStripLines wraps chip by chip: a chip is never cut mid-way, since a
-// truncated "origin ↑2 ↓…" would read as a lie rather than a truncation. A
-// chip that alone still overflows width is kept whole on its own line, for
-// the same reason.
+// Wraps chip by chip and never cuts one mid-way: a truncated "origin ↑2 ↓…"
+// would read as a lie rather than as a truncation.
 func vitalStripLines(chips []domain.Chip, width int, stale bool) []string {
 	if width <= 0 || len(chips) == 0 {
 		return nil
@@ -133,11 +127,9 @@ func vitalStripLines(chips []domain.Chip, width int, stale bool) []string {
 	return append(lines, current)
 }
 
-// renderChip is the vital strip's one deliberate exception to "muted is
-// structure": the working-tree state chip carries the strip's only color.
-// State gates WHETHER a chip is colored at all; Kind only picks WHICH color
-// once State says yes — rules.stateChip is the single source of truth for
-// which chip that is, this never re-derives it from Kind alone.
+// State gates WHETHER a chip is colored, Kind only WHICH color once it is:
+// rules.stateChip stays the single source of truth for the strip's one
+// colored chip, never re-derived here from Kind alone.
 func renderChip(chip domain.Chip, stale bool) string {
 	style := styles.DashboardChip
 	if chip.State {
@@ -151,11 +143,9 @@ func renderChip(chip domain.Chip, stale bool) string {
 	return styleText(stale, style, chip.Text)
 }
 
-// blockersLine joins every refusal the worktree carries into the one line
-// that answers "why can't I delete this" before the menu is even opened.
-// Truncated before it is styled, like every other line in this file: trimming
-// runes off an already-styled string eats its trailing reset sequence and
-// bleeds the color into whatever renders after it.
+// Truncated before it is styled, like every other line here: trimming runes off
+// an already-styled string eats its trailing reset and bleeds the color into
+// whatever renders next.
 func blockersLine(stale bool, blockers []domain.CleanBlocker, width int) string {
 	if len(blockers) == 0 {
 		return ""
@@ -168,8 +158,8 @@ func blockersLine(stale bool, blockers []domain.CleanBlocker, width int) string 
 	return styleText(stale, styles.DashboardBlockers, truncate(text, width))
 }
 
-// detailSectionsInput gathers what rules.DetailSections needs plus the one
-// thing it cannot know: whether Detail has loaded at all yet (state 3, §8).
+// Carries the one thing rules.DetailSections cannot know: whether Detail has
+// loaded at all yet.
 type detailSectionsInput struct {
 	Status    domain.WorktreeStatus
 	Detail    domain.WorktreeDetail
@@ -183,11 +173,8 @@ type detailSectionsInput struct {
 	Height        int
 }
 
-// detailSections asks rules.DetailSections for the finished stack — which
-// sections exist, their order, and their placeholder or failure lines when
-// Detail has not loaded or a family failed to read — then only fits it to the
-// panel's height. It decides nothing about what is shown: that is rules/'s
-// job end to end.
+// Which sections exist, their order and their placeholder lines are rules/'s
+// job end to end; this only fits the finished stack to the panel's height.
 func (m Model) detailSections(input detailSectionsInput) []domain.DetailSection {
 	sections := rules.DetailSections(rules.DetailSectionsParams{
 		Status:        input.Status,
@@ -202,12 +189,10 @@ func (m Model) detailSections(input detailSectionsInput) []domain.DetailSection 
 	return rules.FitSections(rules.FitSectionsParams{Sections: sections, Height: input.Height})
 }
 
-// appendSections stacks each section as a blank separator, its title row
-// (TitleRight flush right on that same row), a blank row, then its body
-// lines — the spacing rules.DetailSectionChrome already accounts for. REVIEW's
-// first line (the PR header) gets its own mouse zone when pr is set: the
-// section renders that same line whether the PR is real or a failure
-// placeholder, but only a real PR has anything to open.
+// The per-section spacing here is what rules.DetailSectionChrome accounts for;
+// the two must agree or the panel overflows. REVIEW's first line takes a mouse
+// zone only when pr is set: the same line also renders a failure placeholder,
+// and that one has nothing to open.
 func (m Model) appendSections(lines []string, sections []domain.DetailSection, width int, stale bool, pr *domain.PRInfo) []string {
 	for _, section := range sections {
 		lines = append(lines, "", sectionTitleLine(stale, section, width), "")
@@ -222,11 +207,8 @@ func (m Model) appendSections(lines []string, sections []domain.DetailSection, w
 	return lines
 }
 
-// openPR launches the selected worktree's PR in the browser, off the UI
-// goroutine: PROpener shells out to gh, and calling it inside Update would
-// freeze the whole program. A failure is reported through openPRMsg, the
-// same route every other operation's output takes — it never crashes the
-// dashboard or blocks it.
+// Off the UI goroutine: PROpener shells out to gh, and calling it inside Update
+// would freeze the program. Failures take openPRMsg to the output panel.
 func (m Model) openPR() (Model, tea.Cmd) {
 	pr := m.prFor(m.selectedBranch())
 	if pr == nil || m.params.PROpener == nil {
@@ -254,9 +236,8 @@ func sectionTitleLine(stale bool, section domain.DetailSection, width int) strin
 	return left + strings.Repeat(" ", max(gap, 0)) + right
 }
 
-// styleText applies style, unless the panel is stale (§8 state 2): a stale
-// body renders uniformly in DashboardStale instead — old data still on
-// screen, but visibly not the freshest read anymore.
+// A stale body renders uniformly muted: old data still on screen, visibly not
+// the freshest read.
 func styleText(stale bool, style lipgloss.Style, text string) string {
 	if stale {
 		return styles.DashboardStale.Render(text)
@@ -264,16 +245,13 @@ func styleText(stale bool, style lipgloss.Style, text string) string {
 	return style.Render(text)
 }
 
-// prUnavailableReason names why PR data could not be read, reusing the same
-// wording worktreepicker's own PR-aware surfaces already show for a broken
-// gh — empty until prsMsg lands with an actual connection state, so no
-// "unavailable" claim is made while the fetch is still in flight.
+// Empty until prsMsg lands with a real connection state, so no "unavailable"
+// claim is made while the fetch is still in flight.
 func (m Model) prUnavailableReason() string {
 	return worktreepicker.GHBanner(m.ghConn).Title
 }
 
-// prFor matches the selected branch against the already-loaded PR list — no
-// network call, since REVIEW does not depend on the lazily loaded Detail.
+// REVIEW reads the already-loaded PR list, not the lazily loaded Detail.
 func (m Model) prFor(branch string) *domain.PRInfo {
 	for index := range m.prs {
 		if m.prs[index].Branch == branch {
