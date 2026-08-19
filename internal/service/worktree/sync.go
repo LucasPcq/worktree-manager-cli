@@ -21,6 +21,11 @@ type SyncParams struct {
 	// SelectedBranches restricts the cascade to the named worktrees (topological
 	// order is preserved). An empty slice means every managed worktree.
 	SelectedBranches []string
+	// FastForwardParents advances the parents no step covers — a parent with no
+	// worktree, or one left out of the selection — to origin/<parent> before their
+	// children are rebased onto them. Without it those parents are reported stale
+	// but left as they are (see ParentUpdate). A diverged parent is never touched.
+	FastForwardParents bool
 }
 
 // PlanSync builds the ordered cascade plan without touching any branch. Used to
@@ -38,6 +43,11 @@ func PlanSync(params SyncParams) (domain.SyncPlan, error) {
 		return domain.SyncPlan{}, err
 	}
 	plan.Steps = rules.FilterSyncSteps(plan.Steps, params.SelectedBranches)
+	plan.BaseTargeted = rules.BaseIsTarget(rules.BaseIsTargetParams{
+		Steps:      plan.Steps,
+		Selected:   params.SelectedBranches,
+		BaseBranch: params.BaseBranch,
+	})
 	return plan, nil
 }
 
@@ -66,19 +76,37 @@ func Sync(params SyncParams) (domain.SyncResult, error) {
 	})
 
 	result := domain.SyncResult{
-		BaseBranch:       params.BaseBranch,
+		BaseBranch: params.BaseBranch,
+		BaseTargeted: rules.BaseIsTarget(rules.BaseIsTargetParams{
+			Steps:      plan.Steps,
+			Selected:   params.SelectedBranches,
+			BaseBranch: params.BaseBranch,
+		}),
 		BaseOldTip:       oldTips[params.BaseBranch],
 		BaseNewTip:       oldTips[params.BaseBranch],
 		SelectedBranches: stepBranches(plan.Steps),
 	}
 
-	if !params.DryRun {
+	if !params.DryRun && result.BaseTargeted {
 		newTip, updated := updateBase(updateBaseParams{
 			MainPath:   mainPath,
 			BaseBranch: params.BaseBranch,
 		})
 		result.BaseUpdated = updated
 		result.BaseNewTip = newTip
+	}
+
+	// Parents outside the cascade are reconciled BEFORE the steps run, so a child
+	// is rebased onto the refreshed parent rather than a stale ref. Dry-run stays
+	// fully offline, so it inspects nothing.
+	if !params.DryRun {
+		result.ParentUpdates = reconcileParents(reconcileParentsParams{
+			Nodes:       nodes,
+			Steps:       plan.Steps,
+			MainPath:    mainPath,
+			BaseBranch:  params.BaseBranch,
+			FastForward: params.FastForwardParents,
+		})
 	}
 
 	skipped := make(map[string]bool)
@@ -97,6 +125,193 @@ func Sync(params SyncParams) (domain.SyncResult, error) {
 	}
 
 	return result, nil
+}
+
+// ClassifyParentsParams holds inputs for ClassifyParents.
+type ClassifyParentsParams struct {
+	ProjectDir string
+	StateDir   string
+	BaseBranch string
+}
+
+// ClassifyParents inspects every branch recorded as a parent against its remote
+// and changes nothing. It is the pre-pass a wizard runs before its first
+// question: which parents a selection leaves uncovered is only known step by
+// step, but each parent's state against origin is not, so the network work is
+// done once up front and the wizard filters it locally (see rules.StaleParentsFor).
+func ClassifyParents(params ClassifyParentsParams) ([]domain.ParentUpdate, error) {
+	nodes, err := buildNodes(params.ProjectDir, params.StateDir)
+	if err != nil {
+		return nil, err
+	}
+
+	mainPath := mainWorktreePath(nodes, params.ProjectDir)
+	pathByBranch := make(map[string]string, len(nodes))
+	for _, node := range nodes {
+		pathByBranch[node.Branch] = node.Path
+	}
+
+	branches := rules.ParentBranches(rules.ParentBranchesParams{
+		Nodes:      nodes,
+		BaseBranch: params.BaseBranch,
+	})
+
+	updates := make([]domain.ParentUpdate, 0, len(branches))
+	for _, branch := range branches {
+		update, ok := reconcileParent(reconcileParentParams{
+			Parent:       domain.ParentUpdate{Branch: branch},
+			WorktreePath: pathByBranch[branch],
+			MainPath:     mainPath,
+		})
+		if !ok {
+			continue
+		}
+		updates = append(updates, update)
+	}
+	return updates, nil
+}
+
+type reconcileParentsParams struct {
+	Nodes       []domain.WorktreeNode
+	Steps       []domain.SyncStep
+	MainPath    string
+	BaseBranch  string
+	FastForward bool
+}
+
+// reconcileParents classifies every parent the cascade leaves uncovered and,
+// when asked, fast-forwards the ones strictly behind their remote.
+func reconcileParents(params reconcileParentsParams) []domain.ParentUpdate {
+	pathByBranch := make(map[string]string, len(params.Nodes))
+	for _, node := range params.Nodes {
+		pathByBranch[node.Branch] = node.Path
+	}
+
+	pending := rules.ParentsOutsideCascade(rules.ParentsOutsideCascadeParams{
+		Steps:      params.Steps,
+		BaseBranch: params.BaseBranch,
+	})
+
+	updates := make([]domain.ParentUpdate, 0, len(pending))
+	for _, parent := range pending {
+		update, ok := reconcileParent(reconcileParentParams{
+			Parent:       parent,
+			WorktreePath: pathByBranch[parent.Branch],
+			MainPath:     params.MainPath,
+			FastForward:  params.FastForward,
+		})
+		if !ok {
+			continue
+		}
+		updates = append(updates, update)
+	}
+	return updates
+}
+
+type reconcileParentParams struct {
+	Parent domain.ParentUpdate
+	// WorktreePath is empty when the parent is a branch with no worktree.
+	WorktreePath string
+	MainPath     string
+	FastForward  bool
+}
+
+// reconcileParent classifies one uncovered parent against its remote. The second
+// return value is false when there is nothing worth reporting: no remote
+// counterpart, or a local ref that already carries it.
+func reconcileParent(params reconcileParentParams) (domain.ParentUpdate, bool) {
+	update := params.Parent
+	gitDir := params.MainPath
+	if params.WorktreePath != "" {
+		gitDir = params.WorktreePath
+	}
+
+	if err := infra.FetchBranch(infra.FetchBranchParams{
+		ProjectDir: gitDir,
+		Branch:     update.Branch,
+	}); err != nil {
+		return domain.ParentUpdate{}, false
+	}
+
+	remoteRef := domain.RemoteBranchPrefix + update.Branch
+	if _, err := infra.Tip(infra.TipParams{WorktreePath: gitDir, Ref: remoteRef}); err != nil {
+		return domain.ParentUpdate{}, false
+	}
+
+	tip, err := infra.Tip(infra.TipParams{WorktreePath: gitDir, Ref: update.Branch})
+	if err != nil {
+		return domain.ParentUpdate{}, false
+	}
+	update.OldTip, update.NewTip = tip, tip
+
+	if infra.IsAncestor(infra.IsAncestorParams{
+		WorktreePath: gitDir,
+		Ancestor:     remoteRef,
+		Descendant:   update.Branch,
+	}) {
+		return domain.ParentUpdate{}, false
+	}
+
+	if !infra.IsAncestor(infra.IsAncestorParams{
+		WorktreePath: gitDir,
+		Ancestor:     update.Branch,
+		Descendant:   remoteRef,
+	}) {
+		update.Status = domain.ParentDiverged
+		return update, true
+	}
+
+	update.Status = domain.ParentBehind
+	if behind, behindErr := infra.Behind(infra.BehindParams{
+		WorktreePath: gitDir,
+		Branch:       update.Branch,
+		Upstream:     remoteRef,
+	}); behindErr == nil {
+		update.Behind = behind
+	}
+	if !params.FastForward {
+		return update, true
+	}
+	if !fastForwardParent(fastForwardParentParams{
+		Branch:       update.Branch,
+		WorktreePath: params.WorktreePath,
+		ProjectDir:   gitDir,
+	}) {
+		return update, true
+	}
+
+	update.Status = domain.ParentFastForwarded
+	if newTip, tipErr := infra.Tip(infra.TipParams{WorktreePath: gitDir, Ref: update.Branch}); tipErr == nil {
+		update.NewTip = newTip
+	}
+	return update, true
+}
+
+type fastForwardParentParams struct {
+	Branch       string
+	WorktreePath string
+	ProjectDir   string
+}
+
+// fastForwardParent advances a parent to origin/<parent>. A branch with no
+// worktree is moved by fetching straight into its ref; a checked-out one must be
+// advanced inside its own worktree, and only while that worktree is clean — the
+// same guard updateBase applies to the base.
+func fastForwardParent(params fastForwardParentParams) bool {
+	if params.WorktreePath == "" {
+		return infra.FastForwardRef(infra.FastForwardRefParams{
+			ProjectDir: params.ProjectDir,
+			Branch:     params.Branch,
+		}) == nil
+	}
+
+	if dirty, err := infra.IsDirty(infra.IsDirtyParams{WorktreePath: params.WorktreePath}); err != nil || dirty {
+		return false
+	}
+	return infra.FastForwardBranch(infra.FastForwardParams{
+		WorktreePath: params.WorktreePath,
+		Onto:         domain.RemoteBranchPrefix + params.Branch,
+	}) == nil
 }
 
 // stepBranches lists the branches covered by a cascade's steps — the explicit
@@ -254,7 +469,7 @@ func updateBase(params updateBaseParams) (string, bool) {
 
 	if ffErr := infra.FastForwardBranch(infra.FastForwardParams{
 		WorktreePath: params.MainPath,
-		Onto:         "origin/" + params.BaseBranch,
+		Onto:         domain.RemoteBranchPrefix + params.BaseBranch,
 	}); ffErr != nil {
 		return currentTip, false
 	}
@@ -284,7 +499,7 @@ func integrateRemote(step domain.SyncStep) integrateOutcome {
 		return integrateProceed
 	}
 
-	remoteRef := "origin/" + step.Branch
+	remoteRef := domain.RemoteBranchPrefix + step.Branch
 	localHasRemote := infra.IsAncestor(infra.IsAncestorParams{
 		WorktreePath: step.Path,
 		Ancestor:     remoteRef,

@@ -165,6 +165,28 @@ func FetchBranch(params FetchBranchParams) error {
 	return nil
 }
 
+// FastForwardRefParams holds inputs for advancing a branch ref that is not
+// checked out anywhere.
+type FastForwardRefParams struct {
+	ProjectDir string
+	Branch     string
+}
+
+// FastForwardRef advances a local branch to its origin counterpart without going
+// through a worktree, by fetching straight into the ref. Without a leading '+'
+// the refspec is fast-forward-only, so git refuses a rewrite; it also refuses a
+// branch checked out in a worktree — those are advanced inside their own
+// worktree instead (see FastForwardBranch).
+func FastForwardRef(params FastForwardRefParams) error {
+	refspec := params.Branch + ":" + params.Branch
+	cmd := exec.Command("git", "-C", params.ProjectDir, "fetch", "origin", refspec)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git fetch origin %s: %s", refspec, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // FetchPruneParams holds inputs for a pruning fetch.
 type FetchPruneParams struct {
 	ProjectDir string

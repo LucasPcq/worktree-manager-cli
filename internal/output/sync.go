@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -13,7 +14,7 @@ import (
 // onto which parent, in execution order. It emits a raw body with no outer blank
 // lines; the caller's frame owns the outer vertical padding.
 func FormatSyncPlan(w io.Writer, plan domain.SyncPlan) {
-	SectionTitle(w, fmt.Sprintf("Sync plan (base: %s)", plan.BaseBranch))
+	SectionTitle(w, planTitle(plan))
 	if len(plan.Steps) == 0 {
 		Message(w, styles.Muted.Render("No worktrees to sync."))
 		return
@@ -37,7 +38,7 @@ func SprintSyncPlan(plan domain.SyncPlan) string {
 		return ""
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Sync plan (base: %s)", plan.BaseBranch)
+	b.WriteString(planTitle(plan))
 	for i, step := range plan.Steps {
 		parent := step.SourceBranch
 		if parent == "" {
@@ -46,6 +47,16 @@ func SprintSyncPlan(plan domain.SyncPlan) string {
 		fmt.Fprintf(&b, "\n%d. %s ← %s", i+1, step.Branch, parent)
 	}
 	return b.String()
+}
+
+// planTitle names the base only when the cascade actually involves it, so a run
+// whose every step rebases onto another parent does not lead with a branch it
+// never touches.
+func planTitle(plan domain.SyncPlan) string {
+	if !plan.BaseTargeted {
+		return "Sync plan"
+	}
+	return fmt.Sprintf("Sync plan (base: %s)", plan.BaseBranch)
 }
 
 // FormatSyncResult prints the detailed recap of a sync run: the base update and
@@ -58,6 +69,32 @@ func SprintSyncPlan(plan domain.SyncPlan) string {
 // the top/bottom padding; the inter-section blank between the base line and the
 // per-branch lines is kept as a genuine separator.
 func FormatSyncResult(w io.Writer, result domain.SyncResult) {
+	printBase(w, result)
+
+	// The blank separates the base line from the per-branch lines; with no steps
+	// (a base-only refresh) it would stack against the push summary's leading
+	// blank, so it is only emitted when there is something to separate.
+	if len(result.Steps) == 0 {
+		return
+	}
+	if result.BaseTargeted {
+		Blank(w)
+	}
+	printParentUpdates(w, result.ParentUpdates)
+	for _, step := range result.Steps {
+		printStep(w, step)
+	}
+	printConflictFooter(w, result.Steps)
+}
+
+// printBase reports the base branch — but only when the run actually involved
+// it. A cascade where every step rebases onto some other parent leaves the base
+// alone, so naming it would put a branch in the recap that the run never read
+// (see rules.BaseIsTarget).
+func printBase(w io.Writer, result domain.SyncResult) {
+	if !result.BaseTargeted {
+		return
+	}
 	if result.BaseUpdated {
 		InfoLine(w, "Base", fmt.Sprintf("%s  %s → %s  %s",
 			result.BaseBranch,
@@ -70,18 +107,6 @@ func FormatSyncResult(w io.Writer, result domain.SyncResult) {
 			styles.Muted.Render(result.BaseOldTip),
 			styles.Muted.Render("(already up to date / no fast-forward)")))
 	}
-
-	// The blank separates the base line from the per-branch lines; with no steps
-	// (a base-only refresh) it would stack against the push summary's leading
-	// blank, so it is only emitted when there is something to separate.
-	if len(result.Steps) == 0 {
-		return
-	}
-	Blank(w)
-	for _, step := range result.Steps {
-		printStep(w, step)
-	}
-	printConflictFooter(w, result.Steps)
 }
 
 // FormatSyncPushSummary prints the trailing summary of which branches were
@@ -90,6 +115,33 @@ func FormatSyncResult(w io.Writer, result domain.SyncResult) {
 func FormatSyncPushSummary(w io.Writer, steps []domain.SyncStepResult) {
 	Blank(w)
 	printPushSummary(w, steps)
+}
+
+// printParentUpdates reports the parents the cascade rebased onto without a step
+// of their own: refreshed, left behind, or diverged. Nothing to report prints
+// nothing; otherwise the block is closed by a blank separating it from the steps.
+func printParentUpdates(w io.Writer, updates []domain.ParentUpdate) {
+	if len(updates) == 0 {
+		return
+	}
+	for _, update := range updates {
+		remote := domain.RemoteBranchPrefix + update.Branch
+		switch update.Status {
+		case domain.ParentFastForwarded:
+			Success(w, fmt.Sprintf("%s fast-forwarded to %s  %s",
+				update.Branch,
+				styles.Muted.Render(remote),
+				styles.Muted.Render(update.OldTip+" → "+update.NewTip)))
+		case domain.ParentBehind:
+			Warning(w, fmt.Sprintf("%s is %s behind %s — %s rebased onto it as is (--%s to refresh)",
+				update.Branch, rules.CommitCountLabel(update.Behind), remote,
+				strings.Join(update.Children, ", "), domain.FlagFFParents))
+		case domain.ParentDiverged:
+			Warning(w, fmt.Sprintf("%s has diverged from %s — left untouched; reconcile it manually",
+				update.Branch, remote))
+		}
+	}
+	Blank(w)
 }
 
 func printStep(w io.Writer, step domain.SyncStepResult) {

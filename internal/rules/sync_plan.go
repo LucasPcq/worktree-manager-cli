@@ -120,3 +120,96 @@ func parentDepth(params parentDepthParams) (int, error) {
 		current = parent
 	}
 }
+
+// ParentsOutsideCascadeParams holds inputs for ParentsOutsideCascade.
+type ParentsOutsideCascadeParams struct {
+	Steps      []domain.SyncStep
+	BaseBranch string
+}
+
+// ParentsOutsideCascade lists the parents a cascade rebases onto but never
+// refreshes: those with no step of their own. The base is excluded — it has its
+// own fast-forward — and so is an empty parent (an unknown-parent step). Order
+// follows first use; each entry carries the steps depending on it, and its
+// Status is left for the caller to resolve against the remote.
+func ParentsOutsideCascade(params ParentsOutsideCascadeParams) []domain.ParentUpdate {
+	covered := make(map[string]struct{}, len(params.Steps))
+	for _, step := range params.Steps {
+		covered[step.Branch] = struct{}{}
+	}
+
+	at := make(map[string]int, len(params.Steps))
+	parents := make([]domain.ParentUpdate, 0, len(params.Steps))
+	for _, step := range params.Steps {
+		parent := step.SourceBranch
+		if parent == "" || parent == params.BaseBranch {
+			continue
+		}
+		if _, skip := covered[parent]; skip {
+			continue
+		}
+		if i, seen := at[parent]; seen {
+			parents[i].Children = append(parents[i].Children, step.Branch)
+			continue
+		}
+		at[parent] = len(parents)
+		parents = append(parents, domain.ParentUpdate{Branch: parent, Children: []string{step.Branch}})
+	}
+	return parents
+}
+
+// ParentBranchesParams holds inputs for ParentBranches.
+type ParentBranchesParams struct {
+	Nodes      []domain.WorktreeNode
+	BaseBranch string
+}
+
+// ParentBranches lists the distinct branches at least one managed worktree
+// records as its parent, excluding the base and the unset parent. It is the set
+// a run may have to inspect against its remote *before* the selection is known —
+// which parents end up uncovered depends on the selection, but the classification
+// of each does not.
+func ParentBranches(params ParentBranchesParams) []string {
+	seen := make(map[string]struct{}, len(params.Nodes))
+	branches := make([]string, 0, len(params.Nodes))
+	for _, node := range params.Nodes {
+		parent := node.SourceBranch
+		if parent == "" || parent == params.BaseBranch {
+			continue
+		}
+		if _, dup := seen[parent]; dup {
+			continue
+		}
+		seen[parent] = struct{}{}
+		branches = append(branches, parent)
+	}
+	return branches
+}
+
+// StaleParentsForParams holds inputs for StaleParentsFor.
+type StaleParentsForParams struct {
+	Uncovered  []domain.ParentUpdate
+	Classified []domain.ParentUpdate
+}
+
+// StaleParentsFor pairs the parents a selection leaves uncovered with what an
+// earlier inspection found about each, keeping only those a fast-forward would
+// actually advance. Children comes from the selection, Status and tips from the
+// inspection.
+func StaleParentsFor(params StaleParentsForParams) []domain.ParentUpdate {
+	status := make(map[string]domain.ParentUpdate, len(params.Classified))
+	for _, update := range params.Classified {
+		status[update.Branch] = update
+	}
+
+	stale := make([]domain.ParentUpdate, 0, len(params.Uncovered))
+	for _, parent := range params.Uncovered {
+		found, ok := status[parent.Branch]
+		if !ok || found.Status != domain.ParentBehind {
+			continue
+		}
+		found.Children = parent.Children
+		stale = append(stale, found)
+	}
+	return stale
+}

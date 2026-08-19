@@ -8,22 +8,23 @@ import (
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
+// The on-conflict step announces the cascade before the plan recap is shown, so
+// it must not name the base branch as the rebase target: a nested worktree is
+// rebased onto its own parent, not onto the base (see evaluateStep's NewBase).
 func TestSyncCounter(t *testing.T) {
 	tests := []struct {
 		name  string
 		count int
-		base  string
 		want  string
 	}{
-		{name: "with base", count: 3, base: "main", want: "About to sync 3 worktree(s) onto main."},
-		{name: "single with base", count: 1, base: "develop", want: "About to sync 1 worktree(s) onto develop."},
-		{name: "no base", count: 2, base: "", want: "About to sync 2 worktree(s)."},
+		{name: "several worktrees", count: 3, want: "About to sync 3 worktree(s) onto their parent."},
+		{name: "single worktree", count: 1, want: "About to sync 1 worktree(s) onto their parent."},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := syncCounter(tc.count, tc.base); got != tc.want {
-				t.Fatalf("syncCounter(%d, %q) = %q, want %q", tc.count, tc.base, got, tc.want)
+			if got := syncCounter(tc.count); got != tc.want {
+				t.Fatalf("syncCounter(%d) = %q, want %q", tc.count, got, tc.want)
 			}
 		})
 	}
@@ -84,5 +85,80 @@ func TestConfirmDescription_KeepConflictFoldsWarning(t *testing.T) {
 	}
 	if !strings.Contains(kept, "Sync plan") {
 		t.Errorf("recap should include the plan text, got:\n%s", kept)
+	}
+}
+
+// The parent question lives inside the wizard, so it must disappear on its own
+// when the current selection leaves no stale parent — not be asked and answered
+// "no" every run.
+func TestParentStepAutoSkipsWithoutStaleParents(t *testing.T) {
+	step, asked := parentStep(parentStepParams{
+		Preselected: []string{"dev-1"},
+		Stale:       func([]string) []domain.ParentUpdate { return nil },
+	})
+
+	step.Model = step.Build(nil)
+	if !step.AutoSkip(components.WizardModel{}) {
+		t.Fatal("the parent step should auto-skip when nothing is stale")
+	}
+	if *asked {
+		t.Fatal("a skipped step must not report itself as asked")
+	}
+	// A skipped step still holds the model Build left behind, whose leading option
+	// is the fast-forward — so its value alone would read back as an answer nobody
+	// gave. This is exactly why Run gates the result on the asked flag.
+	if !resolveParentFF([]components.Step{step}) {
+		t.Fatal("precondition: the built model's value is the leading fast-forward")
+	}
+}
+
+func TestParentStepAsksWhenAParentIsStale(t *testing.T) {
+	var received []string
+	step, asked := parentStep(parentStepParams{
+		Preselected: []string{"dev-1", "dev-2"},
+		Stale: func(branches []string) []domain.ParentUpdate {
+			received = branches
+			return []domain.ParentUpdate{
+				{Branch: "feature", Behind: 2, Children: []string{"dev-1", "dev-2"}},
+			}
+		},
+	})
+
+	step.Model = step.Build(nil)
+	if step.AutoSkip(components.WizardModel{}) {
+		t.Fatal("the parent step must be shown when a parent is stale")
+	}
+	if !*asked {
+		t.Fatal("a shown step should report itself as asked")
+	}
+	// With no multi-select step before it, the hook reads the preselected branches.
+	if len(received) != 2 || received[0] != "dev-1" {
+		t.Fatalf("hook received %v, want the preselected branches", received)
+	}
+	// Fast-forward leads, so it is the highlighted default.
+	if !resolveParentFF([]components.Step{step}) {
+		t.Error("fast-forward should be the leading choice")
+	}
+}
+
+// The parent step must read like the on-conflict step: a situation line, then the
+// reason, then two explicit "action — consequence" choices.
+func TestParentStepWording(t *testing.T) {
+	lines := parentLines([]domain.ParentUpdate{
+		{Branch: "feature", Behind: 2, Children: []string{"dev-1", "dev-2"}},
+		{Branch: "legacy", Behind: 1, Children: []string{"dev-3"}},
+	})
+
+	want := "feature is 2 commits behind origin/feature — dev-1, dev-2 rebase onto it.\n" +
+		"legacy is 1 commit behind origin/legacy — dev-3 rebase onto it."
+	if lines != want {
+		t.Fatalf("parentLines =\n%s\nwant:\n%s", lines, want)
+	}
+}
+
+func TestParentSummaryLabelsTheChoice(t *testing.T) {
+	stale := []domain.ParentUpdate{{Branch: "feature", Behind: 1, Children: []string{"dev"}}}
+	if got := parentSummary(parentModeStep(stale)); got != "fast-forward" {
+		t.Fatalf("summary = %q, want %q", got, "fast-forward")
 	}
 }

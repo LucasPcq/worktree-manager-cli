@@ -10,8 +10,11 @@ The base branch is fetched and fast-forwarded first, then each selected worktree
 rebased onto its parent in topological order (parents before children). The cascade is
 local; on a conflict the branch is left clean (rebase aborted) and its selected
 descendants are skipped. Pass --keep-conflict to leave a conflicting rebase in progress
-in its worktree for manual resolution instead of aborting. After a successful cascade,
-optionally force-push (with lease) the rebased branches.
+in its worktree for manual resolution instead of aborting. A parent no step covers —
+a branch with no worktree, or one left out of the selection — is never refreshed by the
+cascade; when it is behind its remote you are offered to fast-forward it first
+(--ff-parents / --no-ff-parents). After a successful cascade, optionally force-push
+(with lease) the rebased branches.
 
 ```
 wtm sync [branch...] [flags]
@@ -23,8 +26,10 @@ wtm sync [branch...] [flags]
       --all             Sync every managed worktree
       --base string     Base branch to sync from (defaults to config or detected base)
       --dry-run         Preview the cascade without rebasing or pushing
+      --ff-parents      Fast-forward the parents the cascade does not cover (no worktree, or left out of the selection) before rebasing onto them
   -h, --help            help for sync
       --keep-conflict   Leave a conflicting rebase in progress in its worktree instead of aborting
+      --no-ff-parents   Never fast-forward those parents; rebase onto them as they are
       --no-push         Rebase locally only; never push
       --output string   Output format: text or json (default "text")
       --push            Force-push (with lease) rebased branches without prompting

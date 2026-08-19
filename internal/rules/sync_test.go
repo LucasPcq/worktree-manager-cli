@@ -87,3 +87,56 @@ func TestDecidePush(t *testing.T) {
 		})
 	}
 }
+
+func TestDecideParentFastForward(t *testing.T) {
+	tests := []struct {
+		name string
+		in   DecideParentFastForwardParams
+		want ParentDecision
+	}{
+		{name: "nothing stale", in: DecideParentFastForwardParams{Interactive: true}, want: ParentLeaveAsIs},
+		{name: "no-ff wins", in: DecideParentFastForwardParams{NoFF: true, FF: true, StaleCount: 1}, want: ParentLeaveAsIs},
+		{name: "ff forces", in: DecideParentFastForwardParams{FF: true, StaleCount: 1}, want: ParentFastForward},
+		{name: "ff wins over yes", in: DecideParentFastForwardParams{FF: true, Yes: true, StaleCount: 1}, want: ParentFastForward},
+		{name: "yes leaves as is", in: DecideParentFastForwardParams{Yes: true, Interactive: true, StaleCount: 2}, want: ParentLeaveAsIs},
+		{name: "non-interactive leaves as is", in: DecideParentFastForwardParams{StaleCount: 2}, want: ParentLeaveAsIs},
+		{name: "interactive asks", in: DecideParentFastForwardParams{Interactive: true, StaleCount: 2}, want: ParentAsk},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := DecideParentFastForward(tc.in); got != tc.want {
+				t.Fatalf("DecideParentFastForward(%+v) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStaleParents(t *testing.T) {
+	updates := []domain.ParentUpdate{
+		{Branch: "a", Status: domain.ParentBehind},
+		{Branch: "b", Status: domain.ParentDiverged},
+		{Branch: "c", Status: domain.ParentFastForwarded},
+		{Branch: "d", Status: domain.ParentBehind},
+	}
+	stale := StaleParents(updates)
+	if len(stale) != 2 || stale[0].Branch != "a" || stale[1].Branch != "d" {
+		t.Fatalf("StaleParents = %+v, want the two behind parents", stale)
+	}
+}
+
+func TestCommitCountLabel(t *testing.T) {
+	tests := []struct {
+		n    int
+		want string
+	}{
+		{n: 0, want: "0 commits"},
+		{n: 1, want: "1 commit"},
+		{n: 2, want: "2 commits"},
+	}
+	for _, tc := range tests {
+		if got := CommitCountLabel(tc.n); got != tc.want {
+			t.Errorf("CommitCountLabel(%d) = %q, want %q", tc.n, got, tc.want)
+		}
+	}
+}

@@ -76,7 +76,8 @@ func TestSprintSyncPlan_EmptyPlan(t *testing.T) {
 
 func TestSprintSyncPlan_ListsStepsPlain(t *testing.T) {
 	plan := domain.SyncPlan{
-		BaseBranch: "main",
+		BaseBranch:   "main",
+		BaseTargeted: true,
 		Steps: []domain.SyncStep{
 			{Branch: "feat/a", SourceBranch: "main"},
 			{Branch: "feat/b", SourceBranch: "feat/a"},
@@ -147,5 +148,88 @@ func TestFormatSyncResult_AbortedConflictNoFooter(t *testing.T) {
 	}
 	if strings.Contains(out, "Conflicts left in progress") {
 		t.Errorf("did not expect footer in aborted mode, got:\n%s", out)
+	}
+}
+
+func TestFormatSyncResultParentUpdates(t *testing.T) {
+	var buf bytes.Buffer
+	FormatSyncResult(&buf, domain.SyncResult{
+		BaseBranch: "main",
+		ParentUpdates: []domain.ParentUpdate{
+			{Branch: "feature", Status: domain.ParentFastForwarded, OldTip: "aaa1111", NewTip: "bbb2222"},
+			{Branch: "legacy", Status: domain.ParentBehind, Behind: 3, Children: []string{"dev", "other"}},
+			{Branch: "split", Status: domain.ParentDiverged},
+		},
+		Steps: []domain.SyncStepResult{
+			{Branch: "dev", SourceBranch: "feature", Status: domain.SyncStatusUpToDate},
+		},
+	})
+
+	out := buf.String()
+	for _, want := range []string{
+		"feature fast-forwarded to origin/feature",
+		"aaa1111 → bbb2222",
+		"legacy is 3 commits behind origin/legacy",
+		"dev, other rebased onto it as is",
+		"--ff-parents",
+		"split has diverged from origin/split",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recap should contain %q, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestFormatSyncResultNoParentUpdatesPrintsNothingExtra(t *testing.T) {
+	var buf bytes.Buffer
+	FormatSyncResult(&buf, domain.SyncResult{
+		BaseBranch: "main",
+		Steps:      []domain.SyncStepResult{{Branch: "dev", Status: domain.SyncStatusUpToDate}},
+	})
+	if strings.Contains(buf.String(), "behind") || strings.Contains(buf.String(), "fast-forwarded to") {
+		t.Errorf("a run with no parent updates should print no parent block, got:\n%s", buf.String())
+	}
+}
+
+// A cascade where every step rebases onto some other parent never touches the
+// base, so neither the plan header nor the recap may name it.
+func TestSyncPlanAndResultOmitUntargetedBase(t *testing.T) {
+	plan := domain.SyncPlan{
+		BaseBranch: "main",
+		Steps: []domain.SyncStep{
+			{Branch: "dev-1", SourceBranch: "feature"},
+			{Branch: "dev-2", SourceBranch: "feature"},
+		},
+	}
+	got := SprintSyncPlan(plan)
+	if strings.Contains(got, "main") {
+		t.Errorf("plan header must not name an untargeted base, got:\n%s", got)
+	}
+	if !strings.HasPrefix(got, "Sync plan\n") {
+		t.Errorf("plan should still be titled, got:\n%s", got)
+	}
+
+	var buf bytes.Buffer
+	FormatSyncResult(&buf, domain.SyncResult{
+		BaseBranch: "main",
+		Steps:      []domain.SyncStepResult{{Branch: "dev-1", SourceBranch: "feature", Status: domain.SyncStatusUpToDate}},
+	})
+	if strings.Contains(buf.String(), "Base") || strings.Contains(buf.String(), "main") {
+		t.Errorf("recap must not report an untargeted base, got:\n%s", buf.String())
+	}
+}
+
+func TestFormatSyncResultReportsTargetedBase(t *testing.T) {
+	var buf bytes.Buffer
+	FormatSyncResult(&buf, domain.SyncResult{
+		BaseBranch:   "main",
+		BaseTargeted: true,
+		BaseUpdated:  true,
+		BaseOldTip:   "aaa1111",
+		BaseNewTip:   "bbb2222",
+		Steps:        []domain.SyncStepResult{{Branch: "feat", SourceBranch: "main", Status: domain.SyncStatusSynced}},
+	})
+	if !strings.Contains(buf.String(), "main") || !strings.Contains(buf.String(), "aaa1111") {
+		t.Errorf("a targeted base should still be reported, got:\n%s", buf.String())
 	}
 }
