@@ -416,11 +416,11 @@ func resolveSelectionAndTarget(p resolveParams) (extractSelection, error) {
 	}
 
 	wizard, err := runWizard(runWizardParams{
-		cmd:         p.cmd,
-		cfg:         p.cfg,
-		statuses:    p.statuses,
-		source:      p.source,
-		loadFiles:   p.loadFiles,
+		cmd:        p.cmd,
+		cfg:        p.cfg,
+		statuses:   p.statuses,
+		source:     p.source,
+		loadFiles:  p.loadFiles,
 		needSource: p.needSource,
 		needFiles:  needFiles,
 		needTarget: needTarget,
