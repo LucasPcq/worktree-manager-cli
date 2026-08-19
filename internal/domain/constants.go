@@ -540,6 +540,46 @@ const (
 	SyncParentDescription = "These parents have no step of their own, so nothing else refreshes them.\n" +
 		"Choose whether to bring them up to date first."
 
+	SyncWizardErrLabel = "sync wizard"
+	// SyncSelectionTitle heads the worktree multi-select; SyncConflictTitle and
+	// SyncParentsTitle head the two decisions that follow.
+	SyncSelectionTitle   = "Select worktrees to sync"
+	SyncConflictTitle    = "On conflict"
+	SyncParentsTitle     = "Parent branches"
+	SyncConfirmTitle     = "Confirm"
+	SyncSelectAtLeastOne = "select at least one worktree"
+	SyncConflictNormal   = "Sync normally — abort & keep worktrees clean on conflict"
+	SyncConflictKeep     = "Keep conflicts in progress — leave the rebase in its worktree for manual resolution"
+	SyncConflictIntro    = "Choose what happens when a rebase hits a conflict."
+	// SyncCounterFmt names no branch: each worktree is rebased onto its own
+	// recorded parent, which the base only coincides with at the first level.
+	SyncCounterFmt            = "About to sync %d worktree(s) onto their parent."
+	SyncConflictNormalSummary = "sync normally"
+	SyncConflictKeepSummary   = "keep conflicts in progress"
+	SyncParentFFOption        = "Fast-forward them — rebase onto the up-to-date parent"
+	SyncParentKeepOption      = "Leave them as they are — rebase onto the parent as it stands today"
+	SyncParentFFSummary       = "fast-forward"
+	SyncParentKeepSummary     = "leave as they are"
+	SyncParentLineFmt         = "%s is %s behind %s%s — %s rebase onto it."
+	SyncConfirmOption         = "Yes, sync"
+	SyncNothingToSync         = "No worktrees to sync."
+	// SyncNoRebaseStep and SyncNoStaleParent are why a decision was never put to
+	// the user: nothing is rebased, or no parent is behind its remote.
+	SyncNoRebaseStep  = "nothing to rebase"
+	SyncNoStaleParent = "no parent behind its remote"
+	// SyncSelectionRequiredFmt refuses a run that can neither pick nor be told what
+	// to sync. Verbs: --all, --yes, --output, json.
+	SyncSelectionRequiredFmt = "specify one or more worktrees, or pass --%s (no interactive picker under --%s, without a terminal, or in --%s %s mode)"
+	SyncNeedsTerminal        = "sync needs a terminal to confirm the cascade; pass --yes to run unattended or --dry-run to preview"
+	// SyncKeepConflictHintFmt tells the user where a kept conflict was left.
+	// Verbs: branch, worktree path.
+	SyncKeepConflictHintFmt = "%s left mid-rebase in %s — run `git rebase --continue` or `git rebase --abort` there"
+	// SyncBaseSuffix marks the base in the picker; SyncTag* name what the cascade
+	// would skip.
+	SyncBaseSuffix  = " (base)"
+	SyncTagDirty    = "dirty"
+	SyncTagRebasing = "rebasing"
+
 	// Source-reconciliation and env-fallback prompts shared by the create and
 	// extract flows — used both by the in-wizard confirmation steps and the
 	// standalone confirms on the non-interactive --from path. Format verbs:
@@ -828,6 +868,7 @@ const (
 	OpKindClean    = "clean"
 	OpKindReparent = "reparent"
 	OpKindPrune    = "prune"
+	OpKindSync     = "sync"
 
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"

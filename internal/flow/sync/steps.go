@@ -1,0 +1,355 @@
+package sync
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/worktree"
+)
+
+const (
+	KeySelection = "sync.selection"
+	KeyConflict  = "sync.conflict"
+	KeyParents   = "sync.parents"
+	KeyConfirm   = "sync.confirm"
+)
+
+const (
+	conflictNormal = "normal"
+	conflictKeep   = "keep"
+	parentFF       = "fast-forward"
+	parentKeep     = "keep"
+	confirmSync    = "sync"
+)
+
+const (
+	labelSelection = "Worktrees"
+	labelConflict  = "On conflict"
+	labelParents   = "Parent branches"
+	labelConfirm   = "Confirm"
+)
+
+func (f *syncFlow) session() flow.Session {
+	presets := flow.NewAnswers(map[string]string{
+		KeyConflict: f.presetConflict(),
+		KeyParents:  f.presetParents(),
+	})
+	return flow.Session{
+		ErrLabel: domain.SyncWizardErrLabel,
+		Presets:  presets.WithValues(KeySelection, f.fixedSelection()),
+		Steps:    []flow.Step{f.selectionStep(), f.conflictStep(), f.parentsStep(), f.confirmStep()},
+	}
+}
+
+// fixedSelection is what args or --all already settled. --all previews the
+// resolved list; the service still receives nil, which is what "every worktree"
+// means to it (see rules.SyncIncludesBase).
+func (f *syncFlow) fixedSelection() []string {
+	if f.request.All {
+		return f.syncableBranches()
+	}
+	return f.request.Branches
+}
+
+func (f *syncFlow) selectionStep() flow.Step {
+	return flow.Step{
+		Kind:  flow.StepMultiSelect,
+		Key:   KeySelection,
+		Label: labelSelection,
+		Build: func(flow.Answers) (flow.StepContent, error) {
+			return flow.StepContent{
+				Title:       domain.SyncSelectionTitle,
+				Description: domain.MultiSelectHint,
+				Options:     f.selectionOptions(),
+			}, nil
+		},
+		ValidateSet: func(values []string) error {
+			if len(values) == 0 {
+				return errors.New(domain.SyncSelectAtLeastOne)
+			}
+			return nil
+		},
+		Resolve: func(flow.Answers) (flow.Answer, error) {
+			return flow.Answer{}, fmt.Errorf(domain.SyncSelectionRequiredFmt,
+				domain.FlagAll, domain.FlagYes, domain.FlagOutput, domain.OutputJSON)
+		},
+		Summarize: summarizeSelection,
+	}
+}
+
+func (f *syncFlow) selectionOptions() []flow.Option {
+	prechecked := make(map[string]bool, len(f.request.Precheck))
+	for _, branch := range f.request.Precheck {
+		prechecked[branch] = true
+	}
+
+	options := make([]flow.Option, 0, len(f.statuses))
+	for _, status := range f.statuses {
+		tag, tone := statusTag(status)
+		options = append(options, flow.Option{
+			Label:    statusLabel(status),
+			Value:    status.Branch,
+			Selected: prechecked[status.Branch],
+			Tag:      tag,
+			Tone:     tone,
+		})
+	}
+	return options
+}
+
+// statusLabel tells the base apart from the worktrees that hang off it.
+func statusLabel(status domain.WorktreeStatus) string {
+	if status.IsParent {
+		return status.Branch + domain.SyncBaseSuffix
+	}
+	return status.Branch
+}
+
+// statusTag names what the cascade would skip, so a worktree left out is left
+// out for a reason the user can read.
+func statusTag(status domain.WorktreeStatus) (string, domain.Tone) {
+	switch {
+	case status.RebaseInProgress:
+		return domain.SyncTagRebasing, domain.ToneWarning
+	case status.IsDirty:
+		return domain.SyncTagDirty, domain.ToneWarning
+	}
+	return "", domain.ToneNeutral
+}
+
+func summarizeSelection(answer flow.Answer) string {
+	values := answer.Values
+	if len(values) == 0 {
+		return "none"
+	}
+	const maxNames = 5
+	if len(values) <= maxNames {
+		return strings.Join(values, ", ")
+	}
+	return strings.Join(values[:maxNames], ", ") + fmt.Sprintf(" +%d", len(values)-maxNames)
+}
+
+// syncableBranches is the explicit list --all previews. The service still
+// receives nil, which is what "every worktree" means to it.
+func (f *syncFlow) syncableBranches() []string {
+	branches := make([]string, 0, len(f.statuses))
+	for _, status := range f.statuses {
+		if status.IsParent {
+			continue
+		}
+		branches = append(branches, status.Branch)
+	}
+	return branches
+}
+
+// conflictStep is skipped when nothing is rebased: a base-only refresh has no
+// conflict to have an opinion about.
+func (f *syncFlow) conflictStep() flow.Step {
+	return flow.Step{
+		Kind:  flow.StepSelect,
+		Key:   KeyConflict,
+		Label: labelConflict,
+		Skip: func(answers flow.Answers) (bool, string) {
+			return len(f.planFor(answers).Steps) == 0, domain.SyncNoRebaseStep
+		},
+		Build: func(answers flow.Answers) (flow.StepContent, error) {
+			return flow.StepContent{
+				Title:       domain.SyncConflictTitle,
+				Description: conflictDescription(len(answers.Values(KeySelection))),
+				Options: []flow.Option{
+					{Label: domain.SyncConflictNormal, Value: conflictNormal},
+					{Label: domain.SyncConflictKeep, Value: conflictKeep, Danger: true},
+				},
+			}, nil
+		},
+		Resolve: func(flow.Answers) (flow.Answer, error) {
+			return flow.Answer{Value: conflictNormal}, nil
+		},
+		Summarize: func(answer flow.Answer) string {
+			if answer.Value == conflictKeep {
+				return domain.SyncConflictKeepSummary
+			}
+			return domain.SyncConflictNormalSummary
+		},
+		Flag: domain.FlagKeepConflict,
+	}
+}
+
+func conflictDescription(count int) string {
+	if count == 0 {
+		return domain.SyncConflictIntro
+	}
+	return fmt.Sprintf(domain.SyncCounterFmt, count) + "\n\n" + domain.SyncConflictIntro
+}
+
+func (f *syncFlow) presetConflict() string {
+	if f.request.KeepConflict {
+		return conflictKeep
+	}
+	return ""
+}
+
+// parentsStep asks about the parents no step covers. It is skipped when the
+// selection leaves none of them behind their remote.
+func (f *syncFlow) parentsStep() flow.Step {
+	return flow.Step{
+		Kind:  flow.StepSelect,
+		Key:   KeyParents,
+		Label: labelParents,
+		Skip: func(answers flow.Answers) (bool, string) {
+			return len(f.staleParents(answers)) == 0, domain.SyncNoStaleParent
+		},
+		Build: func(answers flow.Answers) (flow.StepContent, error) {
+			return flow.StepContent{
+				Title:       domain.SyncParentsTitle,
+				Description: parentLines(f.staleParents(answers)) + "\n\n" + domain.SyncParentDescription,
+				Options: []flow.Option{
+					{Label: domain.SyncParentFFOption, Value: parentFF},
+					{Label: domain.SyncParentKeepOption, Value: parentKeep},
+				},
+			}, nil
+		},
+		Resolve: func(flow.Answers) (flow.Answer, error) {
+			return flow.Answer{Value: parentKeep}, nil
+		},
+		Summarize: func(answer flow.Answer) string {
+			if answer.Value == parentFF {
+				return domain.SyncParentFFSummary
+			}
+			return domain.SyncParentKeepSummary
+		},
+		Flag: domain.FlagFFParents,
+	}
+}
+
+func parentLines(parents []domain.ParentUpdate) string {
+	lines := make([]string, 0, len(parents))
+	for _, parent := range parents {
+		lines = append(lines, fmt.Sprintf(domain.SyncParentLineFmt,
+			parent.Branch, rules.CommitCountLabel(parent.Behind),
+			domain.RemoteBranchPrefix, parent.Branch,
+			strings.Join(parent.Children, ", ")))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// presetParents settles the question from the flags, through the same rule the
+// command used to call. The step stays listed so a flag never makes a recap line
+// disappear.
+func (f *syncFlow) presetParents() string {
+	switch rules.ParentFlagsDecision(rules.DecideParentFastForwardParams{
+		FF:          f.request.FFParents,
+		NoFF:        f.request.NoFFParents,
+		Interactive: f.prompter.Interactive(),
+	}) {
+	case rules.ParentFastForward:
+		return parentFF
+	case rules.ParentAsk:
+		return ""
+	default:
+		return parentKeep
+	}
+}
+
+// confirmStep previews the cascade. Building the plan walks every selected
+// worktree's history, so it goes through Load — off the UI goroutine, behind a
+// spinner — unless the run already computed it for a fixed selection.
+func (f *syncFlow) confirmStep() flow.Step {
+	step := flow.Step{
+		Kind:           flow.StepRecap,
+		Key:            KeyConfirm,
+		Label:          labelConfirm,
+		Title:          domain.SyncConfirmTitle,
+		LoadingMessage: domain.SyncPlanComputing,
+		Resolve: func(flow.Answers) (flow.Answer, error) {
+			return flow.Answer{Value: confirmSync}, nil
+		},
+	}
+	if len(f.plan.Steps) > 0 {
+		step.Build = func(answers flow.Answers) (flow.StepContent, error) {
+			return f.confirmContent(f.plan, answers), nil
+		}
+		return step
+	}
+	step.Load = func(answers flow.Answers) (flow.StepContent, error) {
+		f.plan = f.planFor(answers)
+		return f.confirmContent(f.plan, answers), nil
+	}
+	return step
+}
+
+func (f *syncFlow) confirmContent(plan domain.SyncPlan, answers flow.Answers) flow.StepContent {
+	return flow.StepContent{
+		Title:       domain.SyncConfirmTitle,
+		Description: confirmDescription(plan, answers.Value(KeyConflict) == conflictKeep),
+		Options: []flow.Option{
+			{Label: domain.SyncConfirmOption, Value: confirmSync},
+			{Separator: true},
+			{Label: domain.WizardCancelLabel, Value: domain.WizardCancelValue},
+		},
+	}
+}
+
+func confirmDescription(plan domain.SyncPlan, keepConflict bool) string {
+	description := fmt.Sprintf(domain.SyncConfirmPrompt, len(plan.Steps))
+	if text := rules.SprintSyncPlan(plan); text != "" {
+		description = text + "\n\n" + description
+	}
+	if keepConflict {
+		description += "\n\n⚠ " + domain.SyncKeepConflictWarning
+	}
+	return description
+}
+
+type syncParamsInput struct {
+	Selected     []string
+	KeepConflict bool
+	FastForward  bool
+}
+
+// syncParams is the one place the request becomes service inputs. --all keeps its
+// meaning by passing nil: the service reads an empty selection as "every worktree".
+func (f *syncFlow) syncParams(input syncParamsInput) worktree.SyncParams {
+	selected := input.Selected
+	if f.request.All {
+		selected = nil
+	}
+	return worktree.SyncParams{
+		ProjectDir:       f.ctx.ProjectDir,
+		StateDir:         f.ctx.StateDir,
+		Config:           f.ctx.Config,
+		BaseBranch:       f.request.BaseBranch,
+		DryRun:           f.request.DryRun,
+		KeepConflict:     input.KeepConflict,
+		SelectedBranches: selected,
+		// Dry-run stays offline, so it never refreshes a parent whatever was asked.
+		FastForwardParents: input.FastForward && !f.request.DryRun,
+	}
+}
+
+// planFor previews the cascade for the selection as it stands. Conflict mode does
+// not affect the plan, so it is not read here.
+func (f *syncFlow) planFor(answers flow.Answers) domain.SyncPlan {
+	plan, err := worktree.PlanSync(f.syncParams(syncParamsInput{Selected: answers.Values(KeySelection)}))
+	if err != nil {
+		return domain.SyncPlan{}
+	}
+	return plan
+}
+
+// staleParents narrows the inspection to the current selection. The scan itself
+// ran once, before the session; nil means the run never inspected them.
+func (f *syncFlow) staleParents(answers flow.Answers) []domain.ParentUpdate {
+	if len(f.classified) == 0 {
+		return nil
+	}
+	return worktree.StaleParents(worktree.StaleParentsParams{
+		Sync:       f.syncParams(syncParamsInput{Selected: answers.Values(KeySelection)}),
+		Branches:   answers.Values(KeySelection),
+		Classified: f.classified,
+	})
+}
