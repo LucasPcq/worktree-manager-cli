@@ -67,7 +67,9 @@ func TestFitSectionsDropsFromTheBottom(t *testing.T) {
 		{Key: domain.DetailSectionLinks, Lines: []string{"g", "h"}},
 	}
 
-	got := sectionKeys(FitSections(FitSectionsParams{Sections: sections, Height: 8}))
+	// DetailSectionChrome = 3 (spec §6: title + blank above + blank below), so
+	// two 2-line sections cost 2*(3+2) = 10, not 8 as before that correction.
+	got := sectionKeys(FitSections(FitSectionsParams{Sections: sections, Height: 10}))
 	want := []string{domain.DetailSectionReview, domain.DetailSectionChanges}
 	if len(got) != len(want) {
 		t.Fatalf("sections retenues = %v, want %v", got, want)
@@ -156,5 +158,72 @@ func TestChangesSectionSummaryIsOnTitleRowNotALine(t *testing.T) {
 		if strings.Contains(line, "modified") {
 			t.Errorf("Lines = %v, le résumé ne doit plus apparaître comme une ligne du corps", changes.Lines)
 		}
+	}
+}
+
+func TestSectionsHeightMatchesSpecMockup(t *testing.T) {
+	// docs/superpowers/specs/2026-08-19-wtm-ui-identity-design.md §6, lines
+	// 130-134: a leading blank, the REVIEW title, a blank under it, then 2 body
+	// lines — 5 rows total, not 4. Pins DetailSectionChrome = 3.
+	review := domain.DetailSection{
+		Key: domain.DetailSectionReview,
+		Lines: []string{
+			"#67  feat(ui): improve dashboard design  OPEN",
+			"checks ✓ 12  ✗ 1  ·  review  changes requested",
+		},
+	}
+	if got := sectionsHeight([]domain.DetailSection{review}); got != 5 {
+		t.Errorf("sectionsHeight(REVIEW, 2 lignes de corps) = %d, want 5 (spec §6)", got)
+	}
+}
+
+func TestListBudgetsLeaveRoomForLinksAtHeight30With18Files(t *testing.T) {
+	now := time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC)
+	files := make([]domain.PorcelainEntry, 18)
+	for i := range files {
+		files[i] = domain.PorcelainEntry{Status: " M", Path: "file.go"}
+	}
+	commits := make([]domain.CommitSummary, 5)
+	for i := range commits {
+		commits[i] = domain.CommitSummary{SHA: "abc1234", Subject: "feat: x", At: now.Add(-time.Hour)}
+	}
+
+	// Fully populated REVIEW + LINKS (every LINKS field, all 5 lines) plus 18
+	// changed files and 5 commits: with the old DetailFixedRows=10 guess, this
+	// stack computes to 34 rows at Height=30 and FitSections drops LINKS,
+	// taking Path off screen on a panel that had room for everything.
+	params := DetailSectionsParams{
+		Status: domain.WorktreeStatus{
+			Branch: "feat/x", Path: "/wt/x", IsDirty: true, CreatedAt: now.Add(-48 * time.Hour),
+		},
+		Parent: "main",
+		Height: 30,
+		Now:    now,
+		PR:     &domain.PRInfo{Number: 67, Title: "feat: x", State: "OPEN"},
+		Detail: domain.WorktreeDetail{
+			Commits:  commits,
+			Changes:  domain.WorkingChanges{Modified: 18, Files: files},
+			Children: []string{"chore/deps-bump"},
+			EnvDrift: domain.EnvDriftSummary{Configured: true, Missing: 2},
+		},
+	}
+
+	fit := FitSections(FitSectionsParams{Sections: DetailSections(params), Height: params.Height})
+
+	for _, key := range sectionKeys(fit) {
+		if key == domain.DetailSectionLinks {
+			return
+		}
+	}
+	t.Errorf("LINKS absente à Height=30 — le panneau avait de la place pour Path (sections retenues: %v)",
+		sectionKeys(fit))
+}
+
+func TestEnvLineGuardsNilFailureError(t *testing.T) {
+	line := envLine(domain.WorktreeDetail{
+		Failures: map[domain.DetailFamily]error{domain.DetailFamilyEnv: nil},
+	})
+	if strings.Contains(line, "<nil>") {
+		t.Errorf("envLine = %q, une erreur nil ne doit jamais être formatée", line)
 	}
 }

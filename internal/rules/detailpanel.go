@@ -84,35 +84,90 @@ type DetailSectionsParams struct {
 // DetailSections emits the sections in a fixed order, and only the ones that
 // have something to say: a section's position varies between worktrees, its
 // rank never does.
+//
+// REVIEW and LINKS are built first, at their real size — nothing about them
+// depends on a budget. What's left of Height, after their ACTUAL cost
+// (sectionsHeight), is what CHANGES and ACTIVITY get to split: the reserve
+// can't drift from what the sections really occupy, because it's read off
+// them instead of guessed.
 func DetailSections(params DetailSectionsParams) []domain.DetailSection {
-	sections := make([]domain.DetailSection, 0, 4)
-
+	var review *domain.DetailSection
 	if params.PR != nil {
-		sections = append(sections, reviewSection(*params.PR))
+		section := reviewSection(*params.PR)
+		review = &section
 	}
-	if changed := changedCount(params.Detail.Changes); changed > 0 {
-		sections = append(sections, changesSection(params.Detail.Changes, listBudget(params, true)))
+	links := linksSection(params)
+
+	fixed := []domain.DetailSection{links}
+	if review != nil {
+		fixed = append(fixed, *review)
 	}
-	if len(params.Detail.Commits) > 0 {
-		sections = append(sections, activitySection(params.Detail.Commits, listBudget(params, false), params.Now))
+
+	wantChanges := changedCount(params.Detail.Changes) > 0
+	wantActivity := len(params.Detail.Commits) > 0
+	changesBudget, activityBudget := listBudgets(listBudgetsParams{
+		Reserved:     sectionsHeight(fixed),
+		Height:       params.Height,
+		WantChanges:  wantChanges,
+		WantActivity: wantActivity,
+		Dirty:        params.Status.IsDirty,
+	})
+
+	sections := make([]domain.DetailSection, 0, 4)
+	if review != nil {
+		sections = append(sections, *review)
 	}
-	return append(sections, linksSection(params))
+	if wantChanges {
+		sections = append(sections, changesSection(params.Detail.Changes, changesBudget))
+	}
+	if wantActivity {
+		sections = append(sections, activitySection(params.Detail.Commits, activityBudget, params.Now))
+	}
+	return append(sections, links)
 }
 
 func changedCount(changes domain.WorkingChanges) int {
 	return changes.Modified + changes.Untracked + changes.Staged
 }
 
-// listBudget splits the remaining height between CHANGES and ACTIVITY: a dirty
-// worktree gives it to the files (what you're working on), a clean one to the
-// commits (what the branch is).
-func listBudget(params DetailSectionsParams, forChanges bool) int {
-	room := max(params.Height-domain.DetailFixedRows, domain.DetailMinListRows)
-	dirty := changedCount(params.Detail.Changes) > 0 && params.Status.IsDirty
-	if forChanges == dirty {
-		return room - domain.DetailMinListRows
+type listBudgetsParams struct {
+	// Reserved is what REVIEW and LINKS actually cost (sectionsHeight), before
+	// either list's own chrome is added.
+	Reserved     int
+	Height       int
+	WantChanges  bool
+	WantActivity bool
+	Dirty        bool
+}
+
+// listBudgets gives CHANGES and ACTIVITY their body-row budget from what
+// genuinely remains after Reserved and each shown list's own chrome: a dirty
+// worktree gives the room to the files (what you're working on), a clean one
+// to the commits (what the branch is). A list shown alone gets all of it.
+// Either way, a shown list keeps at least DetailMinListRows.
+func listBudgets(params listBudgetsParams) (changesBudget, activityBudget int) {
+	reserved := params.Reserved
+	if params.WantChanges {
+		reserved += domain.DetailSectionChrome
 	}
-	return domain.DetailMinListRows
+	if params.WantActivity {
+		reserved += domain.DetailSectionChrome
+	}
+	room := max(params.Height-reserved, 0)
+
+	switch {
+	case params.WantChanges && params.WantActivity:
+		if params.Dirty {
+			return max(room-domain.DetailMinListRows, domain.DetailMinListRows), domain.DetailMinListRows
+		}
+		return domain.DetailMinListRows, max(room-domain.DetailMinListRows, domain.DetailMinListRows)
+	case params.WantChanges:
+		return max(room, domain.DetailMinListRows), 0
+	case params.WantActivity:
+		return 0, max(room, domain.DetailMinListRows)
+	default:
+		return 0, 0
+	}
 }
 
 // splitBudget divides a list of `total` items into what's shown and what's
@@ -258,7 +313,7 @@ func linksSection(params DetailSectionsParams) domain.DetailSection {
 // declared) says so without an alert glyph; a configured family with no drift
 // has nothing to say and is omitted, like an up-to-date origin.
 func envLine(detail domain.WorktreeDetail) string {
-	if err, failed := detail.Failures[domain.DetailFamilyEnv]; failed {
+	if err, failed := detail.Failures[domain.DetailFamilyEnv]; failed && err != nil {
 		return fmt.Sprintf(domain.DashboardUnavailableFmt, err)
 	}
 	if !detail.EnvDrift.Configured {

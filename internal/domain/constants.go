@@ -1102,14 +1102,19 @@ const (
 	ChipOriginBehindFmt   = "origin " + BadgeGlyphBehind + "%d"
 	ChipOriginDivergedFmt = "origin " + BadgeGlyphAhead + "%d " + BadgeGlyphBehind + "%d"
 
-	// DetailFixedRows is what the panel spends on everything besides the two
-	// scrollable lists (title, rule, vital strip, blockers, section chrome).
-	// DetailMinListRows is the floor each list keeps even on a short panel.
-	// DetailSectionChrome is what one section spends on its title row and the
-	// blank line under it, on top of its own body lines.
-	DetailFixedRows     = 10
+	// DetailMinListRows is the floor each shown list (CHANGES/ACTIVITY) keeps
+	// even on a short panel.
+	//
+	// DetailSectionChrome is what one section spends beyond its body lines: a
+	// blank separator row before its title, the title row itself, and a blank
+	// row under it. Verified against the spec §6 mockup
+	// (docs/superpowers/specs/2026-08-19-wtm-ui-identity-design.md, lines
+	// 130-134): REVIEW spans 5 rows for 2 body lines, so chrome is 5-2=3, not 2.
+	// There is no DetailFixedRows: DetailSections reserves exactly what REVIEW
+	// and LINKS actually cost, computed via sectionsHeight, instead of a
+	// constant that had to secretly agree with every section builder.
 	DetailMinListRows   = 3
-	DetailSectionChrome = 2
+	DetailSectionChrome = 3
 
 	// DetailFieldFmt renders a LINKS field as a padded label followed by its
 	// value ("Parent    main"). DetailListSep joins a list of names into one
