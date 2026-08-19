@@ -1,0 +1,87 @@
+package worktree
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/testutil/gittest"
+)
+
+func TestDetailReadsCommitsAndChanges(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("un"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gittest.Git(t, dir, "add", ".")
+	gittest.Git(t, dir, "commit", "-m", "feat: seed")
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("deux"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := Detail(DetailParams{
+		ProjectDir: dir,
+		Status:     domain.WorktreeStatus{Branch: "main", Path: dir, IsDirty: true},
+		Children:   []string{"feat/enfant"},
+		Commits:    domain.DashboardDetailCommits,
+	})
+
+	if len(got.Commits) == 0 {
+		t.Fatal("Commits vide")
+	}
+	if got.Commits[0].Subject != "feat: seed" {
+		t.Errorf("Commits[0].Subject = %q, want %q", got.Commits[0].Subject, "feat: seed")
+	}
+	if got.Changes.Untracked != 1 {
+		t.Errorf("Changes.Untracked = %d, want 1", got.Changes.Untracked)
+	}
+	if len(got.Children) != 1 || got.Children[0] != "feat/enfant" {
+		t.Errorf("Children = %v, want [feat/enfant]", got.Children)
+	}
+	if len(got.Failures) != 0 {
+		t.Errorf("Failures = %v, want vide", got.Failures)
+	}
+}
+
+func TestDetailBlockersFromMemoryNotFromGH(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("un"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gittest.Git(t, dir, "add", ".")
+	gittest.Git(t, dir, "commit", "-m", "seed")
+
+	got := Detail(DetailParams{
+		ProjectDir: dir,
+		Status:     domain.WorktreeStatus{Branch: "feat/x", Path: dir, IsDirty: true},
+		PRs:        []domain.PRInfo{{Branch: "feat/x", Number: 7, URL: "https://example/7"}},
+		Commits:    domain.DashboardDetailCommits,
+	})
+
+	keys := map[string]bool{}
+	for _, blocker := range got.Blockers {
+		keys[blocker.Key] = true
+	}
+	if !keys[domain.CleanBlockerDirty] {
+		t.Error("le worktree sale doit produire un blocker dirty")
+	}
+	if !keys[domain.CleanBlockerOpenPR] {
+		t.Error("la PR passée en entrée doit produire un blocker open-PR, sans appeler gh")
+	}
+}
+
+func TestDetailRecordsFailurePerFamily(t *testing.T) {
+	got := Detail(DetailParams{
+		ProjectDir: t.TempDir(),
+		Status:     domain.WorktreeStatus{Branch: "orpheline", Path: filepath.Join(t.TempDir(), "absent")},
+		Commits:    domain.DashboardDetailCommits,
+	})
+
+	if _, failed := got.Failures[domain.DetailFamilyCommits]; !failed {
+		t.Error("un chemin inexistant doit inscrire une panne pour la famille commits")
+	}
+	if got.Branch != "orpheline" {
+		t.Errorf("Branch = %q — le détail reste exploitable malgré la panne", got.Branch)
+	}
+}
