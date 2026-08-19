@@ -903,8 +903,12 @@ const (
 	// DashboardContextSep joins the header context line's segments (repo, base,
 	// active worktree). DashboardFetchedFmt and DashboardBaseFmt are its
 	// individual segments; DashboardActiveGlyph marks the active worktree.
+	// DashboardNeverFetched is its own wording rather than an empty age: a
+	// repository that has never fetched is the most stale case there is, and
+	// saying nothing about its age would read as "fetched recently".
 	DashboardContextSep      = " · "
 	DashboardFetchedFmt      = "fetched %s"
+	DashboardNeverFetched    = "never fetched"
 	DashboardActiveGlyph     = "●"
 	DashboardBaseFmt         = "base %s"
 	DashboardCountFmt        = "%d worktrees"

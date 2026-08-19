@@ -443,9 +443,14 @@ func TestLayoutMatchesTheDocumentedGeometry(t *testing.T) {
 }
 
 func TestViewNeverOverflowsTheTerminal(t *testing.T) {
-	// 4 is the shortest height the 3-line header plus the 1-line help bar can
-	// fit in without overflowing.
-	sizes := [][2]int{{120, 40}, {80, 30}, {100, 10}, {60, 6}, {40, 4}, {200, 4}, {20, 20}}
+	// 1, 2 and 3 pin the degenerate case: a terminal too short for the header
+	// plus the help bar to both fit at full size. ComputeDashboardLayout must
+	// shrink them rather than let the header overflow past what it was given.
+	sizes := [][2]int{
+		{120, 40}, {80, 30}, {100, 10}, {60, 6}, {40, 4},
+		{200, 4}, {200, 3}, {200, 2}, {200, 1},
+		{20, 20},
+	}
 
 	for _, size := range sizes {
 		model := newTestModel(t, size[0], size[1], "a", "b", "c")

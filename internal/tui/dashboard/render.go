@@ -85,6 +85,20 @@ func (m Model) renderPanel(params panelParams) string {
 // Whole tabs are dropped rather than the bar trimmed: a hard trim would cut
 // through a zone marker and break that tab's hit-testing.
 func (m Model) renderHeader(layout domain.DashboardLayout) string {
+	// A terminal too short for the full 3-line header is degenerate — nothing
+	// else fits either — but it must not overflow. ComputeDashboardLayout
+	// already shrinks Tabs.Height to what actually fits; the renderer honors
+	// it by dropping whole lines from the bottom (rule, then bar) rather than
+	// emitting a fixed line count regardless of the budget, mirroring how
+	// renderPanel returns "" rather than drawing past its own Rect.
+	if layout.Tabs.Height <= 0 {
+		return ""
+	}
+	context := m.renderContextLine(layout.Tabs.Width)
+	if layout.Tabs.Height == 1 {
+		return context
+	}
+
 	wordmark := styles.DashboardWordmark.Render(domain.DashboardWordmark)
 	used := lipgloss.Width(wordmark)
 
@@ -110,8 +124,11 @@ func (m Model) renderHeader(layout domain.DashboardLayout) string {
 	if right := m.headerRight(layout.Tabs.Width - used); right != "" {
 		bar += strings.Repeat(" ", layout.Tabs.Width-used-lipgloss.Width(right)) + right
 	}
+	if layout.Tabs.Height == 2 {
+		return lipgloss.JoinVertical(lipgloss.Left, context, bar)
+	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, m.renderContextLine(layout.Tabs.Width), bar, tabRule(tabRuleParams{
+	return lipgloss.JoinVertical(lipgloss.Left, context, bar, tabRule(tabRuleParams{
 		Width:       layout.Tabs.Width,
 		ActiveStart: activeStart,
 		ActiveWidth: activeWidth,
@@ -146,7 +163,10 @@ func (m Model) renderContextLine(width int) string {
 			return line
 		}
 	}
-	return wordmark
+	// The last variant above already tried the bare wordmark alone; if that
+	// did not fit either, nothing will — the line goes empty rather than
+	// overflow the width it was given.
+	return ""
 }
 
 type contextLeftParams struct {
@@ -185,8 +205,11 @@ func (m Model) fetchedLabel() string {
 	if !rules.FetchIsStale(rules.FetchStalenessParams{FetchedAt: m.fetchedAt, Now: now}) {
 		return ""
 	}
+	if m.fetchedAt.IsZero() {
+		return styles.DashboardContext.Render(domain.DashboardNeverFetched)
+	}
 	age := rules.RelativeAge(rules.RelativeAgeParams{At: m.fetchedAt, Now: now})
-	return styles.DashboardContext.Render(strings.TrimSpace(fmt.Sprintf(domain.DashboardFetchedFmt, age)))
+	return styles.DashboardContext.Render(fmt.Sprintf(domain.DashboardFetchedFmt, age))
 }
 
 // fitContextLine lays the left cluster and the right notice on one row of the
@@ -290,6 +313,9 @@ func tabRule(params tabRuleParams) string {
 }
 
 func (m Model) renderHelpBar(layout domain.DashboardLayout) string {
+	if layout.Help.Height <= 0 {
+		return ""
+	}
 	hint := domain.DashboardHelpWide
 	switch {
 	case m.loadErr != nil:

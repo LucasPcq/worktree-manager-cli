@@ -26,8 +26,14 @@ const minDashboardBody = 3
 func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout {
 	width, height := max(params.Width, 0), max(params.Height, 0)
 
-	tabs := domain.Rect{X: 0, Y: 0, Width: width, Height: min(domain.DashboardHeaderHeight, height)}
-	help := domain.Rect{X: 0, Y: max(height-1, 0), Width: width, Height: min(1, max(height-1, 0))}
+	// helpHeight is reserved first: on a terminal too short for the header
+	// alone, the header gives up rows to it rather than the two overlapping —
+	// which is what let the header silently overflow before it deferred to
+	// this budget.
+	helpHeight := min(1, max(height-1, 0))
+	tabsHeight := min(domain.DashboardHeaderHeight, max(height-helpHeight, 0))
+	tabs := domain.Rect{X: 0, Y: 0, Width: width, Height: tabsHeight}
+	help := domain.Rect{X: 0, Y: max(height-1, 0), Width: width, Height: helpHeight}
 
 	outputHeight := domain.DashboardChromeHeight
 	if params.OutputExpanded {

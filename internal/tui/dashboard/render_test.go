@@ -53,3 +53,21 @@ func TestHeaderDropsSegmentsRightToLeftWhenNarrow(t *testing.T) {
 		t.Error("le wordmark est le dernier segment à tomber")
 	}
 }
+
+func TestHeaderNamesNeverFetchedDistinctlyFromAnAge(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "main")
+
+	model.fetchedAt = time.Time{}
+	if !strings.Contains(model.View(), domain.DashboardNeverFetched) {
+		t.Error("un dépôt jamais fetché doit le dire — le cas le plus périmé ne doit pas se taire")
+	}
+
+	model.fetchedAt = time.Now().Add(-72 * time.Hour)
+	view := model.View()
+	if strings.Contains(view, domain.DashboardNeverFetched) {
+		t.Error("un fetch daté, même périmé, ne doit pas porter le libellé \"jamais fetché\"")
+	}
+	if !strings.Contains(view, "fetched") {
+		t.Error("un fetch daté et périmé doit toujours annoncer son âge")
+	}
+}

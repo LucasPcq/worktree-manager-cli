@@ -14,7 +14,6 @@ import (
 	zone "github.com/lrstanley/bubblezone"
 
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -203,7 +202,7 @@ func (m Model) loadWorktreesCmd(fetch bool) tea.Cmd {
 				Branch:   status.Branch,
 			})
 		}
-		fetchedAt := infra.LastFetchAt(infra.LastFetchAtParams{ProjectDir: projectDir})
+		fetchedAt := worktree.LastFetchAt(worktree.LastFetchAtParams{ProjectDir: projectDir})
 		return worktreesMsg{statuses: statuses, parents: parents, fetchedAt: fetchedAt}
 	}
 }

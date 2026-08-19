@@ -98,7 +98,7 @@ func TestComputeDashboardLayoutShrinksTheOutputPanelBeforeTheBody(t *testing.T) 
 }
 
 func TestComputeDashboardLayoutSurvivesDegenerateSizes(t *testing.T) {
-	for _, size := range [][2]int{{0, 0}, {1, 1}, {10, 2}, {200, 3}} {
+	for _, size := range [][2]int{{0, 0}, {1, 1}, {10, 2}, {200, 1}, {200, 2}, {200, 3}} {
 		layout := ComputeDashboardLayout(DashboardLayoutParams{Width: size[0], Height: size[1]})
 		for name, rect := range map[string]domain.Rect{
 			"tabs": layout.Tabs, "list": layout.List, "detail": layout.Detail,
@@ -110,6 +110,15 @@ func TestComputeDashboardLayoutSurvivesDegenerateSizes(t *testing.T) {
 		}
 		if layout.ListRows < 0 || layout.OutputLines < 0 {
 			t.Errorf("%dx%d: negative row counts", size[0], size[1])
+		}
+
+		// The header and the help bar must give way to each other on a
+		// terminal too short for both at full size, rather than both
+		// claiming their usual rows and overflowing it between them.
+		body := max(layout.List.Height, layout.Detail.Height)
+		if reserved := layout.Tabs.Height + body + layout.Output.Height + layout.Help.Height; reserved > size[1] {
+			t.Errorf("%dx%d: rows reserved (tabs=%d body=%d output=%d help=%d = %d) exceed the terminal height",
+				size[0], size[1], layout.Tabs.Height, body, layout.Output.Height, layout.Help.Height, reserved)
 		}
 	}
 }
