@@ -1078,6 +1078,85 @@ const (
 	GitLogFieldCount = 4
 	// FetchHeadFileName is the file whose mtime marks the last successful fetch.
 	FetchHeadFileName = "FETCH_HEAD"
+
+	// DetailSection* names the detail panel's four conditional sections. A
+	// section is emitted only when it has something to say, so its position
+	// varies between worktrees — its rank in DetailSectionDropOrder never does.
+	DetailSectionReview   = "REVIEW"
+	DetailSectionChanges  = "CHANGES"
+	DetailSectionActivity = "ACTIVITY"
+	DetailSectionLinks    = "LINKS"
+
+	DetailYouAreHere = "● you are here"
+	DetailMoreFmt    = "…  %d more"
+	DetailBlockedFmt = "⚠ cannot be deleted — %s"
+
+	// Chip* build the vital strip. ChipBaseFmt/ChipOrigin*Fmt reuse
+	// BadgeGlyphAhead/BadgeGlyphBehind so the arrow glyph is defined once.
+	ChipClean             = "clean"
+	ChipDirty             = "dirty"
+	ChipRebasing          = "rebasing"
+	ChipBaseFmt           = "base " + BadgeGlyphAhead + "%d"
+	ChipActiveFmt         = "active %s"
+	ChipOriginAheadFmt    = "origin " + BadgeGlyphAhead + "%d"
+	ChipOriginBehindFmt   = "origin " + BadgeGlyphBehind + "%d"
+	ChipOriginDivergedFmt = "origin " + BadgeGlyphAhead + "%d " + BadgeGlyphBehind + "%d"
+
+	// DetailFixedRows is what the panel spends on everything besides the two
+	// scrollable lists (title, rule, vital strip, blockers, section chrome).
+	// DetailMinListRows is the floor each list keeps even on a short panel.
+	// DetailSectionChrome is what one section spends on its title row and the
+	// blank line under it, on top of its own body lines.
+	DetailFixedRows     = 10
+	DetailMinListRows   = 3
+	DetailSectionChrome = 2
+
+	// DetailFieldFmt renders a LINKS field as a padded label followed by its
+	// value ("Parent    main"). DetailListSep joins a list of names into one
+	// field's value.
+	DetailFieldFmt = "%-10s%s"
+	DetailListSep  = ", "
+
+	// DetailListIndent prefixes every line of a CHANGES or ACTIVITY list entry;
+	// LINKS fields carry none. DetailFileFmt renders one changed file as its
+	// glyph and its path, DetailUntrackedGlyph stands in for the raw "??"
+	// porcelain code. DetailCommitFmt renders one commit as its short SHA and
+	// subject.
+	DetailListIndent     = "  "
+	DetailFileFmt        = "%s  %s"
+	DetailUntrackedGlyph = "?"
+	DetailCommitFmt      = "%s  %s"
+
+	// DetailReviewHeaderFmt renders a PR as its number, title and state.
+	DetailReviewHeaderFmt = "#%d  %s  %s"
+
+	// DashboardLabelChildren and DashboardLabelEnv extend the LINKS field
+	// labels (DashboardLabelParent, DashboardLabelCreated, DashboardLabelPath
+	// already exist for the old WORKTREE section).
+	DashboardLabelChildren = "Children"
+	DashboardLabelEnv      = "Env"
+
+	// Changes*Fmt render the CHANGES section's summary line, one fragment per
+	// porcelain category plus the diff volume, each omitted when zero.
+	// ChangesDeletionGlyph is the minus sign, distinct from an ASCII hyphen so a
+	// deletion count never reads as a negative number.
+	ChangesModifiedFmt   = "%d modified"
+	ChangesUntrackedFmt  = "%d untracked"
+	ChangesStagedFmt     = "%d staged"
+	ChangesDeletionGlyph = "−"
+	ChangesDiffStatFmt   = "+%d " + ChangesDeletionGlyph + "%d"
+
+	// Env* render the LINKS "Env" field's drift summary, one fragment per
+	// category, joined with DashboardMetaSeparator when several apply.
+	EnvMissingFmt     = "%d keys missing"
+	EnvConflictingFmt = "%d conflicting"
+	EnvOrphanFmt      = "%d orphan"
+
+	// DashboardNotConfigured names a legitimate absence (no env files declared),
+	// never presented as a success. DashboardUnavailableFmt names a family that
+	// failed to read, naming why — it never goes silently empty.
+	DashboardNotConfigured  = "not configured"
+	DashboardUnavailableFmt = "unavailable — %s"
 )
 
 // EnvTemplateSuffixes are the committed-schema template suffixes recognized on a

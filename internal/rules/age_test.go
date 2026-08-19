@@ -40,6 +40,7 @@ func TestFetchIsStale(t *testing.T) {
 		{"jamais fetché", time.Time{}, true},
 		{"il y a 1 h", now.Add(-time.Hour), false},
 		{"il y a 23 h", now.Add(-23 * time.Hour), false},
+		{"exactement 24 h", now.Add(-24 * time.Hour), false},
 		{"il y a 25 h", now.Add(-25 * time.Hour), true},
 	}
 	for _, c := range cases {

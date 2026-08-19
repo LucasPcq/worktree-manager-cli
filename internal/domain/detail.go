@@ -63,3 +63,38 @@ type WorktreeDetail struct {
 	// legitimate absence from render-time failure.
 	Failures map[DetailFamily]error
 }
+
+// Chip is one element of the vital strip. State marks the only coloured chip:
+// the working-tree state.
+type Chip struct {
+	Text  string
+	State bool
+	Kind  ChipKind
+}
+
+type ChipKind string
+
+const (
+	ChipKindClean    ChipKind = "clean"
+	ChipKindDirty    ChipKind = "dirty"
+	ChipKindRebasing ChipKind = "rebasing"
+	ChipKindNeutral  ChipKind = "neutral"
+)
+
+// DetailSection is one block of the detail panel, already reduced to its plain
+// text lines. Rendering decides nothing: it styles and it stacks.
+type DetailSection struct {
+	Key   string
+	Title string
+	Lines []string
+}
+
+// DetailSectionDropOrder is the order sections give up their place when the
+// panel runs out of height: the last one listed falls first. The vital strip
+// and the blockers line are not in it — they never fall.
+var DetailSectionDropOrder = []string{
+	DetailSectionReview,
+	DetailSectionChanges,
+	DetailSectionActivity,
+	DetailSectionLinks,
+}
