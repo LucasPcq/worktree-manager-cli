@@ -87,10 +87,8 @@ func FormatSyncResult(w io.Writer, result domain.SyncResult) {
 	printConflictFooter(w, result.Steps)
 }
 
-// printBase reports the base branch — but only when the run actually involved
-// it. A cascade where every step rebases onto some other parent leaves the base
-// alone, so naming it would put a branch in the recap that the run never read
-// (see rules.BaseIsTarget).
+// printBase says nothing when the run never involved the base: naming it would
+// put a branch in the recap that was never read (see rules.BaseIsTarget).
 func printBase(w io.Writer, result domain.SyncResult) {
 	if !result.BaseTargeted {
 		return
@@ -117,9 +115,6 @@ func FormatSyncPushSummary(w io.Writer, steps []domain.SyncStepResult) {
 	printPushSummary(w, steps)
 }
 
-// printParentUpdates reports the parents the cascade rebased onto without a step
-// of their own: refreshed, left behind, or diverged. Nothing to report prints
-// nothing; otherwise the block is closed by a blank separating it from the steps.
 func printParentUpdates(w io.Writer, updates []domain.ParentUpdate) {
 	if len(updates) == 0 {
 		return
@@ -139,6 +134,11 @@ func printParentUpdates(w io.Writer, updates []domain.ParentUpdate) {
 		case domain.ParentDiverged:
 			Warning(w, fmt.Sprintf("%s has diverged from %s — left untouched; reconcile it manually",
 				update.Branch, remote))
+		case domain.ParentFFFailed:
+			// The refresh was asked for and could not happen: name the obstacle
+			// rather than suggest the flag the user already passed.
+			Warning(w, fmt.Sprintf("%s could not be fast-forwarded to %s — %s; %s rebased onto it as is",
+				update.Branch, remote, update.Detail, strings.Join(update.Children, ", ")))
 		}
 	}
 	Blank(w)

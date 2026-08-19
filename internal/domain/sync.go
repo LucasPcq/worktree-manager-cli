@@ -29,8 +29,8 @@ type SyncStep struct {
 type SyncPlan struct {
 	BaseBranch string
 	Steps      []SyncStep
-	// BaseTargeted reports whether the base plays any role in this cascade (see
-	// rules.BaseIsTarget). When false the base is neither refreshed nor named.
+	// BaseTargeted is rules.BaseIsTarget for this cascade; when false the base is
+	// neither refreshed nor named.
 	BaseTargeted bool
 }
 
@@ -65,37 +65,38 @@ const (
 	SyncStatusUnknownParent SyncStepStatus = "unknown_parent"
 )
 
-// ParentStatus is the state of a cascade parent that no step covers. Such a
-// parent is rebased onto but never refreshed by a step of its own — typically a
-// branch with no worktree, or a worktree left out of the selection.
+// ParentStatus is the state of a parent no step covers — a branch with no
+// worktree, or a worktree left out of the selection. Nothing in the cascade
+// refreshes such a parent, so a run inspects it separately.
 type ParentStatus string
 
 const (
-	// ParentBehind means the parent is strictly behind origin/<parent> and was
-	// left as is: the children were rebased onto a stale parent.
+	// ParentBehind: strictly behind origin/<parent>, left as is.
 	ParentBehind ParentStatus = "behind"
-	// ParentFastForwarded means the parent was advanced to origin/<parent> before
-	// its children were rebased onto it.
+	// ParentFastForwarded: advanced to origin/<parent> before its children rebased.
 	ParentFastForwarded ParentStatus = "fast_forwarded"
-	// ParentDiverged means local and origin/<parent> have both moved, so no
-	// fast-forward is possible and the parent was left untouched.
+	// ParentDiverged: both refs moved, no fast-forward exists, left untouched.
 	ParentDiverged ParentStatus = "diverged"
+	// ParentFFFailed: the refresh was asked for and could not happen. Distinct from
+	// ParentBehind so the recap names the obstacle instead of re-suggesting the
+	// flag already given.
+	ParentFFFailed ParentStatus = "ff_failed"
 )
 
-// ParentUpdate reports what a run found — and did — about one parent outside the
-// cascade. Only parents worth reporting get an entry: one already carrying its
-// remote, or with no remote counterpart, produces none. Children names the steps
-// rebased onto it.
+// ParentUpdate is one such parent. Only those worth reporting get an entry: one
+// already carrying its remote, or without a remote counterpart, produces none.
 type ParentUpdate struct {
 	Branch string       `json:"branch"`
 	Status ParentStatus `json:"status"`
 	OldTip string       `json:"old_tip"`
 	NewTip string       `json:"new_tip"`
-	// Behind is how many commits the local ref lacks from its remote. It is what
-	// makes the choice concrete ("2 commits behind") rather than abstract; zero for
-	// a diverged parent, where no fast-forward distance exists.
-	Behind   int      `json:"behind"`
+	// Behind counts the commits the local ref lacks; zero for a diverged parent,
+	// where no fast-forward distance exists.
+	Behind int `json:"behind"`
+	// Children are the steps rebased onto this parent.
 	Children []string `json:"children"`
+	// Detail carries why a fast-forward could not happen (ParentFFFailed).
+	Detail string `json:"detail,omitempty"`
 }
 
 // SyncStepResult carries the full detail of one step so the recap can reassure
@@ -127,9 +128,8 @@ type SyncStepResult struct {
 // SyncResult is the outcome of a full cascade sync.
 type SyncResult struct {
 	BaseBranch string `json:"base_branch"`
-	// BaseTargeted reports whether the base was part of the run at all. It is
-	// false when every step rebases onto some other parent: the base is then left
-	// untouched rather than fetched and fast-forwarded as a side effect.
+	// BaseTargeted is false when every step rebases onto some other parent: the
+	// base is then left untouched rather than moved as a side effect.
 	BaseTargeted bool             `json:"base_targeted"`
 	BaseUpdated  bool             `json:"base_updated"`
 	BaseOldTip   string           `json:"base_old_tip"`
@@ -138,8 +138,6 @@ type SyncResult struct {
 	// SelectedBranches lists the branches the run was asked to sync: the explicit
 	// args, or every managed worktree when --all was used. It makes the JSON
 	// output self-describing for agents (which branches this cascade covered).
-	SelectedBranches []string `json:"selected_branches"`
-	// ParentUpdates reports the parents the cascade rebased onto without covering
-	// them with a step of their own (see ParentUpdate).
-	ParentUpdates []ParentUpdate `json:"parent_updates,omitempty"`
+	SelectedBranches []string       `json:"selected_branches"`
+	ParentUpdates    []ParentUpdate `json:"parent_updates,omitempty"`
 }

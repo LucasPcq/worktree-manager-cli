@@ -233,3 +233,29 @@ func TestFormatSyncResultReportsTargetedBase(t *testing.T) {
 		t.Errorf("a targeted base should still be reported, got:\n%s", buf.String())
 	}
 }
+
+// A fast-forward that was asked for and failed must name the obstacle, never
+// re-suggest the flag the user already passed — otherwise the same command is
+// replayed forever on a stale parent.
+func TestFormatSyncResultFailedFastForwardNamesTheObstacle(t *testing.T) {
+	var buf bytes.Buffer
+	FormatSyncResult(&buf, domain.SyncResult{
+		BaseBranch: "main",
+		ParentUpdates: []domain.ParentUpdate{{
+			Branch:   "feature",
+			Status:   domain.ParentFFFailed,
+			Detail:   "worktree has uncommitted changes",
+			Children: []string{"dev-1"},
+		}},
+		Steps: []domain.SyncStepResult{{Branch: "dev-1", Status: domain.SyncStatusUpToDate}},
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "could not be fast-forwarded to origin/feature") ||
+		!strings.Contains(out, "worktree has uncommitted changes") {
+		t.Errorf("recap should name the obstacle, got:\n%s", out)
+	}
+	if strings.Contains(out, "--ff-parents") {
+		t.Errorf("must not suggest the flag already passed, got:\n%s", out)
+	}
+}

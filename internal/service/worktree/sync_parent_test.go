@@ -381,3 +381,179 @@ func TestSyncBaseOnlyRefreshKeepsWorking(t *testing.T) {
 		t.Fatal("BaseTargeted should be true for a base-only refresh")
 	}
 }
+
+// TestSyncLocallyRebasedParentIsNotReportedDiverged covers a banal workflow: the
+// parent was rebased locally, so origin/<parent>'s commits are patch-present but
+// neither ref is an ancestor of the other. Calling that "diverged, reconcile it
+// manually" on every run teaches the user to ignore the parent block entirely.
+func TestSyncLocallyRebasedParentIsNotReportedDiverged(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	stateDir := filepath.Join(dir, ".git", "wtm")
+	devPath := filepath.Join(t.TempDir(), "dev")
+
+	initRemote(t, dir)
+	git(t, dir, "branch", "feature", "main")
+	git(t, dir, "push", "origin", "feature")
+
+	// feature gets a commit and is published, then rebased locally onto a moved
+	// main: same patch, new sha, so local and origin/feature each hold commits the
+	// other lacks by sha.
+	work := filepath.Join(t.TempDir(), "featwork")
+	git(t, dir, "worktree", "add", work, "feature")
+	commitFile(t, work, "feature.txt", "feature work")
+	git(t, work, "push", "origin", "feature")
+	commitFile(t, dir, "main.txt", "main moved")
+	git(t, work, "rebase", "main")
+	git(t, dir, "worktree", "remove", "--force", work)
+
+	git(t, dir, "worktree", "add", "-b", "dev", devPath, "feature")
+	commitFile(t, devPath, "dev.txt", "dev work")
+	writeMeta(t, stateDir, "dev", "feature")
+
+	result, err := Sync(SyncParams{
+		ProjectDir:       dir,
+		StateDir:         stateDir,
+		BaseBranch:       "main",
+		SelectedBranches: []string{"dev"},
+	})
+	if err != nil {
+		t.Fatalf("Sync error: %v", err)
+	}
+
+	if update, ok := parentUpdateFor(result, "feature"); ok {
+		t.Fatalf("a locally-rebased parent has nothing to reconcile, got %+v", update)
+	}
+}
+
+// TestSyncFailedParentFastForwardIsReportedWithReason covers the other half: the
+// refresh was asked for and could not happen. Reporting it as plain "behind"
+// re-suggests --ff-parents, which was already passed, so the run would be
+// replayed identically forever.
+func TestSyncFailedParentFastForwardIsReportedWithReason(t *testing.T) {
+	dir := gittest.InitRepo(t)
+	stateDir := filepath.Join(dir, ".git", "wtm")
+	trees := t.TempDir()
+	featPath := filepath.Join(trees, "feat")
+	devPath := filepath.Join(trees, "dev")
+
+	initRemote(t, dir)
+	git(t, dir, "worktree", "add", "-b", "feat", featPath, "main")
+	commitFile(t, featPath, "feat.txt", "feat work")
+	git(t, featPath, "push", "-u", "origin", "feat")
+	git(t, dir, "worktree", "add", "-b", "dev", devPath, "feat")
+	commitFile(t, devPath, "dev.txt", "dev work")
+
+	advanceRemoteBranch(t, dir, "feat", "feat", "remote-feat.txt")
+
+	writeMeta(t, stateDir, "feat", "main")
+	writeMeta(t, stateDir, "dev", "feat")
+
+	// An untracked file is enough to make the parent worktree dirty.
+	if err := os.WriteFile(filepath.Join(featPath, "scratch.txt"), []byte("wip"), 0o644); err != nil {
+		t.Fatalf("write scratch: %v", err)
+	}
+
+	result, err := Sync(SyncParams{
+		ProjectDir:         dir,
+		StateDir:           stateDir,
+		BaseBranch:         "main",
+		SelectedBranches:   []string{"dev"},
+		FastForwardParents: true,
+	})
+	if err != nil {
+		t.Fatalf("Sync error: %v", err)
+	}
+
+	update, ok := parentUpdateFor(result, "feat")
+	if !ok {
+		t.Fatalf("the failed fast-forward should be reported (%+v)", result.ParentUpdates)
+	}
+	if update.Status != domain.ParentFFFailed {
+		t.Fatalf("feat status = %q, want %q", update.Status, domain.ParentFFFailed)
+	}
+	if update.Detail == "" {
+		t.Error("a failed fast-forward must carry the reason")
+	}
+}
+
+func TestClassifyParents(t *testing.T) {
+	dir, stateDir, _ := setupBranchOnlyParent(t)
+
+	updates, err := ClassifyParents(ClassifyParentsParams{
+		ProjectDir: dir,
+		StateDir:   stateDir,
+		BaseBranch: "main",
+	})
+	if err != nil {
+		t.Fatalf("ClassifyParents error: %v", err)
+	}
+
+	// The inspection is selection-independent: it classifies every recorded parent
+	// so a wizard can filter it locally as the selection changes.
+	if len(updates) != 1 || updates[0].Branch != "feature" {
+		t.Fatalf("updates = %+v, want only feature", updates)
+	}
+	if updates[0].Status != domain.ParentBehind {
+		t.Errorf("feature status = %q, want %q", updates[0].Status, domain.ParentBehind)
+	}
+	if updates[0].Behind != 1 {
+		t.Errorf("feature behind = %d, want 1", updates[0].Behind)
+	}
+
+	// It changes nothing.
+	if local, remote := git(t, dir, "rev-parse", "feature"), git(t, dir, "rev-parse", "origin/feature"); local == remote {
+		t.Error("ClassifyParents must not move the parent")
+	}
+}
+
+// A dry-run stays offline but must still name the problem it is previewing,
+// otherwise the preview hides the very thing the run would report.
+func TestSyncDryRunReportsParentsWithoutTouchingAnything(t *testing.T) {
+	dir, stateDir, _ := setupBranchOnlyParent(t)
+	featureBefore := git(t, dir, "rev-parse", "feature")
+
+	result, err := Sync(SyncParams{
+		ProjectDir:         dir,
+		StateDir:           stateDir,
+		BaseBranch:         "main",
+		SelectedBranches:   []string{"dev"},
+		DryRun:             true,
+		FastForwardParents: true,
+	})
+	if err != nil {
+		t.Fatalf("Sync error: %v", err)
+	}
+
+	update, ok := parentUpdateFor(result, "feature")
+	if !ok {
+		t.Fatalf("a dry-run should still report the stale parent (%+v)", result.ParentUpdates)
+	}
+	// Even with the opt-in: a dry-run never moves anything.
+	if update.Status != domain.ParentBehind {
+		t.Errorf("dry-run status = %q, want %q", update.Status, domain.ParentBehind)
+	}
+	if after := git(t, dir, "rev-parse", "feature"); after != featureBefore {
+		t.Fatalf("dry-run moved feature to %s (was %s)", after, featureBefore)
+	}
+}
+
+// --all covers the whole forest including its root: it keeps refreshing the base
+// even in a tree where every worktree hangs off some other parent. Only an
+// explicit selection leaves the base out.
+func TestSyncAllStillRefreshesTheBase(t *testing.T) {
+	dir, stateDir, _ := setupBranchOnlyParent(t)
+	advanceRemoteBranch(t, dir, "main", "main", "remote-main.txt")
+	mainBefore := git(t, dir, "rev-parse", "main")
+
+	result, err := Sync(SyncParams{ProjectDir: dir, StateDir: stateDir, BaseBranch: "main"})
+	if err != nil {
+		t.Fatalf("Sync error: %v", err)
+	}
+
+	if !result.BaseTargeted {
+		t.Fatal("--all should keep the base in scope")
+	}
+	if after := git(t, dir, "rev-parse", "main"); after == mainBefore {
+		t.Fatal("--all should still fast-forward the base")
+	}
+}

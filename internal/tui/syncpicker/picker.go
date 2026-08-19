@@ -26,7 +26,6 @@ const (
 // syncConfirm is the recap step's action value.
 const syncConfirm = "sync"
 
-// Parent-refresh choices for the parent-branches step.
 const (
 	parentModeFF   = "fast-forward"
 	parentModeKeep = "keep"
@@ -64,6 +63,11 @@ type RunParams struct {
 	// must be local-only: it is called synchronously while the wizard builds the
 	// step. A nil hook omits the parent question entirely.
 	StaleParents func([]string) []domain.ParentUpdate
+	// ParentPreset settles the parent question from a flag instead of asking it.
+	// The step is still installed and still appears in the summaries, naming the
+	// flag that answered it — a flag must never make a line disappear from the
+	// recap. nil means ask.
+	ParentPreset *bool
 	// PlanPreview renders the cascade preview shown on the confirmation step. It
 	// is injected by the command layer so the picker (TUI) needs no dependency on
 	// the service/output packages. Given the checked branches it returns the
@@ -80,9 +84,7 @@ type RunParams struct {
 type RunResult struct {
 	Branches     []string
 	KeepConflict bool
-	// FastForwardParents is the answer to the parent question: refresh the parents
-	// the cascade does not cover before rebasing onto them. False when the question
-	// was not asked (no stale parent, or no hook).
+	// FastForwardParents is false when the question was never asked.
 	FastForwardParents bool
 	// Confirmed reports whether the user accepted the plan. It is true when the
 	// confirmation step was elided (SkipConfirm or no PlanPreview).
@@ -102,7 +104,7 @@ func Run(params RunParams) (RunResult, error) {
 
 	// Set when the parent step is installed; it reports whether that step was
 	// actually shown rather than auto-skipped.
-	var parentAsked *bool
+	var parentShown *bool
 
 	var steps []components.Step
 	if hasSelect {
@@ -120,11 +122,12 @@ func Run(params RunParams) (RunResult, error) {
 			DefaultKeep: params.DefaultKeepConflict,
 		}))
 		if params.StaleParents != nil {
-			step, asked := parentStep(parentStepParams{
+			step, shown := parentStep(parentStepParams{
 				Preselected: params.Preselected,
 				Stale:       params.StaleParents,
+				Preset:      params.ParentPreset,
 			})
-			parentAsked = asked
+			parentShown = shown
 			steps = append(steps, step)
 		}
 	}
@@ -207,10 +210,14 @@ func Run(params RunParams) (RunResult, error) {
 	}
 
 	result := RunResult{
-		Branches:           branches,
-		KeepConflict:       resolveKeep(finalSteps, params.KeepConflict),
-		FastForwardParents: parentAsked != nil && *parentAsked && resolveParentFF(finalSteps),
-		Confirmed:          true,
+		Branches:     branches,
+		KeepConflict: resolveKeep(finalSteps, params.KeepConflict),
+		FastForwardParents: resolveParentAnswer(resolveParentAnswerParams{
+			Steps:  finalSteps,
+			Shown:  parentShown,
+			Preset: params.ParentPreset,
+		}),
+		Confirmed: true,
 	}
 	if showConfirm {
 		if v, ok := stepSelectValue(finalSteps, stepConfirm); ok {
@@ -383,33 +390,68 @@ func conflictModeStep(params conflictModeStepParams) components.SelectListModel 
 type parentStepParams struct {
 	Preselected []string
 	Stale       func([]string) []domain.ParentUpdate
+	// Preset settles the answer from a flag; the step is then shown as a skipped
+	// summary line rather than asked.
+	Preset *bool
 }
 
-// parentStep asks whether to refresh the parents the cascade does not cover
-// before rebasing onto them. It lives inside the wizard rather than after it, so
-// it gets a breadcrumb entry and back navigation, and it auto-skips when the
-// current selection leaves no stale parent — the common case.
-//
-// The returned pointer reports whether the step was actually shown: a skipped
-// step keeps the model Build left behind, whose first option would otherwise read
-// back as an answer nobody gave.
+// parentStep lives inside the wizard rather than after it, so it gets a
+// breadcrumb and back navigation, and auto-skips when the selection leaves no
+// stale parent. The returned pointer reports whether it was shown: a skipped step
+// keeps the model Build left behind, whose first option would otherwise read back
+// as an answer nobody gave.
 func parentStep(p parentStepParams) (components.Step, *bool) {
-	// Cached across Build → AutoSkip within one advance pass, like
+	// Cached across Build → AutoSkip/SkipReason within one advance pass, like
 	// components.ConfirmStep does: buildStep runs Build immediately before AutoSkip.
-	asked := false
+	relevant := false
 	build := func(prev []components.Step) any {
 		stale := p.Stale(resolveBranches(prev, p.Preselected))
-		asked = len(stale) > 0
+		relevant = len(stale) > 0
 		return parentModeStep(stale)
 	}
 
+	// A preset never asks, but it is still listed: a run that will advance a parent
+	// must say so even when a flag decided it.
+	asked := func() bool { return relevant && p.Preset == nil }
+
 	return components.Step{
-		Name:     stepParents,
-		Model:    parentModeStep(nil),
-		Build:    build,
-		AutoSkip: func(components.WizardModel) bool { return !asked },
-		Summary:  parentSummary,
-	}, &asked
+		Name:       stepParents,
+		Model:      parentModeStep(nil),
+		Build:      build,
+		AutoSkip:   func(components.WizardModel) bool { return !asked() },
+		SkipReason: func() string { return presetReason(relevant, p.Preset) },
+		Summary:    parentSummary,
+	}, &relevant
+}
+
+// presetReason names the outcome and the flag responsible. Empty when there was
+// nothing to decide, which keeps the step hidden instead of listing a non-question.
+func presetReason(relevant bool, preset *bool) string {
+	if !relevant || preset == nil {
+		return ""
+	}
+	if *preset {
+		return "fast-forward (--" + domain.FlagFFParents + ")"
+	}
+	return "left as they are (--" + domain.FlagNoFFParents + ")"
+}
+
+type resolveParentAnswerParams struct {
+	Steps  []components.Step
+	Shown  *bool
+	Preset *bool
+}
+
+// resolveParentAnswer reads the parent decision: the preset when a flag settled
+// it, the step's own choice when it was asked, and false when nothing was stale.
+func resolveParentAnswer(params resolveParentAnswerParams) bool {
+	if params.Shown == nil || !*params.Shown {
+		return false
+	}
+	if params.Preset != nil {
+		return *params.Preset
+	}
+	return resolveParentFF(params.Steps)
 }
 
 // parentModeStep builds the parent-refresh choice. Like the on-conflict step it
@@ -438,8 +480,6 @@ func parentModeStep(stale []domain.ParentUpdate) components.SelectListModel {
 	})
 }
 
-// parentLines states each stale parent's situation in one line: how far behind it
-// is, and which of the selected worktrees will rebase onto it.
 func parentLines(parents []domain.ParentUpdate) string {
 	lines := make([]string, 0, len(parents))
 	for _, parent := range parents {
@@ -451,7 +491,6 @@ func parentLines(parents []domain.ParentUpdate) string {
 	return strings.Join(lines, "\n")
 }
 
-// parentSummary labels the parent choice in the completed-step summaries.
 func parentSummary(model any) string {
 	sl, ok := model.(components.SelectListModel)
 	if !ok {
@@ -463,7 +502,6 @@ func parentSummary(model any) string {
 	return "leave as they are"
 }
 
-// resolveParentFF reads the parent choice; false when the step was never shown.
 func resolveParentFF(steps []components.Step) bool {
 	sl, ok := stepModelByName(steps, stepParents).(components.SelectListModel)
 	return ok && sl.Value() == parentModeFF

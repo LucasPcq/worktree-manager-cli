@@ -26,7 +26,7 @@ wtm sync [branch...] [flags]
       --all             Sync every managed worktree
       --base string     Base branch to sync from (defaults to config or detected base)
       --dry-run         Preview the cascade without rebasing or pushing
-      --ff-parents      Fast-forward the parents the cascade does not cover (no worktree, or left out of the selection) before rebasing onto them
+      --ff-parents      Fast-forward the parents the cascade does not cover (no worktree, or left out of the selection) before rebasing onto them; no-op with --dry-run
   -h, --help            help for sync
       --keep-conflict   Leave a conflicting rebase in progress in its worktree instead of aborting
       --no-ff-parents   Never fast-forward those parents; rebase onto them as they are

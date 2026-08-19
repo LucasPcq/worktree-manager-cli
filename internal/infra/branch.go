@@ -172,17 +172,20 @@ type FastForwardRefParams struct {
 	Branch     string
 }
 
-// FastForwardRef advances a local branch to its origin counterpart without going
-// through a worktree, by fetching straight into the ref. Without a leading '+'
-// the refspec is fast-forward-only, so git refuses a rewrite; it also refuses a
-// branch checked out in a worktree — those are advanced inside their own
-// worktree instead (see FastForwardBranch).
+// FastForwardRef advances a local branch to its origin counterpart by fetching
+// straight into the ref. The refspec carries no leading '+', so git itself
+// refuses a rewrite: the safety net does not depend on the caller checking first.
+// git 2.36+ also refuses a branch checked out in a worktree — advance those with
+// FastForwardBranch inside their own worktree. Prefer this to
+// UpdateLocalBranchToRemote, which force-moves and can lose commits.
 func FastForwardRef(params FastForwardRefParams) error {
 	refspec := params.Branch + ":" + params.Branch
-	cmd := exec.Command("git", "-C", params.ProjectDir, "fetch", "origin", refspec)
+	remote := strings.TrimSuffix(domain.RemoteBranchPrefix, "/")
+	cmd := exec.Command("git", "fetch", remote, refspec)
+	cmd.Dir = params.ProjectDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git fetch origin %s: %s", refspec, strings.TrimSpace(string(out)))
+		return fmt.Errorf("git fetch %s %s: %s", remote, refspec, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -276,6 +279,9 @@ type UpdateLocalBranchToRemoteParams struct {
 // via `git branch -f <branch> origin/<branch>`. git refuses this when the branch
 // is checked out in a worktree, so callers must only use it for branches that are
 // not checked out (and after verifying the move is a fast-forward).
+//
+// It force-moves the ref, so the fast-forward is the caller's responsibility.
+// New callers should use FastForwardRef, which makes git enforce it.
 func UpdateLocalBranchToRemote(params UpdateLocalBranchToRemoteParams) error {
 	cmd := exec.Command("git", "branch", "-f", params.Branch, domain.RemoteBranchPrefix+params.Branch)
 	cmd.Dir = params.ProjectDir

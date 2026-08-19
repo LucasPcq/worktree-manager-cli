@@ -128,10 +128,8 @@ type ParentsOutsideCascadeParams struct {
 }
 
 // ParentsOutsideCascade lists the parents a cascade rebases onto but never
-// refreshes: those with no step of their own. The base is excluded — it has its
-// own fast-forward — and so is an empty parent (an unknown-parent step). Order
-// follows first use; each entry carries the steps depending on it, and its
-// Status is left for the caller to resolve against the remote.
+// refreshes. The base is excluded — it has its own fast-forward — and so is an
+// unset parent. Status is left for the caller to resolve against the remote.
 func ParentsOutsideCascade(params ParentsOutsideCascadeParams) []domain.ParentUpdate {
 	covered := make(map[string]struct{}, len(params.Steps))
 	for _, step := range params.Steps {
@@ -164,11 +162,9 @@ type ParentBranchesParams struct {
 	BaseBranch string
 }
 
-// ParentBranches lists the distinct branches at least one managed worktree
-// records as its parent, excluding the base and the unset parent. It is the set
-// a run may have to inspect against its remote *before* the selection is known —
-// which parents end up uncovered depends on the selection, but the classification
-// of each does not.
+// ParentBranches lists the distinct recorded parents, base and unset excluded.
+// It is what a run inspects before the selection is known: which parents end up
+// uncovered depends on the selection, the state of each against its remote does not.
 func ParentBranches(params ParentBranchesParams) []string {
 	seen := make(map[string]struct{}, len(params.Nodes))
 	branches := make([]string, 0, len(params.Nodes))
@@ -193,9 +189,8 @@ type StaleParentsForParams struct {
 }
 
 // StaleParentsFor pairs the parents a selection leaves uncovered with what an
-// earlier inspection found about each, keeping only those a fast-forward would
-// actually advance. Children comes from the selection, Status and tips from the
-// inspection.
+// earlier inspection found: Children from the selection, Status and tips from the
+// inspection, keeping only what a fast-forward would advance.
 func StaleParentsFor(params StaleParentsForParams) []domain.ParentUpdate {
 	status := make(map[string]domain.ParentUpdate, len(params.Classified))
 	for _, update := range params.Classified {

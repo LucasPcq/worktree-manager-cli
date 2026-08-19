@@ -92,7 +92,7 @@ func TestConfirmDescription_KeepConflictFoldsWarning(t *testing.T) {
 // when the current selection leaves no stale parent — not be asked and answered
 // "no" every run.
 func TestParentStepAutoSkipsWithoutStaleParents(t *testing.T) {
-	step, asked := parentStep(parentStepParams{
+	step, relevant := parentStep(parentStepParams{
 		Preselected: []string{"dev-1"},
 		Stale:       func([]string) []domain.ParentUpdate { return nil },
 	})
@@ -101,8 +101,11 @@ func TestParentStepAutoSkipsWithoutStaleParents(t *testing.T) {
 	if !step.AutoSkip(components.WizardModel{}) {
 		t.Fatal("the parent step should auto-skip when nothing is stale")
 	}
-	if *asked {
-		t.Fatal("a skipped step must not report itself as asked")
+	if *relevant {
+		t.Fatal("a step with nothing stale must not report itself as relevant")
+	}
+	if reason := step.SkipReason(); reason != "" {
+		t.Fatalf("an irrelevant step must stay hidden, got reason %q", reason)
 	}
 	// A skipped step still holds the model Build left behind, whose leading option
 	// is the fast-forward — so its value alone would read back as an answer nobody
@@ -114,7 +117,7 @@ func TestParentStepAutoSkipsWithoutStaleParents(t *testing.T) {
 
 func TestParentStepAsksWhenAParentIsStale(t *testing.T) {
 	var received []string
-	step, asked := parentStep(parentStepParams{
+	step, relevant := parentStep(parentStepParams{
 		Preselected: []string{"dev-1", "dev-2"},
 		Stale: func(branches []string) []domain.ParentUpdate {
 			received = branches
@@ -128,8 +131,8 @@ func TestParentStepAsksWhenAParentIsStale(t *testing.T) {
 	if step.AutoSkip(components.WizardModel{}) {
 		t.Fatal("the parent step must be shown when a parent is stale")
 	}
-	if !*asked {
-		t.Fatal("a shown step should report itself as asked")
+	if !*relevant {
+		t.Fatal("a shown step should report itself as relevant")
 	}
 	// With no multi-select step before it, the hook reads the preselected branches.
 	if len(received) != 2 || received[0] != "dev-1" {
@@ -160,5 +163,59 @@ func TestParentSummaryLabelsTheChoice(t *testing.T) {
 	stale := []domain.ParentUpdate{{Branch: "feature", Behind: 1, Children: []string{"dev"}}}
 	if got := parentSummary(parentModeStep(stale)); got != "fast-forward" {
 		t.Fatalf("summary = %q, want %q", got, "fast-forward")
+	}
+}
+
+// A flag must never make a line disappear from the recap (CLAUDE.md): with
+// --ff-parents the question is not asked, but the step is still listed with the
+// outcome and the flag that produced it.
+func TestParentStepPresetIsNotAskedButStillListed(t *testing.T) {
+	stale := func([]string) []domain.ParentUpdate {
+		return []domain.ParentUpdate{{Branch: "feature", Behind: 1, Children: []string{"dev-1"}}}
+	}
+
+	for _, tc := range []struct {
+		name       string
+		preset     bool
+		wantReason string
+	}{
+		{name: "ff-parents", preset: true, wantReason: "fast-forward (--ff-parents)"},
+		{name: "no-ff-parents", preset: false, wantReason: "left as they are (--no-ff-parents)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			preset := tc.preset
+			step, relevant := parentStep(parentStepParams{
+				Preselected: []string{"dev-1"},
+				Stale:       stale,
+				Preset:      &preset,
+			})
+
+			step.Model = step.Build(nil)
+			if !step.AutoSkip(components.WizardModel{}) {
+				t.Fatal("a preset step must not be asked")
+			}
+			if !*relevant {
+				t.Fatal("a preset step with a stale parent is still relevant")
+			}
+			if got := step.SkipReason(); got != tc.wantReason {
+				t.Fatalf("skip reason = %q, want %q", got, tc.wantReason)
+			}
+
+			got := resolveParentAnswer(resolveParentAnswerParams{
+				Steps: []components.Step{step}, Shown: relevant, Preset: &preset,
+			})
+			if got != tc.preset {
+				t.Fatalf("answer = %v, want the preset %v", got, tc.preset)
+			}
+		})
+	}
+}
+
+// Nothing stale → no refresh, whatever the flag said.
+func TestParentAnswerIsFalseWhenNothingIsStale(t *testing.T) {
+	preset := true
+	relevant := false
+	if resolveParentAnswer(resolveParentAnswerParams{Shown: &relevant, Preset: &preset}) {
+		t.Fatal("with nothing stale there is nothing to fast-forward")
 	}
 }
