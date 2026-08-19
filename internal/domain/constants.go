@@ -521,9 +521,11 @@ const (
 	SyncPlanHeader = "Sync plan"
 
 	// SyncKeepConflictWarning is the consequence line on the sync confirmation when
-	// conflicts are kept. It stays one sentence: the option above it already says
-	// what was chosen, this only says what it leaves behind.
-	SyncKeepConflictWarning = "Conflicting rebases are left in their worktree — resolve each with git rebase --continue."
+	// conflicts are kept. It breaks itself in two: the surfaces truncate a row that
+	// does not fit rather than wrapping it, so a single long line loses its tail to
+	// an ellipsis — and the tail is the part naming the way out.
+	SyncKeepConflictWarning = "⚠ Conflicting rebases are left in their worktree.\n" +
+		"  Resolve each with git rebase --continue."
 
 	// SyncPushPrompt is the push confirmation question shown after a successful
 	// cascade, formatted with the number of pushable branches.
@@ -572,8 +574,8 @@ const (
 	SyncConflictNormal = "Abort the rebase"
 	SyncConflictKeep   = "Keep the conflict"
 	SyncConflictIntro  = "Choose what happens when a rebase hits a conflict.\n" +
-		"Aborting rewinds it and leaves the worktree clean; keeping it leaves the rebase\n" +
-		"in progress there for you to resolve by hand."
+		"Aborting rewinds it and leaves the worktree clean.\n" +
+		"Keeping it leaves the rebase there for you to resolve."
 	// SyncCounterFmt names no branch: each worktree is rebased onto its own
 	// recorded parent, which the base only coincides with at the first level.
 	SyncCounterFmt            = "About to sync %d worktree(s) onto their parent."

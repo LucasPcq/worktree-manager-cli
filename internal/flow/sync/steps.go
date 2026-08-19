@@ -316,7 +316,7 @@ func confirmDescription(plan domain.SyncPlan, keepConflict bool) string {
 		description = text + "\n\n" + description
 	}
 	if keepConflict {
-		description += "\n\n⚠ " + domain.SyncKeepConflictWarning
+		description += "\n\n" + domain.SyncKeepConflictWarning
 	}
 	return description
 }
