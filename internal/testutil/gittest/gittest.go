@@ -45,3 +45,36 @@ func Git(t testing.TB, dir string, args ...string) {
 		t.Fatalf("git %s: %s: %v", strings.Join(args, " "), out, err)
 	}
 }
+
+// AddOrigin creates a bare repository outside dir, registers it as origin and
+// pushes the current branch with an upstream. It is what makes upstream state
+// (ahead/behind, and the "[gone]" prune looks for) reproducible in a test.
+func AddOrigin(t testing.TB, dir string) string {
+	t.Helper()
+	remote := t.TempDir()
+
+	cmd := exec.Command("git", "init", "--bare", "-b", "main")
+	cmd.Dir = remote
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %s: %v", out, err)
+	}
+
+	Git(t, dir, "remote", "add", "origin", remote)
+	Git(t, dir, "push", "-u", "origin", "main")
+	return remote
+}
+
+// PushBranch publishes a branch and records it as its upstream, from whichever
+// worktree it is checked out in.
+func PushBranch(t testing.TB, dir, name string) {
+	t.Helper()
+	Git(t, dir, "push", "-u", "origin", name)
+}
+
+// DeleteBranchInRemote removes a branch inside the bare repository itself, not
+// through a delete-push: a push would also drop the local remote-tracking ref,
+// which is exactly the state a `git fetch --prune` is supposed to discover.
+func DeleteBranchInRemote(t testing.TB, remote, name string) {
+	t.Helper()
+	Git(t, remote, "branch", "-D", name)
+}
