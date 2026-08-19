@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
+	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
 
 func (m Model) renderDetail(layout domain.DashboardLayout) string {
@@ -60,12 +61,13 @@ func (m Model) detailBody(layout domain.DashboardLayout) []string {
 
 	budget := max(panelBodyHeight(layout.Detail)-len(lines), 0)
 	sections := m.detailSections(detailSectionsInput{
-		Status:    status,
-		Detail:    detail,
-		HasDetail: hasDetail,
-		Parent:    m.parents[status.Branch],
-		PR:        m.prFor(status.Branch),
-		Height:    budget,
+		Status:        status,
+		Detail:        detail,
+		HasDetail:     hasDetail,
+		Parent:        m.parents[status.Branch],
+		PR:            m.prFor(status.Branch),
+		PRUnavailable: m.prUnavailableReason(),
+		Height:        budget,
 	})
 	return appendSections(lines, sections, width, stale)
 }
@@ -164,7 +166,11 @@ type detailSectionsInput struct {
 	HasDetail bool
 	Parent    string
 	PR        *domain.PRInfo
-	Height    int
+	// PRUnavailable names why PR data could not be read (gh missing or not
+	// authenticated), empty when it is fine. Set alongside PR so a broken tool
+	// never renders as "no PR" (§8 state 4).
+	PRUnavailable string
+	Height        int
 }
 
 // detailSections composes the real sections when Detail has loaded, or a
@@ -175,12 +181,13 @@ type detailSectionsInput struct {
 // real immediately, exactly as LINKS' non-Detail fields (Parent, Path) do.
 func (m Model) detailSections(input detailSectionsInput) []domain.DetailSection {
 	sections := rules.DetailSections(rules.DetailSectionsParams{
-		Status: input.Status,
-		Detail: input.Detail,
-		PR:     input.PR,
-		Parent: input.Parent,
-		Height: input.Height,
-		Now:    time.Now(),
+		Status:        input.Status,
+		Detail:        input.Detail,
+		PR:            input.PR,
+		PRUnavailable: input.PRUnavailable,
+		Parent:        input.Parent,
+		Height:        input.Height,
+		Now:           time.Now(),
 	})
 	if !input.HasDetail {
 		sections = withLoadingPlaceholders(sections, input.Status)
@@ -252,6 +259,14 @@ func styleText(stale bool, style lipgloss.Style, text string) string {
 		return styles.DashboardStale.Render(text)
 	}
 	return style.Render(text)
+}
+
+// prUnavailableReason names why PR data could not be read, reusing the same
+// wording worktreepicker's own PR-aware surfaces already show for a broken
+// gh — empty until prsMsg lands with an actual connection state, so no
+// "unavailable" claim is made while the fetch is still in flight.
+func (m Model) prUnavailableReason() string {
+	return worktreepicker.GHBanner(m.ghConn).Title
 }
 
 // prFor matches the selected branch against the already-loaded PR list — no

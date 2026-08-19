@@ -82,6 +82,7 @@ type Model struct {
 	activeBranch string
 
 	prs       []domain.PRInfo
+	ghConn    domain.GHConnection
 	prsLoaded bool
 
 	outputLines    []string
@@ -134,6 +135,7 @@ func New(params RunParams) Model {
 		},
 		zones:   zone.New(),
 		msgs:    make(chan tea.Msg, domain.DashboardMsgBuffer),
+		ghConn:  domain.GHConnectionOK,
 		loading: true,
 		details: map[string]domain.WorktreeDetail{},
 		spinner: components.MutedSpinner(),
@@ -259,7 +261,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next.triggerDetailReload(before)
 
 	case prsMsg:
-		m.prs, m.prsLoaded = msg.prs, true
+		m.prs, m.ghConn, m.prsLoaded = msg.prs, msg.conn, true
 		return m, nil
 
 	case pollMsg:

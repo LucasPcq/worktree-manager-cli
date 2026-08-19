@@ -73,8 +73,13 @@ type DetailSectionsParams struct {
 	Status domain.WorktreeStatus
 	Detail domain.WorktreeDetail
 	PR     *domain.PRInfo
-	Parent string
-	Height int
+	// PRUnavailable names why PR data could not be read (e.g. the GitHub CLI is
+	// missing or not authenticated), empty when it is fine. It is a plain reason
+	// string so the renderer stays dumb: rules/ still decides whether REVIEW
+	// shows, the caller only supplies why the read failed.
+	PRUnavailable string
+	Parent        string
+	Height        int
 	// Now anchors every relative age this call renders (ACTIVITY's "… ago"), so
 	// the whole panel is reproducible from its inputs instead of reading the
 	// wall clock mid-build.
@@ -92,8 +97,8 @@ type DetailSectionsParams struct {
 // them instead of guessed.
 func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 	var review *domain.DetailSection
-	if params.PR != nil {
-		section := reviewSection(*params.PR)
+	if params.PR != nil || params.PRUnavailable != "" {
+		section := reviewSection(reviewSectionParams{PR: params.PR, Unavailable: params.PRUnavailable})
 		review = &section
 	}
 	links := linksSection(params)
@@ -183,11 +188,26 @@ func splitBudget(total, budget int) (shown, more int) {
 	return budget - 1, total - (budget - 1)
 }
 
-func reviewSection(pr domain.PRInfo) domain.DetailSection {
+type reviewSectionParams struct {
+	PR          *domain.PRInfo
+	Unavailable string
+}
+
+// reviewSection reads either a real PR or a reason PR data could not be read
+// — never both, and the caller only ever supplies one (DetailSections only
+// builds this section when at least one is set). A failed read renders the
+// same "unavailable — reason" form as the LINKS "Env" field (§8 state 4): an
+// absence caused by a broken tool must never look like an absence caused by
+// there being nothing.
+func reviewSection(params reviewSectionParams) domain.DetailSection {
+	line := fmt.Sprintf(domain.DashboardUnavailableFmt, params.Unavailable)
+	if params.PR != nil {
+		line = fmt.Sprintf(domain.DetailReviewHeaderFmt, params.PR.Number, params.PR.Title, params.PR.State)
+	}
 	return domain.DetailSection{
 		Key:   domain.DetailSectionReview,
 		Title: domain.DetailSectionReview,
-		Lines: []string{fmt.Sprintf(domain.DetailReviewHeaderFmt, pr.Number, pr.Title, pr.State)},
+		Lines: []string{line},
 	}
 }
 

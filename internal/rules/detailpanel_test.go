@@ -32,6 +32,38 @@ func TestDetailSectionsOmitsWhatHasNothingToSay(t *testing.T) {
 	}
 }
 
+func TestReviewShowsUnavailableReasonWhenPRDataFailedToLoad(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status:        domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
+		PRUnavailable: "GitHub CLI not found",
+	})
+
+	var review *domain.DetailSection
+	for i := range sections {
+		if sections[i].Key == domain.DetailSectionReview {
+			review = &sections[i]
+		}
+	}
+	if review == nil {
+		t.Fatal("un gh cassé doit produire une section REVIEW, pas son absence silencieuse")
+	}
+	if len(review.Lines) != 1 || !strings.Contains(review.Lines[0], "GitHub CLI not found") {
+		t.Errorf("REVIEW = %v, want the unavailable reason", review.Lines)
+	}
+}
+
+func TestReviewStaysAbsentWithNoPRAndNoFailure(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
+	})
+
+	for _, key := range sectionKeys(sections) {
+		if key == domain.DetailSectionReview {
+			t.Error("pas de PR et gh disponible : REVIEW doit rester absente, exactement comme aujourd'hui")
+		}
+	}
+}
+
 func TestDetailSectionsKeepsFixedOrder(t *testing.T) {
 	sections := DetailSections(DetailSectionsParams{
 		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x", IsDirty: true},

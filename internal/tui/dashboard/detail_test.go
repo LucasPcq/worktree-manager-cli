@@ -144,3 +144,29 @@ func TestBlockersRenderAboveSections(t *testing.T) {
 		t.Error("blockers read before the sections: they answer why the action is refused")
 	}
 }
+
+// TestReviewShowsTheGHFailureNotAnEmptyReview and
+// TestReviewStaysAbsentWhenGHIsFineAndThereIsNoPR are the two ends of the
+// distinction §8 state 4 exists to enforce: an absence caused by a broken gh
+// must never render the same as an absence caused by there being nothing.
+func TestReviewShowsTheGHFailureNotAnEmptyReview(t *testing.T) {
+	model := detailModel(t, domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"})
+	model = update(model, prsMsg{conn: domain.GHConnectionNotInstalled})
+
+	view := model.View()
+	if !strings.Contains(view, domain.DetailSectionReview) {
+		t.Error("gh unavailable must still render a REVIEW section, naming why, not silence")
+	}
+	if !strings.Contains(view, "unavailable") {
+		t.Error("the REVIEW section must say gh is unavailable, not read as an empty PR line")
+	}
+}
+
+func TestReviewStaysAbsentWhenGHIsFineAndThereIsNoPR(t *testing.T) {
+	model := detailModel(t, domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"})
+	model = update(model, prsMsg{conn: domain.GHConnectionOK})
+
+	if strings.Contains(model.View(), domain.DetailSectionReview) {
+		t.Error("gh fine and no PR is a legitimate absence: no REVIEW section at all")
+	}
+}

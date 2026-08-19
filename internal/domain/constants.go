@@ -1167,10 +1167,12 @@ const (
 	EnvOrphanFmt      = "%d orphan"
 
 	// DashboardNotConfigured names a legitimate absence (no env files declared),
-	// never presented as a success. DashboardUnavailableFmt names a family that
-	// failed to read, naming why — it never goes silently empty.
+	// never presented as a success, and stays glyph-free — nothing is wrong.
+	// DashboardUnavailableFmt names a family that failed to read, naming why —
+	// it never goes silently empty, and carries the warning glyph the
+	// legitimate-absence case must not have: that contrast is the point.
 	DashboardNotConfigured  = "not configured"
-	DashboardUnavailableFmt = "unavailable — %s"
+	DashboardUnavailableFmt = "⚠ unavailable — %s"
 )
 
 // EnvTemplateSuffixes are the committed-schema template suffixes recognized on a
