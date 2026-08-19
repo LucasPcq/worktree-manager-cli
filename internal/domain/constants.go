@@ -277,9 +277,14 @@ const (
 	PRStateClosed = "closed"
 
 	// GHCheckConclusion* are the `conclusion` values a statusCheckRollup entry
-	// carries once it has finished running. A NEUTRAL or SKIPPED check did not
-	// fail; CANCELLED, TIMED_OUT and ACTION_REQUIRED all block the PR the same
-	// way FAILURE does.
+	// carries once it has finished running (a modern Checks API CheckRun). A
+	// NEUTRAL or SKIPPED check counts as passed — the least-wrong of three
+	// buckets, disclosed here rather than accidental: it can conflate "ran and
+	// mattered" with "never ran at all". CANCELLED and TIMED_OUT block the PR
+	// the same way FAILURE does. ACTION_REQUIRED is not a failure: the workflow
+	// needs authorization to run (typically a first run from a fork awaiting
+	// approval) — it has not run and broken, it has not started, so it reads
+	// as pending, not ✗.
 	GHCheckConclusionSuccess        = "SUCCESS"
 	GHCheckConclusionFailure        = "FAILURE"
 	GHCheckConclusionNeutral        = "NEUTRAL"
@@ -287,6 +292,16 @@ const (
 	GHCheckConclusionCancelled      = "CANCELLED"
 	GHCheckConclusionTimedOut       = "TIMED_OUT"
 	GHCheckConclusionActionRequired = "ACTION_REQUIRED"
+
+	// GHCheckState* are the `state` values a legacy StatusContext rollup entry
+	// carries — the Status API, used by integrations that predate the Checks
+	// API (CircleCI, Travis, and similar). A rollup mixes both shapes; an
+	// entry with no `conclusion` is not necessarily still running, it may be
+	// reporting through `state` instead.
+	GHCheckStateSuccess = "SUCCESS"
+	GHCheckStateError   = "ERROR"
+	GHCheckStateFailure = "FAILURE"
+	GHCheckStatePending = "PENDING"
 
 	// GHReviewDecision* are the raw `reviewDecision` values `gh` returns.
 	GHReviewDecisionApproved         = "APPROVED"
