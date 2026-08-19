@@ -51,3 +51,37 @@ func TestLockedRowShowsProgressNotState(t *testing.T) {
 		t.Error("une ligne verrouillée montre l'étape en cours")
 	}
 }
+
+// TestEmptySelectionAndOutputNameTheNextAction covers the two empty states
+// that are genuinely reachable and persistent: no worktree selected, and no
+// operation has produced output yet. DashboardEmptyList is deliberately not
+// asserted here — the list can only be empty when the listing itself did not
+// go as expected (a valid repository always has its main worktree), so it
+// keeps neutral wording rather than naming an action.
+func TestEmptySelectionAndOutputNameTheNextAction(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight)
+	model.outputExpanded = true
+
+	if !strings.Contains(strings.Join(model.detailBody(model.layout()), "\n"), domain.DashboardEmptySelection) {
+		t.Error("aucune sélection : le panneau détail doit nommer l'action suivante")
+	}
+	if !strings.Contains(strings.Join(model.outputBody(model.layout(), testWidth), "\n"), domain.DashboardEmptyOutput) {
+		t.Error("aucune sortie : le panneau output doit nommer l'action suivante")
+	}
+}
+
+// TestEmptyListStaysNeutral pins the deliberate exception: an empty listing
+// only happens when the listing itself did not go as expected (a valid
+// repository always has its main worktree), so the placeholder must not
+// offer confident advice ("press n…") about a situation it cannot explain.
+func TestEmptyListStaysNeutral(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight)
+
+	body := strings.Join(model.listBody(model.layout()), "\n")
+	if !strings.Contains(body, domain.DashboardEmptyList) {
+		t.Fatal("l'état vide de la liste est absent")
+	}
+	if strings.Contains(body, "press n") {
+		t.Error("une liste vide ne doit pas conseiller une action : on ignore pourquoi elle est vide")
+	}
+}

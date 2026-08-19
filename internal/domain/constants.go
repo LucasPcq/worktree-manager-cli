@@ -950,7 +950,12 @@ const (
 	DashboardDetailTitle  = "Detail"
 	DashboardOutputTitle  = "Output"
 
-	DashboardEmptyList   = "No worktrees."
+	// DashboardEmptyList is shown when the list loaded but came back with
+	// nothing — in a valid repository the main worktree is always present, so
+	// this means the listing itself did not go as expected. Neutral wording on
+	// purpose: naming an action ("press n…") here would be confident advice in
+	// the one state where the surface does not know what is going on.
+	DashboardEmptyList   = "No worktrees found."
 	DashboardEmptyTree   = "No worktrees to lay out."
 	DashboardLoadingTree = "Building the tree…"
 	// DashboardTreeVirtual marks a node standing in for a parent branch that has
@@ -966,9 +971,12 @@ const (
 	DashboardTreePRFmt       = "PR #%d"
 	DashboardTreeAheadFmt    = "%s %s%d"
 	DashboardTreeDivergedFmt = "%s %s%d %s%d"
-	DashboardEmptySelection  = "No worktree selected."
-	DashboardEmptyOutput     = "No operation output yet."
-	DashboardNoValue         = "—"
+	// DashboardEmptySelection and DashboardEmptyOutput name their next action:
+	// both states are genuinely reachable and persistent, unlike
+	// DashboardEmptyList above.
+	DashboardEmptySelection = "Select a worktree to see what's in it."
+	DashboardEmptyOutput    = "Output from create, clean and sync runs appears here."
+	DashboardNoValue        = "—"
 	// DashboardCreatedFormat renders a worktree's creation date in local time.
 	DashboardCreatedFormat = "2006-01-02 15:04"
 
