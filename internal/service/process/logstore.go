@@ -68,11 +68,14 @@ func OpenLogSink(params LogSinkParams) (*LogSink, error) {
 		return nil, fmt.Errorf("stat job log: %w", err)
 	}
 
-	maxBytes := params.MaxBytes
-	if maxBytes <= 0 {
-		maxBytes = domain.JobLogMaxBytes
+	return &LogSink{path: path, maxBytes: resolveMaxBytes(params.MaxBytes), file: file, size: info.Size()}, nil
+}
+
+func resolveMaxBytes(configured int64) int64 {
+	if configured <= 0 {
+		return domain.JobLogMaxBytes
 	}
-	return &LogSink{path: path, maxBytes: maxBytes, file: file, size: info.Size()}, nil
+	return configured
 }
 
 // Write never fails and never blocks the caller on the file: the job's output
@@ -124,7 +127,7 @@ func (s *LogSink) append(records []domain.LogRecord) {
 		buf.WriteByte('\n')
 	}
 
-	if s.size+int64(buf.Len()) > s.maxBytes {
+	if s.size > 0 && s.size+int64(buf.Len()) > s.maxBytes {
 		if err := s.rotate(); err != nil {
 			s.disable()
 			return
@@ -135,6 +138,17 @@ func (s *LogSink) append(records []domain.LogRecord) {
 	s.size += int64(written)
 	if err != nil {
 		s.disable()
+		return
+	}
+
+	// Rotating only before the write let a batch bigger than the threshold land
+	// in the active file and stay there, growing it without bound. A record is
+	// never split — a log line belongs to one file — so an oversized one is
+	// written whole and retired immediately.
+	if s.size >= s.maxBytes {
+		if err := s.rotate(); err != nil {
+			s.disable()
+		}
 	}
 }
 

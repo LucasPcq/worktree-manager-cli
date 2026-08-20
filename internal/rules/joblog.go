@@ -65,32 +65,55 @@ type SanitizeChunkResult struct {
 	Pending string
 }
 
-// SanitizeLogChunk turns raw output into whole plain-text lines. The tail is
-// carried over untouched, which is what makes a chunk boundary falling in the
-// middle of an escape sequence — or of a line — harmless.
+// SanitizeLogChunk turns raw output into whole plain-text lines. Escape
+// sequences are left in the carried-over tail, which is what makes a chunk
+// boundary falling in the middle of one — or of a line — harmless. The tail is
+// bounded on both counts a job can breach it: redraw frames are collapsed as
+// they arrive, and a line that never ends is journaled once it grows past
+// domain.JobLogMaxPendingBytes.
 func SanitizeLogChunk(params SanitizeChunkParams) SanitizeChunkResult {
 	segments := strings.Split(params.Pending+params.Chunk, "\n")
 
-	result := SanitizeChunkResult{Pending: segments[len(segments)-1]}
+	result := SanitizeChunkResult{}
 	for _, segment := range segments[:len(segments)-1] {
-		text := SanitizeLogLine(segment)
-		if text == "" {
-			continue
-		}
-		result.Records = append(result.Records, domain.LogRecord{At: params.At, Text: text})
+		result.Records = appendRecord(result.Records, params.At, SanitizeLogLine(segment))
 	}
+
+	pending := collapseRedraws(segments[len(segments)-1])
+	if len(pending) <= domain.JobLogMaxPendingBytes {
+		result.Pending = pending
+		return result
+	}
+	result.Records = appendRecord(result.Records, params.At, SanitizeLogLine(pending))
 	return result
 }
 
-// SanitizeLogLine reduces one raw line to its readable form. A line redrawn
-// over itself with carriage returns keeps only its last state: a progress bar
-// leaves its final value in the log, not each of its frames.
+// SanitizeLogLine reduces one raw line to its readable form.
 func SanitizeLogLine(raw string) string {
-	line := strings.TrimSuffix(raw, "\r")
-	if last := strings.LastIndex(line, "\r"); last >= 0 {
-		line = line[last+1:]
+	return strings.TrimRight(stripControlRunes(StripTerminalEscapes(collapseRedraws(raw))), " \t")
+}
+
+// collapseRedraws keeps only the last state of a line written over itself with
+// carriage returns: a progress bar leaves its final value in the log, not each
+// of its frames. A trailing \r is kept — it may be the CR of a CRLF whose LF is
+// still in the next chunk.
+func collapseRedraws(raw string) string {
+	end := len(raw)
+	if strings.HasSuffix(raw, "\r") {
+		end--
 	}
-	return strings.TrimRight(stripControlRunes(StripTerminalEscapes(line)), " \t")
+	last := strings.LastIndex(raw[:end], "\r")
+	if last < 0 {
+		return raw
+	}
+	return raw[last+1:]
+}
+
+func appendRecord(records []domain.LogRecord, at time.Time, text string) []domain.LogRecord {
+	if text == "" {
+		return records
+	}
+	return append(records, domain.LogRecord{At: at, Text: text})
 }
 
 // FormatLogRecord renders a record as one line of a job log file.

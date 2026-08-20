@@ -202,3 +202,66 @@ func TestPurgeWorktreeLogsIsIdempotent(t *testing.T) {
 		t.Errorf("purging an unresolved log dir should succeed, got %v", err)
 	}
 }
+
+func TestLogSinkBoundsTheTailOfALineThatNeverEnds(t *testing.T) {
+	dir := t.TempDir()
+	sink, err := OpenLogSink(LogSinkParams{LogDir: dir, Job: "web"})
+	if err != nil {
+		t.Fatalf("open sink: %v", err)
+	}
+
+	for i := 0; i < 20000; i++ {
+		sink.Write([]byte("\r\x1b[K[" + strings.Repeat("=", i%20) + "] building packages"))
+	}
+
+	sink.mu.Lock()
+	held := len(sink.pending)
+	sink.mu.Unlock()
+	if held > 64 {
+		t.Errorf("the sink holds %d bytes of unterminated line, want only the last frame", held)
+	}
+
+	if err := sink.Close(); err != nil {
+		t.Fatalf("close sink: %v", err)
+	}
+	lines, err := TailJobLog(TailParams{LogDir: dir, Job: "web", Lines: 10})
+	if err != nil {
+		t.Fatalf("tail: %v", err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("log holds %d lines, want the redraw's last frame only", len(lines))
+	}
+	if !strings.HasSuffix(lines[0], "[===================] building packages") {
+		t.Errorf("line = %q, want the last frame of the redraw", lines[0])
+	}
+}
+
+func TestLogSinkRetiresARecordBiggerThanTheThreshold(t *testing.T) {
+	dir := t.TempDir()
+	sink, err := OpenLogSink(LogSinkParams{LogDir: dir, Job: "web", MaxBytes: 100})
+	if err != nil {
+		t.Fatalf("open sink: %v", err)
+	}
+
+	sink.Write([]byte(strings.Repeat("x", 50000) + "\n"))
+
+	active := filepath.Join(dir, "web.log")
+	info, err := os.Stat(active)
+	if err != nil {
+		t.Fatalf("stat active log: %v", err)
+	}
+	if info.Size() > 100 {
+		t.Errorf("active log is %d bytes right after an oversized record, want it bounded by the 100-byte threshold", info.Size())
+	}
+	if _, err := os.Stat(active + ".1"); err != nil {
+		t.Errorf("the oversized record was not retired to a backup: %v", err)
+	}
+
+	sink.Write([]byte("after\n"))
+	if err := sink.Close(); err != nil {
+		t.Fatalf("close sink: %v", err)
+	}
+	if !strings.Contains(readLog(t, active), "after") {
+		t.Error("the line written after the oversized one is missing from the active log")
+	}
+}

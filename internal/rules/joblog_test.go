@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -156,6 +157,78 @@ func TestJobLogFileNameFoldsPathSeparators(t *testing.T) {
 	for job, want := range cases {
 		if got := JobLogFileName(job); got != want {
 			t.Errorf("JobLogFileName(%q) = %q, want %q", job, got, want)
+		}
+	}
+}
+
+func TestSanitizeLogChunkCollapsesRedrawsIntoThePendingTail(t *testing.T) {
+	pending := ""
+	for i := 0; i < 500; i++ {
+		result := SanitizeLogChunk(SanitizeChunkParams{
+			Chunk:   "\r\x1b[K[" + strings.Repeat("=", i%20) + "] building",
+			Pending: pending,
+		})
+		if len(result.Records) != 0 {
+			t.Fatalf("frame %d journaled %v, want a redraw to stay pending", i, texts(result.Records))
+		}
+		pending = result.Pending
+	}
+
+	if len(pending) > 64 {
+		t.Errorf("pending holds %d bytes after 500 redraws, want only the last frame", len(pending))
+	}
+	if got := SanitizeLogLine(pending); got != "[===================] building" {
+		t.Errorf("the pending tail reads %q, want the last frame", got)
+	}
+}
+
+func TestSanitizeLogChunkFlushesATailThatNeverEnds(t *testing.T) {
+	result := SanitizeLogChunk(SanitizeChunkParams{Chunk: strings.Repeat("x", domain.JobLogMaxPendingBytes+1)})
+
+	if len(result.Records) != 1 {
+		t.Fatalf("records = %d, want the oversized tail journaled", len(result.Records))
+	}
+	if result.Pending != "" {
+		t.Errorf("pending holds %d bytes, want it flushed", len(result.Pending))
+	}
+	if len(result.Records[0].Text) != domain.JobLogMaxPendingBytes+1 {
+		t.Errorf("flushed record is %d bytes, want the whole tail", len(result.Records[0].Text))
+	}
+}
+
+func TestSanitizeLogChunkKeepsACRLFSplitAcrossChunks(t *testing.T) {
+	first := SanitizeLogChunk(SanitizeChunkParams{Chunk: "done\r"})
+	if len(first.Records) != 0 {
+		t.Fatalf("records = %v, want nothing before the newline", texts(first.Records))
+	}
+
+	second := SanitizeLogChunk(SanitizeChunkParams{Chunk: "\nnext", Pending: first.Pending})
+	if got := texts(second.Records); len(got) != 1 || got[0] != "done" {
+		t.Errorf("records = %v, want the line whose CR and LF straddled the boundary", got)
+	}
+}
+
+func TestSanitizeLogChunkOnBinaryOutput(t *testing.T) {
+	raw := "before\x00\xff\xfe\x01after\n\x1b[31m\xc3\x28 broken utf8\x1b[0m\n"
+
+	result := SanitizeLogChunk(SanitizeChunkParams{Chunk: raw})
+
+	got := texts(result.Records)
+	if len(got) != 2 {
+		t.Fatalf("records = %v, want two lines", got)
+	}
+	if got[0] != "before\ufffd\ufffdafter" {
+		t.Errorf("first line = %q, want the control bytes dropped and the invalid ones replaced", got[0])
+	}
+	if got[1] != "\ufffd( broken utf8" {
+		t.Errorf("second line = %q, want the escapes stripped and the text kept", got[1])
+	}
+	for _, record := range result.Records {
+		if strings.ContainsAny(record.Text, "\x00\x01\x1b\n\r") {
+			t.Errorf("record %q still carries control bytes", record.Text)
+		}
+		if !utf8.ValidString(record.Text) {
+			t.Errorf("record %q is not valid UTF-8", record.Text)
 		}
 	}
 }

@@ -560,6 +560,12 @@ const (
 	JobLogMaxBytes = 5 << 20
 	JobLogMaxFiles = 3
 
+	// JobLogMaxPendingBytes caps the unterminated tail the sanitizer carries
+	// between two chunks. A job that redraws one line forever without ever
+	// emitting a newline (a progress bar) would otherwise hold — and re-scan —
+	// its whole output; past this many bytes the tail is journaled as it stands.
+	JobLogMaxPendingBytes = 64 << 10
+
 	// JobLogTimestampLayout and JobLogSeparator format one persisted log line:
 	// an RFC3339 instant, then the sanitized text. Fixed-width prefix so a
 	// reader (or a grep) can split every line at the same column.
