@@ -158,7 +158,9 @@ func (m Model) move(delta int) (tea.Model, tea.Cmd) {
 // own up before the next is opened.
 func (m Model) setSelection(name string) (Model, tea.Cmd) {
 	if name != m.selected {
-		m.panes.release(m.selected)
+		if !m.sequenceHolds(m.selected) {
+			m.panes.release(m.selected)
+		}
 		m.selected, m.focused = name, false
 	}
 	m.offset = rules.DashboardScrollOffset(rules.DashboardScrollParams{

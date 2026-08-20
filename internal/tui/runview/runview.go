@@ -328,7 +328,7 @@ func (m Model) fillSelectedPane() (Model, tea.Cmd) {
 
 	// A job the run is starting is already writing into its pane through the
 	// sequence; attaching would replay what it wrote and show it twice.
-	if m.sequence.active && m.sequence.job == view.Name {
+	if m.sequenceHolds(view.Name) {
 		return m, nil
 	}
 
@@ -346,6 +346,13 @@ func (m Model) fillSelectedPane() (Model, tea.Cmd) {
 	}
 	m.pending = view.Name
 	return m, m.historyCmd(view.Name)
+}
+
+// sequenceHolds reports that the run is writing into the job's pane itself.
+// Those bytes are nowhere else yet: no subscription carries them and the log
+// file is still being written, so the pane is the only copy.
+func (m Model) sequenceHolds(job string) bool {
+	return m.sequence.active && m.sequence.job == job
 }
 
 func (m Model) applyAttached(msg attachedMsg) (Model, tea.Cmd) {

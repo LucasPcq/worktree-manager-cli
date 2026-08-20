@@ -71,7 +71,7 @@ func TestPaneStoreKeepsAppendingWhileTheSourceHolds(t *testing.T) {
 	}
 }
 
-func TestPaneStoreReleaseOnlyDropsAnAttachedPane(t *testing.T) {
+func TestPaneStoreReleaseDropsThePaneWhateverFedIt(t *testing.T) {
 	store := newPaneStore(PaneSize{Cols: 40, Rows: 5})
 	stream := runlogstest.NewStream()
 	store.attach("api", stream)
@@ -86,8 +86,8 @@ func TestPaneStoreReleaseOnlyDropsAnAttachedPane(t *testing.T) {
 	}
 
 	store.release("migrate")
-	if _, held := store.entry("migrate"); !held {
-		t.Fatal("a pane read from the log file was dropped: nothing will refill it")
+	if _, held := store.entry("migrate"); held {
+		t.Fatal("a pane read from the log file was kept for the life of the view")
 	}
 }
 

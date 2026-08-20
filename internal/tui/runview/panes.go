@@ -92,15 +92,20 @@ func (s *paneStore) attach(job string, stream runlogs.Stream) *Pane {
 }
 
 // release closes a job's stream and drops the pane it fed. The pane is what
-// makes it worth doing: it holds a styled cell per written column, and the
-// daemon replays the job's recent output the next time it is attached.
+// makes it worth doing: a styled cell per column it was ever written, which at
+// the scrollback the panes hold runs to megabytes each. Nothing is lost with
+// it — the daemon replays a live job's recent output on the next attach, and a
+// stopped one's log file is read back in one call. The one pane worth keeping
+// is the one a run is writing into right now, which the caller keeps for
+// itself: nothing replays that yet.
 func (s *paneStore) release(job string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if entry, held := s.panes[job]; held && entry.source == sourceLive {
-		s.closeStreamLocked(job)
-		delete(s.panes, job)
+	if _, held := s.panes[job]; !held {
+		return
 	}
+	s.closeStreamLocked(job)
+	delete(s.panes, job)
 }
 
 // endStream drops a subscription whose job stopped writing, keeping the pane:

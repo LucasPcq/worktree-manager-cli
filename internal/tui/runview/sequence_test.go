@@ -154,6 +154,28 @@ func TestJobBeingStartedIsNotAttached(t *testing.T) {
 // The run's output lands in the pane on the goroutine that reports it — the
 // clock is what draws it — and the events it does not carry come through the
 // model.
+// The pane a run is writing into is the only copy of those bytes: no
+// subscription carries them and the log file is still being written. It is the
+// one pane the cursor leaving does not drop.
+func TestThePaneTheRunWritesIntoOutlivesTheCursorLeaving(t *testing.T) {
+	h := newHarness(t, harnessParams{
+		Views:   []runlogs.JobView{stopped("migrate"), running("api")},
+		Streams: []string{"api"},
+	})
+	h.emit(t, runlogs.Event{Phase: runlogs.PhaseStarting, Job: "migrate", Step: 1, Steps: 2})
+	h.model.panes.write(writeChunkParams{Job: "migrate", Source: sourceSequence, Chunk: []byte("applying 3 migrations\r\n")})
+
+	h.press(t, namedKey(tea.KeyDown))
+
+	entry, held := h.model.panes.entry("migrate")
+	if !held {
+		t.Fatal("the run's own output went with the pane the cursor left")
+	}
+	if !strings.Contains(ansi.Strip(entry.pane.Render()), "applying 3 migrations") {
+		t.Fatal("the pane was rebuilt under the run that is writing into it")
+	}
+}
+
 func TestRunOutputReachesThePaneAndItsPhasesTheModel(t *testing.T) {
 	h := startedHarness(t, harnessParams{
 		Views: []runlogs.JobView{stopped("migrate")},

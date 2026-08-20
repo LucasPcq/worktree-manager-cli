@@ -265,6 +265,35 @@ func TestLeavingAJobReleasesItsStream(t *testing.T) {
 
 // An attach that lands after the cursor moved on belongs to nobody: left open
 // it would hold the job's output queue and its PTY size.
+// A pane fed by the log file is dropped like any other when the cursor leaves
+// it: it costs a styled cell per column ever written, and one History call
+// builds it again.
+func TestLeavingAStoppedJobDropsItsHistoryPane(t *testing.T) {
+	h := newHarness(t, harnessParams{
+		Views:   []runlogs.JobView{stopped("migrate"), running("api")},
+		Lines:   map[string][]string{"migrate": {"ERROR relation does not exist"}},
+		Streams: []string{"api"},
+	})
+	if _, held := h.model.panes.entry("migrate"); !held {
+		t.Fatal("the stopped job never got a pane")
+	}
+
+	h.press(t, namedKey(tea.KeyDown))
+
+	if _, held := h.model.panes.entry("migrate"); held {
+		t.Fatal("the log-file pane outlived the cursor that left it")
+	}
+
+	h.press(t, namedKey(tea.KeyUp))
+
+	if got := len(h.session.HistoryParams()); got != 2 {
+		t.Fatalf("History was called %d times, want the pane rebuilt from the file", got)
+	}
+	if !strings.Contains(ansi.Strip(h.model.View()), "ERROR relation does not exist") {
+		t.Fatal("the pane came back without what the log file holds")
+	}
+}
+
 func TestAttachForAJobTheCursorLeftIsClosed(t *testing.T) {
 	h := newHarness(t, harnessParams{
 		Views:   []runlogs.JobView{running("api"), running("web")},
