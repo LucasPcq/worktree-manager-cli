@@ -2,6 +2,7 @@ package rules_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
@@ -193,3 +194,58 @@ func TestUpgradeCommandFor(t *testing.T) {
 		})
 	}
 }
+
+func baseCheckParams() rules.ShouldCheckUpdateParams {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+
+	return rules.ShouldCheckUpdateParams{
+		Version:     "0.26.1",
+		Format:      domain.OutputText,
+		Command:     domain.CmdList,
+		StderrIsTTY: true,
+		CheckedAt:   now.Add(-48 * time.Hour),
+		Now:         now,
+	}
+}
+
+func TestShouldCheckUpdate(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*rules.ShouldCheckUpdateParams)
+		want   bool
+	}{
+		{"nominal interactive run", func(p *rules.ShouldCheckUpdateParams) {}, true},
+		{"dev build never checks", func(p *rules.ShouldCheckUpdateParams) { p.Version = "dev" }, false},
+		{"json output", func(p *rules.ShouldCheckUpdateParams) { p.Format = domain.OutputJSON }, false},
+		{"no tty", func(p *rules.ShouldCheckUpdateParams) { p.StderrIsTTY = false }, false},
+		{"ci", func(p *rules.ShouldCheckUpdateParams) { p.CIEnv = true }, false},
+		{"env opt out", func(p *rules.ShouldCheckUpdateParams) { p.OptOutEnv = true }, false},
+		{"config opt out", func(p *rules.ShouldCheckUpdateParams) { p.ConfigCheck = boolPtr(false) }, false},
+		{"config opt in is not an override of ci", func(p *rules.ShouldCheckUpdateParams) {
+			p.ConfigCheck = boolPtr(true)
+			p.CIEnv = true
+		}, false},
+		{"shell-init excluded", func(p *rules.ShouldCheckUpdateParams) { p.Command = domain.CmdShellInit }, false},
+		{"resolve excluded", func(p *rules.ShouldCheckUpdateParams) { p.Command = domain.CmdResolve }, false},
+		{"upgrade excluded", func(p *rules.ShouldCheckUpdateParams) { p.Command = domain.CmdUpgrade }, false},
+		{"daemon excluded", func(p *rules.ShouldCheckUpdateParams) { p.Command = domain.CmdDaemon }, false},
+		{"completion excluded", func(p *rules.ShouldCheckUpdateParams) { p.Command = domain.CmdCompletion }, false},
+		{"schema excluded", func(p *rules.ShouldCheckUpdateParams) { p.Command = domain.CmdSchema }, false},
+		{"inside ttl", func(p *rules.ShouldCheckUpdateParams) { p.CheckedAt = p.Now.Add(-1 * time.Hour) }, false},
+		{"exactly at ttl", func(p *rules.ShouldCheckUpdateParams) { p.CheckedAt = p.Now.Add(-domain.UpdateCheckTTL) }, true},
+		{"never checked", func(p *rules.ShouldCheckUpdateParams) { p.CheckedAt = time.Time{} }, true},
+		{"clock skew: checked in the future", func(p *rules.ShouldCheckUpdateParams) { p.CheckedAt = p.Now.Add(2 * time.Hour) }, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			params := baseCheckParams()
+			tc.mutate(&params)
+			if got := rules.ShouldCheckUpdate(params); got != tc.want {
+				t.Fatalf("ShouldCheckUpdate(%+v) = %v, want %v", params, got, tc.want)
+			}
+		})
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }

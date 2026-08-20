@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -149,4 +150,56 @@ func UpgradeCommandFor(method domain.InstallMethod) string {
 	default:
 		return domain.AppName + " " + domain.CmdUpgrade
 	}
+}
+
+type ShouldCheckUpdateParams struct {
+	Version     string
+	Format      string
+	Command     string
+	StderrIsTTY bool
+	CIEnv       bool
+	OptOutEnv   bool
+	ConfigCheck *bool
+	CheckedAt   time.Time
+	Now         time.Time
+}
+
+// updateCheckExcluded lists commands whose output is consumed by something other
+// than a human: shell-init and resolve are eval'd by the shell, where a stray
+// byte breaks the caller.
+var updateCheckExcluded = map[string]bool{
+	domain.CmdShellInit:  true,
+	domain.CmdResolve:    true,
+	domain.CmdUpgrade:    true,
+	domain.CmdDaemon:     true,
+	domain.CmdCompletion: true,
+	domain.CmdSchema:     true,
+}
+
+func ShouldCheckUpdate(params ShouldCheckUpdateParams) bool {
+	if NormalizeVersion(params.Version) == domain.Version {
+		return false
+	}
+	if !IsHumanFormat(params.Format) {
+		return false
+	}
+	if !params.StderrIsTTY {
+		return false
+	}
+	if params.CIEnv || params.OptOutEnv {
+		return false
+	}
+	if params.ConfigCheck != nil && !*params.ConfigCheck {
+		return false
+	}
+	if updateCheckExcluded[params.Command] {
+		return false
+	}
+	if params.CheckedAt.IsZero() {
+		return true
+	}
+
+	// A CheckedAt in the future yields a negative elapsed and suppresses the
+	// check — the intended behavior under clock skew.
+	return params.Now.Sub(params.CheckedAt) >= domain.UpdateCheckTTL
 }
