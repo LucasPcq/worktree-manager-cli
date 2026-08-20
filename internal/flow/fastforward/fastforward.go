@@ -90,7 +90,12 @@ func (f *fastForwardFlow) run() (Outcome, error) {
 		return f.conclude(Outcome{Empty: true})
 	}
 
-	results, err := f.advance(selected)
+	// The danger option is an answer like any other, so it is read back here:
+	// --force is the flag saying the same thing before anything was asked.
+	results, err := f.advance(advanceParams{
+		Branches: selected,
+		Force:    f.request.Force || answers.Value(KeyConfirm) == confirmForce,
+	})
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -130,17 +135,22 @@ func (f *fastForwardFlow) load() error {
 	return nil
 }
 
-func (f *fastForwardFlow) advance(selected []string) ([]domain.FastForwardResult, error) {
+type advanceParams struct {
+	Branches []string
+	Force    bool
+}
+
+func (f *fastForwardFlow) advance(params advanceParams) ([]domain.FastForwardResult, error) {
 	var results []domain.FastForwardResult
 	err := f.presenter.Stage(flow.StageParams{
 		Message: domain.FastForwardStage,
 		Work: func() error {
-			for _, name := range selected {
+			for _, name := range params.Branches {
 				check := f.check(name)
 				results = append(results, branch.FastForward(branch.FastForwardParams{
 					ProjectDir: f.ctx.ProjectDir,
 					Branch:     name,
-					Force:      f.request.Force,
+					Force:      params.Force,
 					Check:      &check,
 				}))
 			}
