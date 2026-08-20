@@ -743,6 +743,19 @@ const (
 	RunJobStartedFmt        = "%s started"
 	RunJobAlreadyRunningFmt = "%s already running"
 
+	// RunLogPrefixFmt puts a job's name in front of a line it printed, for the
+	// reader that gets one stream instead of one pane per job.
+	RunLogPrefixFmt  = "[%s]"
+	RunNoRunningJobs = "No running jobs in this worktree."
+
+	// RunAbort* report a profile that gave up, on the terminal it kept: the step
+	// that failed, what nothing tore down, what was never reached, and the two
+	// commands that act on it.
+	RunAbortStepFmt         = "Profile aborted at step %d/%d (%s)."
+	RunAbortRunningLabel    = "Left running:"
+	RunAbortNotStartedLabel = "Not started: "
+	RunAbortHint            = "fix and re-run `wtm run up` · `wtm run down` to stop everything"
+
 	// SyncConfirmPrompt is the confirmation question shown before running a sync
 	// cascade, formatted with the number of worktrees to rebase. Shared by the
 	// interactive picker's confirmation step and the non-picker confirm prompt.
