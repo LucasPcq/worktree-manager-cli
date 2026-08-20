@@ -2,43 +2,22 @@
 
 ## v0.27.0 — `wtm upgrade`, `wtm fast-forward` et une aide qui se lit
 
-Deux nouvelles commandes : `wtm upgrade` met le CLI à jour tout seul, `wtm fast-forward`
-avance une branche sur son homologue distant sans rien rejouer. L'overlay d'aide du
-dashboard est repris de zéro pour redevenir une référence consultable.
+Deux nouvelles commandes : `wtm upgrade` met le CLI à jour tout seul, `wtm fast-forward` avance une branche sur son homologue distant sans rien rejouer. L'overlay d'aide du dashboard est repris de zéro pour redevenir une référence consultable.
 
 ### New features
 
-- **`wtm upgrade` — mettre wtm à jour depuis wtm.** La commande fait ce qu'il faut selon
-  l'installation : un binaire autonome est remplacé sur place après vérification de son
-  SHA256 contre les checksums de la release, un binaire Homebrew ou `go install` est
-  confié à son gestionnaire plutôt que désynchronisé, et un binaire compilé depuis les
-  sources est refusé. `--check` dit ce qui est disponible sans rien toucher, `--version`
-  épingle une release précise.
-- **Une notification passive de mise à jour.** wtm signale en fin de commande qu'une
-  version plus récente existe, sans jamais bloquer ni ralentir la commande en cours. Le
-  header de `wtm ui` affiche la version installée et l'appel à la mise à jour.
-- **`wtm fast-forward` — avancer une branche sur `origin/<branche>`.** Rien d'autre : pas
-  de rebase sur le parent, pas de merge. Une branche qui a divergé est refusée — c'est
-  `wtm sync` qui rejoue les commits locaux, et `--force` ne lève pas ce refus. Disponible
-  au clavier depuis le dashboard comme en CLI (`--all`, ou sélection interactive).
+- **`wtm upgrade` — mettre wtm à jour depuis wtm.** La commande fait ce qu'il faut selon l'installation : un binaire autonome est remplacé sur place après vérification de son SHA256 contre les checksums de la release, un binaire Homebrew ou `go install` est confié à son gestionnaire plutôt que désynchronisé, et un binaire compilé depuis les sources est refusé. `--check` dit ce qui est disponible sans rien toucher, `--version` épingle une release précise.
+- **Une notification passive de mise à jour.** wtm signale en fin de commande qu'une version plus récente existe, sans jamais bloquer ni ralentir la commande en cours. Le header de `wtm ui` affiche la version installée et l'appel à la mise à jour.
+- **`wtm fast-forward` — avancer une branche sur `origin/<branche>`.** Rien d'autre : pas de rebase sur le parent, pas de merge. Une branche qui a divergé est refusée — c'est `wtm sync` qui rejoue les commits locaux, et `--force` ne lève pas ce refus. Disponible au clavier depuis le dashboard comme en CLI (`--all`, ou sélection interactive).
 
 ### Improvements
 
-- **L'overlay d'aide du dashboard se lit comme un document.** Les 17 lignes à plat
-  deviennent quatre sections (NAV, ACT, MOUSE, VIEW), appariées sur un écran large et
-  empilées sur un écran étroit ; la souris devient une section à part au lieu d'un suffixe
-  sur chaque touche. L'overlay se dimensionne sur l'écran et fait défiler ce qui dépasse —
-  sur un écran court, sa bordure basse était coupée sans un mot — et il répond enfin à la
-  molette et au clic, lui qui était la seule surface à documenter la souris en l'ignorant.
-  `h`/`l`, que le dashboard bindait sans les lister, y figurent désormais.
+- **L'overlay d'aide du dashboard se lit comme un document.** Les 17 lignes à plat deviennent quatre sections (NAV, ACT, MOUSE, VIEW), appariées sur un écran large et empilées sur un écran étroit ; la souris devient une section à part au lieu d'un suffixe sur chaque touche. L'overlay se dimensionne sur l'écran et fait défiler ce qui dépasse — sur un écran court, sa bordure basse était coupée sans un mot — et il répond enfin à la molette et au clic, lui qui était la seule surface à documenter la souris en l'ignorant. `h`/`l`, que le dashboard bindait sans les lister, y figurent désormais.
 
 ### Bug fixes
 
-- **`wtm sync` interactif affichait un picker vide au lieu de son récapitulatif.** L'étape
-  de confirmation montrait « No matches » et le plan n'était jamais chargé.
-- **Le placeholder de chargement n'affiche plus « No matches ».** Ce message répond à un
-  filtre, pas à un chargement en cours (le plan de `sync`, la vérification des worktrees
-  de `clean`).
+- **`wtm sync` interactif affichait un picker vide au lieu de son récapitulatif.** L'étape de confirmation montrait « No matches » et le plan n'était jamais chargé.
+- **Le placeholder de chargement n'affiche plus « No matches ».** Ce message répond à un filtre, pas à un chargement en cours (le plan de `sync`, la vérification des worktrees de `clean`).
 
 ## v0.26.1 — Le panneau détail ne clignote plus
 
