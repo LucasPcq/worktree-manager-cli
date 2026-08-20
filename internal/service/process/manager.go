@@ -57,9 +57,13 @@ const stopGracePeriod = 5 * time.Second
 const detachedDrainGracePeriod = 2 * time.Second
 
 type ManagedJob struct {
-	Name      string
-	Config    domain.JobConfig
-	Cmd       *exec.Cmd
+	Name   string
+	Config domain.JobConfig
+	Cmd    *exec.Cmd
+	// PTY, unlike the two fields below, lives outside the manager lock: it is
+	// closed by whichever goroutine reaps or stops the job, holding nothing. A
+	// user of it must therefore hold a reference on the descriptor itself
+	// (setWinsize) rather than read its number out.
 	PTY       *os.File
 	Status    domain.JobStatus
 	PID       int
