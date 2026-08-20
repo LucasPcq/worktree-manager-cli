@@ -153,3 +153,43 @@ func TestClassifyInstall(t *testing.T) {
 		})
 	}
 }
+
+func TestReleaseAssetName(t *testing.T) {
+	cases := []struct {
+		name   string
+		params rules.ReleaseAssetNameParams
+		want   string
+	}{
+		{"darwin arm64", rules.ReleaseAssetNameParams{Version: "0.26.1", GOOS: "darwin", GOARCH: "arm64"}, "wtm_0.26.1_darwin_arm64.tar.gz"},
+		{"linux amd64", rules.ReleaseAssetNameParams{Version: "0.26.1", GOOS: "linux", GOARCH: "amd64"}, "wtm_0.26.1_linux_amd64.tar.gz"},
+		{"tag with leading v is normalized", rules.ReleaseAssetNameParams{Version: "v0.26.1", GOOS: "darwin", GOARCH: "amd64"}, "wtm_0.26.1_darwin_amd64.tar.gz"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rules.ReleaseAssetName(tc.params); got != tc.want {
+				t.Fatalf("ReleaseAssetName(%+v) = %q, want %q", tc.params, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestUpgradeCommandFor(t *testing.T) {
+	cases := []struct {
+		method domain.InstallMethod
+		want   string
+	}{
+		{domain.InstallHomebrew, "brew upgrade LucasPcq/tap/wtm"},
+		{domain.InstallGoInstall, "go install github.com/LucasPcq/wtm@latest"},
+		{domain.InstallStandalone, "wtm upgrade"},
+		{domain.InstallSource, "git pull && make install"},
+	}
+
+	for _, tc := range cases {
+		t.Run(string(tc.method), func(t *testing.T) {
+			if got := rules.UpgradeCommandFor(tc.method); got != tc.want {
+				t.Fatalf("UpgradeCommandFor(%q) = %q, want %q", tc.method, got, tc.want)
+			}
+		})
+	}
+}

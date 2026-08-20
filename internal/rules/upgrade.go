@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -121,4 +122,31 @@ func isBrewCellarPath(path string) bool {
 	}
 
 	return false
+}
+
+type ReleaseAssetNameParams struct {
+	Version string
+	GOOS    string
+	GOARCH  string
+}
+
+// ReleaseAssetName builds the goreleaser archive name for a platform. Tags carry
+// a leading "v"; asset filenames do not.
+func ReleaseAssetName(params ReleaseAssetNameParams) string {
+	return fmt.Sprintf("%s_%s_%s_%s.tar.gz", domain.AppName, NormalizeVersion(params.Version), params.GOOS, params.GOARCH)
+}
+
+// UpgradeCommandFor names the exact command that updates this install, so every
+// message can tell the user what to run rather than that an update exists.
+func UpgradeCommandFor(method domain.InstallMethod) string {
+	switch method {
+	case domain.InstallHomebrew:
+		return "brew upgrade " + domain.BrewFormula
+	case domain.InstallGoInstall:
+		return "go install " + domain.ModulePath + "@latest"
+	case domain.InstallSource:
+		return "git pull && make install"
+	default:
+		return domain.AppName + " " + domain.CmdUpgrade
+	}
 }
