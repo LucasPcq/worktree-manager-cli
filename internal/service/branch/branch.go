@@ -86,9 +86,32 @@ func FastForwardIfBehind(params BranchParams) error {
 // diverged, when its worktree has uncommitted changes, or when the fast-forward
 // otherwise fails. A branch that is already up to date is a no-op.
 func FastForwardToOrigin(params BranchParams) error {
-	if err := infra.FetchBranch(infra.FetchBranchParams{ProjectDir: params.ProjectDir, Branch: params.Branch}); err != nil {
+	check, err := Check(params)
+	if err != nil {
 		return err
 	}
+	if check.State == domain.DivergenceDiverged {
+		return fmt.Errorf("%s has diverged from origin (%d ahead, %d behind)", params.Branch, check.Ahead, check.Behind)
+	}
+	result := FastForward(FastForwardParams{
+		ProjectDir: params.ProjectDir,
+		Branch:     params.Branch,
+		Check:      &check,
+	})
+	if result.Status == domain.FFFailed {
+		return errors.New(result.Detail)
+	}
+	return nil
+}
+
+// Check gathers a branch's state against origin in one network round trip, so a
+// recap and the run that follows it read the same facts and the branch is
+// fetched once rather than twice.
+func Check(params BranchParams) (domain.FastForwardCheck, error) {
+	check := domain.FastForwardCheck{Branch: params.Branch, State: domain.DivergenceUnknown}
+
+	// A branch origin does not carry fails here; the ahead/behind below settles it.
+	_ = infra.FetchBranch(infra.FetchBranchParams{ProjectDir: params.ProjectDir, Branch: params.Branch})
 
 	ab, err := infra.AheadBehind(infra.AheadBehindParams{
 		ProjectDir: params.ProjectDir,
@@ -96,31 +119,112 @@ func FastForwardToOrigin(params BranchParams) error {
 		Remote:     domain.RemoteBranchPrefix + params.Branch,
 	})
 	if err != nil {
-		return err
+		return check, nil
 	}
-	if ab.Ahead > 0 {
-		return fmt.Errorf("%s has diverged from origin (%d ahead, %d behind)", params.Branch, ab.Ahead, ab.Behind)
-	}
-	if ab.Behind == 0 {
-		return nil
-	}
+	check.HasUpstream = true
+	check.Ahead, check.Behind = ab.Ahead, ab.Behind
+	check.State = rules.ClassifyDivergence(ab.Ahead, ab.Behind)
 
-	wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{ProjectDir: params.ProjectDir, Branch: params.Branch})
+	wt, err := infra.FindWorktreeByBranch(infra.FindWorktreeByBranchParams{
+		ProjectDir: params.ProjectDir,
+		Branch:     params.Branch,
+	})
 	if err != nil {
 		if errors.Is(err, domain.ErrWorktreeNotFound) {
-			return infra.UpdateLocalBranchToRemote(infra.UpdateLocalBranchToRemoteParams{ProjectDir: params.ProjectDir, Branch: params.Branch})
+			return check, nil
 		}
-		return err
+		return check, err
 	}
+	check.WorktreePath = wt.Path
 
 	dirty, err := infra.IsDirty(infra.IsDirtyParams{WorktreePath: wt.Path})
 	if err != nil {
-		return err
+		return check, err
 	}
-	if dirty {
-		return fmt.Errorf("%s worktree has uncommitted changes", params.Branch)
+	check.IsDirty = dirty
+	return check, nil
+}
+
+// FastForwardParams holds inputs for FastForward.
+type FastForwardParams struct {
+	ProjectDir string
+	Branch     string
+	// Force lifts the dirty refusal, and only that one: a diverged branch is
+	// refused whatever it is set to.
+	Force bool
+	// Check is a state Check already gathered, so an interactive run that built a
+	// recap does not fetch the same branch a second time.
+	Check *domain.FastForwardCheck
+}
+
+// FastForward advances a branch to its origin counterpart, reporting what became
+// of it rather than returning an error: a run over several branches keeps going
+// past the one it could not move.
+func FastForward(params FastForwardParams) domain.FastForwardResult {
+	check, err := resolveCheck(params)
+	if err != nil {
+		return failed(params.Branch, err)
 	}
-	return infra.FastForwardBranch(infra.FastForwardParams{WorktreePath: wt.Path, Onto: domain.RemoteBranchPrefix + params.Branch})
+
+	result := domain.FastForwardResult{Branch: params.Branch, Behind: check.Behind}
+	result.OldTip, _ = infra.Tip(infra.TipParams{WorktreePath: params.ProjectDir, Ref: params.Branch})
+	result.NewTip = result.OldTip
+
+	if !check.HasUpstream {
+		return labelled(result, domain.FFNoUpstream)
+	}
+	if check.State == domain.DivergenceDiverged {
+		return labelled(result, domain.FFDiverged)
+	}
+	if check.Behind == 0 {
+		return labelled(result, domain.FFUpToDate)
+	}
+	if check.IsDirty && !params.Force {
+		result.Detail = domain.FastForwardWarnDirty
+		return labelled(result, domain.FFFailed)
+	}
+
+	if ffErr := advance(check, params.ProjectDir); ffErr != nil {
+		result.Detail = ffErr.Error()
+		return labelled(result, domain.FFFailed)
+	}
+	if tip, tipErr := infra.Tip(infra.TipParams{WorktreePath: params.ProjectDir, Ref: params.Branch}); tipErr == nil {
+		result.NewTip = tip
+	}
+	return labelled(result, domain.FFAdvanced)
+}
+
+func resolveCheck(params FastForwardParams) (domain.FastForwardCheck, error) {
+	if params.Check != nil {
+		return *params.Check, nil
+	}
+	return Check(BranchParams{ProjectDir: params.ProjectDir, Branch: params.Branch})
+}
+
+// advance moves the ref where it must be moved: a branch checked out nowhere is
+// advanced by fetching straight into it, one that is checked out must go through
+// its own worktree.
+func advance(check domain.FastForwardCheck, projectDir string) error {
+	if check.WorktreePath == "" {
+		return infra.FastForwardRef(infra.FastForwardRefParams{
+			ProjectDir: projectDir,
+			Branch:     check.Branch,
+		})
+	}
+	return infra.FastForwardBranch(infra.FastForwardParams{
+		WorktreePath: check.WorktreePath,
+		Onto:         domain.RemoteBranchPrefix + check.Branch,
+	})
+}
+
+func labelled(result domain.FastForwardResult, status domain.FastForwardStatus) domain.FastForwardResult {
+	result.Status = status
+	result.Label = rules.FastForwardStatusLabel(status)
+	return result
+}
+
+func failed(branchName string, err error) domain.FastForwardResult {
+	return labelled(domain.FastForwardResult{Branch: branchName, Detail: err.Error()}, domain.FFFailed)
 }
 
 // divergenceParams holds inputs for divergence.

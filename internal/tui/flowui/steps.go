@@ -23,6 +23,16 @@ type (
 
 func (p *plan) componentStep(step flow.Step, conditional bool) (components.Step, error) {
 	if conditional {
+		// A recap owns its model — its cancel row, and the plan its Load fills in —
+		// so its Skip gates the step instead of replacing it with a choice list.
+		if step.Kind == flow.StepRecap {
+			return p.gated(step, p.recapStep(step)), nil
+		}
+		// Every other conditional step is drawn as a choice list, so one of another
+		// kind would be silently downgraded to a picker rather than refused.
+		if step.Kind != flow.StepSelect {
+			return components.Step{}, conditionalKindErr(step)
+		}
 		return p.choiceStep(step), nil
 	}
 	switch step.Kind {
@@ -169,6 +179,27 @@ func (p *plan) branchItems(pinned string, exclude []string) []components.SelectI
 		Pinned:       found,
 		PinnedSuffix: domain.PinnedSuffixDefault,
 	})
+}
+
+// gated turns a step's Skip into the wizard's entry-time decision while the step
+// keeps the model its kind built. The wizard runs Build immediately before
+// AutoSkip on every advance, so the decision is refreshed there.
+func (p *plan) gated(step flow.Step, built components.Step) components.Step {
+	applies := true
+	reason := ""
+	model := built.Model
+	rebuild := built.Build
+	built.Build = func(prev []components.Step) any {
+		skip, why := step.Skip(p.answersFrom(prev))
+		applies, reason = !skip, why
+		if rebuild != nil {
+			return rebuild(prev)
+		}
+		return model
+	}
+	built.AutoSkip = func(components.WizardModel) bool { return !applies }
+	built.SkipReason = func() string { return reason }
+	return built
 }
 
 func (p *plan) choiceStep(step flow.Step) components.Step {

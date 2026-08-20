@@ -21,7 +21,8 @@ const (
 	menuPrune
 	menuSync
 	menuSyncAll
-	menuRefreshBase
+	menuFastForward
+	menuFastForwardAll
 )
 
 // menuKind is which menu is open: the one hanging off a worktree row, or the
@@ -73,12 +74,19 @@ func (m Model) worktreeMenuItems() []menuItem {
 
 // worktreeActions is what a row offers. The base row hangs off nothing, so it
 // has neither a parent to be moved to nor a rebase to run: all it can do is
-// catch up with its own remote.
+// catch up with its own remote — the same entry every other row leads with.
 func worktreeActions(selected domain.WorktreeStatus) []menuItem {
+	// The fast-forward is never gated on the origin badges: those come from
+	// remote-tracking refs with no fetch, so "up to date" and "no counterpart"
+	// alike are what is known rather than what is true. The run fetches and
+	// reports the truth; disabled stays what it has always meant here, a run
+	// holding this worktree right now.
+	fastForward := menuItem{label: domain.DashboardMenuFastForward, action: menuFastForward}
 	if selected.IsParent {
-		return []menuItem{{label: domain.DashboardMenuRefreshBase, action: menuRefreshBase}}
+		return []menuItem{fastForward}
 	}
 	return []menuItem{
+		fastForward,
 		{label: domain.DashboardMenuSync, action: menuSync},
 		{label: domain.DashboardMenuReparent, action: menuReparent},
 		{label: domain.DashboardMenuDelete, action: menuDelete, danger: true},
@@ -89,6 +97,7 @@ func worktreeActions(selected domain.WorktreeStatus) []menuItem {
 // selected row, so nothing here is keyed off the selection.
 func (m Model) globalMenuItems() []menuItem {
 	items := []menuItem{
+		{label: domain.DashboardMenuFastForwardAll, action: menuFastForwardAll},
 		{label: domain.DashboardMenuReparentBatch, action: menuReparentBatch},
 		{label: domain.DashboardMenuSyncAll, action: menuSyncAll},
 		{label: domain.DashboardMenuPrune, action: menuPrune, danger: true},
@@ -205,14 +214,16 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 		return m.startPrune()
 	case menuSyncAll:
 		return m.startSyncAll()
+	case menuFastForwardAll:
+		return m.startFastForwardAll()
 	case menuReparent:
 		return m.startReparent(selected.Branch)
 	case menuDelete:
 		return m.startClean(selected.Branch)
 	case menuSync:
 		return m.startSync(selected.Branch)
-	case menuRefreshBase:
-		return m.startRefreshBase(selected.Branch)
+	case menuFastForward:
+		return m.startFastForward(selected.Branch)
 	}
 	return m, nil
 }

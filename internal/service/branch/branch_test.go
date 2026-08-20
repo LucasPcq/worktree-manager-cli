@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/testutil/gittest"
 )
 
@@ -84,5 +85,108 @@ func TestFastForwardToOriginRefusesDiverged(t *testing.T) {
 	}
 	if got := revParse(t, work, "feat"); got != local {
 		t.Errorf("feat was modified (%s), want unchanged %s", got, local)
+	}
+}
+
+func TestCheckReportsBehindBranch(t *testing.T) {
+	work := repoWithRemote(t)
+	git(t, work, "branch", "feat")
+	git(t, work, "push", "origin", "feat")
+	git(t, work, "commit", "--allow-empty", "-m", "server-commit")
+	git(t, work, "push", "origin", "main:feat")
+
+	check, err := Check(BranchParams{ProjectDir: work, Branch: "feat"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !check.HasUpstream {
+		t.Fatal("HasUpstream = false, want true")
+	}
+	if check.Behind != 1 || check.Ahead != 0 {
+		t.Fatalf("ahead/behind = %d/%d, want 0/1", check.Ahead, check.Behind)
+	}
+	if check.State != domain.DivergenceBehind {
+		t.Fatalf("state = %v, want DivergenceBehind", check.State)
+	}
+}
+
+func TestCheckReportsNoUpstream(t *testing.T) {
+	work := repoWithRemote(t)
+	git(t, work, "branch", "local-only")
+
+	check, err := Check(BranchParams{ProjectDir: work, Branch: "local-only"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if check.HasUpstream {
+		t.Fatal("HasUpstream = true, want false")
+	}
+	if check.State != domain.DivergenceUnknown {
+		t.Fatalf("state = %v, want DivergenceUnknown", check.State)
+	}
+}
+
+func TestFastForwardAdvancesBranchWithNoWorktree(t *testing.T) {
+	work := repoWithRemote(t)
+	git(t, work, "branch", "feat")
+	git(t, work, "push", "origin", "feat")
+	git(t, work, "commit", "--allow-empty", "-m", "server-commit")
+	git(t, work, "push", "origin", "main:feat")
+
+	result := FastForward(FastForwardParams{ProjectDir: work, Branch: "feat"})
+	if result.Status != domain.FFAdvanced {
+		t.Fatalf("status = %v (%s), want FFAdvanced", result.Status, result.Detail)
+	}
+	if got, want := revParse(t, work, "feat"), revParse(t, work, "origin/feat"); got != want {
+		t.Fatalf("feat = %s, want %s", got, want)
+	}
+	if result.OldTip == result.NewTip {
+		t.Fatalf("tips unchanged: %s", result.NewTip)
+	}
+	if result.Label != domain.FastForwardLabelAdvanced {
+		t.Fatalf("label = %q, want %q", result.Label, domain.FastForwardLabelAdvanced)
+	}
+}
+
+func TestFastForwardIsANoOpWhenUpToDate(t *testing.T) {
+	work := repoWithRemote(t)
+	git(t, work, "branch", "feat")
+	git(t, work, "push", "origin", "feat")
+
+	result := FastForward(FastForwardParams{ProjectDir: work, Branch: "feat"})
+	if result.Status != domain.FFUpToDate {
+		t.Fatalf("status = %v (%s), want FFUpToDate", result.Status, result.Detail)
+	}
+	if result.OldTip != result.NewTip {
+		t.Fatalf("tips moved: %s → %s", result.OldTip, result.NewTip)
+	}
+}
+
+func TestFastForwardRefusesDivergedEvenWithForce(t *testing.T) {
+	work := repoWithRemote(t)
+	git(t, work, "branch", "feat")
+	git(t, work, "push", "origin", "feat")
+	git(t, work, "commit", "--allow-empty", "-m", "server-commit")
+	git(t, work, "push", "origin", "main:feat")
+	git(t, work, "checkout", "feat")
+	git(t, work, "commit", "--allow-empty", "-m", "local-commit")
+	localTip := revParse(t, work, "feat")
+
+	result := FastForward(FastForwardParams{ProjectDir: work, Branch: "feat", Force: true})
+	if result.Status != domain.FFDiverged {
+		t.Fatalf("status = %v (%s), want FFDiverged", result.Status, result.Detail)
+	}
+	if got := revParse(t, work, "feat"); got != localTip {
+		t.Fatalf("feat moved to %s, want it left at %s", got, localTip)
+	}
+}
+
+func TestFastForwardRefusesNoUpstream(t *testing.T) {
+	work := repoWithRemote(t)
+	git(t, work, "branch", "local-only")
+
+	result := FastForward(FastForwardParams{ProjectDir: work, Branch: "local-only"})
+	if result.Status != domain.FFNoUpstream {
+		t.Fatalf("status = %v (%s), want FFNoUpstream", result.Status, result.Detail)
 	}
 }
