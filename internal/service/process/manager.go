@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -20,18 +19,20 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-// ansiCSI matches CSI-style ANSI escape sequences (colors, cursor moves, line
-// clears — everything docker compose emits while drawing its progress block).
-var ansiCSI = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
-
 // detachedOutputBufferSize bounds how much PTY output we keep around while
 // waiting for a detached-service launcher (e.g. `docker compose up -d`) to
 // exit. Enough for the typical Docker/compose error line.
 const detachedOutputBufferSize = 8 * 1024
 
-// outputHistoryBytes is the size of the per-job rolling output buffer that
-// the daemon drains from each long-running PTY. Replayed to clients on attach.
-const outputHistoryBytes = 64 * 1024
+// outputHistoryBytes is the size of the per-job rolling output buffer that the
+// daemon drains from each long-running PTY. Replayed to clients on attach, so it
+// has to hold enough raw bytes for a terminal emulator to rebuild the screen —
+// escape sequences included — not just the last few visible lines.
+const outputHistoryBytes = 1024 * 1024
+
+// outputSubscriberQueue is the per-subscriber chunk queue. Deep enough to
+// absorb a burst from a chatty job while a subscriber is busy rendering.
+const outputSubscriberQueue = 256
 
 // defaultPTYRows and defaultPTYCols are the fallback PTY dimensions used when
 // a job is spawned before any client has attached. TUI apps read the PTY size
@@ -55,68 +56,85 @@ const stopGracePeriod = 5 * time.Second
 // misbehaving launcher.
 const detachedDrainGracePeriod = 2 * time.Second
 
-// ManagedJob holds the state of a running job.
 type ManagedJob struct {
-	Name    string
-	Config  domain.JobConfig
-	Cmd     *exec.Cmd
-	PTY     *os.File
-	Status  domain.JobStatus
-	PID     int
-	WorkDir string
-	output  *outputHub    // nil for detached launcher-style services
-	exited  chan struct{} // closed when the underlying process has been reaped
+	Name   string
+	Config domain.JobConfig
+	Cmd    *exec.Cmd
+	// PTY, unlike the two fields below, lives outside the manager lock: it is
+	// closed by whichever goroutine reaps or stops the job, holding nothing. A
+	// user of it must therefore hold a reference on the descriptor itself
+	// (setWinsize) rather than read its number out.
+	PTY       *os.File
+	Status    domain.JobStatus
+	PID       int
+	WorkDir   string
+	StartedAt time.Time
+	// ExitCode, like Status, is written by the goroutine that reaps the process
+	// and read by List: both are only ever touched under the manager lock.
+	ExitCode *int
+	output   *outputHub    // nil for detached launcher-style services
+	logs     *LogSink      // nil when the client asked for no persisted log
+	exited   chan struct{} // closed when the underlying process has been reaped
 }
 
-// Manager tracks and controls running jobs.
 type Manager struct {
 	jobs map[string]*ManagedJob
 	mu   sync.Mutex
 }
 
-// NewManager creates a new job manager.
 func NewManager() *Manager {
 	return &Manager{
 		jobs: make(map[string]*ManagedJob),
 	}
 }
 
-// jobKey returns a unique identifier for a job scoped to its worktree.
 func jobKey(name string, workDir string) string {
 	return workDir + ":" + name
 }
 
-// Start launches a job in a PTY. Behavior depends on the job's kind:
-//
-//   - Task: blocks until the command exits, streams output to `streamer` if
-//     non-nil, and removes the job from the map whatever the outcome. Returns
-//     an error on non-zero exit (with captured output).
-//   - Service with Stop (detached): blocks until the launcher command exits,
-//     captures output into a bounded buffer so compose failures surface to
-//     the caller, and stays registered as Running afterwards.
-//   - Service without Stop (foreground): returns immediately after pty.Start,
-//     with a background goroutine draining output and watching for exit.
-func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer) error {
-	key := jobKey(job.Name, workDir)
+type StartParams struct {
+	Job     domain.JobConfig
+	WorkDir string
+	// LogDir is the worktree's log directory, resolved by the client. Empty
+	// persists nothing.
+	LogDir   string
+	Streamer io.Writer
+}
+
+// Start blocks for two of the three kinds it serves, which its signature does
+// not say: a task until the command exits (and errors on a non-zero one), a
+// detached service until its launcher exits, while a foreground service returns
+// as soon as its PTY is up and is drained in the background. All three persist
+// their output when a log dir is given.
+func (m *Manager) Start(params StartParams) error {
+	job := params.Job
+	key := jobKey(job.Name, params.WorkDir)
 
 	parts := strings.Fields(job.Cmd)
 	if len(parts) == 0 {
 		return fmt.Errorf("job %s has empty cmd", job.Name)
 	}
 
+	// Opened before the lock: creating the directory and the file is disk I/O,
+	// and a slow state dir (NFS, a saturated disk) would otherwise hold every
+	// List, Attach and Stop the daemon serves behind it.
+	logs := openJobLog(params)
+	hub := newJobHub(job)
+
 	m.mu.Lock()
 	if existing, ok := m.jobs[key]; ok && existing.Status == domain.JobStatusRunning {
 		m.mu.Unlock()
+		closeSink(logs)
 		return fmt.Errorf("job %s %s", job.Name, domain.JobAlreadyRunningSuffix)
 	}
 
 	cmd := exec.Command(parts[0], parts[1:]...)
 	if job.Cwd != "" && !filepath.IsAbs(job.Cwd) {
-		cmd.Dir = filepath.Join(workDir, job.Cwd)
+		cmd.Dir = filepath.Join(params.WorkDir, job.Cwd)
 	} else if job.Cwd != "" {
 		cmd.Dir = job.Cwd
 	} else {
-		cmd.Dir = workDir
+		cmd.Dir = params.WorkDir
 	}
 	cmd.Env = jobEnv(job.Kind)
 	// Tasks run through a plain pipe; without Setpgid they would inherit the
@@ -128,30 +146,34 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	}
 
-	output, err := spawnJob(cmd, job.Kind)
+	outputFile, err := spawnJob(cmd, job.Kind)
 	if err != nil {
 		m.mu.Unlock()
+		closeSink(logs)
 		return fmt.Errorf("start job %s: %w", job.Name, err)
 	}
 
 	managed := &ManagedJob{
-		Name:    job.Name,
-		Config:  job,
-		Cmd:     cmd,
-		PTY:     output,
-		Status:  domain.JobStatusRunning,
-		PID:     cmd.Process.Pid,
-		WorkDir: workDir,
-		exited:  make(chan struct{}),
+		Name:      job.Name,
+		Config:    job,
+		Cmd:       cmd,
+		PTY:       outputFile,
+		Status:    domain.JobStatusRunning,
+		PID:       cmd.Process.Pid,
+		WorkDir:   params.WorkDir,
+		StartedAt: time.Now(),
+		output:    hub,
+		logs:      logs,
+		exited:    make(chan struct{}),
 	}
 	m.jobs[key] = managed
 	m.mu.Unlock()
 
 	switch {
 	case job.Kind == domain.JobKindTask:
-		return m.runTask(managed, streamer)
+		return m.runTask(managed, params.Streamer)
 	case rules.IsDetached(job):
-		if err := m.waitDetached(managed, streamer); err != nil {
+		if err := m.waitDetached(managed, params.Streamer); err != nil {
 			m.mu.Lock()
 			delete(m.jobs, key)
 			m.mu.Unlock()
@@ -159,11 +181,33 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 		}
 		return nil
 	default:
-		managed.output = newOutputHub(outputHistoryBytes)
 		go m.drainToHub(managed)
 		go m.waitForExit(managed)
 		return nil
 	}
+}
+
+// newJobHub allocates the fan-out before the job is published in the map, so
+// that a client listing or attaching the instant it appears cannot read the
+// field while the starting goroutine still writes it. A detached launcher gets
+// none: its output ends with the launcher, and nothing can attach afterwards.
+func newJobHub(job domain.JobConfig) *outputHub {
+	if rules.IsDetached(job) {
+		return nil
+	}
+	return newOutputHub(outputHistoryBytes)
+}
+
+// openJobLog: a job still starts when its log cannot be opened.
+func openJobLog(params StartParams) *LogSink {
+	if params.LogDir == "" {
+		return nil
+	}
+	sink, err := OpenLogSink(LogSinkParams{LogDir: params.LogDir, Job: params.Job.Name})
+	if err != nil {
+		return nil
+	}
+	return sink
 }
 
 // spawnJob starts the command and returns the *os.File from which the child's
@@ -243,9 +287,8 @@ func jobEnv(kind domain.JobKind) []string {
 	return env
 }
 
-// setEnv returns env with the given key set to value, replacing any existing
-// occurrence. Use this when the override must win over what the daemon
-// inherited (e.g. TERM=dumb for tasks regardless of the user's shell TERM).
+// setEnv replaces any existing occurrence of key, so the override wins over
+// what the daemon inherited (e.g. TERM=dumb whatever the user's shell TERM).
 func setEnv(env []string, key, value string) []string {
 	prefix := key + "="
 	out := make([]string, 0, len(env)+1)
@@ -267,16 +310,14 @@ func lookupEnv(env []string, key string) (string, bool) {
 	return "", false
 }
 
-// runTask executes a one-shot task. Output is mirrored to the optional
-// streamer (so the CLI can forward it to the user in real time) and kept in
-// the job's output hub so `run logs <task>` can also attach while it runs.
-// The job is removed from the map on exit, whatever the outcome.
+// runTask keeps the task in the output hub while it runs, so `run logs <task>`
+// can attach to it too, and removes it from the map on exit whatever the
+// outcome. Its exit code therefore never travels on the job: it goes back in
+// the error returned here, and to a client in the daemon's own response.
 func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	defer close(job.exited)
 
 	key := jobKey(job.Name, job.WorkDir)
-
-	job.output = newOutputHub(outputHistoryBytes)
 
 	// streamDone is closed once the streaming goroutine has drained every
 	// buffered chunk. We wait on it before returning so the caller (the daemon)
@@ -286,9 +327,7 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	// Subscribe BEFORE starting drainToHub: a fast task (echo + exit) can
 	// otherwise have its output drained and the hub closed before we attach,
 	// making Subscribe fail with "job output closed" so the streaming goroutine
-	// is never spawned and the streamed output is silently dropped. On a
-	// freshly created, still-open hub Subscribe cannot fail, and h.sub is
-	// registered before drainToHub's first Write so every chunk flows live.
+	// is never spawned and the streamed output is silently dropped.
 	var streamDone chan struct{}
 	if streamer != nil {
 		history, ch, _, subErr := job.output.Subscribe()
@@ -350,12 +389,13 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 		<-streamDone
 	}
 
+	exit := exitCodeOf(waitErr)
+
 	m.mu.Lock()
 	delete(m.jobs, key)
 	m.mu.Unlock()
 
 	if waitErr != nil {
-		exit := exitCodeOf(waitErr)
 		// When a streamer was attached the client already saw the output live,
 		// so we return a concise error instead of re-embedding the full capture.
 		if streamer != nil {
@@ -369,9 +409,12 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	return nil
 }
 
-// exitCodeOf extracts the process exit code from a Cmd.Wait error, falling
-// back to 1 when the error is not an *exec.ExitError.
+// exitCodeOf invents the 1 it answers for a failure Wait did not attribute to
+// the process itself; the -1 comes from the stdlib and means a signal killed it.
 func exitCodeOf(err error) int {
+	if err == nil {
+		return 0
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return exitErr.ExitCode()
@@ -379,20 +422,21 @@ func exitCodeOf(err error) int {
 	return 1
 }
 
-// waitDetached drains PTY output and blocks until the launcher process exits.
-// When a streamer is provided the launcher's output is mirrored to it live
-// (so `run up` shows the `docker compose up -d` lines as they happen, just like
-// a task), while a bounded buffer keeps a copy to embed in the error on
-// failure. On success, the job stays registered as Running (the real work is
-// detached).
+// waitDetached blocks until the launcher exits, mirroring its output live like
+// a task's and keeping a bounded copy to embed in the error on failure. On
+// success the job stays registered as Running: the real work is detached.
 func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 	defer close(job.exited)
 
 	buf := newRingBuffer(detachedOutputBufferSize)
-	var sink io.Writer = buf
+	writers := []io.Writer{buf}
 	if streamer != nil {
-		sink = io.MultiWriter(buf, streamer)
+		writers = append(writers, streamer)
 	}
+	if job.logs != nil {
+		writers = append(writers, job.logs)
+	}
+	sink := io.MultiWriter(writers...)
 	drained := make(chan struct{})
 	go func() {
 		_, _ = io.Copy(sink, job.PTY)
@@ -401,20 +445,15 @@ func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 
 	err := job.Cmd.Wait()
 
-	// The launcher has exited; let io.Copy drain the PTY to its natural EOF so we
-	// never truncate buffered output. Closing the master PTY before the drain
-	// goroutine finishes is what dropped streamed output on slow CI runners
-	// (LUC-84): on a fast machine io.Copy had already read everything, on a slow
-	// one Close() interrupted the read mid-buffer. Once the launcher and its
-	// descendants release the slave, the master read returns EOF (Darwin) or EIO
-	// (Linux) and io.Copy returns on its own. The force-close is a liveness
-	// backstop in case a descendant keeps the slave open.
+	// Same LUC-84 race runTask guards against: closing the master before the
+	// drain goroutine reaches EOF truncated the output on slow CI runners.
 	select {
 	case <-drained:
 	case <-time.After(detachedDrainGracePeriod):
 	}
 	_ = job.PTY.Close()
 	<-drained
+	job.closeLogs()
 
 	if err != nil {
 		// When a streamer was attached the client already saw the output live,
@@ -432,11 +471,11 @@ func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 	return nil
 }
 
-// cleanPTYOutput strips ANSI escape sequences and collapses carriage-return
-// progress redraws (docker compose writes `[+] Running 1/2\r[+] Running 2/2`)
-// into distinct lines, then keeps only non-empty trimmed lines.
+// cleanPTYOutput expands a carriage-return redraw into distinct lines rather
+// than collapsing it: docker compose writes its whole progress block that way
+// (`[+] Running 1/2\r[+] Running 2/2`), and an error embedded in it must survive.
 func cleanPTYOutput(raw string) string {
-	raw = ansiCSI.ReplaceAllString(raw, "")
+	raw = rules.StripTerminalEscapes(raw)
 	raw = strings.ReplaceAll(raw, "\r", "\n")
 
 	var lines []string
@@ -449,7 +488,6 @@ func cleanPTYOutput(raw string) string {
 	return strings.Join(lines, "\n")
 }
 
-// ringBuffer keeps only the most recent `cap` bytes written to it.
 type ringBuffer struct {
 	buf []byte
 	cap int
@@ -469,109 +507,122 @@ func (r *ringBuffer) Write(p []byte) (int, error) {
 
 func (r *ringBuffer) String() string { return string(r.buf) }
 
-// Snapshot returns a copy of the buffer's current contents.
 func (r *ringBuffer) Snapshot() []byte {
 	out := make([]byte, len(r.buf))
 	copy(out, r.buf)
 	return out
 }
 
-// outputHub fans PTY output out to a rolling history buffer and any attached
-// subscribers. One job → one hub → at most one subscriber at a time (matches
-// wtm's single-attach model).
+// outputHub fans PTY output out to a rolling history buffer and every attached
+// subscriber, so one job can feed a CLI streamer, a log file and any number of
+// panes at once.
 type outputHub struct {
 	mu      sync.Mutex
 	history *ringBuffer
-	sub     chan []byte
+	subs    map[int]chan []byte
+	nextID  int
 	closed  bool
 }
 
 func newOutputHub(capacity int) *outputHub {
-	return &outputHub{history: newRingBuffer(capacity)}
+	return &outputHub{history: newRingBuffer(capacity), subs: make(map[int]chan []byte)}
 }
 
-// Write records data into the history buffer and forwards a copy to the
-// current subscriber if any. It never blocks on the subscriber: the subscribe
-// channel is large enough to absorb normal bursts, and a full channel means
-// the client has disappeared — we drop silently rather than stall the PTY
-// reader.
 func (h *outputHub) Write(p []byte) (int, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.history.Write(p)
-	if h.sub != nil {
+	if len(h.subs) > 0 {
+		// One copy of the caller's buffer for all of them: the chunk a
+		// subscriber receives is shared with every other subscriber, so it is
+		// read-only. A pane that wants to keep or rewrite it copies it first.
 		data := make([]byte, len(p))
 		copy(data, p)
-		select {
-		case h.sub <- data:
-		default:
+		for _, sub := range h.subs {
+			// A full queue means that one subscriber stopped reading; dropping
+			// its chunk keeps the PTY reader and the other subscribers moving.
+			select {
+			case sub <- data:
+			default:
+			}
 		}
 	}
 	return len(p), nil
 }
 
-// Subscribe registers a subscriber. Returns the current history snapshot and a
-// channel streaming subsequent writes. At most one subscriber is allowed at a
-// time — returns an error if one is already attached. The returned unsubscribe
-// func must be called to release the slot.
+// Subscribe returns the current history snapshot and a channel streaming
+// subsequent writes. The returned unsubscribe func must be called to release
+// the subscription; it is safe to call after the hub has been closed.
+//
+// Chunks arriving on the channel are shared with every other subscriber and
+// must be treated as read-only — mutating one is visible to all of them.
+// A slow subscriber loses chunks rather than stalling the job, so the stream
+// is a live view, not a record: TailJobLog is what reads back a complete one.
 func (h *outputHub) Subscribe() (history []byte, ch <-chan []byte, unsub func(), err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.closed {
 		return nil, nil, nil, fmt.Errorf("job output closed")
 	}
-	if h.sub != nil {
-		return nil, nil, nil, fmt.Errorf("job already has a subscriber")
-	}
 	history = h.history.Snapshot()
-	subCh := make(chan []byte, 256)
-	h.sub = subCh
+	id := h.nextID
+	h.nextID++
+	subCh := make(chan []byte, outputSubscriberQueue)
+	h.subs[id] = subCh
 	unsub = func() {
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		if h.sub == subCh {
-			h.sub = nil
-			close(subCh)
+		if _, ok := h.subs[id]; !ok {
+			return
 		}
+		delete(h.subs, id)
+		close(subCh)
 	}
 	return history, subCh, unsub, nil
 }
 
-// close releases the current subscriber (if any) and marks the hub as closed
-// so new subscribers are rejected.
 func (h *outputHub) close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.closed = true
-	if h.sub != nil {
-		close(h.sub)
-		h.sub = nil
+	for id, sub := range h.subs {
+		close(sub)
+		delete(h.subs, id)
 	}
 }
 
-// drainToHub copies PTY output into the job's output hub until the PTY
-// closes. Long-running jobs need a continuous reader so the OS PTY buffer
-// never fills up (which would block the job's writes before any client
-// attaches).
+// drainToHub runs for the job's whole life: without a continuous reader the OS
+// PTY buffer fills up and blocks the job's own writes before any client attaches.
 func (m *Manager) drainToHub(job *ManagedJob) {
-	_, _ = io.Copy(job.output, job.PTY)
+	var sink io.Writer = job.output
+	if job.logs != nil {
+		sink = io.MultiWriter(job.output, job.logs)
+	}
+	_, _ = io.Copy(sink, job.PTY)
 	job.output.close()
+	job.closeLogs()
 }
 
-// Stop stops a job by name and workDir.
+func (j *ManagedJob) closeLogs() {
+	closeSink(j.logs)
+}
+
+func closeSink(sink *LogSink) {
+	if sink != nil {
+		_ = sink.Close()
+	}
+}
+
 func (m *Manager) Stop(name string, workDir string) error {
 	return m.stopByKey(jobKey(name, workDir))
 }
 
-// StopAll stops every running job across every worktree. Intended for daemon
-// shutdown; callers that want to stop only one worktree's jobs must use
-// StopAllInWorkDir.
+// StopAll spans every worktree: it is the daemon-shutdown path, and a caller
+// after one worktree's jobs wants StopAllInWorkDir instead.
 func (m *Manager) StopAll() error {
 	return m.stopAllMatching(func(*ManagedJob) bool { return true })
 }
 
-// StopAllInWorkDir stops every running job attached to the given workDir.
-// Jobs belonging to other worktrees are left untouched.
 func (m *Manager) StopAllInWorkDir(workDir string) error {
 	return m.stopAllMatching(func(job *ManagedJob) bool {
 		return job.WorkDir == workDir
@@ -630,10 +681,15 @@ func (m *Manager) stopByKey(key string) error {
 	return m.stopWithSignal(job)
 }
 
-// AttachSession holds everything a client needs to stream a job's output:
-// the PTY (for stdin forwarding and window-size ioctls), the history to
-// replay, and a channel delivering subsequent output. The caller must invoke
-// Release when done.
+// AttachSession hands out the job's live PTY, for stdin forwarding and
+// window-size ioctls. Release must be called when done.
+//
+// A job accepts any number of concurrent attachments — the run view needs
+// several, and refusing the second one used to be what kept stdin
+// single-writer. Nothing arbitrates that PTY now: every attachment writes
+// into it directly, so two of them typing at once interleave their bytes
+// (Vite's r/q/u/o shortcuts land in whichever order they arrive). Output is
+// unaffected, each subscriber gets the whole stream.
 type AttachSession struct {
 	PTY     *os.File
 	History []byte
@@ -641,23 +697,36 @@ type AttachSession struct {
 	Release func()
 }
 
-// Attach subscribes to a job's output hub and returns a session the daemon
-// can use to stream history + live output to a client while still forwarding
-// the client's stdin back into the PTY.
-func (m *Manager) Attach(name string, workDir string) (*AttachSession, error) {
-	key := jobKey(name, workDir)
+type jobRef struct {
+	Name    string
+	WorkDir string
+}
+
+// attachableJob is the gate both Attach and Resize pass: a job a pane can bind
+// to is registered, still running, and streaming through a hub — which a
+// detached launcher never does, its output having ended with its launcher.
+func (m *Manager) attachableJob(ref jobRef) (*ManagedJob, error) {
 	m.mu.Lock()
-	job, ok := m.jobs[key]
+	job, ok := m.jobs[jobKey(ref.Name, ref.WorkDir)]
+	isRunning := ok && job.Status == domain.JobStatusRunning
 	m.mu.Unlock()
 
 	if !ok {
-		return nil, fmt.Errorf("job %s not found", name)
+		return nil, fmt.Errorf("job %s not found", ref.Name)
 	}
-	if job.Status != domain.JobStatusRunning {
-		return nil, fmt.Errorf("job %s is not running", name)
+	if !isRunning {
+		return nil, fmt.Errorf("job %s is not running", ref.Name)
 	}
 	if job.output == nil {
-		return nil, fmt.Errorf("job %s has no attachable output (detached launcher)", name)
+		return nil, fmt.Errorf("job %s has no attachable output (detached launcher)", ref.Name)
+	}
+	return job, nil
+}
+
+func (m *Manager) Attach(name string, workDir string) (*AttachSession, error) {
+	job, err := m.attachableJob(jobRef{Name: name, WorkDir: workDir})
+	if err != nil {
+		return nil, err
 	}
 
 	history, stream, unsub, err := job.output.Subscribe()
@@ -672,7 +741,32 @@ func (m *Manager) Attach(name string, workDir string) (*AttachSession, error) {
 	}, nil
 }
 
-// List returns all managed jobs.
+type ResizeParams struct {
+	Name    string
+	WorkDir string
+	Cols    int
+	Rows    int
+}
+
+// Resize sizes a job's PTY to the pane rendering it, which is the only way the
+// child ever reflows: the emulator drawing that pane does not re-wrap what it
+// has already been sent. Each attached pane resizes for itself, so the last one
+// to speak wins — a job shown twice at two sizes is drawn for the latest.
+func (m *Manager) Resize(params ResizeParams) error {
+	job, err := m.attachableJob(jobRef{Name: params.Name, WorkDir: params.WorkDir})
+	if err != nil {
+		return err
+	}
+	if job.Config.Kind == domain.JobKindTask {
+		return fmt.Errorf("job %s runs on a pipe, not a PTY (task)", params.Name)
+	}
+
+	if err := setWinsize(winsizeParams{File: job.PTY, Cols: params.Cols, Rows: params.Rows}); err != nil {
+		return fmt.Errorf("job %s: %w", params.Name, err)
+	}
+	return nil
+}
+
 func (m *Manager) List() []ManagedJob {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -684,7 +778,6 @@ func (m *Manager) List() []ManagedJob {
 	return result
 }
 
-// IsRunning checks if any jobs are currently running.
 func (m *Manager) IsRunning() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -756,10 +849,12 @@ func (m *Manager) stopWithSignal(job *ManagedJob) error {
 func (m *Manager) waitForExit(job *ManagedJob) {
 	defer close(job.exited)
 
-	_ = job.Cmd.Wait()
+	exit := exitCodeOf(job.Cmd.Wait())
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	job.ExitCode = &exit
 
 	if job.Status != domain.JobStatusRunning {
 		return

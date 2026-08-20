@@ -153,6 +153,9 @@ internal/
     reparent/                 ←   `wtm reparent`: the run (reparent.go) + its questions (steps.go)
     prune/                    ←   `wtm prune`: the run (prune.go) + its questions (steps.go)
     sync/                     ←   `wtm sync`: the run (sync.go) + its questions (steps.go)
+    runlogs/                  ←   `wtm run up`/`run logs`: the jobs a surface shows,
+                                  their live streams, and the profile start sequence
+                                  (asks nothing — it reports events instead of steps)
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
     env/                      ←   .env provisioning (create) + drift reconciliation (`wtm env`, sync.go)
@@ -168,6 +171,8 @@ internal/
     dashboard/                ←   `wtm ui`: the full-screen worktree dashboard, the second
                                   surface over flow/ (its own Prompter/Presenter, mouse
                                   zones via bubblezone)
+    runview/                  ←   a job's raw PTY output replayed through a terminal
+                                  emulator (`github.com/charmbracelet/x/vt`)
   infra/                      ← I/O, git exec, filesystem wrappers
 ```
 

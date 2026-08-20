@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -117,5 +118,101 @@ func TestWriteImportResultText_NothingToImport(t *testing.T) {
 	WriteImportResultText(&buf, ImportResult{})
 	if !strings.Contains(buf.String(), "Nothing to import") {
 		t.Errorf("expected nothing-to-import message: %q", buf.String())
+	}
+}
+
+func TestFormatRunningJobs_ShowsUptime(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	out := FormatRunningJobs(FormatRunningJobsParams{
+		Jobs: []domain.JobInfo{{
+			Name:      "dev",
+			Kind:      domain.JobKindService,
+			Status:    domain.JobStatusRunning,
+			PID:       4242,
+			WorkDir:   "/work/feat",
+			StartedAt: now.Add(-5 * time.Minute),
+		}},
+		Now: now,
+	})
+
+	if !strings.Contains(out, "UPTIME") {
+		t.Errorf("expected an UPTIME column, got:\n%s", out)
+	}
+	if !strings.Contains(out, "5m") {
+		t.Errorf("expected the uptime 5m, got:\n%s", out)
+	}
+	if row := strings.Fields(strings.Split(out, "\n")[1]); len(row) != 6 {
+		t.Errorf("expected 6 filled cells, got %q", row)
+	}
+}
+
+// TestFormatRunningJobs_NoUptimeWithoutARunningStart pins the two cases where
+// the column stays blank rather than counting: a job the daemon never spawned,
+// and one whose run is over.
+func TestFormatRunningJobs_NoUptimeWithoutARunningStart(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name      string
+		status    domain.JobStatus
+		startedAt time.Time
+	}{
+		{"jamais démarré", domain.JobStatusRunning, time.Time{}},
+		{"arrêté", domain.JobStatusStopped, now.Add(-5 * time.Minute)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			job := domain.JobInfo{
+				Name:      "dev",
+				Kind:      domain.JobKindService,
+				Status:    c.status,
+				PID:       7,
+				WorkDir:   "/work/feat",
+				StartedAt: c.startedAt,
+			}
+			out := FormatRunningJobs(FormatRunningJobsParams{Jobs: []domain.JobInfo{job}, Now: now})
+			row := strings.Fields(strings.Split(out, "\n")[1])
+			if len(row) != 5 {
+				t.Errorf("expected 5 filled cells (no uptime), got %q", row)
+			}
+		})
+	}
+}
+
+func TestWriteRunningJobsJSON_ExposesStartAndExit(t *testing.T) {
+	startedAt := time.Date(2026, 8, 20, 11, 0, 0, 0, time.UTC)
+	code := 3
+
+	var buf bytes.Buffer
+	err := WriteRunningJobsJSON(&buf, []domain.JobInfo{
+		{Name: "dev", Status: domain.JobStatusCrashed, StartedAt: startedAt, ExitCode: &code},
+		{Name: "ghost", Status: domain.JobStatusStopped},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var got []domain.JobInfo
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !got[0].StartedAt.Equal(startedAt) {
+		t.Errorf("started_at = %v, want %v", got[0].StartedAt, startedAt)
+	}
+	if got[0].ExitCode == nil || *got[0].ExitCode != code {
+		t.Errorf("exit_code = %v, want %d", got[0].ExitCode, code)
+	}
+
+	// A job the daemon never ran carries neither key rather than an epoch date
+	// and a code that would read as a clean exit. Read as keys, not as text: the
+	// payload is indented, so a literal search for `"exit_code":0` matches
+	// nothing whatever the tags say — and a nil code never renders as 0 anyway.
+	var payloads []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &payloads); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, key := range []string{"started_at", "exit_code"} {
+		if value, present := payloads[1][key]; present {
+			t.Errorf("%s = %v, want no key at all on a job the daemon never ran", key, value)
+		}
 	}
 }

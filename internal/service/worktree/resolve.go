@@ -120,3 +120,13 @@ func FindByBranch(params FindByBranchParams) (domain.GitWorktree, error) {
 		Branch:     params.Branch,
 	})
 }
+
+type CurrentBranchParams struct {
+	Dir string
+}
+
+// CurrentBranch names the branch checked out in the worktree containing Dir,
+// which may be any of its subdirectories. A detached HEAD returns an error.
+func CurrentBranch(params CurrentBranchParams) (string, error) {
+	return infra.CurrentBranch(params.Dir)
+}

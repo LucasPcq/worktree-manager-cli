@@ -91,9 +91,10 @@ A few ideas explain how the commands fit together:
   it work. Without it, use [`resolve`](docs/wtm_resolve.md) to get a path.
 - **Dev jobs** *(experimental)* — long-running **services** (dev servers, docker) and
   one-shot **tasks** (migrations, seeds) declared in `run.toml` and grouped into
-  **profiles**, run per-worktree by a background daemon. The flow is still stabilizing —
-  `wtm go` is the recommended way to enter a worktree today. See [`run`](docs/wtm_run.md)
-  and [Run config](#run-config--runtoml).
+  **profiles**, run per-worktree by a background daemon. Starting them **attaches**: the
+  run view opens one pane per job, leaving it detaches without stopping anything, and
+  `-d` skips it. The flow is still stabilizing — `wtm go` is the recommended way to enter
+  a worktree today. See [`run`](docs/wtm_run.md) and [Run config](#run-config--runtoml).
 
 ## Commands
 
@@ -137,10 +138,10 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 | Command | Purpose |
 |---|---|
 | [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts) |
-| [`run up`](docs/wtm_run_up.md) / [`down`](docs/wtm_run_down.md) | Start / stop a profile's jobs |
-| [`run start`](docs/wtm_run_start.md) / [`stop`](docs/wtm_run_stop.md) | Start / stop a single job |
+| [`run up`](docs/wtm_run_up.md) / [`down`](docs/wtm_run_down.md) | Start / stop a profile's jobs (`up` attaches, `-d` detaches) |
+| [`run start`](docs/wtm_run_start.md) / [`stop`](docs/wtm_run_stop.md) | Start / stop a single job (`start` attaches, `-d` detaches) |
 | [`run ps`](docs/wtm_run_ps.md) / [`list`](docs/wtm_run_list.md) | Running jobs / declared jobs + profiles |
-| [`run logs`](docs/wtm_run_logs.md) | Stream a job's output |
+| [`run logs`](docs/wtm_run_logs.md) | Reopen the run view on this worktree's jobs |
 | [`run export`](docs/wtm_run_export.md) / [`import`](docs/wtm_run_import.md) | Share a job layout between machines |
 | [`run job`](docs/wtm_run_job.md) / [`profile`](docs/wtm_run_profile.md) | Add / remove / edit jobs and profiles |
 
@@ -280,6 +281,14 @@ default = true
 Jobs are scoped per worktree at runtime: starting `docker` from worktree A runs it with
 `cwd = A`; a separate process runs from worktree B. `wtm run down` only stops the current
 worktree's jobs unless you pass `--all`.
+
+`run up` and `run start` **attach**: a full-screen view opens with one pane per job, and
+`wtm run logs` reopens it later. Leaving the view (`q`, or Ctrl+C outside focus mode)
+detaches — the daemon keeps the jobs running. `-d` starts them and hands the prompt back
+instead. Without a terminal, or under `--output json`, no view opens: the run reports
+itself as lines, which is what a script or an agent gets. Each job's output is also
+journaled to `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (5 MB x 3), and
+`run logs` reads that back for a job that is no longer running.
 
 ### Global config — `~/.config/wtm/config.toml`
 

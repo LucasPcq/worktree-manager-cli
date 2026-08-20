@@ -82,10 +82,5 @@ func syncTerminalSize(ptmx *os.File) {
 	if err != nil {
 		return
 	}
-	syscall.Syscall(
-		syscall.SYS_IOCTL,
-		ptmx.Fd(),
-		syscall.TIOCSWINSZ,
-		uintptr(unsafeWinsize(width, height)),
-	)
+	_ = setWinsize(winsizeParams{File: ptmx, Cols: width, Rows: height})
 }

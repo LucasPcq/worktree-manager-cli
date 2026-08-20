@@ -546,11 +546,232 @@ const (
 	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
 	CtrlCByte byte = 0x03
 
+	// JobLogsDirName is the directory under the state dir holding the persisted
+	// job logs, one subdirectory per worktree:
+	// <state-dir>/logs/<worktree>/<job>.log.
+	JobLogsDirName = "logs"
+
+	// JobLogFileExt is the extension of a job's log file.
+	JobLogFileExt = ".log"
+
+	// JobLogMaxBytes is the size at which a job log rotates and JobLogMaxFiles
+	// how many files are kept for that job — the active one plus its backups,
+	// <job>.log.1 and <job>.log.2. Retention is deliberately not configurable.
+	JobLogMaxBytes = 5 << 20
+	JobLogMaxFiles = 3
+
+	// JobLogMaxPendingBytes caps the unterminated tail the sanitizer carries
+	// between two chunks. A job that redraws one line forever without ever
+	// emitting a newline (a progress bar) would otherwise hold — and re-scan —
+	// its whole output; past this many bytes the tail is journaled as it stands.
+	JobLogMaxPendingBytes = 64 << 10
+
+	// JobLogTailLines is how much history a surface reads back when it does not
+	// say: enough to fill a scrollback, short enough to stay one read.
+	JobLogTailLines = 1000
+
+	// JobStreamChunkBytes sizes one read from an attached job, and
+	// JobStreamQueueChunks how many reads may wait ahead of a subscriber before
+	// it holds the stream back. A job redrawing a full screen writes tens of
+	// kilobytes at once, which is what these are sized for.
+	JobStreamChunkBytes  = 32 << 10
+	JobStreamQueueChunks = 256
+
+	// JobLogTimestampLayout and JobLogSeparator format one persisted log line:
+	// an RFC3339 instant, then the sanitized text. Fixed-width prefix so a
+	// reader (or a grep) can split every line at the same column.
+	JobLogTimestampLayout = time.RFC3339
+	JobLogSeparator       = "  "
+
+	// JobUptime*Fmt render how long a job has been up, coarsening as it ages so
+	// the column stays narrow: 42s, 5m, 3h07m, 2d05h.
+	JobUptimeSecFmt  = "%ds"
+	JobUptimeMinFmt  = "%dm"
+	JobUptimeHourFmt = "%dh%02dm"
+	JobUptimeDayFmt  = "%dd%02dh"
+
+	// JobPaneDefaultCols and JobPaneDefaultRows size a job's terminal emulator
+	// until the surface knows how much room it can give it.
+	JobPaneDefaultCols = 80
+	JobPaneDefaultRows = 24
+
+	// JobPaneScrollbackLines is how far back a job pane can scroll. A scrollback
+	// line keeps one styled cell per written column and a cell is 112 bytes, so
+	// this is what a pane costs. Measured saturated at this depth: 9.9 MiB for a
+	// 120-column pane printing 40-character lines, 27.4 MiB for a 200-column one
+	// printing full-width lines — 59 to 165 MiB for a six-job profile, where
+	// 2000 lines measured 49 MiB per pane and 294 MiB for the six. Twenty to
+	// ninety times the raw bytes it holds, against 5 MB x 3 kept on disk per job,
+	// which is why this stops at the depth JobLogTailLines reads back: the
+	// sanitized log file, not the emulator, is where the history lives.
+	JobPaneScrollbackLines = 1000
+
+	// JobPaneScrollbackBurstFactor is how much more than that a pane lets its
+	// emulator hold while someone reads back through the history — the room the
+	// pane needs to count the lines each write pushes, which a buffer that is
+	// evicting no longer reports. It is given back at the live tail.
+	JobPaneScrollbackBurstFactor = 2
+
 	// JobAlreadyRunningSuffix is the tail of the daemon error returned when a
 	// job is started while already running. Callers match on it to treat a
 	// repeat start (e.g. re-running `run up` while services are up) as a benign
 	// no-op rather than a failure that aborts the profile.
 	JobAlreadyRunningSuffix = "is already running"
+
+	// RunViewSidebarWidth is the job list's column budget beside a pane, and
+	// RunViewSidebarMinPaneCols what the pane must keep for the list to be shown
+	// at all: below it the list is dropped rather than squeezing the output both
+	// of them exist to show.
+	RunViewSidebarWidth       = 26
+	RunViewSidebarMinPaneCols = 40
+
+	// RunViewMinBodyRows is the height the body keeps before a notice band is
+	// allowed to take rows from it.
+	RunViewMinBodyRows = 3
+
+	// RunViewMinPanelCols and RunViewMinPanelRows are the smallest a bordered
+	// panel can be and still hold a cell of what it frames.
+	RunViewMinPanelCols = 3
+	RunViewMinPanelRows = 3
+
+	// RunViewBorderWidth is what a panel's border costs it in columns, and
+	// RunViewPanelChrome what the border and the title row together cost it in
+	// rows.
+	RunViewBorderWidth = 2
+	RunViewPanelChrome = 3
+
+	// RunViewMsgBuffer sizes the channel the stream readers post on, and
+	// RunViewPollSeconds how often the job list is re-read from the daemon.
+	RunViewMsgBuffer   = 64
+	RunViewPollSeconds = 2
+
+	// RunViewRenderFPS throttles the redraw of a pane being written to. Writing
+	// a chunk into the emulator costs a fraction of rendering the grid, so the
+	// bytes are taken as they come and only the drawing is paced.
+	RunViewRenderFPS = 30
+
+	// RunViewScrollLines is how far one scroll key moves through a pane's
+	// history; a page moves by the pane's own height.
+	RunViewScrollLines = 3
+
+	// RunViewJobsTitle heads the job list and RunViewEmptyMessage stands in for
+	// it when the worktree declares none.
+	RunViewJobsTitle     = "JOBS"
+	RunViewEmptyMessage  = "No jobs declared. Add them to run.toml with `wtm run init`."
+	RunViewNoMatchFmt    = "No job matches %q."
+	RunViewFilterPrompt  = "filter: "
+	RunViewFilterHintFmt = "filter %q · esc clears"
+
+	// RunViewSeparator joins two things said on one row of the run view.
+	RunViewSeparator = " · "
+
+	// RunViewCursorMark points at the job whose pane is on screen, and
+	// RunViewMark* are the status marks in front of every job's name.
+	RunViewCursorMark  = "▸"
+	RunViewMarkRunning = "●"
+	RunViewMarkStopped = "○"
+	RunViewMarkCrashed = "✗"
+
+	// RunViewPaneWaiting and RunViewPaneNoHistory stand in
+	// for a pane with nothing in it yet, and RunViewPane*Label say where what is
+	// in it came from: the job itself, or the log file it left behind.
+	RunViewPaneWaiting      = "Waiting for output…"
+	RunViewPaneNoHistory    = "No output recorded for this job."
+	RunViewPaneHistoryLabel = "history"
+	RunViewPaneLiveLabel    = "live"
+	RunViewPaneScrollFmt    = "scrolled %d lines back"
+
+	// RunViewHeaderTitle names the view and RunViewRunningFmt counts what it is
+	// showing.
+	RunViewHeaderTitle = "wtm run"
+	RunViewRunningFmt  = "%d/%d running"
+
+	// RunViewHelpBrowse and RunViewHelpFilter are the footer's key reminders,
+	// one per mode the keyboard can be in.
+	RunViewHelpBrowse = "↑↓ job · / filter · pgup/pgdn scroll · enter focus · r refresh · q detach"
+	RunViewHelpFilter = "type to filter · enter apply · esc clear"
+
+	// RunViewFocusKey passes every keystroke to the job. Taking them back needs
+	// a key no child application can claim, and no single one is free: a
+	// terminal cannot even tell shift+enter from enter. So the exit is a
+	// repeat — the first press still reaches the job, a second one within
+	// RunViewFocusExitWindow means the reader, not the job.
+	RunViewFocusKey     = "enter"
+	RunViewFocusExitKey = "esc"
+
+	// RunViewFocusHintFmt replaces the footer's key reminders while a job has the
+	// keyboard, and RunViewFocusLabel marks the pane that holds it.
+	RunViewFocusHintFmt = "focus %s — every key goes to the job · %s twice gives them back"
+	RunViewFocusLabel   = "focus"
+
+	// RunViewFocusExitWindow is how close the second exit key has to land to
+	// read as a way out rather than as two keystrokes meant for the job.
+	RunViewFocusExitWindow = 600 * time.Millisecond
+
+	// RunViewNotAttachableFmt is why focus is refused: there is no live stream
+	// behind the pane, only what the log file kept.
+	RunViewNotAttachableFmt = "%s has no live stream to type into."
+
+	// RunViewStepFmt reports where a profile's start sequence stands, and
+	// RunViewMarkStarting / RunViewMarkDone mark the job it is on in the list.
+	RunViewStepFmt      = "starting %d/%d · %s"
+	RunViewMarkStarting = "◌"
+	RunViewMarkDone     = "✓"
+
+	// RunViewAbortTitle heads the report of a profile that gave up, and
+	// RunViewAbort*Fmt are the three things it has to say: what failed and where,
+	// what was left running, and what was never reached.
+	RunViewAbortTitle         = "Profile aborted"
+	RunViewAbortFailedFmt     = "failed at step %d/%d: %s — %s"
+	RunViewAbortRunningFmt    = "left running: %s"
+	RunViewAbortNotStartedFmt = "not started: %s"
+	RunViewAbortDismiss       = "esc dismisses this report"
+
+	// RunViewRecapTitle heads the recap printed once the screen is given back,
+	// and RunViewRecap*Fmt are its lines: what is running, what ran, what did
+	// not, and the two commands that act on any of it.
+	RunViewRecapTitle         = "Jobs"
+	RunViewRecapRunningFmt    = "Running:      %s"
+	RunViewRecapCompletedFmt  = "Completed:    %s"
+	RunViewRecapFailedFmt     = "Failed:       %s"
+	RunViewRecapNotStartedFmt = "Not started:  %s"
+	RunViewRecapNoneRunning   = "No job left running."
+	RunViewRecapLogsHint      = "wtm run logs  — reopen this view"
+	RunViewRecapDownHint      = "wtm run down  — stop the jobs"
+	// RunViewRecapListSep joins the jobs named on one recap line.
+	RunViewRecapListSep = ", "
+
+	// RunStream* are how the line surface reports a profile's start sequence when
+	// there is no screen to take over: one step announced, one line per job once
+	// the daemon has answered for it, then the two commands that act on what is
+	// left running.
+	RunStreamStepFmt    = "[%d/%d] %s"
+	RunStreamStartedFmt = "%s started"
+	RunStreamAlreadyFmt = "%s already running"
+	RunStreamDoneFmt    = "%s done"
+	RunStreamNextHint   = "wtm run logs to attach · wtm run down to stop"
+
+	// RunAbort* report the partial state a profile that gave up left behind, on
+	// the surface that has no room to draw it: where it stopped, what nothing
+	// tore down, what it never reached, and the way out.
+	RunAbortStepFmt         = "Profile aborted at step %d/%d (%s)."
+	RunAbortRunningLabel    = "Left running:"
+	RunAbortNotStartedLabel = "Not started: "
+	RunAbortHint            = "fix and re-run `wtm run up` · `wtm run down` to stop everything"
+
+	// RunLogsPrefixFmt marks which job a line came from when several of them
+	// share one stream, RunLogsHistoryHint says a job that is not running is
+	// being read back from its log file, and RunLogsNoJobs stands in for a
+	// worktree with nothing to read.
+	RunLogsPrefixFmt   = "[%s]"
+	RunLogsHistoryHint = "%s is not running — reading back its log file."
+	RunLogsNoJobs      = "No running jobs in this worktree."
+
+	// RunDaemonConnecting, RunStartingFmt and RunTaskRunningFmt are what a run
+	// command says while it waits on the daemon.
+	RunDaemonConnecting = "Connecting to daemon…"
+	RunStartingFmt      = "Starting %s…"
+	RunTaskRunningFmt   = "Running task %s"
 
 	// SyncConfirmPrompt is the confirmation question shown before running a sync
 	// cascade, formatted with the number of worktrees to rebase. Shared by the
@@ -1291,6 +1512,11 @@ const (
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so
 	// a persistent dashboard is never left by accident.
 	KeyQuit = "q"
+
+	// EscapePrefix is the leading escape a terminal sends for an alt-modified
+	// key, and KeyCtrlPrefix how a control combination is named.
+	EscapePrefix  = "\x1b"
+	KeyCtrlPrefix = "ctrl+"
 
 	// GitLogFieldSep separates fields in `git log --format`. The pipe cannot
 	// serve: a commit subject may contain one. The ASCII unit separator can't

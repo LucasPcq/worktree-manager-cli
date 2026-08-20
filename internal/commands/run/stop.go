@@ -87,7 +87,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 
 	if format == domain.OutputJSON {
-		return output.WriteJobResultJSON(cmd.OutOrStdout(), output.JobActionResult{
+		return output.WriteJobResultJSON(cmd.OutOrStdout(), domain.JobActionResult{
 			Name:   args[0],
 			Status: domain.JobActionStopped,
 		})

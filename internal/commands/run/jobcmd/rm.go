@@ -113,7 +113,7 @@ func runRmByName(params rmByNameParams) error {
 
 	format, _ := params.Cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
-		return output.WriteJobResultJSON(params.Cmd.OutOrStdout(), output.JobActionResult{
+		return output.WriteJobResultJSON(params.Cmd.OutOrStdout(), domain.JobActionResult{
 			Name:   params.Name,
 			Status: domain.JobActionRemoved,
 		})

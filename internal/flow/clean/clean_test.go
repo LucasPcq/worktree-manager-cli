@@ -8,6 +8,8 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/testutil/flowtest"
 	"github.com/LucasPcq/wtm/internal/testutil/gittest"
@@ -229,6 +231,70 @@ func TestRunConfirmsThenRemoves(t *testing.T) {
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 		t.Errorf("worktree still on disk: %v", statErr)
 	}
+}
+
+func TestRunPurgesTheWorktreeJobLogs(t *testing.T) {
+	ctx := testContext(t)
+	makeWorktree(t, ctx, "feat/logged")
+
+	logs := writeJobLog(t, ctx, "feat/logged")
+	kept := writeJobLog(t, ctx, "feat/kept")
+
+	if _, err := Run(Params{
+		Context:   ctx,
+		Request:   Request{Branch: "feat/logged", BaseBranch: "main"},
+		Prompter:  &flowtest.ScriptedPrompter{Answers: map[string]string{KeyDelete: deleteYes}},
+		Presenter: newRecorder(),
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if _, err := os.Stat(logs); !os.IsNotExist(err) {
+		t.Errorf("the removed worktree kept its job logs: %v", err)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Errorf("another worktree's job logs were purged: %v", err)
+	}
+}
+
+func TestRunSucceedsWhenTheJobLogPurgeFails(t *testing.T) {
+	ctx := testContext(t)
+	path := makeWorktree(t, ctx, "feat/logged")
+
+	// A regular file where the logs/ directory belongs: every purge under it
+	// fails with ENOTDIR, which the removal must not notice.
+	if err := os.WriteFile(filepath.Join(ctx.StateDir, "logs"), []byte("not a directory\n"), 0o644); err != nil {
+		t.Fatalf("plant the blocking file: %v", err)
+	}
+	blocked := rules.WorktreeLogDir(rules.WorktreeLogDirParams{StateDir: ctx.StateDir, Branch: "feat/logged"})
+	if err := process.PurgeWorktreeLogs(blocked); err == nil {
+		t.Fatalf("the fixture does not make the purge fail, so it proves nothing")
+	}
+
+	if _, err := Run(Params{
+		Context:   ctx,
+		Request:   Request{Branch: "feat/logged", BaseBranch: "main"},
+		Prompter:  &flowtest.ScriptedPrompter{Answers: map[string]string{KeyDelete: deleteYes}},
+		Presenter: newRecorder(),
+	}); err != nil {
+		t.Fatalf("a purge that cannot happen must not fail the removal: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("worktree still on disk: %v", err)
+	}
+}
+
+// writeJobLog plants a job log for a branch's worktree and returns its directory.
+func writeJobLog(t *testing.T, ctx flow.Context, branch string) string {
+	t.Helper()
+	dir := rules.WorktreeLogDir(rules.WorktreeLogDirParams{StateDir: ctx.StateDir, Branch: branch})
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create log dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "web.log"), []byte("listening\n"), 0o644); err != nil {
+		t.Fatalf("write log: %v", err)
+	}
+	return dir
 }
 
 func TestRunOffersForceOnlyWhenUnsafe(t *testing.T) {

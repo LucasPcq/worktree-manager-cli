@@ -24,12 +24,14 @@ self-documenting:
 1. **Always pass arguments.** Without one, most commands drop into an interactive picker
    you can't navigate. Get the branch / PR number / profile / job name from a prior
    discovery call (below) first.
-2. **Never launch `wtm ui`.** It is a full-screen alt-screen dashboard meant for a human
-   at a keyboard: it takes over the terminal until someone presses `q`, and there is no way
-   for you to read it or get out of it. Treat it exactly like an interactive picker — do not
-   run it to "look at" the worktrees; run `wtm list --output json` (or `wtm tree`) instead.
-   Suggest `wtm ui` to the *user* when they want to browse worktrees themselves. wtm defends
-   itself here (it errors on `--output json` and with no TTY), but don't rely on that.
+2. **Never launch a full-screen surface.** Two exist: `wtm ui` (the worktree dashboard) and
+   the **run view** that `wtm run up`, `wtm run start <service>` and `wtm run logs` open on a
+   terminal. Both take the terminal over until someone presses `q`, and there is no way for
+   you to read one or get out of it. Treat them exactly like an interactive picker — do not
+   run `wtm ui` to "look at" the worktrees; run `wtm list --output json` (or `wtm tree`)
+   instead, and pass **`-d`** (or `--output json`) to every `run up` / `run start`. Suggest
+   `wtm ui` to the *user* when they want to browse worktrees themselves. wtm defends itself
+   here — no view ever opens under `--output json` or without a TTY — but don't rely on that.
 3. **Always add `--output json`** on data commands. JSON goes to stdout; human text and
    warnings go to stderr — ignore stderr unless the exit code is non-zero.
 4. **Trust exit codes.** `0` = success. Beyond generic `1`, wtm returns granular codes
@@ -83,7 +85,8 @@ self-documenting:
 | Worktree **forest** (parent→child + which need sync) | `wtm tree --output json` |
 | Open PRs | `gh pr list --json number,title,headRefName,state,isDraft,url` |
 | Declared jobs + profiles | `wtm run list --output json` |
-| Jobs running right now | `wtm run ps --output json` |
+| Jobs running right now (+ `started_at`, `exit_code`) | `wtm run ps --output json` |
+| What a job printed | `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (read it as a file) |
 | Resolved project config | `wtm config show --output json` |
 | A branch's worktree path | `wtm resolve <branch> --output json` |
 
@@ -228,6 +231,17 @@ and **experimental**: the global `wtm init` does not configure it.
 - `run up [profile]` / `run down` — start / stop a profile. `run start <job>` / `run stop
   <job>` — one job. A failing job aborts the rest and exits non-zero, leaving started
   services up (fix and re-run).
+- `run up` and `run start <service>` **attach by default**: on a terminal they open the
+  full-screen run view. Always pass **`-d`** (or `--output json`, which never opens it) —
+  `-d` starts the jobs and returns immediately, which is the behaviour you want. A `task`
+  runs inline and blocks until it exits whatever you pass, so `run start <task>` needs no
+  `-d`.
+- `run logs [job]` opens that same view on a terminal. Without one it writes every running
+  job's output as `[job] line` on stdout and only ends when the jobs do — do not call it
+  expecting it to return. Prefer reading the journal instead: every job's output is
+  persisted to `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (rotated
+  5 MB x 3), which you can read with your own file tools; `run logs <job>` on a job that
+  is **not** running prints that file back and returns.
 - `run export` / `run import` — share a layout as JSON.
 - `run job add|rm` and `run profile add|rm` are agent-drivable with flags; the `edit`
   wizards are **interactive — never invoke them**. To change a job, `run export` to read
@@ -269,8 +283,12 @@ On non-zero exit, read stderr, then:
 - `16` (run module not initialized) → run `wtm run init` (or `wtm run init --non-interactive`)
   to create `run.toml`, then re-run the command.
 - `gh: …` → `gh` isn't authenticated; tell the user to run `gh auth login`.
-- A `run up`/`run start` job failed → its captured output is in the JSON error entry; read
-  it to see why, fix, and re-run.
+- A `run up` job failed → its entry in the JSON array is `{"name", "status": "error",
+  "message"}` plus **`output`** (everything the job wrote before it failed) and
+  **`exit_code`**. `message` is the daemon's one-line reason; `output` is why. Note that
+  `run up --output json` exits **0** even when the profile aborted, so the document stays
+  parseable — branch on an entry with `status: "error"`, not on the exit code. `run start
+  --output json` is the opposite: one object, and a failing job exits non-zero.
 - A `sync` exited non-zero → some branch is `status: conflict`/`error` in the JSON. For a
   `conflict` (default mode) the rebase was aborted and the branch + descendants skipped —
   the user resolves it manually in its worktree, then re-run `sync`. `kept_in_progress:

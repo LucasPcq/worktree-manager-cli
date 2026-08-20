@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 // JobKind distinguishes a long-running service from a one-shot task.
 type JobKind string
 
@@ -55,4 +57,46 @@ type JobInfo struct {
 	Status  JobStatus `json:"status"`
 	PID     int       `json:"pid"`
 	WorkDir string    `json:"work_dir"`
+	// StartedAt is when the daemon spawned the process. Zero for a job it never
+	// spawned — one named by a picker, or read back after a daemon restart.
+	StartedAt time.Time `json:"started_at,omitzero"`
+	// ExitCode stays nil until the job's own process is reaped, and -1 says a
+	// signal killed it. A detached launcher exiting does not end its job, so it
+	// keeps a nil code for as long as the service it started is registered.
+	ExitCode *int `json:"exit_code,omitempty"`
 }
+
+// JobActionResult is one job's outcome as a `run *` command reports it, shared
+// by every surface that speaks the JobAction* vocabulary — the JSON output and
+// the flow seam alike.
+type JobActionResult struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	// Message carries the detail when Status is JobActionError.
+	Message string `json:"message,omitempty"`
+	// Output is what the job had written when it failed, raw. A caller reading
+	// this document never saw the live stream, and the daemon's message alone
+	// ("task migrate failed: exit status 1") does not say why it stopped.
+	Output string `json:"output,omitempty"`
+	// ExitCode is what the failing job exited with, absent for one that never
+	// got as far as running.
+	ExitCode *int `json:"exit_code,omitempty"`
+}
+
+// LogRecord is one sanitized line of a job's output, as persisted in that job's
+// log file.
+type LogRecord struct {
+	At   time.Time
+	Text string
+}
+
+// RunSurface names who shows a run's jobs: the full-screen view, a stream of
+// lines on the terminal the command was launched from, or a machine-readable
+// document.
+type RunSurface int
+
+const (
+	RunSurfaceView RunSurface = iota
+	RunSurfaceStream
+	RunSurfaceMachine
+)

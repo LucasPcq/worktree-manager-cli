@@ -25,7 +25,7 @@ func TestRunJobAdd_OK(t *testing.T) {
 		t.Fatalf("run job add: %v", err)
 	}
 
-	var result output.JobActionResult
+	var result domain.JobActionResult
 	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
 		t.Fatalf("parse JSON: %v\noutput: %s", err, stdout)
 	}
@@ -320,7 +320,7 @@ func TestRunJobRm_JSONOutput(t *testing.T) {
 		t.Fatalf("run job rm --output json: %v", err)
 	}
 
-	var result output.JobActionResult
+	var result domain.JobActionResult
 	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
 		t.Fatalf("parse JSON: %v\noutput: %s", err, stdout)
 	}

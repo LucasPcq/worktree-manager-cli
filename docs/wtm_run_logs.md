@@ -4,9 +4,9 @@ Attach to a job's output
 
 ### Synopsis
 
-Without arguments, stream all running jobs (multiplexed).
-With a job name, attach to that single job's PTY.
-Press Ctrl+C to detach.
+Open the run view on this worktree's jobs, focused on [job] when one is named.
+Leaving the view detaches; the jobs keep running.
+Without a terminal, every job's output is written as prefixed lines instead.
 
 ```
 wtm run logs [job] [flags]

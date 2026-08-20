@@ -61,6 +61,20 @@ var (
 	// ErrJobNotFound is returned when a referenced job is not declared in run.toml.
 	ErrJobNotFound = errors.New("job not found")
 
+	// ErrJobNotAttachable is returned for a job with no live output to subscribe
+	// to: a detached launcher, whose stream ended with the launcher, or a job
+	// that is no longer running. Its log file is what is left to read.
+	ErrJobNotAttachable = errors.New("job has no live output")
+
+	// ErrRunServiceRequired is returned by the run log seam when it was handed no
+	// daemon to talk to — a wiring mistake in the surface, never a user error.
+	ErrRunServiceRequired = errors.New("run log service is required")
+
+	// ErrJobStreamClosed is returned by a subscription that has been closed. Close
+	// is a barrier: what the surface asks of the job afterwards is refused rather
+	// than sent on its behalf.
+	ErrJobStreamClosed = errors.New("job stream is closed")
+
 	// ErrRunNotInitialized is returned when a run command runs before the run
 	// module is initialized — run.toml is absent or declares no job/profile. The
 	// message points at the dedicated setup command.
