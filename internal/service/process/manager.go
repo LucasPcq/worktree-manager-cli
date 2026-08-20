@@ -311,7 +311,9 @@ func lookupEnv(env []string, key string) (string, bool) {
 }
 
 // runTask keeps the task in the output hub while it runs, so `run logs <task>`
-// can attach to it too, and removes it from the map on exit whatever the outcome.
+// can attach to it too, and removes it from the map on exit whatever the
+// outcome. Its exit code therefore never travels on the job: it goes back in
+// the error returned here, and to a client in the daemon's own response.
 func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	defer close(job.exited)
 
@@ -390,7 +392,6 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	exit := exitCodeOf(waitErr)
 
 	m.mu.Lock()
-	job.ExitCode = &exit
 	delete(m.jobs, key)
 	m.mu.Unlock()
 
@@ -408,9 +409,8 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	return nil
 }
 
-// exitCodeOf reads a process's outcome from what Wait returned: 0 for a clean
-// exit, -1 when a signal killed it, and 1 for a failure Wait did not attribute
-// to the process itself.
+// exitCodeOf invents the 1 it answers for a failure Wait did not attribute to
+// the process itself; the -1 comes from the stdlib and means a signal killed it.
 func exitCodeOf(err error) int {
 	if err == nil {
 		return 0
