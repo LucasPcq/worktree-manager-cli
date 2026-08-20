@@ -53,8 +53,9 @@ func (m Model) fireDetailTick(msg detailTickMsg) (Model, tea.Cmd) {
 	return m, tea.Batch(m.loadDetailCmd(msg.branch), m.spinner.Tick)
 }
 
-// The poll and an explicit refresh skip the debounce, and leave the cache in
-// place: old data stays on screen rather than blanking while this runs.
+// An explicit refresh and a post-operation invalidation skip the debounce, and
+// leave the cache in place: old data stays on screen rather than blanking while
+// this runs.
 func (m Model) reloadDetailCmd() (Model, tea.Cmd) {
 	branch := m.selectedBranch()
 	if branch == "" {
@@ -121,8 +122,8 @@ func (m Model) statusFor(branch string) domain.WorktreeStatus {
 	return domain.WorktreeStatus{}
 }
 
-// Sorted because the detail reloads regularly: an unsorted map range would
-// permute this line between refreshes, and the panel must not move under the eye.
+// Sorted because a map range would permute this line between two loads of the
+// same branch, and the panel must not move under the eye.
 func (m Model) childrenOf(branch string) []string {
 	children := make([]string, 0, len(m.parents))
 	for child, parent := range m.parents {
