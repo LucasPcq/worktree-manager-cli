@@ -234,10 +234,10 @@ func TestRunConfirmsThenRemoves(t *testing.T) {
 
 func TestRunPurgesTheWorktreeJobLogs(t *testing.T) {
 	ctx := testContext(t)
-	path := makeWorktree(t, ctx, "feat/logged")
+	makeWorktree(t, ctx, "feat/logged")
 
-	logs := writeJobLog(t, ctx, path)
-	kept := writeJobLog(t, ctx, filepath.Join(t.TempDir(), "other"))
+	logs := writeJobLog(t, ctx, "feat/logged")
+	kept := writeJobLog(t, ctx, "feat/kept")
 
 	if _, err := Run(Params{
 		Context:   ctx,
@@ -256,10 +256,10 @@ func TestRunPurgesTheWorktreeJobLogs(t *testing.T) {
 	}
 }
 
-// writeJobLog plants a job log for a worktree and returns its directory.
-func writeJobLog(t *testing.T, ctx flow.Context, worktreePath string) string {
+// writeJobLog plants a job log for a branch's worktree and returns its directory.
+func writeJobLog(t *testing.T, ctx flow.Context, branch string) string {
 	t.Helper()
-	dir := rules.WorktreeLogDir(rules.WorktreeLogDirParams{StateDir: ctx.StateDir, WorkDir: worktreePath})
+	dir := rules.WorktreeLogDir(rules.WorktreeLogDirParams{StateDir: ctx.StateDir, Branch: branch})
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("create log dir: %v", err)
 	}

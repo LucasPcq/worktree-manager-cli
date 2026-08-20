@@ -14,15 +14,15 @@ func TestPurgeJobLogsDropsOnlyThatWorktreesLogs(t *testing.T) {
 	stateDir := t.TempDir()
 	f := &pruneFlow{ctx: flow.Context{StateDir: stateDir}}
 
-	pruned := filepath.Join(stateDir, "logs", "feat")
-	kept := filepath.Join(stateDir, "logs", "other")
+	pruned := filepath.Join(stateDir, "logs", "feat%2Fdone")
+	kept := filepath.Join(stateDir, "logs", "feat%2Fkept")
 	for _, dir := range []string{pruned, kept} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("create %s: %v", dir, err)
 		}
 	}
 
-	f.purgeJobLogs("/trees/feat")
+	f.purgeJobLogs("feat/done")
 
 	if _, err := os.Stat(pruned); !os.IsNotExist(err) {
 		t.Errorf("the pruned worktree kept its job logs: %v", err)
@@ -35,6 +35,6 @@ func TestPurgeJobLogsDropsOnlyThatWorktreesLogs(t *testing.T) {
 func TestPurgeJobLogsToleratesNothingToPurge(t *testing.T) {
 	f := &pruneFlow{ctx: flow.Context{StateDir: t.TempDir()}}
 
-	f.purgeJobLogs("/trees/never-ran-a-job")
+	f.purgeJobLogs("feat/never-ran-a-job")
 	f.purgeJobLogs("")
 }

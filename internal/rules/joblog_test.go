@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -133,16 +134,41 @@ func TestFormatLogRecord(t *testing.T) {
 }
 
 func TestWorktreeLogDir(t *testing.T) {
-	got := WorktreeLogDir(WorktreeLogDirParams{StateDir: "/repo/.git/wtm", WorkDir: "/trees/feat-login/"})
-	if got != "/repo/.git/wtm/logs/feat-login" {
-		t.Errorf("WorktreeLogDir = %q, want the worktree's dir under logs/", got)
+	got := WorktreeLogDir(WorktreeLogDirParams{StateDir: "/repo/.git/wtm", Branch: "feat/login"})
+	if got != "/repo/.git/wtm/logs/feat%2Flogin" {
+		t.Errorf("WorktreeLogDir = %q, want the encoded branch under logs/", got)
 	}
 
-	if got := WorktreeLogDir(WorktreeLogDirParams{WorkDir: "/trees/feat"}); got != "" {
+	if got := WorktreeLogDir(WorktreeLogDirParams{Branch: "feat"}); got != "" {
 		t.Errorf("WorktreeLogDir without a state dir = %q, want nothing to persist", got)
 	}
 	if got := WorktreeLogDir(WorktreeLogDirParams{StateDir: "/repo/.git/wtm"}); got != "" {
-		t.Errorf("WorktreeLogDir without a worktree = %q, want nothing to persist", got)
+		t.Errorf("WorktreeLogDir without a branch = %q, want nothing to persist", got)
+	}
+}
+
+func TestWorktreeLogDirKeepsSameNamedWorktreesApart(t *testing.T) {
+	first := WorktreeLogDir(WorktreeLogDirParams{StateDir: "/repo/.git/wtm", Branch: "alice/api"})
+	second := WorktreeLogDir(WorktreeLogDirParams{StateDir: "/repo/.git/wtm", Branch: "bob/api"})
+
+	if first == second {
+		t.Errorf("two worktrees checked out at .../api share %q — the state dir is shared by the whole repo", first)
+	}
+}
+
+func TestWorktreeLogDirRefusesABranchThatEscapesItsSegment(t *testing.T) {
+	for _, branch := range []string{".", ".."} {
+		if got := WorktreeLogDir(WorktreeLogDirParams{StateDir: "/repo/.git/wtm", Branch: branch}); got != "" {
+			t.Errorf("WorktreeLogDir(%q) = %q, want nothing rather than a path a purge would delete", branch, got)
+		}
+	}
+
+	// Anything else stays inside logs/ because the encoding leaves no separator.
+	for _, branch := range []string{"/", "../../etc", "a/../..", "\\", "%2F.."} {
+		got := WorktreeLogDir(WorktreeLogDirParams{StateDir: "/repo/.git/wtm", Branch: branch})
+		if filepath.Dir(got) != "/repo/.git/wtm/logs" {
+			t.Errorf("WorktreeLogDir(%q) = %q, want a single segment under logs/", branch, got)
+		}
 	}
 }
 

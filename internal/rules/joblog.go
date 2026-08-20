@@ -9,19 +9,35 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// WorktreeLogDirParams holds inputs for resolving a worktree's job-log dir.
 type WorktreeLogDirParams struct {
 	StateDir string
-	WorkDir  string
+	Branch   string
 }
 
-// WorktreeLogDir returns <state-dir>/logs/<worktree>/. Resolved client-side and
-// handed to the daemon, which must never resolve a git dir of its own.
+// WorktreeLogDir returns <state-dir>/logs/<encoded-branch>/. Resolved
+// client-side and handed to the daemon, which must never resolve a git dir of
+// its own. The branch keys the directory the same way <state-dir>/worktrees/
+// does — the state dir is shared by every worktree of the repository, so two
+// worktrees whose paths share a base name would otherwise interleave their
+// writes and purge each other. A branch that would not survive as a single path
+// segment resolves to nothing: this path feeds a recursive delete, so refusing
+// beats guessing.
 func WorktreeLogDir(params WorktreeLogDirParams) string {
-	if params.StateDir == "" || params.WorkDir == "" {
+	if params.StateDir == "" || params.Branch == "" {
 		return ""
 	}
-	return filepath.Join(params.StateDir, domain.JobLogsDirName, filepath.Base(filepath.Clean(params.WorkDir)))
+	segment := EncodeBranchSegment(params.Branch)
+	if !isSinglePathSegment(segment) {
+		return ""
+	}
+	return filepath.Join(params.StateDir, domain.JobLogsDirName, segment)
+}
+
+func isSinglePathSegment(segment string) bool {
+	if segment == "" || segment == "." || segment == ".." {
+		return false
+	}
+	return !strings.ContainsAny(segment, `/\`)
 }
 
 // JobLogFileName returns the log file name of a job, with every character that

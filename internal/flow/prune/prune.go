@@ -193,7 +193,7 @@ func (f *pruneFlow) remove(reparentChildren bool) (Outcome, error) {
 	result.Orphaned = orphaned
 
 	for _, pruned := range result.Pruned {
-		f.purgeJobLogs(pruned.Path)
+		f.purgeJobLogs(pruned.Branch)
 	}
 
 	if insidePruned {
@@ -234,10 +234,10 @@ func (f *pruneFlow) runHooks() error {
 
 // purgeJobLogs drops a removed worktree's persisted job logs. Best effort:
 // leftover log files are not worth failing a removal that already happened.
-func (f *pruneFlow) purgeJobLogs(worktreePath string) {
+func (f *pruneFlow) purgeJobLogs(branch string) {
 	_ = process.PurgeWorktreeLogs(rules.WorktreeLogDir(rules.WorktreeLogDirParams{
 		StateDir: f.ctx.StateDir,
-		WorkDir:  worktreePath,
+		Branch:   branch,
 	}))
 }
 

@@ -185,7 +185,7 @@ func (f *cleanFlow) remove(p removeParams) (Outcome, error) {
 		return Outcome{}, err
 	}
 
-	f.purgeJobLogs(worktreePath)
+	f.purgeJobLogs(params.Branch)
 
 	if insideRemoved {
 		shell.RequestCd(params.ProjectDir)
@@ -207,10 +207,10 @@ func (f *cleanFlow) remove(p removeParams) (Outcome, error) {
 
 // purgeJobLogs drops the removed worktree's persisted job logs. Best effort:
 // leftover log files are not worth failing a removal that already happened.
-func (f *cleanFlow) purgeJobLogs(worktreePath string) {
+func (f *cleanFlow) purgeJobLogs(branch string) {
 	_ = process.PurgeWorktreeLogs(rules.WorktreeLogDir(rules.WorktreeLogDirParams{
 		StateDir: f.ctx.StateDir,
-		WorkDir:  worktreePath,
+		Branch:   branch,
 	}))
 }
 
