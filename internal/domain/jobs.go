@@ -82,3 +82,14 @@ type LogRecord struct {
 	At   time.Time
 	Text string
 }
+
+// RunSurface names who shows a run's jobs: the full-screen view, a stream of
+// lines on the terminal the command was launched from, or a machine-readable
+// document.
+type RunSurface int
+
+const (
+	RunSurfaceView RunSurface = iota
+	RunSurfaceStream
+	RunSurfaceMachine
+)

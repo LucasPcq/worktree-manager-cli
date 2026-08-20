@@ -735,6 +735,18 @@ const (
 	// RunViewRecapListSep joins the jobs named on one recap line.
 	RunViewRecapListSep = ", "
 
+	// RunStreamStartedFmt and RunStreamDoneFmt are what a surface says about a
+	// job the daemon has answered for: a service that is up, a task that ran to
+	// the end.
+	RunStreamStartedFmt = "%s started"
+	RunStreamDoneFmt    = "%s done"
+
+	// RunDaemonConnecting, RunStartingFmt and RunTaskRunningFmt are what a run
+	// command says while it waits on the daemon.
+	RunDaemonConnecting = "Connecting to daemon…"
+	RunStartingFmt      = "Starting %s…"
+	RunTaskRunningFmt   = "Running task %s"
+
 	// SyncConfirmPrompt is the confirmation question shown before running a sync
 	// cascade, formatted with the number of worktrees to rebase. Shared by the
 	// interactive picker's confirmation step and the non-picker confirm prompt.
