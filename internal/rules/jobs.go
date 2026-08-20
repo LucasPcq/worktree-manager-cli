@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -19,6 +20,34 @@ func IsRunInitialized(cfg domain.RunConfig) bool {
 // (e.g. docker compose up -d).
 func IsDetached(job domain.JobConfig) bool {
 	return job.Kind == domain.JobKindService && job.Stop != ""
+}
+
+type JobUptimeParams struct {
+	Job domain.JobInfo
+	Now time.Time
+}
+
+// JobUptime reads how long a job has been up, and only answers for one that
+// still is: on a job that stopped, StartedAt dates a run that is over, and
+// letting it keep counting would read as still running. A start in the future
+// (a clock stepped between the daemon and the reader) counts as zero rather
+// than counting backwards.
+func JobUptime(params JobUptimeParams) string {
+	if params.Job.Status != domain.JobStatusRunning || params.Job.StartedAt.IsZero() {
+		return ""
+	}
+
+	elapsed := max(params.Now.Sub(params.Job.StartedAt), 0)
+	switch {
+	case elapsed < time.Minute:
+		return fmt.Sprintf(domain.JobUptimeSecFmt, int(elapsed.Seconds()))
+	case elapsed < time.Hour:
+		return fmt.Sprintf(domain.JobUptimeMinFmt, int(elapsed.Minutes()))
+	case elapsed < 24*time.Hour:
+		return fmt.Sprintf(domain.JobUptimeHourFmt, int(elapsed.Hours()), int(elapsed.Minutes())%60)
+	default:
+		return fmt.Sprintf(domain.JobUptimeDayFmt, int(elapsed.Hours())/24, int(elapsed.Hours())%24)
+	}
 }
 
 // DefaultProfile returns the profile marked as default, or the first one.

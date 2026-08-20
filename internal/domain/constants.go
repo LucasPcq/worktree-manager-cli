@@ -572,6 +572,13 @@ const (
 	JobLogTimestampLayout = time.RFC3339
 	JobLogSeparator       = "  "
 
+	// JobUptime*Fmt render how long a job has been up, coarsening as it ages so
+	// the column stays narrow: 42s, 5m, 3h07m, 2d05h.
+	JobUptimeSecFmt  = "%ds"
+	JobUptimeMinFmt  = "%dm"
+	JobUptimeHourFmt = "%dh%02dm"
+	JobUptimeDayFmt  = "%dd%02dh"
+
 	// JobAlreadyRunningSuffix is the tail of the daemon error returned when a
 	// job is started while already running. Callers match on it to treat a
 	// repeat start (e.g. re-running `run up` while services are up) as a benign

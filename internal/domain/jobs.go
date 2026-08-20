@@ -57,6 +57,13 @@ type JobInfo struct {
 	Status  JobStatus `json:"status"`
 	PID     int       `json:"pid"`
 	WorkDir string    `json:"work_dir"`
+	// StartedAt is when the daemon spawned the process. Zero for a job it never
+	// spawned — one named by a picker, or read back after a daemon restart.
+	StartedAt time.Time `json:"started_at,omitzero"`
+	// ExitCode stays nil until the job's own process is reaped, and -1 says a
+	// signal killed it. A detached launcher exiting does not end its job, so it
+	// keeps a nil code for as long as the service it started is registered.
+	ExitCode *int `json:"exit_code,omitempty"`
 }
 
 // LogRecord is one sanitized line of a job's output, as persisted in that job's

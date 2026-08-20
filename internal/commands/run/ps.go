@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -52,7 +53,7 @@ func runPs(cmd *cobra.Command, _ []string) error {
 
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		output.Frame(cmd.OutOrStdout(), func() {
-			fmt.Fprint(cmd.OutOrStdout(), output.FormatRunningJobs(jobs))
+			fmt.Fprint(cmd.OutOrStdout(), output.FormatRunningJobs(output.FormatRunningJobsParams{Jobs: jobs, Now: time.Now()}))
 		})
 		return nil
 	}

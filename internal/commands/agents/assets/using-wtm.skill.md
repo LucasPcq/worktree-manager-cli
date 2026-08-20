@@ -83,7 +83,7 @@ self-documenting:
 | Worktree **forest** (parent→child + which need sync) | `wtm tree --output json` |
 | Open PRs | `gh pr list --json number,title,headRefName,state,isDraft,url` |
 | Declared jobs + profiles | `wtm run list --output json` |
-| Jobs running right now | `wtm run ps --output json` |
+| Jobs running right now (+ `started_at`, `exit_code`) | `wtm run ps --output json` |
 | Resolved project config | `wtm config show --output json` |
 | A branch's worktree path | `wtm resolve <branch> --output json` |
 

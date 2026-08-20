@@ -254,3 +254,116 @@ func TestManagerStartWithoutLogDir_PersistsNothing(t *testing.T) {
 		t.Errorf("found %v, want no log file", logs)
 	}
 }
+
+func waitForJob(t *testing.T, m *Manager, name string, until func(ManagedJob) bool) ManagedJob {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		for _, job := range m.List() {
+			if job.Name == name && until(job) {
+				return job
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("job %s never reached the expected state (jobs: %+v)", name, m.List())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestManagerStartService_RecordsStartedAt pins what the uptime column is read
+// from: the instant the daemon spawned the process, not the instant a client
+// asked for the list.
+func TestManagerStartService_RecordsStartedAt(t *testing.T) {
+	m := NewManager()
+	dir := t.TempDir()
+
+	before := time.Now()
+	job := domain.JobConfig{Name: "server", Kind: domain.JobKindService, Cmd: "sleep 30"}
+	if err := m.Start(StartParams{Job: job, WorkDir: dir}); err != nil {
+		t.Fatalf("start service: %v", err)
+	}
+	t.Cleanup(func() { _ = m.StopAll() })
+
+	started := m.List()[0]
+	if started.StartedAt.Before(before) || started.StartedAt.After(time.Now()) {
+		t.Errorf("StartedAt = %v, want between %v and now", started.StartedAt, before)
+	}
+	if started.ExitCode != nil {
+		t.Errorf("ExitCode = %d, want nil while the job runs", *started.ExitCode)
+	}
+}
+
+// TestManagerService_ReportsExitCodeOnCrash verifies that a service dying on
+// its own carries the code it died with, which is what tells a crash apart
+// from a clean shutdown once the process is gone.
+func TestManagerService_ReportsExitCodeOnCrash(t *testing.T) {
+	m := NewManager()
+	dir := t.TempDir()
+
+	script := filepath.Join(dir, "boom.sh")
+	if err := os.WriteFile(script, []byte("exit 7\n"), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	job := domain.JobConfig{Name: "server", Kind: domain.JobKindService, Cmd: "sh " + script}
+	if err := m.Start(StartParams{Job: job, WorkDir: dir}); err != nil {
+		t.Fatalf("start service: %v", err)
+	}
+	t.Cleanup(func() { _ = m.StopAll() })
+
+	crashed := waitForJob(t, m, "server", func(j ManagedJob) bool {
+		return j.Status == domain.JobStatusCrashed
+	})
+	if crashed.ExitCode == nil || *crashed.ExitCode != 7 {
+		t.Errorf("ExitCode = %v, want 7", crashed.ExitCode)
+	}
+}
+
+// TestManagerService_ReportsSignalExitCodeOnStop pins the -1 the JobInfo doc
+// promises: a stopped job was killed, it did not choose an exit code.
+func TestManagerService_ReportsSignalExitCodeOnStop(t *testing.T) {
+	m := NewManager()
+	dir := t.TempDir()
+
+	job := domain.JobConfig{Name: "server", Kind: domain.JobKindService, Cmd: "sleep 30"}
+	if err := m.Start(StartParams{Job: job, WorkDir: dir}); err != nil {
+		t.Fatalf("start service: %v", err)
+	}
+	if err := m.Stop("server", dir); err != nil {
+		t.Fatalf("stop service: %v", err)
+	}
+
+	stopped := m.List()[0]
+	if stopped.Status != domain.JobStatusStopped {
+		t.Fatalf("Status = %s, want stopped", stopped.Status)
+	}
+	if stopped.ExitCode == nil || *stopped.ExitCode != -1 {
+		t.Errorf("ExitCode = %v, want -1 (killed by a signal)", stopped.ExitCode)
+	}
+}
+
+// TestManagerStartDetached_KeepsNoExitCode covers the launcher pattern: the
+// launcher exiting cleanly says nothing about the service it left running, so
+// the job reports no exit code at all rather than a 0 that would read as done.
+func TestManagerStartDetached_KeepsNoExitCode(t *testing.T) {
+	m := NewManager()
+	dir := t.TempDir()
+
+	job := domain.JobConfig{Name: "compose", Kind: domain.JobKindService, Cmd: "echo up", Stop: "echo down"}
+	if err := m.Start(StartParams{Job: job, WorkDir: dir}); err != nil {
+		t.Fatalf("start detached: %v", err)
+	}
+	t.Cleanup(func() { _ = m.StopAll() })
+
+	launcher := m.List()[0]
+	if launcher.Status != domain.JobStatusRunning {
+		t.Fatalf("Status = %s, want running", launcher.Status)
+	}
+	if launcher.ExitCode != nil {
+		t.Errorf("ExitCode = %d, want nil for a detached launcher", *launcher.ExitCode)
+	}
+	if launcher.StartedAt.IsZero() {
+		t.Error("StartedAt is zero, want the launcher's spawn instant")
+	}
+}

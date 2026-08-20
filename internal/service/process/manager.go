@@ -57,16 +57,20 @@ const stopGracePeriod = 5 * time.Second
 const detachedDrainGracePeriod = 2 * time.Second
 
 type ManagedJob struct {
-	Name    string
-	Config  domain.JobConfig
-	Cmd     *exec.Cmd
-	PTY     *os.File
-	Status  domain.JobStatus
-	PID     int
-	WorkDir string
-	output  *outputHub    // nil for detached launcher-style services
-	logs    *LogSink      // nil when the client asked for no persisted log
-	exited  chan struct{} // closed when the underlying process has been reaped
+	Name      string
+	Config    domain.JobConfig
+	Cmd       *exec.Cmd
+	PTY       *os.File
+	Status    domain.JobStatus
+	PID       int
+	WorkDir   string
+	StartedAt time.Time
+	// ExitCode, like Status, is written by the goroutine that reaps the process
+	// and read by List: both are only ever touched under the manager lock.
+	ExitCode *int
+	output   *outputHub    // nil for detached launcher-style services
+	logs     *LogSink      // nil when the client asked for no persisted log
+	exited   chan struct{} // closed when the underlying process has been reaped
 }
 
 type Manager struct {
@@ -145,15 +149,16 @@ func (m *Manager) Start(params StartParams) error {
 	}
 
 	managed := &ManagedJob{
-		Name:    job.Name,
-		Config:  job,
-		Cmd:     cmd,
-		PTY:     output,
-		Status:  domain.JobStatusRunning,
-		PID:     cmd.Process.Pid,
-		WorkDir: params.WorkDir,
-		logs:    logs,
-		exited:  make(chan struct{}),
+		Name:      job.Name,
+		Config:    job,
+		Cmd:       cmd,
+		PTY:       output,
+		Status:    domain.JobStatusRunning,
+		PID:       cmd.Process.Pid,
+		WorkDir:   params.WorkDir,
+		StartedAt: time.Now(),
+		logs:      logs,
+		exited:    make(chan struct{}),
 	}
 	m.jobs[key] = managed
 	m.mu.Unlock()
@@ -368,12 +373,14 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 		<-streamDone
 	}
 
+	exit := exitCodeOf(waitErr)
+
 	m.mu.Lock()
+	job.ExitCode = &exit
 	delete(m.jobs, key)
 	m.mu.Unlock()
 
 	if waitErr != nil {
-		exit := exitCodeOf(waitErr)
 		// When a streamer was attached the client already saw the output live,
 		// so we return a concise error instead of re-embedding the full capture.
 		if streamer != nil {
@@ -387,7 +394,13 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	return nil
 }
 
+// exitCodeOf reads a process's outcome from what Wait returned: 0 for a clean
+// exit, -1 when a signal killed it, and 1 for a failure Wait did not attribute
+// to the process itself.
 func exitCodeOf(err error) int {
+	if err == nil {
+		return 0
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		return exitErr.ExitCode()
@@ -780,10 +793,12 @@ func (m *Manager) stopWithSignal(job *ManagedJob) error {
 func (m *Manager) waitForExit(job *ManagedJob) {
 	defer close(job.exited)
 
-	_ = job.Cmd.Wait()
+	exit := exitCodeOf(job.Cmd.Wait())
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	job.ExitCode = &exit
 
 	if job.Status != domain.JobStatusRunning {
 		return

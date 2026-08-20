@@ -208,13 +208,7 @@ func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
 		if req.WorkDir != "" && job.WorkDir != req.WorkDir {
 			continue
 		}
-		stopped = append(stopped, domain.JobInfo{
-			Name:    job.Name,
-			Kind:    job.Config.Kind,
-			WorkDir: job.WorkDir,
-			Status:  job.Status,
-			PID:     job.PID,
-		})
+		stopped = append(stopped, jobInfoOf(job))
 	}
 
 	var err error
@@ -235,16 +229,22 @@ func (d *daemonServer) handleList(encoder *json.Encoder, req Request) {
 	jobs := d.manager.List()
 	infos := make([]domain.JobInfo, 0, len(jobs))
 	for _, job := range jobs {
-		infos = append(infos, domain.JobInfo{
-			Name:    job.Name,
-			Kind:    job.Config.Kind,
-			WorkDir: job.WorkDir,
-			Status:  job.Status,
-			PID:     job.PID,
-		})
+		infos = append(infos, jobInfoOf(job))
 	}
 
 	encoder.Encode(Response{Status: StatusOK, Jobs: infos})
+}
+
+func jobInfoOf(job ManagedJob) domain.JobInfo {
+	return domain.JobInfo{
+		Name:      job.Name,
+		Kind:      job.Config.Kind,
+		WorkDir:   job.WorkDir,
+		Status:    job.Status,
+		PID:       job.PID,
+		StartedAt: job.StartedAt,
+		ExitCode:  job.ExitCode,
+	}
 }
 
 func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Request) {
