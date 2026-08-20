@@ -36,4 +36,5 @@ wtm [flags]
 * [wtm sync](wtm_sync.md)	 - Rebase selected worktrees onto their parent, in cascade
 * [wtm tree](wtm_tree.md)	 - Show the worktree forest (parent → child)
 * [wtm ui](wtm_ui.md)	 - Open the worktree dashboard
+* [wtm upgrade](wtm_upgrade.md)	 - Update wtm to the latest release
 

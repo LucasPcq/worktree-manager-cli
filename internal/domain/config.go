@@ -48,8 +48,15 @@ type HooksConfig struct {
 
 // GlobalConfig maps to ~/.config/wtm/config.toml (user-level configuration).
 type GlobalConfig struct {
-	Shell ShellType `toml:"shell"`
-	UI    UIConfig  `toml:"ui"`
+	Shell  ShellType    `toml:"shell"`
+	UI     UIConfig     `toml:"ui"`
+	Update UpdateConfig `toml:"update"`
+}
+
+// UpdateConfig groups update-check preferences. Check is a pointer so an absent
+// key is distinguishable from an explicit false — see rules.ShouldCheckUpdate.
+type UpdateConfig struct {
+	Check *bool `toml:"check" json:"check"`
 }
 
 // UIConfig groups display preferences. Animations is a pointer so an absent

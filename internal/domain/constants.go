@@ -1127,8 +1127,14 @@ const (
 	// DashboardNeverFetched is its own wording rather than an empty age: a
 	// repository that has never fetched is the most stale case there is, and
 	// saying nothing about its age would read as "fetched recently".
-	DashboardContextSep      = " · "
-	DashboardFetchedFmt      = "fetched %s"
+	DashboardContextSep = " · "
+	DashboardFetchedFmt = "fetched %s"
+	// DashboardVersionFmt renders the running version, always shown.
+	// DashboardUpgradeFmt is appended to it when a newer release is known — it
+	// carries the command because a badge that only says a version exists leaves
+	// the reader to guess what to do with it.
+	DashboardVersionFmt      = "v%s"
+	DashboardUpgradeFmt      = "→ %s · run wtm upgrade"
 	DashboardNeverFetched    = "never fetched"
 	DashboardActiveGlyph     = "●"
 	DashboardBaseFmt         = "base %s"
@@ -1544,3 +1550,62 @@ var DashboardWordmarkLines = [3]string{
 	`┃╻┃  ┃  ┃┃┃`,
 	`┗┻┛  ╹  ╹ ╹`,
 }
+
+// Self-update: the release source, the install methods it can act on, and the
+// policy knobs of the passive update check.
+const (
+	RepoOwner = "LucasPcq"
+	RepoName  = "wtm"
+
+	ModulePath  = "github.com/LucasPcq/wtm"
+	BrewFormula = "LucasPcq/tap/wtm"
+
+	ReleaseAPIBase = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/releases"
+
+	// ChecksumsFileName is the SHA256 manifest goreleaser publishes with every release.
+	ChecksumsFileName = "checksums.txt"
+
+	// GlobalStateFile holds wtm-written state next to the user config. Kept separate
+	// from config.toml: the CLI must never rewrite a file the user hand-edits.
+	GlobalStateFile = "state.json"
+
+	UpdateCheckTTL     = 24 * time.Hour
+	UpdateCheckTimeout = 2 * time.Second
+	UpdateNoticeWait   = 300 * time.Millisecond
+	DownloadTimeout    = 60 * time.Second
+
+	EnvNoUpdateCheck = "WTM_NO_UPDATE_CHECK"
+	EnvCI            = "CI"
+	EnvGitHubActions = "GITHUB_ACTIONS"
+
+	// CmdUpgrade is the self-update command name. The five that follow already
+	// exist as literals in their command files and are centralized here because
+	// the update-check exclusion list needs to name them.
+	CmdUpgrade    = "upgrade"
+	CmdShellInit  = "shell-init"
+	CmdResolve    = "resolve"
+	CmdDaemon     = "daemon"
+	CmdCompletion = "completion"
+	CmdSchema     = "schema"
+
+	// CmdShellComp and CmdShellCompNoDesc mirror cobra.ShellCompRequestCmd and
+	// ShellCompNoDescRequestCmd, the hidden commands a shell invokes on Tab.
+	CmdShellComp       = "__complete"
+	CmdShellCompNoDesc = "__completeNoDesc"
+
+	// FlagCheck (the read-only report) is shared with `wtm env`.
+	FlagVersionPin = "version"
+
+	// ExitCodeUpgradeUnsupported marks an upgrade that cannot proceed on this
+	// install: built from source, or the binary is not writable.
+	ExitCodeUpgradeUnsupported = 17
+
+	// UpgradeConfirmPrompt keeps a space before the question mark, unlike every
+	// other prompt here: it ends on a version number, and "0.26.1?" reads as part
+	// of the number rather than as a question.
+	UpgradeConfirmPrompt = "Update %s %s → %s ?"
+
+	UpgradeJSONNeedsYes   = "--output json requires --yes or --check (the confirmation prompt cannot run in JSON mode)"
+	UpgradeSourceHint     = "this binary was built from source — run `git pull && make install` instead"
+	UpgradePinUnsupported = "--version only applies to a standalone binary; pin the version through your package manager instead"
+)

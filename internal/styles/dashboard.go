@@ -14,8 +14,8 @@ var (
 	DashboardPanelTitle = lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)
 
 	// DashboardWordmark is the product's name in the header bar: the one place
-	// the dashboard says what it is, and one of the two uses of the signature
-	// accent (the other is DashboardAddButton).
+	// the dashboard says what it is, and one of the three uses of the signature
+	// accent (the others are DashboardAddButton and DashboardUpgrade).
 	DashboardWordmark = lipgloss.NewStyle().Foreground(ColorSignature).Bold(true).Padding(0, 1)
 
 	// DashboardTabActive and DashboardTabInactive render the tab bar entries. The
@@ -117,14 +117,19 @@ var (
 
 	DashboardMenuTitle = lipgloss.NewStyle().Foreground(ColorPrimary).Bold(true)
 
-	// DashboardAddButton is the header's call to action, and the other use of the
-	// signature accent: it stands alone in a title row, with no focus ring
-	// around it to say what it is.
+	// DashboardAddButton is the header's primary call to action, and one of the
+	// three uses of the signature accent: it stands alone in a title row, with no
+	// focus ring around it to say what it is.
 	DashboardAddButton = lipgloss.NewStyle().
 				Foreground(ColorBadgeFg).
 				Background(ColorSignature).
 				Bold(true).
 				Padding(0, 3)
+
+	// DashboardUpgrade is the "run wtm upgrade" segment of the header's context
+	// row — the third use of the signature accent, and the reason it is not muted
+	// like the facts it sits among: it is the only thing on that row to act on.
+	DashboardUpgrade = lipgloss.NewStyle().Foreground(ColorSignature).Bold(true)
 
 	// DashboardHeaderButton is a secondary header action: muted, so the filled
 	// call to action is the bar's only accent — two equal-weight calls would

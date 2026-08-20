@@ -31,7 +31,9 @@ self-documenting:
    Suggest `wtm ui` to the *user* when they want to browse worktrees themselves. wtm defends
    itself here (it errors on `--output json` and with no TTY), but don't rely on that.
 3. **Always add `--output json`** on data commands. JSON goes to stdout; human text and
-   warnings go to stderr — ignore stderr unless the exit code is non-zero.
+   warnings go to stderr — ignore stderr unless the exit code is non-zero. wtm may also
+   print a one-line update notice there (at most once a day, never under `--output json`,
+   never in CI or without a TTY); it never touches stdout, so parsing is unaffected.
 4. **Trust exit codes.** `0` = success. Beyond generic `1`, wtm returns granular codes
    (table below) so you can branch precisely. On failure, surface the stderr text.
 5. **JSON mode requires `--yes` on every mutating command.** JSON is non-interactive, so any
@@ -74,6 +76,7 @@ self-documenting:
 | `14` | service/job not declared in `run.toml` |
 | `15` | `extract`: selected changes conflict with the target worktree |
 | `16` | run module not initialized — run `wtm run init` first |
+| `17` | `upgrade`: this install cannot be upgraded — built from source, or the binary is not writable |
 
 ## Discovery first — get names before you act
 
@@ -264,6 +267,16 @@ and **experimental**: the global `wtm init` does not configure it.
   reconfigure one section later with `wtm init --only env|hooks|worktrees --non-interactive --yes`.
   Services are **not** part of `wtm init` — configure them with `wtm run init`.
   See their `--help` for the full flag set.
+- `wtm upgrade` updates **the CLI itself**, never worktrees — that is `wtm sync`. **Do not
+  run it unless the user asked**: it replaces the binary you are driving. `--check` is the
+  safe form — it reports availability and changes nothing. `--yes` skips the confirmation and
+  is **required** with `--output json` unless `--check` is passed; without it the command
+  exits `1` naming `--yes`. `--version <v>` pins a release and applies to a **standalone**
+  install only — on a Homebrew or `go install` binary it errors. JSON is exactly
+  `{"installed", "latest", "up_to_date", "method", "action"}`, where `method` is
+  `homebrew|go-install|standalone|source` and `action` is `replaced|delegated|none|checked`.
+  Exit `17` means the install cannot be upgraded (built from source, or the binary needs
+  sudo); network and checksum failures exit `1`.
 
 ## Failure handling
 
@@ -271,6 +284,8 @@ On non-zero exit, read stderr, then:
 
 - `12` (config not found) → repo not initialized. Run `wtm init --non-interactive` with
   flags, or ask the user to run interactive `wtm init`.
+- `17` (`upgrade` unsupported) → nothing to retry. Report the message: a source build updates
+  with `git pull && make install`, an unwritable binary needs the user to re-run with sudo.
 - `11` (branch not found) → wrong name; re-run the relevant discovery call.
 - `10` (worktree already exists) → either the path is taken, or the branch is checked out
   in another worktree. Enter it with `wtm go <branch>` (get its path from `wtm resolve
