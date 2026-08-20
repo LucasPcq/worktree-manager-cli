@@ -150,7 +150,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		if resp.Status == process.StatusError {
 			// A repeat start (re-running `run up` while services are up) is
 			// benign: count the job as running and keep going.
-			if strings.Contains(resp.Message, domain.JobAlreadyRunningSuffix) {
+			if rules.IsAlreadyRunning(resp.Message) {
 				results = append(results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
 				started = append(started, job)
 				if format != domain.OutputJSON {
@@ -334,7 +334,7 @@ func runDetachedJob(params jobRunParams) (bool, error) {
 	}
 	if resp.Status == process.StatusError {
 		// Re-running `run up` while the launcher's work is already up is benign.
-		if strings.Contains(resp.Message, domain.JobAlreadyRunningSuffix) {
+		if rules.IsAlreadyRunning(resp.Message) {
 			*params.Results = append(*params.Results, domain.JobActionResult{Name: params.Job.Name, Status: domain.JobActionStarted})
 			if params.Format != domain.OutputJSON {
 				output.Success(params.Cmd.OutOrStdout(), fmt.Sprintf("%s already running", params.Job.Name))
