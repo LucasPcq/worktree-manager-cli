@@ -84,7 +84,30 @@ func init() {
 
 var version = domain.Version
 
-var updateCheck *selfupdate.Check
+var (
+	updateCheck        *selfupdate.Check
+	updateCheckStarted bool
+)
+
+// startUpdateCheck arms the passive check once per run. It is called from both
+// PersistentPreRun and the help function because cobra short-circuits on the
+// --help flag before any Run hook fires; the guard keeps the second caller from
+// discarding an in-flight check started by the first.
+func startUpdateCheck(cmd *cobra.Command) {
+	if updateCheckStarted {
+		return
+	}
+	updateCheckStarted = true
+
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	updateCheck = selfupdate.StartCheck(selfupdate.StartCheckParams{
+		Version:     version,
+		Format:      format,
+		Command:     cmd.Name(),
+		StderrIsTTY: term.IsTerminal(int(os.Stderr.Fd())),
+		ConfigCheck: globalUpdateCheck(),
+	})
+}
 
 var rootCmd = &cobra.Command{
 	Use:     domain.AppName,
@@ -92,14 +115,7 @@ var rootCmd = &cobra.Command{
 	Version: version,
 	RunE:    rootRunE,
 	PersistentPreRun: func(cmd *cobra.Command, _ []string) {
-		format, _ := cmd.Flags().GetString(domain.FlagOutput)
-		updateCheck = selfupdate.StartCheck(selfupdate.StartCheckParams{
-			Version:     version,
-			Format:      format,
-			Command:     cmd.Name(),
-			StderrIsTTY: term.IsTerminal(int(os.Stderr.Fd())),
-			ConfigCheck: globalUpdateCheck(),
-		})
+		startUpdateCheck(cmd)
 	},
 	SilenceErrors: true,
 	SilenceUsage:  true,
@@ -135,6 +151,8 @@ func init() {
 	// Override the global help function to add consistent padding around help text.
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		startUpdateCheck(cmd)
+
 		w := cmd.OutOrStdout()
 		output.Blank(w)
 
