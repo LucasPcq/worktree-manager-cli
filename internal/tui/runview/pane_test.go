@@ -258,6 +258,69 @@ func TestPaneScrollOffsetFollowsIncomingOutput(t *testing.T) {
 	}
 }
 
+// The buffer full is the regime the anchor is for: a job printing forever pushes
+// a line out for every line in, and a scrollback length that no longer moves
+// says nothing about how far the text slid.
+func TestPaneScrollOffsetFollowsIncomingOutputOnAFullScrollback(t *testing.T) {
+	p := newTestPane(t)
+	for i := range 40 {
+		write(t, p, fmt.Sprintf("line%02d\r\n", i))
+	}
+	if got := p.term.ScrollbackLen(); got != 10 {
+		t.Fatalf("scrollback holds %d lines, want the 10 of a full buffer", got)
+	}
+
+	p.ScrollUp(4)
+	before := ansi.Strip(p.Render())
+
+	for i := range 4 {
+		write(t, p, fmt.Sprintf("more%02d\r\n", i))
+	}
+
+	if got := ansi.Strip(p.Render()); got != before {
+		t.Fatalf("view drifted while scrolled back on a full scrollback:\n got %q\nwant %q", got, before)
+	}
+}
+
+// Past the room the pane holds for a reader, the lines being read are gone for
+// good: the anchor stops at the oldest line left rather than sliding on.
+func TestPaneScrollAnchorStopsAtTheOldestLineLeft(t *testing.T) {
+	p := newTestPane(t)
+	write(t, p, strings.Repeat("old\r\n", 12))
+
+	p.ScrollUp(4)
+	write(t, p, strings.Repeat("new\r\n", 40))
+
+	if got, oldest := p.ScrollOffset(), p.term.ScrollbackLen(); got != oldest {
+		t.Fatalf("offset = %d, want the %d of the oldest line left", got, oldest)
+	}
+	view := ansi.Strip(p.Render())
+	if strings.Contains(view, "old") {
+		t.Fatalf("the burst left content it had evicted in view: %q", view)
+	}
+	if !strings.HasPrefix(view, "new") {
+		t.Fatalf("view = %q, want it anchored on the oldest line left", view)
+	}
+}
+
+// The room a reader gets is lent, not kept: a pane that never returned it would
+// cost twice its budget for the rest of the session.
+func TestPaneReleasesTheHistoryRoomAtTheLiveTail(t *testing.T) {
+	p := newTestPane(t)
+	write(t, p, strings.Repeat("line\r\n", 12))
+
+	p.ScrollUp(4)
+	write(t, p, strings.Repeat("more\r\n", 20))
+	if got := p.term.ScrollbackLen(); got <= 10 {
+		t.Fatalf("scrollback holds %d lines, want the reader's history held past the budget", got)
+	}
+
+	p.ScrollToLive()
+	if got := p.term.ScrollbackLen(); got != 10 {
+		t.Fatalf("scrollback holds %d lines back at the live tail, want the 10 it budgets for", got)
+	}
+}
+
 func TestPaneScrollToLive(t *testing.T) {
 	p := newTestPane(t)
 	write(t, p, strings.Repeat("line\r\n", 6))
@@ -284,11 +347,20 @@ func equalLines(got, want []string) bool {
 
 func TestPaneWriteAndRenderAreConcurrencySafe(t *testing.T) {
 	p := newTestPane(t)
+	// t.Fatalf outside the test goroutine is undefined, so the writer reports
+	// back instead of failing where it runs.
+	failed := make(chan error, 1)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for range 200 {
-			write(t, p, "\x1b[32mchunk\x1b[m\r\n")
+			if _, err := p.Write([]byte("\x1b[32mchunk\x1b[m\r\n")); err != nil {
+				select {
+				case failed <- err:
+				default:
+				}
+				return
+			}
 		}
 	}()
 	for range 200 {
@@ -297,4 +369,10 @@ func TestPaneWriteAndRenderAreConcurrencySafe(t *testing.T) {
 		p.ScrollToLive()
 	}
 	<-done
+
+	select {
+	case err := <-failed:
+		t.Fatalf("concurrent write: %v", err)
+	default:
+	}
 }

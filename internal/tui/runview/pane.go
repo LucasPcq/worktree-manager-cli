@@ -25,30 +25,30 @@ type PaneParams struct {
 // part of what it exposes — WriteString, String, Close, Bounds and InputPipe
 // are promoted unlocked from the embedded *Emulator.
 type Pane struct {
-	mu     sync.Mutex
-	term   *vt.Emulator
-	size   PaneSize
-	offset int
+	mu         sync.Mutex
+	term       *vt.Emulator
+	size       PaneSize
+	scrollback int
+	offset     int
 }
 
 func NewPane(params PaneParams) *Pane {
 	size := resolvePaneSize(params.Size)
-	term := vt.NewEmulator(size.Cols, size.Rows)
-	term.SetScrollbackSize(orDefault(params.ScrollbackSize, domain.JobPaneScrollbackLines))
-	return &Pane{term: term, size: size}
+	pane := &Pane{
+		term:       vt.NewEmulator(size.Cols, size.Rows),
+		size:       size,
+		scrollback: orDefault(params.ScrollbackSize, domain.JobPaneScrollbackLines),
+	}
+	pane.term.SetScrollbackSize(pane.scrollback)
+	return pane
 }
 
 func (p *Pane) Write(b []byte) (int, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	before := p.term.ScrollbackLen()
+	held := p.term.ScrollbackLen()
 	n, err := p.term.Write(b)
-	if p.offset > 0 {
-		// Scrolled back, the offset is an anchor into the history: follow the
-		// lines the reader is looking at as new output pushes them up.
-		p.offset += p.term.ScrollbackLen() - before
-		p.clampLocked()
-	}
+	p.followLocked(held)
 	return n, err
 }
 
@@ -82,6 +82,7 @@ func (p *Pane) ScrollToLive() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.offset = 0
+	p.holdHistoryLocked()
 }
 
 // ScrollOffset is the number of scrollback lines above the live tail; zero
@@ -125,6 +126,42 @@ func (p *Pane) scrollBy(lines int) {
 	defer p.mu.Unlock()
 	p.offset += lines
 	p.clampLocked()
+	p.holdHistoryLocked()
+}
+
+// followLocked keeps a scrolled-back reader on the same lines by moving the
+// anchor as far as the write pushed the history up. That distance is how much
+// the scrollback grew — but only while nothing is being evicted: a full buffer
+// keeps its length as it slides, and an anchor following that would follow the
+// tail instead of the text. holdHistoryLocked is what buys the room, and the
+// pane runs out of it only when a single write pushed more lines than the whole
+// history holds, at which point nothing the reader anchored on is left and the
+// anchor drops to the oldest line still held.
+func (p *Pane) followLocked(held int) {
+	if p.offset == 0 {
+		return
+	}
+	if p.term.ScrollbackLen() >= p.historyCapacity() {
+		p.offset = p.term.ScrollbackLen()
+		return
+	}
+	p.offset += p.term.ScrollbackLen() - held
+	p.clampLocked()
+}
+
+// holdHistoryLocked widens the emulator's buffer past what the pane retains for
+// as long as someone is reading back through it, and gives the room back — the
+// oldest lines with it — as soon as the pane is following the job again.
+func (p *Pane) holdHistoryLocked() {
+	if p.offset > 0 {
+		p.term.SetScrollbackSize(p.historyCapacity())
+		return
+	}
+	p.term.SetScrollbackSize(p.scrollback)
+}
+
+func (p *Pane) historyCapacity() int {
+	return p.scrollback * domain.JobPaneScrollbackBurstFactor
 }
 
 func (p *Pane) clampLocked() {

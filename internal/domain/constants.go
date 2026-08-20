@@ -601,6 +601,12 @@ const (
 	// default, and above the raw replay a freshly attached pane can ever receive.
 	JobPaneScrollbackLines = 2000
 
+	// JobPaneScrollbackBurstFactor is how much more than that a pane lets its
+	// emulator hold while someone reads back through the history — the room the
+	// pane needs to count the lines each write pushes, which a buffer that is
+	// evicting no longer reports. It is given back at the live tail.
+	JobPaneScrollbackBurstFactor = 2
+
 	// JobAlreadyRunningSuffix is the tail of the daemon error returned when a
 	// job is started while already running. Callers match on it to treat a
 	// repeat start (e.g. re-running `run up` while services are up) as a benign
