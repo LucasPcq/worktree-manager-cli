@@ -1200,6 +1200,58 @@ const (
 	// zone is listed there with its keyboard equivalent.
 	DashboardHelpTitle = "Keys & mouse"
 
+	// DashboardHelpSection* name the reference's four groups. The mouse is a
+	// group of its own rather than a suffix on every key: it is the same
+	// information, and folded into the prose it doubled the width of every row.
+	DashboardHelpSectionNav   = "NAV"
+	DashboardHelpSectionAct   = "ACT"
+	DashboardHelpSectionMouse = "MOUSE"
+	DashboardHelpSectionView  = "VIEW"
+
+	DashboardHelpKeysSelect      = "↑↓  j k"
+	DashboardHelpKeysEnds        = "g  G"
+	DashboardHelpKeysPage        = "pgup pgdown"
+	DashboardHelpKeysTab         = "tab shift+tab"
+	DashboardHelpKeysOpenDetail  = "enter → l"
+	DashboardHelpKeysCloseDetail = "esc ← h"
+	DashboardHelpKeysOutputMove  = "shift+↑↓"
+	DashboardHelpKeysClick       = "click"
+	DashboardHelpKeysRightClick  = "right-click"
+	DashboardHelpKeysWheel       = "wheel"
+
+	DashboardHelpTextSelect      = "select a worktree"
+	DashboardHelpTextEnds        = "first · last"
+	DashboardHelpTextPage        = "page the list"
+	DashboardHelpTextTab         = "switch view"
+	DashboardHelpTextOpenDetail  = "open the detail"
+	DashboardHelpTextCloseDetail = "close the detail"
+	DashboardHelpTextNew         = "new worktree"
+	DashboardHelpTextMenu        = "actions on this worktree"
+	DashboardHelpTextActions     = "actions on several"
+	DashboardHelpTextFastForward = "fast-forward from origin"
+	DashboardHelpTextOpenPR      = "open the pull request"
+	DashboardHelpTextOutput      = "fold/unfold the output"
+	DashboardHelpTextOutputMove  = "scroll the output"
+	DashboardHelpTextRefresh     = "refresh worktrees / PRs"
+	DashboardHelpTextClick       = "select · activate"
+	DashboardHelpTextRightClick  = "actions on a row"
+	DashboardHelpTextWheel       = "scroll list / output"
+
+	// DashboardHelpHint closes the overlay, DashboardHelpHintScroll replaces it
+	// when the reference is taller than the screen and has to be scrolled.
+	DashboardHelpHint       = "? or esc  close     q  quit"
+	DashboardHelpHintScroll = "↑↓  scroll     ? or esc  close     q  quit"
+
+	// DashboardHelpKeyGap separates the key column from the text it names, and
+	// DashboardHelpColumnGap the two columns of the wide layout.
+	DashboardHelpKeyGap    = 2
+	DashboardHelpColumnGap = 4
+	// DashboardHelpChrome is what the overlay spends around its bands: the title
+	// and its rule, then the rule and the hint closing it. DashboardHelpFrame is
+	// what the box itself spends: two border columns and two padding columns.
+	DashboardHelpChrome = 4
+	DashboardHelpFrame  = 4
+
 	// DashboardAddLabel is the list panel's header button, KeyNew its keyboard
 	// equivalent. The long form is used wherever the panel is wide enough.
 	DashboardAddLabel     = "+ New"
