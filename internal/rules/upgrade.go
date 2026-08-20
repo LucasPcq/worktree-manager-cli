@@ -176,7 +176,10 @@ var updateCheckExcluded = map[string]bool{
 	domain.CmdSchema:     true,
 }
 
-func ShouldCheckUpdate(params ShouldCheckUpdateParams) bool {
+// UpdateNoticeAllowed reports whether this run may print an update notice at
+// all. It is every suppression axis except the TTL, which gates the network
+// call rather than the display: a notice served from cached state is free.
+func UpdateNoticeAllowed(params ShouldCheckUpdateParams) bool {
 	if NormalizeVersion(params.Version) == domain.Version {
 		return false
 	}
@@ -192,7 +195,13 @@ func ShouldCheckUpdate(params ShouldCheckUpdateParams) bool {
 	if params.ConfigCheck != nil && !*params.ConfigCheck {
 		return false
 	}
-	if updateCheckExcluded[params.Command] {
+	return !updateCheckExcluded[params.Command]
+}
+
+// ShouldCheckUpdate reports whether this run may reach the network to refresh
+// the cached latest version.
+func ShouldCheckUpdate(params ShouldCheckUpdateParams) bool {
+	if !UpdateNoticeAllowed(params) {
 		return false
 	}
 	if params.CheckedAt.IsZero() {

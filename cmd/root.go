@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/agents"
 	"github.com/LucasPcq/wtm/internal/commands/checkout"
@@ -20,9 +21,11 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/ui"
 	"github.com/LucasPcq/wtm/internal/commands/upgrade"
 	"github.com/LucasPcq/wtm/internal/commands/wt"
+	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/selfupdate"
 )
 
 func init() {
@@ -81,17 +84,50 @@ func init() {
 
 var version = domain.Version
 
+var updateCheck *selfupdate.Check
+
 var rootCmd = &cobra.Command{
-	Use:           domain.AppName,
-	Short:         "Orchestrate git worktrees and team dev workflows from the terminal",
-	Version:       version,
-	RunE:          rootRunE,
+	Use:     domain.AppName,
+	Short:   "Orchestrate git worktrees and team dev workflows from the terminal",
+	Version: version,
+	RunE:    rootRunE,
+	PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+		format, _ := cmd.Flags().GetString(domain.FlagOutput)
+		updateCheck = selfupdate.StartCheck(selfupdate.StartCheckParams{
+			Version:     version,
+			Format:      format,
+			Command:     cmd.Name(),
+			StderrIsTTY: term.IsTerminal(int(os.Stderr.Fd())),
+			ConfigCheck: globalUpdateCheck(),
+		})
+	},
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
 
 func rootRunE(cmd *cobra.Command, _ []string) error {
 	return cmd.Help()
+}
+
+func globalUpdateCheck() *bool {
+	cfg, err := config.LoadGlobal()
+	if err != nil {
+		return nil
+	}
+
+	return cfg.Update.Check
+}
+
+// printUpdateNotice drains the passive check started in PersistentPreRun. It is
+// nil-safe: a suppressed check leaves updateCheck nil.
+func printUpdateNotice() {
+	current, latest, method, ok := updateCheck.Notice(domain.UpdateNoticeWait)
+	if !ok {
+		return
+	}
+
+	output.Blank(os.Stderr)
+	output.UpdateNotice(os.Stderr, output.UpdateNoticeParams{Current: current, Latest: latest, Method: method})
 }
 
 func init() {
@@ -134,6 +170,9 @@ func Execute() {
 			output.Error(os.Stderr, err.Error())
 			output.Blank(os.Stderr)
 		}
+		printUpdateNotice()
 		os.Exit(rules.ExitCode(err))
 	}
+
+	printUpdateNotice()
 }
