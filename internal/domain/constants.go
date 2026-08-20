@@ -717,7 +717,9 @@ const (
 	FastForwardNoRemoteFmt     = "%s has no origin counterpart"
 	// FastForwardPlanFmt, FastForwardUpToDateFmt, FastForwardResultFmt and
 	// FastForwardFailedFmt are the per-branch lines: what will happen, and what did.
-	FastForwardPlanFmt     = "%s → origin/%s (%s)"
+	// The arrow points at the branch that moves, the way the sync plan renders
+	// "branch ← parent": here the branch receives what origin already carries.
+	FastForwardPlanFmt     = "%s ← origin/%s (%s)"
 	FastForwardUpToDateFmt = "%s is already up to date"
 	FastForwardResultFmt   = "%s: %s"
 	FastForwardFailedFmt   = "%s: failed — %s"

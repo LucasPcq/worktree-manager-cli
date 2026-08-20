@@ -136,6 +136,21 @@ func TestRecapNamesEveryBranchIncludingTheRefusedOnes(t *testing.T) {
 	}
 }
 
+// The branch is what moves, so the arrow points at it — the same direction the
+// sync plan renders "branch ← parent" with. Pointing it the other way reads as
+// the branch pushing its commits to origin, which is the opposite operation.
+func TestRecapPointsTheArrowAtTheBranchThatMoves(t *testing.T) {
+	line := recapLine(domain.FastForwardCheck{
+		Branch: "main", HasUpstream: true, Behind: 2, State: domain.DivergenceBehind,
+	})
+	if want := "main ← origin/main"; !strings.Contains(line, want) {
+		t.Fatalf("line = %q, want it to contain %q", line, want)
+	}
+	if strings.Contains(line, "→") {
+		t.Errorf("line = %q, want no arrow pointing away from the branch", line)
+	}
+}
+
 func TestBlockersAreNamedPerBranch(t *testing.T) {
 	blockers := blockersOf([]domain.FastForwardCheck{
 		{Branch: "a", HasUpstream: true, Behind: 1, State: domain.DivergenceBehind, IsDirty: true},
