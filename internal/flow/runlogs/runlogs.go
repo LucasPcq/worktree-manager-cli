@@ -29,7 +29,6 @@ type Size struct {
 	Rows int
 }
 
-// Stream is a subscription to one job's live output.
 type Stream interface {
 	// Chunks carries the job's bytes exactly as the job wrote them, escape
 	// sequences included — an emulator needs them untouched. A chunk is shared
@@ -56,7 +55,6 @@ type HistoryParams struct {
 	Lines int
 }
 
-// Session is a worktree's jobs as a surface consumes them.
 type Session interface {
 	Jobs() []JobView
 	// Refresh re-reads the daemon's view of the jobs.
@@ -144,8 +142,7 @@ type Event struct {
 	Outcome Outcome
 }
 
-// Sink receives the start sequence as it happens, on the goroutine that called
-// Run.
+// Sink is emitted to on the goroutine that called Run.
 type Sink interface {
 	Emit(Event)
 }
