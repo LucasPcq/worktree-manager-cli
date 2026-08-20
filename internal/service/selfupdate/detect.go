@@ -40,7 +40,27 @@ func DetectInstall(version string) Install {
 	}
 }
 
+// goBinDir returns the go-install destination with symlinks resolved: it is
+// compared against an already-resolved executable path, and on macOS /tmp alone
+// is enough to make the two differ.
 func goBinDir() string {
+	return resolveDir(rawGoBinDir())
+}
+
+func resolveDir(dir string) string {
+	if dir == "" {
+		return ""
+	}
+
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return dir
+	}
+
+	return resolved
+}
+
+func rawGoBinDir() string {
 	if bin := os.Getenv("GOBIN"); bin != "" {
 		return bin
 	}
