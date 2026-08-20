@@ -735,11 +735,31 @@ const (
 	// RunViewRecapListSep joins the jobs named on one recap line.
 	RunViewRecapListSep = ", "
 
-	// RunStreamStartedFmt and RunStreamDoneFmt are what a surface says about a
-	// job the daemon has answered for: a service that is up, a task that ran to
-	// the end.
+	// RunStream* are how the line surface reports a profile's start sequence when
+	// there is no screen to take over: one step announced, one line per job once
+	// the daemon has answered for it, then the two commands that act on what is
+	// left running.
+	RunStreamStepFmt    = "[%d/%d] %s"
 	RunStreamStartedFmt = "%s started"
+	RunStreamAlreadyFmt = "%s already running"
 	RunStreamDoneFmt    = "%s done"
+	RunStreamNextHint   = "wtm run logs to attach · wtm run down to stop"
+
+	// RunAbort* report the partial state a profile that gave up left behind, on
+	// the surface that has no room to draw it: where it stopped, what nothing
+	// tore down, what it never reached, and the way out.
+	RunAbortStepFmt         = "Profile aborted at step %d/%d (%s)."
+	RunAbortRunningLabel    = "Left running:"
+	RunAbortNotStartedLabel = "Not started: "
+	RunAbortHint            = "fix and re-run `wtm run up` · `wtm run down` to stop everything"
+
+	// RunLogsPrefixFmt marks which job a line came from when several of them
+	// share one stream, RunLogsHistoryHint says a job that is not running is
+	// being read back from its log file, and RunLogsNoJobs stands in for a
+	// worktree with nothing to read.
+	RunLogsPrefixFmt   = "[%s]"
+	RunLogsHistoryHint = "%s is not running — reading back its log file."
+	RunLogsNoJobs      = "No running jobs in this worktree."
 
 	// RunDaemonConnecting, RunStartingFmt and RunTaskRunningFmt are what a run
 	// command says while it waits on the daemon.

@@ -105,3 +105,39 @@ func openRunView(params viewParams) error {
 	}
 	return nil
 }
+
+type streamParams struct {
+	Cmd   *cobra.Command
+	Start runview.StartFunc
+}
+
+// runOnStream reports a start sequence as lines on the terminal it was launched
+// from — `-d`, a pipe, a CI job. An aborted run ends on stderr, which is where
+// its frame closes.
+func runOnStream(params streamParams) error {
+	out, errOut := params.Cmd.OutOrStdout(), params.Cmd.ErrOrStderr()
+
+	output.FrameStart(out)
+	outcome, err := params.Start(params.Cmd.Context(), output.NewRunPrinter(output.RunPrinterParams{Out: out, Err: errOut}))
+	if err != nil {
+		return err
+	}
+
+	if outcome.Aborted() {
+		output.FrameEnd(errOut)
+		return domain.ErrAborted
+	}
+	output.FrameEnd(out)
+	return nil
+}
+
+// runForMachine emits the run's outcome as a JSON document and exits zero even
+// when the profile aborted: the failure is a result entry, and a half-written
+// document would be worse than an exit code for whoever is parsing it.
+func runForMachine(params streamParams) error {
+	outcome, err := params.Start(params.Cmd.Context(), nil)
+	if err != nil {
+		return err
+	}
+	return output.WriteRunOutcomeJSON(params.Cmd.OutOrStdout(), outcome)
+}

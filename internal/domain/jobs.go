@@ -74,6 +74,13 @@ type JobActionResult struct {
 	Status string `json:"status"`
 	// Message carries the detail when Status is JobActionError.
 	Message string `json:"message,omitempty"`
+	// Output is what the job had written when it failed, raw. A caller reading
+	// this document never saw the live stream, and the daemon's message alone
+	// ("task migrate failed: exit status 1") does not say why it stopped.
+	Output string `json:"output,omitempty"`
+	// ExitCode is what the failing job exited with, absent for one that never
+	// got as far as running.
+	ExitCode *int `json:"exit_code,omitempty"`
 }
 
 // LogRecord is one sanitized line of a job's output, as persisted in that job's

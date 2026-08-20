@@ -8,11 +8,13 @@ import (
 	"sync"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
+	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/styles"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -23,9 +25,11 @@ func newLogsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   domain.CmdLogs + " [job]",
 		Short: "Attach to a job's output",
-		Long:  "Without arguments, stream all running jobs (multiplexed).\nWith a job name, attach to that single job's PTY.\nPress Ctrl+C to detach.",
-		Args:  cobra.MaximumNArgs(1),
-		RunE:  runLogs,
+		Long: "Open the run view on this worktree's jobs, focused on [job] when one is named.\n" +
+			"Leaving the view detaches; the jobs keep running.\n" +
+			"Without a terminal, every job's output is written as prefixed lines instead.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: runLogs,
 	}
 }
 
@@ -34,82 +38,42 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
 	}
-	if err := shared.GuardRunInitialized(dir); err != nil {
+
+	result, err := shared.LoadConfig(cmd, dir)
+	if err != nil {
+		return err
+	}
+
+	runCfg, err := config.LoadRun(result.StateDir)
+	if err != nil {
+		return fmt.Errorf("load run config: %w", err)
+	}
+
+	if err := shared.RequireRunInitialized(runCfg); err != nil {
 		return err
 	}
 
 	socketPath := process.SocketPath()
 	if err := components.RunLoading(components.LoadingParams{
-		Message: "Connecting to daemon…",
+		Message: domain.RunDaemonConnecting,
 		Animate: true,
 		Work:    func() error { return process.EnsureDaemon(socketPath) },
 	}); err != nil {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
 
+	job := ""
 	if len(args) > 0 {
-		return attachSingleJob(socketPath, args[0], dir)
+		job = args[0]
 	}
 
-	return multiplexAllJobs(socketPath, dir)
-}
-
-func attachSingleJob(socketPath string, name string, dir string) error {
-	fd := int(os.Stdin.Fd())
-	cols, rows, err := term.GetSize(fd)
-	if err != nil {
-		cols = 80
-		rows = 24
+	seam := openRunSeam(runSeamParams{StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs})
+	surface := rules.DecideRunSurface(rules.RunSurfaceParams{TTY: isTTY(), Format: domain.OutputText})
+	if surface == domain.RunSurfaceView {
+		return showRunView(viewParams{Cmd: cmd, Session: seam.session, Job: job})
 	}
 
-	client := process.NewClient(socketPath)
-	conn, err := client.Attach(process.AttachParams{
-		Name:    name,
-		WorkDir: dir,
-		Cols:    cols,
-		Rows:    rows,
-	})
-	if err != nil {
-		return fmt.Errorf("attach to %s: %w", name, err)
-	}
-	defer conn.Close()
-
-	oldState, err := term.MakeRaw(fd)
-	if err != nil {
-		return fmt.Errorf("set terminal raw mode: %w", err)
-	}
-	defer term.Restore(fd, oldState)
-	defer process.ResetTerminalState(os.Stdout)
-
-	done := make(chan struct{}, 1)
-
-	go func() {
-		io.Copy(os.Stdout, conn)
-		done <- struct{}{}
-	}()
-
-	go func() {
-		buf := make([]byte, 1024)
-		for {
-			n, readErr := os.Stdin.Read(buf)
-			if readErr != nil {
-				break
-			}
-			for i := range n {
-				if buf[i] == domain.CtrlCByte {
-					done <- struct{}{}
-					return
-				}
-			}
-			if _, writeErr := conn.Write(buf[:n]); writeErr != nil {
-				break
-			}
-		}
-		done <- struct{}{}
-	}()
-
-	<-done
-	return nil
+	return writeJobLines(jobLinesParams{Cmd: cmd, Session: seam.session, Job: job})
 }
 
 // jobColors cycles through distinct colors for each job's log prefix.
@@ -120,94 +84,126 @@ var jobColors = []func(string) string{
 	func(s string) string { return styles.Muted.Render(s) },
 }
 
-func multiplexAllJobs(socketPath string, dir string) error {
-	client := process.NewClient(socketPath)
-	resp, err := client.Send(process.Request{Action: process.ActionList})
-	if err != nil {
+type jobLinesParams struct {
+	Cmd     *cobra.Command
+	Session runlogs.Session
+	// Job narrows the output to one job; empty takes every job the worktree has.
+	Job string
+}
+
+// writeJobLines is `run logs` with no terminal to draw on: one prefixed line per
+// job on a single stream, live while the job runs and read back from its log
+// file when it does not. Nothing here touches the terminal's mode — the process
+// is left to die on SIGINT like any other pipe.
+func writeJobLines(params jobLinesParams) error {
+	if err := params.Session.Refresh(); err != nil {
 		return fmt.Errorf("list jobs: %w", err)
 	}
 
-	var running []domain.JobInfo
-	for _, job := range resp.Jobs {
-		if job.WorkDir == dir && job.Status == domain.JobStatusRunning {
-			running = append(running, job)
-		}
+	views, err := logJobViews(params)
+	if err != nil {
+		return err
 	}
-
-	if len(running) == 0 {
-		output.Frame(os.Stdout, func() {
-			output.Message(os.Stdout, "No running jobs in this worktree.")
-		})
+	out := params.Cmd.OutOrStdout()
+	if len(views) == 0 {
+		output.Frame(out, func() { output.Message(out, domain.RunLogsNoJobs) })
 		return nil
 	}
 
-	return multiplexJobs(socketPath, dir, running)
-}
-
-// multiplexJobs attaches to every job in `running` and prints their output as
-// color-prefixed lines on a single stream. Ctrl+C detaches from all of them
-// without stopping the jobs. Used both by `run logs` (no args) and by
-// `run up` once a profile's services are live.
-func multiplexJobs(socketPath string, dir string, running []domain.JobInfo) error {
-	client := process.NewClient(socketPath)
-
-	defer process.ResetTerminalState(os.Stdout)
-
-	fd := int(os.Stdin.Fd())
-	cols, rows, err := term.GetSize(fd)
-	if err != nil {
-		cols = 80
-		rows = 24
-	}
-
+	output.FrameStart(out)
+	writer := &lineWriter{out: out}
 	var wg sync.WaitGroup
-	done := make(chan struct{})
 
-	for i, job := range running {
-		colorFn := jobColors[i%len(jobColors)]
-		prefix := colorFn(fmt.Sprintf("[%s]", job.Name))
+	for i, view := range views {
+		prefix := jobColors[i%len(jobColors)](fmt.Sprintf(domain.RunLogsPrefixFmt, view.Name))
 
-		conn, attachErr := client.Attach(process.AttachParams{
-			Name:    job.Name,
-			WorkDir: dir,
-			Cols:    cols,
-			Rows:    rows,
-		})
+		if !view.Attachable {
+			lines, historyErr := params.Session.History(runlogs.HistoryParams{Job: view.Name})
+			if historyErr != nil {
+				output.Error(params.Cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", view.Name, historyErr))
+				continue
+			}
+			for _, line := range lines {
+				writer.write(prefix, line)
+			}
+			continue
+		}
+
+		stream, attachErr := params.Session.Attach(runlogs.AttachParams{Job: view.Name})
 		if attachErr != nil {
-			output.Error(os.Stderr, fmt.Sprintf("%s: %v", job.Name, attachErr))
+			output.Error(params.Cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", view.Name, attachErr))
 			continue
 		}
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer conn.Close()
-			scanner := bufio.NewScanner(conn)
+			defer stream.Close()
+			scanner := bufio.NewScanner(&streamReader{chunks: stream.Chunks()})
 			for scanner.Scan() {
-				select {
-				case <-done:
-					return
-				default:
-					fmt.Printf("%s %s\n", prefix, scanner.Text())
-				}
+				writer.write(prefix, scanner.Text())
 			}
 		}()
 	}
 
-	go func() {
-		buf := make([]byte, 1)
-		for {
-			n, readErr := os.Stdin.Read(buf)
-			if readErr != nil || n == 0 {
-				break
-			}
-			if buf[0] == domain.CtrlCByte {
-				close(done)
-				return
+	wg.Wait()
+	output.FrameEnd(out)
+	return nil
+}
+
+// logJobViews is what this run of `run logs` reports on: the named job, or every
+// job the worktree has anything to show for.
+func logJobViews(params jobLinesParams) ([]runlogs.JobView, error) {
+	jobs := params.Session.Jobs()
+	if params.Job != "" {
+		for _, view := range jobs {
+			if view.Name == params.Job {
+				return []runlogs.JobView{view}, nil
 			}
 		}
-	}()
+		return nil, fmt.Errorf("%w: %s", domain.ErrJobNotFound, params.Job)
+	}
 
-	wg.Wait()
-	return nil
+	views := make([]runlogs.JobView, 0, len(jobs))
+	for _, view := range jobs {
+		if view.Attachable {
+			views = append(views, view)
+		}
+	}
+	return views, nil
+}
+
+// lineWriter serializes the lines several jobs write at once: without it two
+// prefixes and two lines interleave inside one row.
+type lineWriter struct {
+	mu  sync.Mutex
+	out io.Writer
+}
+
+func (w *lineWriter) write(prefix string, line string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	fmt.Fprintf(w.out, "%s%s %s\n", output.Indent, prefix, line)
+}
+
+// streamReader reads a job's chunks as the io.Reader a line scanner needs.
+type streamReader struct {
+	chunks  <-chan []byte
+	pending []byte
+}
+
+// Read never writes into a chunk: it is shared with the job's other
+// subscribers, so what does not fit in p is kept as a slice of it until the
+// next call.
+func (r *streamReader) Read(p []byte) (int, error) {
+	for len(r.pending) == 0 {
+		chunk, open := <-r.chunks
+		if !open {
+			return 0, io.EOF
+		}
+		r.pending = chunk
+	}
+	n := copy(p, r.pending)
+	r.pending = r.pending[n:]
+	return n, nil
 }
