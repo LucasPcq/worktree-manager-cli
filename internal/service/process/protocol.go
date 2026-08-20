@@ -11,6 +11,7 @@ const (
 	ActionStopAll RequestAction = "stop_all"
 	ActionList    RequestAction = "list"
 	ActionAttach  RequestAction = "attach"
+	ActionResize  RequestAction = "resize"
 )
 
 // Request is a JSON message sent from client to daemon.
@@ -23,8 +24,10 @@ type Request struct {
 	// it, so the daemon never has to run git to find the state dir. Empty
 	// persists nothing.
 	LogDir string `json:"log_dir,omitempty"`
-	Cols   int    `json:"cols,omitempty"`
-	Rows   int    `json:"rows,omitempty"`
+	// Cols and Rows size the job's PTY: once on ActionAttach, then on every
+	// ActionResize as the pane rendering the job changes size.
+	Cols int `json:"cols,omitempty"`
+	Rows int `json:"rows,omitempty"`
 }
 
 // ResponseStatus is the status field in a daemon response. For long-lived

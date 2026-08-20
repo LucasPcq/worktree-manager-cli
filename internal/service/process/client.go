@@ -108,6 +108,26 @@ func (c *Client) Attach(params AttachParams) (net.Conn, error) {
 	return conn, nil
 }
 
+// Resize asks the daemon to size a job's PTY to the pane rendering it. It
+// dials its own connection rather than reusing the one Attach returned, which
+// is a raw byte stream feeding the job's stdin from the moment it is accepted.
+func (c *Client) Resize(params ResizeParams) error {
+	resp, err := c.Send(Request{
+		Action:  ActionResize,
+		Name:    params.Name,
+		WorkDir: params.WorkDir,
+		Cols:    params.Cols,
+		Rows:    params.Rows,
+	})
+	if err != nil {
+		return err
+	}
+	if resp.Status != StatusOK {
+		return fmt.Errorf("resize failed: %s", resp.Message)
+	}
+	return nil
+}
+
 // IsDaemonRunning checks if a daemon is listening on the socket.
 func IsDaemonRunning(socketPath string) bool {
 	conn, err := net.Dial("unix", socketPath)

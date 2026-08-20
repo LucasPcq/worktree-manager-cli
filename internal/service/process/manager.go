@@ -115,6 +115,7 @@ func (m *Manager) Start(params StartParams) error {
 	// and a slow state dir (NFS, a saturated disk) would otherwise hold every
 	// List, Attach and Stop the daemon serves behind it.
 	logs := openJobLog(params)
+	hub := newJobHub(job)
 
 	m.mu.Lock()
 	if existing, ok := m.jobs[key]; ok && existing.Status == domain.JobStatusRunning {
@@ -141,7 +142,7 @@ func (m *Manager) Start(params StartParams) error {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	}
 
-	output, err := spawnJob(cmd, job.Kind)
+	outputFile, err := spawnJob(cmd, job.Kind)
 	if err != nil {
 		m.mu.Unlock()
 		closeSink(logs)
@@ -152,11 +153,12 @@ func (m *Manager) Start(params StartParams) error {
 		Name:      job.Name,
 		Config:    job,
 		Cmd:       cmd,
-		PTY:       output,
+		PTY:       outputFile,
 		Status:    domain.JobStatusRunning,
 		PID:       cmd.Process.Pid,
 		WorkDir:   params.WorkDir,
 		StartedAt: time.Now(),
+		output:    hub,
 		logs:      logs,
 		exited:    make(chan struct{}),
 	}
@@ -175,11 +177,21 @@ func (m *Manager) Start(params StartParams) error {
 		}
 		return nil
 	default:
-		managed.output = newOutputHub(outputHistoryBytes)
 		go m.drainToHub(managed)
 		go m.waitForExit(managed)
 		return nil
 	}
+}
+
+// newJobHub allocates the fan-out before the job is published in the map, so
+// that a client listing or attaching the instant it appears cannot read the
+// field while the starting goroutine still writes it. A detached launcher gets
+// none: its output ends with the launcher, and nothing can attach afterwards.
+func newJobHub(job domain.JobConfig) *outputHub {
+	if rules.IsDetached(job) {
+		return nil
+	}
+	return newOutputHub(outputHistoryBytes)
 }
 
 // openJobLog: a job still starts when its log cannot be opened.
@@ -300,8 +312,6 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	defer close(job.exited)
 
 	key := jobKey(job.Name, job.WorkDir)
-
-	job.output = newOutputHub(outputHistoryBytes)
 
 	// streamDone is closed once the streaming goroutine has drained every
 	// buffered chunk. We wait on it before returning so the caller (the daemon)
@@ -683,20 +693,36 @@ type AttachSession struct {
 	Release func()
 }
 
-func (m *Manager) Attach(name string, workDir string) (*AttachSession, error) {
-	key := jobKey(name, workDir)
+type jobRef struct {
+	Name    string
+	WorkDir string
+}
+
+// attachableJob is the gate both Attach and Resize pass: a job a pane can bind
+// to is registered, still running, and streaming through a hub — which a
+// detached launcher never does, its output having ended with its launcher.
+func (m *Manager) attachableJob(ref jobRef) (*ManagedJob, error) {
 	m.mu.Lock()
-	job, ok := m.jobs[key]
+	job, ok := m.jobs[jobKey(ref.Name, ref.WorkDir)]
+	isRunning := ok && job.Status == domain.JobStatusRunning
 	m.mu.Unlock()
 
 	if !ok {
-		return nil, fmt.Errorf("job %s not found", name)
+		return nil, fmt.Errorf("job %s not found", ref.Name)
 	}
-	if job.Status != domain.JobStatusRunning {
-		return nil, fmt.Errorf("job %s is not running", name)
+	if !isRunning {
+		return nil, fmt.Errorf("job %s is not running", ref.Name)
 	}
 	if job.output == nil {
-		return nil, fmt.Errorf("job %s has no attachable output (detached launcher)", name)
+		return nil, fmt.Errorf("job %s has no attachable output (detached launcher)", ref.Name)
+	}
+	return job, nil
+}
+
+func (m *Manager) Attach(name string, workDir string) (*AttachSession, error) {
+	job, err := m.attachableJob(jobRef{Name: name, WorkDir: workDir})
+	if err != nil {
+		return nil, err
 	}
 
 	history, stream, unsub, err := job.output.Subscribe()
@@ -709,6 +735,36 @@ func (m *Manager) Attach(name string, workDir string) (*AttachSession, error) {
 		Stream:  stream,
 		Release: unsub,
 	}, nil
+}
+
+type ResizeParams struct {
+	Name    string
+	WorkDir string
+	Cols    int
+	Rows    int
+}
+
+// Resize sizes a job's PTY to the pane rendering it, which is the only way the
+// child ever reflows: the emulator drawing that pane does not re-wrap what it
+// has already been sent. Each attached pane resizes for itself, so the last one
+// to speak wins — a job shown twice at two sizes is drawn for the latest.
+func (m *Manager) Resize(params ResizeParams) error {
+	if params.Cols <= 0 || params.Rows <= 0 {
+		return fmt.Errorf("job %s: invalid size %dx%d", params.Name, params.Cols, params.Rows)
+	}
+
+	job, err := m.attachableJob(jobRef{Name: params.Name, WorkDir: params.WorkDir})
+	if err != nil {
+		return err
+	}
+	if job.Config.Kind == domain.JobKindTask {
+		return fmt.Errorf("job %s runs on a pipe, not a PTY (task)", params.Name)
+	}
+
+	if err := setWinsize(winsizeParams{File: job.PTY, Cols: params.Cols, Rows: params.Rows}); err != nil {
+		return fmt.Errorf("resize job %s: %w", params.Name, err)
+	}
+	return nil
 }
 
 func (m *Manager) List() []ManagedJob {

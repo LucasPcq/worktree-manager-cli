@@ -130,6 +130,8 @@ func (d *daemonServer) handleConnection(conn net.Conn) {
 		d.handleList(encoder, req)
 	case ActionAttach:
 		d.handleAttach(conn, encoder, req)
+	case ActionResize:
+		d.handleResize(encoder, req)
 	default:
 		encoder.Encode(Response{Status: StatusError, Message: fmt.Sprintf("unknown action: %s", req.Action)})
 	}
@@ -247,6 +249,24 @@ func jobInfoOf(job ManagedJob) domain.JobInfo {
 	}
 }
 
+// handleResize answers on its own connection by design: an attach connection
+// carries raw PTY bytes as soon as it is accepted, so a size sent there would
+// be typed into the job instead of resizing it.
+func (d *daemonServer) handleResize(encoder *json.Encoder, req Request) {
+	err := d.manager.Resize(ResizeParams{
+		Name:    req.Name,
+		WorkDir: req.WorkDir,
+		Cols:    req.Cols,
+		Rows:    req.Rows,
+	})
+	if err != nil {
+		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
+		return
+	}
+
+	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s resized", req.Name)})
+}
+
 func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Request) {
 	session, err := d.manager.Attach(req.Name, req.WorkDir)
 	if err != nil {
@@ -255,14 +275,8 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 	}
 	defer session.Release()
 
-	// Set initial window size if provided
 	if req.Cols > 0 && req.Rows > 0 {
-		syscall.Syscall(
-			syscall.SYS_IOCTL,
-			session.PTY.Fd(),
-			syscall.TIOCSWINSZ,
-			uintptr(unsafeWinsize(req.Cols, req.Rows)),
-		)
+		_ = setWinsize(winsizeParams{File: session.PTY, Cols: req.Cols, Rows: req.Rows})
 	}
 
 	// Send OK before switching to raw mode
