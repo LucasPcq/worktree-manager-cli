@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/service/process"
@@ -15,8 +14,6 @@ import (
 
 // attachSettle is how long the fake daemon holds a job's output back after
 // accepting an attach; see serve.
-const attachSettle = 50 * time.Millisecond
-
 // fakeDaemon answers on the socket process.SocketPath resolves to, with the
 // config dir redirected under a short temp home: a command under test dials it
 // exactly as it dials the real daemon, and never forks one.
@@ -91,10 +88,6 @@ func (d *fakeDaemon) serve(conn net.Conn) {
 	}
 	if req.Action == process.ActionAttach {
 		_ = encoder.Encode(process.Response{Status: process.StatusOK})
-		// The client reads the acceptance with a buffering JSON decoder and then
-		// hands the raw connection on, so bytes written in the same breath as the
-		// acceptance are swallowed with it. Let it read first.
-		time.Sleep(attachSettle)
 		_, _ = conn.Write(d.Streams[req.Name])
 		return
 	}

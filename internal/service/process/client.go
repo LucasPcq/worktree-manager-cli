@@ -1,9 +1,11 @@
 package process
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -119,8 +121,36 @@ func (c *Client) Attach(params AttachParams) (net.Conn, error) {
 		return nil, fmt.Errorf("attach failed: %s", resp.Message)
 	}
 
-	return conn, nil
+	held, err := io.ReadAll(decoder.Buffered())
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("read attach response: %w", err)
+	}
+
+	return prefixedConn{
+		Conn:   conn,
+		reader: io.MultiReader(bytes.NewReader(afterResponseDelimiter(held)), conn),
+	}, nil
 }
+
+// afterResponseDelimiter drops the newline the encoder writes to close the
+// attach response, which the decoder leaves in its buffer. Everything past it
+// is the job's own output.
+func afterResponseDelimiter(held []byte) []byte {
+	held = bytes.TrimPrefix(held, []byte("\r"))
+	return bytes.TrimPrefix(held, []byte("\n"))
+}
+
+// prefixedConn replays what the decoder read past the attach response before
+// the rest of the connection. The daemon writes the job's buffered history
+// right behind that response, so a single read commonly carries both, and
+// whatever the decoder kept would otherwise be dropped with it.
+type prefixedConn struct {
+	net.Conn
+	reader io.Reader
+}
+
+func (c prefixedConn) Read(p []byte) (int, error) { return c.reader.Read(p) }
 
 // Resize asks the daemon to size a job's PTY to the pane rendering it. It
 // dials its own connection rather than reusing the one Attach returned, which
