@@ -151,6 +151,31 @@ func TestPaneResizeKeepsContentOnce(t *testing.T) {
 	}
 }
 
+// x/vt drops the bottom rows on a shrink and never gives them back, so the
+// pane pushes what would go into its scrollback first: the newest output stays
+// on screen and the oldest is still one page-up away.
+func TestPaneShrinkKeepsTheNewestRowsAndBanksTheOldest(t *testing.T) {
+	p := NewPane(PaneParams{Size: PaneSize{Cols: 20, Rows: 6}, ScrollbackSize: 100})
+	for i := range 20 {
+		write(t, p, fmt.Sprintf("line %02d\r\n", i))
+	}
+
+	p.Resize(PaneSize{Cols: 20, Rows: 3})
+
+	shown := strings.Join(plainLines(t, p), "\n")
+	if !strings.Contains(shown, "line 19") {
+		t.Fatalf("pane = %q, want the newest line the job printed", shown)
+	}
+	if strings.Contains(shown, "line 15") {
+		t.Fatalf("pane = %q, want the shorter screen to hold the tail only", shown)
+	}
+
+	p.ScrollUp(4)
+	if banked := strings.Join(plainLines(t, p), "\n"); !strings.Contains(banked, "line 15") {
+		t.Fatalf("scrollback = %q, want the rows the shrink took", banked)
+	}
+}
+
 func TestPaneResizeReportsNoChangeOnSameSize(t *testing.T) {
 	p := newTestPane(t)
 	if changed := p.Resize(PaneSize{Cols: 20, Rows: 3}); changed {

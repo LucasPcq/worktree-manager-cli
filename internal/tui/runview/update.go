@@ -27,8 +27,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case domain.RunViewFocusKey:
 		return m.focus()
 	case keyEscape:
-		m.dismissed = true
-		return m, nil
+		return m.dismiss()
 	case keyQuit, keyInterrupt:
 		return m.detach()
 	case keyUp, keyVimUp:
@@ -130,6 +129,19 @@ func (m Model) detach() (tea.Model, tea.Cmd) {
 	m.cancel()
 	m.panes.closeAll()
 	return m, tea.Quit
+}
+
+// dismiss takes the abort report off the frame and gives its rows back to the
+// panes under it. With no report on screen the key does nothing: pressing esc
+// before the run fails would otherwise silence a report that is not written
+// yet, and the reader would never learn why the profile stopped.
+func (m Model) dismiss() (tea.Model, tea.Cmd) {
+	if len(m.report()) == 0 {
+		return m, nil
+	}
+	m.dismissed = true
+	model, cmd := m.applySize()
+	return model, cmd
 }
 
 func (m Model) move(delta int) (tea.Model, tea.Cmd) {

@@ -2,6 +2,7 @@ package runview
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -247,8 +248,65 @@ func TestAbortReportIsDismissed(t *testing.T) {
 	if h.model.layout().PaneRows <= rows {
 		t.Fatal("the rows the report held were not given back to the pane")
 	}
+	assertPaneMatchesLayout(t, h.model, h.model.selected)
 	if !h.model.sequence.outcome.Aborted() {
 		t.Fatal("dismissing the report lost the outcome it was built from")
+	}
+}
+
+// The band takes its rows from the body, so the emulators behind the panes have
+// to be re-sized with it. A pane fed taller than it is drawn shows its oldest
+// rows, and after an abort the newest ones are the whole point.
+func TestAbortReportResizesThePanesItShortens(t *testing.T) {
+	h := newHarness(t, harnessParams{
+		Views:   []runlogs.JobView{running("api"), stopped("migrate")},
+		Streams: []string{"api"},
+	})
+	for i := range 40 {
+		h.streams["api"].Feed(fmt.Appendf(nil, "api line %02d\r\n", i))
+	}
+	h.waitForPane(t, "api", "api line 39")
+
+	h.emit(t, runlogs.Event{
+		Phase: runlogs.PhaseAborted, Job: "migrate", Step: 2, Steps: 2, Reason: "exit status 1",
+		Outcome: runlogs.Outcome{Failed: "migrate", FailedStep: 2, Steps: 2, Started: []string{"api"}},
+	})
+
+	assertPaneMatchesLayout(t, h.model, "api")
+	if !strings.Contains(ansi.Strip(h.model.View()), "api line 39") {
+		t.Fatal("the newest output of the run that aborted fell off the frame")
+	}
+}
+
+// esc is the reflex key for "never mind", and it is what closes the filter box.
+// Pressing it before anything failed must not silence a report the run has not
+// written yet.
+func TestEscBeforeAnAbortDoesNotSilenceTheReport(t *testing.T) {
+	h := newHarness(t, harnessParams{
+		Views:   []runlogs.JobView{running("api"), stopped("migrate")},
+		Streams: []string{"api"},
+	})
+
+	h.press(t, namedKey(tea.KeyEsc))
+	h.emit(t, runlogs.Event{
+		Phase: runlogs.PhaseAborted, Job: "migrate", Step: 2, Steps: 2, Reason: "exit status 1",
+		Outcome: runlogs.Outcome{Failed: "migrate", FailedStep: 2, Steps: 2, Started: []string{"api"}},
+	})
+
+	if !strings.Contains(ansi.Strip(h.model.View()), domain.RunViewAbortTitle) {
+		t.Fatal("the report never reached the frame: esc had dismissed it in advance")
+	}
+}
+
+func assertPaneMatchesLayout(t *testing.T, model Model, job string) {
+	t.Helper()
+	entry, held := model.panes.entry(job)
+	if !held {
+		t.Fatalf("%s has no pane", job)
+	}
+	layout := model.layout()
+	if got := entry.pane.Size(); got.Rows != layout.PaneRows || got.Cols != layout.PaneCols {
+		t.Fatalf("emulator of %s is %+v, the layout draws it at %dx%d", job, got, layout.PaneCols, layout.PaneRows)
 	}
 }
 

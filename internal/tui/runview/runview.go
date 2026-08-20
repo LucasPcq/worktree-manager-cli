@@ -259,6 +259,17 @@ func (m Model) applySize() (Model, tea.Cmd) {
 	return m, resizeCmd(resizeParams{Streams: m.panes.resize(size), Size: size})
 }
 
+// resyncSize re-sizes the emulators when the abort report's occupation of the
+// frame changed. The band takes its rows from the body, and a pane fed at one
+// size while drawn shorter shows its oldest rows: the output of the job that
+// just failed is exactly what would fall off the bottom.
+func (m Model) resyncSize(noticeLines int) (Model, tea.Cmd) {
+	if len(m.report()) == noticeLines {
+		return m, nil
+	}
+	return m.applySize()
+}
+
 func (m Model) paneSize() PaneSize {
 	layout := m.layout()
 	return PaneSize{Cols: layout.PaneCols, Rows: layout.PaneRows}

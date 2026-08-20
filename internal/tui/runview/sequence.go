@@ -65,6 +65,7 @@ func (s sink) Emit(event runlogs.Event) {
 
 func (m Model) applyEvent(msg eventMsg) (Model, tea.Cmd) {
 	event := msg.event
+	noticeLines := len(m.report())
 	m.sequence.steps = max(event.Steps, m.sequence.steps)
 
 	switch event.Phase {
@@ -85,7 +86,8 @@ func (m Model) applyEvent(msg eventMsg) (Model, tea.Cmd) {
 	}
 
 	model, cmd := m.followSequence(event)
-	return model, tea.Batch(cmd, model.refreshCmd(), listenCmd(m.msgs))
+	model, resized := model.resyncSize(noticeLines)
+	return model, tea.Batch(cmd, resized, model.refreshCmd(), listenCmd(m.msgs))
 }
 
 // followSequence puts the job the sequence is acting on in front of the reader,
@@ -101,6 +103,7 @@ func (m Model) followSequence(event runlogs.Event) (Model, tea.Cmd) {
 // not a job's: a sequence that was detached from ended on the context, which is
 // the view being left rather than anything to report.
 func (m Model) applyRunFinished(msg runFinishedMsg) (Model, tea.Cmd) {
+	noticeLines := len(m.report())
 	m.sequence.active = false
 	if msg.outcome.Steps > 0 || msg.outcome.Failed != "" {
 		m.sequence.outcome = msg.outcome
@@ -108,7 +111,8 @@ func (m Model) applyRunFinished(msg runFinishedMsg) (Model, tea.Cmd) {
 	if msg.err != nil && m.runCtx.Err() == nil {
 		m.err = msg.err
 	}
-	return m, m.refreshCmd()
+	model, resized := m.resyncSize(noticeLines)
+	return model, tea.Batch(resized, model.refreshCmd())
 }
 
 // report is what an aborted profile has to say, one line per thing it says.

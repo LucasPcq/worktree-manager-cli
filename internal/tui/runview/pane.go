@@ -62,10 +62,26 @@ func (p *Pane) Resize(size PaneSize) (changed bool) {
 	if next == p.size {
 		return false
 	}
+	p.scrollIntoHistoryLocked(next.Rows)
 	p.term.Resize(next.Cols, next.Rows)
 	p.size = next
 	p.clampLocked()
 	return true
+}
+
+// scrollIntoHistoryLocked makes room for a shorter screen the way a terminal
+// does. x/vt drops the bottom rows on a shrink and never gives them back, so
+// the rows under the new last one are pushed up into the scrollback first —
+// otherwise the newest output goes, which on the frame the abort report just
+// shortened is the crash the reader opened the view for.
+func (p *Pane) scrollIntoHistoryLocked(rows int) {
+	lost := p.term.CursorPosition().Y - (rows - 1)
+	if lost <= 0 {
+		return
+	}
+	held := p.term.ScrollbackLen()
+	p.term.Write([]byte(ansi.ScrollUp(lost)))
+	p.followLocked(held)
 }
 
 func (p *Pane) Size() PaneSize {
