@@ -288,7 +288,8 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 		done <- struct{}{}
 	}()
 
-	// Client stdin → PTY.
+	// Client stdin → PTY, unarbitrated: see AttachSession on what two clients
+	// typing at the same time get.
 	go func() {
 		io.Copy(session.PTY, conn)
 		done <- struct{}{}

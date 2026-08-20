@@ -506,6 +506,9 @@ func (h *outputHub) Write(p []byte) (int, error) {
 	defer h.mu.Unlock()
 	h.history.Write(p)
 	if len(h.subs) > 0 {
+		// One copy of the caller's buffer for all of them: the chunk a
+		// subscriber receives is shared with every other subscriber, so it is
+		// read-only. A pane that wants to keep or rewrite it copies it first.
 		data := make([]byte, len(p))
 		copy(data, p)
 		for _, sub := range h.subs {
@@ -523,6 +526,11 @@ func (h *outputHub) Write(p []byte) (int, error) {
 // Subscribe returns the current history snapshot and a channel streaming
 // subsequent writes. The returned unsubscribe func must be called to release
 // the subscription; it is safe to call after the hub has been closed.
+//
+// Chunks arriving on the channel are shared with every other subscriber and
+// must be treated as read-only — mutating one is visible to all of them.
+// A slow subscriber loses chunks rather than stalling the job, so the stream
+// is a live view, not a record: TailJobLog is what reads back a complete one.
 func (h *outputHub) Subscribe() (history []byte, ch <-chan []byte, unsub func(), err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -648,6 +656,13 @@ func (m *Manager) stopByKey(key string) error {
 
 // AttachSession hands out the job's live PTY, for stdin forwarding and
 // window-size ioctls. Release must be called when done.
+//
+// A job accepts any number of concurrent attachments — the run view needs
+// several, and refusing the second one used to be what kept stdin
+// single-writer. Nothing arbitrates that PTY now: every attachment writes
+// into it directly, so two of them typing at once interleave their bytes
+// (Vite's r/q/u/o shortcuts land in whichever order they arrive). Output is
+// unaffected, each subscriber gets the whole stream.
 type AttachSession struct {
 	PTY     *os.File
 	History []byte

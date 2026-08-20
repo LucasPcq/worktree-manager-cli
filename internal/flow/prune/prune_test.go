@@ -8,8 +8,9 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 )
 
-// The purge reports nothing back to the run: a log directory that cannot be
-// deleted leaves the removal untouched by construction.
+// A purge that fails cannot reach the run — purgeJobLogs returns nothing. The
+// flow-level proof is in flow/clean (TestRunSucceedsWhenTheJobLogPurgeFails);
+// what is pinned here is that it deletes one worktree's logs and no other's.
 func TestPurgeJobLogsDropsOnlyThatWorktreesLogs(t *testing.T) {
 	stateDir := t.TempDir()
 	f := &pruneFlow{ctx: flow.Context{StateDir: stateDir}}
