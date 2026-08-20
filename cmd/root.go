@@ -18,6 +18,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/schema"
 	"github.com/LucasPcq/wtm/internal/commands/shell"
 	"github.com/LucasPcq/wtm/internal/commands/ui"
+	"github.com/LucasPcq/wtm/internal/commands/upgrade"
 	"github.com/LucasPcq/wtm/internal/commands/wt"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
@@ -70,6 +71,10 @@ func init() {
 	schemaCmd := schema.NewCmd()
 	schemaCmd.GroupID = domain.CmdGroupSetup
 	rootCmd.AddCommand(schemaCmd)
+
+	upgradeCmd := upgrade.NewCmd(upgrade.NewCmdParams{Version: version})
+	upgradeCmd.GroupID = domain.CmdGroupSetup
+	rootCmd.AddCommand(upgradeCmd)
 
 	rootCmd.AddCommand(daemon.NewCmd())
 }
