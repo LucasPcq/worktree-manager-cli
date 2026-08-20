@@ -10,18 +10,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 )
 
-// stepState is where a job stands in the start sequence, which the daemon's own
-// view of it lags behind: a job is marked started here before a list call says
-// it is running.
-type stepState int
-
-const (
-	stepStarting stepState = iota
-	stepStarted
-	stepDone
-	stepFailed
-)
-
 // sequence is what the view knows of a profile being started. It decides
 // nothing about the run — the order, what aborts it and what is left running
 // are runlogs' answers, carried here as they are emitted.
@@ -30,7 +18,7 @@ type sequence struct {
 	job    string
 	step   int
 	steps  int
-	states map[string]stepState
+	states map[string]domain.JobStep
 	// reason is what the daemon answered for the job that ended the sequence.
 	reason  string
 	outcome runlogs.Outcome
@@ -72,13 +60,13 @@ func (m Model) applyEvent(msg eventMsg) (Model, tea.Cmd) {
 	case runlogs.PhaseStarting:
 		m.sequence.active = true
 		m.sequence.job, m.sequence.step = event.Job, event.Step
-		m.sequence.states[event.Job] = stepStarting
+		m.sequence.states[event.Job] = domain.JobStepStarting
 	case runlogs.PhaseStarted:
-		m.sequence.states[event.Job], m.sequence.job = stepStarted, ""
+		m.sequence.states[event.Job], m.sequence.job = domain.JobStepStarted, ""
 	case runlogs.PhaseDone:
-		m.sequence.states[event.Job], m.sequence.job = stepDone, ""
+		m.sequence.states[event.Job], m.sequence.job = domain.JobStepDone, ""
 	case runlogs.PhaseFailed:
-		m.sequence.states[event.Job], m.sequence.job = stepFailed, ""
+		m.sequence.states[event.Job], m.sequence.job = domain.JobStepFailed, ""
 		m.sequence.reason = event.Reason
 	case runlogs.PhaseAborted, runlogs.PhaseReady:
 		m.sequence.active, m.sequence.job = false, ""
@@ -113,7 +101,7 @@ func (m Model) followSequence(event runlogs.Event) (Model, tea.Cmd) {
 func (m Model) applyRunFinished(msg runFinishedMsg) (Model, tea.Cmd) {
 	noticeLines := len(m.report())
 	m.sequence.active = false
-	if msg.outcome.Steps > 0 || msg.outcome.Failed != "" {
+	if msg.outcome.Recorded() {
 		m.sequence.outcome = msg.outcome
 	}
 	if msg.err != nil && m.runCtx.Err() == nil {

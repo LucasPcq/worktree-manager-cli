@@ -87,6 +87,57 @@ func TestComputeRunViewLayoutSizesTheEmulatorToItsBox(t *testing.T) {
 	}
 }
 
+func TestJobMark(t *testing.T) {
+	cases := []struct {
+		label  string
+		params JobMarkParams
+		want   domain.JobMark
+	}{
+		{
+			label:  "no sequence has spoken",
+			params: JobMarkParams{Status: domain.JobStatusRunning},
+			want:   domain.JobMarkRunning,
+		},
+		{
+			label:  "the sequence is ahead of the daemon",
+			params: JobMarkParams{Status: domain.JobStatusStopped, Step: domain.JobStepStarting, Tracked: true},
+			want:   domain.JobMarkStarting,
+		},
+		{
+			label:  "a task the sequence ran to the end",
+			params: JobMarkParams{Status: domain.JobStatusStopped, Step: domain.JobStepDone, Tracked: true},
+			want:   domain.JobMarkDone,
+		},
+		{
+			label:  "the job that ended the sequence",
+			params: JobMarkParams{Status: domain.JobStatusStopped, Step: domain.JobStepFailed, Tracked: true},
+			want:   domain.JobMarkCrashed,
+		},
+		{
+			label:  "a job the sequence started and left running",
+			params: JobMarkParams{Status: domain.JobStatusRunning, Step: domain.JobStepStarted, Tracked: true},
+			want:   domain.JobMarkRunning,
+		},
+		{
+			label:  "one it started that has crashed since",
+			params: JobMarkParams{Status: domain.JobStatusCrashed, Step: domain.JobStepStarted, Tracked: true},
+			want:   domain.JobMarkCrashed,
+		},
+		{
+			label:  "one it started that has stopped since",
+			params: JobMarkParams{Status: domain.JobStatusStopped, Step: domain.JobStepStarted, Tracked: true},
+			want:   domain.JobMarkStopped,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			if got := JobMark(tc.params); got != tc.want {
+				t.Fatalf("JobMark(%+v) = %v, want %v", tc.params, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestClipReport(t *testing.T) {
 	report := []string{"aborted", "failed at 2/3", "left running: api", "not started: web", "esc dismisses"}
 

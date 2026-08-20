@@ -33,6 +33,12 @@ type Outcome struct {
 
 func (o Outcome) Aborted() bool { return o.Failed != "" }
 
+// Recorded reports that the run got far enough to have an account of itself. A
+// zero Outcome is a run that never gave one — a surface detached from before
+// the first job, or a refusal ahead of it — and it must not replace the account
+// a surface already has.
+func (o Outcome) Recorded() bool { return o.Steps > 0 || o.Aborted() }
+
 type RunParams struct {
 	Service Service
 	Sink    Sink

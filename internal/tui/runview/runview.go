@@ -86,7 +86,7 @@ func New(params Params) Model {
 		// running before the first chunk lands.
 		ticking:   params.Start != nil,
 		following: params.Start != nil,
-		sequence:  sequence{states: map[string]stepState{}},
+		sequence:  sequence{states: map[string]domain.JobStep{}},
 		runCtx:    ctx,
 		cancel:    cancel,
 	}

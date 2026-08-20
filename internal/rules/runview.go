@@ -46,6 +46,45 @@ func ComputeRunViewLayout(params RunViewLayoutParams) domain.RunViewLayout {
 	}
 }
 
+type JobMarkParams struct {
+	Status domain.JobStatus
+	Step   domain.JobStep
+	// Tracked is false for a job no start sequence has said anything about, and
+	// for every job of a view that is only reading what already runs.
+	Tracked bool
+}
+
+// JobMark reconciles what the start sequence knows of a job with what the
+// daemon answers about it. The sequence wins while it has something to say: a
+// job it has just reached is starting before any list call mentions it. Once it
+// has said the job started, the daemon has the newer answer — it may have
+// crashed since.
+func JobMark(params JobMarkParams) domain.JobMark {
+	if !params.Tracked {
+		return statusMark(params.Status)
+	}
+	switch params.Step {
+	case domain.JobStepStarting:
+		return domain.JobMarkStarting
+	case domain.JobStepDone:
+		return domain.JobMarkDone
+	case domain.JobStepFailed:
+		return domain.JobMarkCrashed
+	}
+	return statusMark(params.Status)
+}
+
+func statusMark(status domain.JobStatus) domain.JobMark {
+	switch status {
+	case domain.JobStatusRunning:
+		return domain.JobMarkRunning
+	case domain.JobStatusCrashed:
+		return domain.JobMarkCrashed
+	default:
+		return domain.JobMarkStopped
+	}
+}
+
 // ClipReport fits an abort report into the rows the frame can spare. Its head
 // is what the run has to say, but its last line is how the band is taken off
 // the screen: cutting from the bottom leaves a reader on a short terminal with

@@ -164,30 +164,20 @@ func (m Model) renderJobRow(params jobRowParams) string {
 	})
 }
 
-// jobMark marks a job with where the sequence left it, and with the daemon's
-// view of it otherwise: a job the run has just started is running before a list
-// call says so.
 func (m Model) jobMark(view runlogs.JobView) string {
-	state, tracked := m.sequence.states[view.Name]
-	if !tracked {
-		return statusMark(view.Status)
-	}
-	switch state {
-	case stepStarting:
-		return styles.Warning.Render(domain.RunViewMarkStarting)
-	case stepDone:
-		return styles.Success.Render(domain.RunViewMarkDone)
-	case stepFailed:
-		return styles.DangerText.Render(domain.RunViewMarkCrashed)
-	}
-	return statusMark(view.Status)
+	step, tracked := m.sequence.states[view.Name]
+	return renderMark(rules.JobMark(rules.JobMarkParams{Status: view.Status, Step: step, Tracked: tracked}))
 }
 
-func statusMark(status domain.JobStatus) string {
-	switch status {
-	case domain.JobStatusRunning:
+func renderMark(mark domain.JobMark) string {
+	switch mark {
+	case domain.JobMarkStarting:
+		return styles.Warning.Render(domain.RunViewMarkStarting)
+	case domain.JobMarkRunning:
 		return styles.Success.Render(domain.RunViewMarkRunning)
-	case domain.JobStatusCrashed:
+	case domain.JobMarkDone:
+		return styles.Success.Render(domain.RunViewMarkDone)
+	case domain.JobMarkCrashed:
 		return styles.DangerText.Render(domain.RunViewMarkCrashed)
 	default:
 		return styles.Muted.Render(domain.RunViewMarkStopped)

@@ -52,6 +52,26 @@ func run(t *testing.T, service *runlogstest.Service, jobs ...domain.JobConfig) (
 	return outcome, sink
 }
 
+func TestOutcomeRecorded(t *testing.T) {
+	cases := []struct {
+		label   string
+		outcome runlogs.Outcome
+		want    bool
+	}{
+		{label: "nothing was reported", outcome: runlogs.Outcome{}, want: false},
+		{label: "the run reached its jobs", outcome: runlogs.Outcome{Steps: 3}, want: true},
+		{label: "it ended on one of them", outcome: runlogs.Outcome{Failed: "migrate"}, want: true},
+		{label: "a detach kept what it started", outcome: runlogs.Outcome{Started: []string{"api"}}, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			if got := tc.outcome.Recorded(); got != tc.want {
+				t.Fatalf("Recorded() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRunStartsEveryJobInDeclaredOrder(t *testing.T) {
 	service := &runlogstest.Service{}
 

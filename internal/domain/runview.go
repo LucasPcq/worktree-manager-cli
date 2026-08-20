@@ -21,3 +21,27 @@ type RunViewLayout struct {
 	PaneCols int
 	PaneRows int
 }
+
+// JobStep is where a job stands in a profile's start sequence, which the
+// daemon's own view of it lags behind: a job is marked started here before a
+// list call says it is running.
+type JobStep int
+
+const (
+	JobStepStarting JobStep = iota
+	JobStepStarted
+	JobStepDone
+	JobStepFailed
+)
+
+// JobMark is the state a job wears in the run view's list, once the sequence's
+// account of it and the daemon's have been reconciled.
+type JobMark int
+
+const (
+	JobMarkStopped JobMark = iota
+	JobMarkStarting
+	JobMarkRunning
+	JobMarkDone
+	JobMarkCrashed
+)
