@@ -11,6 +11,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	ffflow "github.com/LucasPcq/wtm/internal/flow/fastforward"
 	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 	syncflow "github.com/LucasPcq/wtm/internal/flow/sync"
@@ -208,17 +209,68 @@ func (m Model) startSyncAll() (Model, tea.Cmd) {
 	})
 }
 
-// startRefreshBase fetches the row it was opened on and nothing else. It names
-// that branch rather than the configured base: a context menu acts on the line it
-// hangs off, even on a main worktree parked on some other branch. The selection is
-// fixed and holds a single root, so the flow finds no rebase step in it and asks
-// neither about conflicts nor about parents.
-func (m Model) startRefreshBase(branch string) (Model, tea.Cmd) {
-	return m.runSync(runSyncParams{
-		Title:    domain.DashboardRefreshBaseTitle,
+// startFastForward advances the row's own branch to its origin counterpart, and
+// nothing else: the parent it hangs off and the rebase onto it are their own
+// gestures. The branch is preset, so the modal only asks the recap. The base row
+// reaches the same run — it hangs off nothing, so catching up with its remote is
+// all it can do.
+func (m Model) startFastForward(branch string) (Model, tea.Cmd) {
+	return m.runFastForward(runFastForwardParams{
+		Title:    domain.DashboardFastForwardTitle,
 		Row:      branch,
-		Base:     branch,
 		Branches: []string{branch},
+		Shape:    modalForm,
+	})
+}
+
+// startFastForwardAll presets nothing, so the run asks which worktrees first. It
+// arrives with the ones the badges call behind already checked; the rest stay
+// listed, tagged with why, one keystroke from being included. Those tags are
+// cached remote-tracking refs, so the recap — which fetches — is what settles it.
+func (m Model) startFastForwardAll() (Model, tea.Cmd) {
+	return m.runFastForward(runFastForwardParams{
+		Title:    domain.DashboardFastForwardAllTitle,
+		Precheck: rules.FastForwardReadyBranches(m.statuses),
+		Shape:    modalStepper,
+	})
+}
+
+type runFastForwardParams struct {
+	Title string
+	// Row is the worktree the gesture was made on, when it was made on one:
+	// nothing may advance a branch another run is holding.
+	Row string
+	// Branches fixes the selection; Precheck only says what arrives checked.
+	Branches []string
+	Precheck []string
+	Shape    modalShape
+}
+
+func (m Model) runFastForward(params runFastForwardParams) (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(params.Row); refused {
+		return m.refuse(reason), nil
+	}
+	m, id := m.beginOp(beginParams{Operation: ffflow.Operation(), Target: params.Row})
+	send := m.sender()
+
+	flowParams := ffflow.Params{
+		Context: m.flowContext(),
+		Request: ffflow.Request{
+			Branches: params.Branches,
+			Precheck: params.Precheck,
+		},
+		Prompter: prompter{
+			send:  send,
+			title: params.Title,
+			shape: params.Shape,
+			opID:  id,
+		},
+		Presenter: ffPresenter{presenter{send: send, id: id}},
+	}
+
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		_, err := ffflow.Run(flowParams)
+		return opDoneMsg{id: id, err: err}
 	})
 }
 
@@ -227,9 +279,6 @@ type runSyncParams struct {
 	// Row is the worktree the gesture was made on, when it was made on one:
 	// nothing may rebase a worktree another run is holding.
 	Row string
-	// Base overrides the branch the cascade treats as its root, for a gesture made
-	// on that root itself. Empty means the configured base.
-	Base string
 	// Branches fixes the selection; Precheck only says what arrives checked.
 	Branches []string
 	Precheck []string
@@ -247,7 +296,7 @@ func (m Model) runSync(params runSyncParams) (Model, tea.Cmd) {
 		Request: syncflow.Request{
 			Branches:   params.Branches,
 			Precheck:   params.Precheck,
-			BaseBranch: m.syncBase(params.Base),
+			BaseBranch: m.baseBranch(),
 		},
 		Prompter: prompter{
 			send:  send,
@@ -265,13 +314,6 @@ func (m Model) runSync(params runSyncParams) (Model, tea.Cmd) {
 }
 
 func (m Model) baseBranch() string { return m.params.Config.Project.Worktrees.BaseBranch }
-
-func (m Model) syncBase(override string) string {
-	if override != "" {
-		return override
-	}
-	return m.baseBranch()
-}
 
 func (m Model) ancestryOf(branch string) []string {
 	return rules.SyncAncestry(rules.SyncAncestryParams{Nodes: m.worktreeNodes(), Leaf: branch})
@@ -384,6 +426,8 @@ func (m Model) applyFlow(msg tea.Msg) (Model, tea.Cmd) {
 	case prunedMsg:
 		return m, m.reload()
 	case syncedMsg:
+		return m, m.reload()
+	case fastForwardedMsg:
 		return m, m.reload()
 	}
 	return m, nil

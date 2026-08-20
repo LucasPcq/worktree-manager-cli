@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // The create command itself is not run here: startCreate hands the flow to a
@@ -438,17 +439,17 @@ func TestARunThatAlreadyReportedItselfAddsNoRedundantFailureLine(t *testing.T) {
 	}
 }
 
-// The base refresh is a context-menu entry: it acts on the row it hangs off, not
+// The fast-forward is a context-menu entry: it acts on the row it hangs off, not
 // on whatever the config calls the base.
-func TestTheBaseRefreshActsOnTheRowItWasOpenedFrom(t *testing.T) {
+func TestTheRowFastForwardActsOnTheRowItWasOpenedFrom(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight)
 	model = update(model, worktreesMsg{
-		statuses: []domain.WorktreeStatus{{Branch: "trunk", IsParent: true}},
+		statuses: []domain.WorktreeStatus{{Branch: "trunk", IsParent: true, OriginState: domain.DivergenceBehind, OriginBehind: 1}},
 		parents:  map[string]string{},
 	})
 	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindCreate, target: "trunk"})
 
-	refused, cmd := model.startRefreshBase("trunk")
+	refused, cmd := model.startFastForward("trunk")
 
 	if cmd != nil {
 		t.Fatal("the run must be refused: it acts on a worktree another run is holding")
@@ -456,10 +457,51 @@ func TestTheBaseRefreshActsOnTheRowItWasOpenedFrom(t *testing.T) {
 	if len(refused.outputLines) == 0 {
 		t.Error("the refusal must be stated where the user is looking")
 	}
-	if got := model.syncBase("trunk"); got != "trunk" {
-		t.Errorf("base = %q, want the row's own branch to root the cascade", got)
+}
+
+func TestTheFastForwardKeyStartsTheRunOnTheSelectedRow(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight)
+	model = update(model, worktreesMsg{
+		statuses: []domain.WorktreeStatus{{Branch: "feat", OriginState: domain.DivergenceBehind, OriginBehind: 2}},
+		parents:  map[string]string{},
+	})
+
+	started, cmd := updateCmd(model, key(domain.KeyFastForward))
+
+	if cmd == nil {
+		t.Fatal("f must start the fast-forward flow")
 	}
-	if got := model.syncBase(""); got != model.baseBranch() {
-		t.Errorf("base = %q, want the configured base when no row names one", got)
+	if len(started.ops.running) != 1 || started.ops.running[0].kind != domain.OpKindFastForward {
+		t.Fatalf("running = %+v, want the fast-forward run recorded", started.ops.running)
+	}
+	if started.ops.running[0].mode != flow.ModeBlocking {
+		t.Errorf("mode = %v, want the mode the flow declares", started.ops.running[0].mode)
+	}
+}
+
+// The batch run holds the whole surface, so it locks no single worktree, and it
+// arrives with exactly the branches the badges call behind already checked.
+func TestBatchFastForwardBlocksTheSurfaceAndPrechecksTheBehindOnes(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight)
+	model = update(model, worktreesMsg{
+		statuses: []domain.WorktreeStatus{
+			{Branch: "behind", OriginState: domain.DivergenceBehind, OriginBehind: 2},
+			{Branch: "current", OriginState: domain.DivergenceUpToDate},
+			{Branch: "split", OriginState: domain.DivergenceDiverged, OriginAhead: 1, OriginBehind: 1},
+		},
+		parents: map[string]string{},
+	})
+
+	started, cmd := model.startFastForwardAll()
+
+	if cmd == nil {
+		t.Fatal("the batch entry must start the run")
+	}
+	if len(started.ops.running) != 1 || started.ops.running[0].target != "" {
+		t.Fatalf("running = %+v, want a run holding the surface and no worktree", started.ops.running)
+	}
+	precheck := rules.FastForwardReadyBranches(model.statuses)
+	if len(precheck) != 1 || precheck[0] != "behind" {
+		t.Fatalf("precheck = %v, want [behind]", precheck)
 	}
 }

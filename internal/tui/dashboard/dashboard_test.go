@@ -23,7 +23,11 @@ const (
 func statuses(branches ...string) []domain.WorktreeStatus {
 	out := make([]domain.WorktreeStatus, 0, len(branches))
 	for _, branch := range branches {
-		out = append(out, domain.WorktreeStatus{Branch: branch, Path: "/tmp/" + branch})
+		out = append(out, domain.WorktreeStatus{
+			Branch:      branch,
+			Path:        "/tmp/" + branch,
+			OriginState: domain.DivergenceUpToDate,
+		})
 	}
 	return out
 }

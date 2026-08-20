@@ -621,6 +621,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openActionsMenu(m.actionsAnchorPoint()), nil
 	case keyOpenPR:
 		return m.openPR()
+	case keyFastForward:
+		selected, ok := m.selected()
+		if !ok {
+			return m, nil
+		}
+		return m.startFastForward(selected.Branch)
 
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded

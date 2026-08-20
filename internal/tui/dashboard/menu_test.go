@@ -309,8 +309,8 @@ func TestTheActionsMenuListsGlobalActionsWithNoSelection(t *testing.T) {
 	if len(items) == 0 {
 		t.Fatal("the global menu must offer something with no worktree selected")
 	}
-	if items[0].action != menuReparentBatch {
-		t.Errorf("first entry = %v, want the batch reparent", items[0].action)
+	if items[0].action != menuFastForwardAll {
+		t.Errorf("first entry = %v, want the batch fast-forward", items[0].action)
 	}
 	if title, ok := model.menuTitle(); !ok || title != domain.DashboardActionsTitle {
 		t.Errorf("title = %q, want the menu to name itself rather than a worktree", title)
@@ -376,18 +376,21 @@ func TestTheActionsMenuStartsThePruneRun(t *testing.T) {
 	}
 }
 
-// The Tree tab flags a worktree whose parent moved; the row menu is where that
-// is acted on, so the rebase leads it.
-func TestTheRowMenuLeadsWithSync(t *testing.T) {
+// The row menu leads with the fast-forward — the least destructive thing a row
+// offers — then the rebase, which the Tree tab flags and which is acted on here.
+func TestTheRowMenuLeadsWithFastForwardThenSync(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b")
 
 	items := model.worktreeMenuItems()
 
-	if len(items) == 0 || items[0].action != menuSync {
-		t.Fatalf("items = %+v, want the row menu to lead with the sync", items)
+	if len(items) < 2 || items[0].action != menuFastForward || items[1].action != menuSync {
+		t.Fatalf("items = %+v, want the fast-forward then the sync", items)
 	}
-	if items[0].label != domain.DashboardMenuSync || items[0].danger {
-		t.Errorf("entry = %+v, want the sync named and not marked dangerous", items[0])
+	if items[0].label != domain.DashboardMenuFastForward || items[0].danger {
+		t.Errorf("entry = %+v, want the fast-forward named and not marked dangerous", items[0])
+	}
+	if items[1].label != domain.DashboardMenuSync || items[1].danger {
+		t.Errorf("entry = %+v, want the sync named and not marked dangerous", items[1])
 	}
 }
 
@@ -396,17 +399,17 @@ func TestTheRowMenuLeadsWithSync(t *testing.T) {
 func TestTheBaseRowOffersTheBaseRefreshAlone(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight)
 	model = update(model, worktreesMsg{
-		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}},
+		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true, OriginState: domain.DivergenceBehind, OriginBehind: 1}},
 		parents:  map[string]string{},
 	})
 
 	items := model.worktreeMenuItems()
 
-	if len(items) != 1 || items[0].action != menuRefreshBase {
-		t.Fatalf("items = %+v, want exactly the base refresh", items)
+	if len(items) != 1 || items[0].action != menuFastForward {
+		t.Fatalf("items = %+v, want exactly the fast-forward", items)
 	}
-	if items[0].label != domain.DashboardMenuRefreshBase {
-		t.Errorf("label = %q, want the refresh named", items[0].label)
+	if items[0].label != domain.DashboardMenuFastForward {
+		t.Errorf("label = %q, want the fast-forward named", items[0].label)
 	}
 }
 
@@ -452,20 +455,97 @@ func TestTheRowMenuStartsTheSyncOnItsWorktree(t *testing.T) {
 	}
 }
 
-func TestTheBaseRowStartsTheBaseRefresh(t *testing.T) {
+func TestTheBaseRowStartsItsOwnFastForward(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight)
 	model = update(model, worktreesMsg{
-		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}},
+		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true, OriginState: domain.DivergenceBehind, OriginBehind: 1}},
 		parents:  map[string]string{},
 	})
 	model = update(model, key(domain.KeyMenu))
 
-	started, cmd := model.activateMenu(menuIndexOf(t, model, menuRefreshBase))
+	started, cmd := model.activateMenu(menuIndexOf(t, model, menuFastForward))
 
 	if cmd == nil {
-		t.Fatal("activating the refresh entry must start the run")
+		t.Fatal("activating the fast-forward entry must start the run")
 	}
-	if len(started.ops.running) != 1 || started.ops.running[0].kind != domain.OpKindSync {
-		t.Fatalf("running = %+v, want the sync run recorded", started.ops.running)
+	if len(started.ops.running) != 1 || started.ops.running[0].kind != domain.OpKindFastForward {
+		t.Fatalf("running = %+v, want the fast-forward run recorded", started.ops.running)
+	}
+}
+
+func TestWorktreeMenuLeadsWithFastForward(t *testing.T) {
+	items := worktreeActions(domain.WorktreeStatus{
+		Branch:       "feat",
+		OriginState:  domain.DivergenceBehind,
+		OriginBehind: 2,
+	})
+	if len(items) == 0 || items[0].action != menuFastForward {
+		t.Fatalf("first entry = %+v, want menuFastForward", items)
+	}
+	if items[0].label != domain.DashboardMenuFastForward {
+		t.Fatalf("label = %q, want %q", items[0].label, domain.DashboardMenuFastForward)
+	}
+}
+
+func TestBaseRowOffersTheSameFastForwardEntry(t *testing.T) {
+	items := worktreeActions(domain.WorktreeStatus{
+		Branch:      "main",
+		IsParent:    true,
+		OriginState: domain.DivergenceBehind,
+	})
+	if len(items) != 1 || items[0].action != menuFastForward {
+		t.Fatalf("base row entries = %+v, want one menuFastForward", items)
+	}
+}
+
+// The badges come from cached remote-tracking refs with no fetch, so "up to
+// date" is what is known, not what is true: the entry stays clickable.
+func TestFastForwardStaysEnabledOnAnUpToDateBranch(t *testing.T) {
+	items := worktreeActions(domain.WorktreeStatus{
+		Branch:      "feat",
+		OriginState: domain.DivergenceUpToDate,
+	})
+	if items[0].disabled != "" {
+		t.Fatalf("disabled = %q, want it enabled", items[0].disabled)
+	}
+}
+
+func TestFastForwardIsInertWhenNothingCouldFastForward(t *testing.T) {
+	cases := []struct {
+		name  string
+		state domain.DivergenceState
+		want  string
+	}{
+		{"diverged", domain.DivergenceDiverged, domain.DashboardFFDisabledDiverged},
+		{"no counterpart", domain.DivergenceUnknown, domain.DashboardFFDisabledNoRemote},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			items := worktreeActions(domain.WorktreeStatus{Branch: "feat", OriginState: tc.state})
+			if items[0].disabled != tc.want {
+				t.Fatalf("disabled = %q, want %q", items[0].disabled, tc.want)
+			}
+		})
+	}
+}
+
+func TestGlobalMenuOffersTheBatchFastForward(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+
+	var found bool
+	for _, item := range model.globalMenuItems() {
+		if item.action != menuFastForwardAll {
+			continue
+		}
+		found = true
+		if item.label != domain.DashboardMenuFastForwardAll {
+			t.Fatalf("label = %q, want %q", item.label, domain.DashboardMenuFastForwardAll)
+		}
+		if item.disabled != "" {
+			t.Fatalf("disabled = %q, want it enabled", item.disabled)
+		}
+	}
+	if !found {
+		t.Fatal("global menu has no menuFastForwardAll entry")
 	}
 }

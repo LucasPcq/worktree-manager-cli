@@ -166,15 +166,15 @@ func TestAVirtualNodeSelectsNothingAndOffersNothing(t *testing.T) {
 func TestTheMainWorktreeOffersOnlyTheBaseRefreshFromTheTree(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight)
 	model = update(model, worktreesMsg{
-		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}},
+		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true, OriginState: domain.DivergenceBehind, OriginBehind: 1}},
 		parents:  map[string]string{},
 	})
 	model, _ = model.selectTab(tabTree)
 	model = update(model, treeMsg{rows: rules.FlattenForest(sampleForest())})
 
 	items := model.menuItems()
-	if len(items) != 1 || items[0].action != menuRefreshBase {
-		t.Errorf("menu = %+v, want the base refresh alone on the main worktree", items)
+	if len(items) != 1 || items[0].action != menuFastForward {
+		t.Errorf("menu = %+v, want the fast-forward alone on the main worktree", items)
 	}
 }
 

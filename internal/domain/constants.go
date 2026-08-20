@@ -1227,9 +1227,6 @@ const (
 	// It arrives with the row and its descendants checked; the selection stays the
 	// user's to change.
 	DashboardMenuSync = "Sync this worktree"
-	// DashboardMenuRefreshBase is the only entry the base row offers: it hangs off
-	// nothing, so there is no rebase to run on it — only its own fast-forward.
-	DashboardMenuRefreshBase = "Refresh base branch"
 	// DashboardMenuFastForward leads every row menu, base row included: it is the
 	// least destructive action a row offers, and the most frequent.
 	DashboardMenuFastForward = "Fast-forward from origin"
@@ -1259,8 +1256,7 @@ const (
 	DashboardSyncTitle          = "Sync worktrees"
 	// DashboardSyncRowTitle heads the same run started from a row: a modal that
 	// renamed the entry the user just picked reads as a different action.
-	DashboardSyncRowTitle     = "Sync this worktree"
-	DashboardRefreshBaseTitle = "Refresh base branch"
+	DashboardSyncRowTitle = "Sync this worktree"
 	// DashboardFastForwardTitle heads the run started from a row, and
 	// DashboardFastForwardAllTitle the one started from the global menu.
 	DashboardFastForwardTitle    = "Fast-forward from origin"
