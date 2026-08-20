@@ -258,8 +258,9 @@ func TestRunForwardsAJobsOutputAsItStarts(t *testing.T) {
 }
 
 func TestRunWithoutAServiceIsRefused(t *testing.T) {
-	if _, err := runlogs.Run(runlogs.RunParams{Jobs: []domain.JobConfig{api}}); err == nil {
-		t.Fatal("Run accepted a nil service")
+	_, err := runlogs.Run(runlogs.RunParams{Jobs: []domain.JobConfig{api}})
+	if !errors.Is(err, domain.ErrRunServiceRequired) {
+		t.Fatalf("Run without a service: %v, want ErrRunServiceRequired", err)
 	}
 }
 

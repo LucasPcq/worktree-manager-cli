@@ -1,8 +1,6 @@
 package runlogs
 
 import (
-	"errors"
-
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
@@ -48,7 +46,7 @@ type RunParams struct {
 // what it prints, belongs to the surface.
 func Run(params RunParams) (Outcome, error) {
 	if params.Service == nil {
-		return Outcome{}, errors.New("run log service is required")
+		return Outcome{}, domain.ErrRunServiceRequired
 	}
 
 	r := &runner{

@@ -66,6 +66,10 @@ var (
 	// that is no longer running. Its log file is what is left to read.
 	ErrJobNotAttachable = errors.New("job has no live output")
 
+	// ErrRunServiceRequired is returned by the run log seam when it was handed no
+	// daemon to talk to — a wiring mistake in the surface, never a user error.
+	ErrRunServiceRequired = errors.New("run log service is required")
+
 	// ErrJobStreamClosed is returned by a subscription that has been closed. Close
 	// is a barrier: what the surface asks of the job afterwards is refused rather
 	// than sent on its behalf.
