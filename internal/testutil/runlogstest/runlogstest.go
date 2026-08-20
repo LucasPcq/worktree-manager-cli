@@ -201,3 +201,125 @@ func (s *Stream) Closed() bool {
 	defer s.mu.Unlock()
 	return s.closed
 }
+
+// Session is the surface's view of a worktree's jobs under the test's control:
+// the views it lists, the streams it hands out, and the history it reads back.
+type Session struct {
+	mu sync.Mutex
+
+	views      []runlogs.JobView
+	streams    map[string]runlogs.Stream
+	lines      map[string][]string
+	refreshErr error
+	attachErr  error
+	historyErr error
+
+	refreshes int
+	attached  []runlogs.AttachParams
+	histories []runlogs.HistoryParams
+}
+
+type SessionParams struct {
+	Views   []runlogs.JobView
+	Streams map[string]runlogs.Stream
+	Lines   map[string][]string
+	// RefreshErr, AttachErr and HistoryErr are what each call answers instead of
+	// doing its work.
+	RefreshErr error
+	AttachErr  error
+	HistoryErr error
+}
+
+func NewSession(params SessionParams) *Session {
+	return &Session{
+		views:      params.Views,
+		streams:    params.Streams,
+		lines:      params.Lines,
+		refreshErr: params.RefreshErr,
+		attachErr:  params.AttachErr,
+		historyErr: params.HistoryErr,
+	}
+}
+
+func (s *Session) Jobs() []runlogs.JobView {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]runlogs.JobView(nil), s.views...)
+}
+
+// SetViews replaces what the next Refresh reports, for a test that moves a job
+// from running to stopped under the surface.
+func (s *Session) SetViews(views []runlogs.JobView) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.views = views
+}
+
+func (s *Session) Refresh() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.refreshes++
+	return s.refreshErr
+}
+
+// Attach refuses a job that is not attachable, as the real session does: a
+// surface that subscribes to a stopped job has to fail its test, not read an
+// empty stream.
+func (s *Session) Attach(params runlogs.AttachParams) (runlogs.Stream, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.attached = append(s.attached, params)
+	if s.attachErr != nil {
+		return nil, s.attachErr
+	}
+	for _, view := range s.views {
+		if view.Name == params.Job && !view.Attachable {
+			return nil, fmt.Errorf("%w: %s", domain.ErrJobNotAttachable, params.Job)
+		}
+	}
+	stream, scripted := s.streams[params.Job]
+	if !scripted {
+		return nil, fmt.Errorf("no stream scripted for job %q", params.Job)
+	}
+	return stream, nil
+}
+
+func (s *Session) History(params runlogs.HistoryParams) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.histories = append(s.histories, params)
+	if s.historyErr != nil {
+		return nil, s.historyErr
+	}
+	return s.lines[params.Job], nil
+}
+
+func (s *Session) Refreshes() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.refreshes
+}
+
+// AttachedJobs names every job a subscription was asked for, in order, so a
+// test can pin that a job was never attached twice.
+func (s *Session) AttachedJobs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	jobs := make([]string, 0, len(s.attached))
+	for _, params := range s.attached {
+		jobs = append(jobs, params.Job)
+	}
+	return jobs
+}
+
+func (s *Session) AttachParams() []runlogs.AttachParams {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]runlogs.AttachParams(nil), s.attached...)
+}
+
+func (s *Session) HistoryParams() []runlogs.HistoryParams {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]runlogs.HistoryParams(nil), s.histories...)
+}

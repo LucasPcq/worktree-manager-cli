@@ -618,6 +618,79 @@ const (
 	// no-op rather than a failure that aborts the profile.
 	JobAlreadyRunningSuffix = "is already running"
 
+	// RunViewSidebarWidth is the job list's column budget beside a pane, and
+	// RunViewSidebarMinPaneCols what the pane must keep for the list to be shown
+	// at all: below it the list is dropped rather than squeezing the output both
+	// of them exist to show.
+	RunViewSidebarWidth       = 26
+	RunViewSidebarMinPaneCols = 40
+
+	// RunViewMinBodyRows is the height the body keeps before a notice band is
+	// allowed to take rows from it.
+	RunViewMinBodyRows = 3
+
+	// RunViewMinPanelCols and RunViewMinPanelRows are the smallest a bordered
+	// panel can be and still hold a cell of what it frames.
+	RunViewMinPanelCols = 3
+	RunViewMinPanelRows = 3
+
+	// RunViewBorderWidth is what a panel's border costs it in columns, and
+	// RunViewPanelChrome what the border and the title row together cost it in
+	// rows.
+	RunViewBorderWidth = 2
+	RunViewPanelChrome = 3
+
+	// RunViewMsgBuffer sizes the channel the stream readers post on, and
+	// RunViewPollSeconds how often the job list is re-read from the daemon.
+	RunViewMsgBuffer   = 64
+	RunViewPollSeconds = 2
+
+	// RunViewRenderFPS throttles the redraw of a pane being written to. Writing
+	// a chunk into the emulator costs a fraction of rendering the grid, so the
+	// bytes are taken as they come and only the drawing is paced.
+	RunViewRenderFPS = 30
+
+	// RunViewScrollLines is how far one scroll key moves through a pane's
+	// history; a page moves by the pane's own height.
+	RunViewScrollLines = 3
+
+	// RunViewJobsTitle heads the job list and RunViewEmptyMessage stands in for
+	// it when the worktree declares none.
+	RunViewJobsTitle     = "JOBS"
+	RunViewEmptyMessage  = "No jobs declared. Add them to run.toml with `wtm run init`."
+	RunViewNoMatchFmt    = "No job matches %q."
+	RunViewFilterPrompt  = "filter: "
+	RunViewFilterHintFmt = "filter %q · esc clears"
+
+	// RunViewSeparator joins two things said on one row of the run view.
+	RunViewSeparator = " · "
+
+	// RunViewCursorMark points at the job whose pane is on screen, and
+	// RunViewMark* are the status marks in front of every job's name.
+	RunViewCursorMark  = "▸"
+	RunViewMarkRunning = "●"
+	RunViewMarkStopped = "○"
+	RunViewMarkCrashed = "✗"
+
+	// RunViewPaneWaiting and RunViewPaneNoHistory stand in
+	// for a pane with nothing in it yet, and RunViewPane*Label say where what is
+	// in it came from: the job itself, or the log file it left behind.
+	RunViewPaneWaiting      = "Waiting for output…"
+	RunViewPaneNoHistory    = "No output recorded for this job."
+	RunViewPaneHistoryLabel = "history"
+	RunViewPaneLiveLabel    = "live"
+	RunViewPaneScrollFmt    = "scrolled %d lines back"
+
+	// RunViewHeaderTitle names the view and RunViewRunningFmt counts what it is
+	// showing.
+	RunViewHeaderTitle = "wtm run"
+	RunViewRunningFmt  = "%d/%d running"
+
+	// RunViewHelpBrowse and RunViewHelpFilter are the footer's key reminders,
+	// one per mode the keyboard can be in.
+	RunViewHelpBrowse = "↑↓ job · / filter · pgup/pgdn scroll · r refresh · q detach"
+	RunViewHelpFilter = "type to filter · enter apply · esc clear"
+
 	// SyncConfirmPrompt is the confirmation question shown before running a sync
 	// cascade, formatted with the number of worktrees to rebase. Shared by the
 	// interactive picker's confirmation step and the non-picker confirm prompt.
