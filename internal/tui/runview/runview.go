@@ -36,6 +36,11 @@ type Model struct {
 
 	filtering bool
 	filter    string
+	// focused reports that the keyboard belongs to the selected job rather than
+	// to this view.
+	focused bool
+	// notice is a refusal the view has to answer with rather than act on.
+	notice string
 
 	// pending is the job whose pane is being filled — an attach or a history
 	// read in flight — so a second one is not started behind it.
@@ -76,7 +81,10 @@ type jobsMsg struct {
 type attachedMsg struct {
 	job    string
 	stream runlogs.Stream
-	err    error
+	// size is what the job's PTY was sized to as the subscription opened, which
+	// the view may have outgrown while the daemon was answering.
+	size PaneSize
+	err  error
 }
 
 type historyMsg struct {
@@ -86,6 +94,11 @@ type historyMsg struct {
 }
 
 type streamEndedMsg struct{ job string }
+
+type streamErrMsg struct {
+	job string
+	err error
+}
 
 type frameMsg struct{}
 
@@ -108,7 +121,7 @@ func (m Model) attachCmd(job string, size PaneSize) tea.Cmd {
 			Job:  job,
 			Size: runlogs.Size{Cols: size.Cols, Rows: size.Rows},
 		})
-		return attachedMsg{job: job, stream: stream, err: err}
+		return attachedMsg{job: job, stream: stream, size: size, err: err}
 	}
 }
 
@@ -136,7 +149,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		return m.applySize(), nil
+		return m.applySize()
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -150,11 +163,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case historyMsg:
 		return m.applyHistory(msg)
 
+	case streamErrMsg:
+		m.err = msg.err
+		return m, nil
+
 	case streamEndedMsg:
-		if m.pending == msg.job {
-			m.pending = ""
-		}
-		return m, tea.Batch(m.refreshCmd(), listenCmd(m.msgs))
+		return m.applyStreamEnded(msg)
 
 	case pollMsg:
 		return m, tea.Batch(m.refreshCmd(), pollCmd())
@@ -170,11 +184,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// applySize gives the emulators the room the layout just measured. x/vt never
-// reflows, so a pane that changed size has to be redrawn by the job itself.
-func (m Model) applySize() Model {
-	m.panes.resize(m.paneSize())
-	return m
+// applySize gives the emulators the room the layout just measured, and the
+// jobs behind them the same size. x/vt never reflows: only the job's own
+// process can redraw at the new width, and it does not know about it until its
+// PTY does.
+func (m Model) applySize() (Model, tea.Cmd) {
+	size := m.paneSize()
+	return m, resizeCmd(resizeParams{Streams: m.panes.resize(size), Size: size})
 }
 
 func (m Model) paneSize() PaneSize {
@@ -218,7 +234,7 @@ func (m Model) fillSelectedPane() (Model, tea.Cmd) {
 
 	entry, held := m.panes.entry(view.Name)
 	if view.Attachable {
-		if held && entry.source == sourceLive {
+		if held && entry.source == sourceLive && entry.stream != nil {
 			return m, nil
 		}
 		m.pending = view.Name
@@ -253,7 +269,28 @@ func (m Model) applyAttached(msg attachedMsg) (Model, tea.Cmd) {
 	m.err = nil
 	pane := m.panes.attach(msg.job, msg.stream)
 	go readStream(readParams{Job: msg.job, Stream: msg.stream, Pane: pane, Msgs: m.msgs})
-	return m.startTicking()
+
+	model, tick := m.startTicking()
+	// The window may have moved while the daemon was answering, and the size the
+	// subscription carried is the one it opened with.
+	if size := pane.Size(); size != msg.size {
+		return model, tea.Batch(tick, resizeCmd(resizeParams{Streams: []runlogs.Stream{msg.stream}, Size: size}))
+	}
+	return model, tick
+}
+
+// applyStreamEnded is the job's output running out. The pane keeps what it
+// printed, the subscription goes, and so does the keyboard: there is nothing
+// left to type into.
+func (m Model) applyStreamEnded(msg streamEndedMsg) (Model, tea.Cmd) {
+	m.panes.endStream(msg.job)
+	if m.pending == msg.job {
+		m.pending = ""
+	}
+	if m.selected == msg.job {
+		m.focused = false
+	}
+	return m, tea.Batch(m.refreshCmd(), listenCmd(m.msgs))
 }
 
 func (m Model) applyHistory(msg historyMsg) (Model, tea.Cmd) {
@@ -278,6 +315,43 @@ func (m Model) startTicking() (Model, tea.Cmd) {
 	}
 	m.ticking = true
 	return m, frameCmd()
+}
+
+type writeParams struct {
+	Job    string
+	Stream runlogs.Stream
+	Bytes  []byte
+}
+
+// writeCmd feeds a job's stdin off the render loop: the bytes travel to the
+// daemon, and a keystroke is not worth blocking a frame on.
+func writeCmd(params writeParams) tea.Cmd {
+	return func() tea.Msg {
+		if err := params.Stream.Write(params.Bytes); err != nil {
+			return streamErrMsg{job: params.Job, err: err}
+		}
+		return nil
+	}
+}
+
+type resizeParams struct {
+	Streams []runlogs.Stream
+	Size    PaneSize
+}
+
+// resizeCmd sizes the PTYs behind the panes that moved. A refusal is not worth
+// reporting: a stream closed between the measurement and the round-trip is a
+// pane nobody is looking at any more.
+func resizeCmd(params resizeParams) tea.Cmd {
+	if len(params.Streams) == 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		for _, stream := range params.Streams {
+			stream.Resize(runlogs.Size{Cols: params.Size.Cols, Rows: params.Size.Rows})
+		}
+		return nil
+	}
 }
 
 type readParams struct {

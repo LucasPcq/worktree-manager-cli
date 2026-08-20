@@ -688,8 +688,23 @@ const (
 
 	// RunViewHelpBrowse and RunViewHelpFilter are the footer's key reminders,
 	// one per mode the keyboard can be in.
-	RunViewHelpBrowse = "↑↓ job · / filter · pgup/pgdn scroll · r refresh · q detach"
+	RunViewHelpBrowse = "↑↓ job · / filter · pgup/pgdn scroll · enter focus · r refresh · q detach"
 	RunViewHelpFilter = "type to filter · enter apply · esc clear"
+
+	// RunViewFocusKey passes every keystroke to the job, RunViewFocusExitKey
+	// takes them back. The exit key is the one thing the job never receives, so
+	// it has to be one a child terminal application does not use.
+	RunViewFocusKey     = "enter"
+	RunViewFocusExitKey = "ctrl+]"
+
+	// RunViewFocusHintFmt replaces the footer's key reminders while a job has the
+	// keyboard, and RunViewFocusLabel marks the pane that holds it.
+	RunViewFocusHintFmt = "focus %s — every key goes to the job · %s gives them back"
+	RunViewFocusLabel   = "focus"
+
+	// RunViewNotAttachableFmt is why focus is refused: there is no live stream
+	// behind the pane, only what the log file kept.
+	RunViewNotAttachableFmt = "%s has no live stream to type into."
 
 	// SyncConfirmPrompt is the confirmation question shown before running a sync
 	// cascade, formatted with the number of worktrees to rebase. Shared by the
@@ -1430,6 +1445,11 @@ const (
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so
 	// a persistent dashboard is never left by accident.
 	KeyQuit = "q"
+
+	// EscapePrefix is the leading escape a terminal sends for an alt-modified
+	// key, and KeyCtrlPrefix how a control combination is named.
+	EscapePrefix  = "\x1b"
+	KeyCtrlPrefix = "ctrl+"
 
 	// GitLogFieldSep separates fields in `git log --format`. The pipe cannot
 	// serve: a commit subject may contain one. The ASCII unit separator can't

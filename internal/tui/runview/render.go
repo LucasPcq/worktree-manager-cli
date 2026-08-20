@@ -54,6 +54,9 @@ func (m Model) renderHeader(layout domain.RunViewLayout) string {
 
 	left := styles.Bold.Render(domain.RunViewHeaderTitle)
 	right := styles.Muted.Render(fmt.Sprintf(domain.RunViewRunningFmt, m.runningCount(), len(m.jobs)))
+	if m.notice != "" {
+		right = styles.Warning.Render(truncate(m.notice, layout.Header.Width))
+	}
 	if m.err != nil {
 		right = styles.DangerText.Render(truncate(m.err.Error(), layout.Header.Width))
 	}
@@ -145,10 +148,17 @@ func (m Model) renderPanePanel(layout domain.RunViewLayout) string {
 	lines := append([]string{m.renderPaneTitle(paneTitleParams{View: view, Found: found, Width: layout.PaneCols})},
 		m.renderPaneBody(paneBodyParams{View: view, Found: found, Layout: layout})...)
 
-	return styles.RunViewPane.
+	return m.paneStyle().
 		Width(layout.Pane.Width - domain.RunViewBorderWidth).
 		Height(layout.Pane.Height - domain.RunViewBorderWidth).
 		Render(strings.Join(clip(lines, layout.Pane.Height-domain.RunViewBorderWidth), "\n"))
+}
+
+func (m Model) paneStyle() lipgloss.Style {
+	if m.focused {
+		return styles.RunViewPaneFocused
+	}
+	return styles.RunViewPane
 }
 
 type paneTitleParams struct {
@@ -168,6 +178,9 @@ func (m Model) renderPaneTitle(params paneTitleParams) string {
 // paneOrigin says what the pane is showing: the job as it prints, the log file
 // it left behind, or a point in a history the reader has scrolled back into.
 func (m Model) paneOrigin(view runlogs.JobView) string {
+	if m.focused {
+		return domain.RunViewFocusLabel
+	}
 	entry, held := m.panes.entry(view.Name)
 	if !held {
 		return ""
@@ -227,6 +240,10 @@ func (m Model) emptyMessage() string {
 func (m Model) renderHelp(layout domain.RunViewLayout) string {
 	if layout.Help.Height <= 0 {
 		return ""
+	}
+	if m.focused {
+		return styles.HelpBar.Render(truncate(
+			fmt.Sprintf(domain.RunViewFocusHintFmt, m.selected, domain.RunViewFocusExitKey), layout.Help.Width))
 	}
 	if m.filtering {
 		return styles.HelpBar.Render(truncate(

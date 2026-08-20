@@ -90,6 +90,15 @@ func (s *paneStore) release(job string) {
 	}
 }
 
+// endStream drops a subscription whose job stopped writing, keeping the pane:
+// what the job printed before it went is the last thing worth reading, and the
+// log file has nothing more to add to it.
+func (s *paneStore) endStream(job string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closeStreamLocked(job)
+}
+
 func (s *paneStore) closeStreamLocked(job string) {
 	entry, held := s.panes[job]
 	if !held || entry.stream == nil {

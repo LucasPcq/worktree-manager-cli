@@ -10,6 +10,13 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(ColorMuted)
 
+	// RunViewPaneFocused frames the same pane while the keyboard belongs to the
+	// job inside it. The accent on the border is the whole indicator: nothing
+	// else on screen changes, because nothing else changed.
+	RunViewPaneFocused = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorPrimary)
+
 	// RunViewSidebar frames the job list beside it.
 	RunViewSidebar = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).

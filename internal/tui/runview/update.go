@@ -1,6 +1,8 @@
 package runview
 
 import (
+	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -8,11 +10,19 @@ import (
 )
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.focused {
+		return m.handleFocusKey(msg)
+	}
 	if m.filtering {
 		return m.handleFilterKey(msg)
 	}
 
+	// A refusal answers one keystroke; the next one is a fresh question.
+	m.notice = ""
+
 	switch msg.String() {
+	case domain.RunViewFocusKey:
+		return m.focus()
 	case keyQuit, keyInterrupt:
 		return m.detach()
 	case keyUp, keyVimUp:
@@ -36,6 +46,46 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.scrollToLive(), nil
 	}
 	return m, nil
+}
+
+// handleFocusKey hands the keyboard to the job: every key it can encode is
+// written to the job's stdin, Ctrl+C included — interrupting the child is the
+// whole point of focus. The one key it keeps is the one that gives the keyboard
+// back, or there would be no way out.
+func (m Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == domain.RunViewFocusExitKey {
+		m.focused = false
+		return m, nil
+	}
+
+	stream := m.panes.stream(m.selected)
+	if stream == nil {
+		m.focused = false
+		return m, nil
+	}
+	encoded := rules.EncodeKeyStroke(strokeOf(msg))
+	if len(encoded) == 0 {
+		return m, nil
+	}
+	return m, writeCmd(writeParams{Job: m.selected, Stream: stream, Bytes: encoded})
+}
+
+// focus is refused for a pane the job is not behind: a log file has no stdin,
+// and a keystroke silently going nowhere reads as a frozen terminal.
+func (m Model) focus() (tea.Model, tea.Cmd) {
+	if m.panes.stream(m.selected) == nil {
+		m.notice = fmt.Sprintf(domain.RunViewNotAttachableFmt, m.selected)
+		return m, nil
+	}
+	m.focused, m.notice = true, ""
+	return m.scrollToLive(), nil
+}
+
+func strokeOf(msg tea.KeyMsg) domain.KeyStroke {
+	if msg.Type == tea.KeyRunes {
+		return domain.KeyStroke{Runes: msg.Runes, Alt: msg.Alt}
+	}
+	return domain.KeyStroke{Name: msg.Type.String(), Alt: msg.Alt}
 }
 
 // handleFilterKey reads the filter box. Every keystroke re-resolves the
@@ -89,7 +139,7 @@ func (m Model) move(delta int) (tea.Model, tea.Cmd) {
 func (m Model) setSelection(name string) (Model, tea.Cmd) {
 	if name != m.selected {
 		m.panes.release(m.selected)
-		m.selected = name
+		m.selected, m.focused = name, false
 	}
 	m.offset = rules.DashboardScrollOffset(rules.DashboardScrollParams{
 		Cursor:  m.selectedIndex(),
