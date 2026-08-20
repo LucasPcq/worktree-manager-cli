@@ -1436,3 +1436,52 @@ var DashboardWordmarkLines = [3]string{
 	`┃╻┃  ┃  ┃┃┃`,
 	`┗┻┛  ╹  ╹ ╹`,
 }
+
+// Self-update: the release source, the install methods it can act on, and the
+// policy knobs of the passive update check.
+const (
+	RepoOwner = "LucasPcq"
+	RepoName  = "wtm"
+
+	ModulePath  = "github.com/LucasPcq/wtm"
+	BrewFormula = "LucasPcq/tap/wtm"
+
+	ReleaseAPIBase = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/releases"
+
+	// ChecksumsFileName is the SHA256 manifest goreleaser publishes with every release.
+	ChecksumsFileName = "checksums.txt"
+
+	// GlobalStateFile holds wtm-written state next to the user config. Kept separate
+	// from config.toml: the CLI must never rewrite a file the user hand-edits.
+	GlobalStateFile = "state.json"
+
+	UpdateCheckTTL     = 24 * time.Hour
+	UpdateCheckTimeout = 2 * time.Second
+	UpdateNoticeWait   = 300 * time.Millisecond
+	DownloadTimeout    = 60 * time.Second
+
+	EnvNoUpdateCheck = "WTM_NO_UPDATE_CHECK"
+	EnvCI            = "CI"
+	EnvGitHubActions = "GITHUB_ACTIONS"
+
+	// CmdUpgrade is the self-update command name. The five that follow already
+	// exist as literals in their command files and are centralized here because
+	// the update-check exclusion list needs to name them.
+	CmdUpgrade    = "upgrade"
+	CmdShellInit  = "shell-init"
+	CmdResolve    = "resolve"
+	CmdDaemon     = "daemon"
+	CmdCompletion = "completion"
+	CmdSchema     = "schema"
+
+	// FlagCheck (the read-only report) is shared with `wtm env`.
+	FlagVersionPin = "version"
+
+	// ExitCodeUpgradeUnsupported marks an upgrade that cannot proceed on this
+	// install: built from source, or the binary is not writable.
+	ExitCodeUpgradeUnsupported = 17
+
+	UpgradeJSONNeedsYes   = "--output json requires --yes or --check (the confirmation prompt cannot run in JSON mode)"
+	UpgradeSourceHint     = "this binary was built from source — run `git pull && make install` instead"
+	UpgradePinUnsupported = "--version only applies to a standalone binary; pin the version through your package manager instead"
+)

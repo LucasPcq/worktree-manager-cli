@@ -159,3 +159,24 @@ var (
 	// ErrDashboardJSON is returned when `wtm ui` is invoked with --output json.
 	ErrDashboardJSON = errors.New("`wtm ui` has no --output json form — the dashboard cannot be driven by an agent; use `wtm list --output json`")
 )
+
+var (
+	// ErrUpgradeFromSource is returned when wtm upgrade runs on a binary built
+	// from source, where no published release corresponds to what is installed.
+	ErrUpgradeFromSource = errors.New(UpgradeSourceHint)
+
+	// ErrUpgradeNotWritable is returned when the running binary cannot be replaced
+	// because its directory is not writable by the current user.
+	ErrUpgradeNotWritable = errors.New("cannot write to the wtm binary — re-run with sudo")
+
+	// ErrChecksumMismatch is returned when a downloaded release archive does not
+	// match the SHA256 published in checksums.txt. Nothing is written.
+	ErrChecksumMismatch = errors.New("downloaded archive failed checksum verification")
+
+	// ErrReleaseAssetMissing is returned when the release carries no archive for
+	// the running platform.
+	ErrReleaseAssetMissing = errors.New("no release asset for this platform")
+
+	// ErrReleaseNotFound is returned when the requested release tag does not exist.
+	ErrReleaseNotFound = errors.New("release not found")
+)

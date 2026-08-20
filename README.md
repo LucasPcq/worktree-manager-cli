@@ -28,10 +28,10 @@ it. Install and authenticate it to unlock GitHub features: [cli.github.com](http
 brew install LucasPcq/tap/wtm
 ```
 
-**Download binary** — grab the latest [release](https://github.com/LucasPcq/worktree-manager-cli/releases), extract, and move it onto your `PATH`:
+**Download binary** — grab the latest [release](https://github.com/LucasPcq/wtm/releases), extract, and move it onto your `PATH`:
 
 ```bash
-tar -xzf worktree-manager-cli_*_darwin_arm64.tar.gz   # or _darwin_amd64 / _linux_amd64
+tar -xzf wtm_*_darwin_arm64.tar.gz   # or _darwin_amd64 / _linux_amd64
 sudo mv wtm /usr/local/bin/
 ```
 

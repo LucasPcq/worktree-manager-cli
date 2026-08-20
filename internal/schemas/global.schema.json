@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/LucasPcq/worktree-manager-cli/main/schemas/global.schema.json",
+  "$id": "https://raw.githubusercontent.com/LucasPcq/wtm/main/schemas/global.schema.json",
   "title": "wtm global config",
   "description": "Schema for ~/.config/wtm/config.toml — per-user defaults applied across all projects.",
   "type": "object",
