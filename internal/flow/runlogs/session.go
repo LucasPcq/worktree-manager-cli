@@ -123,7 +123,7 @@ func declaredView(job domain.JobConfig, info domain.JobInfo) JobView {
 		view.StartedAt = info.StartedAt
 		view.ExitCode = info.ExitCode
 	}
-	view.Attachable = view.Status == domain.JobStatusRunning && !rules.IsDetached(job) && job.Kind == domain.JobKindService
+	view.Attachable = view.Status == domain.JobStatusRunning && !rules.IsDetached(job)
 	return view
 }
 
@@ -137,6 +137,6 @@ func undeclaredView(info domain.JobInfo) JobView {
 		Status:     info.Status,
 		StartedAt:  info.StartedAt,
 		ExitCode:   info.ExitCode,
-		Attachable: info.Status == domain.JobStatusRunning && info.Kind == domain.JobKindService,
+		Attachable: info.Status == domain.JobStatusRunning,
 	}
 }

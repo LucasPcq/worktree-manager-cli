@@ -90,6 +90,67 @@ func TestSessionRefusesToAttachAJobWithoutLiveOutput(t *testing.T) {
 	}
 }
 
+// The daemon streams a task for as long as it runs: newJobHub withholds a hub
+// from a detached launcher only, and attachableJob takes any job that has one.
+// A three-minute migration read from a second terminal belongs in its pane, not
+// in the sanitized file the log falls back to.
+func TestSessionAttachesARunningTask(t *testing.T) {
+	stream := runlogstest.NewStream()
+	service := &runlogstest.Service{
+		Infos:   []domain.JobInfo{running("migrate", domain.JobKindTask)},
+		Streams: map[string]runlogs.Stream{"migrate": stream},
+	}
+	session := newSession(t, service, migrate)
+
+	if views := session.Jobs(); !views[0].Attachable {
+		t.Fatalf("a running task reads as %+v", views[0])
+	}
+	if _, err := session.Attach(runlogs.AttachParams{Job: "migrate"}); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+}
+
+func TestSessionRefusesToAttachAJobThatStopped(t *testing.T) {
+	exited := 0
+	stopped := func(name string, kind domain.JobKind) domain.JobInfo {
+		return domain.JobInfo{
+			Name: name, Kind: kind, Status: domain.JobStatusStopped,
+			WorkDir: workDir, ExitCode: &exited,
+		}
+	}
+	service := &runlogstest.Service{Infos: []domain.JobInfo{
+		stopped("api", domain.JobKindService),
+		stopped("legacy", domain.JobKindService),
+		stopped("seed", domain.JobKindTask),
+	}}
+
+	views := newSession(t, service, api).Jobs()
+
+	for _, view := range views {
+		if view.Attachable {
+			t.Fatalf("%s stopped and still offers a live stream: %+v", view.Name, view)
+		}
+	}
+	if len(views) != 3 {
+		t.Fatalf("jobs %+v, want the declared service and the two the daemon still holds", views)
+	}
+}
+
+// A job run.toml no longer declares is read the same way, task or service: what
+// the daemon holds a hub for is what can be attached.
+func TestSessionAttachesARunningUndeclaredTask(t *testing.T) {
+	service := &runlogstest.Service{Infos: []domain.JobInfo{running("legacy-migrate", domain.JobKindTask)}}
+
+	views := newSession(t, service, api).Jobs()
+
+	if len(views) != 2 || views[1].Name != "legacy-migrate" {
+		t.Fatalf("jobs %+v, want the undeclared task listed", views)
+	}
+	if !views[1].Attachable {
+		t.Fatalf("a running undeclared task reads as %+v", views[1])
+	}
+}
+
 func TestSessionAttachSizesThePTYToThePane(t *testing.T) {
 	stream := runlogstest.NewStream()
 	service := &runlogstest.Service{

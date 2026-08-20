@@ -17,7 +17,9 @@ type JobView struct {
 	ExitCode  *int
 	// Attachable is false for a job with no live output to bind to: a detached
 	// launcher, whose stream ended with the launcher itself, and any job that is
-	// no longer running. History is what is left to show for those.
+	// no longer running. History is what is left to show for those. A task is
+	// attachable while it runs — the daemon streams it like any other job, and
+	// its pane is the only place its colours and redraws survive.
 	Attachable bool
 }
 
