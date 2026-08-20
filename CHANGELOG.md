@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.26.1 — Le panneau détail ne clignote plus
+
+### Bug fixes
+
+- **Le panneau détail de `wtm ui` se rechargeait tout seul toutes les trois secondes** — le
+  poll qui rafraîchit la liste rechargeait aussi le détail du worktree sélectionné, si bien
+  qu'un panneau qu'on était en train de lire passait en gris derrière un marqueur
+  `refreshing` en continu. Le poll ne touche plus au détail : il se recharge quand la
+  sélection change, quand une opération vient de toucher sa branche, et sur la touche `r`
+  — jamais sur une horloge. La liste, elle, garde son poll court.
+
 ## v0.26.0 — `wtm ui` : un dashboard pour piloter ses worktrees
 
 Cette version apporte `wtm ui`, un dashboard plein écran d'où se pilotent les commandes
