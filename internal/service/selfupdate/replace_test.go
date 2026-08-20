@@ -22,11 +22,17 @@ import (
 func buildArchive(t *testing.T, payload string) []byte {
 	t.Helper()
 
+	return buildArchiveWithHeader(t, tar.Header{Name: "wtm", Mode: 0o755, Typeflag: tar.TypeReg, Size: int64(len(payload))}, payload)
+}
+
+func buildArchiveWithHeader(t *testing.T, header tar.Header, payload string) []byte {
+	t.Helper()
+
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
 
-	if err := tw.WriteHeader(&tar.Header{Name: "wtm", Mode: 0o755, Size: int64(len(payload))}); err != nil {
+	if err := tw.WriteHeader(&header); err != nil {
 		t.Fatalf("write header: %v", err)
 	}
 	if _, err := tw.Write([]byte(payload)); err != nil {
@@ -214,5 +220,92 @@ func TestReplaceBinaryReadOnlyDirectory(t *testing.T) {
 	})
 	if !errors.Is(err, domain.ErrUpgradeNotWritable) {
 		t.Fatalf("err = %v, want ErrUpgradeNotWritable", err)
+	}
+}
+
+// A release whose wtm entry is not a regular file, or is shorter than it
+// declares, must never be renamed over the user's binary: the result would be a
+// truncated or zero-byte executable with no working wtm left to recover with.
+func TestReplaceBinaryRejectsAMalformedArchiveEntry(t *testing.T) {
+	cases := []struct {
+		name    string
+		archive func(t *testing.T) []byte
+	}{
+		{
+			name: "symlink entry",
+			archive: func(t *testing.T) []byte {
+				return buildArchiveWithHeader(t, tar.Header{Name: "wtm", Mode: 0o755, Typeflag: tar.TypeSymlink, Linkname: "/bin/sh"}, "")
+			},
+		},
+		{
+			name: "directory entry",
+			archive: func(t *testing.T) []byte {
+				return buildArchiveWithHeader(t, tar.Header{Name: "wtm", Mode: 0o755, Typeflag: tar.TypeDir}, "")
+			},
+		},
+		{
+			name: "empty regular entry",
+			archive: func(t *testing.T) []byte {
+				return buildArchiveWithHeader(t, tar.Header{Name: "wtm", Mode: 0o755, Typeflag: tar.TypeReg, Size: 0}, "")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			archive := tc.archive(t)
+			srv := newReleaseServer(t, archive, sha256Hex(archive))
+			defer srv.Close()
+
+			_, target := seedBinary(t)
+
+			err := selfupdate.ReplaceBinary(selfupdate.ReplaceBinaryParams{
+				Release:    srv.release(),
+				BinaryPath: target,
+				GOOS:       "darwin",
+				GOARCH:     "arm64",
+				Timeout:    5 * time.Second,
+			})
+			if err == nil {
+				t.Fatal("ReplaceBinary accepted a malformed archive entry")
+			}
+
+			got, readErr := os.ReadFile(target)
+			if readErr != nil {
+				t.Fatalf("read back: %v", readErr)
+			}
+			if string(got) != "OLD BINARY" {
+				t.Fatalf("binary content = %q, want the original left untouched", got)
+			}
+		})
+	}
+}
+
+func TestReplaceBinaryPreservesTheInstalledMode(t *testing.T) {
+	archive := buildArchive(t, "NEW BINARY")
+	srv := newReleaseServer(t, archive, sha256Hex(archive))
+	defer srv.Close()
+
+	_, target := seedBinary(t)
+	if err := os.Chmod(target, 0o700); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	if err := selfupdate.ReplaceBinary(selfupdate.ReplaceBinaryParams{
+		Release:    srv.release(),
+		BinaryPath: target,
+		GOOS:       "darwin",
+		GOARCH:     "arm64",
+		Timeout:    5 * time.Second,
+	}); err != nil {
+		t.Fatalf("ReplaceBinary: %v", err)
+	}
+
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("mode = %v, want 0700 preserved — an upgrade must not widen it", info.Mode().Perm())
 	}
 }

@@ -31,11 +31,13 @@ func TestIsNewerVersion(t *testing.T) {
 		{"garbage latest", "0.26.1", "banana", false},
 		{"empty latest", "0.26.1", "", false},
 		{"short version", "1.0", "1.0.1", true},
+		{"build metadata is ignored", "1.2.3+abc", "1.2.4", true},
+		{"build metadata does not make it newer", "1.2.3", "1.2.3+abc", false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := rules.IsNewerVersion(tc.current, tc.latest); got != tc.want {
+			if got := rules.IsNewerVersion(rules.NewerVersionParams{Current: tc.current, Latest: tc.latest}); got != tc.want {
 				t.Fatalf("IsNewerVersion(%q, %q) = %v, want %v", tc.current, tc.latest, got, tc.want)
 			}
 		})
@@ -67,9 +69,8 @@ func TestClassifyInstall(t *testing.T) {
 		{
 			name: "homebrew arm mac",
 			params: rules.ClassifyInstallParams{
-				ExecPath:     "/opt/homebrew/bin/wtm",
 				ResolvedPath: "/opt/homebrew/Cellar/wtm/0.26.1/bin/wtm",
-				GoBinDir:     "/Users/x/go/bin",
+				GoBinDir:     goBin("/Users/x/go/bin"),
 				Version:      "0.26.1",
 			},
 			want: domain.InstallHomebrew,
@@ -77,9 +78,8 @@ func TestClassifyInstall(t *testing.T) {
 		{
 			name: "homebrew intel mac",
 			params: rules.ClassifyInstallParams{
-				ExecPath:     "/usr/local/bin/wtm",
 				ResolvedPath: "/usr/local/Cellar/wtm/0.26.1/bin/wtm",
-				GoBinDir:     "/Users/x/go/bin",
+				GoBinDir:     goBin("/Users/x/go/bin"),
 				Version:      "0.26.1",
 			},
 			want: domain.InstallHomebrew,
@@ -87,9 +87,8 @@ func TestClassifyInstall(t *testing.T) {
 		{
 			name: "linuxbrew",
 			params: rules.ClassifyInstallParams{
-				ExecPath:     "/home/x/.linuxbrew/bin/wtm",
 				ResolvedPath: "/home/linuxbrew/.linuxbrew/Cellar/wtm/0.26.1/bin/wtm",
-				GoBinDir:     "/home/x/go/bin",
+				GoBinDir:     goBin("/home/x/go/bin"),
 				Version:      "0.26.1",
 			},
 			want: domain.InstallHomebrew,
@@ -97,9 +96,8 @@ func TestClassifyInstall(t *testing.T) {
 		{
 			name: "go install",
 			params: rules.ClassifyInstallParams{
-				ExecPath:     "/Users/x/go/bin/wtm",
 				ResolvedPath: "/Users/x/go/bin/wtm",
-				GoBinDir:     "/Users/x/go/bin",
+				GoBinDir:     goBin("/Users/x/go/bin"),
 				Version:      "0.26.1",
 			},
 			want: domain.InstallGoInstall,
@@ -107,9 +105,8 @@ func TestClassifyInstall(t *testing.T) {
 		{
 			name: "standalone in usr local bin",
 			params: rules.ClassifyInstallParams{
-				ExecPath:     "/usr/local/bin/wtm",
 				ResolvedPath: "/usr/local/bin/wtm",
-				GoBinDir:     "/Users/x/go/bin",
+				GoBinDir:     goBin("/Users/x/go/bin"),
 				Version:      "0.26.1",
 			},
 			want: domain.InstallStandalone,
@@ -117,9 +114,8 @@ func TestClassifyInstall(t *testing.T) {
 		{
 			name: "user directory literally named Cellar is not brew",
 			params: rules.ClassifyInstallParams{
-				ExecPath:     "/Users/x/Cellar/wtm",
 				ResolvedPath: "/Users/x/Cellar/wtm",
-				GoBinDir:     "/Users/x/go/bin",
+				GoBinDir:     goBin("/Users/x/go/bin"),
 				Version:      "0.26.1",
 			},
 			want: domain.InstallStandalone,
@@ -127,9 +123,8 @@ func TestClassifyInstall(t *testing.T) {
 		{
 			name: "dev build in go bin is source, not go-install",
 			params: rules.ClassifyInstallParams{
-				ExecPath:     "/Users/x/go/bin/wtm",
 				ResolvedPath: "/Users/x/go/bin/wtm",
-				GoBinDir:     "/Users/x/go/bin",
+				GoBinDir:     goBin("/Users/x/go/bin"),
 				Version:      "dev",
 			},
 			want: domain.InstallSource,
@@ -137,9 +132,8 @@ func TestClassifyInstall(t *testing.T) {
 		{
 			name: "empty go bin dir does not swallow everything",
 			params: rules.ClassifyInstallParams{
-				ExecPath:     "/usr/local/bin/wtm",
 				ResolvedPath: "/usr/local/bin/wtm",
-				GoBinDir:     "",
+				GoBinDir:     goBin(""),
 				Version:      "0.26.1",
 			},
 			want: domain.InstallStandalone,
@@ -249,3 +243,5 @@ func TestShouldCheckUpdate(t *testing.T) {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+func goBin(dir string) func() string { return func() string { return dir } }

@@ -13,7 +13,12 @@ type StartCheckParams struct {
 	Format      string
 	Command     string
 	StderrIsTTY bool
-	ConfigCheck *bool
+	// BaseURL overrides the releases endpoint, for tests.
+	BaseURL string
+	// ConfigCheck is a thunk: reading the global config costs a stat and a strict
+	// TOML decode, and must not be paid by commands the cheap axes already
+	// exclude — `resolve` sits in the shell's cd path.
+	ConfigCheck func() *bool
 }
 
 type Check struct {
@@ -30,8 +35,6 @@ type Check struct {
 // fails; the network call only refreshes that cache, at most once per TTL.
 // Returns nil when policy forbids a notice on this run.
 func StartCheck(params StartCheckParams) *Check {
-	state := LoadState()
-
 	gate := rules.ShouldCheckUpdateParams{
 		Version:     params.Version,
 		Format:      params.Format,
@@ -39,17 +42,28 @@ func StartCheck(params StartCheckParams) *Check {
 		StderrIsTTY: params.StderrIsTTY,
 		CIEnv:       os.Getenv(domain.EnvCI) != "" || os.Getenv(domain.EnvGitHubActions) != "",
 		OptOutEnv:   os.Getenv(domain.EnvNoUpdateCheck) != "",
-		ConfigCheck: params.ConfigCheck,
-		CheckedAt:   state.CheckedAt,
 		Now:         time.Now(),
 	}
 
+	// Evaluated in two passes so an excluded command pays neither the state file
+	// nor the config decode: a nil ConfigCheck reads as "unset", so this first
+	// pass is every axis except the config one.
 	if !rules.UpdateNoticeAllowed(gate) {
 		return nil
 	}
 
+	if params.ConfigCheck != nil {
+		gate.ConfigCheck = params.ConfigCheck()
+		if !rules.UpdateNoticeAllowed(gate) {
+			return nil
+		}
+	}
+
+	state := LoadState()
+	gate.CheckedAt = state.CheckedAt
+
 	check := &Check{done: make(chan struct{}), version: params.Version}
-	if rules.IsNewerVersion(params.Version, state.LatestVersion) {
+	if rules.IsNewerVersion(rules.NewerVersionParams{Current: params.Version, Latest: state.LatestVersion}) {
 		check.cached = state.LatestVersion
 	}
 
@@ -58,15 +72,21 @@ func StartCheck(params StartCheckParams) *Check {
 		return check
 	}
 
-	// The attempt is recorded before it runs: the goroutine dies with the
-	// process if the request outlives the drain window, and a timestamp written
-	// only on success would let every command re-issue a network call.
-	_ = SaveState(domain.UpdateState{CheckedAt: time.Now(), LatestVersion: state.LatestVersion})
+	// The attempt is recorded before it runs: the goroutine dies with the process
+	// if the request outlives the drain window, and a timestamp written only on
+	// success would let every command re-issue a network call. If it cannot be
+	// persisted at all (no writable config dir), skip the fetch entirely rather
+	// than hit the API on every single invocation.
+	if err := SaveState(domain.UpdateState{CheckedAt: time.Now(), LatestVersion: state.LatestVersion}); err != nil {
+		close(check.done)
+		return check
+	}
 
 	go func() {
 		defer close(check.done)
 
 		release, err := FetchRelease(FetchReleaseParams{
+			BaseURL:   params.BaseURL,
 			UserAgent: domain.AppName + "/" + rules.NormalizeVersion(params.Version),
 			Timeout:   domain.UpdateCheckTimeout,
 		})
@@ -76,7 +96,7 @@ func StartCheck(params StartCheckParams) *Check {
 
 		_ = SaveState(domain.UpdateState{CheckedAt: time.Now(), LatestVersion: release.Version})
 
-		if rules.IsNewerVersion(params.Version, release.Version) {
+		if rules.IsNewerVersion(rules.NewerVersionParams{Current: params.Version, Latest: release.Version}) {
 			check.fresh = release.Version
 		}
 	}()

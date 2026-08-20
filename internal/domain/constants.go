@@ -1474,6 +1474,11 @@ const (
 	CmdCompletion = "completion"
 	CmdSchema     = "schema"
 
+	// CmdShellComp and CmdShellCompNoDesc mirror cobra.ShellCompRequestCmd and
+	// ShellCompNoDescRequestCmd, the hidden commands a shell invokes on Tab.
+	CmdShellComp       = "__complete"
+	CmdShellCompNoDesc = "__completeNoDesc"
+
 	// FlagCheck (the read-only report) is shared with `wtm env`.
 	FlagVersionPin = "version"
 

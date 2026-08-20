@@ -73,14 +73,17 @@ func run(cmd *cobra.Command, version string) error {
 		UserAgent: userAgent(version),
 		Timeout:   domain.DownloadTimeout,
 	})
-	if err != nil {
+	// A delegated upgrade needs no release metadata to succeed: brew and go
+	// resolve the version themselves, so an unreachable API must not fail a run
+	// that would have worked. --check has nothing to report without it.
+	if err != nil && (check || install.Method == domain.InstallStandalone) {
 		return err
 	}
 
 	result := domain.UpgradeResult{
 		Installed: rules.NormalizeVersion(version),
 		Latest:    release.Version,
-		UpToDate:  !rules.IsNewerVersion(version, release.Version),
+		UpToDate:  release.Version != "" && !rules.IsNewerVersion(rules.NewerVersionParams{Current: version, Latest: release.Version}),
 		Method:    install.Method,
 		Action:    domain.UpgradeActionNone,
 	}

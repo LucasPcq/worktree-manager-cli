@@ -30,10 +30,11 @@ func DetectInstall(version string) Install {
 
 	return Install{
 		Method: rules.ClassifyInstall(rules.ClassifyInstallParams{
-			ExecPath:     execPath,
 			ResolvedPath: resolved,
-			GoBinDir:     goBinDir(),
-			Version:      version,
+			// Lazy: resolving it shells out to `go env`, which a Homebrew or
+			// source install never needs to pay for.
+			GoBinDir: goBinDir,
+			Version:  version,
 		}),
 		BinaryPath: resolved,
 	}

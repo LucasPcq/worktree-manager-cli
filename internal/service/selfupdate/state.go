@@ -53,5 +53,32 @@ func SaveState(state domain.UpdateState) error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	// Written through a temp file: os.WriteFile truncates in place, so a process
+	// exiting mid-write — which the refresh goroutine does by design — would
+	// leave a partial file that costs an extra network call to recover from.
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+domain.GlobalStateFile+"-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o644); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+
+	return nil
 }

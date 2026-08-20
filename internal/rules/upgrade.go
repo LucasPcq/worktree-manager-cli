@@ -16,13 +16,20 @@ func NormalizeVersion(v string) string {
 	return strings.TrimPrefix(strings.TrimSpace(v), "v")
 }
 
+func stripBuildMetadata(v string) string {
+	core, _, _ := strings.Cut(v, "+")
+	return core
+}
+
 type parsedVersion struct {
 	fields     [3]int
 	prerelease string
 }
 
 func parseVersion(v string) (parsedVersion, bool) {
-	core, pre, _ := strings.Cut(NormalizeVersion(v), "-")
+	// Build metadata is dropped before the pre-release split: "1.2.3+meta" would
+	// otherwise fail to parse and silence the notifier.
+	core, pre, _ := strings.Cut(stripBuildMetadata(NormalizeVersion(v)), "-")
 	if core == "" {
 		return parsedVersion{}, false
 	}
@@ -44,16 +51,21 @@ func parseVersion(v string) (parsedVersion, bool) {
 	return out, true
 }
 
-// IsNewerVersion reports whether latest supersedes current. An unparseable
+type NewerVersionParams struct {
+	Current string
+	Latest  string
+}
+
+// IsNewerVersion reports whether Latest supersedes Current. An unparseable
 // version on either side reports false: the notifier stays silent rather than
 // guessing.
-func IsNewerVersion(current string, latest string) bool {
-	cur, ok := parseVersion(current)
+func IsNewerVersion(params NewerVersionParams) bool {
+	cur, ok := parseVersion(params.Current)
 	if !ok {
 		return false
 	}
 
-	next, ok := parseVersion(latest)
+	next, ok := parseVersion(params.Latest)
 	if !ok {
 		return false
 	}
@@ -78,10 +90,11 @@ func IsNewerVersion(current string, latest string) bool {
 }
 
 type ClassifyInstallParams struct {
-	ExecPath     string
 	ResolvedPath string
-	GoBinDir     string
-	Version      string
+	// GoBinDir is a thunk: resolving it costs a `go env` subprocess that only the
+	// go-install branch needs, and the branches above it short-circuit first.
+	GoBinDir func() string
+	Version  string
 }
 
 // ClassifyInstall decides how the running binary was installed. Order matters:
@@ -98,8 +111,10 @@ func ClassifyInstall(params ClassifyInstallParams) domain.InstallMethod {
 		return domain.InstallHomebrew
 	}
 
-	if params.GoBinDir != "" && filepath.Dir(params.ResolvedPath) == filepath.Clean(params.GoBinDir) {
-		return domain.InstallGoInstall
+	if params.GoBinDir != nil {
+		if dir := params.GoBinDir(); dir != "" && filepath.Dir(params.ResolvedPath) == filepath.Clean(dir) {
+			return domain.InstallGoInstall
+		}
 	}
 
 	return domain.InstallStandalone
@@ -174,6 +189,10 @@ var updateCheckExcluded = map[string]bool{
 	domain.CmdDaemon:     true,
 	domain.CmdCompletion: true,
 	domain.CmdSchema:     true,
+	// Cobra's completion machinery: __complete runs on every shell Tab, where a
+	// stray line garbles the prompt mid-redraw.
+	domain.CmdShellComp:       true,
+	domain.CmdShellCompNoDesc: true,
 }
 
 // UpdateNoticeAllowed reports whether this run may print an update notice at

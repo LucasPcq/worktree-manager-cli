@@ -1,0 +1,30 @@
+package selfupdate
+
+import (
+	"runtime/debug"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
+)
+
+// devBuildInfoVersion is what the toolchain records for a binary built from a
+// local source tree rather than fetched by version.
+const devBuildInfoVersion = "(devel)"
+
+// ResolveVersion recovers the real version of the running binary. Releases carry
+// it through goreleaser's ldflag, but `go install <module>@<version>` never runs
+// goreleaser — those binaries report "dev" while the module version sits in the
+// build info. Without this fallback every go-install user is classified as a
+// source build: refused by `wtm upgrade` and never notified.
+func ResolveVersion(linked string) string {
+	if rules.NormalizeVersion(linked) != domain.Version {
+		return linked
+	}
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok || info.Main.Version == "" || info.Main.Version == devBuildInfoVersion {
+		return domain.Version
+	}
+
+	return info.Main.Version
+}
