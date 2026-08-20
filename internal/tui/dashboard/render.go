@@ -500,6 +500,7 @@ func (m Model) helpBox() (string, domain.Rect) {
 		{"wheel", "scroll the list or the output panel"},
 		{"n", "new worktree (or click + new)"},
 		{"m", "actions on the selected worktree (or right-click a row)"},
+		{"f", "fast-forward the selected branch from origin"},
 		{"a", "actions on several worktrees (or click ⋯ actions)"},
 		{"tab · shift+tab", "switch view (or click a tab)"},
 		{"enter · →", "open the detail (narrow terminals)"},

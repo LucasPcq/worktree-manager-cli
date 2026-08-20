@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	ffflow "github.com/LucasPcq/wtm/internal/flow/fastforward"
 	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 	syncflow "github.com/LucasPcq/wtm/internal/flow/sync"
@@ -256,6 +257,26 @@ func reparentSyncHint(results []domain.ReparentResult) string {
 }
 
 // flowContext: the flow cannot load the config itself, which reads cobra flags.
+type ffPresenter struct {
+	cliPresenter
+}
+
+func (p ffPresenter) FastForwarded(outcome ffflow.Outcome) error {
+	if p.format == domain.OutputJSON {
+		return output.WriteFastForwardJSON(p.cmd.OutOrStdout(), outcome.Results)
+	}
+	if outcome.Empty {
+		output.Frame(p.cmd.OutOrStdout(), func() {
+			output.Message(p.cmd.OutOrStdout(), domain.FastForwardNothingToDo)
+		})
+		return nil
+	}
+	output.Frame(p.cmd.OutOrStdout(), func() {
+		output.FormatFastForwardResults(p.cmd.OutOrStdout(), outcome.Results)
+	})
+	return nil
+}
+
 func flowContext(config shared.ConfigResult) flow.Context {
 	return flow.Context{
 		ProjectDir: config.ProjectDir,

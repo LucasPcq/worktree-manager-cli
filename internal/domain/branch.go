@@ -71,3 +71,45 @@ type BranchCandidate struct {
 	Behind   int
 	State    DivergenceState
 }
+
+// FastForwardStatus is what became of one branch in a fast-forward run.
+type FastForwardStatus int
+
+const (
+	FFUpToDate FastForwardStatus = iota
+	FFAdvanced
+	FFDiverged
+	FFNoUpstream
+	FFFailed
+)
+
+// FastForwardCheck is one branch's state against origin, gathered in a single
+// network round trip so a recap and the run that follows it read the same facts.
+type FastForwardCheck struct {
+	Branch string
+	// WorktreePath is empty when the branch is checked out nowhere.
+	WorktreePath string
+	IsDirty      bool
+	Ahead        int
+	Behind       int
+	State        DivergenceState
+	HasUpstream  bool
+}
+
+type FastForwardResult struct {
+	Branch string            `json:"branch"`
+	Status FastForwardStatus `json:"-"`
+	Label  string            `json:"status"`
+	OldTip string            `json:"old_tip"`
+	NewTip string            `json:"new_tip"`
+	Behind int               `json:"behind"`
+	// Detail carries git's own message when Status is FFFailed.
+	Detail string `json:"detail,omitempty"`
+}
+
+// FastForwardBlocker is a safety refusal a surface may have lifted one at a
+// time. Only refusals that --force may lift are ever built as one.
+type FastForwardBlocker struct {
+	Key   string
+	Label string
+}

@@ -183,6 +183,21 @@ flagged; everything else is what the name implies.
   change base_path).
 
 **Stacked branches**
+- `wtm fast-forward <branch…>` (alias `ff`) / `wtm fast-forward --all` — advance the
+  selected worktrees to `origin/<branch>` and **nothing else**: no rebase onto the parent,
+  no merge. Use it to pull down work pushed to a branch you already agree with; use `sync`
+  when the branch has to be replayed onto its parent. With neither branch args nor `--all`
+  it refuses naming `--all` rather than opening a picker (same rule as `sync` and `prune`),
+  so always pass `--output json --yes` (driving rule 5). `--output json` requires `--yes`.
+  Two refusals, only one of them liftable: a **diverged** branch is refused and `--force`
+  does **not** lift it (advancing it would drop local commits — run `wtm sync` instead); a
+  worktree with **uncommitted changes** is refused and `--force` does lift it, though git
+  still refuses if a modified file would be overwritten. A run over several branches keeps
+  going past the ones it could not move and reports every one.
+  JSON: an array of `{branch, status, old_tip, new_tip, behind, detail?}`, where `status`
+  is `already up to date`, `fast-forwarded from origin`, `diverged`, `no origin counterpart`,
+  or `failed` (`detail` says why). A run in which any branch is `failed` exits non-zero;
+  `diverged` and `no origin counterpart` are reported facts, not failures.
 - `wtm sync <branch…>` / `wtm sync --all` — rebase the selected worktrees onto their
   recorded parent, in cascade (parents before children), fetching first. A conflict aborts
   that branch's rebase (its descendants are skipped) unless `--keep-conflict` leaves it in

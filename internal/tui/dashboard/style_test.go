@@ -345,13 +345,13 @@ func lineIndex(lines []string, needle string) int {
 
 // The base has no parent to be moved to and cannot be deleted, so the only thing
 // its row offers is catching up with its own remote.
-func TestTheParentWorktreeIsOfferedOnlyItsOwnRefresh(t *testing.T) {
+func TestTheParentWorktreeIsOfferedOnlyItsOwnFastForward(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "main", "feature/x")
 	model.statuses[0] = domain.WorktreeStatus{Branch: "main", Path: "/tmp/main", IsParent: true}
 
 	items := model.menuItems()
-	if len(items) != 1 || items[0].action != menuRefreshBase {
-		t.Fatalf("items = %+v, want the base refresh alone: nothing else could ever apply", items)
+	if len(items) != 1 || items[0].action != menuFastForward {
+		t.Fatalf("items = %+v, want the fast-forward alone: nothing else could ever apply", items)
 	}
 
 	model = update(model, key(domain.KeyMenu))
@@ -360,16 +360,16 @@ func TestTheParentWorktreeIsOfferedOnlyItsOwnRefresh(t *testing.T) {
 	if !strings.Contains(box, "main") {
 		t.Error("the menu still names the worktree it was opened on")
 	}
-	if !strings.Contains(box, domain.DashboardMenuRefreshBase) {
+	if !strings.Contains(box, domain.DashboardMenuFastForward) {
 		t.Errorf("menu = %q, want the one action it does offer", box)
 	}
 
 	model, cmd := updateCmd(model, namedKey(13))
 	if cmd == nil || len(model.ops.running) != 1 {
-		t.Fatalf("running = %+v, want enter to start the refresh", model.ops.running)
+		t.Fatalf("running = %+v, want enter to start the fast-forward", model.ops.running)
 	}
-	if model.ops.running[0].kind != domain.OpKindSync {
-		t.Errorf("kind = %q, want the refresh run through the sync flow", model.ops.running[0].kind)
+	if model.ops.running[0].kind != domain.OpKindFastForward {
+		t.Errorf("kind = %q, want the fast-forward flow", model.ops.running[0].kind)
 	}
 }
 

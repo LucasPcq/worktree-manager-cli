@@ -9,6 +9,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	ffflow "github.com/LucasPcq/wtm/internal/flow/fastforward"
 	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 	syncflow "github.com/LucasPcq/wtm/internal/flow/sync"
@@ -168,5 +169,23 @@ func (p syncPresenter) Synced(outcome syncflow.Outcome) error {
 		}
 	}
 	p.send(syncedMsg{})
+	return nil
+}
+
+type ffPresenter struct{ presenter }
+
+func (p ffPresenter) FastForwarded(outcome ffflow.Outcome) error {
+	if outcome.Empty {
+		p.line(domain.FastForwardNothingToDo)
+		return nil
+	}
+	for _, result := range outcome.Results {
+		if result.Status == domain.FFFailed {
+			p.line(fmt.Sprintf(domain.FastForwardFailedFmt, result.Branch, result.Detail))
+			continue
+		}
+		p.line(fmt.Sprintf(domain.FastForwardResultFmt, result.Branch, rules.FastForwardStatusLabel(result.Status)))
+	}
+	p.send(fastForwardedMsg{})
 	return nil
 }
