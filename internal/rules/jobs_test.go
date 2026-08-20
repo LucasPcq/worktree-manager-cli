@@ -182,3 +182,22 @@ func TestApplyDefaultOverride_NoDefaultsToFlip(t *testing.T) {
 		t.Errorf("expected 'dev' to remain Default=true")
 	}
 }
+
+func TestIsAlreadyRunning(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		want    bool
+	}{
+		{"refus du démon", "job api is already running", true},
+		{"autre refus", "job api: exit status 1", false},
+		{"message vide", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsAlreadyRunning(tt.message); got != tt.want {
+				t.Errorf("IsAlreadyRunning(%q) = %v, want %v", tt.message, got, tt.want)
+			}
+		})
+	}
+}

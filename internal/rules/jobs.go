@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -20,6 +21,13 @@ func IsRunInitialized(cfg domain.RunConfig) bool {
 // (e.g. docker compose up -d).
 func IsDetached(job domain.JobConfig) bool {
 	return job.Kind == domain.JobKindService && job.Stop != ""
+}
+
+// IsAlreadyRunning reads the daemon's refusal to start a job that is already
+// up. A repeat start asks for a state the job is already in, so a caller
+// starting a profile treats it as a job that is running rather than a failure.
+func IsAlreadyRunning(message string) bool {
+	return strings.Contains(message, domain.JobAlreadyRunningSuffix)
 }
 
 type JobUptimeParams struct {

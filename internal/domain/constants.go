@@ -566,6 +566,17 @@ const (
 	// its whole output; past this many bytes the tail is journaled as it stands.
 	JobLogMaxPendingBytes = 64 << 10
 
+	// JobLogTailLines is how much history a surface reads back when it does not
+	// say: enough to fill a scrollback, short enough to stay one read.
+	JobLogTailLines = 1000
+
+	// JobStreamChunkBytes sizes one read from an attached job, and
+	// JobStreamQueueChunks how many reads may wait ahead of a subscriber before
+	// it holds the stream back. A job redrawing a full screen writes tens of
+	// kilobytes at once, which is what these are sized for.
+	JobStreamChunkBytes  = 32 << 10
+	JobStreamQueueChunks = 256
+
 	// JobLogTimestampLayout and JobLogSeparator format one persisted log line:
 	// an RFC3339 instant, then the sanitized text. Fixed-width prefix so a
 	// reader (or a grep) can split every line at the same column.
