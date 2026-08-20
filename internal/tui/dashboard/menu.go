@@ -76,11 +76,12 @@ func (m Model) worktreeMenuItems() []menuItem {
 // has neither a parent to be moved to nor a rebase to run: all it can do is
 // catch up with its own remote — the same entry every other row leads with.
 func worktreeActions(selected domain.WorktreeStatus) []menuItem {
-	fastForward := menuItem{
-		label:    domain.DashboardMenuFastForward,
-		action:   menuFastForward,
-		disabled: fastForwardDisabled(selected),
-	}
+	// The fast-forward is never gated on the origin badges: those come from
+	// remote-tracking refs with no fetch, so "up to date" and "no counterpart"
+	// alike are what is known rather than what is true. The run fetches and
+	// reports the truth; disabled stays what it has always meant here, a run
+	// holding this worktree right now.
+	fastForward := menuItem{label: domain.DashboardMenuFastForward, action: menuFastForward}
 	if selected.IsParent {
 		return []menuItem{fastForward}
 	}
@@ -89,20 +90,6 @@ func worktreeActions(selected domain.WorktreeStatus) []menuItem {
 		{label: domain.DashboardMenuSync, action: menuSync},
 		{label: domain.DashboardMenuReparent, action: menuReparent},
 		{label: domain.DashboardMenuDelete, action: menuDelete, danger: true},
-	}
-}
-
-// fastForwardDisabled names what stands in the way, and stays silent about a
-// branch the badges call up to date: those come from remote-tracking refs with
-// no fetch, so that is what is known, not what is true.
-func fastForwardDisabled(selected domain.WorktreeStatus) string {
-	switch selected.OriginState {
-	case domain.DivergenceDiverged:
-		return domain.DashboardFFDisabledDiverged
-	case domain.DivergenceUnknown:
-		return domain.DashboardFFDisabledNoRemote
-	default:
-		return ""
 	}
 }
 

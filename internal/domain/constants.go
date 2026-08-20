@@ -1233,12 +1233,6 @@ const (
 	// DashboardMenuFastForwardAll is the same gesture over a selection the user
 	// makes inside the run, next to the batch sync and reparent.
 	DashboardMenuFastForwardAll = "Fast-forward worktrees"
-	// DashboardFFDisabledDiverged and DashboardFFDisabledNoRemote are why the row
-	// entry is inert. "Up to date" is not one of them: those badges come from
-	// cached remote-tracking refs with no fetch, so a branch shown up to date may
-	// not be — which is exactly when the user wants to click.
-	DashboardFFDisabledDiverged = "diverged — use Sync"
-	DashboardFFDisabledNoRemote = "no origin counterpart"
 	// DashboardMenuSyncAll rebases every worktree at once. It arrives with the ones
 	// a cascade would skip left unchecked — they stay listed, with the tag saying
 	// why.

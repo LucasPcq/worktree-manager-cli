@@ -444,7 +444,7 @@ func TestARunThatAlreadyReportedItselfAddsNoRedundantFailureLine(t *testing.T) {
 func TestTheRowFastForwardActsOnTheRowItWasOpenedFrom(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight)
 	model = update(model, worktreesMsg{
-		statuses: []domain.WorktreeStatus{{Branch: "trunk", IsParent: true, OriginState: domain.DivergenceBehind, OriginBehind: 1}},
+		statuses: []domain.WorktreeStatus{{Branch: "trunk", IsParent: true}},
 		parents:  map[string]string{},
 	})
 	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindCreate, target: "trunk"})

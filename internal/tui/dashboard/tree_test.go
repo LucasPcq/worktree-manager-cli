@@ -166,7 +166,7 @@ func TestAVirtualNodeSelectsNothingAndOffersNothing(t *testing.T) {
 func TestTheMainWorktreeOffersOnlyTheBaseRefreshFromTheTree(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight)
 	model = update(model, worktreesMsg{
-		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true, OriginState: domain.DivergenceBehind, OriginBehind: 1}},
+		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}},
 		parents:  map[string]string{},
 	})
 	model, _ = model.selectTab(tabTree)

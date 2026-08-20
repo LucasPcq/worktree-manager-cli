@@ -399,7 +399,7 @@ func TestTheRowMenuLeadsWithFastForwardThenSync(t *testing.T) {
 func TestTheBaseRowOffersTheBaseRefreshAlone(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight)
 	model = update(model, worktreesMsg{
-		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true, OriginState: domain.DivergenceBehind, OriginBehind: 1}},
+		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}},
 		parents:  map[string]string{},
 	})
 
@@ -458,7 +458,7 @@ func TestTheRowMenuStartsTheSyncOnItsWorktree(t *testing.T) {
 func TestTheBaseRowStartsItsOwnFastForward(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight)
 	model = update(model, worktreesMsg{
-		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true, OriginState: domain.DivergenceBehind, OriginBehind: 1}},
+		statuses: []domain.WorktreeStatus{{Branch: "main", IsParent: true}},
 		parents:  map[string]string{},
 	})
 	model = update(model, key(domain.KeyMenu))
@@ -498,34 +498,36 @@ func TestBaseRowOffersTheSameFastForwardEntry(t *testing.T) {
 	}
 }
 
-// The badges come from cached remote-tracking refs with no fetch, so "up to
-// date" is what is known, not what is true: the entry stays clickable.
-func TestFastForwardStaysEnabledOnAnUpToDateBranch(t *testing.T) {
-	items := worktreeActions(domain.WorktreeStatus{
-		Branch:      "feat",
-		OriginState: domain.DivergenceUpToDate,
-	})
-	if items[0].disabled != "" {
-		t.Fatalf("disabled = %q, want it enabled", items[0].disabled)
+// The origin badges come from cached remote-tracking refs with no fetch, so
+// every one of them says what is known rather than what is true: a branch shown
+// up to date may be behind, and one shown without a counterpart may have been
+// pushed from another machine. None of them may gate the entry — the run
+// fetches and reports the truth.
+func TestFastForwardIsNeverGatedOnTheCachedOriginBadges(t *testing.T) {
+	states := []domain.DivergenceState{
+		domain.DivergenceUpToDate,
+		domain.DivergenceBehind,
+		domain.DivergenceAhead,
+		domain.DivergenceDiverged,
+		domain.DivergenceUnknown,
+	}
+	for _, state := range states {
+		items := worktreeActions(domain.WorktreeStatus{Branch: "feat", OriginState: state})
+		if items[0].disabled != "" {
+			t.Errorf("state %v: disabled = %q, want it enabled", state, items[0].disabled)
+		}
 	}
 }
 
-func TestFastForwardIsInertWhenNothingCouldFastForward(t *testing.T) {
-	cases := []struct {
-		name  string
-		state domain.DivergenceState
-		want  string
-	}{
-		{"diverged", domain.DivergenceDiverged, domain.DashboardFFDisabledDiverged},
-		{"no counterpart", domain.DivergenceUnknown, domain.DashboardFFDisabledNoRemote},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			items := worktreeActions(domain.WorktreeStatus{Branch: "feat", OriginState: tc.state})
-			if items[0].disabled != tc.want {
-				t.Fatalf("disabled = %q, want %q", items[0].disabled, tc.want)
-			}
-		})
+// The only thing that makes an entry inert is a run holding the worktree — the
+// one meaning disabled has ever carried on this menu.
+func TestOnlyARunningOperationDisablesTheFastForward(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindCreate, target: "a"})
+
+	items := model.worktreeMenuItems()
+	if items[0].disabled == "" {
+		t.Fatal("a worktree another run is holding must disable its entries")
 	}
 }
 

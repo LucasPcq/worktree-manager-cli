@@ -347,7 +347,7 @@ func lineIndex(lines []string, needle string) int {
 // its row offers is catching up with its own remote.
 func TestTheParentWorktreeIsOfferedOnlyItsOwnFastForward(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "main", "feature/x")
-	model.statuses[0] = domain.WorktreeStatus{Branch: "main", Path: "/tmp/main", IsParent: true, OriginState: domain.DivergenceBehind, OriginBehind: 1}
+	model.statuses[0] = domain.WorktreeStatus{Branch: "main", Path: "/tmp/main", IsParent: true}
 
 	items := model.menuItems()
 	if len(items) != 1 || items[0].action != menuFastForward {
