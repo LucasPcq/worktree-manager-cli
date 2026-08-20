@@ -144,6 +144,23 @@ func TestFrameKeepsTheJobsTruecolor(t *testing.T) {
 	}
 }
 
+// A frame too short for the whole report cuts it down. The line that says how
+// to take the band off the screen is the one that has to survive: without it
+// the reader is left with a report they cannot remove over a pane they came to
+// read.
+func TestShortFrameKeepsTheWayOutOfTheReport(t *testing.T) {
+	h := abortedHarness(t)
+
+	frame := ansi.Strip(resize(h.model, 40, 7).View())
+
+	if !strings.Contains(frame, domain.RunViewAbortTitle) {
+		t.Fatalf("frame = %q, want what the run has to say", frame)
+	}
+	if !strings.Contains(frame, domain.RunViewAbortDismiss) {
+		t.Fatalf("frame = %q, want the line that dismisses the band", frame)
+	}
+}
+
 // A pane is fed at the size it is drawn at: an emulator wider than its box
 // pushes the border off the row.
 func TestPanesAreSizedFromTheLayout(t *testing.T) {

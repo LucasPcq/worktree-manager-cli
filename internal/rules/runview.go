@@ -46,6 +46,21 @@ func ComputeRunViewLayout(params RunViewLayoutParams) domain.RunViewLayout {
 	}
 }
 
+// ClipReport fits an abort report into the rows the frame can spare. Its head
+// is what the run has to say, but its last line is how the band is taken off
+// the screen: cutting from the bottom leaves a reader on a short terminal with
+// a report they cannot remove and a pane they cannot widen. Below two rows
+// there is only room for what happened.
+func ClipReport(lines []string, height int) []string {
+	if height <= 0 || len(lines) <= height {
+		return lines
+	}
+	if height == 1 {
+		return lines[:1]
+	}
+	return append(lines[:height-1:height-1], lines[len(lines)-1])
+}
+
 // MatchesJobFilter reads the run view's filter box against a job's name. An
 // empty filter matches everything: the box is open but says nothing yet.
 func MatchesJobFilter(name, filter string) bool {

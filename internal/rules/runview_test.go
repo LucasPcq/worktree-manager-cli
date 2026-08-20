@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -83,6 +84,34 @@ func TestComputeRunViewLayoutSizesTheEmulatorToItsBox(t *testing.T) {
 	}
 	if layout.SidebarRows != layout.Sidebar.Height-domain.RunViewPanelChrome {
 		t.Fatalf("SidebarRows = %d, want the rows under the list's title", layout.SidebarRows)
+	}
+}
+
+func TestClipReport(t *testing.T) {
+	report := []string{"aborted", "failed at 2/3", "left running: api", "not started: web", "esc dismisses"}
+
+	cases := []struct {
+		label  string
+		height int
+		want   []string
+	}{
+		{label: "every line fits", height: 5, want: report},
+		{label: "more room than lines", height: 9, want: report},
+		{label: "the way out is kept", height: 3, want: []string{"aborted", "failed at 2/3", "esc dismisses"}},
+		{label: "two rows", height: 2, want: []string{"aborted", "esc dismisses"}},
+		{label: "one row says what happened", height: 1, want: []string{"aborted"}},
+		{label: "no room", height: 0, want: report},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			got := ClipReport(report, tc.height)
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("ClipReport(_, %d) = %v, want %v", tc.height, got, tc.want)
+			}
+			if report[1] != "failed at 2/3" || report[4] != "esc dismisses" {
+				t.Fatalf("ClipReport wrote through its argument: %v", report)
+			}
+		})
 	}
 }
 

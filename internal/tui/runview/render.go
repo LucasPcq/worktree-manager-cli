@@ -43,9 +43,10 @@ func (m Model) renderNotice(layout domain.RunViewLayout) []string {
 		return nil
 	}
 
-	lines := make([]string, 0, layout.Notice.Height)
-	for index, line := range clip(report, layout.Notice.Height) {
-		lines = append(lines, truncate(m.styleReportLine(index, len(report), line), layout.Notice.Width))
+	shown := rules.ClipReport(report, layout.Notice.Height)
+	lines := make([]string, 0, len(shown))
+	for index, line := range shown {
+		lines = append(lines, truncate(m.styleReportLine(index, len(shown), line), layout.Notice.Width))
 	}
 	return fit(lines, layout.Notice.Height)
 }
