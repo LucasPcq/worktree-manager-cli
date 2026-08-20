@@ -4,7 +4,7 @@ List currently running jobs
 
 ### Synopsis
 
-Show the jobs managed by the background daemon (name, kind, status, PID, worktree).
+Show the jobs managed by the background daemon (name, kind, status, PID, uptime, worktree).
 In a TTY, offers an interactive picker with stop/logs/restart actions.
 
 ```

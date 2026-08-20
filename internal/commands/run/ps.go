@@ -22,7 +22,7 @@ func newPsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdPs,
 		Short: "List currently running jobs",
-		Long:  "Show the jobs managed by the background daemon (name, kind, status, PID, worktree).\nIn a TTY, offers an interactive picker with stop/logs/restart actions.",
+		Long:  "Show the jobs managed by the background daemon (name, kind, status, PID, uptime, worktree).\nIn a TTY, offers an interactive picker with stop/logs/restart actions.",
 		RunE:  runPs,
 	}
 	shared.AddOutputFlag(cmd)
