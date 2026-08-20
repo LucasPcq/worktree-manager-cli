@@ -34,9 +34,9 @@ func (s *daemonService) Start(req StartRequest) (StartResult, error) {
 		return StartResult{}, err
 	}
 	if resp.Status == process.StatusError {
-		return StartResult{Refused: true, Message: resp.Message}, nil
+		return StartResult{Refused: true, Message: resp.Message, ExitCode: resp.ExitCode}, nil
 	}
-	return StartResult{}, nil
+	return StartResult{ExitCode: resp.ExitCode}, nil
 }
 
 func (s *daemonService) List(workDir string) ([]domain.JobInfo, error) {

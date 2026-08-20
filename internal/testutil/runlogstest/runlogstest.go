@@ -19,9 +19,11 @@ type StartCall struct {
 
 type Service struct {
 	// Refusals maps a job name to the message the daemon answers instead of
-	// starting it, and Errors to a daemon it could not reach at all.
-	Refusals map[string]string
-	Errors   map[string]error
+	// starting it, Errors to a daemon it could not reach at all, and ExitCodes
+	// to the code the daemon reports alongside a refusal.
+	Refusals  map[string]string
+	Errors    map[string]error
+	ExitCodes map[string]int
 	// Output maps a job name to what it writes while it starts.
 	Output map[string][]string
 
@@ -51,7 +53,11 @@ func (s *Service) Start(req runlogs.StartRequest) (runlogs.StartResult, error) {
 		return runlogs.StartResult{}, err
 	}
 	if message, refused := s.Refusals[req.Job.Name]; refused {
-		return runlogs.StartResult{Refused: true, Message: message}, nil
+		result := runlogs.StartResult{Refused: true, Message: message}
+		if code, scripted := s.ExitCodes[req.Job.Name]; scripted {
+			result.ExitCode = &code
+		}
+		return result, nil
 	}
 	return runlogs.StartResult{}, nil
 }

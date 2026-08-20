@@ -135,6 +135,54 @@ func TestRunAbortsOnAFailingTaskAndReportsThePartialState(t *testing.T) {
 	}
 }
 
+// What the failing job printed is the only account of why a run stopped for a
+// surface that never showed it live — `run up --output json`, a CI log, an agent
+// reading the result — and the daemon's one-line reason is not it.
+func TestRunCarriesTheFailedJobsOutputAndExitCode(t *testing.T) {
+	service := &runlogstest.Service{
+		Output: map[string][]string{
+			"docker":  {"docker is up\n"},
+			"migrate": {"applying 001\n", "ERROR: relation \"users\" already exists\n"},
+		},
+		Refusals:  map[string]string{"migrate": "task migrate failed: exit status 1"},
+		ExitCodes: map[string]int{"migrate": 1},
+	}
+
+	outcome, sink := run(t, service, docker, migrate, api)
+
+	want := "applying 001\nERROR: relation \"users\" already exists\n"
+	if got := string(outcome.FailedOutput); got != want {
+		t.Fatalf("failed output = %q, want %q", got, want)
+	}
+	if outcome.FailedExitCode == nil || *outcome.FailedExitCode != 1 {
+		t.Fatalf("failed exit code = %v, want 1", outcome.FailedExitCode)
+	}
+
+	aborted, found := sink.Last(runlogs.PhaseAborted)
+	if !found {
+		t.Fatal("no aborted event")
+	}
+	if string(aborted.Outcome.FailedOutput) != want {
+		t.Fatalf("the abort reports %q as the failure's output", aborted.Outcome.FailedOutput)
+	}
+}
+
+func TestRunCarriesNoOutputForAJobThatNeverPrinted(t *testing.T) {
+	service := &runlogstest.Service{
+		Output:   map[string][]string{"docker": {"docker is up\n"}},
+		Refusals: map[string]string{"api": "port 3000 already in use"},
+	}
+
+	outcome, _ := run(t, service, docker, api)
+
+	if outcome.FailedOutput != nil {
+		t.Fatalf("failed output = %q, want the previous job's lines left out of it", outcome.FailedOutput)
+	}
+	if outcome.FailedExitCode != nil {
+		t.Fatalf("failed exit code = %v, want none for a job that never ran", *outcome.FailedExitCode)
+	}
+}
+
 func TestRunTreatsAnAlreadyRunningLauncherAsStarted(t *testing.T) {
 	service := &runlogstest.Service{
 		Refusals: map[string]string{"docker": "job docker " + domain.JobAlreadyRunningSuffix},

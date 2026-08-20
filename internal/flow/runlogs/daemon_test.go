@@ -1,14 +1,17 @@
 package runlogs
 
 import (
+	"encoding/json"
 	"errors"
 	"net"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
 func pipedStream(t *testing.T) (*connStream, net.Conn) {
@@ -161,4 +164,64 @@ func waitFor(t *testing.T, what string, done func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+// scriptedDaemon answers one request with the responses given, in order, then
+// hangs up — enough to read what the adapter keeps of the daemon's answer.
+func scriptedDaemon(t *testing.T, responses ...process.Response) string {
+	t.Helper()
+	socket := filepath.Join(t.TempDir(), "wtm.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { listener.Close() })
+
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		var req process.Request
+		if err := json.NewDecoder(conn).Decode(&req); err != nil {
+			return
+		}
+		encoder := json.NewEncoder(conn)
+		for _, resp := range responses {
+			if err := encoder.Encode(resp); err != nil {
+				return
+			}
+		}
+	}()
+	return socket
+}
+
+func TestServiceStartKeepsWhatTheDaemonAnswered(t *testing.T) {
+	failed := 1
+	socket := scriptedDaemon(t,
+		process.Response{Status: process.StatusOutput, Data: []byte("applying 001\n")},
+		process.Response{Status: process.StatusError, Message: "task migrate failed: exit status 1", ExitCode: &failed},
+	)
+
+	var streamed []byte
+	result, err := NewService(ServiceParams{SocketPath: socket}).Start(StartRequest{
+		Job:      domain.JobConfig{Name: "migrate", Kind: domain.JobKindTask, Cmd: "pnpm migrate"},
+		WorkDir:  "/work/api",
+		OnOutput: func(chunk []byte) { streamed = append(streamed, chunk...) },
+	})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if !result.Refused || result.Message != "task migrate failed: exit status 1" {
+		t.Fatalf("result = %+v, want the daemon's refusal", result)
+	}
+	if result.ExitCode == nil || *result.ExitCode != 1 {
+		t.Fatalf("exit code = %v, want the 1 the daemon reported", result.ExitCode)
+	}
+	if got := string(streamed); got != "applying 001\n" {
+		t.Fatalf("streamed %q, want the task's line", got)
+	}
 }

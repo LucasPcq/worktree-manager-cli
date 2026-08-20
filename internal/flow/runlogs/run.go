@@ -21,6 +21,14 @@ type Outcome struct {
 	Failed     string
 	FailedStep int
 	Steps      int
+	// FailedOutput is what the job that ended the sequence had written, raw. A
+	// surface that never showed it live — machine output, a CI log, an agent
+	// reading JSON — has nothing else to say why the run stopped, and the
+	// daemon's Reason alone ("task migrate failed: exit status 1") does not.
+	FailedOutput []byte
+	// FailedExitCode is the code the daemon reported for it, nil when it never
+	// got as far as running.
+	FailedExitCode *int
 }
 
 func (o Outcome) Aborted() bool { return o.Failed != "" }
@@ -66,6 +74,9 @@ type runner struct {
 	results   []domain.JobActionResult
 	started   []string
 	completed []string
+	// captured is what the job being started has written so far, kept only until
+	// the next job starts: an abort is the one moment it has to be readable.
+	captured []byte
 }
 
 func (r *runner) run() Outcome {
@@ -73,11 +84,13 @@ func (r *runner) run() Outcome {
 		job := r.jobs[i]
 		r.sink.Emit(r.event(Event{Phase: PhaseStarting, Job: job.Name, Step: i + 1}))
 
+		r.captured = nil
 		result, err := r.service.Start(StartRequest{
 			Job:     job,
 			WorkDir: r.workDir,
 			LogDir:  r.logDir,
 			OnOutput: func(chunk []byte) {
+				r.captured = append(r.captured, chunk...)
 				r.sink.Emit(r.event(Event{Phase: PhaseOutput, Job: job.Name, Step: i + 1, Chunk: chunk}))
 			},
 		})
@@ -90,7 +103,7 @@ func (r *runner) run() Outcome {
 		// reach: one the daemon refuses has not run.
 		alreadyRunning := result.Refused && job.Kind != domain.JobKindTask && rules.IsAlreadyRunning(result.Message)
 		if result.Refused && !alreadyRunning {
-			return r.abort(abortParams{Index: i, Job: job, Reason: result.Message})
+			return r.abort(abortParams{Index: i, Job: job, Reason: result.Message, ExitCode: result.ExitCode})
 		}
 
 		if job.Kind == domain.JobKindTask {
@@ -113,9 +126,10 @@ func (r *runner) run() Outcome {
 }
 
 type abortParams struct {
-	Index  int
-	Job    domain.JobConfig
-	Reason string
+	Index    int
+	Job      domain.JobConfig
+	Reason   string
+	ExitCode *int
 }
 
 func (r *runner) abort(params abortParams) Outcome {
@@ -130,6 +144,8 @@ func (r *runner) abort(params abortParams) Outcome {
 	outcome.Failed = params.Job.Name
 	outcome.FailedStep = params.Index + 1
 	outcome.NotStarted = jobNames(r.jobs[params.Index+1:])
+	outcome.FailedOutput = r.captured
+	outcome.FailedExitCode = params.ExitCode
 
 	r.sink.Emit(r.event(Event{
 		Phase: PhaseAborted, Job: params.Job.Name, Step: params.Index + 1,

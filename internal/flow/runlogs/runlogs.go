@@ -80,6 +80,9 @@ type StartRequest struct {
 type StartResult struct {
 	Refused bool
 	Message string
+	// ExitCode is what a task exited with, nil for a job whose lifetime does not
+	// end with this answer.
+	ExitCode *int
 }
 
 type AttachRequest struct {
