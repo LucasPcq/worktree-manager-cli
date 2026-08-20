@@ -119,9 +119,15 @@ func (m *Manager) Start(params StartParams) error {
 		return fmt.Errorf("job %s has empty cmd", job.Name)
 	}
 
+	// Opened before the lock: creating the directory and the file is disk I/O,
+	// and a slow state dir (NFS, a saturated disk) would otherwise hold every
+	// List, Attach and Stop the daemon serves behind it.
+	logs := openJobLog(params)
+
 	m.mu.Lock()
 	if existing, ok := m.jobs[key]; ok && existing.Status == domain.JobStatusRunning {
 		m.mu.Unlock()
+		closeSink(logs)
 		return fmt.Errorf("job %s %s", job.Name, domain.JobAlreadyRunningSuffix)
 	}
 
@@ -146,6 +152,7 @@ func (m *Manager) Start(params StartParams) error {
 	output, err := spawnJob(cmd, job.Kind)
 	if err != nil {
 		m.mu.Unlock()
+		closeSink(logs)
 		return fmt.Errorf("start job %s: %w", job.Name, err)
 	}
 
@@ -157,7 +164,7 @@ func (m *Manager) Start(params StartParams) error {
 		Status:  domain.JobStatusRunning,
 		PID:     cmd.Process.Pid,
 		WorkDir: params.WorkDir,
-		logs:    openJobLog(params),
+		logs:    logs,
 		exited:  make(chan struct{}),
 	}
 	m.jobs[key] = managed
@@ -595,8 +602,12 @@ func (m *Manager) drainToHub(job *ManagedJob) {
 }
 
 func (j *ManagedJob) closeLogs() {
-	if j.logs != nil {
-		_ = j.logs.Close()
+	closeSink(j.logs)
+}
+
+func closeSink(sink *LogSink) {
+	if sink != nil {
+		_ = sink.Close()
 	}
 }
 
