@@ -125,6 +125,7 @@ Full flags live in `wtm <command> --help` and [`docs/`](docs/wtm.md). Overview:
 
 | Command | Purpose |
 |---|---|
+| [`fast-forward`](docs/wtm_fast-forward.md) | Advance worktree branches to `origin/<branch>` — no rebase, no merge |
 | [`sync`](docs/wtm_sync.md) | Rebase selected worktrees onto their parent, in cascade |
 | [`reparent`](docs/wtm_reparent.md) | Change the parent a worktree is rebased onto |
 
