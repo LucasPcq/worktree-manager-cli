@@ -328,16 +328,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.tab == tabTree {
 			tree = m.loadTreeCmd()
 		}
-		// Same reasoning for the detail: five subprocesses every poll to keep a
-		// panel nobody is looking at "fresh" is exactly the jamais-dans-le-poll
-		// rule (§7) would forbid if the panel were on screen — it is spent only
-		// when it is. The poll never clears m.details either way; when it does
-		// reload, old data stays on screen underneath it.
-		detailCmd := tea.Cmd(nil)
-		if m.layout().DetailVisible {
-			m, detailCmd = m.reloadDetailCmd()
-		}
-		return m, tea.Batch(m.loadWorktreesCmd(false), tree, detailCmd, pollCmd())
+		// The detail panel is deliberately absent from the poll: a reload every
+		// few seconds mutes the whole panel behind a "refreshing" marker while
+		// the user is reading it. It reloads when the selection changes, when an
+		// operation touches its branch, and on KeyRefresh — never on a timer.
+		return m, tea.Batch(m.loadWorktreesCmd(false), tree, pollCmd())
 
 	case treeMsg:
 		before := m.selectedBranch()

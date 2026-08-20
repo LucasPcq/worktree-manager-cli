@@ -129,19 +129,38 @@ func TestSupersededTickIsDropped(t *testing.T) {
 	}
 }
 
-// TestPollSkipsDetailReloadWhenPanelHidden pins §7's "jamais dans le poll"
-// rule extended to visibility: a poll must do no detail work at all when
-// nothing is on screen to keep fresh.
-func TestPollSkipsDetailReloadWhenPanelHidden(t *testing.T) {
-	model := newTestModel(t, narrowWide, testHeight, "main")
-	if model.layout().DetailVisible {
-		t.Fatal("setup: narrow mode without detailOpen must hide the detail panel")
+// TestPollNeverReloadsTheDetail pins the panel out of the poll entirely: a
+// timer-driven reload mutes the whole panel behind a "refreshing" marker every
+// few seconds while the user is reading it. The detail reloads on a selection
+// change, on an operation touching its branch, and on KeyRefresh — not on time.
+func TestPollNeverReloadsTheDetail(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "main")
+	if !model.layout().DetailVisible {
+		t.Fatal("setup: the detail panel must be on screen for this to prove anything")
 	}
 	model = update(model, detailMsg{branch: "main", detail: domain.WorktreeDetail{Branch: "main"}})
 
 	model = update(model, pollMsg{})
 	if model.detailLoading != "" {
-		t.Errorf("detailLoading = %q, want empty: the poll must not reload a hidden detail panel", model.detailLoading)
+		t.Errorf("detailLoading = %q, want empty: the poll must never reload the detail panel", model.detailLoading)
+	}
+	if model.detailIsStale() {
+		t.Error("le poll ne doit jamais griser le panneau détail ni afficher son marqueur de rafraîchissement")
+	}
+}
+
+// TestRefreshKeyReloadsTheDetail is the other half of the rule above: taking
+// the panel out of the poll only holds if `r` still brings it back.
+func TestRefreshKeyReloadsTheDetail(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "main")
+	model = update(model, detailMsg{branch: "main", detail: domain.WorktreeDetail{Branch: "main"}})
+
+	model, cmd := updateCmd(model, key(keyRefresh))
+	if cmd == nil {
+		t.Fatal("la touche refresh doit programmer un rechargement")
+	}
+	if model.detailLoading != "main" {
+		t.Errorf("detailLoading = %q, want main: refresh must reload the detail panel", model.detailLoading)
 	}
 }
 
