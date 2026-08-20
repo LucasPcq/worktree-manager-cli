@@ -2,6 +2,8 @@ package rules
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -19,6 +21,42 @@ func IsRunInitialized(cfg domain.RunConfig) bool {
 // (e.g. docker compose up -d).
 func IsDetached(job domain.JobConfig) bool {
 	return job.Kind == domain.JobKindService && job.Stop != ""
+}
+
+// IsAlreadyRunning reads the daemon's refusal to start a job that is already
+// up. A repeat start asks for a state the job is already in, so a caller
+// starting a profile treats it as a job that is running rather than a failure.
+func IsAlreadyRunning(message string) bool {
+	return strings.Contains(message, domain.JobAlreadyRunningSuffix)
+}
+
+type JobUptimeParams struct {
+	Job domain.JobInfo
+	Now time.Time
+}
+
+// JobUptime reads how long a job has been up, and only answers for one that
+// still is: on a job that stopped, StartedAt dates a run that is over, and
+// letting it keep counting would read as still running. A start in the future
+// (a clock stepped between the daemon and the reader) counts as zero rather
+// than counting backwards, and a caller that did not say when now is gets no
+// answer at all rather than a 0s reading as a job that just started.
+func JobUptime(params JobUptimeParams) string {
+	if params.Now.IsZero() || params.Job.Status != domain.JobStatusRunning || params.Job.StartedAt.IsZero() {
+		return ""
+	}
+
+	elapsed := max(params.Now.Sub(params.Job.StartedAt), 0)
+	switch {
+	case elapsed < time.Minute:
+		return fmt.Sprintf(domain.JobUptimeSecFmt, int(elapsed.Seconds()))
+	case elapsed < time.Hour:
+		return fmt.Sprintf(domain.JobUptimeMinFmt, int(elapsed.Minutes()))
+	case elapsed < 24*time.Hour:
+		return fmt.Sprintf(domain.JobUptimeHourFmt, int(elapsed.Hours()), int(elapsed.Minutes())%60)
+	default:
+		return fmt.Sprintf(domain.JobUptimeDayFmt, int(elapsed.Hours())/24, int(elapsed.Hours())%24)
+	}
 }
 
 // DefaultProfile returns the profile marked as default, or the first one.

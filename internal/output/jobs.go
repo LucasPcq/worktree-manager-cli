@@ -5,17 +5,12 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
-
-// JobActionResult is a single job's outcome emitted by `run *` commands.
-type JobActionResult struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"`            // "started", "stopped", "done", "error", "added", "removed"
-	Message string `json:"message,omitempty"` // error detail when Status == "error"
-}
 
 // ProfileActionResult is a single profile's outcome emitted by `run profile` commands.
 type ProfileActionResult struct {
@@ -41,15 +36,15 @@ type PRCheckoutJSON struct {
 }
 
 // WriteJobResultsJSON writes the JSON array describing each job outcome.
-func WriteJobResultsJSON(w io.Writer, results []JobActionResult) error {
+func WriteJobResultsJSON(w io.Writer, results []domain.JobActionResult) error {
 	if results == nil {
-		results = []JobActionResult{}
+		results = []domain.JobActionResult{}
 	}
 	return encodeJSON(w, results)
 }
 
 // WriteJobResultJSON writes a single job outcome (start/stop single job).
-func WriteJobResultJSON(w io.Writer, result JobActionResult) error {
+func WriteJobResultJSON(w io.Writer, result domain.JobActionResult) error {
 	return encodeJSON(w, result)
 }
 
@@ -186,16 +181,26 @@ func FormatRunConfig(cfg domain.RunConfig) string {
 	return b.String()
 }
 
+type FormatRunningJobsParams struct {
+	Jobs []domain.JobInfo
+	Now  time.Time
+}
+
 // FormatRunningJobs renders a table of running (or recently running) jobs. It
 // returns a raw body with no outer blank lines; the caller's frame owns the
 // outer vertical padding.
-func FormatRunningJobs(jobs []domain.JobInfo) string {
-	if len(jobs) == 0 {
+func FormatRunningJobs(params FormatRunningJobsParams) string {
+	if len(params.Jobs) == 0 {
 		return Indent + "No jobs running.\n"
 	}
 
-	nameW, kindW, statusW, pidW := len("NAME"), len("KIND"), len("STATUS"), len("PID")
-	for _, j := range jobs {
+	uptimes := make([]string, len(params.Jobs))
+	for i, j := range params.Jobs {
+		uptimes[i] = rules.JobUptime(rules.JobUptimeParams{Job: j, Now: params.Now})
+	}
+
+	nameW, kindW, statusW, pidW, upW := len("NAME"), len("KIND"), len("STATUS"), len("PID"), len("UPTIME")
+	for i, j := range params.Jobs {
 		if len(j.Name) > nameW {
 			nameW = len(j.Name)
 		}
@@ -209,31 +214,36 @@ func FormatRunningJobs(jobs []domain.JobInfo) string {
 		if len(pid) > pidW {
 			pidW = len(pid)
 		}
+		if len(uptimes[i]) > upW {
+			upW = len(uptimes[i])
+		}
 	}
 
 	var b strings.Builder
-	header := fmt.Sprintf("%s%-*s  %-*s  %-*s  %-*s  %s\n",
+	header := fmt.Sprintf("%s%-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
 		Indent,
 		nameW, "NAME",
 		kindW, "KIND",
 		statusW, "STATUS",
 		pidW, "PID",
+		upW, "UPTIME",
 		"WORKTREE",
 	)
 	b.WriteString(styles.Muted.Render(header))
 
-	for _, j := range jobs {
+	for i, j := range params.Jobs {
 		status := styleJobStatus(j.Status)
 		pid := ""
 		if j.PID != 0 {
 			pid = strconv.Itoa(j.PID)
 		}
-		line := fmt.Sprintf("%s%-*s  %-*s  %-*s  %-*s  %s\n",
+		line := fmt.Sprintf("%s%-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
 			Indent,
 			nameW, j.Name,
 			kindW, string(j.Kind),
 			statusW+ansiOverhead(status), status,
 			pidW, pid,
+			upW, uptimes[i],
 			styles.Muted.Render(j.WorkDir),
 		)
 		b.WriteString(line)

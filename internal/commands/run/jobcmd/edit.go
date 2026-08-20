@@ -109,7 +109,7 @@ func runEditByName(params editByNameParams) error {
 
 	format, _ := params.Cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
-		return output.WriteJobResultJSON(params.Cmd.OutOrStdout(), output.JobActionResult{
+		return output.WriteJobResultJSON(params.Cmd.OutOrStdout(), domain.JobActionResult{
 			Name:   updated.Name,
 			Status: domain.JobActionUpdated,
 		})

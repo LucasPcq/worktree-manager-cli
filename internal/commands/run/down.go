@@ -76,7 +76,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 		}
 
 		jobs := rules.ProfileJobs(runCfg, profile)
-		results := make([]output.JobActionResult, 0, len(jobs))
+		results := make([]domain.JobActionResult, 0, len(jobs))
 		if rules.IsHumanFormat(format) {
 			output.FrameStart(cmd.OutOrStdout())
 		}
@@ -96,20 +96,20 @@ func runDown(cmd *cobra.Command, args []string) error {
 				},
 			})
 			if sendErr != nil {
-				results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: sendErr.Error()})
+				results = append(results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: sendErr.Error()})
 				if format != domain.OutputJSON {
 					output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", job.Name, sendErr))
 				}
 				continue
 			}
 			if resp.Status == process.StatusError {
-				results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: resp.Message})
+				results = append(results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: resp.Message})
 				if format != domain.OutputJSON {
 					output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %s", job.Name, resp.Message))
 				}
 				continue
 			}
-			results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStopped})
+			results = append(results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStopped})
 			if format != domain.OutputJSON {
 				output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", job.Name))
 			}
@@ -144,9 +144,9 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 
 	if format == domain.OutputJSON {
-		stopped := make([]output.JobActionResult, 0, len(resp.Jobs))
+		stopped := make([]domain.JobActionResult, 0, len(resp.Jobs))
 		for _, job := range resp.Jobs {
-			stopped = append(stopped, output.JobActionResult{Name: job.Name, Status: domain.JobActionStopped})
+			stopped = append(stopped, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStopped})
 		}
 		return output.WriteJobResultsJSON(cmd.OutOrStdout(), stopped)
 	}

@@ -1,8 +1,11 @@
 package process
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -36,11 +39,21 @@ func (c *Client) Send(req Request) (Response, error) {
 // stdout/stderr to the user). Returns the first terminal response
 // (StatusOK, StatusDone, or StatusError) received.
 func (c *Client) SendStream(req Request, onOutput func([]byte)) (Response, error) {
+	return c.SendStreamContext(context.Background(), req, onOutput)
+}
+
+// SendStreamContext is SendStream, given up on when ctx is done: the connection
+// is closed, which unblocks the read, and the call returns the context's error.
+// The daemon is not told anything — the job it is running is untouched, and only
+// this conversation about it ends.
+func (c *Client) SendStreamContext(ctx context.Context, req Request, onOutput func([]byte)) (Response, error) {
 	conn, err := net.Dial("unix", c.socketPath)
 	if err != nil {
 		return Response{}, fmt.Errorf("connect to daemon: %w", err)
 	}
 	defer conn.Close()
+
+	defer context.AfterFunc(ctx, func() { conn.Close() })()
 
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
@@ -52,6 +65,9 @@ func (c *Client) SendStream(req Request, onOutput func([]byte)) (Response, error
 	for {
 		var resp Response
 		if err := decoder.Decode(&resp); err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return Response{}, ctxErr
+			}
 			return Response{}, fmt.Errorf("read response: %w", err)
 		}
 		if resp.Status == StatusOutput {
@@ -105,7 +121,55 @@ func (c *Client) Attach(params AttachParams) (net.Conn, error) {
 		return nil, fmt.Errorf("attach failed: %s", resp.Message)
 	}
 
-	return conn, nil
+	held, err := io.ReadAll(decoder.Buffered())
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("read attach response: %w", err)
+	}
+
+	return prefixedConn{
+		Conn:   conn,
+		reader: io.MultiReader(bytes.NewReader(afterResponseDelimiter(held)), conn),
+	}, nil
+}
+
+// afterResponseDelimiter drops the newline the encoder writes to close the
+// attach response, which the decoder leaves in its buffer. Everything past it
+// is the job's own output.
+func afterResponseDelimiter(held []byte) []byte {
+	held = bytes.TrimPrefix(held, []byte("\r"))
+	return bytes.TrimPrefix(held, []byte("\n"))
+}
+
+// prefixedConn replays what the decoder read past the attach response before
+// the rest of the connection. The daemon writes the job's buffered history
+// right behind that response, so a single read commonly carries both, and
+// whatever the decoder kept would otherwise be dropped with it.
+type prefixedConn struct {
+	net.Conn
+	reader io.Reader
+}
+
+func (c prefixedConn) Read(p []byte) (int, error) { return c.reader.Read(p) }
+
+// Resize asks the daemon to size a job's PTY to the pane rendering it. It
+// dials its own connection rather than reusing the one Attach returned, which
+// is a raw byte stream feeding the job's stdin from the moment it is accepted.
+func (c *Client) Resize(params ResizeParams) error {
+	resp, err := c.Send(Request{
+		Action:  ActionResize,
+		Name:    params.Name,
+		WorkDir: params.WorkDir,
+		Cols:    params.Cols,
+		Rows:    params.Rows,
+	})
+	if err != nil {
+		return err
+	}
+	if resp.Status != StatusOK {
+		return fmt.Errorf("resize failed: %s", resp.Message)
+	}
+	return nil
 }
 
 // IsDaemonRunning checks if a daemon is listening on the socket.

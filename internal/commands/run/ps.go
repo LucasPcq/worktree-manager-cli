@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -21,7 +22,7 @@ func newPsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdPs,
 		Short: "List currently running jobs",
-		Long:  "Show the jobs managed by the background daemon (name, kind, status, PID, worktree).\nIn a TTY, offers an interactive picker with stop/logs/restart actions.",
+		Long:  "Show the jobs managed by the background daemon (name, kind, status, PID, uptime, worktree).\nIn a TTY, offers an interactive picker with stop/logs/restart actions.",
 		RunE:  runPs,
 	}
 	shared.AddOutputFlag(cmd)
@@ -52,7 +53,7 @@ func runPs(cmd *cobra.Command, _ []string) error {
 
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		output.Frame(cmd.OutOrStdout(), func() {
-			fmt.Fprint(cmd.OutOrStdout(), output.FormatRunningJobs(jobs))
+			fmt.Fprint(cmd.OutOrStdout(), output.FormatRunningJobs(output.FormatRunningJobsParams{Jobs: jobs, Now: time.Now()}))
 		})
 		return nil
 	}

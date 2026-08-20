@@ -19,12 +19,14 @@ internal/
     decide/                     branch/env decisions shared by the create-like flows
     create/                     `wtm create`: the run + its questions
     clean/                      `wtm clean`: the run + its questions
+    runlogs/                    `wtm run`: the jobs, their live streams, the start sequence
   service/                    impure orchestration (git exec, I/O, hooks)
   output/                     format and print results (zero decision logic)
   styles/                     all Lipgloss styles
   tui/                        Bubbletea models (rendering only)
     flowui/                     runs a flow.Session as the CLI wizard
     dashboard/                  `wtm ui`, the second surface over flow/
+    runview/                    `wtm run up`/`logs`, a VT emulator per job
   infra/                      I/O, git exec, filesystem wrappers
 ```
 
@@ -101,6 +103,38 @@ and `rules.SprintSyncPlan` directly, and `internal/tui/syncpicker` (the package
 `envFallbackPrompt` and `memoizedTarget` as thin adapters over `internal/flow/decide` —
 not for `create`, which no longer uses them, but for `wtm extract`, which embeds
 create's Bubbletea wizard as a sub-flow. They go with its migration (LUC-182).
+
+## The run module — a flow that asks nothing
+
+`internal/flow/runlogs` is the second shape a flow takes. `create` and `clean` ask
+questions and need a `Prompter`; a run has none to ask — it *reports*. So the seam is
+made of three types instead:
+
+- **`runlogs.Session`** — the worktree's jobs as a surface reads them: `Jobs()` (a
+  `JobView` per declared or running job), `Refresh()`, `Attach()` for a live `Stream`, and
+  `History()` for what a job left in its log file. A surface never speaks to
+  `service/process`.
+- **`runlogs.Stream`** — one attached job: raw chunks in (escape sequences included, an
+  emulator needs them untouched), keystrokes and a PTY resize out.
+- **`runlogs.Run(ctx, RunParams)`** — a profile's start sequence, reporting each step to a
+  `Sink` as an `Event`/`Phase`. It returns an `Outcome`, never an error: what a partial
+  state is worth — an exit code, a report, a JSON entry — belongs to the surface.
+  Cancelling `ctx` ends the *reporting*, not the jobs: that is what a detach is.
+
+Three surfaces consume it, chosen by one pure rule (`rules.DecideRunSurface`, which needs
+a terminal, a human format and no `-d` before it picks the view):
+
+| Surface | Who | What it does with the seam |
+| -- | -- | -- |
+| `internal/tui/runview` | a terminal | full screen, one VT-emulated pane per job, tmux-style focus; returns its recap for the command to frame |
+| `output.RunPrinter` | `-d`, a pipe, CI | renders each `Event` as a line on stdout/stderr |
+| `output.WriteRunOutcomeJSON` | `--output json` | the array of job results, with the failing job's `output` and `exit_code` |
+
+`internal/commands/run/surface.go` is the whole wiring: open the seam, build the starter,
+switch on the rule. The one thing left in the command is `handleConcurrentJobs` — the
+question `run up` asks about another worktree's jobs. It is a `flow.Prompter` question in
+everything but name, and `runlogs` has no Prompter; it stays put until the
+`--exclusive`/`--parallel` axis is reopened, which worktree isolation may remove entirely.
 
 ## What is migrated, and what is not
 

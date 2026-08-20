@@ -130,6 +130,8 @@ func (d *daemonServer) handleConnection(conn net.Conn) {
 		d.handleList(encoder, req)
 	case ActionAttach:
 		d.handleAttach(conn, encoder, req)
+	case ActionResize:
+		d.handleResize(encoder, req)
 	default:
 		encoder.Encode(Response{Status: StatusError, Message: fmt.Sprintf("unknown action: %s", req.Action)})
 	}
@@ -146,7 +148,12 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		// the socket as StatusOutput chunks, so the CLI can render it live
 		// (`run up` / `run start`). Start blocks until every chunk has been
 		// flushed, so the terminal response below never races the stream.
-		err := d.manager.Start(*req.Job, req.WorkDir, responseStreamWriter{encoder: encoder})
+		err := d.manager.Start(StartParams{
+			Job:      *req.Job,
+			WorkDir:  req.WorkDir,
+			LogDir:   req.LogDir,
+			Streamer: responseStreamWriter{encoder: encoder},
+		})
 		if err != nil {
 			code := exitCodeOf(err)
 			encoder.Encode(Response{Status: StatusError, Message: err.Error(), ExitCode: &code})
@@ -162,7 +169,12 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 	// registered as Running afterwards. Stream that output live so `run up`
 	// shows the launcher's lines as they happen, then send the terminal "started".
 	if rules.IsDetached(*req.Job) {
-		if err := d.manager.Start(*req.Job, req.WorkDir, responseStreamWriter{encoder: encoder}); err != nil {
+		if err := d.manager.Start(StartParams{
+			Job:      *req.Job,
+			WorkDir:  req.WorkDir,
+			LogDir:   req.LogDir,
+			Streamer: responseStreamWriter{encoder: encoder},
+		}); err != nil {
 			encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 			return
 		}
@@ -170,7 +182,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		return
 	}
 
-	if err := d.manager.Start(*req.Job, req.WorkDir, nil); err != nil {
+	if err := d.manager.Start(StartParams{Job: *req.Job, WorkDir: req.WorkDir, LogDir: req.LogDir}); err != nil {
 		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 		return
 	}
@@ -198,13 +210,7 @@ func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
 		if req.WorkDir != "" && job.WorkDir != req.WorkDir {
 			continue
 		}
-		stopped = append(stopped, domain.JobInfo{
-			Name:    job.Name,
-			Kind:    job.Config.Kind,
-			WorkDir: job.WorkDir,
-			Status:  job.Status,
-			PID:     job.PID,
-		})
+		stopped = append(stopped, jobInfoOf(job))
 	}
 
 	var err error
@@ -225,16 +231,40 @@ func (d *daemonServer) handleList(encoder *json.Encoder, req Request) {
 	jobs := d.manager.List()
 	infos := make([]domain.JobInfo, 0, len(jobs))
 	for _, job := range jobs {
-		infos = append(infos, domain.JobInfo{
-			Name:    job.Name,
-			Kind:    job.Config.Kind,
-			WorkDir: job.WorkDir,
-			Status:  job.Status,
-			PID:     job.PID,
-		})
+		infos = append(infos, jobInfoOf(job))
 	}
 
 	encoder.Encode(Response{Status: StatusOK, Jobs: infos})
+}
+
+func jobInfoOf(job ManagedJob) domain.JobInfo {
+	return domain.JobInfo{
+		Name:      job.Name,
+		Kind:      job.Config.Kind,
+		WorkDir:   job.WorkDir,
+		Status:    job.Status,
+		PID:       job.PID,
+		StartedAt: job.StartedAt,
+		ExitCode:  job.ExitCode,
+	}
+}
+
+// handleResize answers on its own connection by design: an attach connection
+// carries raw PTY bytes as soon as it is accepted, so a size sent there would
+// be typed into the job instead of resizing it.
+func (d *daemonServer) handleResize(encoder *json.Encoder, req Request) {
+	err := d.manager.Resize(ResizeParams{
+		Name:    req.Name,
+		WorkDir: req.WorkDir,
+		Cols:    req.Cols,
+		Rows:    req.Rows,
+	})
+	if err != nil {
+		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
+		return
+	}
+
+	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s resized", req.Name)})
 }
 
 func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Request) {
@@ -245,14 +275,8 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 	}
 	defer session.Release()
 
-	// Set initial window size if provided
 	if req.Cols > 0 && req.Rows > 0 {
-		syscall.Syscall(
-			syscall.SYS_IOCTL,
-			session.PTY.Fd(),
-			syscall.TIOCSWINSZ,
-			uintptr(unsafeWinsize(req.Cols, req.Rows)),
-		)
+		_ = setWinsize(winsizeParams{File: session.PTY, Cols: req.Cols, Rows: req.Rows})
 	}
 
 	// Send OK before switching to raw mode
@@ -278,8 +302,8 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 		done <- struct{}{}
 	}()
 
-	// Client stdin → PTY. Direct write path; only one subscriber at a time
-	// means there's no write contention.
+	// Client stdin → PTY, unarbitrated: see AttachSession on what two clients
+	// typing at the same time get.
 	go func() {
 		io.Copy(session.PTY, conn)
 		done <- struct{}{}
