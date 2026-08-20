@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/LucasPcq/wtm/internal/domain"
 )
 
 func newTestPane(t *testing.T) *Pane {
@@ -156,15 +158,22 @@ func TestPaneResizeReportsNoChangeOnSameSize(t *testing.T) {
 	}
 }
 
-func TestPaneDefaultsSizeAndScrollback(t *testing.T) {
+func TestPaneDefaultsItsSize(t *testing.T) {
 	p := NewPane(PaneParams{})
 	if got := p.Size(); got != (PaneSize{Cols: 80, Rows: 24}) {
 		t.Fatalf("Size() = %+v, want the 80x24 default", got)
 	}
+}
 
-	write(t, p, strings.Repeat("line\r\n", 100))
-	if got := p.term.ScrollbackLen(); got == 0 {
-		t.Fatal("no scrollback retained with the default size")
+// The scrollback budget is what a pane costs in memory: left to itself the
+// emulator keeps ten times as many lines.
+func TestPaneRetainsNoMoreThanItsScrollbackBudget(t *testing.T) {
+	p := NewPane(PaneParams{})
+
+	write(t, p, strings.Repeat("line\r\n", domain.JobPaneScrollbackLines*2))
+
+	if got := p.term.ScrollbackLen(); got != domain.JobPaneScrollbackLines {
+		t.Fatalf("scrollback holds %d lines, want the %d it budgets for", got, domain.JobPaneScrollbackLines)
 	}
 }
 

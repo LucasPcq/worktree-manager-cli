@@ -596,10 +596,15 @@ const (
 	JobPaneDefaultRows = 24
 
 	// JobPaneScrollbackLines is how far back a job pane can scroll. A scrollback
-	// line holds one styled cell per column, so this is the knob that decides how
-	// much memory a pane costs; it is deliberately well under x/vt's own 10k
-	// default, and above the raw replay a freshly attached pane can ever receive.
-	JobPaneScrollbackLines = 2000
+	// line keeps one styled cell per written column and a cell is 112 bytes, so
+	// this is what a pane costs. Measured saturated at this depth: 9.9 MiB for a
+	// 120-column pane printing 40-character lines, 27.4 MiB for a 200-column one
+	// printing full-width lines — 59 to 165 MiB for a six-job profile, where
+	// 2000 lines measured 49 MiB per pane and 294 MiB for the six. Twenty to
+	// ninety times the raw bytes it holds, against 5 MB x 3 kept on disk per job,
+	// which is why this stops at the depth JobLogTailLines reads back: the
+	// sanitized log file, not the emulator, is where the history lives.
+	JobPaneScrollbackLines = 1000
 
 	// JobPaneScrollbackBurstFactor is how much more than that a pane lets its
 	// emulator hold while someone reads back through the history — the room the
