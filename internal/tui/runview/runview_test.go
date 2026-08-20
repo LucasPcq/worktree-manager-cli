@@ -312,6 +312,69 @@ func TestAttachForAJobTheCursorLeftIsClosed(t *testing.T) {
 	}
 }
 
+// The subscription carries the size the job's PTY is opened at, so what the
+// job draws matches the pane it is drawn in from its first byte. Without it the
+// job wraps its output against the daemon's default and the emulator only ever
+// sees the wrapped text.
+func TestAttachCarriesThePaneSizeItOpensAt(t *testing.T) {
+	h := newHarness(t, harnessParams{
+		Views:   []runlogs.JobView{running("api")},
+		Streams: []string{"api"},
+	})
+
+	attached := h.session.AttachParams()
+	if len(attached) != 1 {
+		t.Fatalf("Attach was called %d times, want once", len(attached))
+	}
+	layout := h.model.layout()
+	if layout.PaneCols == 0 || layout.PaneRows == 0 {
+		t.Fatal("the layout left the pane no size to attach at")
+	}
+	if want := (runlogs.Size{Cols: layout.PaneCols, Rows: layout.PaneRows}); attached[0].Size != want {
+		t.Fatalf("attached at %+v, want the layout's %+v", attached[0].Size, want)
+	}
+}
+
+// A job list arriving while an attach is in flight must not start a second one:
+// the pane would be rebuilt under the reader, the daemon would replay the job's
+// history into it again, and the first subscription would be closed from under
+// the goroutine reading it.
+func TestAJobListArrivingMidAttachDoesNotAttachTwice(t *testing.T) {
+	stream := runlogstest.NewStream()
+	views := []runlogs.JobView{running("api")}
+	session := runlogstest.NewSession(runlogstest.SessionParams{
+		Views:   views,
+		Streams: map[string]runlogs.Stream{"api": stream},
+	})
+
+	model := New(Params{Session: session})
+	t.Cleanup(func() {
+		model.cancel()
+		model.panes.closeAll()
+	})
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+
+	model, attach := updateCmd(model, jobsMsg{jobs: views})
+	if attach == nil {
+		t.Fatal("the selected job was never attached")
+	}
+	if model.pending != "api" {
+		t.Fatalf("pending = %q, want the job whose attach is in flight", model.pending)
+	}
+
+	if _, cmd := updateCmd(model, jobsMsg{jobs: views}); cmd != nil {
+		t.Fatal("the poll started a second attach behind the one in flight")
+	}
+	if attached := session.AttachedJobs(); len(attached) != 0 {
+		t.Fatalf("Attach ran for %v before the first one answered", attached)
+	}
+
+	update(model, exec(t, attach))
+	if attached := session.AttachedJobs(); len(attached) != 1 {
+		t.Fatalf("Attach ran for %v, want api once", attached)
+	}
+}
+
 func TestDetachClosesEveryStreamAndQuits(t *testing.T) {
 	for _, name := range []string{"q", "ctrl+c"} {
 		t.Run(name, func(t *testing.T) {
