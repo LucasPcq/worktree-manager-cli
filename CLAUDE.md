@@ -168,6 +168,8 @@ internal/
     dashboard/                ←   `wtm ui`: the full-screen worktree dashboard, the second
                                   surface over flow/ (its own Prompter/Presenter, mouse
                                   zones via bubblezone)
+    runview/                  ←   a job's raw PTY output replayed through a terminal
+                                  emulator (`github.com/charmbracelet/x/vt`)
   infra/                      ← I/O, git exec, filesystem wrappers
 ```
 
