@@ -48,6 +48,10 @@ type Model struct {
 	// focused reports that the keyboard belongs to the selected job rather than
 	// to this view.
 	focused bool
+
+	// lastExitKey dates the last exit key the focused job received, which is
+	// what turns a second one into a way out.
+	lastExitKey time.Time
 	// notice is a refusal the view has to answer with rather than act on.
 	notice string
 

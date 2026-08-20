@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -16,7 +17,7 @@ import (
 
 func focusKey() tea.KeyMsg { return namedKey(tea.KeyEnter) }
 
-func exitFocusKey() tea.KeyMsg { return namedKey(tea.KeyCtrlCloseBracket) }
+func exitFocusKey() tea.KeyMsg { return namedKey(tea.KeyEsc) }
 
 func focusedHarness(t *testing.T, jobs ...string) *testHarness {
 	t.Helper()
@@ -73,23 +74,69 @@ func TestFocusSendsEveryKeyToTheJob(t *testing.T) {
 	}
 }
 
-// The exit key is the only one the job never sees; anything else and there
-// would be no way back to the view.
-func TestFocusExitKeyNeverReachesTheJob(t *testing.T) {
+// A lone exit key belongs to the job — vim leaves insert mode, a prompt
+// clears. Only a second one right behind it is the reader asking to leave.
+func TestOneExitKeyGoesToTheJobAndKeepsFocus(t *testing.T) {
 	h := focusedHarness(t, "api")
 
 	h.press(t, exitFocusKey())
 
-	if h.model.focused {
-		t.Fatal("the exit key did not give the keyboard back")
+	if !h.model.focused {
+		t.Fatal("a single exit key gave the keyboard back, so the job can never receive one")
 	}
-	if written := h.streams["api"].Written(); len(written) != 0 {
-		t.Fatalf("the job received %q, want the exit key kept by the view", written)
+	if written := strings.Join(h.streams["api"].Written(), ""); written != "\x1b" {
+		t.Fatalf("the job received %q, want the escape it is entitled to", written)
+	}
+}
+
+func TestTheExitKeyTwiceGivesTheKeyboardBack(t *testing.T) {
+	h := focusedHarness(t, "api")
+
+	h.press(t, exitFocusKey())
+	h.press(t, exitFocusKey())
+
+	if h.model.focused {
+		t.Fatal("two exit keys did not give the keyboard back")
+	}
+	if written := strings.Join(h.streams["api"].Written(), ""); written != "\x1b" {
+		t.Fatalf("the job received %q, want only the first of the two", written)
 	}
 
 	h.press(t, key("j"))
-	if h.model.focused || len(h.streams["api"].Written()) != 0 {
+	if h.model.focused || strings.Join(h.streams["api"].Written(), "") != "\x1b" {
 		t.Fatal("keys still reach the job after leaving focus")
+	}
+}
+
+// Two escapes a minute apart are two keystrokes for the job, not a way out.
+func TestExitKeysTooFarApartStayWithTheJob(t *testing.T) {
+	h := focusedHarness(t, "api")
+
+	h.press(t, exitFocusKey())
+	h.model.lastExitKey = h.model.lastExitKey.Add(-domain.RunViewFocusExitWindow - time.Second)
+	h.press(t, exitFocusKey())
+
+	if !h.model.focused {
+		t.Fatal("escapes a minute apart were read as a way out")
+	}
+	if written := strings.Join(h.streams["api"].Written(), ""); written != "\x1b\x1b" {
+		t.Fatalf("the job received %q, want both escapes", written)
+	}
+}
+
+// Anything typed in between makes them two keystrokes for the job.
+func TestAKeyBetweenTheTwoExitKeysKeepsFocus(t *testing.T) {
+	h := focusedHarness(t, "api")
+
+	h.press(t, exitFocusKey())
+	h.press(t, key("j"))
+	h.press(t, exitFocusKey())
+
+	if !h.model.focused {
+		t.Fatal("an interrupted repeat still gave the keyboard back")
+	}
+	if written := strings.Join(h.streams["api"].Written(), ""); written != "\x1bj\x1b" {
+		t.Fatalf("the job received %q, want every keystroke in order", written)
 	}
 }
 

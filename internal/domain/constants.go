@@ -691,16 +691,22 @@ const (
 	RunViewHelpBrowse = "↑↓ job · / filter · pgup/pgdn scroll · enter focus · r refresh · q detach"
 	RunViewHelpFilter = "type to filter · enter apply · esc clear"
 
-	// RunViewFocusKey passes every keystroke to the job, RunViewFocusExitKey
-	// takes them back. The exit key is the one thing the job never receives, so
-	// it has to be one a child terminal application does not use.
+	// RunViewFocusKey passes every keystroke to the job. Taking them back needs
+	// a key no child application can claim, and no single one is free: a
+	// terminal cannot even tell shift+enter from enter. So the exit is a
+	// repeat — the first press still reaches the job, a second one within
+	// RunViewFocusExitWindow means the reader, not the job.
 	RunViewFocusKey     = "enter"
-	RunViewFocusExitKey = "ctrl+]"
+	RunViewFocusExitKey = "esc"
 
 	// RunViewFocusHintFmt replaces the footer's key reminders while a job has the
 	// keyboard, and RunViewFocusLabel marks the pane that holds it.
-	RunViewFocusHintFmt = "focus %s — every key goes to the job · %s gives them back"
+	RunViewFocusHintFmt = "focus %s — every key goes to the job · %s twice gives them back"
 	RunViewFocusLabel   = "focus"
+
+	// RunViewFocusExitWindow is how close the second exit key has to land to
+	// read as a way out rather than as two keystrokes meant for the job.
+	RunViewFocusExitWindow = 600 * time.Millisecond
 
 	// RunViewNotAttachableFmt is why focus is refused: there is no live stream
 	// behind the pane, only what the log file kept.

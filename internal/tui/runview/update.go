@@ -2,6 +2,7 @@ package runview
 
 import (
 	"fmt"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -55,12 +56,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleFocusKey hands the keyboard to the job: every key it can encode is
 // written to the job's stdin, Ctrl+C included — interrupting the child is the
-// whole point of focus. The one key it keeps is the one that gives the keyboard
-// back, or there would be no way out.
+// whole point of focus. Even the exit key goes through, since a lone press
+// belongs to the job; only a second one right behind it means the reader.
 func (m Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == domain.RunViewFocusExitKey {
-		m.focused = false
-		return m, nil
+		if rules.ExitsFocus(rules.FocusExitParams{Previous: m.lastExitKey, Now: time.Now()}) {
+			m.focused, m.lastExitKey = false, time.Time{}
+			return m, nil
+		}
+		m.lastExitKey = time.Now()
+	} else {
+		// Anything in between makes the two presses two keystrokes for the job.
+		m.lastExitKey = time.Time{}
 	}
 
 	stream := m.panes.stream(m.selected)
@@ -82,7 +89,7 @@ func (m Model) focus() (tea.Model, tea.Cmd) {
 		m.notice = fmt.Sprintf(domain.RunViewNotAttachableFmt, m.selected)
 		return m, nil
 	}
-	m.focused, m.notice = true, ""
+	m.focused, m.notice, m.lastExitKey = true, "", time.Time{}
 	return m.scrollToLive(), nil
 }
 
