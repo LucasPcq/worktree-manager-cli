@@ -1,9 +1,14 @@
 package runlogs
 
 import (
+	"errors"
 	"net"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/LucasPcq/wtm/internal/domain"
 )
 
 func pipedStream(t *testing.T) (*connStream, net.Conn) {
@@ -62,16 +67,13 @@ func TestConnStreamClosesItsChunksWhenTheOutputEnds(t *testing.T) {
 	}
 }
 
-// A surface that stops reading must not strand the goroutine holding the
-// connection: closing releases it even mid-delivery.
-func TestConnStreamCloseReleasesTheReader(t *testing.T) {
-	stream, daemon := pipedStream(t)
+// Two things release the goroutine holding the connection, and a test that
+// drains a near-empty queue proves neither: closing the connection wakes a read
+// that is waiting for bytes, and the done channel wakes a delivery that no
+// longer fits in the queue. One test each, or removing either leaves both green.
 
-	go func() {
-		for i := 0; i < 4; i++ {
-			daemon.Write([]byte("line\n"))
-		}
-	}()
+func TestConnStreamCloseWakesAReadWaitingForBytes(t *testing.T) {
+	stream, _ := pipedStream(t)
 
 	if err := stream.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -80,15 +82,83 @@ func TestConnStreamCloseReleasesTheReader(t *testing.T) {
 		t.Fatalf("second Close: %v", err)
 	}
 
-	deadline := time.After(time.Second)
-	for {
-		select {
-		case _, open := <-stream.Chunks():
-			if !open {
+	select {
+	case _, open := <-stream.Chunks():
+		if open {
+			t.Fatal("a chunk arrived on a closed stream")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the reader stayed parked on the connection after Close")
+	}
+}
+
+func TestConnStreamCloseWakesADeliveryIntoAFullQueue(t *testing.T) {
+	before := readersRunning()
+	stream, daemon := pipedStream(t)
+
+	go func() {
+		for {
+			if _, err := daemon.Write([]byte("line\n")); err != nil {
 				return
 			}
-		case <-deadline:
-			t.Fatal("the chunks channel stayed open after Close")
 		}
+	}()
+	waitFor(t, "the queue to fill", func() bool {
+		return len(stream.Chunks()) == domain.JobStreamQueueChunks
+	})
+
+	if err := stream.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
+
+	// Nothing reads the queue: the reader is parked on a delivery that does not
+	// fit, and only the done channel can bring it back.
+	waitFor(t, "the reader to leave", func() bool { return readersRunning() <= before })
+}
+
+func TestConnStreamRefusesWhatIsAskedOfAClosedStream(t *testing.T) {
+	stream, daemon := pipedStream(t)
+
+	if err := stream.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// A pane bubbletea already destroyed, running the resize command it had
+	// scheduled: the daemon must never hear about it.
+	if err := stream.Resize(Size{Cols: 80, Rows: 20}); !errors.Is(err, domain.ErrJobStreamClosed) {
+		t.Fatalf("Resize after Close: %v, want ErrJobStreamClosed", err)
+	}
+	if err := stream.Write([]byte("q")); !errors.Is(err, domain.ErrJobStreamClosed) {
+		t.Fatalf("Write after Close: %v, want ErrJobStreamClosed", err)
+	}
+
+	daemon.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+	if _, err := daemon.Read(make([]byte, 1)); err == nil {
+		t.Fatal("the closed stream still reached the job")
+	}
+}
+
+func TestConnStreamResizeWithoutADaemonClientIsRefused(t *testing.T) {
+	stream, _ := pipedStream(t)
+
+	if err := stream.Resize(Size{Cols: 80, Rows: 20}); err == nil {
+		t.Fatal("Resize answered without a client to reach the daemon with")
+	}
+}
+
+func readersRunning() int {
+	buf := make([]byte, 1<<20)
+	return strings.Count(string(buf[:runtime.Stack(buf, true)]), "(*connStream).read(")
+}
+
+func waitFor(t *testing.T, what string, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if done() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
 }

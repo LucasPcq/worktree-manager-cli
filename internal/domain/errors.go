@@ -66,6 +66,11 @@ var (
 	// that is no longer running. Its log file is what is left to read.
 	ErrJobNotAttachable = errors.New("job has no live output")
 
+	// ErrJobStreamClosed is returned by a subscription that has been closed. Close
+	// is a barrier: what the surface asks of the job afterwards is refused rather
+	// than sent on its behalf.
+	ErrJobStreamClosed = errors.New("job stream is closed")
+
 	// ErrRunNotInitialized is returned when a run command runs before the run
 	// module is initialized — run.toml is absent or declares no job/profile. The
 	// message points at the dedicated setup command.

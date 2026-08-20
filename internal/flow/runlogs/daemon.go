@@ -109,17 +109,40 @@ func newConnStream(params connStreamParams) *connStream {
 func (s *connStream) Chunks() <-chan []byte { return s.chunks }
 
 func (s *connStream) Write(p []byte) error {
+	if err := s.subscribed(); err != nil {
+		return err
+	}
 	_, err := s.conn.Write(p)
 	return err
 }
 
 func (s *connStream) Resize(size Size) error {
+	if err := s.subscribed(); err != nil {
+		return err
+	}
+	if s.client == nil {
+		return fmt.Errorf("resize %s: stream has no daemon client", s.name)
+	}
 	return s.client.Resize(process.ResizeParams{
 		Name:    s.name,
 		WorkDir: s.workDir,
 		Cols:    size.Cols,
 		Rows:    size.Rows,
 	})
+}
+
+// subscribed makes Close a barrier for everything this stream can ask of the
+// job. Resize in particular reaches the daemon on its own connection, so a
+// closed stream would still be obeyed: a surface that destroys a pane and then
+// runs the resize command it had already scheduled would size the job's PTY to
+// a pane nobody is looking at, under the eyes of the panes that are left.
+func (s *connStream) subscribed() error {
+	select {
+	case <-s.done:
+		return fmt.Errorf("%w: %s", domain.ErrJobStreamClosed, s.name)
+	default:
+		return nil
+	}
 }
 
 func (s *connStream) Close() error {
