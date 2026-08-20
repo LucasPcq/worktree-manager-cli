@@ -1,12 +1,44 @@
 package rules
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
+
+// WorktreeLogDirParams holds inputs for resolving a worktree's job-log dir.
+type WorktreeLogDirParams struct {
+	StateDir string
+	WorkDir  string
+}
+
+// WorktreeLogDir returns <state-dir>/logs/<worktree>/. Resolved client-side and
+// handed to the daemon, which must never resolve a git dir of its own.
+func WorktreeLogDir(params WorktreeLogDirParams) string {
+	if params.StateDir == "" || params.WorkDir == "" {
+		return ""
+	}
+	return filepath.Join(params.StateDir, domain.JobLogsDirName, filepath.Base(filepath.Clean(params.WorkDir)))
+}
+
+// JobLogFileName returns the log file name of a job, with every character that
+// could escape the log directory or confuse a shell folded to an underscore.
+func JobLogFileName(job string) string {
+	safe := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			return r
+		case r == '.' || r == '-' || r == '_':
+			return r
+		default:
+			return '_'
+		}
+	}, job)
+	return safe + domain.JobLogFileExt
+}
 
 // terminalEscape matches what a PTY-backed job writes to drive the terminal:
 // CSI (colors, cursor moves, line clears), OSC (window title), charset

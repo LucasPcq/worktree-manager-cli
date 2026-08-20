@@ -65,6 +65,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	client := process.NewClient(socketPath)
+	logDir := rules.WorktreeLogDir(rules.WorktreeLogDirParams{StateDir: result.StateDir, WorkDir: dir})
 
 	if job.Kind == domain.JobKindTask {
 		// Stream the task's output live (text mode); JSON mode stays silent on
@@ -80,6 +81,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 			Action:  process.ActionStart,
 			Job:     &job,
 			WorkDir: dir,
+			LogDir:  logDir,
 		}, onOutput)
 		if err != nil {
 			return fmt.Errorf("task %s: %w", job.Name, err)
@@ -108,6 +110,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 				Action:  process.ActionStart,
 				Job:     &job,
 				WorkDir: dir,
+				LogDir:  logDir,
 			})
 			return e
 		},

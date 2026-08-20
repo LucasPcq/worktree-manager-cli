@@ -66,6 +66,7 @@ type ManagedJob struct {
 	PID     int
 	WorkDir string
 	output  *outputHub    // nil for detached launcher-style services
+	logs    *LogSink      // nil when the client asked for no persisted log
 	exited  chan struct{} // closed when the underlying process has been reaped
 }
 
@@ -87,9 +88,19 @@ func jobKey(name string, workDir string) string {
 	return workDir + ":" + name
 }
 
+// StartParams holds inputs for launching a job.
+type StartParams struct {
+	Job     domain.JobConfig
+	WorkDir string
+	// LogDir is the worktree's log directory, resolved by the client. Empty
+	// persists nothing.
+	LogDir   string
+	Streamer io.Writer
+}
+
 // Start launches a job in a PTY. Behavior depends on the job's kind:
 //
-//   - Task: blocks until the command exits, streams output to `streamer` if
+//   - Task: blocks until the command exits, streams output to the streamer if
 //     non-nil, and removes the job from the map whatever the outcome. Returns
 //     an error on non-zero exit (with captured output).
 //   - Service with Stop (detached): blocks until the launcher command exits,
@@ -97,8 +108,11 @@ func jobKey(name string, workDir string) string {
 //     the caller, and stays registered as Running afterwards.
 //   - Service without Stop (foreground): returns immediately after pty.Start,
 //     with a background goroutine draining output and watching for exit.
-func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer) error {
-	key := jobKey(job.Name, workDir)
+//
+// All three persist their output when a log dir is given.
+func (m *Manager) Start(params StartParams) error {
+	job := params.Job
+	key := jobKey(job.Name, params.WorkDir)
 
 	parts := strings.Fields(job.Cmd)
 	if len(parts) == 0 {
@@ -113,11 +127,11 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 
 	cmd := exec.Command(parts[0], parts[1:]...)
 	if job.Cwd != "" && !filepath.IsAbs(job.Cwd) {
-		cmd.Dir = filepath.Join(workDir, job.Cwd)
+		cmd.Dir = filepath.Join(params.WorkDir, job.Cwd)
 	} else if job.Cwd != "" {
 		cmd.Dir = job.Cwd
 	} else {
-		cmd.Dir = workDir
+		cmd.Dir = params.WorkDir
 	}
 	cmd.Env = jobEnv(job.Kind)
 	// Tasks run through a plain pipe; without Setpgid they would inherit the
@@ -142,7 +156,8 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 		PTY:     output,
 		Status:  domain.JobStatusRunning,
 		PID:     cmd.Process.Pid,
-		WorkDir: workDir,
+		WorkDir: params.WorkDir,
+		logs:    openJobLog(params),
 		exited:  make(chan struct{}),
 	}
 	m.jobs[key] = managed
@@ -150,9 +165,9 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 
 	switch {
 	case job.Kind == domain.JobKindTask:
-		return m.runTask(managed, streamer)
+		return m.runTask(managed, params.Streamer)
 	case rules.IsDetached(job):
-		if err := m.waitDetached(managed, streamer); err != nil {
+		if err := m.waitDetached(managed, params.Streamer); err != nil {
 			m.mu.Lock()
 			delete(m.jobs, key)
 			m.mu.Unlock()
@@ -165,6 +180,19 @@ func (m *Manager) Start(job domain.JobConfig, workDir string, streamer io.Writer
 		go m.waitForExit(managed)
 		return nil
 	}
+}
+
+// openJobLog returns nil when nothing is to be persisted, or when the file
+// cannot be opened: a job still starts when its log does not.
+func openJobLog(params StartParams) *LogSink {
+	if params.LogDir == "" {
+		return nil
+	}
+	sink, err := OpenLogSink(LogSinkParams{LogDir: params.LogDir, Job: params.Job.Name})
+	if err != nil {
+		return nil
+	}
+	return sink
 }
 
 // spawnJob starts the command and returns the *os.File from which the child's
@@ -388,10 +416,14 @@ func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 	defer close(job.exited)
 
 	buf := newRingBuffer(detachedOutputBufferSize)
-	var sink io.Writer = buf
+	writers := []io.Writer{buf}
 	if streamer != nil {
-		sink = io.MultiWriter(buf, streamer)
+		writers = append(writers, streamer)
 	}
+	if job.logs != nil {
+		writers = append(writers, job.logs)
+	}
+	sink := io.MultiWriter(writers...)
 	drained := make(chan struct{})
 	go func() {
 		_, _ = io.Copy(sink, job.PTY)
@@ -414,6 +446,7 @@ func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 	}
 	_ = job.PTY.Close()
 	<-drained
+	job.closeLogs()
 
 	if err != nil {
 		// When a streamer was attached the client already saw the output live,
@@ -552,8 +585,19 @@ func (h *outputHub) close() {
 // never fills up (which would block the job's writes before any client
 // attaches).
 func (m *Manager) drainToHub(job *ManagedJob) {
-	_, _ = io.Copy(job.output, job.PTY)
+	var sink io.Writer = job.output
+	if job.logs != nil {
+		sink = io.MultiWriter(job.output, job.logs)
+	}
+	_, _ = io.Copy(sink, job.PTY)
 	job.output.close()
+	job.closeLogs()
+}
+
+func (j *ManagedJob) closeLogs() {
+	if j.logs != nil {
+		_ = j.logs.Close()
+	}
 }
 
 // Stop stops a job by name and workDir.

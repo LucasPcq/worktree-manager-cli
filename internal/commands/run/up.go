@@ -85,6 +85,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	client := process.NewClient(socketPath)
+	logDir := rules.WorktreeLogDir(rules.WorktreeLogDirParams{StateDir: result.StateDir, WorkDir: dir})
 
 	if err := handleConcurrentJobs(cmd, client, dir); err != nil {
 		return err
@@ -99,7 +100,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 		// launching the rest, leave what's running, and report the partial
 		// state (or emit the JSON results in machine mode).
 		if job.Kind == domain.JobKindTask {
-			if err := runTaskJob(cmd, client, job, dir, format, &results); err != nil {
+			if err := runTaskJob(jobRunParams{
+				Cmd: cmd, Client: client, Job: job, WorkDir: dir, LogDir: logDir,
+				Format: format, Results: &results,
+			}); err != nil {
 				return abortProfile(cmd, jobs, i, started, results, format)
 			}
 			continue
@@ -108,7 +112,10 @@ func runUp(cmd *cobra.Command, args []string) error {
 		// Detached launchers (docker compose up -d) stream their startup output
 		// live like a task, then stay running in the background.
 		if rules.IsDetached(job) {
-			if err := runDetachedJob(cmd, client, job, dir, format, &results, &started); err != nil {
+			if err := runDetachedJob(jobRunParams{
+				Cmd: cmd, Client: client, Job: job, WorkDir: dir, LogDir: logDir,
+				Format: format, Results: &results, Started: &started,
+			}); err != nil {
 				return abortProfile(cmd, jobs, i, started, results, format)
 			}
 			continue
@@ -124,6 +131,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 					Action:  process.ActionStart,
 					Job:     &job,
 					WorkDir: dir,
+					LogDir:  logDir,
 				})
 				return e
 			},
@@ -229,7 +237,22 @@ func watchProfileServices(cmd *cobra.Command, jobs []domain.JobConfig, dir strin
 	return watchErr
 }
 
-func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig, dir string, format string, results *[]output.JobActionResult) error {
+// jobRunParams carries what starting one job of a profile needs. Started is
+// only read by the detached launcher, the sole kind that stays registered.
+type jobRunParams struct {
+	Cmd     *cobra.Command
+	Client  *process.Client
+	Job     domain.JobConfig
+	WorkDir string
+	LogDir  string
+	Format  string
+	Results *[]output.JobActionResult
+	Started *[]domain.JobConfig
+}
+
+func runTaskJob(params jobRunParams) error {
+	cmd, client, job := params.Cmd, params.Client, params.Job
+	format, results := params.Format, params.Results
 	// We always capture the streamed output so failures carry the "why" — live
 	// on stdout in text mode (the user reads it as it runs), and into the JSON
 	// result's message in machine mode (LLM/CI never sees the live stream).
@@ -248,7 +271,8 @@ func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig
 	resp, err := client.SendStream(process.Request{
 		Action:  process.ActionStart,
 		Job:     &job,
-		WorkDir: dir,
+		WorkDir: params.WorkDir,
+		LogDir:  params.LogDir,
 	}, onOutput)
 	if err != nil {
 		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: err.Error()})
@@ -280,7 +304,9 @@ func runTaskJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig
 // freeing the terminal — exactly like a task, except the job stays registered
 // as running afterwards. Returns a non-nil error only when the profile should
 // abort; an already-running launcher is a benign no-op.
-func runDetachedJob(cmd *cobra.Command, client *process.Client, job domain.JobConfig, dir string, format string, results *[]output.JobActionResult, started *[]domain.JobConfig) error {
+func runDetachedJob(params jobRunParams) error {
+	cmd, client, job := params.Cmd, params.Client, params.Job
+	format, results, started := params.Format, params.Results, params.Started
 	// Always capture the streamed output so a failure carries the "why" — live
 	// on stdout in text mode, and into the JSON result's message in machine mode.
 	var captured bytes.Buffer
@@ -298,7 +324,8 @@ func runDetachedJob(cmd *cobra.Command, client *process.Client, job domain.JobCo
 	resp, err := client.SendStream(process.Request{
 		Action:  process.ActionStart,
 		Job:     &job,
-		WorkDir: dir,
+		WorkDir: params.WorkDir,
+		LogDir:  params.LogDir,
 	}, onOutput)
 	if err != nil {
 		*results = append(*results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: err.Error()})

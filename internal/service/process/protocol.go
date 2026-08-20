@@ -19,8 +19,12 @@ type Request struct {
 	Job     *domain.JobConfig `json:"job,omitempty"`
 	Name    string            `json:"name,omitempty"`
 	WorkDir string            `json:"work_dir,omitempty"`
-	Cols    int               `json:"cols,omitempty"`
-	Rows    int               `json:"rows,omitempty"`
+	// LogDir is where the daemon persists the job's output. The client resolves
+	// it, so the daemon never has to run git to find the state dir. Empty
+	// persists nothing.
+	LogDir string `json:"log_dir,omitempty"`
+	Cols   int    `json:"cols,omitempty"`
+	Rows   int    `json:"rows,omitempty"`
 }
 
 // ResponseStatus is the status field in a daemon response. For long-lived

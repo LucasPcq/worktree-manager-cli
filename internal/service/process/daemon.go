@@ -146,7 +146,12 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		// the socket as StatusOutput chunks, so the CLI can render it live
 		// (`run up` / `run start`). Start blocks until every chunk has been
 		// flushed, so the terminal response below never races the stream.
-		err := d.manager.Start(*req.Job, req.WorkDir, responseStreamWriter{encoder: encoder})
+		err := d.manager.Start(StartParams{
+			Job:      *req.Job,
+			WorkDir:  req.WorkDir,
+			LogDir:   req.LogDir,
+			Streamer: responseStreamWriter{encoder: encoder},
+		})
 		if err != nil {
 			code := exitCodeOf(err)
 			encoder.Encode(Response{Status: StatusError, Message: err.Error(), ExitCode: &code})
@@ -162,7 +167,12 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 	// registered as Running afterwards. Stream that output live so `run up`
 	// shows the launcher's lines as they happen, then send the terminal "started".
 	if rules.IsDetached(*req.Job) {
-		if err := d.manager.Start(*req.Job, req.WorkDir, responseStreamWriter{encoder: encoder}); err != nil {
+		if err := d.manager.Start(StartParams{
+			Job:      *req.Job,
+			WorkDir:  req.WorkDir,
+			LogDir:   req.LogDir,
+			Streamer: responseStreamWriter{encoder: encoder},
+		}); err != nil {
 			encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 			return
 		}
@@ -170,7 +180,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		return
 	}
 
-	if err := d.manager.Start(*req.Job, req.WorkDir, nil); err != nil {
+	if err := d.manager.Start(StartParams{Job: *req.Job, WorkDir: req.WorkDir, LogDir: req.LogDir}); err != nil {
 		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 		return
 	}

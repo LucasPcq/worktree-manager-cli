@@ -546,6 +546,20 @@ const (
 	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
 	CtrlCByte byte = 0x03
 
+	// JobLogsDirName is the directory under the state dir holding the persisted
+	// job logs, one subdirectory per worktree:
+	// <state-dir>/logs/<worktree>/<job>.log.
+	JobLogsDirName = "logs"
+
+	// JobLogFileExt is the extension of a job's log file.
+	JobLogFileExt = ".log"
+
+	// JobLogMaxBytes is the size at which a job log rotates and JobLogMaxFiles
+	// how many files are kept for that job — the active one plus its backups,
+	// <job>.log.1 and <job>.log.2. Retention is deliberately not configurable.
+	JobLogMaxBytes = 5 << 20
+	JobLogMaxFiles = 3
+
 	// JobLogTimestampLayout and JobLogSeparator format one persisted log line:
 	// an RFC3339 instant, then the sanitized text. Fixed-width prefix so a
 	// reader (or a grep) can split every line at the same column.

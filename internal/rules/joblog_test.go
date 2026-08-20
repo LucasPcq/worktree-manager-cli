@@ -130,3 +130,32 @@ func TestFormatLogRecord(t *testing.T) {
 		t.Errorf("FormatLogRecord = %q, want a UTC-stamped line", got)
 	}
 }
+
+func TestWorktreeLogDir(t *testing.T) {
+	got := WorktreeLogDir(WorktreeLogDirParams{StateDir: "/repo/.git/wtm", WorkDir: "/trees/feat-login/"})
+	if got != "/repo/.git/wtm/logs/feat-login" {
+		t.Errorf("WorktreeLogDir = %q, want the worktree's dir under logs/", got)
+	}
+
+	if got := WorktreeLogDir(WorktreeLogDirParams{WorkDir: "/trees/feat"}); got != "" {
+		t.Errorf("WorktreeLogDir without a state dir = %q, want nothing to persist", got)
+	}
+	if got := WorktreeLogDir(WorktreeLogDirParams{StateDir: "/repo/.git/wtm"}); got != "" {
+		t.Errorf("WorktreeLogDir without a worktree = %q, want nothing to persist", got)
+	}
+}
+
+func TestJobLogFileNameFoldsPathSeparators(t *testing.T) {
+	cases := map[string]string{
+		"web":         "web.log",
+		"web-api":     "web-api.log",
+		"api/gateway": "api_gateway.log",
+		"../escape":   ".._escape.log",
+		"db 2":        "db_2.log",
+	}
+	for job, want := range cases {
+		if got := JobLogFileName(job); got != want {
+			t.Errorf("JobLogFileName(%q) = %q, want %q", job, got, want)
+		}
+	}
+}
