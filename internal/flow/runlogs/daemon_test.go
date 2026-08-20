@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/service/process"
+	"github.com/LucasPcq/wtm/internal/testutil/socktest"
 )
 
 func pipedStream(t *testing.T) (*connStream, net.Conn) {
@@ -171,7 +171,7 @@ func waitFor(t *testing.T, what string, done func() bool) {
 // hangs up — enough to read what the adapter keeps of the daemon's answer.
 func scriptedDaemon(t *testing.T, responses ...process.Response) string {
 	t.Helper()
-	socket := filepath.Join(t.TempDir(), "wtm.sock")
+	socket := socktest.Path(t)
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatalf("listen: %v", err)

@@ -13,6 +13,7 @@ import (
 	"github.com/creack/pty"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/testutil/socktest"
 )
 
 func startService(t *testing.T, m *Manager, job domain.JobConfig) string {
@@ -190,7 +191,7 @@ func TestDaemonHandleResize_ReportsTheManagerVerdict(t *testing.T) {
 // depends on: the size is a request of its own, not bytes pushed into the
 // attach stream, which by then belongs to the job's stdin.
 func TestClientResize_TravelsOnItsOwnConnection(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "wtm.sock")
+	socket := socktest.Path(t)
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -231,7 +232,7 @@ func TestClientResize_TravelsOnItsOwnConnection(t *testing.T) {
 }
 
 func TestClientResize_SurfacesTheDaemonError(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "wtm.sock")
+	socket := socktest.Path(t)
 	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatalf("listen: %v", err)
