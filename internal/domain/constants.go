@@ -527,6 +527,9 @@ const (
 	CmdTree     = "tree"
 	CmdPrune    = "prune"
 	CmdEnv      = "env"
+	// CmdFastForwardAlias keeps the frequent gesture short to type.
+	CmdFastForward      = "fast-forward"
+	CmdFastForwardAlias = "ff"
 
 	// MinWizardListHeight is the minimum number of rows reserved for a wizard
 	// step's scrollable list. Completed-step summaries are bounded so they never
@@ -680,6 +683,45 @@ const (
 	// SyncPlanFailedFmt heads the recap of a cascade that could not be planned
 	// (e.g. a cycle in the parent chain).
 	SyncPlanFailedFmt = "Failed to build sync plan: %w"
+
+	// FastForward* are the fast-forward flow's labels, shared by both surfaces.
+	FastForwardWizardErrLabel   = "fast-forward wizard"
+	FastForwardSelectionTitle   = "Select worktrees to fast-forward"
+	FastForwardConfirmTitle     = "Fast-forward from origin"
+	FastForwardCheckLoading     = "Checking branches against origin"
+	FastForwardStage            = "Fast-forwarding"
+	FastForwardOption           = "Yes, fast-forward"
+	FastForwardAnywayOption     = "Fast-forward anyway"
+	FastForwardSelectAtLeastOne = "select at least one worktree"
+	FastForwardNothingToDo      = "No worktrees to fast-forward."
+	FastForwardWarnDirty        = "uncommitted changes."
+	FastForwardBlockerDirty     = "dirty"
+	// FastForwardSelectionRequiredFmt names the flag a run with no picker is
+	// missing, rather than falling back to one. Verbs: --all, --yes, --output, json.
+	FastForwardSelectionRequiredFmt = "specify one or more worktrees, or pass --%s (no interactive picker under --%s, without a terminal, or in --%s %s mode)"
+	// FastForwardForceHintFmt refuses a dirty worktree by naming the flag that
+	// lifts it: --yes is the confirmation axis and never lifts a refusal.
+	// Verbs: branch, reason, --force.
+	FastForwardForceHintFmt = "%s has %s Use --%s to fast-forward anyway"
+	// FastForwardLabel* say in a few words what became of one branch
+	// (rules.FastForwardStatusLabel).
+	FastForwardLabelUpToDate = "already up to date"
+	FastForwardLabelAdvanced = "fast-forwarded from origin"
+	FastForwardLabelDiverged = "diverged"
+	FastForwardLabelNoRemote = "no origin counterpart"
+	FastForwardLabelFailed   = "failed"
+	// FastForwardDivergedHintFmt names the gesture that does handle a divergence:
+	// this one never rewrites a branch carrying local commits. Verbs: branch,
+	// ahead, behind, branch.
+	FastForwardDivergedHintFmt = "%s has diverged from origin (%d ahead, %d behind) — run `wtm sync %s`"
+	FastForwardNoRemoteFmt     = "%s has no origin counterpart"
+	// FastForwardPlanFmt, FastForwardUpToDateFmt, FastForwardResultFmt and
+	// FastForwardFailedFmt are the per-branch lines: what will happen, and what did.
+	FastForwardPlanFmt     = "%s → origin/%s (%s)"
+	FastForwardUpToDateFmt = "%s is already up to date"
+	FastForwardResultFmt   = "%s: %s"
+	FastForwardFailedFmt   = "%s: failed — %s"
+	FastForwardHeader      = "Fast-forward"
 
 	// Source-reconciliation and env-fallback prompts shared by the create and
 	// extract flows — used both by the in-wizard confirmation steps and the
@@ -970,6 +1012,9 @@ const (
 	OpKindReparent = "reparent"
 	OpKindPrune    = "prune"
 	OpKindSync     = "sync"
+	// OpKindFastForward names a run that advances branches to their origin
+	// counterpart and nothing else.
+	OpKindFastForward = "fast-forward"
 
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"
@@ -1185,6 +1230,18 @@ const (
 	// DashboardMenuRefreshBase is the only entry the base row offers: it hangs off
 	// nothing, so there is no rebase to run on it — only its own fast-forward.
 	DashboardMenuRefreshBase = "Refresh base branch"
+	// DashboardMenuFastForward leads every row menu, base row included: it is the
+	// least destructive action a row offers, and the most frequent.
+	DashboardMenuFastForward = "Fast-forward from origin"
+	// DashboardMenuFastForwardAll is the same gesture over a selection the user
+	// makes inside the run, next to the batch sync and reparent.
+	DashboardMenuFastForwardAll = "Fast-forward worktrees"
+	// DashboardFFDisabledDiverged and DashboardFFDisabledNoRemote are why the row
+	// entry is inert. "Up to date" is not one of them: those badges come from
+	// cached remote-tracking refs with no fetch, so a branch shown up to date may
+	// not be — which is exactly when the user wants to click.
+	DashboardFFDisabledDiverged = "diverged — use Sync"
+	DashboardFFDisabledNoRemote = "no origin counterpart"
 	// DashboardMenuSyncAll rebases every worktree at once. It arrives with the ones
 	// a cascade would skip left unchecked — they stay listed, with the tag saying
 	// why.
@@ -1204,6 +1261,10 @@ const (
 	// renamed the entry the user just picked reads as a different action.
 	DashboardSyncRowTitle     = "Sync this worktree"
 	DashboardRefreshBaseTitle = "Refresh base branch"
+	// DashboardFastForwardTitle heads the run started from a row, and
+	// DashboardFastForwardAllTitle the one started from the global menu.
+	DashboardFastForwardTitle    = "Fast-forward from origin"
+	DashboardFastForwardAllTitle = "Fast-forward worktrees"
 	// DashboardSync*Fmt report a finished cascade in the output panel, one line per
 	// branch it touched. Verbs: branch, then what became of it.
 	DashboardSyncStepFmt   = "%s — %s"
@@ -1286,6 +1347,9 @@ const (
 	// detail panel's PR line is also clickable; the key is what makes the action
 	// reachable without a mouse and over a plain ssh terminal.
 	KeyOpenPR = "p"
+	// KeyFastForward advances the selected worktree's branch to its origin
+	// counterpart, the keyboard way into the row menu's first entry.
+	KeyFastForward = "f"
 
 	KeyHelp = "?"
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so
