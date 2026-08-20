@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -19,10 +18,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
-
-// ansiCSI matches CSI-style ANSI escape sequences (colors, cursor moves, line
-// clears — everything docker compose emits while drawing its progress block).
-var ansiCSI = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
 
 // detachedOutputBufferSize bounds how much PTY output we keep around while
 // waiting for a detached-service launcher (e.g. `docker compose up -d`) to
@@ -436,11 +431,11 @@ func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 	return nil
 }
 
-// cleanPTYOutput strips ANSI escape sequences and collapses carriage-return
+// cleanPTYOutput strips terminal escape sequences and collapses carriage-return
 // progress redraws (docker compose writes `[+] Running 1/2\r[+] Running 2/2`)
 // into distinct lines, then keeps only non-empty trimmed lines.
 func cleanPTYOutput(raw string) string {
-	raw = ansiCSI.ReplaceAllString(raw, "")
+	raw = rules.StripTerminalEscapes(raw)
 	raw = strings.ReplaceAll(raw, "\r", "\n")
 
 	var lines []string

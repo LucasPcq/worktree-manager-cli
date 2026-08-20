@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 // JobKind distinguishes a long-running service from a one-shot task.
 type JobKind string
 
@@ -55,4 +57,11 @@ type JobInfo struct {
 	Status  JobStatus `json:"status"`
 	PID     int       `json:"pid"`
 	WorkDir string    `json:"work_dir"`
+}
+
+// LogRecord is one sanitized line of a job's output, as persisted in that job's
+// log file.
+type LogRecord struct {
+	At   time.Time
+	Text string
 }

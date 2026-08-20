@@ -546,6 +546,12 @@ const (
 	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
 	CtrlCByte byte = 0x03
 
+	// JobLogTimestampLayout and JobLogSeparator format one persisted log line:
+	// an RFC3339 instant, then the sanitized text. Fixed-width prefix so a
+	// reader (or a grep) can split every line at the same column.
+	JobLogTimestampLayout = time.RFC3339
+	JobLogSeparator       = "  "
+
 	// JobAlreadyRunningSuffix is the tail of the daemon error returned when a
 	// job is started while already running. Callers match on it to treat a
 	// repeat start (e.g. re-running `run up` while services are up) as a benign
