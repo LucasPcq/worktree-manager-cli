@@ -29,9 +29,15 @@ var ansiCSI = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
 // exit. Enough for the typical Docker/compose error line.
 const detachedOutputBufferSize = 8 * 1024
 
-// outputHistoryBytes is the size of the per-job rolling output buffer that
-// the daemon drains from each long-running PTY. Replayed to clients on attach.
-const outputHistoryBytes = 64 * 1024
+// outputHistoryBytes is the size of the per-job rolling output buffer that the
+// daemon drains from each long-running PTY. Replayed to clients on attach, so it
+// has to hold enough raw bytes for a terminal emulator to rebuild the screen —
+// escape sequences included — not just the last few visible lines.
+const outputHistoryBytes = 1024 * 1024
+
+// outputSubscriberQueue is the per-subscriber chunk queue. Deep enough to
+// absorb a burst from a chatty job while a subscriber is busy rendering.
+const outputSubscriberQueue = 256
 
 // defaultPTYRows and defaultPTYCols are the fallback PTY dimensions used when
 // a job is spawned before any client has attached. TUI apps read the PTY size
@@ -286,9 +292,7 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	// Subscribe BEFORE starting drainToHub: a fast task (echo + exit) can
 	// otherwise have its output drained and the hub closed before we attach,
 	// making Subscribe fail with "job output closed" so the streaming goroutine
-	// is never spawned and the streamed output is silently dropped. On a
-	// freshly created, still-open hub Subscribe cannot fail, and h.sub is
-	// registered before drainToHub's first Write so every chunk flows live.
+	// is never spawned and the streamed output is silently dropped.
 	var streamDone chan struct{}
 	if streamer != nil {
 		history, ch, _, subErr := job.output.Subscribe()
@@ -476,76 +480,75 @@ func (r *ringBuffer) Snapshot() []byte {
 	return out
 }
 
-// outputHub fans PTY output out to a rolling history buffer and any attached
-// subscribers. One job → one hub → at most one subscriber at a time (matches
-// wtm's single-attach model).
+// outputHub fans PTY output out to a rolling history buffer and every attached
+// subscriber, so one job can feed a CLI streamer, a log file and any number of
+// panes at once.
 type outputHub struct {
 	mu      sync.Mutex
 	history *ringBuffer
-	sub     chan []byte
+	subs    map[int]chan []byte
+	nextID  int
 	closed  bool
 }
 
 func newOutputHub(capacity int) *outputHub {
-	return &outputHub{history: newRingBuffer(capacity)}
+	return &outputHub{history: newRingBuffer(capacity), subs: make(map[int]chan []byte)}
 }
 
-// Write records data into the history buffer and forwards a copy to the
-// current subscriber if any. It never blocks on the subscriber: the subscribe
-// channel is large enough to absorb normal bursts, and a full channel means
-// the client has disappeared — we drop silently rather than stall the PTY
-// reader.
 func (h *outputHub) Write(p []byte) (int, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.history.Write(p)
-	if h.sub != nil {
+	if len(h.subs) > 0 {
 		data := make([]byte, len(p))
 		copy(data, p)
-		select {
-		case h.sub <- data:
-		default:
+		for _, sub := range h.subs {
+			// A full queue means that one subscriber stopped reading; dropping
+			// its chunk keeps the PTY reader and the other subscribers moving.
+			select {
+			case sub <- data:
+			default:
+			}
 		}
 	}
 	return len(p), nil
 }
 
-// Subscribe registers a subscriber. Returns the current history snapshot and a
-// channel streaming subsequent writes. At most one subscriber is allowed at a
-// time — returns an error if one is already attached. The returned unsubscribe
-// func must be called to release the slot.
+// Subscribe returns the current history snapshot and a channel streaming
+// subsequent writes. The returned unsubscribe func must be called to release
+// the subscription; it is safe to call after the hub has been closed.
 func (h *outputHub) Subscribe() (history []byte, ch <-chan []byte, unsub func(), err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.closed {
 		return nil, nil, nil, fmt.Errorf("job output closed")
 	}
-	if h.sub != nil {
-		return nil, nil, nil, fmt.Errorf("job already has a subscriber")
-	}
 	history = h.history.Snapshot()
-	subCh := make(chan []byte, 256)
-	h.sub = subCh
+	id := h.nextID
+	h.nextID++
+	subCh := make(chan []byte, outputSubscriberQueue)
+	h.subs[id] = subCh
 	unsub = func() {
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		if h.sub == subCh {
-			h.sub = nil
-			close(subCh)
+		if _, ok := h.subs[id]; !ok {
+			return
 		}
+		delete(h.subs, id)
+		close(subCh)
 	}
 	return history, subCh, unsub, nil
 }
 
-// close releases the current subscriber (if any) and marks the hub as closed
-// so new subscribers are rejected.
+// close releases every subscriber and marks the hub as closed so new
+// subscribers are rejected.
 func (h *outputHub) close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.closed = true
-	if h.sub != nil {
-		close(h.sub)
-		h.sub = nil
+	for id, sub := range h.subs {
+		close(sub)
+		delete(h.subs, id)
 	}
 }
 

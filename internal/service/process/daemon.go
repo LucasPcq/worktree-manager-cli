@@ -278,8 +278,7 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 		done <- struct{}{}
 	}()
 
-	// Client stdin → PTY. Direct write path; only one subscriber at a time
-	// means there's no write contention.
+	// Client stdin → PTY.
 	go func() {
 		io.Copy(session.PTY, conn)
 		done <- struct{}{}
