@@ -8,9 +8,21 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/selfupdate"
 )
 
-func TestStartCheckSuppressedReturnsNilAndNoticeIsNilSafe(t *testing.T) {
+// hermeticEnv isolates a notify test from the machine running it: StartCheck
+// reads the environment to decide, and CI exports CI/GITHUB_ACTIONS, which would
+// suppress every check and make these tests pass locally but fail on CI.
+func hermeticEnv(t *testing.T) {
+	t.Helper()
+
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv(domain.EnvCI, "")
+	t.Setenv(domain.EnvGitHubActions, "")
+	t.Setenv(domain.EnvNoUpdateCheck, "")
+}
+
+func TestStartCheckSuppressedReturnsNilAndNoticeIsNilSafe(t *testing.T) {
+	hermeticEnv(t)
 	t.Setenv(domain.EnvNoUpdateCheck, "1")
 
 	check := selfupdate.StartCheck(selfupdate.StartCheckParams{
@@ -29,11 +41,7 @@ func TestStartCheckSuppressedReturnsNilAndNoticeIsNilSafe(t *testing.T) {
 }
 
 func TestNoticeServesTheCachedVersionWithoutNetwork(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv(domain.EnvNoUpdateCheck, "")
-	t.Setenv(domain.EnvCI, "")
-	t.Setenv(domain.EnvGitHubActions, "")
+	hermeticEnv(t)
 
 	// A recent check with a newer version cached: no refresh is due, so the
 	// notice must come straight from state with no network call.
@@ -64,8 +72,7 @@ func TestNoticeServesTheCachedVersionWithoutNetwork(t *testing.T) {
 }
 
 func TestNoticeSilentWhenCachedVersionIsNotNewer(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("HOME", t.TempDir())
+	hermeticEnv(t)
 
 	if err := selfupdate.SaveState(domain.UpdateState{
 		CheckedAt:     time.Now(),
