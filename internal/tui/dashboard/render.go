@@ -489,64 +489,6 @@ func (m Model) renderHelpBar(layout domain.DashboardLayout) string {
 	return styles.DashboardHelp.Render(truncate(hint, max(layout.Help.Width-paddingWidth, 0)))
 }
 
-// helpBox is the key and mouse reference: every clickable zone paired with the
-// key that does the same thing. Like the other overlays it is a box pasted over
-// the frame, sized on its own content.
-func (m Model) helpBox() (string, domain.Rect) {
-	rows := [][2]string{
-		{"↑↓ · j k", "select a worktree (or click a row)"},
-		{"g · G", "first · last worktree"},
-		{"pgup · pgdown", "page through the list"},
-		{"wheel", "scroll the list or the output panel"},
-		{"n", "new worktree (or click + new)"},
-		{"m", "actions on the selected worktree (or right-click a row)"},
-		{"f", "fast-forward the selected branch from origin"},
-		{"a", "actions on several worktrees (or click ⋯ actions)"},
-		{"tab · shift+tab", "switch view (or click a tab)"},
-		{"enter · →", "open the detail (narrow terminals)"},
-		{"esc · ←", "close the detail"},
-		{"p", "open the pull request in a browser (or click its line)"},
-		{"o", "fold/unfold the output panel (or click its header)"},
-		{"shift+↑ · shift+↓", "scroll the output panel"},
-		{"r", "refresh worktrees and pull requests"},
-		{"?", "close this help"},
-		{"q · ctrl+c", "quit"},
-	}
-
-	textWidth := helpTextWidth(rows, m.width)
-	if textWidth <= 0 {
-		return "", domain.Rect{}
-	}
-
-	lines := make([]string, 0, len(rows)+2)
-	lines = append(lines, styles.DashboardModalTitle.Render(truncate(domain.DashboardHelpTitle, textWidth)), "")
-	for _, row := range rows {
-		lines = append(lines, truncate(styles.DashboardLabel.Render(pad(row[0], helpKeyWidth))+
-			styles.DashboardValue.Render(row[1]), textWidth))
-	}
-
-	box := styles.DashboardModal.Width(textWidth + modalPadding).Render(strings.Join(lines, "\n"))
-	return box, rules.CenterRect(rules.CenterRectParams{
-		Width:        lipgloss.Width(box),
-		Height:       lipgloss.Height(box),
-		ScreenWidth:  m.width,
-		ScreenHeight: m.height,
-	})
-}
-
-// helpKeyWidth is the column the descriptions line up on.
-const helpKeyWidth = 18
-
-// helpTextWidth sizes the box on its longest row, then keeps it inside the
-// screen: an overlay is pasted whole, so it must never need trimming.
-func helpTextWidth(rows [][2]string, screenWidth int) int {
-	widest := lipgloss.Width(domain.DashboardHelpTitle)
-	for _, row := range rows {
-		widest = max(widest, helpKeyWidth+lipgloss.Width(row[1]))
-	}
-	return min(widest, screenWidth-domain.DashboardModalChrome-modalPadding)
-}
-
 // A body is assembled by counting entries as rows, and an entry carrying its own
 // newlines renders as several — which is how a hook or git failure pasted in
 // verbatim pushes the frame past the terminal and scrolls the alt screen. This

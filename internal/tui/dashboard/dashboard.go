@@ -128,6 +128,9 @@ type Model struct {
 
 	detailOpen bool
 	showHelp   bool
+	// helpScroll is the first visible body row of the reference overlay. It only
+	// ever leaves zero on a screen too short to hold the whole reference.
+	helpScroll int
 
 	// details caches the last detail loaded per branch, invalidated (never
 	// emptied) by the poll and by a finished operation, so the panel keeps
@@ -577,15 +580,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateModal(msg)
 	}
 
-	// The overlay documents "q · ctrl+c quit", so it must not swallow them.
 	if m.showHelp {
-		if key == keyQuit || key == keyInterrupt {
-			return m, tea.Quit
-		}
-		if key == keyHelp || key == keyEscape {
-			m.showHelp = false
-		}
-		return m, nil
+		return m.helpKey(key)
 	}
 
 	// An open menu takes the keys it uses and lets every other one through, after
@@ -610,7 +606,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyInterrupt, keyQuit:
 		return m, tea.Quit
 	case keyHelp:
-		m.showHelp = true
+		m.showHelp, m.helpScroll = true, 0
 	case keyRefresh:
 		return m.refresh()
 	case keyNew:
@@ -703,7 +699,7 @@ func (m Model) inZone(id string, msg tea.MouseMsg) bool {
 
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
-		return m, nil
+		return m.helpMouse(msg)
 	}
 	if m.modal.open {
 		return m.modalMouse(msg)

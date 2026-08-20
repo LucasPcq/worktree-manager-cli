@@ -74,6 +74,18 @@ var (
 
 	// DashboardHelp renders the bottom key hint bar.
 	DashboardHelp = lipgloss.NewStyle().Foreground(ColorMuted).Padding(0, 1)
+
+	// DashboardHelpBox frames the key and mouse reference. Its border is muted
+	// where a modal's is accented: the accent says a box is waiting on an
+	// answer, and the reference asks for nothing.
+	DashboardHelpBox = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorMuted).
+				Padding(0, 1)
+
+	// DashboardHelpKey weights the key over what it does: a reference is read by
+	// its key column, so that column carries the weight the description used to.
+	DashboardHelpKey = lipgloss.NewStyle().Bold(true)
 )
 
 var (
