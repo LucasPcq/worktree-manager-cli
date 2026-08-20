@@ -102,8 +102,6 @@ func TestManagerResize_RefusesWhatHasNoPTY(t *testing.T) {
 		{"job arrêté", ResizeParams{Name: "old", WorkDir: stoppedDir, Cols: 80, Rows: 20}, "job old is not running"},
 		{"launcher détaché", ResizeParams{Name: "compose", WorkDir: launcherDir, Cols: 80, Rows: 20}, "job compose has no attachable output"},
 		{"task sur un pipe", ResizeParams{Name: "migrate", WorkDir: taskDir, Cols: 80, Rows: 20}, "job migrate runs on a pipe"},
-		{"taille nulle", ResizeParams{Name: "dev", WorkDir: serviceDir}, "job dev: invalid size 0x0"},
-		{"taille négative", ResizeParams{Name: "dev", WorkDir: serviceDir, Cols: -1, Rows: 20}, "job dev: invalid size -1x20"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -113,6 +111,55 @@ func TestManagerResize_RefusesWhatHasNoPTY(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), c.wantMsg) {
 				t.Errorf("error = %q, want it to contain %q", err, c.wantMsg)
+			}
+		})
+	}
+}
+
+// TestManagerResize_RefusesASizeAWinsizeCannotHold walks the sizes that must
+// not reach the ioctl. The out-of-range ones are the reason the check lives at
+// the truncation point: 65536 columns fit an int and wrap to a zero-width
+// window, which is how a job ends up permanently in plain log mode.
+func TestManagerResize_RefusesASizeAWinsizeCannotHold(t *testing.T) {
+	m := NewManager()
+	dir := startService(t, m, domain.JobConfig{Name: "dev", Kind: domain.JobKindService, Cmd: "sleep 30"})
+
+	session, err := m.Attach("dev", dir)
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	defer session.Release()
+
+	if err := m.Resize(ResizeParams{Name: "dev", WorkDir: dir, Cols: 120, Rows: 40}); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		params  ResizeParams
+		wantMsg string
+	}{
+		{"taille nulle", ResizeParams{Name: "dev", WorkDir: dir}, "job dev: invalid size 0x0"},
+		{"taille négative", ResizeParams{Name: "dev", WorkDir: dir, Cols: -1, Rows: 20}, "job dev: invalid size -1x20"},
+		{"colonnes hors bornes", ResizeParams{Name: "dev", WorkDir: dir, Cols: 65536, Rows: 24}, "job dev: invalid size 65536x24"},
+		{"lignes hors bornes", ResizeParams{Name: "dev", WorkDir: dir, Cols: 80, Rows: 70000}, "job dev: invalid size 80x70000"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := m.Resize(c.params)
+			if err == nil {
+				t.Fatalf("expected an error, got nil")
+			}
+			if !strings.Contains(err.Error(), c.wantMsg) {
+				t.Errorf("error = %q, want it to contain %q", err, c.wantMsg)
+			}
+
+			rows, cols, sizeErr := pty.Getsize(session.PTY)
+			if sizeErr != nil {
+				t.Fatalf("read pty size: %v", sizeErr)
+			}
+			if cols != 120 || rows != 40 {
+				t.Errorf("pty is %dx%d, want the refused resize to have left it at 120x40", cols, rows)
 			}
 		})
 	}

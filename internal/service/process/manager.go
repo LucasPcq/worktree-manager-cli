@@ -753,10 +753,6 @@ type ResizeParams struct {
 // has already been sent. Each attached pane resizes for itself, so the last one
 // to speak wins — a job shown twice at two sizes is drawn for the latest.
 func (m *Manager) Resize(params ResizeParams) error {
-	if params.Cols <= 0 || params.Rows <= 0 {
-		return fmt.Errorf("job %s: invalid size %dx%d", params.Name, params.Cols, params.Rows)
-	}
-
 	job, err := m.attachableJob(jobRef{Name: params.Name, WorkDir: params.WorkDir})
 	if err != nil {
 		return err
@@ -766,7 +762,7 @@ func (m *Manager) Resize(params ResizeParams) error {
 	}
 
 	if err := setWinsize(winsizeParams{File: job.PTY, Cols: params.Cols, Rows: params.Rows}); err != nil {
-		return fmt.Errorf("resize job %s: %w", params.Name, err)
+		return fmt.Errorf("job %s: %w", params.Name, err)
 	}
 	return nil
 }
