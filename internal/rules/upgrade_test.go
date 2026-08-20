@@ -1,0 +1,57 @@
+package rules_test
+
+import (
+	"testing"
+
+	"github.com/LucasPcq/wtm/internal/rules"
+)
+
+func TestIsNewerVersion(t *testing.T) {
+	cases := []struct {
+		name    string
+		current string
+		latest  string
+		want    bool
+	}{
+		{"patch bump", "0.26.1", "0.26.2", true},
+		{"minor bump", "0.26.1", "0.27.0", true},
+		{"major bump", "0.26.1", "1.0.0", true},
+		{"equal", "0.26.1", "0.26.1", false},
+		{"older", "0.27.0", "0.26.1", false},
+		{"leading v on latest", "0.26.1", "v0.27.0", true},
+		{"leading v on both", "v0.26.1", "v0.26.1", false},
+		{"numeric not lexical", "0.9.0", "0.10.0", true},
+		{"prerelease below its release", "1.0.0-rc1", "1.0.0", true},
+		{"release above its prerelease", "1.0.0", "1.0.0-rc1", false},
+		{"prerelease ordering", "1.0.0-rc1", "1.0.0-rc2", true},
+		{"dev never notifies", "dev", "0.27.0", false},
+		{"garbage current", "banana", "0.27.0", false},
+		{"garbage latest", "0.26.1", "banana", false},
+		{"empty latest", "0.26.1", "", false},
+		{"short version", "1.0", "1.0.1", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rules.IsNewerVersion(tc.current, tc.latest); got != tc.want {
+				t.Fatalf("IsNewerVersion(%q, %q) = %v, want %v", tc.current, tc.latest, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeVersion(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"v0.26.1", "0.26.1"},
+		{"0.26.1", "0.26.1"},
+		{"", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			if got := rules.NormalizeVersion(tc.in); got != tc.want {
+				t.Fatalf("NormalizeVersion(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
