@@ -13,6 +13,7 @@ code as delivered, not the design that preceded it.
 | [architecture.md](architecture.md) | The layers, who may call whom, and what each interdiction buys |
 | [flow-layer.md](flow-layer.md) | `internal/flow/` — the three seams, the step model, the flow diagrams, one flow across three surfaces |
 | [adding-a-mutation-command.md](adding-a-mutation-command.md) | End-to-end recipe for a new worktree-mutating command |
+| [run-log-seam.md](run-log-seam.md) | `internal/flow/runlogs` — the run module's two surfaces, and what is not in the seam yet |
 
 For the coding standards themselves (immutability, struct params, constants, comment
 density), see [`CLAUDE.md`](../../CLAUDE.md) and the `go-cli` skill in

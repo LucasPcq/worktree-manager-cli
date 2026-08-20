@@ -1,12 +1,12 @@
 ## wtm run logs
 
-Attach to a job's output
+Open the run view on this worktree's jobs
 
 ### Synopsis
 
-Without arguments, stream all running jobs (multiplexed).
-With a job name, attach to that single job's PTY.
-Press Ctrl+C to detach.
+Open the run view: one pane per job, its output live, Ctrl+C detaches without stopping anything.
+With a job name, the view opens on that job.
+Without a terminal, streams the running jobs as prefixed lines instead.
 
 ```
 wtm run logs [job] [flags]

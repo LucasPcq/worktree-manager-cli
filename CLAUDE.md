@@ -19,7 +19,7 @@ changes that don't affect how an agent invokes wtm.
 **Docs & README:** the full command reference under `docs/` is **generated** from the
 Cobra command tree by `tools/gendocs` — never hand-edit it. The one exception is
 `docs/dev/`, hand-written developer documentation (architecture, the `flow/` layer, how
-to add a mutation command): gendocs only writes `wtm_*.md` at the root of `docs/`, so
+to add a mutation command, the run log seam): gendocs only writes `wtm_*.md` at the root of `docs/`, so
 that subdirectory survives a regeneration. Keep it in step with the code the same way
 this file is. `README.md` is a lean guide
 (concepts + a grouped command-overview table linking into `docs/`), not a flag reference.
@@ -142,6 +142,9 @@ cmd/                          ← entry points, cobra setup only
 internal/
   commands/                   ← flag wiring, delegates to flow/service (zero business logic)
     ui/                       ←   `wtm ui`: refuses JSON and a missing TTY, then hands off to tui/dashboard
+    run/                      ←   `wtm run …`; surface.go is the line-by-line half of the
+                                  runlogs seam (text sink + JSON) and picks between it and
+                                  tui/runview through `rules.UseRunView`
   domain/                     ← types, errors, constants only (no methods, no functions)
   rules/                      ← pure functions (stdlib + domain only, no I/O)
   config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/, plus ~/.config/wtm/config.toml
@@ -171,8 +174,10 @@ internal/
     dashboard/                ←   `wtm ui`: the full-screen worktree dashboard, the second
                                   surface over flow/ (its own Prompter/Presenter, mouse
                                   zones via bubblezone)
-    runview/                  ←   a job's raw PTY output replayed through a terminal
-                                  emulator (`github.com/charmbracelet/x/vt`)
+    runview/                  ←   `wtm run up`/`start`/`logs`: the full-screen job view,
+                                  the second surface over flow/runlogs — a job's raw PTY
+                                  output replayed through a terminal emulator
+                                  (`github.com/charmbracelet/x/vt`)
   infra/                      ← I/O, git exec, filesystem wrappers
 ```
 
@@ -255,7 +260,7 @@ in `commands/` to flags → `Request` → pick the two seams → `<cmd>.Run`. A 
 inspects state, orders service calls or gates a picker on `interactive` beyond choosing
 the Prompter has put the flow in the wrong layer, and a service closure injected into a
 `tui/` package is the same mistake in its older form. The developer reference is
-`docs/dev/` (`flow-layer.md`, `adding-a-mutation-command.md`); the import rule above is
+`docs/dev/` (`flow-layer.md`, `adding-a-mutation-command.md`, `run-log-seam.md`); the import rule above is
 checked mechanically by the `build-validator` subagent.
 
 **Mutation commands — bypass flags (two orthogonal axes):** every worktree-mutating

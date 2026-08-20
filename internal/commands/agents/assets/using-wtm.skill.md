@@ -24,12 +24,15 @@ self-documenting:
 1. **Always pass arguments.** Without one, most commands drop into an interactive picker
    you can't navigate. Get the branch / PR number / profile / job name from a prior
    discovery call (below) first.
-2. **Never launch `wtm ui`.** It is a full-screen alt-screen dashboard meant for a human
-   at a keyboard: it takes over the terminal until someone presses `q`, and there is no way
-   for you to read it or get out of it. Treat it exactly like an interactive picker — do not
-   run it to "look at" the worktrees; run `wtm list --output json` (or `wtm tree`) instead.
-   Suggest `wtm ui` to the *user* when they want to browse worktrees themselves. wtm defends
-   itself here (it errors on `--output json` and with no TTY), but don't rely on that.
+2. **Never launch a full-screen view.** `wtm ui` (the worktree dashboard) and the **run
+   view** — which `wtm run up`, `wtm run start <service>` and `wtm run logs` open by default
+   — are alt-screen surfaces meant for a human at a keyboard: they take over the terminal
+   until someone presses `q`, and there is no way for you to read one or get out of it.
+   Treat them exactly like an interactive picker. Instead: `wtm list --output json` (or
+   `wtm tree`) to look at worktrees, `-d` / `--output json` on `run up` and `run start` so
+   they start the jobs and return, and the persisted log files rather than `run logs` (see
+   Dev jobs). wtm defends itself here — no view on `--output json` or without a TTY — but
+   don't rely on that.
 3. **Always add `--output json`** on data commands. JSON goes to stdout; human text and
    warnings go to stderr — ignore stderr unless the exit code is non-zero.
 4. **Trust exit codes.** `0` = success. Beyond generic `1`, wtm returns granular codes
@@ -226,8 +229,20 @@ and **experimental**: the global `wtm init` does not configure it.
   auto-generates; re-running merges without overwriting. `run job add` / `run profile add`
   also work before init (they create the first job).
 - `run up [profile]` / `run down` — start / stop a profile. `run start <job>` / `run stop
-  <job>` — one job. A failing job aborts the rest and exits non-zero, leaving started
-  services up (fix and re-run).
+  <job>` — one job. A failing job aborts the rest, leaving started services up (fix and
+  re-run); `run up` exits non-zero in text mode and reports the failure inside its JSON
+  array (exit 0) in machine mode.
+- **`run up` and `run start <service>` attach by default**: on a terminal they open the run
+  view and hold it. Always pass **`-d`** (or `--output json`, which never opens a view) so
+  the command starts the jobs and returns. `run start <task>` always runs inline: it streams
+  the task's output and exits with it, so it needs no flag.
+- **`run logs` is the run view** — do not invoke it. Without a TTY it degrades to prefixed
+  lines (`[job] line`) and streams until the jobs stop, which is still a command that does
+  not return. Read the persisted logs instead: `<git-common-dir>/wtm/logs/<branch>/<job>.log`
+  (`git rev-parse --git-common-dir` gives the first part; the branch segment is
+  percent-encoded, so list the `logs/` directory rather than guessing it). Those files are
+  sanitized of terminal escapes and timestamped, rotated at 5 MB × 3 per job, and removed
+  with the worktree by `clean` / `prune`.
 - `run export` / `run import` — share a layout as JSON.
 - `run job add|rm` and `run profile add|rm` are agent-drivable with flags; the `edit`
   wizards are **interactive — never invoke them**. To change a job, `run export` to read
@@ -269,8 +284,10 @@ On non-zero exit, read stderr, then:
 - `16` (run module not initialized) → run `wtm run init` (or `wtm run init --non-interactive`)
   to create `run.toml`, then re-run the command.
 - `gh: …` → `gh` isn't authenticated; tell the user to run `gh auth login`.
-- A `run up`/`run start` job failed → its captured output is in the JSON error entry; read
-  it to see why, fix, and re-run.
+- A `run up` job failed → the JSON array still parses (exit stays 0 for `up`): the failing
+  entry has `status: "error"` and a `message` carrying the daemon's reason **and** the
+  job's own captured output. `run start` exits non-zero instead and puts the same reason +
+  output in its stderr error. Read it to see why, fix, and re-run.
 - A `sync` exited non-zero → some branch is `status: conflict`/`error` in the JSON. For a
   `conflict` (default mode) the rebase was aborted and the branch + descendants skipped —
   the user resolves it manually in its worktree, then re-run `sync`. `kept_in_progress:

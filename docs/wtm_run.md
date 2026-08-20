@@ -21,7 +21,7 @@ Run commands and profiles declared in <git-common-dir>/wtm/run.toml — long-run
 * [wtm run init](wtm_run_init.md)	 - Configure the run module (services & tasks) for this repo
 * [wtm run job](wtm_run_job.md)	 - Add, remove, or edit jobs in run.toml
 * [wtm run list](wtm_run_list.md)	 - List jobs and profiles declared in run.toml
-* [wtm run logs](wtm_run_logs.md)	 - Attach to a job's output
+* [wtm run logs](wtm_run_logs.md)	 - Open the run view on this worktree's jobs
 * [wtm run profile](wtm_run_profile.md)	 - Add, remove, or edit profiles in run.toml
 * [wtm run ps](wtm_run_ps.md)	 - List currently running jobs
 * [wtm run start](wtm_run_start.md)	 - Start a single job

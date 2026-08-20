@@ -134,13 +134,19 @@ Per-worktree services + tasks. Functional, but the flow is still stabilizing. Th
 run module is **opt-in**: run `wtm run init` once to set it up (the global `wtm init`
 no longer touches services). Until then, run commands stop with a hint pointing there.
 
+`run up`, `run start <service>` and `run logs` open the **run view**: one full-screen
+pane per job, its output live, `Ctrl+C` detaches without stopping anything. `-d` starts
+the jobs and gives the terminal back instead. Without a terminal — a pipe, CI, an agent —
+the same commands print line by line and never open the view; every job's output is also
+kept on disk (see [Run config](#run-config--runtoml)).
+
 | Command | Purpose |
 |---|---|
 | [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts) |
 | [`run up`](docs/wtm_run_up.md) / [`down`](docs/wtm_run_down.md) | Start / stop a profile's jobs |
 | [`run start`](docs/wtm_run_start.md) / [`stop`](docs/wtm_run_stop.md) | Start / stop a single job |
 | [`run ps`](docs/wtm_run_ps.md) / [`list`](docs/wtm_run_list.md) | Running jobs / declared jobs + profiles |
-| [`run logs`](docs/wtm_run_logs.md) | Stream a job's output |
+| [`run logs`](docs/wtm_run_logs.md) | Open the run view on this worktree's jobs |
 | [`run export`](docs/wtm_run_export.md) / [`import`](docs/wtm_run_import.md) | Share a job layout between machines |
 | [`run job`](docs/wtm_run_job.md) / [`profile`](docs/wtm_run_profile.md) | Add / remove / edit jobs and profiles |
 
@@ -280,6 +286,10 @@ default = true
 Jobs are scoped per worktree at runtime: starting `docker` from worktree A runs it with
 `cwd = A`; a separate process runs from worktree B. `wtm run down` only stops the current
 worktree's jobs unless you pass `--all`.
+
+Each job's output is persisted, sanitized and timestamped, to
+`<git-common-dir>/wtm/logs/<branch>/<job>.log` (5 MB x 3 files per job) and removed with
+the worktree by `clean` / `prune`.
 
 ### Global config — `~/.config/wtm/config.toml`
 
