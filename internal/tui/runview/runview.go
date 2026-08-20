@@ -1,6 +1,7 @@
 package runview
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -15,7 +16,15 @@ type Params struct {
 	Session runlogs.Session
 	// Job is selected when the view opens; empty takes the first one.
 	Job string
+	// Start runs a profile's start sequence while the view is open, reporting to
+	// the Sink it is given. Nil for a view that only reads what is already
+	// running. Cancelling the context ends the reporting, never the jobs.
+	Start StartFunc
 }
+
+// StartFunc is a start sequence the view drives — runlogs.Run, wired by the
+// command that opened the view.
+type StartFunc func(context.Context, runlogs.Sink) (runlogs.Outcome, error)
 
 // Model is the run view's root Bubbletea model: a job list, the selected job's
 // terminal emulator, and nothing else. What a job is, whether it can be
@@ -48,29 +57,75 @@ type Model struct {
 	// ticking reports whether a redraw tick is already scheduled: a pane being
 	// written to is redrawn on a clock, never once per chunk.
 	ticking bool
+
+	start StartFunc
+	// started reports that a run was asked for, which is what makes a recap
+	// worth printing on the way out.
+	started  bool
+	sequence sequence
+	// following keeps the cursor on the job the sequence is acting on, until the
+	// reader takes it themselves.
+	following bool
+	// dismissed hides the abort report; the outcome it was built from stays.
+	dismissed bool
+
+	runCtx context.Context
+	cancel context.CancelFunc
 }
 
 func New(params Params) Model {
+	ctx, cancel := context.WithCancel(context.Background())
 	return Model{
 		session:  params.Session,
 		selected: params.Job,
 		panes:    newPaneStore(PaneSize{}),
 		msgs:     make(chan tea.Msg, domain.RunViewMsgBuffer),
+		start:    params.Start,
+		started:  params.Start != nil,
+		// A run feeds panes from its own goroutine, so the clock has to be
+		// running before the first chunk lands.
+		ticking:   params.Start != nil,
+		following: params.Start != nil,
+		sequence:  sequence{states: map[string]stepState{}},
+		runCtx:    ctx,
+		cancel:    cancel,
 	}
 }
 
-// Run opens the view on the alternate screen. Leaving it detaches: the jobs it
-// was showing keep running.
-func Run(params Params) error {
+// Run opens the view on the alternate screen and returns what to say once it is
+// given back. Leaving it detaches: the jobs it was showing keep running, and a
+// start sequence it was reporting on carries on without a reader.
+func Run(params Params) (Result, error) {
 	model := New(params)
-	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
-		return fmt.Errorf("run view: %w", err)
+	final, err := tea.NewProgram(model, tea.WithAltScreen()).Run()
+	if err != nil {
+		return Result{}, fmt.Errorf("run view: %w", err)
 	}
-	return nil
+	last, ok := final.(Model)
+	if !ok {
+		return Result{}, nil
+	}
+	return last.result(), nil
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.refreshCmd(), pollCmd(), listenCmd(m.msgs))
+	cmds := []tea.Cmd{m.refreshCmd(), pollCmd(), listenCmd(m.msgs)}
+	if m.start != nil {
+		cmds = append(cmds, m.startCmd(), frameCmd())
+	}
+	return tea.Batch(cmds...)
+}
+
+// startCmd runs the start sequence off the render loop. Its events come back
+// through the sink, which writes a job's output straight into that job's pane
+// and posts only the phases the view has to draw.
+func (m Model) startCmd() tea.Cmd {
+	start, ctx := m.start, m.runCtx
+	emitter := sink{panes: m.panes, msgs: m.msgs, done: ctx.Done()}
+	return func() tea.Msg {
+		outcome, err := start(ctx, emitter)
+		return runFinishedMsg{outcome: outcome, err: err}
+	}
 }
 
 type jobsMsg struct {
@@ -114,14 +169,19 @@ func (m Model) refreshCmd() tea.Cmd {
 	}
 }
 
-func (m Model) attachCmd(job string, size PaneSize) tea.Cmd {
+type attachParams struct {
+	Job  string
+	Size PaneSize
+}
+
+func (m Model) attachCmd(params attachParams) tea.Cmd {
 	session := m.session
 	return func() tea.Msg {
 		stream, err := session.Attach(runlogs.AttachParams{
-			Job:  job,
-			Size: runlogs.Size{Cols: size.Cols, Rows: size.Rows},
+			Job:  params.Job,
+			Size: runlogs.Size{Cols: params.Size.Cols, Rows: params.Size.Rows},
 		})
-		return attachedMsg{job: job, stream: stream, size: size, err: err}
+		return attachedMsg{job: params.Job, stream: stream, size: params.Size, err: err}
 	}
 }
 
@@ -163,6 +223,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case historyMsg:
 		return m.applyHistory(msg)
 
+	case eventMsg:
+		return m.applyEvent(msg)
+
+	case runFinishedMsg:
+		return m.applyRunFinished(msg)
+
 	case streamErrMsg:
 		m.err = msg.err
 		return m, nil
@@ -174,7 +240,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.refreshCmd(), pollCmd())
 
 	case frameMsg:
-		if !m.panes.hasStream() {
+		if !m.panes.hasStream() && !m.sequence.active {
 			m.ticking = false
 			return m, nil
 		}
@@ -199,7 +265,11 @@ func (m Model) paneSize() PaneSize {
 }
 
 func (m Model) layout() domain.RunViewLayout {
-	return rules.ComputeRunViewLayout(rules.RunViewLayoutParams{Width: m.width, Height: m.height})
+	return rules.ComputeRunViewLayout(rules.RunViewLayoutParams{
+		Width:       m.width,
+		Height:      m.height,
+		NoticeLines: len(m.report()),
+	})
 }
 
 func (m Model) applyJobs(msg jobsMsg) (Model, tea.Cmd) {
@@ -232,13 +302,19 @@ func (m Model) fillSelectedPane() (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// A job the run is starting is already writing into its pane through the
+	// sequence; attaching would replay what it wrote and show it twice.
+	if m.sequence.active && m.sequence.job == view.Name {
+		return m, nil
+	}
+
 	entry, held := m.panes.entry(view.Name)
 	if view.Attachable {
 		if held && entry.source == sourceLive && entry.stream != nil {
 			return m, nil
 		}
 		m.pending = view.Name
-		return m, m.attachCmd(view.Name, m.paneSize())
+		return m, m.attachCmd(attachParams{Job: view.Name, Size: m.paneSize()})
 	}
 
 	if held {

@@ -26,11 +26,38 @@ func (m Model) View() string {
 	if layout.Header.Height > 0 {
 		lines = append(lines, m.renderHeader(layout))
 	}
+	lines = append(lines, m.renderNotice(layout)...)
 	lines = append(lines, m.renderBody(layout)...)
 	if layout.Help.Height > 0 {
 		lines = append(lines, m.renderHelp(layout))
 	}
 	return strings.Join(fit(lines, m.height), "\n")
+}
+
+// renderNotice draws the abort report as a band under the header. It takes rows
+// from the body, never from what the panes hold: the output of the job that
+// failed is the first thing the reader will want under it.
+func (m Model) renderNotice(layout domain.RunViewLayout) []string {
+	report := m.report()
+	if layout.Notice.Height <= 0 || len(report) == 0 {
+		return nil
+	}
+
+	lines := make([]string, 0, layout.Notice.Height)
+	for index, line := range clip(report, layout.Notice.Height) {
+		lines = append(lines, truncate(m.styleReportLine(index, len(report), line), layout.Notice.Width))
+	}
+	return fit(lines, layout.Notice.Height)
+}
+
+func (m Model) styleReportLine(index, count int, line string) string {
+	if index == 0 {
+		return styles.DashboardDanger.Render(line)
+	}
+	if index == count-1 {
+		return styles.Muted.Render(line)
+	}
+	return styles.Warning.Render(line)
 }
 
 // renderBody fills the rows between the header and the footer, and gives them up
@@ -54,6 +81,10 @@ func (m Model) renderHeader(layout domain.RunViewLayout) string {
 
 	left := styles.Bold.Render(domain.RunViewHeaderTitle)
 	right := styles.Muted.Render(fmt.Sprintf(domain.RunViewRunningFmt, m.runningCount(), len(m.jobs)))
+	if m.sequence.active {
+		right = styles.Primary.Render(fmt.Sprintf(domain.RunViewStepFmt,
+			m.sequence.step, m.sequence.steps, m.sequence.job))
+	}
 	if m.notice != "" {
 		right = styles.Warning.Render(truncate(m.notice, layout.Header.Width))
 	}
@@ -126,10 +157,29 @@ func (m Model) renderJobRow(params jobRowParams) string {
 	})
 
 	return spread(spreadParams{
-		Left:  cursor + statusMark(params.View.Status) + " " + name,
+		Left:  cursor + m.jobMark(params.View) + " " + name,
 		Right: styles.Muted.Render(uptime),
 		Width: params.Width,
 	})
+}
+
+// jobMark marks a job with where the sequence left it, and with the daemon's
+// view of it otherwise: a job the run has just started is running before a list
+// call says so.
+func (m Model) jobMark(view runlogs.JobView) string {
+	state, tracked := m.sequence.states[view.Name]
+	if !tracked {
+		return statusMark(view.Status)
+	}
+	switch state {
+	case stepStarting:
+		return styles.Warning.Render(domain.RunViewMarkStarting)
+	case stepDone:
+		return styles.Success.Render(domain.RunViewMarkDone)
+	case stepFailed:
+		return styles.DangerText.Render(domain.RunViewMarkCrashed)
+	}
+	return statusMark(view.Status)
 }
 
 func statusMark(status domain.JobStatus) string {

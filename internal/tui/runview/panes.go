@@ -15,6 +15,9 @@ type paneSource int
 const (
 	sourceLive paneSource = iota
 	sourceHistory
+	// sourceSequence is a job whose bytes come from the run starting it, which
+	// reports them itself rather than through a subscription.
+	sourceSequence
 )
 
 type jobPane struct {
@@ -56,6 +59,16 @@ func (s *paneStore) openLocked(job string, source paneSource) *Pane {
 	pane := NewPane(PaneParams{Size: s.size})
 	s.panes[job] = &jobPane{pane: pane, source: source}
 	return pane
+}
+
+type writeChunkParams struct {
+	Job    string
+	Source paneSource
+	Chunk  []byte
+}
+
+func (s *paneStore) write(params writeChunkParams) {
+	s.open(params.Job, params.Source).Write(params.Chunk)
 }
 
 func (s *paneStore) writeLines(job string, lines []string) {

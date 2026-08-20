@@ -706,6 +706,35 @@ const (
 	// behind the pane, only what the log file kept.
 	RunViewNotAttachableFmt = "%s has no live stream to type into."
 
+	// RunViewStepFmt reports where a profile's start sequence stands, and
+	// RunViewMarkStarting / RunViewMarkDone mark the job it is on in the list.
+	RunViewStepFmt      = "starting %d/%d · %s"
+	RunViewMarkStarting = "◌"
+	RunViewMarkDone     = "✓"
+
+	// RunViewAbortTitle heads the report of a profile that gave up, and
+	// RunViewAbort*Fmt are the three things it has to say: what failed and where,
+	// what was left running, and what was never reached.
+	RunViewAbortTitle         = "Profile aborted"
+	RunViewAbortFailedFmt     = "failed at step %d/%d: %s — %s"
+	RunViewAbortRunningFmt    = "left running: %s"
+	RunViewAbortNotStartedFmt = "not started: %s"
+	RunViewAbortDismiss       = "esc dismisses this report"
+
+	// RunViewRecapTitle heads the recap printed once the screen is given back,
+	// and RunViewRecap*Fmt are its lines: what is running, what ran, what did
+	// not, and the two commands that act on any of it.
+	RunViewRecapTitle         = "Jobs"
+	RunViewRecapRunningFmt    = "Running:      %s"
+	RunViewRecapCompletedFmt  = "Completed:    %s"
+	RunViewRecapFailedFmt     = "Failed:       %s"
+	RunViewRecapNotStartedFmt = "Not started:  %s"
+	RunViewRecapNoneRunning   = "No job left running."
+	RunViewRecapLogsHint      = "wtm run logs  — reopen this view"
+	RunViewRecapDownHint      = "wtm run down  — stop the jobs"
+	// RunViewRecapListSep joins the jobs named on one recap line.
+	RunViewRecapListSep = ", "
+
 	// SyncConfirmPrompt is the confirmation question shown before running a sync
 	// cascade, formatted with the number of worktrees to rebase. Shared by the
 	// interactive picker's confirmation step and the non-picker confirm prompt.

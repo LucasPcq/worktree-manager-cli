@@ -20,9 +20,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// A refusal answers one keystroke; the next one is a fresh question.
 	m.notice = ""
 
+	// Any key the reader presses is them taking the cursor back from the run.
+	m.following = false
+
 	switch msg.String() {
 	case domain.RunViewFocusKey:
 		return m.focus()
+	case keyEscape:
+		m.dismissed = true
+		return m, nil
 	case keyQuit, keyInterrupt:
 		return m.detach()
 	case keyUp, keyVimUp:
@@ -117,9 +123,11 @@ func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.setSelection(m.resolveSelection())
 }
 
-// detach leaves the view. Nothing is stopped: the streams are dropped, and the
-// jobs behind them keep running.
+// detach leaves the view. Nothing is stopped: cancelling ends the reporting of
+// a run in progress, not the run, and the jobs behind the dropped streams keep
+// running.
 func (m Model) detach() (tea.Model, tea.Cmd) {
+	m.cancel()
 	m.panes.closeAll()
 	return m, tea.Quit
 }
