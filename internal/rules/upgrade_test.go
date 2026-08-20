@@ -245,3 +245,55 @@ func TestShouldCheckUpdate(t *testing.T) {
 func boolPtr(b bool) *bool { return &b }
 
 func goBin(dir string) func() string { return func() string { return dir } }
+
+func TestDashboardVersionSegments(t *testing.T) {
+	cases := []struct {
+		name        string
+		params      rules.NewerVersionParams
+		wantVersion string
+		wantAction  string
+	}{
+		{
+			name:        "upgrade available",
+			params:      rules.NewerVersionParams{Current: "0.26.0", Latest: "0.26.1"},
+			wantVersion: "v0.26.0",
+			wantAction:  "→ 0.26.1 · run wtm upgrade",
+		},
+		{
+			name:        "up to date shows the version alone",
+			params:      rules.NewerVersionParams{Current: "0.26.1", Latest: "0.26.1"},
+			wantVersion: "v0.26.1",
+			wantAction:  "",
+		},
+		{
+			name:        "nothing known yet",
+			params:      rules.NewerVersionParams{Current: "0.26.1"},
+			wantVersion: "v0.26.1",
+			wantAction:  "",
+		},
+		{
+			name:        "source build never calls to action",
+			params:      rules.NewerVersionParams{Current: domain.Version, Latest: "0.26.1"},
+			wantVersion: "vdev",
+			wantAction:  "",
+		},
+		{
+			name:        "tag form is normalized on both sides",
+			params:      rules.NewerVersionParams{Current: "v0.26.0", Latest: "v0.26.1"},
+			wantVersion: "v0.26.0",
+			wantAction:  "→ 0.26.1 · run wtm upgrade",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			version, action := rules.DashboardVersionSegments(tc.params)
+			if version != tc.wantVersion {
+				t.Fatalf("version = %q, want %q", version, tc.wantVersion)
+			}
+			if action != tc.wantAction {
+				t.Fatalf("action = %q, want %q", action, tc.wantAction)
+			}
+		})
+	}
+}

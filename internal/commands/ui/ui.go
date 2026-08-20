@@ -13,11 +13,16 @@ import (
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
+	"github.com/LucasPcq/wtm/internal/service/selfupdate"
 	"github.com/LucasPcq/wtm/internal/tui/dashboard"
 )
 
+type NewCmdParams struct {
+	Version string
+}
+
 // NewCmd creates the wtm ui command.
-func NewCmd() *cobra.Command {
+func NewCmd(params NewCmdParams) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdUI,
 		Short: "Open the worktree dashboard",
@@ -32,13 +37,15 @@ func NewCmd() *cobra.Command {
 			"both refresh on demand with `r`.\n" +
 			"Press `?` for the key reference.",
 		Args: cobra.NoArgs,
-		RunE: runUI,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runUI(cmd, params.Version)
+		},
 	}
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
 
-func runUI(cmd *cobra.Command, _ []string) error {
+func runUI(cmd *cobra.Command, version string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	if !rules.IsHumanFormat(format) {
 		return domain.ErrDashboardJSON
@@ -57,7 +64,7 @@ func runUI(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	return dashboard.Run(buildRunParams(dir, result))
+	return dashboard.Run(buildRunParams(buildParams{Dir: dir, Result: result, Version: version}))
 }
 
 // buildRunParams assembles the dashboard's inputs from the resolved config and
@@ -65,13 +72,25 @@ func runUI(cmd *cobra.Command, _ []string) error {
 // the wiring (Cwd in particular: the raw working directory, not ProjectDir,
 // which LoadConfig may have resolved upward) is asserted directly rather than
 // only reachable by running the dashboard itself, which needs a real terminal.
-func buildRunParams(dir string, result shared.ConfigResult) dashboard.RunParams {
+type buildParams struct {
+	Dir     string
+	Result  shared.ConfigResult
+	Version string
+}
+
+func buildRunParams(params buildParams) dashboard.RunParams {
+	result := params.Result
+
 	return dashboard.RunParams{
 		ProjectDir: result.ProjectDir,
 		StateDir:   result.StateDir,
-		Cwd:        infra.ResolvePath(dir),
+		Cwd:        infra.ResolvePath(params.Dir),
 		Config:     result.Config,
-		PRLoader:   func() ([]domain.PRInfo, domain.GHConnection) { return shared.LoadPRsWithChecks(result.ProjectDir) },
+		Version:    params.Version,
+		// Read from the cached state only: the dashboard must not pay a network
+		// round-trip to draw its header.
+		UpgradeLatest: selfupdate.CachedUpgrade(params.Version),
+		PRLoader:      func() ([]domain.PRInfo, domain.GHConnection) { return shared.LoadPRsWithChecks(result.ProjectDir) },
 		PROpener: func(number int) error {
 			return ghservice.OpenPR(ghservice.OpenPRParams{ProjectDir: result.ProjectDir, Number: number})
 		},

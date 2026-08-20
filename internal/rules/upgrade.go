@@ -231,3 +231,17 @@ func ShouldCheckUpdate(params ShouldCheckUpdateParams) bool {
 	// check — the intended behavior under clock skew.
 	return params.Now.Sub(params.CheckedAt) >= domain.UpdateCheckTTL
 }
+
+// DashboardVersionSegments splits the header's version cluster into the part
+// that is always shown and the call to action that only exists when an upgrade
+// is available. They are returned apart because the surface styles them
+// differently — the action has to carry, the version does not — and because the
+// header drops the action first when the row runs out of room.
+func DashboardVersionSegments(params NewerVersionParams) (version string, action string) {
+	version = fmt.Sprintf(domain.DashboardVersionFmt, NormalizeVersion(params.Current))
+	if !IsNewerVersion(params) {
+		return version, ""
+	}
+
+	return version, fmt.Sprintf(domain.DashboardUpgradeFmt, NormalizeVersion(params.Latest))
+}

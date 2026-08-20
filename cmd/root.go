@@ -43,7 +43,7 @@ func init() {
 	}
 	rootCmd.AddCommand(run.NewCmd())
 
-	uiCmd := ui.NewCmd()
+	uiCmd := ui.NewCmd(ui.NewCmdParams{Version: effectiveVersion})
 	uiCmd.GroupID = domain.CmdGroupWorktrees
 	rootCmd.AddCommand(uiCmd)
 

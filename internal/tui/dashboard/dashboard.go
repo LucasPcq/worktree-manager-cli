@@ -35,6 +35,11 @@ type RunParams struct {
 	// wired with ProjectDir). Injected the same way PRLoader is, so a test can
 	// exercise the REVIEW section's click without shelling out to a real gh.
 	PROpener func(number int) error
+	// Version is the running wtm version and UpgradeLatest the newer release the
+	// last passive check found, or "" when there is none. Both are resolved by
+	// the command layer: the dashboard renders them, it decides nothing.
+	Version       string
+	UpgradeLatest string
 }
 
 // OutputLineMsg appends one line to the bottom output panel. Every phase of a

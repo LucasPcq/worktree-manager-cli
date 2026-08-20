@@ -17,7 +17,7 @@ func TestBuildRunParamsThreadsTheWorkingDirectoryAsCwd(t *testing.T) {
 	const cwd = "/repo/wt/feat-a"
 	result := shared.ConfigResult{ProjectDir: "/repo", StateDir: "/repo/.wtm"}
 
-	params := buildRunParams(cwd, result)
+	params := buildRunParams(buildParams{Dir: cwd, Result: result, Version: "0.26.1"})
 
 	if params.Cwd != cwd {
 		t.Errorf("Cwd = %q, want %q — the directory wtm ui actually ran from", params.Cwd, cwd)
@@ -27,6 +27,9 @@ func TestBuildRunParamsThreadsTheWorkingDirectoryAsCwd(t *testing.T) {
 	}
 	if params.StateDir != result.StateDir {
 		t.Errorf("StateDir = %q, want %q", params.StateDir, result.StateDir)
+	}
+	if params.Version != "0.26.1" {
+		t.Errorf("Version = %q, want 0.26.1 — the header renders it, so it must be threaded", params.Version)
 	}
 }
 
@@ -44,7 +47,7 @@ func TestUIRefusesToRunWhereItCannotBeSeen(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := NewCmd()
+			cmd := NewCmd(NewCmdParams{Version: "0.26.1"})
 			cmd.SetArgs(tc.args)
 			cmd.SilenceErrors, cmd.SilenceUsage = true, true
 
@@ -63,7 +66,7 @@ func TestUIRefusesToRunWhereItCannotBeSeen(t *testing.T) {
 // --output json is refused before the terminal check, so an agent gets the
 // message about its own invocation rather than one about the terminal.
 func TestJSONRefusalWinsOverTheTerminalCheck(t *testing.T) {
-	cmd := NewCmd()
+	cmd := NewCmd(NewCmdParams{Version: "0.26.1"})
 	cmd.SetArgs([]string{"--" + domain.FlagOutput, domain.OutputJSON})
 	cmd.SilenceErrors, cmd.SilenceUsage = true, true
 
@@ -73,7 +76,7 @@ func TestJSONRefusalWinsOverTheTerminalCheck(t *testing.T) {
 }
 
 func TestUITakesNoArguments(t *testing.T) {
-	cmd := NewCmd()
+	cmd := NewCmd(NewCmdParams{Version: "0.26.1"})
 	cmd.SetArgs([]string{"some-branch"})
 	cmd.SilenceErrors, cmd.SilenceUsage = true, true
 

@@ -1080,8 +1080,14 @@ const (
 	// DashboardNeverFetched is its own wording rather than an empty age: a
 	// repository that has never fetched is the most stale case there is, and
 	// saying nothing about its age would read as "fetched recently".
-	DashboardContextSep      = " · "
-	DashboardFetchedFmt      = "fetched %s"
+	DashboardContextSep = " · "
+	DashboardFetchedFmt = "fetched %s"
+	// DashboardVersionFmt renders the running version, always shown.
+	// DashboardUpgradeFmt is appended to it when a newer release is known — it
+	// carries the command because a badge that only says a version exists leaves
+	// the reader to guess what to do with it.
+	DashboardVersionFmt      = "v%s"
+	DashboardUpgradeFmt      = "→ %s · run wtm upgrade"
 	DashboardNeverFetched    = "never fetched"
 	DashboardActiveGlyph     = "●"
 	DashboardBaseFmt         = "base %s"

@@ -267,3 +267,96 @@ func TestRowFlashDisabledWhenAnimationsOff(t *testing.T) {
 		t.Error("the row must still be selected even with animations off")
 	}
 }
+
+// The version is permanent context; the call to action only exists when the
+// cached check found something newer. Both ride the header's count row.
+func TestHeaderShowsTheVersionAndCallsToActionWhenOutdated(t *testing.T) {
+	cases := []struct {
+		name       string
+		version    string
+		latest     string
+		wantText   []string
+		wantAbsent []string
+	}{
+		{
+			name:     "outdated calls to action",
+			version:  "0.26.0",
+			latest:   "0.26.1",
+			wantText: []string{"v0.26.0", "0.26.1", "run wtm upgrade"},
+		},
+		{
+			name:       "up to date shows the version alone",
+			version:    "0.26.1",
+			latest:     "",
+			wantText:   []string{"v0.26.1"},
+			wantAbsent: []string{"run wtm upgrade"},
+		},
+		{
+			name:       "source build never calls to action",
+			version:    domain.Version,
+			latest:     "0.26.1",
+			wantText:   []string{"v" + domain.Version},
+			wantAbsent: []string{"run wtm upgrade"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			model := New(RunParams{ProjectDir: "/repo/wtm", Version: tc.version, UpgradeLatest: tc.latest})
+			t.Cleanup(model.Close)
+			model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+			model = update(model, worktreesMsg{
+				statuses: []domain.WorktreeStatus{{Branch: "main", Path: "/repo/wtm"}},
+				parents:  map[string]string{},
+			})
+
+			header := stripANSI(model.renderHeader(model.layout()))
+			for _, want := range tc.wantText {
+				if !strings.Contains(header, want) {
+					t.Errorf("header = %q, want it to mention %q", header, want)
+				}
+			}
+			for _, absent := range tc.wantAbsent {
+				if strings.Contains(header, absent) {
+					t.Errorf("header = %q, must not mention %q", header, absent)
+				}
+			}
+		})
+	}
+}
+
+// The count row is hard-truncated by wordmarkRow, so it has to shed segments
+// itself. The call to action is the last thing to go before the version.
+func TestHeaderCountLineDropsFetchedBeforeTheCallToAction(t *testing.T) {
+	model := New(RunParams{ProjectDir: "/repo/wtm", Version: "0.26.0", UpgradeLatest: "0.26.1"})
+	t.Cleanup(model.Close)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model = update(model, worktreesMsg{
+		statuses:  []domain.WorktreeStatus{{Branch: "main", Path: "/repo/wtm"}},
+		parents:   map[string]string{},
+		fetchedAt: time.Now().Add(-72 * time.Hour),
+	})
+
+	roomy := stripANSI(model.headerCountLine(200))
+	for _, want := range []string{"fetched", "v0.26.0", "run wtm upgrade"} {
+		if !strings.Contains(roomy, want) {
+			t.Fatalf("with room the line = %q, want it to carry %q", roomy, want)
+		}
+	}
+
+	tight := stripANSI(model.headerCountLine(len("v0.26.0 · → 0.26.1 · run wtm upgrade") + 4))
+	if strings.Contains(tight, "fetched") {
+		t.Errorf("tight line = %q, want fetched dropped first — it comes back on `r`", tight)
+	}
+	if !strings.Contains(tight, "run wtm upgrade") {
+		t.Errorf("tight line = %q, want the call to action kept", tight)
+	}
+
+	narrow := stripANSI(model.headerCountLine(len("v0.26.0")))
+	if strings.Contains(narrow, "run wtm upgrade") {
+		t.Errorf("narrow line = %q, want the action dropped when only the version fits", narrow)
+	}
+	if !strings.Contains(narrow, "v0.26.0") {
+		t.Errorf("narrow line = %q, want the version to survive longest", narrow)
+	}
+}

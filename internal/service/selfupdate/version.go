@@ -28,3 +28,15 @@ func ResolveVersion(linked string) string {
 
 	return info.Main.Version
 }
+
+// CachedUpgrade reports the newer version already known from the last passive
+// check, or "" when there is nothing to announce. It reads only the state file:
+// a surface calling this must not pay a network round-trip to render.
+func CachedUpgrade(version string) string {
+	latest := LoadState().LatestVersion
+	if !rules.IsNewerVersion(rules.NewerVersionParams{Current: version, Latest: latest}) {
+		return ""
+	}
+
+	return rules.NormalizeVersion(latest)
+}
