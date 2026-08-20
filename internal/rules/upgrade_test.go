@@ -3,6 +3,7 @@ package rules_test
 import (
 	"testing"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
@@ -51,6 +52,103 @@ func TestNormalizeVersion(t *testing.T) {
 		t.Run(tc.in, func(t *testing.T) {
 			if got := rules.NormalizeVersion(tc.in); got != tc.want {
 				t.Fatalf("NormalizeVersion(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestClassifyInstall(t *testing.T) {
+	cases := []struct {
+		name   string
+		params rules.ClassifyInstallParams
+		want   domain.InstallMethod
+	}{
+		{
+			name: "homebrew arm mac",
+			params: rules.ClassifyInstallParams{
+				ExecPath:     "/opt/homebrew/bin/wtm",
+				ResolvedPath: "/opt/homebrew/Cellar/wtm/0.26.1/bin/wtm",
+				GoBinDir:     "/Users/x/go/bin",
+				Version:      "0.26.1",
+			},
+			want: domain.InstallHomebrew,
+		},
+		{
+			name: "homebrew intel mac",
+			params: rules.ClassifyInstallParams{
+				ExecPath:     "/usr/local/bin/wtm",
+				ResolvedPath: "/usr/local/Cellar/wtm/0.26.1/bin/wtm",
+				GoBinDir:     "/Users/x/go/bin",
+				Version:      "0.26.1",
+			},
+			want: domain.InstallHomebrew,
+		},
+		{
+			name: "linuxbrew",
+			params: rules.ClassifyInstallParams{
+				ExecPath:     "/home/x/.linuxbrew/bin/wtm",
+				ResolvedPath: "/home/linuxbrew/.linuxbrew/Cellar/wtm/0.26.1/bin/wtm",
+				GoBinDir:     "/home/x/go/bin",
+				Version:      "0.26.1",
+			},
+			want: domain.InstallHomebrew,
+		},
+		{
+			name: "go install",
+			params: rules.ClassifyInstallParams{
+				ExecPath:     "/Users/x/go/bin/wtm",
+				ResolvedPath: "/Users/x/go/bin/wtm",
+				GoBinDir:     "/Users/x/go/bin",
+				Version:      "0.26.1",
+			},
+			want: domain.InstallGoInstall,
+		},
+		{
+			name: "standalone in usr local bin",
+			params: rules.ClassifyInstallParams{
+				ExecPath:     "/usr/local/bin/wtm",
+				ResolvedPath: "/usr/local/bin/wtm",
+				GoBinDir:     "/Users/x/go/bin",
+				Version:      "0.26.1",
+			},
+			want: domain.InstallStandalone,
+		},
+		{
+			name: "user directory literally named Cellar is not brew",
+			params: rules.ClassifyInstallParams{
+				ExecPath:     "/Users/x/Cellar/wtm",
+				ResolvedPath: "/Users/x/Cellar/wtm",
+				GoBinDir:     "/Users/x/go/bin",
+				Version:      "0.26.1",
+			},
+			want: domain.InstallStandalone,
+		},
+		{
+			name: "dev build in go bin is source, not go-install",
+			params: rules.ClassifyInstallParams{
+				ExecPath:     "/Users/x/go/bin/wtm",
+				ResolvedPath: "/Users/x/go/bin/wtm",
+				GoBinDir:     "/Users/x/go/bin",
+				Version:      "dev",
+			},
+			want: domain.InstallSource,
+		},
+		{
+			name: "empty go bin dir does not swallow everything",
+			params: rules.ClassifyInstallParams{
+				ExecPath:     "/usr/local/bin/wtm",
+				ResolvedPath: "/usr/local/bin/wtm",
+				GoBinDir:     "",
+				Version:      "0.26.1",
+			},
+			want: domain.InstallStandalone,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rules.ClassifyInstall(tc.params); got != tc.want {
+				t.Fatalf("ClassifyInstall(%+v) = %q, want %q", tc.params, got, tc.want)
 			}
 		})
 	}

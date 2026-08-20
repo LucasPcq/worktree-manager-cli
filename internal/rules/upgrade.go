@@ -1,8 +1,11 @@
 package rules
 
 import (
+	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/LucasPcq/wtm/internal/domain"
 )
 
 // NormalizeVersion strips the leading "v" that release tags carry and asset
@@ -70,4 +73,52 @@ func IsNewerVersion(current string, latest string) bool {
 	}
 
 	return next.prerelease > cur.prerelease
+}
+
+type ClassifyInstallParams struct {
+	ExecPath     string
+	ResolvedPath string
+	GoBinDir     string
+	Version      string
+}
+
+// ClassifyInstall decides how the running binary was installed. Order matters:
+// a `make install` build lands in GoBinDir and would otherwise be sent to fetch
+// a published release over the user's own build.
+func ClassifyInstall(params ClassifyInstallParams) domain.InstallMethod {
+	if NormalizeVersion(params.Version) == domain.Version {
+		return domain.InstallSource
+	}
+
+	// Homebrew installs <prefix>/bin/wtm as a symlink into the Cellar, so the
+	// resolved path is what carries the evidence.
+	if isBrewCellarPath(params.ResolvedPath) {
+		return domain.InstallHomebrew
+	}
+
+	if params.GoBinDir != "" && filepath.Dir(params.ResolvedPath) == filepath.Clean(params.GoBinDir) {
+		return domain.InstallGoInstall
+	}
+
+	return domain.InstallStandalone
+}
+
+const brewCellarSegment = "Cellar"
+
+// isBrewCellarPath matches the full Homebrew layout —
+// <prefix>/Cellar/<formula>/<version>/bin/<binary> — rather than the bare
+// "Cellar" segment, which a user directory of that name would also carry.
+func isBrewCellarPath(path string) bool {
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	if len(parts) < 5 || parts[len(parts)-2] != "bin" {
+		return false
+	}
+
+	for i, part := range parts[:len(parts)-3] {
+		if part == brewCellarSegment && i < len(parts)-3 {
+			return true
+		}
+	}
+
+	return false
 }
