@@ -56,7 +56,6 @@ const stopGracePeriod = 5 * time.Second
 // misbehaving launcher.
 const detachedDrainGracePeriod = 2 * time.Second
 
-// ManagedJob holds the state of a running job.
 type ManagedJob struct {
 	Name    string
 	Config  domain.JobConfig
@@ -70,25 +69,21 @@ type ManagedJob struct {
 	exited  chan struct{} // closed when the underlying process has been reaped
 }
 
-// Manager tracks and controls running jobs.
 type Manager struct {
 	jobs map[string]*ManagedJob
 	mu   sync.Mutex
 }
 
-// NewManager creates a new job manager.
 func NewManager() *Manager {
 	return &Manager{
 		jobs: make(map[string]*ManagedJob),
 	}
 }
 
-// jobKey returns a unique identifier for a job scoped to its worktree.
 func jobKey(name string, workDir string) string {
 	return workDir + ":" + name
 }
 
-// StartParams holds inputs for launching a job.
 type StartParams struct {
 	Job     domain.JobConfig
 	WorkDir string
@@ -98,18 +93,11 @@ type StartParams struct {
 	Streamer io.Writer
 }
 
-// Start launches a job in a PTY. Behavior depends on the job's kind:
-//
-//   - Task: blocks until the command exits, streams output to the streamer if
-//     non-nil, and removes the job from the map whatever the outcome. Returns
-//     an error on non-zero exit (with captured output).
-//   - Service with Stop (detached): blocks until the launcher command exits,
-//     captures output into a bounded buffer so compose failures surface to
-//     the caller, and stays registered as Running afterwards.
-//   - Service without Stop (foreground): returns immediately after pty.Start,
-//     with a background goroutine draining output and watching for exit.
-//
-// All three persist their output when a log dir is given.
+// Start blocks for two of the three kinds it serves, which its signature does
+// not say: a task until the command exits (and errors on a non-zero one), a
+// detached service until its launcher exits, while a foreground service returns
+// as soon as its PTY is up and is drained in the background. All three persist
+// their output when a log dir is given.
 func (m *Manager) Start(params StartParams) error {
 	job := params.Job
 	key := jobKey(job.Name, params.WorkDir)
@@ -189,8 +177,7 @@ func (m *Manager) Start(params StartParams) error {
 	}
 }
 
-// openJobLog returns nil when nothing is to be persisted, or when the file
-// cannot be opened: a job still starts when its log does not.
+// openJobLog: a job still starts when its log cannot be opened.
 func openJobLog(params StartParams) *LogSink {
 	if params.LogDir == "" {
 		return nil
@@ -279,9 +266,8 @@ func jobEnv(kind domain.JobKind) []string {
 	return env
 }
 
-// setEnv returns env with the given key set to value, replacing any existing
-// occurrence. Use this when the override must win over what the daemon
-// inherited (e.g. TERM=dumb for tasks regardless of the user's shell TERM).
+// setEnv replaces any existing occurrence of key, so the override wins over
+// what the daemon inherited (e.g. TERM=dumb whatever the user's shell TERM).
 func setEnv(env []string, key, value string) []string {
 	prefix := key + "="
 	out := make([]string, 0, len(env)+1)
@@ -303,10 +289,8 @@ func lookupEnv(env []string, key string) (string, bool) {
 	return "", false
 }
 
-// runTask executes a one-shot task. Output is mirrored to the optional
-// streamer (so the CLI can forward it to the user in real time) and kept in
-// the job's output hub so `run logs <task>` can also attach while it runs.
-// The job is removed from the map on exit, whatever the outcome.
+// runTask keeps the task in the output hub while it runs, so `run logs <task>`
+// can attach to it too, and removes it from the map on exit whatever the outcome.
 func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	defer close(job.exited)
 
@@ -403,8 +387,6 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	return nil
 }
 
-// exitCodeOf extracts the process exit code from a Cmd.Wait error, falling
-// back to 1 when the error is not an *exec.ExitError.
 func exitCodeOf(err error) int {
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -413,12 +395,9 @@ func exitCodeOf(err error) int {
 	return 1
 }
 
-// waitDetached drains PTY output and blocks until the launcher process exits.
-// When a streamer is provided the launcher's output is mirrored to it live
-// (so `run up` shows the `docker compose up -d` lines as they happen, just like
-// a task), while a bounded buffer keeps a copy to embed in the error on
-// failure. On success, the job stays registered as Running (the real work is
-// detached).
+// waitDetached blocks until the launcher exits, mirroring its output live like
+// a task's and keeping a bounded copy to embed in the error on failure. On
+// success the job stays registered as Running: the real work is detached.
 func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 	defer close(job.exited)
 
@@ -439,14 +418,8 @@ func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 
 	err := job.Cmd.Wait()
 
-	// The launcher has exited; let io.Copy drain the PTY to its natural EOF so we
-	// never truncate buffered output. Closing the master PTY before the drain
-	// goroutine finishes is what dropped streamed output on slow CI runners
-	// (LUC-84): on a fast machine io.Copy had already read everything, on a slow
-	// one Close() interrupted the read mid-buffer. Once the launcher and its
-	// descendants release the slave, the master read returns EOF (Darwin) or EIO
-	// (Linux) and io.Copy returns on its own. The force-close is a liveness
-	// backstop in case a descendant keeps the slave open.
+	// Same LUC-84 race runTask guards against: closing the master before the
+	// drain goroutine reaches EOF truncated the output on slow CI runners.
 	select {
 	case <-drained:
 	case <-time.After(detachedDrainGracePeriod):
@@ -471,9 +444,9 @@ func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 	return nil
 }
 
-// cleanPTYOutput strips terminal escape sequences and collapses carriage-return
-// progress redraws (docker compose writes `[+] Running 1/2\r[+] Running 2/2`)
-// into distinct lines, then keeps only non-empty trimmed lines.
+// cleanPTYOutput expands a carriage-return redraw into distinct lines rather
+// than collapsing it: docker compose writes its whole progress block that way
+// (`[+] Running 1/2\r[+] Running 2/2`), and an error embedded in it must survive.
 func cleanPTYOutput(raw string) string {
 	raw = rules.StripTerminalEscapes(raw)
 	raw = strings.ReplaceAll(raw, "\r", "\n")
@@ -488,7 +461,6 @@ func cleanPTYOutput(raw string) string {
 	return strings.Join(lines, "\n")
 }
 
-// ringBuffer keeps only the most recent `cap` bytes written to it.
 type ringBuffer struct {
 	buf []byte
 	cap int
@@ -508,7 +480,6 @@ func (r *ringBuffer) Write(p []byte) (int, error) {
 
 func (r *ringBuffer) String() string { return string(r.buf) }
 
-// Snapshot returns a copy of the buffer's current contents.
 func (r *ringBuffer) Snapshot() []byte {
 	out := make([]byte, len(r.buf))
 	copy(out, r.buf)
@@ -575,8 +546,6 @@ func (h *outputHub) Subscribe() (history []byte, ch <-chan []byte, unsub func(),
 	return history, subCh, unsub, nil
 }
 
-// close releases every subscriber and marks the hub as closed so new
-// subscribers are rejected.
 func (h *outputHub) close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -587,10 +556,8 @@ func (h *outputHub) close() {
 	}
 }
 
-// drainToHub copies PTY output into the job's output hub until the PTY
-// closes. Long-running jobs need a continuous reader so the OS PTY buffer
-// never fills up (which would block the job's writes before any client
-// attaches).
+// drainToHub runs for the job's whole life: without a continuous reader the OS
+// PTY buffer fills up and blocks the job's own writes before any client attaches.
 func (m *Manager) drainToHub(job *ManagedJob) {
 	var sink io.Writer = job.output
 	if job.logs != nil {
@@ -611,20 +578,16 @@ func closeSink(sink *LogSink) {
 	}
 }
 
-// Stop stops a job by name and workDir.
 func (m *Manager) Stop(name string, workDir string) error {
 	return m.stopByKey(jobKey(name, workDir))
 }
 
-// StopAll stops every running job across every worktree. Intended for daemon
-// shutdown; callers that want to stop only one worktree's jobs must use
-// StopAllInWorkDir.
+// StopAll spans every worktree: it is the daemon-shutdown path, and a caller
+// after one worktree's jobs wants StopAllInWorkDir instead.
 func (m *Manager) StopAll() error {
 	return m.stopAllMatching(func(*ManagedJob) bool { return true })
 }
 
-// StopAllInWorkDir stops every running job attached to the given workDir.
-// Jobs belonging to other worktrees are left untouched.
 func (m *Manager) StopAllInWorkDir(workDir string) error {
 	return m.stopAllMatching(func(job *ManagedJob) bool {
 		return job.WorkDir == workDir
@@ -683,10 +646,8 @@ func (m *Manager) stopByKey(key string) error {
 	return m.stopWithSignal(job)
 }
 
-// AttachSession holds everything a client needs to stream a job's output:
-// the PTY (for stdin forwarding and window-size ioctls), the history to
-// replay, and a channel delivering subsequent output. The caller must invoke
-// Release when done.
+// AttachSession hands out the job's live PTY, for stdin forwarding and
+// window-size ioctls. Release must be called when done.
 type AttachSession struct {
 	PTY     *os.File
 	History []byte
@@ -694,9 +655,6 @@ type AttachSession struct {
 	Release func()
 }
 
-// Attach subscribes to a job's output hub and returns a session the daemon
-// can use to stream history + live output to a client while still forwarding
-// the client's stdin back into the PTY.
 func (m *Manager) Attach(name string, workDir string) (*AttachSession, error) {
 	key := jobKey(name, workDir)
 	m.mu.Lock()
@@ -725,7 +683,6 @@ func (m *Manager) Attach(name string, workDir string) (*AttachSession, error) {
 	}, nil
 }
 
-// List returns all managed jobs.
 func (m *Manager) List() []ManagedJob {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -737,7 +694,6 @@ func (m *Manager) List() []ManagedJob {
 	return result
 }
 
-// IsRunning checks if any jobs are currently running.
 func (m *Manager) IsRunning() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -14,18 +14,15 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-// JobLogPathParams holds inputs for resolving a job's log file.
 type JobLogPathParams struct {
 	LogDir string
 	Job    string
 }
 
-// JobLogPath returns the active log file of a job inside its worktree's log dir.
 func JobLogPath(params JobLogPathParams) string {
 	return filepath.Join(params.LogDir, rules.JobLogFileName(params.Job))
 }
 
-// LogSinkParams holds inputs for opening a job's log file.
 type LogSinkParams struct {
 	LogDir string
 	Job    string
@@ -187,7 +184,6 @@ func backupPath(path string, rank int) string {
 	return path + "." + strconv.Itoa(rank)
 }
 
-// TailParams holds inputs for reading the tail of a job's log.
 type TailParams struct {
 	LogDir string
 	Job    string

@@ -40,8 +40,6 @@ func isSinglePathSegment(segment string) bool {
 	return !strings.ContainsAny(segment, `/\`)
 }
 
-// JobLogFileName returns the log file name of a job, with every character that
-// could escape the log directory or confuse a shell folded to an underscore.
 func JobLogFileName(job string) string {
 	safe := strings.Map(func(r rune) rune {
 		switch {
@@ -61,23 +59,20 @@ func JobLogFileName(job string) string {
 // designation, and the single-byte escapes.
 var terminalEscape = regexp.MustCompile(`\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b\[[0-9;?:<=>]*[ -/]*[@-~]|\x1b[()*+#][0-9A-Za-z]|\x1b[@-Z\\-_]`)
 
-// StripTerminalEscapes returns s without its terminal escape sequences.
 func StripTerminalEscapes(s string) string {
 	return terminalEscape.ReplaceAllString(s, "")
 }
 
-// SanitizeChunkParams carries one chunk of raw job output together with the
-// incomplete tail the previous chunk left behind.
 type SanitizeChunkParams struct {
 	Chunk   string
 	Pending string
 	At      time.Time
 }
 
-// SanitizeChunkResult holds the lines this chunk completed, and the tail still
-// waiting for its newline — feed it back as Pending on the next chunk.
 type SanitizeChunkResult struct {
 	Records []domain.LogRecord
+	// Pending is the tail still waiting for its newline — feed it back as the
+	// next call's Pending.
 	Pending string
 }
 
@@ -104,7 +99,6 @@ func SanitizeLogChunk(params SanitizeChunkParams) SanitizeChunkResult {
 	return result
 }
 
-// SanitizeLogLine reduces one raw line to its readable form.
 func SanitizeLogLine(raw string) string {
 	return strings.TrimRight(stripControlRunes(StripTerminalEscapes(collapseRedraws(raw))), " \t")
 }
@@ -132,7 +126,6 @@ func appendRecord(records []domain.LogRecord, at time.Time, text string) []domai
 	return append(records, domain.LogRecord{At: at, Text: text})
 }
 
-// FormatLogRecord renders a record as one line of a job log file.
 func FormatLogRecord(record domain.LogRecord) string {
 	return record.At.UTC().Format(domain.JobLogTimestampLayout) + domain.JobLogSeparator + record.Text
 }
