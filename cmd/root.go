@@ -126,8 +126,9 @@ func printUpdateNotice() {
 		return
 	}
 
-	output.Blank(os.Stderr)
-	output.UpdateNotice(os.Stderr, output.UpdateNoticeParams{Current: current, Latest: latest, Method: method})
+	output.Frame(os.Stderr, func() {
+		output.UpdateNotice(os.Stderr, output.UpdateNoticeParams{Current: current, Latest: latest, Method: method})
+	})
 }
 
 func init() {
