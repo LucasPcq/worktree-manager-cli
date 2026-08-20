@@ -1,6 +1,7 @@
 package runview
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -443,6 +444,78 @@ func TestRedrawClockRunsOnlyWhileAStreamFeeds(t *testing.T) {
 	}
 	if next.ticking {
 		t.Fatal("the model still believes a frame is scheduled")
+	}
+}
+
+// A model too busy to drain its mailbox must not lose the end of a stream:
+// nothing else reports it, so the subscription would stay registered for the
+// life of the view — a dead pane redrawn on the clock, and a focus writing
+// keystrokes into a closed stream.
+func TestStreamEndIsNotLostWhenTheMailboxIsFull(t *testing.T) {
+	stream := runlogstest.NewStream()
+	msgs := make(chan tea.Msg, domain.RunViewMsgBuffer)
+	for range cap(msgs) {
+		msgs <- frameMsg{}
+	}
+
+	returned := make(chan struct{})
+	go func() {
+		defer close(returned)
+		readStream(readParams{
+			Job:    "api",
+			Stream: stream,
+			Pane:   NewPane(PaneParams{}),
+			Msgs:   msgs,
+			Done:   make(chan struct{}),
+		})
+	}()
+	stream.Close()
+
+	select {
+	case <-returned:
+		t.Fatal("the reader gave the end of the stream up rather than wait for room")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	for {
+		select {
+		case msg := <-msgs:
+			if _, isEnd := msg.(streamEndedMsg); isEnd {
+				return
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("the mailbox emptied without the end of the stream ever arriving")
+		}
+	}
+}
+
+// The wait for the mailbox has to end somewhere. Leaving the view cancels its
+// context, and a reader still holding its last message gives up there rather
+// than outliving the program.
+func TestStreamReaderGivesUpOnceTheViewIsGone(t *testing.T) {
+	stream := runlogstest.NewStream()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	returned := make(chan struct{})
+	go func() {
+		defer close(returned)
+		readStream(readParams{
+			Job:    "api",
+			Stream: stream,
+			Pane:   NewPane(PaneParams{}),
+			Msgs:   make(chan tea.Msg),
+			Done:   ctx.Done(),
+		})
+	}()
+
+	stream.Close()
+	cancel()
+
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the reader is still offering the end of a stream nobody will take")
 	}
 }
 

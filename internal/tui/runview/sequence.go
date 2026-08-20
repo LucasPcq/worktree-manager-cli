@@ -87,7 +87,15 @@ func (m Model) applyEvent(msg eventMsg) (Model, tea.Cmd) {
 
 	model, cmd := m.followSequence(event)
 	model, resized := model.resyncSize(noticeLines)
-	return model, tea.Batch(cmd, resized, model.refreshCmd(), listenCmd(m.msgs))
+
+	// The clock is the only thing that draws a pane the run writes into: a
+	// PhaseOutput never reaches the model, and a tick that landed before the
+	// first phase found nothing scheduled and stopped.
+	var tick tea.Cmd
+	if model.sequence.active {
+		model, tick = model.startTicking()
+	}
+	return model, tea.Batch(cmd, resized, tick, model.refreshCmd(), model.listenCmd())
 }
 
 // followSequence puts the job the sequence is acting on in front of the reader,

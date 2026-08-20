@@ -455,3 +455,28 @@ func TestRedrawClockRunsWhileTheRunDoes(t *testing.T) {
 		t.Fatal("the clock kept ticking once the run was over and nothing was subscribed")
 	}
 }
+
+// A tick landing before the run reached its first job finds nothing to draw and
+// stops the clock. The phase that opens the sequence has to arm it again, or
+// the output the run writes straight into panes is never put on screen: no
+// PhaseOutput ever reaches the model, so nothing else would.
+func TestRedrawClockIsArmedAgainWhenTheSequenceStarts(t *testing.T) {
+	model := New(Params{
+		Session: runlogstest.NewSession(runlogstest.SessionParams{Views: []runlogs.JobView{stopped("migrate")}}),
+		Start:   func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
+	})
+	t.Cleanup(model.cancel)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model = update(model, jobsMsg{jobs: []runlogs.JobView{stopped("migrate")}})
+
+	model, cmd := updateCmd(model, frameMsg{})
+	if cmd != nil || model.ticking {
+		t.Fatal("the clock did not stop before the run reached its first job")
+	}
+
+	model = update(model, eventMsg{event: runlogs.Event{Phase: runlogs.PhaseStarting, Job: "migrate", Step: 1, Steps: 1}})
+
+	if !model.ticking {
+		t.Fatal("the sequence became active with no frame scheduled: what it writes into panes will never be drawn")
+	}
+}

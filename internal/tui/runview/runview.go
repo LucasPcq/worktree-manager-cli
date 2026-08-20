@@ -99,6 +99,8 @@ func Run(params Params) (Result, error) {
 	model := New(params)
 	final, err := tea.NewProgram(model, tea.WithAltScreen()).Run()
 	if err != nil {
+		model.cancel()
+		model.panes.closeAll()
 		return Result{}, fmt.Errorf("run view: %w", err)
 	}
 	last, ok := final.(Model)
@@ -109,7 +111,7 @@ func Run(params Params) (Result, error) {
 }
 
 func (m Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.refreshCmd(), pollCmd(), listenCmd(m.msgs)}
+	cmds := []tea.Cmd{m.refreshCmd(), pollCmd(), m.listenCmd()}
 	if m.start != nil {
 		cmds = append(cmds, m.startCmd(), frameCmd())
 	}
@@ -201,8 +203,19 @@ func frameCmd() tea.Cmd {
 	return tea.Tick(time.Second/domain.RunViewRenderFPS, func(time.Time) tea.Msg { return frameMsg{} })
 }
 
-func listenCmd(msgs <-chan tea.Msg) tea.Cmd {
-	return func() tea.Msg { return <-msgs }
+// listenCmd takes the next message the stream readers and the run posted, and
+// gives up when the view does: the channel is never closed, so a reader parked
+// on it would outlive the program.
+func (m Model) listenCmd() tea.Cmd {
+	msgs, done := m.msgs, m.runCtx.Done()
+	return func() tea.Msg {
+		select {
+		case msg := <-msgs:
+			return msg
+		case <-done:
+			return nil
+		}
+	}
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -355,7 +368,7 @@ func (m Model) applyAttached(msg attachedMsg) (Model, tea.Cmd) {
 
 	m.err = nil
 	pane := m.panes.attach(msg.job, msg.stream)
-	go readStream(readParams{Job: msg.job, Stream: msg.stream, Pane: pane, Msgs: m.msgs})
+	go readStream(readParams{Job: msg.job, Stream: msg.stream, Pane: pane, Msgs: m.msgs, Done: m.runCtx.Done()})
 
 	model, tick := m.startTicking()
 	// The window may have moved while the daemon was answering, and the size the
@@ -377,7 +390,7 @@ func (m Model) applyStreamEnded(msg streamEndedMsg) (Model, tea.Cmd) {
 	if m.selected == msg.job {
 		m.focused = false
 	}
-	return m, tea.Batch(m.refreshCmd(), listenCmd(m.msgs))
+	return m, tea.Batch(m.refreshCmd(), m.listenCmd())
 }
 
 func (m Model) applyHistory(msg historyMsg) (Model, tea.Cmd) {
@@ -446,6 +459,9 @@ type readParams struct {
 	Stream runlogs.Stream
 	Pane   *Pane
 	Msgs   chan<- tea.Msg
+	// Done is the view being gone, which is the only thing that lets a reader
+	// stop waiting for its last message to be taken.
+	Done <-chan struct{}
 }
 
 // readStream drains a job's output into its pane as it arrives. It draws
@@ -455,11 +471,13 @@ func readStream(params readParams) {
 	for chunk := range params.Stream.Chunks() {
 		params.Pane.Write(chunk)
 	}
-	// A full queue means the model is busy, not gone: the poll re-reads the job
-	// list anyway, so the end of a stream is never worth blocking a reader on.
+	// Nothing else reports the end of a stream — the poll only re-reads the job
+	// list — so dropping it on a busy model would leave the subscription
+	// registered for the life of the view: a dead pane redrawn at 30 fps, and a
+	// focus that writes keystrokes into a closed stream.
 	select {
 	case params.Msgs <- streamEndedMsg{job: params.Job}:
-	default:
+	case <-params.Done:
 	}
 }
 
