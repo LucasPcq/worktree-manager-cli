@@ -155,7 +155,6 @@ func TestNoticeFallsBackToTheCacheWhenTheRefreshIsTooSlow(t *testing.T) {
 		_, _ = w.Write([]byte(`{"tag_name":"v9.9.9","assets":[]}`))
 	}))
 	defer srv.Close()
-	defer close(release)
 
 	if err := selfupdate.SaveState(domain.UpdateState{
 		CheckedAt:     time.Now().Add(-domain.UpdateCheckTTL - time.Hour),
@@ -182,6 +181,13 @@ func TestNoticeFallsBackToTheCacheWhenTheRefreshIsTooSlow(t *testing.T) {
 	if latest != "0.5.0" {
 		t.Fatalf("latest = %q, want the cached 0.5.0 when the refresh misses the window", latest)
 	}
+
+	// Drained before returning, with the temp HOME still installed: the refresh
+	// goroutine calls SaveState when it lands, and t.Setenv restores the real
+	// environment the moment this function returns — a goroutine still in flight
+	// would write the test's fixture into the user's own state file.
+	close(release)
+	check.Notice(5 * time.Second)
 }
 
 func TestStartCheckDoesNotReachTheNetworkInsideTheTTL(t *testing.T) {

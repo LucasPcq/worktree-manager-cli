@@ -1492,6 +1492,11 @@ const (
 	// install: built from source, or the binary is not writable.
 	ExitCodeUpgradeUnsupported = 17
 
+	// UpgradeConfirmPrompt keeps a space before the question mark, unlike every
+	// other prompt here: it ends on a version number, and "0.26.1?" reads as part
+	// of the number rather than as a question.
+	UpgradeConfirmPrompt = "Update %s %s → %s ?"
+
 	UpgradeJSONNeedsYes   = "--output json requires --yes or --check (the confirmation prompt cannot run in JSON mode)"
 	UpgradeSourceHint     = "this binary was built from source — run `git pull && make install` instead"
 	UpgradePinUnsupported = "--version only applies to a standalone binary; pin the version through your package manager instead"

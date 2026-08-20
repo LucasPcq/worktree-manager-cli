@@ -222,7 +222,8 @@ type countLineParams struct {
 }
 
 // The muted segments and the call to action are styled apart on purpose: an
-// available upgrade has to read as actionable, not as one more context crumb.
+// available upgrade has to read as actionable, not as one more context crumb —
+// hence the signature accent it shares with the wordmark and the add button.
 func (m Model) countLineVariant(params countLineParams) string {
 	muted := make([]string, 0, 3)
 	if params.Count {
@@ -248,7 +249,7 @@ func (m Model) countLineVariant(params countLineParams) string {
 		return line
 	}
 
-	action := styles.Warning.Render(params.Action)
+	action := styles.DashboardUpgrade.Render(params.Action)
 	if line == "" {
 		return action
 	}

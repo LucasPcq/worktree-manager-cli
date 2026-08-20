@@ -102,7 +102,7 @@ func run(cmd *cobra.Command, version string) error {
 	interactive := rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd())) && !yes
 	if interactive {
 		confirmed, err := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
-			Title:       fmt.Sprintf("Update %s %s → %s?", domain.AppName, result.Installed, result.Latest),
+			Title:       fmt.Sprintf(domain.UpgradeConfirmPrompt, domain.AppName, result.Installed, result.Latest),
 			Description: rules.UpgradeCommandFor(install.Method),
 			DefaultYes:  true,
 		}))

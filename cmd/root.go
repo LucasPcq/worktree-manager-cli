@@ -75,7 +75,6 @@ func init() {
 	schemaCmd.GroupID = domain.CmdGroupSetup
 	rootCmd.AddCommand(schemaCmd)
 
-	effectiveVersion = selfupdate.ResolveVersion(version)
 	rootCmd.Version = effectiveVersion
 
 	upgradeCmd := upgrade.NewCmd(upgrade.NewCmdParams{Version: effectiveVersion})
@@ -92,7 +91,10 @@ var version = domain.Version
 
 // effectiveVersion is what every consumer reads: the linked version, or the
 // module version recovered from the build info for a `go install` binary.
-var effectiveVersion = domain.Version
+// Resolved as a package-level initializer, not inside init(): Go orders var
+// initialization by dependency, so every command constructed below already sees
+// the final value regardless of the order they are registered in.
+var effectiveVersion = selfupdate.ResolveVersion(version)
 
 var (
 	updateCheck        *selfupdate.Check
