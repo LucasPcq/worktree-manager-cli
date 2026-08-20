@@ -31,9 +31,10 @@ type JobUptimeParams struct {
 // still is: on a job that stopped, StartedAt dates a run that is over, and
 // letting it keep counting would read as still running. A start in the future
 // (a clock stepped between the daemon and the reader) counts as zero rather
-// than counting backwards.
+// than counting backwards, and a caller that did not say when now is gets no
+// answer at all rather than a 0s reading as a job that just started.
 func JobUptime(params JobUptimeParams) string {
-	if params.Job.Status != domain.JobStatusRunning || params.Job.StartedAt.IsZero() {
+	if params.Now.IsZero() || params.Job.Status != domain.JobStatusRunning || params.Job.StartedAt.IsZero() {
 		return ""
 	}
 

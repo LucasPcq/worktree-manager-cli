@@ -37,6 +37,19 @@ func TestJobUptime(t *testing.T) {
 	}
 }
 
+// TestJobUptime_SaysNothingWithoutANow pins the degradation an unset Now would
+// otherwise be: every row of the table reading 0s, i.e. every job just started.
+func TestJobUptime_SaysNothingWithoutANow(t *testing.T) {
+	job := domain.JobInfo{
+		Name:      "dev",
+		Status:    domain.JobStatusRunning,
+		StartedAt: time.Date(2026, 8, 20, 11, 0, 0, 0, time.UTC),
+	}
+	if got := JobUptime(JobUptimeParams{Job: job}); got != "" {
+		t.Errorf("JobUptime() = %q, want an empty column", got)
+	}
+}
+
 func TestJobIsDetached(t *testing.T) {
 	tests := []struct {
 		name string
