@@ -41,6 +41,26 @@ sudo mv wtm /usr/local/bin/
 go install github.com/LucasPcq/wtm@latest
 ```
 
+### Updating
+
+```bash
+wtm upgrade          # update to the latest release
+wtm upgrade --check  # see what's available without installing
+```
+
+`wtm upgrade` detects how wtm was installed: a standalone binary is replaced in
+place after its checksum is verified, a Homebrew or `go install` binary is handed
+to that tool. It updates the CLI itself — for your worktrees, that's `wtm sync`.
+
+wtm also checks for new releases at most once a day and prints a notice on stderr.
+It stays silent in CI, without a TTY, and under `--output json`. Disable it with
+`WTM_NO_UPDATE_CHECK=1`, or in `~/.config/wtm/config.toml`:
+
+```toml
+[update]
+check = false
+```
+
 ## Quick Start
 
 ```bash
@@ -159,6 +179,7 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 | [`config`](docs/wtm_config.md) | Inspect or edit the project config |
 | [`agents`](docs/wtm_agents.md) | Install the `using-wtm` skill for LLM agents |
 | [`schema`](docs/wtm_schema.md) | Extract the bundled JSON Schemas |
+| [`upgrade`](docs/wtm_upgrade.md) | Update wtm itself to the latest release |
 
 ## Machine-readable output
 
