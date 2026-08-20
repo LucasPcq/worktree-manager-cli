@@ -374,7 +374,7 @@ func (m Model) applyAttached(msg attachedMsg) (Model, tea.Cmd) {
 	}
 
 	m.err = nil
-	pane := m.panes.attach(msg.job, msg.stream)
+	pane := m.panes.attach(attachPaneParams{Job: msg.job, Stream: msg.stream})
 	go readStream(readParams{Job: msg.job, Stream: msg.stream, Pane: pane, Msgs: m.msgs, Done: m.runCtx.Done()})
 
 	model, tick := m.startTicking()
@@ -409,7 +409,7 @@ func (m Model) applyHistory(msg historyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.err = nil
-	m.panes.writeLines(msg.job, msg.lines)
+	m.panes.writeLines(writeLinesParams{Job: msg.job, Lines: msg.lines})
 	return m, nil
 }
 

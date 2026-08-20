@@ -40,24 +40,29 @@ func newPaneStore(size PaneSize) *paneStore {
 	return &paneStore{size: size, panes: map[string]*jobPane{}}
 }
 
-// open returns the job's pane, building a fresh one when the job has none or
-// when its bytes are about to come from somewhere else than they did.
-func (s *paneStore) open(job string, source paneSource) *Pane {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.openLocked(job, source)
+type openPaneParams struct {
+	Job    string
+	Source paneSource
 }
 
-func (s *paneStore) openLocked(job string, source paneSource) *Pane {
-	if entry, held := s.panes[job]; held && entry.source == source {
+// open returns the job's pane, building a fresh one when the job has none or
+// when its bytes are about to come from somewhere else than they did.
+func (s *paneStore) open(params openPaneParams) *Pane {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.openLocked(params)
+}
+
+func (s *paneStore) openLocked(params openPaneParams) *Pane {
+	if entry, held := s.panes[params.Job]; held && entry.source == params.Source {
 		return entry.pane
 	}
 	// A pane being replaced may still be subscribed to its job; dropping it
 	// without closing that would leave the job feeding a pane nobody reads.
-	s.closeStreamLocked(job)
+	s.closeStreamLocked(params.Job)
 
 	pane := NewPane(PaneParams{Size: s.size})
-	s.panes[job] = &jobPane{pane: pane, source: source}
+	s.panes[params.Job] = &jobPane{pane: pane, source: params.Source}
 	return pane
 }
 
@@ -68,12 +73,17 @@ type writeChunkParams struct {
 }
 
 func (s *paneStore) write(params writeChunkParams) {
-	s.open(params.Job, params.Source).Write(params.Chunk)
+	s.open(openPaneParams{Job: params.Job, Source: params.Source}).Write(params.Chunk)
 }
 
-func (s *paneStore) writeLines(job string, lines []string) {
-	pane := s.open(job, sourceHistory)
-	for _, line := range lines {
+type writeLinesParams struct {
+	Job   string
+	Lines []string
+}
+
+func (s *paneStore) writeLines(params writeLinesParams) {
+	pane := s.open(openPaneParams{Job: params.Job, Source: sourceHistory})
+	for _, line := range params.Lines {
 		pane.Write([]byte(line + "\r\n"))
 	}
 }
@@ -81,14 +91,19 @@ func (s *paneStore) writeLines(job string, lines []string) {
 // attach binds a stream to a fresh pane and returns it for the goroutine that
 // will feed it. Any stream the job already had is closed first: two
 // subscriptions on one job would double its output and fight over its PTY size.
-func (s *paneStore) attach(job string, stream runlogs.Stream) *Pane {
+func (s *paneStore) attach(params attachPaneParams) *Pane {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.closeStreamLocked(job)
+	s.closeStreamLocked(params.Job)
 
 	pane := NewPane(PaneParams{Size: s.size})
-	s.panes[job] = &jobPane{pane: pane, source: sourceLive, stream: stream}
+	s.panes[params.Job] = &jobPane{pane: pane, source: sourceLive, stream: params.Stream}
 	return pane
+}
+
+type attachPaneParams struct {
+	Job    string
+	Stream runlogs.Stream
 }
 
 // release closes a job's stream and drops the pane it fed. The pane is what

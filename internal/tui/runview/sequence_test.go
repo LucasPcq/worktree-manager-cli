@@ -208,7 +208,7 @@ func abortedHarness(t *testing.T) *testHarness {
 		Views:   []runlogs.JobView{running("api"), stopped("migrate"), stopped("web")},
 		Streams: []string{"api"},
 	})
-	h.model.panes.writeLines("migrate", []string{"ERROR relation does not exist"})
+	h.model.panes.writeLines(writeLinesParams{Job: "migrate", Lines: []string{"ERROR relation does not exist"}})
 	h.model.following = true
 
 	outcome := runlogs.Outcome{
