@@ -9,21 +9,22 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// newStartCmd creates the wtm run start subcommand.
 func newStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdStart + " <job>",
 		Short: "Start a single job",
-		Long:  "Start an individual job by name (defined in run.toml). Tasks run inline and block until they exit; services launch in the background.",
+		Long:  "Start an individual job by name (defined in run.toml).\nA task runs inline and blocks until it exits; a service opens the run view on itself, and -d starts it in the background instead.",
 		Args:  cobra.ExactArgs(1),
 		RunE:  runStart,
 	}
+	cmd.Flags().BoolP(domain.FlagDetach, "d", false, "Start the job and return instead of opening the run view")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -50,10 +51,11 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	job, ok := rules.FindJob(runCfg, args[0])
 	if !ok {
-		return fmt.Errorf("job %q not found in config", args[0])
+		return fmt.Errorf("%w: %s", domain.ErrJobNotFound, args[0])
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
 
 	socketPath := process.SocketPath()
 	if err := components.RunLoading(components.LoadingParams{
@@ -64,72 +66,60 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
 
-	client := process.NewClient(socketPath)
-	logDir := jobLogDir(jobLogDirParams{StateDir: result.StateDir, Dir: dir})
+	surface := surfaceParams{
+		Out:      cmd.OutOrStdout(),
+		Err:      cmd.ErrOrStderr(),
+		Format:   format,
+		Service:  runlogs.NewService(runlogs.ServiceParams{SocketPath: socketPath}),
+		Declared: []domain.JobConfig{job},
+		Start:    []domain.JobConfig{job},
+		Focus:    job.Name,
+		WorkDir:  dir,
+		LogDir:   jobLogDir(jobLogDirParams{StateDir: result.StateDir, Dir: dir}),
+	}
 
-	if job.Kind == domain.JobKindTask {
-		// Stream the task's output live (text mode); JSON mode stays silent on
-		// stdout so the structured result remains a clean JSON document.
-		var onOutput func([]byte)
-		if format != domain.OutputJSON {
-			out := cmd.OutOrStdout()
-			output.FrameStart(out)
-			output.Loading(out, fmt.Sprintf("Running task %s", job.Name))
-			onOutput = func(chunk []byte) { _, _ = out.Write(chunk) }
+	if wantsRunView(wantsRunViewParams{Format: format, Detach: detach, Inline: rules.RunsInline(job)}) {
+		outcome, viewErr := startInView(surface)
+		if viewErr != nil {
+			return viewErr
 		}
-		resp, err := client.SendStream(process.Request{
-			Action:  process.ActionStart,
-			Job:     &job,
-			WorkDir: dir,
-			LogDir:  logDir,
-		}, onOutput)
-		if err != nil {
-			return fmt.Errorf("task %s: %w", job.Name, err)
+		if outcome.Aborted() {
+			return domain.ErrAborted
 		}
-		if resp.Status == process.StatusError {
-			return fmt.Errorf("%s", resp.Message)
-		}
-		if format == domain.OutputJSON {
-			return output.WriteJobResultJSON(cmd.OutOrStdout(), domain.JobActionResult{
-				Name:   job.Name,
-				Status: domain.JobActionDone,
-			})
-		}
-		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s done", job.Name))
-		output.FrameEnd(cmd.OutOrStdout())
 		return nil
 	}
 
-	var resp process.Response
-	if startErr := components.RunLoading(components.LoadingParams{
-		Message: fmt.Sprintf("Starting %s…", job.Name),
-		Animate: rules.IsHumanFormat(format),
-		Work: func() error {
-			var e error
-			resp, e = client.Send(process.Request{
-				Action:  process.ActionStart,
-				Job:     &job,
-				WorkDir: dir,
-				LogDir:  logDir,
-			})
-			return e
-		},
-	}); startErr != nil {
-		return fmt.Errorf("start %s: %w", job.Name, startErr)
-	}
-	if resp.Status == process.StatusError {
-		return fmt.Errorf("%s", resp.Message)
+	return startJobInline(surface)
+}
+
+// startJobInline starts one job on the terminal the caller keeps — a task,
+// whose output belongs to the scrollback, or a service under -d, a pipe or a
+// machine-readable run. A job that fails is this command's whole subject, so it
+// fails the command rather than reporting a partial state.
+func startJobInline(params surfaceParams) error {
+	human := rules.IsHumanFormat(params.Format)
+	if human {
+		output.FrameStart(params.Out)
 	}
 
-	if format == domain.OutputJSON {
-		return output.WriteJobResultJSON(cmd.OutOrStdout(), domain.JobActionResult{
-			Name:   job.Name,
-			Status: domain.JobActionStarted,
-		})
+	outcome, err := startInline(params)
+	if err != nil {
+		return err
 	}
 
-	output.Frame(cmd.OutOrStdout(), func() {
-		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s started", job.Name))
-	})
+	if outcome.Aborted() {
+		// A reader that saw the output live is not told it twice.
+		var captured []byte
+		if !human {
+			captured = outcome.FailedOutput
+		}
+		return fmt.Errorf("%s", failureReason(failureParams{Outcome: outcome, Output: captured}))
+	}
+
+	if !human {
+		return output.WriteJobResultJSON(params.Out, outcome.Results[0])
+	}
+
+	output.FrameEnd(params.Out)
 	return nil
 }

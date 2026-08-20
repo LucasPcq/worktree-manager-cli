@@ -735,6 +735,14 @@ const (
 	// RunViewRecapListSep joins the jobs named on one recap line.
 	RunViewRecapListSep = ", "
 
+	// RunTaskRunningFmt through RunJobAlreadyRunningFmt are what a run says
+	// about a job on a terminal it does not take over: -d, a pipe, a task.
+	RunTaskRunningFmt       = "Running task %s"
+	RunJobStartingFmt       = "Starting %s"
+	RunJobDoneFmt           = "%s done"
+	RunJobStartedFmt        = "%s started"
+	RunJobAlreadyRunningFmt = "%s already running"
+
 	// SyncConfirmPrompt is the confirmation question shown before running a sync
 	// cascade, formatted with the number of worktrees to rebase. Shared by the
 	// interactive picker's confirmation step and the non-picker confirm prompt.
