@@ -579,6 +579,17 @@ const (
 	JobUptimeHourFmt = "%dh%02dm"
 	JobUptimeDayFmt  = "%dd%02dh"
 
+	// JobPaneDefaultCols and JobPaneDefaultRows size a job's terminal emulator
+	// until the surface knows how much room it can give it.
+	JobPaneDefaultCols = 80
+	JobPaneDefaultRows = 24
+
+	// JobPaneScrollbackLines is how far back a job pane can scroll. A scrollback
+	// line holds one styled cell per column, so this is the knob that decides how
+	// much memory a pane costs; it is deliberately well under x/vt's own 10k
+	// default, and above the raw replay a freshly attached pane can ever receive.
+	JobPaneScrollbackLines = 2000
+
 	// JobAlreadyRunningSuffix is the tail of the daemon error returned when a
 	// job is started while already running. Callers match on it to treat a
 	// repeat start (e.g. re-running `run up` while services are up) as a benign
