@@ -1,6 +1,7 @@
 package runlogs
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net"
@@ -177,6 +178,9 @@ func scriptedDaemon(t *testing.T, responses ...process.Response) string {
 	}
 	t.Cleanup(func() { listener.Close() })
 
+	held := make(chan struct{})
+	t.Cleanup(func() { close(held) })
+
 	go func() {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -194,6 +198,9 @@ func scriptedDaemon(t *testing.T, responses ...process.Response) string {
 				return
 			}
 		}
+		// A daemon running a three-minute task holds the line: what the client
+		// does about that is the client's business.
+		<-held
 	}()
 	return socket
 }
@@ -206,7 +213,7 @@ func TestServiceStartKeepsWhatTheDaemonAnswered(t *testing.T) {
 	)
 
 	var streamed []byte
-	result, err := NewService(ServiceParams{SocketPath: socket}).Start(StartRequest{
+	result, err := NewService(ServiceParams{SocketPath: socket}).Start(t.Context(), StartRequest{
 		Job:      domain.JobConfig{Name: "migrate", Kind: domain.JobKindTask, Cmd: "pnpm migrate"},
 		WorkDir:  "/work/api",
 		OnOutput: func(chunk []byte) { streamed = append(streamed, chunk...) },
@@ -223,5 +230,45 @@ func TestServiceStartKeepsWhatTheDaemonAnswered(t *testing.T) {
 	}
 	if got := string(streamed); got != "applying 001\n" {
 		t.Fatalf("streamed %q, want the task's line", got)
+	}
+}
+
+func TestServiceStartGivesUpOnTheDaemonWhenTheRunDetaches(t *testing.T) {
+	socket := scriptedDaemon(t, process.Response{Status: process.StatusOutput, Data: []byte("applying 001\n")})
+	ctx, detach := context.WithCancel(t.Context())
+	service := NewService(ServiceParams{SocketPath: socket})
+
+	streamed := make(chan struct{}, 1)
+	answered := make(chan error, 1)
+	go func() {
+		_, err := service.Start(ctx, StartRequest{
+			Job:     domain.JobConfig{Name: "migrate", Kind: domain.JobKindTask, Cmd: "pnpm migrate"},
+			WorkDir: "/work/api",
+			OnOutput: func([]byte) {
+				select {
+				case streamed <- struct{}{}:
+				default:
+				}
+			},
+		})
+		answered <- err
+	}()
+
+	select {
+	case <-streamed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the task never started streaming")
+	}
+	detach()
+
+	select {
+	case err := <-answered:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Start after the detach: %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		// Held on the socket read, with its goroutine, its connection and its
+		// buffer, until the task the user walked away from ends.
+		t.Fatal("Start held on to the daemon after the detach")
 	}
 }

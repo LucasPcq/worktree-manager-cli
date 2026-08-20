@@ -4,6 +4,7 @@
 package runlogstest
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -36,14 +37,27 @@ type Service struct {
 	// Lines maps a job name to its persisted history.
 	Lines map[string][]string
 
+	// Starting runs before the daemon answers a job's start and Answered once it
+	// has, for a test that has to act mid-sequence: cancelling from the first is
+	// a detach the client gives up on mid-stream, from the second one that lands
+	// between two jobs.
+	Starting func(job string)
+	Answered func(job string)
+
 	Started  []StartCall
 	Attached []runlogs.AttachRequest
 	Tailed   []runlogs.TailRequest
 }
 
-func (s *Service) Start(req runlogs.StartRequest) (runlogs.StartResult, error) {
+func (s *Service) Start(ctx context.Context, req runlogs.StartRequest) (runlogs.StartResult, error) {
 	s.Started = append(s.Started, StartCall{Job: req.Job, WorkDir: req.WorkDir, LogDir: req.LogDir})
 
+	if s.Starting != nil {
+		s.Starting(req.Job.Name)
+	}
+	if err := ctx.Err(); err != nil {
+		return runlogs.StartResult{}, err
+	}
 	if req.OnOutput != nil {
 		for _, chunk := range s.Output[req.Job.Name] {
 			req.OnOutput([]byte(chunk))
@@ -51,6 +65,9 @@ func (s *Service) Start(req runlogs.StartRequest) (runlogs.StartResult, error) {
 	}
 	if err := s.Errors[req.Job.Name]; err != nil {
 		return runlogs.StartResult{}, err
+	}
+	if s.Answered != nil {
+		s.Answered(req.Job.Name)
 	}
 	if message, refused := s.Refusals[req.Job.Name]; refused {
 		result := runlogs.StartResult{Refused: true, Message: message}

@@ -1,6 +1,7 @@
 package runlogs
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -23,8 +24,8 @@ type daemonService struct {
 	client *process.Client
 }
 
-func (s *daemonService) Start(req StartRequest) (StartResult, error) {
-	resp, err := s.client.SendStream(process.Request{
+func (s *daemonService) Start(ctx context.Context, req StartRequest) (StartResult, error) {
+	resp, err := s.client.SendStreamContext(ctx, process.Request{
 		Action:  process.ActionStart,
 		Job:     &req.Job,
 		WorkDir: req.WorkDir,

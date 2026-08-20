@@ -1,6 +1,8 @@
 package runlogs
 
 import (
+	"context"
+
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
@@ -44,12 +46,18 @@ type RunParams struct {
 // alone — the fix-and-retry loop keeps docker and databases warm — and that
 // partial state is the Outcome, not an error: whether it exits non-zero, and
 // what it prints, belongs to the surface.
-func Run(params RunParams) (Outcome, error) {
+//
+// Cancelling ctx stops the reporting, not the jobs. A surface the user detached
+// from is gone, and there is nobody left to emit to; what the daemon is running
+// keeps running, the sequence stops where it stands, and the jobs it never
+// reached come back as NotStarted with the context's error.
+func Run(ctx context.Context, params RunParams) (Outcome, error) {
 	if params.Service == nil {
 		return Outcome{}, domain.ErrRunServiceRequired
 	}
 
 	r := &runner{
+		ctx:     ctx,
 		service: params.Service,
 		sink:    params.Sink,
 		jobs:    params.Jobs,
@@ -59,10 +67,11 @@ func Run(params RunParams) (Outcome, error) {
 	if r.sink == nil {
 		r.sink = noSink{}
 	}
-	return r.run(), nil
+	return r.run(), ctx.Err()
 }
 
 type runner struct {
+	ctx     context.Context
 	service Service
 	sink    Sink
 	jobs    []domain.JobConfig
@@ -79,20 +88,28 @@ type runner struct {
 
 func (r *runner) run() Outcome {
 	for i := range r.jobs {
+		if r.ctx.Err() != nil {
+			return r.detached(i)
+		}
+
 		job := r.jobs[i]
-		r.sink.Emit(r.event(Event{Phase: PhaseStarting, Job: job.Name, Step: i + 1}))
+		r.emit(Event{Phase: PhaseStarting, Job: job.Name, Step: i + 1})
 
 		r.captured = nil
-		result, err := r.service.Start(StartRequest{
+		result, err := r.service.Start(r.ctx, StartRequest{
 			Job:     job,
 			WorkDir: r.workDir,
 			LogDir:  r.logDir,
 			OnOutput: func(chunk []byte) {
 				r.captured = append(r.captured, chunk...)
-				r.sink.Emit(r.event(Event{Phase: PhaseOutput, Job: job.Name, Step: i + 1, Chunk: chunk}))
+				r.emit(Event{Phase: PhaseOutput, Job: job.Name, Step: i + 1, Chunk: chunk})
 			},
 		})
 		if err != nil {
+			// A read the detach itself broke says nothing about the job.
+			if r.ctx.Err() != nil {
+				return r.detached(i)
+			}
 			return r.abort(abortParams{Index: i, Job: job, Reason: err.Error()})
 		}
 
@@ -107,19 +124,17 @@ func (r *runner) run() Outcome {
 		if job.Kind == domain.JobKindTask {
 			r.completed = append(r.completed, job.Name)
 			r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionDone})
-			r.sink.Emit(r.event(Event{Phase: PhaseDone, Job: job.Name, Step: i + 1}))
+			r.emit(Event{Phase: PhaseDone, Job: job.Name, Step: i + 1})
 			continue
 		}
 
 		r.started = append(r.started, job.Name)
 		r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
-		r.sink.Emit(r.event(Event{
-			Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning,
-		}))
+		r.emit(Event{Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning})
 	}
 
 	outcome := r.outcome()
-	r.sink.Emit(r.event(Event{Phase: PhaseReady, Outcome: outcome}))
+	r.emit(Event{Phase: PhaseReady, Outcome: outcome})
 	return outcome
 }
 
@@ -134,9 +149,7 @@ func (r *runner) abort(params abortParams) Outcome {
 	r.results = append(r.results, domain.JobActionResult{
 		Name: params.Job.Name, Status: domain.JobActionError, Message: params.Reason,
 	})
-	r.sink.Emit(r.event(Event{
-		Phase: PhaseFailed, Job: params.Job.Name, Step: params.Index + 1, Reason: params.Reason,
-	}))
+	r.emit(Event{Phase: PhaseFailed, Job: params.Job.Name, Step: params.Index + 1, Reason: params.Reason})
 
 	outcome := r.outcome()
 	outcome.Failed = params.Job.Name
@@ -145,11 +158,30 @@ func (r *runner) abort(params abortParams) Outcome {
 	outcome.FailedOutput = r.captured
 	outcome.FailedExitCode = params.ExitCode
 
-	r.sink.Emit(r.event(Event{
+	r.emit(Event{
 		Phase: PhaseAborted, Job: params.Job.Name, Step: params.Index + 1,
 		Reason: params.Reason, Outcome: outcome,
-	}))
+	})
 	return outcome
+}
+
+// detached is the sequence stopping because nobody is watching any more. It is
+// not an abort: nothing failed, nothing is torn down, and the jobs already up
+// stay up.
+func (r *runner) detached(index int) Outcome {
+	outcome := r.outcome()
+	outcome.NotStarted = jobNames(r.jobs[index:])
+	return outcome
+}
+
+// emit drops what it is given once the run is detached: the surface it reported
+// to is gone, and a phase it cannot show is noise on a dead channel.
+func (r *runner) emit(event Event) {
+	if r.ctx.Err() != nil {
+		return
+	}
+	event.Steps = len(r.jobs)
+	r.sink.Emit(event)
 }
 
 func (r *runner) outcome() Outcome {
@@ -159,11 +191,6 @@ func (r *runner) outcome() Outcome {
 		Completed: r.completed,
 		Steps:     len(r.jobs),
 	}
-}
-
-func (r *runner) event(event Event) Event {
-	event.Steps = len(r.jobs)
-	return event
 }
 
 func jobNames(jobs []domain.JobConfig) []string {

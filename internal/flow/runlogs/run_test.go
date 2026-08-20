@@ -1,6 +1,7 @@
 package runlogs_test
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -38,7 +39,7 @@ func trace(sink *runlogstest.Sink) string {
 func run(t *testing.T, service *runlogstest.Service, jobs ...domain.JobConfig) (runlogs.Outcome, *runlogstest.Sink) {
 	t.Helper()
 	sink := &runlogstest.Sink{}
-	outcome, err := runlogs.Run(runlogs.RunParams{
+	outcome, err := runlogs.Run(t.Context(), runlogs.RunParams{
 		Service: service,
 		Sink:    sink,
 		Jobs:    jobs,
@@ -257,8 +258,108 @@ func TestRunForwardsAJobsOutputAsItStarts(t *testing.T) {
 	}
 }
 
+// Detaching ends the reporting, not the run: the daemon keeps what it started,
+// the sequence stops where it stands, and nothing more is emitted to a surface
+// that is gone.
+func TestRunStopsReportingWhenTheSurfaceDetaches(t *testing.T) {
+	ctx, detach := context.WithCancel(t.Context())
+	sink := &runlogstest.Sink{}
+	service := &runlogstest.Service{}
+	service.Starting = func(job string) {
+		if job == "migrate" {
+			detach()
+		}
+	}
+
+	outcome, err := runlogs.Run(ctx, runlogs.RunParams{
+		Service: service,
+		Sink:    sink,
+		Jobs:    []domain.JobConfig{docker, migrate, api},
+		WorkDir: "/work/api",
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run: %v, want context.Canceled", err)
+	}
+	if got := service.StartedNames(); !reflect.DeepEqual(got, []string{"docker", "migrate"}) {
+		t.Fatalf("started %v, want the sequence stopped at the detach", got)
+	}
+	if outcome.Aborted() {
+		t.Fatalf("a detach reads as an abort: %+v", outcome)
+	}
+	if !reflect.DeepEqual(outcome.Started, []string{"docker"}) {
+		t.Fatalf("left running %v, want docker — a detach tears nothing down", outcome.Started)
+	}
+	if !reflect.DeepEqual(outcome.NotStarted, []string{"migrate", "api"}) {
+		t.Fatalf("not started %v, want what the detach cut short", outcome.NotStarted)
+	}
+	// migrate was announced before the detach reached the runner; nothing it
+	// printed, nor how it ended, is reported after.
+	if got := trace(sink); got != "starting:docker started:docker starting:migrate" {
+		t.Fatalf("trace = %q, want nothing emitted past the detach", got)
+	}
+}
+
+// The detach can also land between two jobs, with nothing in flight to break.
+func TestRunStopsTheSequenceWhenTheDetachLandsBetweenTwoJobs(t *testing.T) {
+	ctx, detach := context.WithCancel(t.Context())
+	sink := &runlogstest.Sink{}
+	service := &runlogstest.Service{}
+	service.Answered = func(job string) {
+		if job == "docker" {
+			detach()
+		}
+	}
+
+	outcome, err := runlogs.Run(ctx, runlogs.RunParams{
+		Service: service,
+		Sink:    sink,
+		Jobs:    []domain.JobConfig{docker, migrate, api},
+		WorkDir: "/work/api",
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run: %v, want context.Canceled", err)
+	}
+	if got := service.StartedNames(); !reflect.DeepEqual(got, []string{"docker"}) {
+		t.Fatalf("started %v, want the sequence stopped at the detach", got)
+	}
+	if !reflect.DeepEqual(outcome.Started, []string{"docker"}) {
+		t.Fatalf("left running %v, want the launcher the daemon did start", outcome.Started)
+	}
+	if !reflect.DeepEqual(outcome.NotStarted, []string{"migrate", "api"}) {
+		t.Fatalf("not started %v, want what the detach cut short", outcome.NotStarted)
+	}
+	if got := trace(sink); got != "starting:docker" {
+		t.Fatalf("trace = %q, want nothing emitted past the detach", got)
+	}
+}
+
+func TestRunEmitsNothingToASurfaceThatDetachedFirst(t *testing.T) {
+	ctx, detach := context.WithCancel(t.Context())
+	detach()
+	sink := &runlogstest.Sink{}
+
+	outcome, err := runlogs.Run(ctx, runlogs.RunParams{
+		Service: &runlogstest.Service{},
+		Sink:    sink,
+		Jobs:    []domain.JobConfig{docker, api},
+		WorkDir: "/work/api",
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run: %v, want context.Canceled", err)
+	}
+	if len(sink.Events) != 0 {
+		t.Fatalf("emitted %+v to a surface that had already gone", sink.Events)
+	}
+	if !reflect.DeepEqual(outcome.NotStarted, []string{"docker", "api"}) {
+		t.Fatalf("not started %v, want every job", outcome.NotStarted)
+	}
+}
+
 func TestRunWithoutAServiceIsRefused(t *testing.T) {
-	_, err := runlogs.Run(runlogs.RunParams{Jobs: []domain.JobConfig{api}})
+	_, err := runlogs.Run(t.Context(), runlogs.RunParams{Jobs: []domain.JobConfig{api}})
 	if !errors.Is(err, domain.ErrRunServiceRequired) {
 		t.Fatalf("Run without a service: %v, want ErrRunServiceRequired", err)
 	}
@@ -267,7 +368,7 @@ func TestRunWithoutAServiceIsRefused(t *testing.T) {
 func TestRunWithoutASinkStillRuns(t *testing.T) {
 	service := &runlogstest.Service{}
 
-	outcome, err := runlogs.Run(runlogs.RunParams{Service: service, Jobs: []domain.JobConfig{api}})
+	outcome, err := runlogs.Run(t.Context(), runlogs.RunParams{Service: service, Jobs: []domain.JobConfig{api}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

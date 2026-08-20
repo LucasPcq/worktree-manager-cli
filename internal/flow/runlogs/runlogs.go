@@ -4,6 +4,7 @@
 package runlogs
 
 import (
+	"context"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -100,7 +101,9 @@ type TailRequest struct {
 // Service is the daemon as this package uses it: the seam NewService implements
 // over internal/service/process, and a test replaces.
 type Service interface {
-	Start(StartRequest) (StartResult, error)
+	// Start returns as soon as the run stops watching: cancelling ends the
+	// conversation about the job, never the job.
+	Start(context.Context, StartRequest) (StartResult, error)
 	List(workDir string) ([]domain.JobInfo, error)
 	Attach(AttachRequest) (Stream, error)
 	Tail(TailRequest) ([]string, error)

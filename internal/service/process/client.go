@@ -1,6 +1,7 @@
 package process
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -36,11 +37,21 @@ func (c *Client) Send(req Request) (Response, error) {
 // stdout/stderr to the user). Returns the first terminal response
 // (StatusOK, StatusDone, or StatusError) received.
 func (c *Client) SendStream(req Request, onOutput func([]byte)) (Response, error) {
+	return c.SendStreamContext(context.Background(), req, onOutput)
+}
+
+// SendStreamContext is SendStream, given up on when ctx is done: the connection
+// is closed, which unblocks the read, and the call returns the context's error.
+// The daemon is not told anything — the job it is running is untouched, and only
+// this conversation about it ends.
+func (c *Client) SendStreamContext(ctx context.Context, req Request, onOutput func([]byte)) (Response, error) {
 	conn, err := net.Dial("unix", c.socketPath)
 	if err != nil {
 		return Response{}, fmt.Errorf("connect to daemon: %w", err)
 	}
 	defer conn.Close()
+
+	defer context.AfterFunc(ctx, func() { conn.Close() })()
 
 	encoder := json.NewEncoder(conn)
 	decoder := json.NewDecoder(conn)
@@ -52,6 +63,9 @@ func (c *Client) SendStream(req Request, onOutput func([]byte)) (Response, error
 	for {
 		var resp Response
 		if err := decoder.Decode(&resp); err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return Response{}, ctxErr
+			}
 			return Response{}, fmt.Errorf("read response: %w", err)
 		}
 		if resp.Status == StatusOutput {
