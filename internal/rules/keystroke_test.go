@@ -30,6 +30,11 @@ func TestEncodeKeyStroke(t *testing.T) {
 		{label: "punctuation control", stroke: domain.KeyStroke{Name: "ctrl+]"}, want: "\x1d"},
 		{label: "alt letter", stroke: domain.KeyStroke{Runes: []rune("b"), Alt: true}, want: "\x1bb"},
 		{label: "alt arrow", stroke: domain.KeyStroke{Name: "left", Alt: true}, want: "\x1b\x1b[D"},
+		{label: "word-wise motion", stroke: domain.KeyStroke{Name: "ctrl+left"}, want: "\x1b[1;5D"},
+		{label: "selection", stroke: domain.KeyStroke{Name: "shift+right"}, want: "\x1b[1;2C"},
+		{label: "both modifiers", stroke: domain.KeyStroke{Name: "ctrl+shift+end"}, want: "\x1b[1;6F"},
+		{label: "modified page", stroke: domain.KeyStroke{Name: "ctrl+pgup"}, want: "\x1b[5;5~"},
+		{label: "high function key", stroke: domain.KeyStroke{Name: "f17"}, want: "\x1b[15;2~"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
@@ -45,11 +50,9 @@ func TestEncodeKeyStroke(t *testing.T) {
 func TestEncodeKeyStrokeRefusesWhatItCannotEncode(t *testing.T) {
 	unknown := []domain.KeyStroke{
 		{},
-		{Name: "ctrl+shift+home"},
-		{Name: "ctrl+up"},
-		{Name: "shift+down"},
 		{Name: "f21"},
 		{Name: "runes"},
+		{Name: "ctrl+alt+home"},
 	}
 	for _, stroke := range unknown {
 		if got := EncodeKeyStroke(stroke); got != nil {

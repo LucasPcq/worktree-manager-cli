@@ -10,6 +10,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/testutil/runlogstest"
 )
 
@@ -29,6 +30,25 @@ func focusedHarness(t *testing.T, jobs ...string) *testHarness {
 		t.Fatal("the pane did not take the keyboard")
 	}
 	return h
+}
+
+// keyTypeProbe walks Bubbletea's KeyType range in both directions: the control
+// keys sit above zero, the named ones below, and neither bound is exported.
+const keyTypeProbe = 500
+
+// Every key Bubbletea can name has to reach the job in focus. One that encodes
+// to nothing is a keystroke the reader watched go nowhere, which reads as a
+// frozen terminal rather than as an unsupported key.
+func TestEveryKeyBubbleteaCanNameReachesTheJob(t *testing.T) {
+	for kind := tea.KeyType(-keyTypeProbe); kind < keyTypeProbe; kind++ {
+		name := kind.String()
+		if name == "" || kind == tea.KeyRunes {
+			continue
+		}
+		if len(rules.EncodeKeyStroke(domain.KeyStroke{Name: name})) == 0 {
+			t.Errorf("%s encodes to nothing: the job never hears it", name)
+		}
+	}
 }
 
 // In focus every key belongs to the job — Ctrl+C first of all, since

@@ -43,6 +43,39 @@ var keySequences = map[string]string{
 	"f10":       "\x1b[21~",
 	"f11":       "\x1b[23~",
 	"f12":       "\x1b[24~",
+	"f13":       "\x1b[1;2P",
+	"f14":       "\x1b[1;2Q",
+	"f15":       "\x1b[1;2R",
+	"f16":       "\x1b[1;2S",
+	"f17":       "\x1b[15;2~",
+	"f18":       "\x1b[17;2~",
+	"f19":       "\x1b[18;2~",
+	"f20":       "\x1b[19;2~",
+
+	// The modified navigation keys, CSI <param>;<modifier> <final>, the modifier
+	// being 1 + shift + 4×ctrl. Word-wise motion in a shell or a REPL is
+	// ctrl+left and ctrl+right, and a selection is the shift+ pair: a job that
+	// never receives them reads as one that ignores the keyboard.
+	"shift+up":         "\x1b[1;2A",
+	"shift+down":       "\x1b[1;2B",
+	"shift+right":      "\x1b[1;2C",
+	"shift+left":       "\x1b[1;2D",
+	"shift+home":       "\x1b[1;2H",
+	"shift+end":        "\x1b[1;2F",
+	"ctrl+up":          "\x1b[1;5A",
+	"ctrl+down":        "\x1b[1;5B",
+	"ctrl+right":       "\x1b[1;5C",
+	"ctrl+left":        "\x1b[1;5D",
+	"ctrl+home":        "\x1b[1;5H",
+	"ctrl+end":         "\x1b[1;5F",
+	"ctrl+pgup":        "\x1b[5;5~",
+	"ctrl+pgdown":      "\x1b[6;5~",
+	"ctrl+shift+up":    "\x1b[1;6A",
+	"ctrl+shift+down":  "\x1b[1;6B",
+	"ctrl+shift+right": "\x1b[1;6C",
+	"ctrl+shift+left":  "\x1b[1;6D",
+	"ctrl+shift+home":  "\x1b[1;6H",
+	"ctrl+shift+end":   "\x1b[1;6F",
 }
 
 // EncodeKeyStroke turns a keypress back into the bytes a terminal would have
