@@ -1,6 +1,7 @@
 package process
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,30 +144,81 @@ func TestTailJobLogReturnsTheLastLines(t *testing.T) {
 	}
 }
 
-func TestTailJobLogReachesIntoTheRotatedBackups(t *testing.T) {
-	dir := t.TempDir()
+func logTexts(t *testing.T, lines []string) []string {
+	t.Helper()
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		stamp, text, found := strings.Cut(line, domain.JobLogSeparator)
+		if !found {
+			t.Fatalf("line %q carries no timestamp", line)
+		}
+		if _, err := time.Parse(domain.JobLogTimestampLayout, stamp); err != nil {
+			t.Fatalf("line %q: %v", line, err)
+		}
+		out = append(out, text)
+	}
+	return out
+}
+
+// writeNumberedLines fills a job log with `count` lines, rotating every four.
+func writeNumberedLines(t *testing.T, dir string, count int) {
+	t.Helper()
 	sink, err := OpenLogSink(LogSinkParams{LogDir: dir, Job: "web", MaxBytes: 120})
 	if err != nil {
 		t.Fatalf("open sink: %v", err)
 	}
-	for i := 0; i < 8; i++ {
-		sink.Write([]byte("line " + string(rune('0'+i)) + "\n"))
+	for i := 0; i < count; i++ {
+		sink.Write([]byte(fmt.Sprintf("line %d\n", i)))
 	}
-	sink.Close()
+	if err := sink.Close(); err != nil {
+		t.Fatalf("close sink: %v", err)
+	}
+}
 
-	active, err := TailJobLog(TailParams{LogDir: dir, Job: "web", Lines: 1})
-	if err != nil {
-		t.Fatalf("tail active: %v", err)
+func TestTailJobLogReachesIntoTheRotatedBackups(t *testing.T) {
+	dir := t.TempDir()
+	writeNumberedLines(t, dir, 8)
+
+	backup := readLog(t, filepath.Join(dir, "web.log.1"))
+	if !strings.Contains(backup, "line 2") {
+		t.Fatalf("the fixture no longer rotates line 2 out of the active file:\n%s", backup)
 	}
+	if strings.Contains(readLog(t, filepath.Join(dir, "web.log")), "line 2") {
+		t.Fatal("the fixture leaves line 2 in the active file, so the tail proves nothing")
+	}
+
 	lines, err := TailJobLog(TailParams{LogDir: dir, Job: "web", Lines: 6})
 	if err != nil {
 		t.Fatalf("tail: %v", err)
 	}
-	if len(lines) <= len(active) {
-		t.Errorf("tail returned %d lines, want more than the active file's %d", len(lines), len(active))
+
+	want := []string{"line 2", "line 3", "line 4", "line 5", "line 6", "line 7"}
+	if got := logTexts(t, lines); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("tail = %v, want %v — the two oldest come from the rotated backup", got, want)
 	}
-	if !strings.HasSuffix(lines[len(lines)-1], "line 7") {
-		t.Errorf("last line = %q, want the most recent one", lines[len(lines)-1])
+}
+
+func TestTailJobLogSpansEveryRotatedFileInOrder(t *testing.T) {
+	dir := t.TempDir()
+	writeNumberedLines(t, dir, 12)
+
+	for _, name := range []string{"web.log", "web.log.1", "web.log.2"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Fatalf("the fixture did not produce %s: %v", name, err)
+		}
+	}
+
+	lines, err := TailJobLog(TailParams{LogDir: dir, Job: "web", Lines: 12})
+	if err != nil {
+		t.Fatalf("tail: %v", err)
+	}
+
+	want := make([]string, 0, 12)
+	for i := 0; i < 12; i++ {
+		want = append(want, fmt.Sprintf("line %d", i))
+	}
+	if got := logTexts(t, lines); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("tail = %v, want the three files read oldest first: %v", got, want)
 	}
 }
 
