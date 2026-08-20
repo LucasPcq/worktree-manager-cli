@@ -203,14 +203,16 @@ func TestWriteRunningJobsJSON_ExposesStartAndExit(t *testing.T) {
 	}
 
 	// A job the daemon never ran carries neither key rather than an epoch date
-	// and a code that would read as a clean exit.
-	raw := buf.String()
-	for _, key := range []string{`"started_at":"0001`, `"exit_code":0`} {
-		if strings.Contains(raw, key) {
-			t.Errorf("unexpected %s in %s", key, raw)
-		}
+	// and a code that would read as a clean exit. Read as keys, not as text: the
+	// payload is indented, so a literal search for `"exit_code":0` matches
+	// nothing whatever the tags say — and a nil code never renders as 0 anyway.
+	var payloads []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &payloads); err != nil {
+		t.Fatalf("unmarshal: %v", err)
 	}
-	if got[1].ExitCode != nil {
-		t.Errorf("exit_code = %v, want nil", *got[1].ExitCode)
+	for _, key := range []string{"started_at", "exit_code"} {
+		if value, present := payloads[1][key]; present {
+			t.Errorf("%s = %v, want no key at all on a job the daemon never ran", key, value)
+		}
 	}
 }
