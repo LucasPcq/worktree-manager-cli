@@ -66,6 +66,16 @@ type JobInfo struct {
 	ExitCode *int `json:"exit_code,omitempty"`
 }
 
+// JobActionResult is one job's outcome as a `run *` command reports it, shared
+// by every surface that speaks the JobAction* vocabulary — the JSON output and
+// the flow seam alike.
+type JobActionResult struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	// Message carries the detail when Status is JobActionError.
+	Message string `json:"message,omitempty"`
+}
+
 // LogRecord is one sanitized line of a job's output, as persisted in that job's
 // log file.
 type LogRecord struct {

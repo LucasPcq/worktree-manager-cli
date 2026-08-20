@@ -75,7 +75,7 @@ func TestRunStartsEveryJobInDeclaredOrder(t *testing.T) {
 		t.Fatalf("steps = %d, want 3", outcome.Steps)
 	}
 
-	want := []runlogs.JobResult{
+	want := []domain.JobActionResult{
 		{Name: "migrate", Status: domain.JobActionDone},
 		{Name: "docker", Status: domain.JobActionStarted},
 		{Name: "api", Status: domain.JobActionStarted},

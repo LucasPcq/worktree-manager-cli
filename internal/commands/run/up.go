@@ -90,7 +90,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	if err := handleConcurrentJobs(cmd, client, dir); err != nil {
 		return err
 	}
-	results := make([]output.JobActionResult, 0, len(jobs))
+	results := make([]domain.JobActionResult, 0, len(jobs))
 	var started []domain.JobConfig
 
 	for i := range jobs {
@@ -141,7 +141,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 			},
 		})
 		if sendErr != nil {
-			results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: sendErr.Error()})
+			results = append(results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: sendErr.Error()})
 			if format != domain.OutputJSON {
 				output.Error(cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", job.Name, sendErr))
 			}
@@ -151,7 +151,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 			// A repeat start (re-running `run up` while services are up) is
 			// benign: count the job as running and keep going.
 			if strings.Contains(resp.Message, domain.JobAlreadyRunningSuffix) {
-				results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
+				results = append(results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
 				started = append(started, job)
 				if format != domain.OutputJSON {
 					output.Blank(cmd.OutOrStdout())
@@ -159,13 +159,13 @@ func runUp(cmd *cobra.Command, args []string) error {
 				}
 				continue
 			}
-			results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: resp.Message})
+			results = append(results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionError, Message: resp.Message})
 			if format != domain.OutputJSON {
 				output.Error(cmd.ErrOrStderr(), resp.Message)
 			}
 			return abortProfile(cmd, jobs, i, started, results, format)
 		}
-		results = append(results, output.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
+		results = append(results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
 		started = append(started, job)
 		if format != domain.OutputJSON {
 			output.Blank(cmd.OutOrStdout())
@@ -248,7 +248,7 @@ type jobRunParams struct {
 	WorkDir string
 	LogDir  string
 	Format  string
-	Results *[]output.JobActionResult
+	Results *[]domain.JobActionResult
 }
 
 func runTaskJob(params jobRunParams) error {
@@ -274,7 +274,7 @@ func runTaskJob(params jobRunParams) error {
 		LogDir:  params.LogDir,
 	}, onOutput)
 	if err != nil {
-		*params.Results = append(*params.Results, output.JobActionResult{Name: params.Job.Name, Status: domain.JobActionError, Message: err.Error()})
+		*params.Results = append(*params.Results, domain.JobActionResult{Name: params.Job.Name, Status: domain.JobActionError, Message: err.Error()})
 		return fmt.Errorf("task %s: %w", params.Job.Name, err)
 	}
 	if resp.Status == process.StatusError {
@@ -284,14 +284,14 @@ func runTaskJob(params jobRunParams) error {
 		if logs := strings.TrimSpace(captured.String()); logs != "" && params.Format == domain.OutputJSON {
 			message = resp.Message + "\n" + logs
 		}
-		*params.Results = append(*params.Results, output.JobActionResult{Name: params.Job.Name, Status: domain.JobActionError, Message: message})
+		*params.Results = append(*params.Results, domain.JobActionResult{Name: params.Job.Name, Status: domain.JobActionError, Message: message})
 		if params.Format != domain.OutputJSON {
 			output.Error(params.Cmd.ErrOrStderr(), resp.Message)
 		}
 		return fmt.Errorf("task %s failed", params.Job.Name)
 	}
 
-	*params.Results = append(*params.Results, output.JobActionResult{Name: params.Job.Name, Status: domain.JobActionDone})
+	*params.Results = append(*params.Results, domain.JobActionResult{Name: params.Job.Name, Status: domain.JobActionDone})
 	if params.Format != domain.OutputJSON {
 		output.Success(params.Cmd.OutOrStdout(), fmt.Sprintf("%s done", params.Job.Name))
 	}
@@ -326,7 +326,7 @@ func runDetachedJob(params jobRunParams) (bool, error) {
 		LogDir:  params.LogDir,
 	}, onOutput)
 	if err != nil {
-		*params.Results = append(*params.Results, output.JobActionResult{Name: params.Job.Name, Status: domain.JobActionError, Message: err.Error()})
+		*params.Results = append(*params.Results, domain.JobActionResult{Name: params.Job.Name, Status: domain.JobActionError, Message: err.Error()})
 		if params.Format != domain.OutputJSON {
 			output.Error(params.Cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", params.Job.Name, err))
 		}
@@ -335,7 +335,7 @@ func runDetachedJob(params jobRunParams) (bool, error) {
 	if resp.Status == process.StatusError {
 		// Re-running `run up` while the launcher's work is already up is benign.
 		if strings.Contains(resp.Message, domain.JobAlreadyRunningSuffix) {
-			*params.Results = append(*params.Results, output.JobActionResult{Name: params.Job.Name, Status: domain.JobActionStarted})
+			*params.Results = append(*params.Results, domain.JobActionResult{Name: params.Job.Name, Status: domain.JobActionStarted})
 			if params.Format != domain.OutputJSON {
 				output.Success(params.Cmd.OutOrStdout(), fmt.Sprintf("%s already running", params.Job.Name))
 			}
@@ -347,14 +347,14 @@ func runDetachedJob(params jobRunParams) (bool, error) {
 		if logs := strings.TrimSpace(captured.String()); logs != "" && params.Format == domain.OutputJSON {
 			message = resp.Message + "\n" + logs
 		}
-		*params.Results = append(*params.Results, output.JobActionResult{Name: params.Job.Name, Status: domain.JobActionError, Message: message})
+		*params.Results = append(*params.Results, domain.JobActionResult{Name: params.Job.Name, Status: domain.JobActionError, Message: message})
 		if params.Format != domain.OutputJSON {
 			output.Error(params.Cmd.ErrOrStderr(), resp.Message)
 		}
 		return false, fmt.Errorf("service %s failed", params.Job.Name)
 	}
 
-	*params.Results = append(*params.Results, output.JobActionResult{Name: params.Job.Name, Status: domain.JobActionStarted})
+	*params.Results = append(*params.Results, domain.JobActionResult{Name: params.Job.Name, Status: domain.JobActionStarted})
 	if params.Format != domain.OutputJSON {
 		output.Success(params.Cmd.OutOrStdout(), fmt.Sprintf("%s started", params.Job.Name))
 	}
@@ -366,7 +366,7 @@ func runDetachedJob(params jobRunParams) (bool, error) {
 // zero so the document stays parseable; in text mode it prints the partial-state
 // report and returns ErrAborted so the process exits non-zero without a second
 // error line on top of the report.
-func abortProfile(cmd *cobra.Command, jobs []domain.JobConfig, failedIdx int, started []domain.JobConfig, results []output.JobActionResult, format string) error {
+func abortProfile(cmd *cobra.Command, jobs []domain.JobConfig, failedIdx int, started []domain.JobConfig, results []domain.JobActionResult, format string) error {
 	if format == domain.OutputJSON {
 		return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
 	}

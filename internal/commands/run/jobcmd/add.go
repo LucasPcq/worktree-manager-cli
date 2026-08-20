@@ -86,7 +86,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
-		return output.WriteJobResultJSON(cmd.OutOrStdout(), output.JobActionResult{
+		return output.WriteJobResultJSON(cmd.OutOrStdout(), domain.JobActionResult{
 			Name:   newJob.Name,
 			Status: domain.JobActionAdded,
 		})

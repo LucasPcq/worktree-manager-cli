@@ -90,7 +90,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("%s", resp.Message)
 		}
 		if format == domain.OutputJSON {
-			return output.WriteJobResultJSON(cmd.OutOrStdout(), output.JobActionResult{
+			return output.WriteJobResultJSON(cmd.OutOrStdout(), domain.JobActionResult{
 				Name:   job.Name,
 				Status: domain.JobActionDone,
 			})
@@ -122,7 +122,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	if format == domain.OutputJSON {
-		return output.WriteJobResultJSON(cmd.OutOrStdout(), output.JobActionResult{
+		return output.WriteJobResultJSON(cmd.OutOrStdout(), domain.JobActionResult{
 			Name:   job.Name,
 			Status: domain.JobActionStarted,
 		})

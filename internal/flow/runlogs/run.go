@@ -7,16 +7,8 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-// JobResult is one job's outcome, using the domain.JobAction* vocabulary the
-// machine-readable surfaces already speak.
-type JobResult struct {
-	Name    string
-	Status  string
-	Message string
-}
-
 type Outcome struct {
-	Results []JobResult
+	Results []domain.JobActionResult
 	// Started names the jobs left running when the sequence ended — after an
 	// abort, the ones nothing tore down.
 	Started []string
@@ -71,7 +63,7 @@ type runner struct {
 	workDir string
 	logDir  string
 
-	results   []JobResult
+	results   []domain.JobActionResult
 	started   []string
 	completed []string
 }
@@ -103,13 +95,13 @@ func (r *runner) run() Outcome {
 
 		if job.Kind == domain.JobKindTask {
 			r.completed = append(r.completed, job.Name)
-			r.results = append(r.results, JobResult{Name: job.Name, Status: domain.JobActionDone})
+			r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionDone})
 			r.sink.Emit(r.event(Event{Phase: PhaseDone, Job: job.Name, Step: i + 1}))
 			continue
 		}
 
 		r.started = append(r.started, job.Name)
-		r.results = append(r.results, JobResult{Name: job.Name, Status: domain.JobActionStarted})
+		r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
 		r.sink.Emit(r.event(Event{
 			Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning,
 		}))
@@ -127,7 +119,7 @@ type abortParams struct {
 }
 
 func (r *runner) abort(params abortParams) Outcome {
-	r.results = append(r.results, JobResult{
+	r.results = append(r.results, domain.JobActionResult{
 		Name: params.Job.Name, Status: domain.JobActionError, Message: params.Reason,
 	})
 	r.sink.Emit(r.event(Event{

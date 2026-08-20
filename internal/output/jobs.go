@@ -12,13 +12,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
-// JobActionResult is a single job's outcome emitted by `run *` commands.
-type JobActionResult struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"`            // "started", "stopped", "done", "error", "added", "removed"
-	Message string `json:"message,omitempty"` // error detail when Status == "error"
-}
-
 // ProfileActionResult is a single profile's outcome emitted by `run profile` commands.
 type ProfileActionResult struct {
 	Name    string `json:"name"`
@@ -43,15 +36,15 @@ type PRCheckoutJSON struct {
 }
 
 // WriteJobResultsJSON writes the JSON array describing each job outcome.
-func WriteJobResultsJSON(w io.Writer, results []JobActionResult) error {
+func WriteJobResultsJSON(w io.Writer, results []domain.JobActionResult) error {
 	if results == nil {
-		results = []JobActionResult{}
+		results = []domain.JobActionResult{}
 	}
 	return encodeJSON(w, results)
 }
 
 // WriteJobResultJSON writes a single job outcome (start/stop single job).
-func WriteJobResultJSON(w io.Writer, result JobActionResult) error {
+func WriteJobResultJSON(w io.Writer, result domain.JobActionResult) error {
 	return encodeJSON(w, result)
 }
 
