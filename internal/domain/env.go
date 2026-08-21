@@ -21,3 +21,13 @@ type EnvLine struct {
 	Export bool
 	Raw    string
 }
+
+// EnvPortScan is what one directory's env files say about the ports of the job
+// running there. SourceByVar names the file each port was read from — the recap
+// shows it so the user can go check the value wtm picked up.
+type EnvPortScan struct {
+	Dir         string
+	Err         string
+	Ports       map[string]int
+	SourceByVar map[string]string
+}
