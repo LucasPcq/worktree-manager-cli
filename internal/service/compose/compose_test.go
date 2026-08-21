@@ -166,7 +166,7 @@ func TestPatchRewritesOnlyThePortLines(t *testing.T) {
 		t.Fatalf("want 4 frozen mappings, got %d", len(frozen))
 	}
 
-	if err := Patch(PatchParams{ProjectDir: dir, File: file, Bindings: frozen}); err != nil {
+	if err := PatchAll(PatchAllParams{ProjectDir: dir, ByFile: map[string][]domain.ComposePortBinding{file: frozen}}); err != nil {
 		t.Fatalf("patch: %v", err)
 	}
 
@@ -212,7 +212,7 @@ func TestPatchRefusesAFileChangedSinceTheScan(t *testing.T) {
 		}
 	}
 
-	err := Patch(PatchParams{ProjectDir: dir, File: file, Bindings: frozen})
+	err := PatchAll(PatchAllParams{ProjectDir: dir, ByFile: map[string][]domain.ComposePortBinding{file: frozen}})
 	if err == nil {
 		t.Fatal("patching a file that moved under us must fail")
 	}
@@ -293,5 +293,70 @@ func TestScanRefusesAnAnchoredPortsList(t *testing.T) {
 		if b.Replacement != "" {
 			t.Errorf("%s: must not be rewritten, got %q", b.Service, b.Replacement)
 		}
+	}
+}
+
+// TestPatchAllWritesNothingWhenOneFileMoved is the guard against a half-applied
+// rewrite: everything is rendered before anything is written, so a file that
+// changed under wtm aborts the whole batch instead of leaving the tree mixed.
+func TestPatchAllWritesNothingWhenOneFileMoved(t *testing.T) {
+	dir := t.TempDir()
+	good, moved := "a-compose.yml", "b-compose.yml"
+	for _, f := range []string{good, moved} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("services:\n  db:\n    ports:\n      - \"5432:5432\"\n"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", f, err)
+		}
+	}
+
+	byFile := map[string][]domain.ComposePortBinding{}
+	for _, f := range []string{good, moved} {
+		scan := Scan(ScanParams{ProjectDir: dir, File: f})
+		byFile[f] = scan.Bindings
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, moved), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatalf("rewrite: %v", err)
+	}
+
+	if failures := VerifyAll(VerifyAllParams{ProjectDir: dir, ByFile: byFile}); len(failures) != 1 || failures[moved] == "" {
+		t.Errorf("VerifyAll must name %s and only it, got %v", moved, failures)
+	}
+
+	if err := PatchAll(PatchAllParams{ProjectDir: dir, ByFile: byFile}); err == nil {
+		t.Fatal("PatchAll must refuse the batch")
+	}
+
+	after, err := os.ReadFile(filepath.Join(dir, good))
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(after), `"5432:5432"`) {
+		t.Errorf("the healthy file must be left untouched:\n%s", after)
+	}
+}
+
+func TestPatchAllPreservesFileMode(t *testing.T) {
+	dir, file := writeCompose(t, richCompose)
+	if err := os.Chmod(filepath.Join(dir, file), 0o600); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	scan := Scan(ScanParams{ProjectDir: dir, File: file})
+	var frozen []domain.ComposePortBinding
+	for _, b := range scan.Bindings {
+		if b.Status == domain.ComposePortFrozen {
+			frozen = append(frozen, b)
+		}
+	}
+	if err := PatchAll(PatchAllParams{ProjectDir: dir, ByFile: map[string][]domain.ComposePortBinding{file: frozen}}); err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+
+	info, err := os.Stat(filepath.Join(dir, file))
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600 kept across the rename", info.Mode().Perm())
 	}
 }

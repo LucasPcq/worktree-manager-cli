@@ -197,6 +197,17 @@ const (
 	ComposePatchMovedFmt = "%s:%d: expected %s but found %s — the file changed since it was read"
 	// ComposePatchOutOfRangeFmt aborts a patch pointing past the end of the file.
 	ComposePatchOutOfRangeFmt = "%s:%d: line is past the end of the file"
+	// ComposePatchPartialFmt names the files already rewritten when a later one
+	// fails to write, so the user knows the tree is not as it was.
+	ComposePatchPartialFmt = "already rewritten: %s"
+	ComposeReadFileFmt     = "read %s: %w"
+	ComposeWriteFileFmt    = "write %s: %w"
+
+	// ComposeChangedTitle and ComposeOrphanTitle head the two report sections
+	// that say why a file contributed nothing.
+	ComposeChangedTitle = "Compose files skipped — they changed while wtm was reading them"
+	ComposeOrphanTitle  = "Compose files with no job to carry their ports"
+	ComposeOrphanFmt    = "%s · no job in run.toml runs this file, so its ports were not declared"
 
 	// PortCollisionHorizon is how many worktrees a declared layout is checked
 	// against. Two base ports collide when they differ by a multiple of the

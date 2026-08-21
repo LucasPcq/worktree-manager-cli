@@ -87,34 +87,23 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Job construction sees only the compose files nothing runs yet; the ports of
-	// the others still reach the job that does run them, via the backfill below.
-	forJobs := answers
-	forJobs.DockerComposeFiles = rules.ComposeFilesNeedingAJob(existing, answers.DockerComposeFiles)
-
-	built := rules.BuildInitRunConfig(forJobs, detection.PackageManager)
-	merged, mergeResult := rules.MergeRunConfigs(existing, built)
-
 	plan := rules.PlanComposePorts(rules.PlanComposePortsParams{
 		Scans: detection.ComposeScans,
 		Files: answers.DockerComposeFiles,
 		Patch: answers.PatchCompose,
 	})
-	if err := compose.PatchAll(res.ProjectDir, plan.Patches); err != nil {
-		return err
-	}
-
-	backfilled := rules.BackfillDockerPorts(rules.BackfillDockerPortsParams{
-		Config:      merged,
-		PortsByFile: plan.PortsByFile,
+	outcome := rules.ResolveComposePorts(rules.ResolveComposePortsParams{
+		Answers:        answers,
+		PackageManager: detection.PackageManager,
+		Existing:       existing,
+		Plan:           plan,
+		Unverifiable: compose.VerifyAll(compose.VerifyAllParams{
+			ProjectDir: res.ProjectDir,
+			ByFile:     plan.Patches,
+		}),
 	})
-	pruned := rules.PruneCollidingPorts(rules.PruneCollidingPortsParams{
-		Config:   backfilled.Config,
-		Detected: backfilled.Added,
-	})
-	merged = pruned.Config
 
-	if !rules.IsRunInitialized(merged) {
+	if !rules.IsRunInitialized(outcome.Config) {
 		output.Frame(cmd.OutOrStdout(), func() {
 			output.Message(cmd.OutOrStdout(), "No docker-compose files or package scripts detected — nothing to configure automatically.")
 			output.Message(cmd.OutOrStdout(), "Add jobs by hand with `wtm run job add`, then group them with `wtm run profile add`.")
@@ -124,26 +113,34 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	if err := runconfig.Save(runconfig.SaveParams{StateDir: res.StateDir, Config: merged}); err != nil {
+	// The rewrites come first: a compose templatized without run.toml behind it
+	// keeps binding its defaults, while a run.toml declaring ports the compose
+	// does not read would announce an isolation that is not there.
+	if err := compose.PatchAll(compose.PatchAllParams{ProjectDir: res.ProjectDir, ByFile: outcome.Patches}); err != nil {
+		return err
+	}
+	if err := runconfig.Save(runconfig.SaveParams{StateDir: res.StateDir, Config: outcome.Config}); err != nil {
 		return err
 	}
 
 	runPath := filepath.Join(res.StateDir, domain.RunFileName)
 	output.Frame(cmd.OutOrStdout(), func() {
 		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Configured run module → %s", runPath))
-		if len(mergeResult.Added) > 0 {
-			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Jobs added: %s", strings.Join(mergeResult.Added, ", ")))
+		if len(outcome.Merge.Added) > 0 {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Jobs added: %s", strings.Join(outcome.Merge.Added, ", ")))
 		}
-		if len(mergeResult.Skipped) > 0 {
-			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Already present (kept): %s", strings.Join(mergeResult.Skipped, ", ")))
+		if len(outcome.Merge.Skipped) > 0 {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Already present (kept): %s", strings.Join(outcome.Merge.Skipped, ", ")))
 		}
 		output.ComposePortsReport(cmd.OutOrStdout(), output.ComposePortsReportParams{
-			Patched:    plan.Patches,
-			Written:    rules.RemoveDroppedPorts(backfilled.Added, pruned.Dropped),
-			Withheld:   plan.Withheld,
-			JobsByFile: composeJobsByFile(merged, answers.DockerComposeFiles),
-			Dropped:    pruned.Dropped,
-			Unreadable: plan.Unreadable,
+			Patched:    outcome.Patches,
+			Written:    outcome.Written,
+			Withheld:   outcome.Withheld,
+			JobsByFile: composeJobsByFile(outcome.Config, answers.DockerComposeFiles),
+			Dropped:    outcome.Dropped,
+			Unreadable: outcome.Unreadable,
+			Changed:    outcome.Changed,
+			Orphaned:   outcome.Orphaned,
 		})
 		output.Blank(cmd.OutOrStdout())
 		output.Message(cmd.OutOrStdout(), "Next: `wtm run up` to start · `wtm run job add` to add more")

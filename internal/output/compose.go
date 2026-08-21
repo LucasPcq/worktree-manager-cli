@@ -23,6 +23,10 @@ type ComposePortsReportParams struct {
 	Dropped []rules.DroppedPort
 	// Unreadable are the compose files the scan could not open or parse.
 	Unreadable []domain.ComposeScan
+	// Changed are the files that moved between the scan and the write, mapped to
+	// the reason, and Orphaned those whose ports found no job to carry them.
+	Changed  map[string]string
+	Orphaned []string
 }
 
 // ComposePortsReport prints what the detection did and, just as importantly,
@@ -51,6 +55,24 @@ func ComposePortsReport(w io.Writer, params ComposePortsReportParams) {
 			lines = append(lines, rules.ComposeDroppedLine(d))
 		}
 		Callout(w, domain.ComposeDroppedTitle, lines)
+	}
+
+	if len(params.Changed) > 0 {
+		Blank(w)
+		lines := make([]string, 0, len(params.Changed))
+		for _, file := range rules.SortedComposeFiles(params.Changed) {
+			lines = append(lines, fmt.Sprintf(domain.ComposeUnreadableFmt, file, params.Changed[file]))
+		}
+		Callout(w, domain.ComposeChangedTitle, lines)
+	}
+
+	if len(params.Orphaned) > 0 {
+		Blank(w)
+		lines := make([]string, 0, len(params.Orphaned))
+		for _, file := range params.Orphaned {
+			lines = append(lines, fmt.Sprintf(domain.ComposeOrphanFmt, file))
+		}
+		Callout(w, domain.ComposeOrphanTitle, lines)
 	}
 
 	for _, scan := range params.Unreadable {
