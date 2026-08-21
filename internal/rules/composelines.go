@@ -2,7 +2,6 @@ package rules
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -65,13 +64,15 @@ func ComposeUnreadableLine(scan domain.ComposeScan) string {
 	return fmt.Sprintf(domain.ComposeUnreadableFmt, scan.File, scan.Err)
 }
 
-// ComposePortsWrittenLines lists what each job gained, in the NAME=PORT form
-// the rest of the run surface already speaks.
+// ComposePortsWrittenLines lists what each job gained, one port per line so a
+// job declaring six of them reads as a column rather than one line running off
+// the terminal.
 func ComposePortsWrittenLines(added map[string]map[string]int) []string {
-	jobs := sortedKeys(added)
-	lines := make([]string, 0, len(jobs))
-	for _, job := range jobs {
-		lines = append(lines, fmt.Sprintf(domain.ComposePortsWrittenFmt, job, strings.Join(PortEntries(added[job]), " ")))
+	var lines []string
+	for _, job := range sortedKeys(added) {
+		for _, entry := range PortEntries(added[job]) {
+			lines = append(lines, fmt.Sprintf(domain.ComposePortsWrittenFmt, job, entry))
+		}
 	}
 	return lines
 }
