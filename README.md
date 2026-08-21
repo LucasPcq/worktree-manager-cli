@@ -350,7 +350,9 @@ job takes the file in its own directory, so in a monorepo every package keeps it
 wtm declares the port and nothing else: it never edits your `.env` and never rewrites a
 command. Checking that the command reads the variable is yours to do — `next dev` and most
 node servers read `PORT` from the environment, while a CLI that only takes a flag needs
-`--cmd 'pnpm dev --port ${PORT}'`.
+`--cmd 'pnpm dev --port ${PORT}'`. The port it declares is also the base the `[[env_port]]`
+links below follow, so a `.env` holding both `PORT=5173` and a `VITE_API_URL` pointing at
+it ends up with the two shifted together.
 
 wtm declares only what it can actually isolate, and says why for the rest: a port range,
 a mapping with no host port, a `ports:` list carrying a YAML **anchor or alias** (rewriting

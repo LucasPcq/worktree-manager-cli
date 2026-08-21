@@ -253,6 +253,9 @@ and **experimental**: the global `wtm init` does not configure it.
   reads the variable is not checked**: `next dev` and most node servers read `PORT` from
   the environment, but a CLI that only takes a flag (vite) needs
   `--cmd 'pnpm dev --port ${PORT}'`. Never assume a declared port means an isolated one.
+  This detection feeds the `[[env_port]]` pass below: the port it declares is the base
+  those links then follow, so a `.env` holding `PORT=5173` and
+  `VITE_API_URL=http://localhost:5173/api` ends up with **both** keys shifted per worktree.
 - What `run init` refuses to declare, and reports instead: port ranges, mappings with no
   host port, a `ports:` list carrying a YAML anchor or alias, `${VAR}` with no default,
   and a variable two services give two different defaults. It also **withdraws** a
