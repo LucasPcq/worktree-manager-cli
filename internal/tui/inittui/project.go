@@ -115,6 +115,7 @@ func RunServicesWizard(params ServicesWizardParams) (domain.InitProjectAnswers, 
 		Existing:     params.Existing,
 		Prefill:      params.Prefill,
 		PatchCompose: params.PatchCompose,
+		EnvScans:     params.EnvScans,
 	})
 
 	if len(s.steps) == 0 {
@@ -140,6 +141,9 @@ type ServicesWizardParams struct {
 	// PatchCompose is --patch-compose already given on the command line: the
 	// rewrite is authorized, so the wizard states it instead of asking again.
 	PatchCompose bool
+	// EnvScans feeds the same resolution the recap runs, so the rewrite step
+	// cannot announce a patch a .env port later withdraws.
+	EnvScans map[string]domain.EnvPortScan
 }
 
 // SectionWizardParams holds inputs for RunSectionWizard.
@@ -463,6 +467,7 @@ type addServicesStepsParams struct {
 	Existing     domain.RunConfig
 	Prefill      *SectionPrefill
 	PatchCompose bool
+	EnvScans     map[string]domain.EnvPortScan
 }
 
 func addServicesSteps(s *stepSet, params addServicesStepsParams) {
@@ -484,12 +489,6 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) {
 			Callout: true,
 		})
 	}
-
-	addComposePatchStep(s, addComposePatchStepParams{
-		Detection:  detection,
-		Existing:   params.Existing,
-		Authorized: params.PatchCompose,
-	})
 
 	if len(detection.PackageScripts) > 0 {
 		pm := string(detection.PackageManager)
@@ -518,6 +517,16 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) {
 			Callout: true,
 		})
 	}
+
+	// Declared last on purpose: the step resolves the ports of both selections,
+	// so it must be able to read them — a .env port can withdraw a compose
+	// declaration, and the step would otherwise offer a rewrite that never runs.
+	addComposePatchStep(s, addComposePatchStepParams{
+		Detection:  detection,
+		Existing:   params.Existing,
+		Authorized: params.PatchCompose,
+		EnvScans:   params.EnvScans,
+	})
 }
 
 // ── Extraction ──────────────────────────────────────────────────────────────
@@ -811,11 +820,12 @@ type addComposePatchStepParams struct {
 	// Authorized is --patch-compose: the answer is already in, so the step
 	// states it rather than asking, and stays in the recap.
 	Authorized bool
+	EnvScans   map[string]domain.EnvPortScan
 }
 
 func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
 	detection := params.Detection
-	docker := s.at(stepDocker)
+	docker, scripts := s.at(stepDocker), s.at(stepScripts)
 	if docker < 0 || len(detection.ComposeScans) == 0 {
 		return
 	}
@@ -828,8 +838,10 @@ func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
 			patches := composePatchesFor(composePatchesForParams{
 				Prev:      prev,
 				Docker:    docker,
+				Scripts:   scripts,
 				Detection: detection,
 				Existing:  params.Existing,
+				EnvScans:  params.EnvScans,
 			})
 			if len(patches) == 0 {
 				return false, "", components.NewConfirmParams{}
@@ -852,8 +864,10 @@ func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
 type composePatchesForParams struct {
 	Prev      []components.Step
 	Docker    int
+	Scripts   int
 	Detection domain.InitDetectionResult
 	Existing  domain.RunConfig
+	EnvScans  map[string]domain.EnvPortScan
 }
 
 // composePatchesFor runs the full resolution, not just the plan, so the lines
@@ -868,11 +882,12 @@ func composePatchesFor(params composePatchesForParams) map[string][]domain.Compo
 	}
 
 	answers := domain.InitProjectAnswers{
-		DockerComposeFiles: selected.Values(),
-		DockerComposeCmd:   params.Detection.DockerComposeCmd,
-		PatchCompose:       true,
+		DockerComposeFiles:     selected.Values(),
+		DockerComposeCmd:       params.Detection.DockerComposeCmd,
+		PatchCompose:           true,
+		SelectedPackageScripts: selectedScripts(params.Prev, params.Scripts, params.Detection.PackageScripts),
 	}
-	return rules.ResolveComposePorts(rules.ResolveComposePortsParams{
+	return rules.ResolveDetectedPorts(rules.ResolveDetectedPortsParams{
 		Answers:        answers,
 		PackageManager: params.Detection.PackageManager,
 		Existing:       params.Existing,
@@ -881,5 +896,28 @@ func composePatchesFor(params composePatchesForParams) map[string][]domain.Compo
 			Files: selected.Values(),
 			Patch: true,
 		}),
+		EnvScansByDir: params.EnvScans,
 	}).Patches
+}
+
+// selectedScripts reads a scripts multi-select back into the scripts it names,
+// tolerating a step that is absent from this wizard.
+func selectedScripts(prev []components.Step, at int, detected []domain.PackageScript) []domain.PackageScript {
+	if at < 0 || at >= len(prev) {
+		return nil
+	}
+	model, ok := prev[at].Model.(components.MultiSelectModel)
+	if !ok {
+		return nil
+	}
+
+	var scripts []domain.PackageScript
+	for _, value := range model.Values() {
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 || n >= len(detected) {
+			continue
+		}
+		scripts = append(scripts, detected[n])
+	}
+	return scripts
 }

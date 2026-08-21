@@ -310,6 +310,19 @@ const (
 	ComposeOrphanTitle  = "Compose files with no job to carry their ports"
 	ComposeOrphanFmt    = "%s · no job in run.toml runs this file, so its ports were not declared"
 
+	// EnvPortKeyName and EnvPortKeySuffix are the whole convention wtm reads a
+	// dev server's port by: a key named PORT, or one ending in _PORT.
+	EnvPortKeyName   = "PORT"
+	EnvPortKeySuffix = "_PORT"
+
+	// The .env port report. Unlike a compose mapping, a declared port only
+	// isolates the job if its command actually reads the variable — which wtm
+	// does not know and does not guess, so the notice asks.
+	EnvPortsDetectedTitle  = "Ports detected from .env"
+	EnvPortDetectedLineFmt = "%s · %s=%d (%s)"
+	EnvPortsVerifyFmt      = "Check that these commands read the variable — otherwise pass it as a flag, e.g. `pnpm dev --port ${%s}`"
+	EnvPortUnreadable      = "%s could not be read: %s"
+
 	// PortCollisionHorizon is how many worktrees a declared layout is checked
 	// against. Two base ports collide when they differ by a multiple of the
 	// block, but the multiple says how many worktrees it takes to get there:

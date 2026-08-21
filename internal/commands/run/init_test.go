@@ -366,3 +366,129 @@ func TestRunInit_PatchComposeIsIdempotent(t *testing.T) {
 		t.Errorf("jobs went from %d to %d", len(firstCfg.Jobs), len(secondCfg.Jobs))
 	}
 }
+
+// writeProjectFile writes a file under the project dir, creating parents.
+func writeProjectFile(t *testing.T, rel, content string) {
+	t.Helper()
+	path := filepath.Join(os.Getenv("WTM_PROJECT_DIR"), rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", rel, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", rel, err)
+	}
+}
+
+func jobByName(cfg domain.RunConfig, name string) (domain.JobConfig, bool) {
+	for _, job := range cfg.Jobs {
+		if job.Name == name {
+			return job, true
+		}
+	}
+	return domain.JobConfig{}, false
+}
+
+// TestRunInit_DeclaresPortsFromEnvFiles covers the pnpm monorepo case: each
+// dev server takes the port its own package's env file declares, and the root
+// .env never reaches a package that has none of its own.
+func TestRunInit_DeclaresPortsFromEnvFiles(t *testing.T) {
+	stateDir := setupTestProject(t)
+
+	writeProjectFile(t, "package.json", `{"name":"root","scripts":{"dev":"pnpm -r dev"}}`)
+	writeProjectFile(t, "pnpm-workspace.yaml", "packages:\n  - \"apps/*\"\n")
+	writeProjectFile(t, ".env", "PORT=3000\n")
+
+	writeProjectFile(t, "apps/web/package.json", `{"name":"web","scripts":{"dev":"vite"}}`)
+	writeProjectFile(t, "apps/web/.env", "PORT=5173\nDATABASE_URL=postgres://localhost:5432/app\n")
+
+	writeProjectFile(t, "apps/api/package.json", `{"name":"api","scripts":{"dev":"node server.js","build":"tsc"}}`)
+	writeProjectFile(t, "apps/api/.env.example", "API_PORT=4000\n")
+
+	if _, _, err := runCmd(t, domain.CmdInit, "--"+domain.FlagNonInteractive); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+
+	web, found := jobByName(cfg, "web-dev")
+	if !found {
+		t.Fatalf("no web-dev job in %+v", cfg.Jobs)
+	}
+	if web.Ports["PORT"] != 5173 {
+		t.Errorf("web-dev ports = %v, want PORT=5173 from apps/web/.env", web.Ports)
+	}
+
+	api, found := jobByName(cfg, "api-dev")
+	if !found {
+		t.Fatalf("no api-dev job in %+v", cfg.Jobs)
+	}
+	if api.Ports["API_PORT"] != 4000 {
+		t.Errorf("api-dev ports = %v, want API_PORT=4000 from the committed template", api.Ports)
+	}
+	if _, leaked := api.Ports["PORT"]; leaked {
+		t.Errorf("api-dev inherited the root PORT: %v", api.Ports)
+	}
+
+	if root, found := jobByName(cfg, "dev"); found && root.Ports["PORT"] != 3000 {
+		t.Errorf("root dev ports = %v, want PORT=3000", root.Ports)
+	}
+
+	if build, found := jobByName(cfg, "api-build"); found && len(build.Ports) > 0 {
+		t.Errorf("a task binds nothing, got %v", build.Ports)
+	}
+}
+
+// TestRunInit_EnvPortsAreIdempotent asserts a second run changes nothing.
+func TestRunInit_EnvPortsAreIdempotent(t *testing.T) {
+	stateDir := setupTestProject(t)
+
+	writeProjectFile(t, "package.json", `{"name":"root","scripts":{"dev":"next dev"}}`)
+	writeProjectFile(t, ".env", "PORT=3000\n")
+
+	for i := 0; i < 2; i++ {
+		if _, _, err := runCmd(t, domain.CmdInit, "--"+domain.FlagNonInteractive); err != nil {
+			t.Fatalf("run init #%d: %v", i+1, err)
+		}
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if len(cfg.Jobs) != 1 {
+		t.Fatalf("jobs = %+v, want exactly one", cfg.Jobs)
+	}
+	if cfg.Jobs[0].Ports["PORT"] != 3000 {
+		t.Errorf("ports = %v, want PORT=3000", cfg.Jobs[0].Ports)
+	}
+}
+
+// TestRunInit_HandWrittenPortSurvivesDetection asserts a base already in
+// run.toml outranks the one the .env declares.
+func TestRunInit_HandWrittenPortSurvivesDetection(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "dev", Kind: domain.JobKindService, Cmd: "pnpm run dev", Cwd: ".", Ports: map[string]int{"PORT": 7777}},
+		},
+	})
+
+	writeProjectFile(t, "package.json", `{"name":"root","scripts":{"dev":"next dev"}}`)
+	writeProjectFile(t, ".env", "PORT=3000\n")
+
+	if _, _, err := runCmd(t, domain.CmdInit, "--"+domain.FlagNonInteractive); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	job, _ := jobByName(cfg, "dev")
+	if job.Ports["PORT"] != 7777 {
+		t.Errorf("PORT = %d, want the hand-written 7777", job.Ports["PORT"])
+	}
+}

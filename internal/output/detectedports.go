@@ -8,7 +8,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-type ComposePortsReportParams struct {
+type DetectedPortsReportParams struct {
 	// Patched are the rewrites that were applied, empty when none were.
 	Patched map[string][]domain.ComposePortBinding
 	// Written is what each job gained in run.toml.
@@ -25,12 +25,18 @@ type ComposePortsReportParams struct {
 	// the reason, and Orphaned those whose ports found no job to carry them.
 	Changed  map[string]string
 	Orphaned []string
+
+	// EnvWritten is what the .env detection gave each job, EnvSources the file
+	// each port came from, and EnvUnreadable the directories it could not read.
+	EnvWritten    map[string]map[string]int
+	EnvSources    map[string]map[string]string
+	EnvUnreadable []domain.EnvPortScan
 }
 
-// ComposePortsReport prints what the detection did and, just as importantly,
+// DetectedPortsReport prints what the detection did and, just as importantly,
 // what it declined to do. It emits a raw body with no surrounding blank lines;
 // the caller's frame owns the padding. Nothing to say prints nothing.
-func ComposePortsReport(w io.Writer, params ComposePortsReportParams) {
+func DetectedPortsReport(w io.Writer, params DetectedPortsReportParams) {
 	if len(params.Patched) > 0 {
 		Blank(w)
 		Callout(w, domain.ComposePatchedTitle, rules.ComposePatchLines(params.Patched))
@@ -39,6 +45,15 @@ func ComposePortsReport(w io.Writer, params ComposePortsReportParams) {
 	if len(params.Written) > 0 {
 		Blank(w)
 		Callout(w, domain.ComposePortsTitle, rules.ComposePortsWrittenLines(params.Written))
+	}
+
+	if len(params.EnvWritten) > 0 {
+		Blank(w)
+		lines := rules.EnvPortsWrittenLines(rules.EnvPortsWrittenLinesParams{
+			Written: params.EnvWritten,
+			Sources: params.EnvSources,
+		})
+		Callout(w, domain.EnvPortsDetectedTitle, append(lines, "", rules.EnvPortsVerifyLine()))
 	}
 
 	if len(params.Withheld) > 0 {
@@ -77,9 +92,14 @@ func ComposePortsReport(w io.Writer, params ComposePortsReportParams) {
 		Blank(w)
 		Warning(w, rules.ComposeUnreadableLine(scan))
 	}
+
+	for _, scan := range params.EnvUnreadable {
+		Blank(w)
+		Warning(w, scan.Err)
+	}
 }
 
-func withheldLines(params ComposePortsReportParams) []string {
+func withheldLines(params DetectedPortsReportParams) []string {
 	var lines []string
 	for _, b := range params.Withheld {
 		lines = append(lines, rules.ComposeWithheldLine(b))
