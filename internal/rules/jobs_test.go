@@ -201,3 +201,13 @@ func TestIsAlreadyRunning(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeRunConfigsKeepsThePortOffsetBlock(t *testing.T) {
+	dst := domain.RunConfig{PortOffsetBlock: 25, Jobs: []domain.JobConfig{{Name: "a", Cmd: "x"}}}
+	src := domain.RunConfig{Jobs: []domain.JobConfig{{Name: "b", Cmd: "y"}}}
+
+	got, _ := MergeRunConfigs(dst, src)
+	if got.PortOffsetBlock != 25 {
+		t.Errorf("block = %d; a project sets it precisely to keep its ports apart", got.PortOffsetBlock)
+	}
+}

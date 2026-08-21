@@ -1,7 +1,6 @@
 package rules
 
 import (
-	"sort"
 	"strings"
 )
 
@@ -52,13 +51,4 @@ func withoutEnv(env []string, key string) []string {
 		}
 	}
 	return out
-}
-
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }

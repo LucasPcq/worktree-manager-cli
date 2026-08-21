@@ -44,7 +44,7 @@
           },
           "ports": {
             "type": "object",
-            "description": "Base ports this job binds, as ENV_VAR = port. wtm injects ENV_VAR = port + WTM_PORT_OFFSET, so the main checkout keeps the declared port and every other worktree gets a free one. Write the command to read the variable (PORT for a dev server) or template it into docker-compose (\"${DB_PORT}:5432\").",
+            "description": "Base ports this job binds, as ENV_VAR = port. wtm injects ENV_VAR = port + WTM_PORT_OFFSET, so the main checkout keeps the declared port and every other worktree gets a free one. Write the command to read the variable (PORT for a dev server) or template it into docker-compose (\"${DB_PORT:-5432}:5432\", the default keeping the file usable without wtm).",
             "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
             "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 65535 }
           }

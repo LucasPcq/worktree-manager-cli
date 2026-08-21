@@ -1,0 +1,235 @@
+package rules
+
+import (
+	"fmt"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+)
+
+type ResolveComposePortsParams struct {
+	Answers        domain.InitProjectAnswers
+	PackageManager domain.PackageManager
+	Existing       domain.RunConfig
+	Plan           ComposePortPlan
+	// Unverifiable maps a compose file to the reason its recorded positions can
+	// no longer be trusted. Such a file contributes nothing: a stale scan would
+	// declare ports the file may no longer expose.
+	Unverifiable map[string]string
+}
+
+// ComposePortOutcome is the whole decision of a `run init`. Nothing here
+// touches disk, so the order of the steps below is testable on its own.
+type ComposePortOutcome struct {
+	Config  domain.RunConfig
+	Merge   MergeResult
+	Patches map[string][]domain.ComposePortBinding
+
+	Written    map[string]map[string]int
+	Withheld   []domain.ComposePortBinding
+	Dropped    []DroppedPort
+	Unreadable []domain.ComposeScan
+	// Changed and Orphaned name the files that contributed nothing, and why.
+	Changed  map[string]string
+	Orphaned []string
+}
+
+// ResolveComposePorts runs the whole sequence in one place: build the jobs the
+// selection still needs, merge, backfill the detected ports, withdraw the ones
+// that cannot coexist, and keep only the rewrites whose declaration survived.
+//
+// The order matters and is the point of gathering it here. A mapping is only
+// ever rewritten once its declaration is known to be kept — otherwise wtm would
+// edit a project file for a port it then refuses to declare.
+func ResolveComposePorts(params ResolveComposePortsParams) ComposePortOutcome {
+	outcome := ComposePortOutcome{
+		Withheld:   params.Plan.Withheld,
+		Unreadable: params.Plan.Unreadable,
+		Changed:    params.Unverifiable,
+	}
+
+	ports, patches := withoutFiles(params.Plan, sortedKeys(params.Unverifiable))
+
+	forJobs := params.Answers
+	forJobs.DockerComposeFiles = ComposeFilesNeedingAJob(ComposeFilesNeedingAJobParams{
+		Config: params.Existing,
+		Files:  params.Answers.DockerComposeFiles,
+	})
+	built := BuildInitRunConfig(forJobs, params.PackageManager)
+	merged, mergeResult := MergeRunConfigs(params.Existing, built)
+	outcome.Merge = mergeResult
+
+	// A file whose job was skipped — its name already taken by another file —
+	// has nowhere to put its ports. Declaring them elsewhere would be a guess.
+	outcome.Orphaned = orphanedComposeFiles(merged, ports)
+	ports, patches = withoutFiles(ComposePortPlan{PortsByFile: ports, Patches: patches}, outcome.Orphaned)
+
+	// A job stacking several compose files (-f base.yml -f dev.yml) receives all
+	// of their ports at once, so the same variable can arrive twice with two
+	// bases — the per-file check inside the plan cannot see it.
+	conflicts := sharedVarsAcrossFiles(merged, ports)
+	ports, patches = withoutVars(ports, patches, conflicts)
+	outcome.Withheld = append(outcome.Withheld, withheldForConflicts(withheldForConflictsParams{
+		Config:    merged,
+		Declared:  params.Plan.Declared,
+		Conflicts: conflicts,
+	})...)
+
+	backfilled := BackfillDockerPorts(BackfillDockerPortsParams{Config: merged, PortsByFile: ports})
+	pruned := PruneCollidingPorts(PruneCollidingPortsParams{Config: backfilled.Config, Detected: backfilled.Added})
+
+	outcome.Config = pruned.Config
+	outcome.Dropped = pruned.Dropped
+	outcome.Written = RemoveDroppedPorts(RemoveDroppedPortsParams{Added: backfilled.Added, Dropped: pruned.Dropped})
+	outcome.Patches = survivingPatches(pruned.Config, patches)
+	return outcome
+}
+
+// survivingPatches keeps a rewrite only when the config about to be written
+// declares its variable at exactly the base the mapping had. A different base —
+// one the user wrote by hand, or one a second file won — would make the rewrite
+// move a binding that already worked, which is the whole thing to avoid.
+func survivingPatches(cfg domain.RunConfig, patches map[string][]domain.ComposePortBinding) map[string][]domain.ComposePortBinding {
+	kept := map[string][]domain.ComposePortBinding{}
+	for _, file := range SortedComposeFiles(patches) {
+		job := jobNamed(cfg, ComposeJobName(ComposeJobNameParams{Config: cfg, File: file}))
+		for _, binding := range patches[file] {
+			if base, declared := job.Ports[binding.Var]; declared && base == binding.Base {
+				kept[file] = append(kept[file], binding)
+			}
+		}
+	}
+	return kept
+}
+
+// sharedVarsAcrossFiles maps a job to the variables its files disagree on.
+func sharedVarsAcrossFiles(cfg domain.RunConfig, ports map[string]map[string]int) map[string]map[string]bool {
+	seen := map[string]map[string]int{}
+	conflicts := map[string]map[string]bool{}
+
+	for _, file := range SortedComposeFiles(ports) {
+		job := ComposeJobName(ComposeJobNameParams{Config: cfg, File: file})
+		if job == "" {
+			continue
+		}
+		if seen[job] == nil {
+			seen[job] = map[string]int{}
+		}
+		for _, name := range sortedPortNames(ports[file]) {
+			base := ports[file][name]
+			if previous, found := seen[job][name]; found && previous != base {
+				if conflicts[job] == nil {
+					conflicts[job] = map[string]bool{}
+				}
+				conflicts[job][name] = true
+				continue
+			}
+			seen[job][name] = base
+		}
+	}
+	return conflicts
+}
+
+func withoutVars(
+	ports map[string]map[string]int,
+	patches map[string][]domain.ComposePortBinding,
+	conflicts map[string]map[string]bool,
+) (map[string]map[string]int, map[string][]domain.ComposePortBinding) {
+	if len(conflicts) == 0 {
+		return ports, patches
+	}
+
+	inConflict := map[string]bool{}
+	for _, vars := range conflicts {
+		for name := range vars {
+			inConflict[name] = true
+		}
+	}
+
+	keptPorts := map[string]map[string]int{}
+	for file, byName := range ports {
+		kept := map[string]int{}
+		for name, base := range byName {
+			if !inConflict[name] {
+				kept[name] = base
+			}
+		}
+		if len(kept) > 0 {
+			keptPorts[file] = kept
+		}
+	}
+
+	keptPatches := map[string][]domain.ComposePortBinding{}
+	for file, bindings := range patches {
+		for _, b := range bindings {
+			if !inConflict[b.Var] {
+				keptPatches[file] = append(keptPatches[file], b)
+			}
+		}
+	}
+	return keptPorts, keptPatches
+}
+
+type withheldForConflictsParams struct {
+	Config    domain.RunConfig
+	Declared  map[string][]domain.ComposePortBinding
+	Conflicts map[string]map[string]bool
+}
+
+func withheldForConflicts(params withheldForConflictsParams) []domain.ComposePortBinding {
+	var withheld []domain.ComposePortBinding
+	for _, file := range SortedComposeFiles(params.Declared) {
+		job := ComposeJobName(ComposeJobNameParams{Config: params.Config, File: file})
+		for _, binding := range params.Declared[file] {
+			if !params.Conflicts[job][binding.Var] {
+				continue
+			}
+			binding.Reason = fmt.Sprintf(domain.ComposePortReasonSharedJob, binding.Var, job)
+			withheld = append(withheld, binding)
+		}
+	}
+	return withheld
+}
+
+func orphanedComposeFiles(cfg domain.RunConfig, ports map[string]map[string]int) []string {
+	var orphaned []string
+	for _, file := range SortedComposeFiles(ports) {
+		if len(ports[file]) > 0 && ComposeJobName(ComposeJobNameParams{Config: cfg, File: file}) == "" {
+			orphaned = append(orphaned, file)
+		}
+	}
+	return orphaned
+}
+
+func withoutFiles(plan ComposePortPlan, files []string) (map[string]map[string]int, map[string][]domain.ComposePortBinding) {
+	if len(files) == 0 {
+		return plan.PortsByFile, plan.Patches
+	}
+
+	excluded := make(map[string]bool, len(files))
+	for _, f := range files {
+		excluded[f] = true
+	}
+
+	ports := map[string]map[string]int{}
+	for file, p := range plan.PortsByFile {
+		if !excluded[file] {
+			ports[file] = p
+		}
+	}
+	patches := map[string][]domain.ComposePortBinding{}
+	for file, b := range plan.Patches {
+		if !excluded[file] {
+			patches[file] = b
+		}
+	}
+	return ports, patches
+}
+
+func jobNamed(cfg domain.RunConfig, name string) domain.JobConfig {
+	for _, job := range cfg.Jobs {
+		if job.Name == name {
+			return job
+		}
+	}
+	return domain.JobConfig{}
+}

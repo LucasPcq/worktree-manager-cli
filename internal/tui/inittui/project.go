@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/tui/branchrefresh"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
@@ -26,6 +27,7 @@ const (
 	stepHooksCleanGate = "hooks_clean_gate"
 	stepHooksClean     = "hooks_clean"
 	stepDocker         = "docker"
+	stepComposePatch   = "compose_patch"
 	stepScripts        = "scripts"
 )
 
@@ -106,19 +108,38 @@ func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (
 // detection defaults; a non-nil prefill (re-run) pre-selects what run.toml
 // already declares so the merge is additive. Returns empty answers with no
 // error when nothing is detected — the caller reports how to add jobs manually.
-func RunServicesWizard(projectDir string, detection domain.InitDetectionResult, prefill *SectionPrefill) (domain.InitProjectAnswers, error) {
+func RunServicesWizard(params ServicesWizardParams) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
-	addServicesSteps(s, detection, nil, prefill)
+	addServicesSteps(s, addServicesStepsParams{
+		Detection:    params.Detection,
+		Existing:     params.Existing,
+		Prefill:      params.Prefill,
+		PatchCompose: params.PatchCompose,
+	})
 
 	if len(s.steps) == 0 {
 		return domain.InitProjectAnswers{}, nil
 	}
 
-	final, err := runWizard(runWizardParams{steps: s.steps, projectDir: projectDir})
+	final, err := runWizard(runWizardParams{steps: s.steps, projectDir: params.ProjectDir})
 	if err != nil {
 		return domain.InitProjectAnswers{}, err
 	}
-	return extractProjectAnswers(final, detection, s.idx), nil
+
+	answers := extractProjectAnswers(final, params.Detection, s.idx)
+	answers.PatchCompose = answers.PatchCompose || params.PatchCompose
+	return answers, nil
+}
+
+// ServicesWizardParams holds the inputs for RunServicesWizard.
+type ServicesWizardParams struct {
+	ProjectDir string
+	Detection  domain.InitDetectionResult
+	Existing   domain.RunConfig
+	Prefill    *SectionPrefill
+	// PatchCompose is --patch-compose already given on the command line: the
+	// rewrite is authorized, so the wizard states it instead of asking again.
+	PatchCompose bool
 }
 
 // SectionWizardParams holds inputs for RunSectionWizard.
@@ -437,7 +458,15 @@ func addHooksCleanSteps(s *stepSet, autoSkip func(components.WizardModel) bool, 
 	})
 }
 
-func addServicesSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip func(components.WizardModel) bool, prefill *SectionPrefill) {
+type addServicesStepsParams struct {
+	Detection    domain.InitDetectionResult
+	Existing     domain.RunConfig
+	Prefill      *SectionPrefill
+	PatchCompose bool
+}
+
+func addServicesSteps(s *stepSet, params addServicesStepsParams) {
+	detection, prefill := params.Detection, params.Prefill
 	if len(detection.DockerComposeFiles) > 0 {
 		items := make([]components.MultiSelectItem, 0, len(detection.DockerComposeFiles))
 		for _, f := range detection.DockerComposeFiles {
@@ -451,11 +480,16 @@ func addServicesSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip
 				Description: "Each selected docker-compose file becomes a service you can start and stop with `wtm run`.",
 				Items:       items,
 			}),
-			Summary:  multiSelectSummary,
-			AutoSkip: autoSkip,
-			Callout:  true,
+			Summary: multiSelectSummary,
+			Callout: true,
 		})
 	}
+
+	addComposePatchStep(s, addComposePatchStepParams{
+		Detection:  detection,
+		Existing:   params.Existing,
+		Authorized: params.PatchCompose,
+	})
 
 	if len(detection.PackageScripts) > 0 {
 		pm := string(detection.PackageManager)
@@ -480,9 +514,8 @@ func addServicesSteps(s *stepSet, detection domain.InitDetectionResult, autoSkip
 				Description: "Each selected script becomes a job — dev-style scripts run as services, the rest as one-off tasks.",
 				Items:       items,
 			}),
-			Summary:  packageScriptsSummary,
-			AutoSkip: autoSkip,
-			Callout:  true,
+			Summary: packageScriptsSummary,
+			Callout: true,
 		})
 	}
 }
@@ -557,6 +590,11 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 			if len(answers.DockerComposeFiles) > 0 {
 				answers.DockerComposeCmd = detection.DockerComposeCmd
 			}
+		}
+	}
+	if i := at(stepComposePatch); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.ConfirmModel); ok {
+			answers.PatchCompose = m.Confirmed()
 		}
 	}
 	if i := at(stepScripts); i >= 0 && !final.Skipped(i) {
@@ -759,4 +797,89 @@ func selectEnvFiles(detected []domain.EnvFile, targets []string) []domain.EnvFil
 
 func detectedHooks(d domain.InitDetectionResult) string {
 	return d.InstallCommand
+}
+
+// addComposePatchStep asks whether the selected compose files may be rewritten
+// so their literal host ports read a variable. It only appears when the files
+// picked in the previous step actually have something to rewrite, and it lists
+// every line it would touch — the same lines the recap reports afterwards.
+type addComposePatchStepParams struct {
+	Detection domain.InitDetectionResult
+	// Existing is the config on disk: the same collision and conflict checks the
+	// recap runs must run here, or the step asks to rewrite lines it will not.
+	Existing domain.RunConfig
+	// Authorized is --patch-compose: the answer is already in, so the step
+	// states it rather than asking, and stays in the recap.
+	Authorized bool
+}
+
+func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
+	detection := params.Detection
+	docker := s.at(stepDocker)
+	if docker < 0 || len(detection.ComposeScans) == 0 {
+		return
+	}
+
+	s.add(stepComposePatch, components.ConfirmStep(components.ConfirmStepParams{
+		Name:     domain.ComposePatchStepName,
+		YesLabel: domain.ComposePatchStepYes,
+		NoLabel:  domain.ComposePatchStepNo,
+		Decide: func(prev []components.Step) (bool, string, components.NewConfirmParams) {
+			patches := composePatchesFor(composePatchesForParams{
+				Prev:      prev,
+				Docker:    docker,
+				Detection: detection,
+				Existing:  params.Existing,
+			})
+			if len(patches) == 0 {
+				return false, "", components.NewConfirmParams{}
+			}
+			if params.Authorized {
+				return false, "--" + domain.FlagPatchCompose, components.NewConfirmParams{}
+			}
+			return true, "", components.NewConfirmParams{
+				Title: domain.ComposePatchStepTitle,
+				Description: strings.Join([]string{
+					domain.ComposePatchStepPrelude,
+					strings.Join(rules.ComposePatchLines(patches), "\n"),
+					domain.ComposePatchStepEpilogue,
+				}, "\n\n"),
+			}
+		},
+	}))
+}
+
+type composePatchesForParams struct {
+	Prev      []components.Step
+	Docker    int
+	Detection domain.InitDetectionResult
+	Existing  domain.RunConfig
+}
+
+// composePatchesFor runs the full resolution, not just the plan, so the lines
+// the step asks about are exactly the ones the recap will report as rewritten.
+func composePatchesFor(params composePatchesForParams) map[string][]domain.ComposePortBinding {
+	if params.Docker >= len(params.Prev) {
+		return nil
+	}
+	selected, ok := params.Prev[params.Docker].Model.(components.MultiSelectModel)
+	if !ok {
+		return nil
+	}
+
+	answers := domain.InitProjectAnswers{
+		DockerComposeFiles: selected.Values(),
+		DockerComposeCmd:   params.Detection.DockerComposeCmd,
+		PatchCompose:       true,
+	}
+	return rules.ResolveComposePorts(rules.ResolveComposePortsParams{
+		Answers:        answers,
+		PackageManager: params.Detection.PackageManager,
+		Existing:       params.Existing,
+		Plan: rules.PlanComposePorts(rules.PlanComposePortsParams{
+			Scans: params.Detection.ComposeScans,
+			Files: selected.Values(),
+			Patch: true,
+		}),
+	}).Patches
 }

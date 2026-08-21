@@ -137,7 +137,7 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 
 | Command | Purpose |
 |---|---|
-| [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts) |
+| [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts, pre-fill ports) |
 | [`run up`](docs/wtm_run_up.md) / [`down`](docs/wtm_run_down.md) | Start / stop a profile's jobs (`up` attaches, `-d` detaches) |
 | [`run start`](docs/wtm_run_start.md) / [`stop`](docs/wtm_run_stop.md) | Start / stop a single job (`start` attaches, `-d` detaches) |
 | [`run ps`](docs/wtm_run_ps.md) / [`list`](docs/wtm_run_list.md) | Running jobs / declared jobs + profiles |
@@ -325,6 +325,31 @@ A declaration overrides whatever the environment already sets for that variable,
 job's `stop` command runs with the same ports its `cmd` did. For Docker, template the host
 side of the mapping (`"${DB_PORT}:5432"`) and declare `DB_PORT = 5432`: the container port
 never moves, only the binding does.
+
+`wtm run init` writes those Docker declarations for you. It reads the `ports:` of the
+compose files you pick: a mapping that already reads a variable is declared as-is, while a
+literal `"5432:5432"` would bind the same port in every worktree and is therefore **not**
+declared — wtm shows the line to write instead. Pass `--patch-compose` and it makes the
+change itself:
+
+```diff
+   postgres:
+     ports:
+-      - "5432:5432"
++      - "${POSTGRES_PORT:-5432}:5432"
+```
+
+Only the port value is rewritten, at its exact position — comments, indentation and
+quoting style are untouched — and the `:-5432` default keeps `docker compose up` working
+on its own, with no dependency on wtm. Re-running `run init` backfills a compose job that
+predates declarative ports without overwriting one you set by hand.
+
+wtm declares only what it can actually isolate, and says why for the rest: a port range,
+a mapping with no host port, a `ports:` list carrying a YAML **anchor or alias** (rewriting
+it would move every service sharing it), a `${DB_PORT}` with no default (the file never
+says which port it stands for), and a variable two services declare with two different
+defaults. It also withdraws a detected port rather than write a `run.toml` its own loader
+would refuse — two bases a multiple of the block apart — naming both sides.
 
 A server that **ignores** `PORT` and only takes its port as a CLI flag — Vite is the usual
 one — reads it back from the same variable, because `cmd` is a shell line:

@@ -176,7 +176,7 @@ func TestAutoServicesAnswers(t *testing.T) {
 		DockerComposeCmd:   "docker compose",
 		PackageScripts:     []domain.PackageScript{{Name: "dev"}},
 	}
-	got := rules.AutoServicesAnswers(detection)
+	got := rules.AutoServicesAnswers(rules.AutoServicesAnswersParams{Detection: detection})
 	if len(got.DockerComposeFiles) != 1 || got.DockerComposeCmd != "docker compose" {
 		t.Errorf("docker not carried: files=%v cmd=%q", got.DockerComposeFiles, got.DockerComposeCmd)
 	}
