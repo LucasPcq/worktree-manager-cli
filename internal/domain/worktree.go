@@ -18,6 +18,10 @@ type WorktreeMetadata struct {
 	SourceBranch string      `json:"source_branch"`
 	CreatedAt    string      `json:"created_at"`
 	EnvStrategy  EnvStrategy `json:"env_strategy"`
+	// Ordinal is the worktree's stable number, what every port and resource name
+	// is derived from. Zero means unallocated: the main worktree is ordinal 0 by
+	// definition and never gets a meta.json of its own.
+	Ordinal int `json:"ordinal,omitempty"`
 }
 
 // WorktreeStatus holds the display state of a worktree for wtm ls.
