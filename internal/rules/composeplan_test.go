@@ -2,6 +2,7 @@ package rules
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -254,5 +255,48 @@ func TestPruneCollidingPortsProducesALoadableConfig(t *testing.T) {
 
 	if errs := ValidateRunPorts(got.Config); len(errs) != 0 {
 		t.Errorf("the pruned config must load, got %v", errs)
+	}
+}
+
+func TestPlanComposePortsWithholdsAVariableDeclaredWithTwoBases(t *testing.T) {
+	// Before wtm, web binds 3000 and web2 binds 3001 via their defaults.
+	// Declaring the variable once would inject one value into both.
+	scans := map[string]domain.ComposeScan{
+		"docker-compose.yml": scanWith("docker-compose.yml",
+			templated("web", "APP_PORT", 3000),
+			templated("web2", "APP_PORT", 3001),
+		),
+	}
+
+	plan := PlanComposePorts(PlanComposePortsParams{Scans: scans, Files: []string{"docker-compose.yml"}})
+
+	if len(plan.PortsByFile["docker-compose.yml"]) != 0 {
+		t.Errorf("neither base can be honoured, got %v", plan.PortsByFile["docker-compose.yml"])
+	}
+	if len(plan.Withheld) != 2 {
+		t.Fatalf("both must be reported, got %+v", plan.Withheld)
+	}
+	for _, b := range plan.Withheld {
+		if !strings.Contains(b.Reason, "APP_PORT") {
+			t.Errorf("reason must name the variable, got %q", b.Reason)
+		}
+	}
+}
+
+func TestPlanComposePortsDeclaresAVariableSharedWithTheSameBase(t *testing.T) {
+	scans := map[string]domain.ComposeScan{
+		"docker-compose.yml": scanWith("docker-compose.yml",
+			templated("web", "APP_PORT", 3000),
+			templated("web2", "APP_PORT", 3000),
+		),
+	}
+
+	plan := PlanComposePorts(PlanComposePortsParams{Scans: scans, Files: []string{"docker-compose.yml"}})
+
+	if plan.PortsByFile["docker-compose.yml"]["APP_PORT"] != 3000 {
+		t.Errorf("one value satisfies both, got %v", plan.PortsByFile["docker-compose.yml"])
+	}
+	if len(plan.Withheld) != 0 {
+		t.Errorf("nothing to withhold, got %+v", plan.Withheld)
 	}
 }

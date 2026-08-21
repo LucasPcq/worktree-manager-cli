@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -39,11 +40,16 @@ type ComposeFixLinesParams struct {
 // declare: the mapping to write, then the declaration that makes it effective.
 // A mapping wtm cannot rewrite at all has no fix to offer.
 func ComposeFixLines(params ComposeFixLinesParams) []string {
-	if params.Binding.Status != domain.ComposePortFrozen || params.Binding.Replacement == "" {
+	var lines []string
+	switch {
+	case params.Binding.Status == domain.ComposePortFrozen && params.Binding.Replacement != "":
+		lines = []string{fmt.Sprintf(domain.ComposeFixLineFmt, params.Binding.Replacement)}
+	case ComposeNeedsDefault(params.Binding):
+		lines = []string{fmt.Sprintf(domain.ComposeFixDefaultFmt, ComposeSuggestedDefault(params.Binding))}
+	default:
 		return nil
 	}
 
-	lines := []string{fmt.Sprintf(domain.ComposeFixLineFmt, params.Binding.Replacement)}
 	if params.Job == "" {
 		return append(lines, fmt.Sprintf(domain.ComposeFixNoJobFmt, params.Binding.Var, params.Binding.Base))
 	}
@@ -105,4 +111,23 @@ func ComposeFilesNeedingAJob(cfg domain.RunConfig, files []string) []string {
 		}
 	}
 	return needing
+}
+
+// ComposeNeedsDefault singles out the one withheld mapping wtm can still help
+// with: an explicit template whose variable carries no default, so the file
+// never says which port it stands for. Every other refusal resolves without a
+// variable name, which is what tells the two apart.
+func ComposeNeedsDefault(b domain.ComposePortBinding) bool {
+	return b.Status == domain.ComposePortUnsupported && b.Var != "" && b.Token != ""
+}
+
+// ComposeSuggestedDefault rewrites the mapping with the container port as the
+// default. It is a suggestion for the reader to confirm, never something wtm
+// writes — the whole reason the mapping is withheld is that wtm cannot know.
+func ComposeSuggestedDefault(b domain.ComposePortBinding) string {
+	withDefault := fmt.Sprintf(domain.ComposeTemplatedPortFmt, b.Var, b.Base)
+	if braced := "${" + b.Var + "}"; strings.Contains(b.Token, braced) {
+		return strings.Replace(b.Token, braced, withDefault, 1)
+	}
+	return strings.Replace(b.Token, "$"+b.Var, withDefault, 1)
 }

@@ -242,3 +242,56 @@ func TestScanAllKeysByRelativePath(t *testing.T) {
 		t.Error("no file means no map")
 	}
 }
+
+// TestScanNeverReusesANameTheFileAlreadyUses is the guard against wtm breaking a
+// compose that worked: naming a literal port after a variable used elsewhere
+// would make wtm's own injection rewrite a value the project depends on.
+func TestScanNeverReusesANameTheFileAlreadyUses(t *testing.T) {
+	dir, file := writeCompose(t, `services:
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      DSN: postgres://app@db:${POSTGRES_PORT}/app
+  metrics:
+    ports:
+      - "${POSTGRES_PORT:-6000}:9187"
+`)
+	scan := Scan(ScanParams{ProjectDir: dir, File: file})
+
+	frozen := findBinding(t, scan, "postgres", 5432)
+	if frozen.Var == "POSTGRES_PORT" {
+		t.Fatalf("wtm claimed %q, a name the file already reads", frozen.Var)
+	}
+	if !strings.HasPrefix(frozen.Var, "POSTGRES_PORT_") {
+		t.Errorf("var = %q, want a name derived from the service but distinct", frozen.Var)
+	}
+
+	templated := findBinding(t, scan, "metrics", 9187)
+	if templated.Var != "POSTGRES_PORT" || templated.Base != 6000 {
+		t.Errorf("the user's own declaration must be read as written, got %s=%d", templated.Var, templated.Base)
+	}
+}
+
+func TestScanRefusesAnAnchoredPortsList(t *testing.T) {
+	dir, file := writeCompose(t, `services:
+  b:
+    ports: &bports
+      - "6379:6379"
+  c:
+    ports: *bports
+`)
+	scan := Scan(ScanParams{ProjectDir: dir, File: file})
+
+	if len(scan.Bindings) != 2 {
+		t.Fatalf("got %+v, want one binding per service", scan.Bindings)
+	}
+	for _, b := range scan.Bindings {
+		if b.Status != domain.ComposePortUnsupported {
+			t.Errorf("%s: rewriting an anchored list moves every service aliasing it, got %+v", b.Service, b)
+		}
+		if b.Replacement != "" {
+			t.Errorf("%s: must not be rewritten, got %q", b.Service, b.Replacement)
+		}
+	}
+}

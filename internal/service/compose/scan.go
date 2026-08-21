@@ -45,8 +45,31 @@ func Scan(params ScanParams) domain.ComposeScan {
 		services: mappingValue(root.Content[0], domain.ComposeServicesKey),
 		lines:    strings.Split(string(content), "\n"),
 		file:     params.File,
+		taken:    referencedNames(&root),
 	})
 	return scan
+}
+
+// referencedNames collects every environment variable the file interpolates,
+// anywhere — not just in its ports. A name wtm introduces for a literal port
+// becomes a variable it injects into the job, so reusing one the file already
+// reads elsewhere (a DATABASE_URL, an environment: entry) would silently
+// rewrite a value the project depends on.
+func referencedNames(root *yaml.Node) map[string]bool {
+	taken := map[string]bool{}
+	var walk func(n *yaml.Node)
+	walk = func(n *yaml.Node) {
+		if n.Kind == yaml.ScalarNode {
+			for _, name := range rules.EnvVarReferences(n.Value) {
+				taken[name] = true
+			}
+		}
+		for _, child := range n.Content {
+			walk(child)
+		}
+	}
+	walk(root)
+	return taken
 }
 
 // ScanAll scans every file in order, keyed by the same relative path run.toml
@@ -66,6 +89,7 @@ type collectParams struct {
 	services *yaml.Node
 	lines    []string
 	file     string
+	taken    map[string]bool
 }
 
 func collectBindings(params collectParams) []domain.ComposePortBinding {
@@ -74,9 +98,10 @@ func collectBindings(params collectParams) []domain.ComposePortBinding {
 	}
 
 	var bindings []domain.ComposePortBinding
-	// Taken spans the whole file: two services normalizing to the same variable
-	// name would otherwise declare the same one twice.
-	taken := map[string]bool{}
+	taken := params.taken
+	if taken == nil {
+		taken = map[string]bool{}
+	}
 
 	for i := 0; i+1 < len(params.services.Content); i += 2 {
 		name := params.services.Content[i].Value
@@ -87,6 +112,12 @@ func collectBindings(params collectParams) []domain.ComposePortBinding {
 
 		if ports.Kind == yaml.AliasNode {
 			bindings = append(bindings, unsupported(params.file, name, domain.ComposePortReasonAlias))
+			continue
+		}
+		// An anchored list is read by every service aliasing it, so rewriting it
+		// here would move their bindings too.
+		if ports.Anchor != "" {
+			bindings = append(bindings, unsupported(params.file, name, domain.ComposePortReasonAnchor))
 			continue
 		}
 		if ports.Kind != yaml.SequenceNode {
@@ -123,6 +154,10 @@ type bindingForParams struct {
 }
 
 func bindingFor(params bindingForParams) (domain.ComposePortBinding, bool) {
+	if params.entry.Anchor != "" {
+		return unsupported(params.file, params.service, domain.ComposePortReasonAnchor), true
+	}
+
 	switch params.entry.Kind {
 	case yaml.AliasNode:
 		return unsupported(params.file, params.service, domain.ComposePortReasonAlias), true
@@ -175,6 +210,9 @@ func locate(binding domain.ComposePortBinding, file string, node *yaml.Node, lin
 
 	token, ok := sourceToken(lines, node)
 	if !ok {
+		if binding.Reason != "" {
+			return binding
+		}
 		return unsupported(file, binding.Service, domain.ComposePortReasonUnreadable)
 	}
 	binding.Token = token

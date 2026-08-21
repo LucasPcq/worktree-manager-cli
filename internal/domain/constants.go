@@ -161,6 +161,13 @@ const (
 	ComposePortReasonBadVarName = "%q is not a valid environment variable name"
 	ComposePortReasonAlias      = "the ports list is a YAML alias — templating it would change every anchor site"
 	ComposePortReasonUnreadable = "wtm could not read this mapping back from the file, so it will not rewrite it"
+	ComposePortReasonNoDefault  = "%s has no default — wtm cannot tell which port it stands for"
+	ComposePortReasonSharedVar  = "%s is declared with two different bases in this file — wtm cannot tell which one wins"
+	ComposePortReasonAnchor     = "the ports list carries a YAML anchor — rewriting it would move every service aliasing it"
+
+	// ComposeFixDefaultFmt suggests the default to add to an explicit template.
+	// The container port is a guess the reader confirms, not a value wtm writes.
+	ComposeFixDefaultFmt = "add a default, e.g. %s"
 
 	// The section titles of the compose port report.
 	ComposePatchedTitle  = "Compose ports templatized"

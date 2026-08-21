@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -79,16 +80,15 @@ func ComposeShortPort(params ComposeShortPortParams) domain.ComposePortBinding {
 	binding := domain.ComposePortBinding{Service: params.Service}
 
 	fields := splitComposeMapping(params.Mapping)
-	if len(fields) < 2 || len(fields) > 3 {
+	if len(fields) < 2 {
 		return unsupportedComposePort(binding, domain.ComposePortReasonNoHost)
 	}
 
-	ip := ""
-	if len(fields) == 3 {
-		ip = fields[0]
-		fields = fields[1:]
-	}
-	host, container := fields[0], fields[1]
+	// The host port and the container port are always the last two fields;
+	// anything before them is the listen address, which an IPv6 literal spreads
+	// over several colon-separated pieces ("[::1]", "", "1]").
+	ip := strings.Join(fields[:len(fields)-2], ":")
+	host, container := fields[len(fields)-2], fields[len(fields)-1]
 
 	containerPort, ok := parseComposeContainerPort(container)
 	if !ok {
@@ -102,13 +102,13 @@ func ComposeShortPort(params ComposeShortPortParams) domain.ComposePortBinding {
 		Container: containerPort,
 		Taken:     params.Taken,
 	})
+	binding.Var = resolved.varName
+	binding.Base = resolved.base
 	if resolved.reason != "" {
 		return unsupportedComposePort(binding, resolved.reason)
 	}
 
 	binding.Status = resolved.status
-	binding.Var = resolved.varName
-	binding.Base = resolved.base
 	if resolved.status == domain.ComposePortFrozen {
 		binding.Replacement = renderComposeShortMapping(renderComposeShortMappingParams{
 			IP:        ip,
@@ -151,13 +151,13 @@ func ComposeLongPort(params ComposeLongPortParams) domain.ComposePortBinding {
 		Container: containerPort,
 		Taken:     params.Taken,
 	})
+	binding.Var = resolved.varName
+	binding.Base = resolved.base
 	if resolved.reason != "" {
 		return unsupportedComposePort(binding, resolved.reason)
 	}
 
 	binding.Status = resolved.status
-	binding.Var = resolved.varName
-	binding.Base = resolved.base
 	if resolved.status == domain.ComposePortFrozen {
 		binding.Replacement = strconv.Quote(fmt.Sprintf(domain.ComposeTemplatedPortFmt, resolved.varName, resolved.base))
 	}
@@ -193,13 +193,20 @@ func resolveComposeHostPort(params resolveComposeHostPortParams) resolvedCompose
 			return resolvedComposeHostPort{reason: fmt.Sprintf(domain.ComposePortReasonBadVarName, name)}
 		}
 
-		base := params.Container
-		if fallback != "" {
-			parsed, err := strconv.Atoi(fallback)
-			if err != nil {
-				return resolvedComposeHostPort{reason: fmt.Sprintf(domain.ComposePortReasonNotAPort, fallback)}
+		// No default means the file does not say which port the variable stands
+		// for. Inferring one from the container port would let a declaration
+		// override whatever the project's .env already sets, silently moving a
+		// binding that worked.
+		if fallback == "" {
+			return resolvedComposeHostPort{
+				varName: name,
+				base:    params.Container,
+				reason:  fmt.Sprintf(domain.ComposePortReasonNoDefault, host),
 			}
-			base = parsed
+		}
+		base, err := strconv.Atoi(fallback)
+		if err != nil {
+			return resolvedComposeHostPort{reason: fmt.Sprintf(domain.ComposePortReasonNotAPort, fallback)}
 		}
 		if base < domain.PortMin || base > domain.PortMax {
 			return resolvedComposeHostPort{reason: fmt.Sprintf(domain.ComposePortReasonOutOfRange, base, domain.PortMin, domain.PortMax)}
@@ -233,7 +240,6 @@ func resolveComposeHostPort(params resolveComposeHostPortParams) resolvedCompose
 func unsupportedComposePort(binding domain.ComposePortBinding, reason string) domain.ComposePortBinding {
 	binding.Status = domain.ComposePortUnsupported
 	binding.Reason = reason
-	binding.Var = ""
 	binding.Replacement = ""
 	return binding
 }
@@ -410,4 +416,20 @@ func sortedKeys[T any](m map[string]T) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+var envVarReferencePattern = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)`)
+
+// EnvVarReferences lists the environment variables a string interpolates. The
+// scanner seeds a compose file's taken names with every reference in it, so a
+// name wtm introduces for a literal port cannot land on one the file already
+// uses somewhere else — which would make wtm's own injection rewrite a value
+// the project relies on.
+func EnvVarReferences(s string) []string {
+	matches := envVarReferencePattern.FindAllStringSubmatch(s, -1)
+	names := make([]string, 0, len(matches))
+	for _, m := range matches {
+		names = append(names, m[1])
+	}
+	return names
 }

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -44,15 +45,20 @@ func PlanComposePorts(params PlanComposePortsParams) ComposePortPlan {
 			continue
 		}
 
+		shared := sharedVarBases(scan.Bindings, params.Patch)
+
 		for _, binding := range scan.Bindings {
 			switch {
-			case binding.Status == domain.ComposePortTemplated:
-				declareComposePort(plan.PortsByFile, file, binding)
-			case binding.Status == domain.ComposePortFrozen && params.Patch:
-				declareComposePort(plan.PortsByFile, file, binding)
-				plan.Patches[file] = append(plan.Patches[file], binding)
-			default:
+			case !declarable(binding, params.Patch):
 				plan.Withheld = append(plan.Withheld, binding)
+			case shared[binding.Var]:
+				binding.Reason = fmt.Sprintf(domain.ComposePortReasonSharedVar, binding.Var)
+				plan.Withheld = append(plan.Withheld, binding)
+			default:
+				declareComposePort(plan.PortsByFile, file, binding)
+				if binding.Status == domain.ComposePortFrozen {
+					plan.Patches[file] = append(plan.Patches[file], binding)
+				}
 			}
 		}
 	}
@@ -60,8 +66,35 @@ func PlanComposePorts(params PlanComposePortsParams) ComposePortPlan {
 	return plan
 }
 
-// declareComposePort keeps the first declaration of a variable: the scanner
-// already made names unique per file, so a second one can only be a duplicate.
+// declarable says whether a mapping can back a run.toml declaration at all.
+func declarable(binding domain.ComposePortBinding, patch bool) bool {
+	return binding.Status == domain.ComposePortTemplated ||
+		(binding.Status == domain.ComposePortFrozen && patch)
+}
+
+// sharedVarBases names the variables a file declares twice with two different
+// bases. wtm injects one value per variable, so declaring either would move the
+// other service's binding onto it — the two cannot both be honoured and there
+// is nothing to arbitrate on, so neither is declared.
+func sharedVarBases(bindings []domain.ComposePortBinding, patch bool) map[string]bool {
+	seen := map[string]int{}
+	shared := map[string]bool{}
+	for _, b := range bindings {
+		if !declarable(b, patch) {
+			continue
+		}
+		if base, found := seen[b.Var]; found && base != b.Base {
+			shared[b.Var] = true
+			continue
+		}
+		seen[b.Var] = b.Base
+	}
+	return shared
+}
+
+// declareComposePort keeps the first declaration of a variable; a second one
+// with the same base is the same declaration, and a second one with a
+// different base never reaches here.
 func declareComposePort(ports map[string]map[string]int, file string, binding domain.ComposePortBinding) {
 	if ports[file] == nil {
 		ports[file] = map[string]int{}

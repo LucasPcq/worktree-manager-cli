@@ -83,8 +83,6 @@ func TestComposeShortPortTemplated(t *testing.T) {
 	}{
 		{"braced with a default", "${DB_PORT:-5432}:5432", "DB_PORT", 5432},
 		{"braced with a hard default", "${DB_PORT-5432}:5432", "DB_PORT", 5432},
-		{"no default falls back to the container port", "${DB_PORT}:5432", "DB_PORT", 5432},
-		{"bare variable", "$DB_PORT:5432", "DB_PORT", 5432},
 		{"host ip and a variable", "127.0.0.1:${DB_PORT:-15432}:5432", "DB_PORT", 15432},
 	}
 	for _, tt := range tests {
@@ -115,6 +113,7 @@ func TestComposeShortPortUnsupported(t *testing.T) {
 		{"host port is not a number", "abc:5432", "not a port number"},
 		{"out of range", "70000:5432", "outside"},
 		{"variable is not an env name", "${1BAD}:5432", "not a valid environment variable name"},
+		{"bare variable has no default", "$DB_PORT:5432", "no default"},
 		{"empty", "", "no host port"},
 	}
 	for _, tt := range tests {
@@ -224,5 +223,63 @@ func TestApplyComposePortPatchesLeavesTheFileAloneWithoutBindings(t *testing.T) 
 	}
 	if got != composeSource {
 		t.Error("no binding must mean no rewrite")
+	}
+}
+
+func TestComposeShortPortKeepsAnIPv6HostAddress(t *testing.T) {
+	tests := []struct {
+		name    string
+		mapping string
+		wantIP  string
+	}{
+		{"bracketed", "[::1]:5432:5432", "[::1]"},
+		{"bare", "::1:5432:5432", "::1"},
+		{"full form", "[2001:db8::1]:5432:5432", "[2001:db8::1]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ComposeShortPort(ComposeShortPortParams{Service: "db", Mapping: tt.mapping})
+			if got.Status != domain.ComposePortFrozen {
+				t.Fatalf("status = %q (%s), want frozen — there is a host port to shift", got.Status, got.Reason)
+			}
+			if got.Base != 5432 || got.Container != 5432 {
+				t.Errorf("base/container = %d/%d, want 5432/5432", got.Base, got.Container)
+			}
+			want := `"` + tt.wantIP + `:${DB_PORT:-5432}:5432"`
+			if got.Replacement != want {
+				t.Errorf("replacement = %s, want %s", got.Replacement, want)
+			}
+		})
+	}
+}
+
+func TestComposeShortPortRefusesATemplateWithNoDefault(t *testing.T) {
+	got := ComposeShortPort(ComposeShortPortParams{Service: "db", Mapping: "${DB_PORT}:5432"})
+
+	if got.Status != domain.ComposePortUnsupported {
+		t.Fatalf("status = %q, want unsupported: wtm cannot tell which port DB_PORT stands for", got.Status)
+	}
+	if got.Var != "DB_PORT" {
+		t.Errorf("var = %q, want DB_PORT kept so the report can name it", got.Var)
+	}
+	if got.Replacement != "" {
+		t.Error("an explicit template is never rewritten")
+	}
+	if !strings.Contains(got.Reason, "no default") {
+		t.Errorf("reason = %q", got.Reason)
+	}
+}
+
+func TestEnvVarReferences(t *testing.T) {
+	got := EnvVarReferences(`postgres://user:${DB_PASS}@host:${DB_PORT:-5432}/$DB_NAME and ${1BAD}`)
+	want := map[string]bool{"DB_PASS": true, "DB_PORT": true, "DB_NAME": true}
+
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want the three valid names only", got)
+	}
+	for _, name := range got {
+		if !want[name] {
+			t.Errorf("unexpected reference %q", name)
+		}
 	}
 }
