@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func TestLoadRunRejectsTypoedSection(t *testing.T) {
@@ -158,5 +159,47 @@ func TestRunTemplateUncommentsIntoAValidConfig(t *testing.T) {
 	}
 	if byName["web"].Ports["PORT"] != 3000 {
 		t.Errorf("the dev server recipe lost its port: %v", byName["web"].Ports)
+	}
+}
+
+func TestLoadRunRejectsNegativeBlock(t *testing.T) {
+	dir := writeRunFile(t, `
+port_offset_block = -10
+
+[[job]]
+name = "web"
+kind = "service"
+cmd = "pnpm dev"
+`)
+
+	_, err := LoadRun(dir)
+	if err == nil {
+		t.Fatal("expected a negative port_offset_block to be refused at load")
+	}
+	if !strings.Contains(err.Error(), "port_offset_block") {
+		t.Errorf("the error should name the key, got: %v", err)
+	}
+}
+
+// Zero is how an absent block decodes, so it must read as "use the default"
+// rather than as a block of nothing — which would put every worktree on the
+// main checkout's ports.
+func TestLoadRunAcceptsZeroBlock(t *testing.T) {
+	dir := writeRunFile(t, `
+port_offset_block = 0
+
+[[job]]
+name = "web"
+kind = "service"
+cmd = "pnpm dev"
+ports = { PORT = 3000 }
+`)
+
+	cfg, err := LoadRun(dir)
+	if err != nil {
+		t.Fatalf("zero must load as the default block: %v", err)
+	}
+	if got := rules.EffectivePortOffsetBlock(cfg); got != domain.PortOffsetBlock {
+		t.Errorf("got block %d, want the default %d", got, domain.PortOffsetBlock)
 	}
 }
