@@ -175,7 +175,12 @@ func runMoveStep(p executeRelocateStepParams, res domain.RelocateStepResult) dom
 	}
 
 	if !p.Params.DryRun {
-		if err := adoptWorktree(p.Params.StateDir, res.Branch, res.Parent); err != nil {
+		if err := adoptWorktree(adoptWorktreeParams{
+			ProjectDir: p.Params.ProjectDir,
+			StateDir:   p.Params.StateDir,
+			Branch:     res.Branch,
+			Parent:     res.Parent,
+		}); err != nil {
 			return failStep(res, err)
 		}
 	}
@@ -185,7 +190,12 @@ func runMoveStep(p executeRelocateStepParams, res domain.RelocateStepResult) dom
 
 func runAdoptStep(p executeRelocateStepParams, res domain.RelocateStepResult) domain.RelocateStepResult {
 	if !p.Params.DryRun {
-		if err := adoptWorktree(p.Params.StateDir, res.Branch, res.Parent); err != nil {
+		if err := adoptWorktree(adoptWorktreeParams{
+			ProjectDir: p.Params.ProjectDir,
+			StateDir:   p.Params.StateDir,
+			Branch:     res.Branch,
+			Parent:     res.Parent,
+		}); err != nil {
 			return failStep(res, err)
 		}
 	}
@@ -199,12 +209,29 @@ func failStep(res domain.RelocateStepResult, err error) domain.RelocateStepResul
 	return res
 }
 
-func adoptWorktree(stateDir, branch, parent string) error {
-	metadata := domain.WorktreeMetadata{
-		SourceBranch: parent,
-		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+type adoptWorktreeParams struct {
+	ProjectDir string
+	StateDir   string
+	Branch     string
+	Parent     string
+}
+
+func adoptWorktree(params adoptWorktreeParams) error {
+	ordinal, err := EnsureOrdinal(EnsureOrdinalParams{
+		ProjectDir: params.ProjectDir,
+		StateDir:   params.StateDir,
+		Branch:     params.Branch,
+	})
+	if err != nil {
+		return fmt.Errorf("allocate ordinal: %w", err)
 	}
-	return writeMetadata(rules.WorktreeMetaDir(stateDir, branch), metadata)
+
+	metadata := domain.WorktreeMetadata{
+		SourceBranch: params.Parent,
+		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+		Ordinal:      ordinal,
+	}
+	return writeMetadata(rules.WorktreeMetaDir(params.StateDir, params.Branch), metadata)
 }
 
 func resolveParent(params RelocateParams, step domain.RelocateStep) string {

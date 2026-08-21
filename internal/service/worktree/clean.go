@@ -91,6 +91,8 @@ func Clean(params domain.CleanParams) error {
 		return fmt.Errorf("delete branch: %w", err)
 	}
 
+	purgeState(params.StateDir, params.Branch)
+
 	return nil
 }
 
@@ -157,6 +159,8 @@ func ForceClean(params domain.ForceCleanParams) error {
 	}); err != nil {
 		return fmt.Errorf("delete branch: %w", err)
 	}
+
+	purgeState(params.StateDir, params.Branch)
 
 	return nil
 }

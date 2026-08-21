@@ -89,10 +89,20 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		}
 	}
 
+	ordinal, err := EnsureOrdinal(EnsureOrdinalParams{
+		ProjectDir: params.ProjectDir,
+		StateDir:   params.StateDir,
+		Branch:     params.Branch,
+	})
+	if err != nil {
+		return domain.CreateResult{}, fmt.Errorf("allocate ordinal: %w", err)
+	}
+
 	metadata := domain.WorktreeMetadata{
 		SourceBranch: sourceBranch,
 		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
 		EnvStrategy:  strategy,
+		Ordinal:      ordinal,
 	}
 
 	metaDir := rules.WorktreeMetaDir(params.StateDir, params.Branch)

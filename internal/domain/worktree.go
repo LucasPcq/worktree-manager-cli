@@ -172,6 +172,7 @@ type CleanHooksParams struct {
 // local branch. Used when `git worktree remove` failed on undeletable files.
 type ForceCleanParams struct {
 	ProjectDir string
+	StateDir   string
 	Path       string
 	Branch     string
 	Force      bool

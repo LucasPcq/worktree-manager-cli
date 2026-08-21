@@ -282,6 +282,7 @@ func (f *cleanFlow) recoverRemoveFailure(p recoverParams) (bool, error) {
 
 	if forceErr := worktree.ForceClean(domain.ForceCleanParams{
 		ProjectDir: p.Params.ProjectDir,
+		StateDir:   p.Params.StateDir,
 		Path:       p.Path,
 		Branch:     p.Params.Branch,
 		Force:      p.Params.Force,
