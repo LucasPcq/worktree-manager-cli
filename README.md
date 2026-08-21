@@ -137,7 +137,7 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 
 | Command | Purpose |
 |---|---|
-| [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts) |
+| [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts, pre-fill ports) |
 | [`run up`](docs/wtm_run_up.md) / [`down`](docs/wtm_run_down.md) | Start / stop a profile's jobs (`up` attaches, `-d` detaches) |
 | [`run start`](docs/wtm_run_start.md) / [`stop`](docs/wtm_run_stop.md) | Start / stop a single job (`start` attaches, `-d` detaches) |
 | [`run ps`](docs/wtm_run_ps.md) / [`list`](docs/wtm_run_list.md) | Running jobs / declared jobs + profiles |
@@ -325,6 +325,25 @@ A declaration overrides whatever the environment already sets for that variable,
 job's `stop` command runs with the same ports its `cmd` did. For Docker, template the host
 side of the mapping (`"${DB_PORT}:5432"`) and declare `DB_PORT = 5432`: the container port
 never moves, only the binding does.
+
+`wtm run init` writes those Docker declarations for you. It reads the `ports:` of the
+compose files you pick: a mapping that already reads a variable is declared as-is, while a
+literal `"5432:5432"` would bind the same port in every worktree and is therefore **not**
+declared — wtm shows the line to write instead. Pass `--patch-compose` and it makes the
+change itself:
+
+```diff
+   postgres:
+     ports:
+-      - "5432:5432"
++      - "${POSTGRES_PORT:-5432}:5432"
+```
+
+Only the port value is rewritten, at its exact position — comments, indentation, anchors
+and quoting style are untouched — and the `:-5432` default keeps `docker compose up`
+working on its own, with no dependency on wtm. Port ranges and aliased `ports:` lists are
+reported rather than rewritten, and re-running `run init` backfills a compose job that
+predates declarative ports without overwriting one you set by hand.
 
 A server that **ignores** `PORT` and only takes its port as a CLI flag — Vite is the usual
 one — reads it back from the same variable, because `cmd` is a shell line:

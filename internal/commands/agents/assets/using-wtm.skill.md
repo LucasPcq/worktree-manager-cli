@@ -228,6 +228,16 @@ and **experimental**: the global `wtm init` does not configure it.
   `16` (run module not initialized) until at least one job/profile is declared. Non-TTY it
   auto-generates; re-running merges without overwriting. `run job add` / `run profile add`
   also work before init (they create the first job).
+- `run init` also **pre-fills the ports** of the compose files it picks up. A mapping
+  already reading a variable (`"${DB_PORT:-5432}:5432"`) is declared as-is. A literal one
+  (`"5432:5432"`) binds the same port in every worktree, so it is **not** declared: wtm
+  reports it with the line to write and the `run job edit --port` that follows. Pass
+  **`--patch-compose`** to have wtm rewrite those mappings itself — it edits only the port
+  value in place (comments and formatting survive) and the `:-default` keeps
+  `docker compose up` working without wtm. Non-interactively no project file is ever
+  touched without that flag. Ranges and aliased `ports:` lists are reported, never
+  rewritten. Re-running `run init` backfills the ports of a compose job that predates
+  them, without overwriting a port already declared.
 - `run up [profile]` / `run down` — start / stop a profile. `run start <job>` / `run stop
   <job>` — one job. A failing job aborts the rest and exits non-zero, leaving started
   services up (fix and re-run).
@@ -260,7 +270,8 @@ and **experimental**: the global `wtm init` does not configure it.
   `wtm run job add web --cmd "pnpm dev" --port PORT=3000` (repeat `--port` per variable).
   The main checkout gets `PORT=3000`, the next worktree `PORT=3010`. For Docker, template
   the host side in `docker-compose.yml` (`"${DB_PORT}:5432"`) and declare
-  `--port DB_PORT=5432`: the container port never moves, only the binding. A declaration
+  `--port DB_PORT=5432`: the container port never moves, only the binding. `wtm run init
+  --patch-compose` does both steps for you. A declaration
   **overrides** any inherited value for that variable, and the same ports are given to the
   job's `stop` command. `run up` / `run start` print what was bound (`web started · PORT=3010`).
 - **A job's `cmd` and `stop` are `/bin/sh` lines**, not whitespace-split argv: quotes, `&&`,
