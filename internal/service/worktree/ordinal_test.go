@@ -1,8 +1,10 @@
 package worktree
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -140,27 +142,65 @@ func TestEnsureOrdinalBackfillsWithoutLosingMetadata(t *testing.T) {
 }
 
 func TestEnsureOrdinalRepairsDuplicate(t *testing.T) {
+	cases := []struct {
+		name    string
+		askedAt string
+	}{
+		// The outcome must not depend on who asks: whichever worktree runs first,
+		// the lowest branch keeps the number and the other moves. Without that,
+		// both sides re-allocate, land on the same free number and collide again.
+		{"le perdant demande en premier", "feat/one"},
+		{"le gagnant demande en premier", "feat/clone"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			repo := newOrdinalRepo(t)
+			repo.addWorktree(t, "feat/one")
+			repo.addWorktree(t, "feat/clone")
+
+			// A meta.json copied by hand, or a lock that could not be taken: two
+			// live worktrees claiming the same number.
+			for _, branch := range []string{"feat/one", "feat/clone"} {
+				duplicate := domain.WorktreeMetadata{SourceBranch: "main", Ordinal: 1}
+				if err := writeMetadata(rules.WorktreeMetaDir(repo.stateDir, branch), duplicate); err != nil {
+					t.Fatalf("write duplicate: %v", err)
+				}
+			}
+
+			repo.ensure(t, c.askedAt)
+
+			if got := repo.ensure(t, "feat/clone"); got != 1 {
+				t.Errorf("feat/clone = %d, want 1 (its branch sorts first, it keeps the number)", got)
+			}
+			if got := repo.ensure(t, "feat/one"); got == 1 {
+				t.Error("feat/one kept the contested number, want it moved")
+			}
+		})
+	}
+}
+
+// Asking twice in a row must not move anything: a repair that re-allocated on
+// every run would walk a worktree's ports out from under its running jobs.
+func TestEnsureOrdinalConvergesAfterRepair(t *testing.T) {
 	repo := newOrdinalRepo(t)
 	repo.addWorktree(t, "feat/one")
 	repo.addWorktree(t, "feat/clone")
 
-	repo.ensure(t, "feat/one")
-
-	// A meta.json copied by hand, or a lock that could not be taken: two live
-	// worktrees claiming the same number.
-	duplicate := domain.WorktreeMetadata{SourceBranch: "main", Ordinal: 1}
-	if err := writeMetadata(rules.WorktreeMetaDir(repo.stateDir, "feat/clone"), duplicate); err != nil {
-		t.Fatalf("write duplicate: %v", err)
+	for _, branch := range []string{"feat/one", "feat/clone"} {
+		if err := writeMetadata(rules.WorktreeMetaDir(repo.stateDir, branch), domain.WorktreeMetadata{Ordinal: 1}); err != nil {
+			t.Fatalf("write duplicate: %v", err)
+		}
 	}
 
-	if got := repo.ensure(t, "feat/clone"); got == 1 {
-		t.Fatal("duplicate ordinal kept, want re-allocation")
-	}
-	if got := repo.meta(t, "feat/clone").Ordinal; got != 2 {
-		t.Errorf("repaired ordinal = %d, want 2", got)
-	}
-	if got := repo.ensure(t, "feat/one"); got != 1 {
-		t.Errorf("feat/one = %d, want 1 (it was there first and keeps its number)", got)
+	repaired := repo.ensure(t, "feat/one")
+	for range 3 {
+		if got := repo.ensure(t, "feat/one"); got != repaired {
+			t.Fatalf("ordinal moved again: %d then %d", repaired, got)
+		}
+		if got := repo.ensure(t, "feat/clone"); got != 1 {
+			t.Fatalf("feat/clone moved to %d, want a stable 1", got)
+		}
 	}
 }
 
@@ -195,5 +235,101 @@ func TestCreatedWorktreeIsManaged(t *testing.T) {
 
 	if !isManaged(repo.stateDir, "feat/adopted") {
 		t.Error("a worktree wtm created or adopted is not seen as managed")
+	}
+}
+
+// The whole point of the ticket: worktrees numbered at the same instant must
+// still get distinct numbers. The list of worktrees is read inside the lock, so
+// an allocation cannot be computed against a repository state another process
+// has already moved past.
+func TestEnsureOrdinalNeverCollidesUnderConcurrency(t *testing.T) {
+	repo := newOrdinalRepo(t)
+
+	branches := []string{"feat/a", "feat/b", "feat/c", "feat/d", "feat/e", "feat/f"}
+	for _, branch := range branches {
+		repo.addWorktree(t, branch)
+	}
+
+	var wg sync.WaitGroup
+	got := make([]int, len(branches))
+	for i, branch := range branches {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ordinal, err := EnsureOrdinal(WorktreeRef{
+				ProjectDir: repo.dir,
+				StateDir:   repo.stateDir,
+				Branch:     branch,
+			})
+			if err != nil {
+				t.Errorf("EnsureOrdinal(%s): %v", branch, err)
+				return
+			}
+			got[i] = ordinal
+		}()
+	}
+	wg.Wait()
+
+	seen := make(map[int]string, len(branches))
+	for i, ordinal := range got {
+		if owner, taken := seen[ordinal]; taken {
+			t.Errorf("%s and %s both got ordinal %d", owner, branches[i], ordinal)
+		}
+		seen[ordinal] = branches[i]
+	}
+}
+
+// An unreadable meta.json means "holds an unknown number", not "holds nothing".
+// Skipping it would hand its number to the worktree asking.
+func TestEnsureOrdinalRefusesWhenAnotherOrdinalIsUnreadable(t *testing.T) {
+	repo := newOrdinalRepo(t)
+	repo.addWorktree(t, "feat/one")
+	repo.addWorktree(t, "feat/two")
+	repo.ensure(t, "feat/one")
+
+	metaPath := filepath.Join(rules.WorktreeMetaDir(repo.stateDir, "feat/one"), domain.MetaFileName)
+	if err := os.WriteFile(metaPath, []byte("{ truncated"), 0o644); err != nil {
+		t.Fatalf("corrupt meta: %v", err)
+	}
+
+	_, err := EnsureOrdinal(WorktreeRef{ProjectDir: repo.dir, StateDir: repo.stateDir, Branch: "feat/two"})
+	if !errors.Is(err, domain.ErrOrdinalUnreadable) {
+		t.Errorf("error = %v, want %v", err, domain.ErrOrdinalUnreadable)
+	}
+}
+
+func TestEnsureOrdinalRefusesAnIncompleteReference(t *testing.T) {
+	repo := newOrdinalRepo(t)
+
+	cases := []struct {
+		name string
+		ref  WorktreeRef
+	}{
+		{"sans project dir", WorktreeRef{StateDir: repo.stateDir, Branch: "feat/x"}},
+		{"sans state dir", WorktreeRef{ProjectDir: repo.dir, Branch: "feat/x"}},
+		{"sans branche", WorktreeRef{ProjectDir: repo.dir, StateDir: repo.stateDir}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := EnsureOrdinal(c.ref); !errors.Is(err, domain.ErrOrdinalRefIncomplete) {
+				t.Errorf("error = %v, want %v", err, domain.ErrOrdinalRefIncomplete)
+			}
+		})
+	}
+}
+
+// A worktree git cannot name has no metadata to look up. It must not break the
+// numbering of the worktrees around it.
+func TestEnsureOrdinalToleratesDetachedHead(t *testing.T) {
+	repo := newOrdinalRepo(t)
+	detached := repo.addWorktree(t, "feat/detached")
+	repo.addWorktree(t, "feat/live")
+	repo.ensure(t, "feat/detached")
+
+	git(t, detached, "checkout", "--detach")
+
+	if got := repo.ensure(t, "feat/live"); got == 0 {
+		t.Error("feat/live got the main checkout's ordinal")
 	}
 }

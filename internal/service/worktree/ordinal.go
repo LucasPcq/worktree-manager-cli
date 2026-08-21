@@ -27,31 +27,34 @@ type WorktreeRef struct {
 // Allocation reads the ordinals of the worktrees git still lists, not every
 // meta.json in the state dir — a removed worktree must give its number back.
 func EnsureOrdinal(params WorktreeRef) (int, error) {
-	worktrees, err := infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: params.ProjectDir})
+	if params.ProjectDir == "" || params.StateDir == "" || params.Branch == "" {
+		return 0, domain.ErrOrdinalRefIncomplete
+	}
+
+	claim, err := readClaim(params)
 	if err != nil {
-		return 0, fmt.Errorf("list worktrees: %w", err)
+		return 0, err
 	}
-
-	if isMainBranch(worktrees, params.Branch) {
-		return domain.MainWorktreeOrdinal, nil
-	}
-
-	if ordinal := settledOrdinal(worktrees, params); ordinal > domain.MainWorktreeOrdinal {
-		return ordinal, nil
+	if claim.settled {
+		return claim.ordinal, nil
 	}
 
 	allocated := 0
 	lockErr := infra.WithFileLock(infra.WithFileLockParams{
 		Path: filepath.Join(params.StateDir, domain.OrdinalLockFileName),
 		Do: func() error {
-			// Re-read under the lock: another process may have allocated between
-			// the check above and here, and its number is now taken.
-			if ordinal := settledOrdinal(worktrees, params); ordinal > domain.MainWorktreeOrdinal {
-				allocated = ordinal
+			// Everything is read again here, git included. The claim above was
+			// taken outside the lock, so the worktree list it saw may predate a
+			// worktree another process has since created and numbered.
+			fresh, err := readClaim(params)
+			if err != nil {
+				return err
+			}
+			if fresh.settled {
+				allocated = fresh.ordinal
 				return nil
 			}
-			ordinal, err := allocateAndPersist(worktrees, params)
-			allocated = ordinal
+			allocated, err = persistOrdinal(params, rules.AllocateOrdinal(rules.TakenOrdinals(fresh.others)))
 			return err
 		},
 	})
@@ -61,27 +64,45 @@ func EnsureOrdinal(params WorktreeRef) (int, error) {
 	return allocated, nil
 }
 
-// settledOrdinal returns the recorded ordinal when it is genuinely this
-// worktree's, and zero when it must be re-allocated: never assigned, or shared
-// with a live worktree. The second case is the self-repair — a duplicate that
-// slipped in (a meta.json copied by hand, a lock that could not be taken) is
-// corrected on the next run instead of silently colliding forever.
-func settledOrdinal(worktrees []domain.GitWorktree, params WorktreeRef) int {
-	meta, err := loadMetadata(params.StateDir, params.Branch)
-	if err != nil || meta.Ordinal <= domain.MainWorktreeOrdinal {
-		return 0
-	}
-	for _, taken := range otherOrdinals(worktrees, params) {
-		if taken == meta.Ordinal {
-			return 0
-		}
-	}
-	return meta.Ordinal
+// claim is what one look at the repository says about a worktree's number:
+// either it is settled, or it has to be allocated against what the others hold.
+type claim struct {
+	settled bool
+	ordinal int
+	others  []rules.OrdinalHolder
 }
 
-func allocateAndPersist(worktrees []domain.GitWorktree, params WorktreeRef) (int, error) {
-	ordinal := rules.AllocateOrdinal(otherOrdinals(worktrees, params))
+func readClaim(params WorktreeRef) (claim, error) {
+	worktrees, err := infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: params.ProjectDir})
+	if err != nil {
+		return claim{}, fmt.Errorf("list worktrees: %w", err)
+	}
 
+	for _, wt := range worktrees {
+		if wt.Branch == params.Branch && wt.IsMain {
+			return claim{settled: true, ordinal: domain.MainWorktreeOrdinal}, nil
+		}
+	}
+
+	others, err := otherHolders(otherHoldersParams{Worktrees: worktrees, Ref: params})
+	if err != nil {
+		return claim{}, err
+	}
+
+	meta, err := loadMetadata(params.StateDir, params.Branch)
+	if err != nil {
+		return claim{others: others}, nil
+	}
+
+	settled := rules.KeepsOrdinal(rules.KeepsOrdinalParams{
+		Branch:  params.Branch,
+		Ordinal: meta.Ordinal,
+		Others:  others,
+	})
+	return claim{settled: settled, ordinal: meta.Ordinal, others: others}, nil
+}
+
+func persistOrdinal(params WorktreeRef, ordinal int) (int, error) {
 	meta, err := loadMetadata(params.StateDir, params.Branch)
 	if err != nil {
 		meta = domain.WorktreeMetadata{}
@@ -94,41 +115,51 @@ func allocateAndPersist(worktrees []domain.GitWorktree, params WorktreeRef) (int
 	return ordinal, nil
 }
 
-// otherOrdinals collects what every live worktree but this one holds. The main
-// checkout is included as ordinal 0 so allocation never hands it out.
-func otherOrdinals(worktrees []domain.GitWorktree, params WorktreeRef) []int {
-	taken := make([]int, 0, len(worktrees))
-	for _, wt := range worktrees {
-		if wt.Branch == params.Branch {
+type otherHoldersParams struct {
+	Worktrees []domain.GitWorktree
+	Ref       WorktreeRef
+}
+
+// otherHolders reads what every live worktree but this one holds. The main
+// checkout holds 0 by definition and has no metadata to read.
+//
+// A worktree whose metadata exists but cannot be read is an error, not a
+// worktree holding nothing: handing its number to someone else is exactly the
+// collision this package exists to prevent.
+func otherHolders(params otherHoldersParams) ([]rules.OrdinalHolder, error) {
+	holders := make([]rules.OrdinalHolder, 0, len(params.Worktrees))
+	for _, wt := range params.Worktrees {
+		if wt.Branch == params.Ref.Branch {
 			continue
 		}
 		if wt.IsMain {
-			taken = append(taken, domain.MainWorktreeOrdinal)
+			holders = append(holders, rules.OrdinalHolder{Branch: wt.Branch, Ordinal: domain.MainWorktreeOrdinal})
 			continue
 		}
-		meta, err := loadMetadata(params.StateDir, wt.Branch)
-		if err != nil {
+		// A worktree git cannot name (a detached HEAD) has no metadata to look
+		// up: it is skipped, and keeps whatever number it was given under the
+		// branch it left.
+		if wt.Branch == "" {
 			continue
 		}
-		taken = append(taken, meta.Ordinal)
-	}
-	return taken
-}
 
-func isMainBranch(worktrees []domain.GitWorktree, branch string) bool {
-	for _, wt := range worktrees {
-		if wt.Branch == branch {
-			return wt.IsMain
+		meta, err := loadMetadata(params.Ref.StateDir, wt.Branch)
+		if os.IsNotExist(err) {
+			continue
 		}
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s: %w", domain.ErrOrdinalUnreadable, wt.Branch, err)
+		}
+		holders = append(holders, rules.OrdinalHolder{Branch: wt.Branch, Ordinal: meta.Ordinal})
 	}
-	return false
+	return holders, nil
 }
 
 // purgeState drops a removed worktree's metadata directory, which nothing else
 // ever deletes — leaving it behind would keep its ordinal reserved for good.
 // Best effort: leftover state is not worth failing a removal that happened.
-func purgeState(stateDir, branch string) {
-	dir := rules.PurgeableMetaDir(rules.PurgeableMetaDirParams{StateDir: stateDir, Branch: branch})
+func purgeState(ref WorktreeRef) {
+	dir := rules.PurgeableMetaDir(rules.PurgeableMetaDirParams{StateDir: ref.StateDir, Branch: ref.Branch})
 	if dir == "" {
 		return
 	}

@@ -92,7 +92,7 @@ func Clean(params domain.CleanParams) error {
 		return fmt.Errorf("delete branch: %w", err)
 	}
 
-	purgeState(params.StateDir, params.Branch)
+	purgeState(WorktreeRef{ProjectDir: params.ProjectDir, StateDir: params.StateDir, Branch: params.Branch})
 
 	return nil
 }
@@ -166,7 +166,7 @@ func ForceClean(params domain.ForceCleanParams) error {
 		return fmt.Errorf("delete branch: %w", err)
 	}
 
-	purgeState(params.StateDir, params.Branch)
+	purgeState(WorktreeRef{ProjectDir: params.ProjectDir, StateDir: params.StateDir, Branch: params.Branch})
 
 	return nil
 }

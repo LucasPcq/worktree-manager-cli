@@ -218,8 +218,27 @@ func writeMetadata(metaDir string, metadata domain.WorktreeMetadata) error {
 		return fmt.Errorf("marshal metadata: %w", err)
 	}
 
+	// Written aside and renamed over: several commands read-modify-write this
+	// file, and a reader landing on a half-written one would see a worktree that
+	// holds no ordinal rather than one whose ordinal it could not read.
 	metaPath := filepath.Join(metaDir, domain.MetaFileName)
-	if err := os.WriteFile(metaPath, data, 0o644); err != nil {
+	tmp, err := os.CreateTemp(metaDir, domain.MetaFileName+".*")
+	if err != nil {
+		return fmt.Errorf("write %s: %w", metaPath, err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write %s: %w", metaPath, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("write %s: %w", metaPath, err)
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", metaPath, err)
+	}
+	if err := os.Rename(tmp.Name(), metaPath); err != nil {
 		return fmt.Errorf("write %s: %w", metaPath, err)
 	}
 
