@@ -45,6 +45,9 @@ type RunParams struct {
 	Jobs    []domain.JobConfig
 	WorkDir string
 	LogDir  string
+	// Env is what every job in this run learns about the worktree it belongs to,
+	// resolved by the surface — the only side that can ask git.
+	Env map[string]string
 }
 
 // Run starts a profile's jobs in their declared order and reports each step to
@@ -69,6 +72,7 @@ func Run(ctx context.Context, params RunParams) (Outcome, error) {
 		jobs:    params.Jobs,
 		workDir: params.WorkDir,
 		logDir:  params.LogDir,
+		env:     params.Env,
 	}
 	if r.sink == nil {
 		r.sink = noSink{}
@@ -83,6 +87,7 @@ type runner struct {
 	jobs    []domain.JobConfig
 	workDir string
 	logDir  string
+	env     map[string]string
 
 	results   []domain.JobActionResult
 	started   []string
@@ -106,6 +111,7 @@ func (r *runner) run() Outcome {
 			Job:     job,
 			WorkDir: r.workDir,
 			LogDir:  r.logDir,
+			Env:     r.env,
 			OnOutput: func(chunk []byte) {
 				r.captured = append(r.captured, chunk...)
 				r.emit(Event{Phase: PhaseOutput, Job: job.Name, Step: i + 1, Chunk: chunk})

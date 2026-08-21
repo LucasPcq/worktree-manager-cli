@@ -70,6 +70,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	logDir := jobLogDir(jobLogDirParams{StateDir: result.StateDir, Dir: dir})
+	env := jobEnv(jobEnvParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir})
 
 	surface := rules.DecideRunSurface(rules.RunSurfaceParams{
 		Inline: job.Kind == domain.JobKindTask,
@@ -78,7 +79,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		Format: format,
 	})
 	if surface == domain.RunSurfaceView {
-		seam := openRunSeam(runSeamParams{StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs})
+		seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs})
 		return showRunView(viewParams{
 			Cmd:     cmd,
 			Session: seam.session,
@@ -93,6 +94,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		Job:    job,
 		Dir:    dir,
 		LogDir: logDir,
+		Env:    env,
 		Format: format,
 	}
 	if job.Kind == domain.JobKindTask {
@@ -107,6 +109,7 @@ type startJobParams struct {
 	Job    domain.JobConfig
 	Dir    string
 	LogDir string
+	Env    map[string]string
 	Format string
 }
 
@@ -129,6 +132,7 @@ func startTaskInline(params startJobParams) error {
 		Job:     &params.Job,
 		WorkDir: params.Dir,
 		LogDir:  params.LogDir,
+		Env:     params.Env,
 	}, onOutput)
 	if err != nil {
 		return fmt.Errorf("task %s: %w", params.Job.Name, err)
@@ -160,6 +164,7 @@ func startServiceDetached(params startJobParams) error {
 				Job:     &params.Job,
 				WorkDir: params.Dir,
 				LogDir:  params.LogDir,
+				Env:     params.Env,
 			})
 			return e
 		},

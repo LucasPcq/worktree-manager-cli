@@ -704,6 +704,7 @@ func createTarget(params createTargetParams) (extractTarget, error) {
 	}
 	// on_create hooks as a distinct, titled phase (shared with create/checkout).
 	if err := shared.RunCreateHooksPhase(shared.CreateHooksPhaseParams{
+		StateDir:     params.cfg.StateDir,
 		Cmd:          params.cmd,
 		ShowHeader:   params.showHeader,
 		ProjectDir:   params.cfg.ProjectDir,

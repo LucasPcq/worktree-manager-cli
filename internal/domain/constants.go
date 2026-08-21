@@ -117,6 +117,28 @@ const (
 	// EnvGoFile is the environment variable used by the shell wrapper to pass the go-file path.
 	EnvGoFile = "WTM_GO_FILE"
 
+	// Worktree-scoped variables injected into every job and lifecycle hook, so
+	// two worktrees running the same services never share a resource.
+	EnvWorktree           = "WTM_WORKTREE"
+	EnvBranch             = "WTM_BRANCH"
+	EnvOrdinal            = "WTM_ORDINAL"
+	EnvPortOffset         = "WTM_PORT_OFFSET"
+	EnvComposeProjectName = "COMPOSE_PROJECT_NAME"
+
+	// MainWorktreeOrdinal is never persisted: the main worktree has no meta.json,
+	// so 0 in a linked worktree's metadata means "not allocated yet".
+	MainWorktreeOrdinal = 0
+
+	// PortOffsetBlock spaces two worktrees' ports apart, so declared base ports
+	// must be at least a block apart to stay in their own lane.
+	PortOffsetBlock = 10
+
+	// OrdinalLockFileName guards allocation: the scan and the write that follows
+	// it must be one step, or two worktrees started at once claim one number.
+	OrdinalLockFileName = "ordinal.lock"
+
+	ComposeProjectFallback = "wtm"
+
 	// Flag names.
 	FlagFrom       = "from"
 	FlagFF         = "ff"
@@ -1657,6 +1679,18 @@ var EnvTemplateSuffixes = []string{
 // header's permanent top-left anchor — the letter spacing (one blank column
 // between W, T and M) is deliberate: run together the glyphs are harder to
 // read.
+// WorktreeScopedEnv names the variables that describe one worktree and must
+// never be inherited. The run daemon is global and outlives the command that
+// forked it, so its own environment holds whichever worktree started it; a job
+// gets these from its request or not at all.
+var WorktreeScopedEnv = []string{
+	EnvWorktree,
+	EnvBranch,
+	EnvOrdinal,
+	EnvPortOffset,
+	EnvComposeProjectName,
+}
+
 var DashboardWordmarkLines = [3]string{
 	`╻ ╻ ╺┳╸ ┏┳┓`,
 	`┃╻┃  ┃  ┃┃┃`,

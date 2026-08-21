@@ -30,6 +30,7 @@ func (s *daemonService) Start(ctx context.Context, req StartRequest) (StartResul
 		Job:     &req.Job,
 		WorkDir: req.WorkDir,
 		LogDir:  req.LogDir,
+		Env:     req.Env,
 	}, req.OnOutput)
 	if err != nil {
 		return StartResult{}, err

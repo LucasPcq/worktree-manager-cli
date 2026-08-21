@@ -154,6 +154,7 @@ func (f *createFlow) runHooks(worktreePath, branchName, fromBranch string) error
 		Run: func(sink io.Writer) error {
 			return worktree.RunCreateHooks(domain.CreateHooksParams{
 				ProjectDir:   f.ctx.ProjectDir,
+				StateDir:     f.ctx.StateDir,
 				WorktreePath: worktreePath,
 				Branch:       branchName,
 				FromBranch:   fromBranch,
