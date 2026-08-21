@@ -148,6 +148,9 @@ const runTemplateContent = `#:schema ./schemas/run.schema.json
 # wtm — service & task definitions
 # No services were configured during init. Uncomment and adapt the examples
 # below, then manage them with ` + "`wtm run`" + `.
+#
+# Every cmd and stop below is a /bin/sh line: quotes, &&, pipes and globs work,
+# and ${VAR} expands from the job's environment.
 
 # Spacing between two worktrees' ports. Each worktree holds an ordinal (0 for
 # the main checkout) and every base port below is shifted by ordinal x this
@@ -169,6 +172,8 @@ const runTemplateContent = `#:schema ./schemas/run.schema.json
 
 # A dev server reading its port from the environment. On the main checkout it
 # gets PORT=3000; the next worktree gets PORT=3010, with no script to write.
+# A server that ignores PORT and only takes a CLI flag (vite) reads it back
+# from the same variable: cmd = "pnpm dev --port ${PORT}".
 # [[job]]
 # name = "web"
 # kind = "service"

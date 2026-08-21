@@ -260,6 +260,11 @@ and package scripts), not by the global `wtm init`. Declares dev **jobs** and gr
 them into **profiles**. Per-clone, never committed — share layouts with
 `wtm run export | wtm run import -`.
 
+A job's `cmd` (and its `stop`) is a **`/bin/sh` line**, not a whitespace-split argv:
+quotes, `&&`, pipes, redirections and globs behave as they do in a terminal, and `${VAR}`
+expands from the job's environment. POSIX `sh` is used on every machine, never your own
+interactive shell, so a shared `run.toml` behaves the same everywhere.
+
 ```toml
 [[job]]
 name = "docker"
@@ -320,6 +325,13 @@ A declaration overrides whatever the environment already sets for that variable,
 job's `stop` command runs with the same ports its `cmd` did. For Docker, template the host
 side of the mapping (`"${DB_PORT}:5432"`) and declare `DB_PORT = 5432`: the container port
 never moves, only the binding does.
+
+A server that **ignores** `PORT` and only takes its port as a CLI flag — Vite is the usual
+one — reads it back from the same variable, because `cmd` is a shell line:
+
+```console
+$ wtm run job add web --cmd 'pnpm dev --port ${PORT}' --port PORT=3000
+```
 
 Two base ports must not differ by a **multiple of the block**, or two worktrees end up on
 the same one — `3000` and `3010` are refused when `run.toml` is read, naming both sides,

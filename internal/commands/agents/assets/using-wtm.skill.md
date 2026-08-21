@@ -263,6 +263,13 @@ and **experimental**: the global `wtm init` does not configure it.
   `--port DB_PORT=5432`: the container port never moves, only the binding. A declaration
   **overrides** any inherited value for that variable, and the same ports are given to the
   job's `stop` command. `run up` / `run start` print what was bound (`web started · PORT=3010`).
+- **A job's `cmd` and `stop` are `/bin/sh` lines**, not whitespace-split argv: quotes, `&&`,
+  pipes, redirections and globs work, and `${VAR}` expands from the job's environment. So a
+  server that ignores `PORT` and only takes a CLI flag (vite) still gets isolated — pass the
+  declared port back on the command line, quoting for **your** shell so wtm receives the
+  variable verbatim: `wtm run job add web --cmd 'pnpm dev --port ${PORT}' --port PORT=3000`.
+  A `cmd` the shell cannot parse is refused when the job is written, naming the job. POSIX
+  `sh` is always used, never the user's interactive shell: no `[[ ]]`, no process substitution.
 - Two base ports must not differ by a multiple of the block, or two worktrees land on the
   same port: `3000` and `3010` are refused **when run.toml is read** (with both sides named),
   while `5434`/`5435`/`5436` are fine — a uniform offset preserves the gaps. Raise
