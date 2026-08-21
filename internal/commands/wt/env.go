@@ -120,6 +120,10 @@ func runEnvNonInteractive(cmd *cobra.Command, cfg shared.ConfigResult, arg strin
 	}
 
 	ctx := resolveEnvStrategyAndParent(cfg, wt.Branch, f.from)
+	ports, err := resolveEnvPorts(cfg, wt.Branch, wt.Path)
+	if err != nil {
+		return err
+	}
 	result, err := envsvc.SyncEnv(envsvc.SyncEnvParams{
 		Branch:             wt.Branch,
 		MainPath:           cfg.ProjectDir,
@@ -132,6 +136,7 @@ func runEnvNonInteractive(cmd *cobra.Command, cfg shared.ConfigResult, arg strin
 		Prune:              f.prune,
 		Check:              f.check,
 		OnConflict:         f.onConflict,
+		Ports:              ports,
 	})
 	if err != nil {
 		return err
@@ -167,18 +172,26 @@ func runEnvInteractive(cmd *cobra.Command, cfg shared.ConfigResult, arg string, 
 		branches = branchNames(statuses)
 	}
 	diffByBranch := make(map[string][]domain.EnvFileResult, len(branches))
+	portsByBranch := make(map[string]domain.EnvPortPlan, len(branches))
 	for _, b := range branches {
 		files, err := computeBranchDiff(cfg, statuses, b, f)
 		if err != nil {
 			return err
 		}
 		diffByBranch[b] = files
+
+		plan, err := computeBranchPorts(cfg, statuses, b)
+		if err != nil {
+			return err
+		}
+		portsByBranch[b] = plan
 	}
 
 	res, err := envwizard.Run(envwizard.RunParams{
-		Candidates:   statuses,
-		PresetBranch: preset,
-		DiffByBranch: diffByBranch,
+		Candidates:    statuses,
+		PresetBranch:  preset,
+		DiffByBranch:  diffByBranch,
+		PortsByBranch: portsByBranch,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		return abortedEnv(cmd, f.format)
@@ -188,16 +201,23 @@ func runEnvInteractive(cmd *cobra.Command, cfg shared.ConfigResult, arg string, 
 	}
 
 	ctx := resolveEnvStrategyAndParent(cfg, res.Branch, f.from)
+	worktreePath := worktreePathForBranch(statuses, res.Branch)
+	ports, err := resolveEnvPorts(cfg, res.Branch, worktreePath)
+	if err != nil {
+		return err
+	}
 	result, err := envsvc.ApplyEnvSync(envsvc.ApplyEnvSyncParams{
 		Branch:             res.Branch,
 		MainPath:           cfg.ProjectDir,
-		WorktreePath:       worktreePathForBranch(statuses, res.Branch),
+		WorktreePath:       worktreePath,
 		ParentWorktreePath: ctx.ParentPath,
 		ParentBranch:       ctx.ParentBranch,
 		Files:              cfg.Config.Project.Env.Files,
 		Strategy:           ctx.Strategy,
 		Mode:               f.mode,
 		Resolutions:        mapDecisions(res.Decisions),
+		Ports:              ports,
+		SkipPortRewrite:    res.SkipPorts,
 	})
 	if err != nil {
 		return err
@@ -208,15 +228,44 @@ func runEnvInteractive(cmd *cobra.Command, cfg shared.ConfigResult, arg string, 
 // computeBranchDiff computes one worktree's drift for the wizard (no write).
 func computeBranchDiff(cfg shared.ConfigResult, statuses []domain.WorktreeStatus, branch string, f envFlags) ([]domain.EnvFileResult, error) {
 	ctx := resolveEnvStrategyAndParent(cfg, branch, f.from)
+	worktreePath := worktreePathForBranch(statuses, branch)
+	ports, err := resolveEnvPorts(cfg, branch, worktreePath)
+	if err != nil {
+		return nil, err
+	}
 	return envsvc.ComputeEnvDiff(envsvc.ComputeEnvParams{
 		Branch:             branch,
 		MainPath:           cfg.ProjectDir,
-		WorktreePath:       worktreePathForBranch(statuses, branch),
+		WorktreePath:       worktreePath,
 		ParentWorktreePath: ctx.ParentPath,
 		ParentBranch:       ctx.ParentBranch,
 		Files:              cfg.Config.Project.Env.Files,
 		Strategy:           ctx.Strategy,
 		Mode:               f.mode,
+		Ports:              ports,
+	})
+}
+
+// computeBranchPorts resolves one worktree's port pass for the wizard recap, so
+// the apply is announced before it happens rather than discovered after.
+func computeBranchPorts(cfg shared.ConfigResult, statuses []domain.WorktreeStatus, branch string) (domain.EnvPortPlan, error) {
+	ports, err := resolveEnvPorts(cfg, branch, worktreePathForBranch(statuses, branch))
+	if err != nil || ports.Empty() {
+		return domain.EnvPortPlan{}, err
+	}
+	return envsvc.ComputeEnvPorts(ports)
+}
+
+// resolveEnvPorts gathers the [[env_port]] links and the offset this worktree
+// binds on. A project with no run.toml, or none declared, resolves to nothing and
+// the reconciliation runs exactly as it did before.
+func resolveEnvPorts(cfg shared.ConfigResult, branch string, worktreePath string) (envsvc.EnvPortsParams, error) {
+	return worktree.ResolveEnvPorts(worktree.ResolveEnvPortsParams{
+		ProjectDir:   cfg.ProjectDir,
+		StateDir:     cfg.StateDir,
+		Branch:       branch,
+		WorktreePath: worktreePath,
+		EnvFiles:     cfg.Config.Project.Env.Files,
 	})
 }
 

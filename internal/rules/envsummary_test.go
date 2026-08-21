@@ -1,0 +1,122 @@
+package rules
+
+import (
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+)
+
+// planWithRewrites builds a plan whose n links each shift one value.
+func planWithRewrites(t *testing.T, n int) domain.EnvPortPlan {
+	t.Helper()
+
+	links := make([]domain.EnvPortLink, 0, n)
+	bases := make(map[string]int, n)
+	var content strings.Builder
+	for i := range n {
+		key := "K" + strconv.Itoa(i)
+		links = append(links, domain.EnvPortLink{File: ".env", Key: key, Port: key})
+		bases[key] = 5000 + i
+		content.WriteString(key + "=http://localhost:" + strconv.Itoa(5000+i) + "\n")
+	}
+
+	plan := PlanEnvPorts(PlanEnvPortsParams{
+		Links:  links,
+		Bases:  bases,
+		Offset: 10,
+		Lines:  map[string][]domain.EnvLine{".env": ParseEnv(content.String())},
+	})
+	if got := len(plan.Rewrites()); got != n {
+		t.Fatalf("planWithRewrites(%d) produced %d rewrites", n, got)
+	}
+	plan.Applied = true
+	return plan
+}
+
+// declined is a plan the user refused: it still holds its rewrites, because the
+// links keep normalizing the diff, but nothing was written.
+func declined(plan domain.EnvPortPlan) domain.EnvPortPlan {
+	plan.Applied = false
+	return plan
+}
+
+// The port pass writes to the same .env as the reconciliation, so a run that
+// shifted a port and changed nothing else has written changes. Reporting "no
+// changes written" there is a false report, not a wording preference.
+func TestEnvOutcomeSummaryCountsThePortPass(t *testing.T) {
+	applied := domain.EnvFileResult{Target: ".env", Applied: true}
+	untouched := domain.EnvFileResult{Target: ".env"}
+
+	cases := []struct {
+		name   string
+		result domain.EnvSyncResult
+		want   string
+		done   bool
+	}{
+		{
+			"ports only",
+			domain.EnvSyncResult{Files: []domain.EnvFileResult{untouched}, Ports: planWithRewrites(t, 2)},
+			"Shifted 2 port value(s).", true,
+		},
+		{
+			"files only",
+			domain.EnvSyncResult{Files: []domain.EnvFileResult{applied}},
+			"Reconciled 1 file(s).", true,
+		},
+		{
+			"both",
+			domain.EnvSyncResult{Files: []domain.EnvFileResult{applied}, Ports: planWithRewrites(t, 2)},
+			"Reconciled 1 file(s) and shifted 2 port value(s).", true,
+		},
+		{
+			"neither",
+			domain.EnvSyncResult{Files: []domain.EnvFileResult{untouched}},
+			"No changes written.", false,
+		},
+		{
+			"port pass declined counts as nothing written",
+			domain.EnvSyncResult{Files: []domain.EnvFileResult{untouched}, Ports: declined(planWithRewrites(t, 2))},
+			"No changes written.", false,
+		},
+		{
+			"port pass declined alongside a real file change",
+			domain.EnvSyncResult{Files: []domain.EnvFileResult{applied}, Ports: declined(planWithRewrites(t, 2))},
+			"Reconciled 1 file(s).", true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := EnvOutcomeSummary(c.result)
+			if got.Text != c.want || got.Done != c.done {
+				t.Errorf("EnvOutcomeSummary() = %+v, want {%q %v}", got, c.want, c.done)
+			}
+		})
+	}
+}
+
+func TestEnvOutcomeSummaryCheckMode(t *testing.T) {
+	clean := domain.EnvSyncResult{Check: true, Files: []domain.EnvFileResult{{Target: ".env"}}}
+	if got := EnvOutcomeSummary(clean); got.Text != "No drift." || !got.Done {
+		t.Errorf("EnvOutcomeSummary() = %+v, want a clean verdict", got)
+	}
+
+	// --check must not answer "no drift" about a worktree whose .env still points
+	// at another worktree's services.
+	drifting := domain.EnvSyncResult{Check: true, Files: []domain.EnvFileResult{{Target: ".env"}}, Ports: planWithRewrites(t, 1)}
+	if got := EnvOutcomeSummary(drifting); got.Done {
+		t.Errorf("EnvOutcomeSummary() = %+v, want drift reported for a pending port shift", got)
+	}
+}
+
+func TestEnvPortPlanTouches(t *testing.T) {
+	plan := planWithRewrites(t, 1)
+	if !EnvPortPlanTouches(plan, ".env") {
+		t.Error("EnvPortPlanTouches() = false for the file it rewrites")
+	}
+	if EnvPortPlanTouches(plan, "apps/web/.env") {
+		t.Error("EnvPortPlanTouches() = true for a file it never names")
+	}
+}

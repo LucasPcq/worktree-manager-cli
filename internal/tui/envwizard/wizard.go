@@ -10,11 +10,18 @@ import (
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-const applyAction = "apply"
+const (
+	applyAction = "apply"
+	// applyWithoutPortsAction is the port pass declined. It is offered as a
+	// second way to apply rather than as its own screen: `wtm create` proposes
+	// the same pass and it would be incoherent for `wtm env` to impose it.
+	applyWithoutPortsAction = "apply-without-ports"
+)
 
 // RunParams holds the wizard inputs. DiffByBranch is the precomputed per-worktree
 // drift (keyed by branch); Candidates are the worktrees offered when no PresetBranch
@@ -23,12 +30,19 @@ type RunParams struct {
 	Candidates   []domain.WorktreeStatus
 	PresetBranch string
 	DiffByBranch map[string][]domain.EnvFileResult
+	// PortsByBranch is the [[env_port]] pass each worktree would get. It is not a
+	// decision the wizard offers — it rides along with the apply — which is
+	// exactly why the recap has to name it: discovering it afterwards is a
+	// surprise, and a surprise about a file the user did not agree to touch.
+	PortsByBranch map[string]domain.EnvPortPlan
 }
 
 // Result is the wizard outcome: the chosen worktree and its per-file decisions.
 type Result struct {
 	Branch    string
 	Decisions []components.EnvFileDecision
+	// SkipPorts is the user choosing to apply without the [[env_port]] pass.
+	SkipPorts bool
 }
 
 // Run drives the unified wizard and returns the branch + collected decisions.
@@ -53,7 +67,11 @@ func Run(params RunParams) (Result, error) {
 	steps = append(steps, resolveStep(params, branchOf))
 
 	recapIdx := len(steps)
-	steps = append(steps, recapStep(branchOf, resolveIdx))
+	steps = append(steps, recapStep(recapStepParams{
+		BranchOf:      branchOf,
+		ResolveIdx:    resolveIdx,
+		PortsByBranch: params.PortsByBranch,
+	}))
 
 	final, err := components.RunWizard(components.RunWizardParams{
 		Steps:    steps,
@@ -65,11 +83,12 @@ func Run(params RunParams) (Result, error) {
 	}
 
 	done := final.Steps()
-	if selectValue(done, recapIdx) == domain.WizardCancelValue {
+	action := selectValue(done, recapIdx)
+	if action == domain.WizardCancelValue {
 		return Result{}, domain.ErrUserAborted
 	}
 
-	res := Result{Branch: branchOf(done)}
+	res := Result{Branch: branchOf(done), SkipPorts: action == applyWithoutPortsAction}
 	if m, ok := done[resolveIdx].Model.(components.EnvResolveModel); ok {
 		res.Decisions = m.Decisions()
 	}
@@ -124,26 +143,59 @@ func resolveStep(params RunParams, branchOf func([]components.Step) string) comp
 	}
 }
 
-// recapStep restates the worktree and every decision (with values), then offers
-// "Yes, apply" / "No, cancel".
-func recapStep(branchOf func([]components.Step) string, resolveIdx int) components.Step {
+type recapStepParams struct {
+	BranchOf      func([]components.Step) string
+	ResolveIdx    int
+	PortsByBranch map[string]domain.EnvPortPlan
+}
+
+// recapStep restates the worktree, every decision (with values) and the port
+// values the apply will shift, then offers "Yes, apply" / "No, cancel".
+func recapStep(params recapStepParams) components.Step {
 	return components.RecapStep(components.RecapStepParams{
 		Name: "Review & apply",
 		Build: func(prev []components.Step) components.RecapContent {
-			lines := []string{styles.Muted.Render("Worktree:") + "  " + styles.Bold.Render(branchOf(prev)), ""}
-			if m, ok := stepModel(prev, resolveIdx).(components.EnvResolveModel); ok {
+			branch := params.BranchOf(prev)
+			lines := []string{styles.Muted.Render("Worktree:") + "  " + styles.Bold.Render(branch), ""}
+			if m, ok := stepModel(prev, params.ResolveIdx).(components.EnvResolveModel); ok {
 				if body := m.RecapLines(); len(body) > 0 {
 					lines = append(lines, body...)
 				} else {
 					lines = append(lines, "Only safe additions will be applied.")
 				}
 			}
+			lines = append(lines, portRecapLines(params.PortsByBranch[branch])...)
 			return components.RecapContent{
 				Description: strings.Join(lines, "\n"),
-				Actions:     []components.SelectItem{{Label: "Yes, apply", Value: applyAction}},
+				Actions:     recapActions(params.PortsByBranch[branch]),
 			}
 		},
 	})
+}
+
+// recapActions offers the port pass as a choice rather than a fait accompli. A
+// worktree with no port to move keeps the single plain confirmation.
+func recapActions(plan domain.EnvPortPlan) []components.SelectItem {
+	apply := components.SelectItem{Label: domain.EnvApplyActionLabel, Value: applyAction}
+	if len(plan.Rewrites()) == 0 {
+		return []components.SelectItem{apply}
+	}
+	return []components.SelectItem{
+		apply,
+		{Label: domain.EnvApplyWithoutPortsLabel, Value: applyWithoutPortsAction},
+	}
+}
+
+// portRecapLines announces the [[env_port]] pass that rides along with the apply.
+func portRecapLines(plan domain.EnvPortPlan) []string {
+	table := rules.EnvPortTableLines(plan)
+	if len(table) == 0 {
+		return nil
+	}
+	return append([]string{
+		"",
+		styles.Bold.Render(rules.EnvPortOffsetLabel(plan.Offset)),
+	}, table...)
 }
 
 // driftBadge renders the per-worktree env-drift pill for the selection list.

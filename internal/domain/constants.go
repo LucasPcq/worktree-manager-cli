@@ -90,6 +90,15 @@ const (
 	EnvQuoteDouble   = '"'
 	EnvQuoteSingle   = '\''
 
+	// EnvCredentialsSeparator ends the userinfo part of a URL. A value is elided
+	// there before display: what precedes it is a password, what follows is the
+	// host and the port the reader is actually looking for.
+	EnvCredentialsSeparator = "@"
+	// EnvValueDisplayWidth caps an elided .env value in the port table.
+	EnvValueDisplayWidth = 44
+	// Ellipsis marks a value the display cut short.
+	Ellipsis = "\u2026"
+
 	// DefaultShell is the default shell for integration.
 	DefaultShell = ShellZsh
 
@@ -203,6 +212,89 @@ const (
 	ComposeReadFileFmt     = "read %s: %w"
 	ComposeWriteFileFmt    = "write %s: %w"
 
+	// The .env port report ([[env_port]] links resolved for one worktree).
+	EnvPortsTitle       = "Env ports"
+	EnvPortOffsetPrefix = "offset +"
+	// EnvPortOffsetNoteFmt orients the reader of the confirmation, whose title
+	// already says what is being asked.
+	EnvPortOffsetNoteFmt = "This worktree's offset is +%d — the ports below move with it."
+	// EnvPortTableRowFmt aligns key, port name, the port move, and the value the
+	// key lands on — the only column that can be long, and the only one elided.
+	EnvPortTableRowFmt = "%s  %s  %s  %s"
+	// EnvPortFileRuleFmt opens a file's group; EnvPortRuleRune fills it out to
+	// the table's width.
+	EnvPortFileRuleFmt = "── %s "
+	EnvPortRuleRune    = "─"
+	// The port table's header. Read across, a row says "this key follows that
+	// port, which moves from here to there, and becomes this".
+	EnvPortHeaderKey     = "KEY"
+	EnvPortHeaderFollows = "FOLLOWS"
+	EnvPortHeaderPort    = "PORT"
+	EnvPortHeaderBecomes = "BECOMES"
+	EnvPortMoveFmt       = "%d → %d"
+
+	// EnvPortAnomaliesTitle heads the links wtm reports instead of applying.
+	EnvPortAnomaliesTitle = "Env ports left alone"
+	EnvPortAnomalyRowFmt  = "%s  %s  %s"
+	// The reasons a link is left alone. Guessing which number of a URL is the
+	// port can corrupt it, so each of these reports rather than acts. The port
+	// they concern is its own column, so no reason repeats it.
+	EnvPortReasonMissingKey   = "no such key in this file"
+	EnvPortReasonAmbiguousFmt = "%d appears more than once"
+	EnvPortReasonNotFoundFmt  = "no %d to shift in the value"
+	EnvPortsAppliedFmt        = "Env ports updated for this worktree (%d value(s))"
+	EnvPortsConfirmPrompt     = "Update these .env values to this worktree's ports?"
+
+	// The trailing verdict of `wtm env`.
+	EnvCheckDriftMessage = "Read-only check — run `wtm env` to reconcile."
+	// EnvFileInSyncMessage closes a file block with nothing to do.
+	// EnvFileKeysInSyncMessage replaces it when the port pass below still moves
+	// a value in that same file — "in sync" there would contradict the next
+	// section about the very same file.
+	EnvFileInSyncMessage     = "in sync — nothing to reconcile"
+	EnvFileKeysInSyncMessage = "keys in sync — port values below"
+
+	// The detail column of a file block's key rows.
+	EnvKeyRowGap         = "  "
+	EnvDetailWouldAddFmt = "would be added from %s"
+	EnvDetailAddedFmt    = "added from %s"
+	EnvDetailToAddFmt    = "to add from %s"
+	EnvDetailConflictFmt = "conflict — local %s vs %s %s"
+	EnvDetailMissingFmt  = "needs a value — placeholder %s"
+	EnvDetailOrphan      = "orphan — in no source"
+	EnvEmptyValueLabel   = "(empty)"
+	// The glyphs a file block's rows are marked with. One rune each, so the
+	// key column stays aligned whatever a row's status is.
+	EnvKeyGlyphAdd       = "+"
+	EnvKeyGlyphAttention = "!"
+	EnvKeyGlyphOrphan    = "−"
+	// EnvFileHeaderFmt heads a file block; EnvFileSourceFmt is its muted half.
+	EnvFileHeaderFmt   = "%s   %s"
+	EnvFileSourceFmt   = "strategy: %s  ·  source: %s"
+	EnvFieldWorktree   = "Worktree"
+	EnvFieldMode       = "Mode"
+	EnvModeCheckSuffix = "  ·  read-only check"
+	// The two ways to apply on the `wtm env` recap. The second exists so the
+	// port pass is proposed, as `wtm create` proposes it, and never imposed.
+	EnvApplyActionLabel       = "Yes, apply"
+	EnvApplyWithoutPortsLabel = "Apply, but leave the port values alone"
+	// EnvPortsLeftAloneFmt replaces the table when the pass was declined.
+	EnvPortsLeftAloneFmt       = "Env ports left alone — %d value(s) still on the base ports"
+	EnvCheckCleanMessage       = "No drift."
+	EnvNothingWrittenMessage   = "No changes written."
+	EnvReconciledFmt           = "Reconciled %d file(s)."
+	EnvPortsShiftedFmt         = "Shifted %d port value(s)."
+	EnvReconciledAndShiftedFmt = "Reconciled %d file(s) and shifted %d port value(s)."
+
+	// The [[env_port]] detection of `wtm run init`.
+	// EnvPortLinkFmt is one link as the prompt and the recap both show it:
+	// "<file> · <key>   follows POSTGRES_PORT (5432)".
+	EnvPortLinkFmt         = "%s   follows %s (%d)"
+	EnvPortLinkSeparator   = " · "
+	EnvPortsLinkedTitle    = "Env keys now following a port"
+	EnvPortLinkConfirm     = "Link these keys so each worktree gets its own ports?"
+	EnvPortLinkDescription = "wtm rewrites the port inside each value when a worktree is created or reconciled. The rest of the value is left alone."
+
 	// The wizard step that asks to templatize the selected files' literal ports.
 	ComposePatchStepName    = "Templatize ports"
 	ComposePatchStepYes     = "rewrite"
@@ -226,10 +318,10 @@ const (
 	// The .env port report. Unlike a compose mapping, a declared port only
 	// isolates the job if its command actually reads the variable — which wtm
 	// does not know and does not guess, so the notice asks.
-	EnvPortsDetectedTitle     = "Ports detected from .env"
-	EnvPortDetectedLineFmt    = "%s · %s=%d (%s)"
-	EnvPortsVerifyFmt = "Check that these commands read the variable — otherwise pass it as a flag, e.g. `pnpm dev --port ${%s}`"
-	EnvPortUnreadable = "%s could not be read: %s"
+	EnvPortsDetectedTitle  = "Ports detected from .env"
+	EnvPortDetectedLineFmt = "%s · %s=%d (%s)"
+	EnvPortsVerifyFmt      = "Check that these commands read the variable — otherwise pass it as a flag, e.g. `pnpm dev --port ${%s}`"
+	EnvPortUnreadable      = "%s could not be read: %s"
 
 	// PortCollisionHorizon is how many worktrees a declared layout is checked
 	// against. Two base ports collide when they differ by a multiple of the
@@ -309,6 +401,7 @@ const (
 	FlagIfNotExists    = "if-not-exists"
 	FlagNonInteractive = "non-interactive"
 	FlagPatchCompose   = "patch-compose"
+	FlagLinkEnv        = "link-env"
 	FlagShell          = "shell"
 	FlagBasePath       = "base-path"
 	FlagBaseBranch     = "base-branch"
