@@ -235,9 +235,15 @@ and **experimental**: the global `wtm init` does not configure it.
   **`--patch-compose`** to have wtm rewrite those mappings itself — it edits only the port
   value in place (comments and formatting survive) and the `:-default` keeps
   `docker compose up` working without wtm. Non-interactively no project file is ever
-  touched without that flag. Ranges and aliased `ports:` lists are reported, never
-  rewritten. Re-running `run init` backfills the ports of a compose job that predates
-  them, without overwriting a port already declared.
+  touched without that flag. Re-running `run init` backfills the ports of a compose job
+  that predates them, without overwriting a port already declared.
+- What `run init` refuses to declare, and reports instead: port ranges, mappings with no
+  host port, a `ports:` list carrying a YAML anchor or alias, `${VAR}` with no default,
+  and a variable two services give two different defaults. It also **withdraws** a
+  detected port when two bases differ by a multiple of the block — it would make
+  `run.toml` unloadable — and names both sides. So a "Ports withdrawn" or "Ports left
+  alone" section in the output is expected behavior, not a failure: read the fix it
+  prints (a compose line, then a `run job edit --port` command).
 - `run up [profile]` / `run down` — start / stop a profile. `run start <job>` / `run stop
   <job>` — one job. A failing job aborts the rest and exits non-zero, leaving started
   services up (fix and re-run).

@@ -301,3 +301,68 @@ func TestRunInit_BackfillsAJobWhoseNameWasChanged(t *testing.T) {
 		t.Errorf("ports = %v, want the detected port backfilled onto it", cfg.Jobs[0].Ports)
 	}
 }
+
+// TestRunInit_TwoComposeFilesOnTheSameBase is the case the spec names: the two
+// declarations meet inside a single worktree, not some worktrees apart.
+func TestRunInit_TwoComposeFilesOnTheSameBase(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeCompose(t, "docker-compose.yml", "services:\n  a:\n    ports:\n      - \"${A_PORT:-5432}:5432\"\n")
+	writeCompose(t, "docker-compose.other.yml", "services:\n  b:\n    ports:\n      - \"${B_PORT:-5432}:5432\"\n")
+
+	stdout, _, err := runCmd(t, domain.CmdInit, "--"+domain.FlagNonInteractive)
+	if err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("the written config must load: %v", err)
+	}
+	for _, j := range cfg.Jobs {
+		if len(j.Ports) != 0 {
+			t.Errorf("job %q kept %v; two identical bases can never coexist", j.Name, j.Ports)
+		}
+	}
+	if !strings.Contains(stdout, "withdrawn") {
+		t.Errorf("the withdrawal must be reported, got:\n%s", stdout)
+	}
+}
+
+// TestRunInit_PatchComposeIsIdempotent verifies a second run neither rewrites
+// the file again nor duplicates anything.
+func TestRunInit_PatchComposeIsIdempotent(t *testing.T) {
+	stateDir := setupTestProject(t)
+	composePath := writeCompose(t, "docker-compose.yml", composeWithPorts)
+
+	flags := []string{domain.CmdInit, "--" + domain.FlagNonInteractive, "--" + domain.FlagPatchCompose}
+	if _, _, err := runCmd(t, flags...); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	first, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	firstCfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	if _, _, err := runCmd(t, flags...); err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	second, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	secondCfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	if string(first) != string(second) {
+		t.Errorf("the compose file changed on the second run:\n%s", second)
+	}
+	if len(firstCfg.Jobs) != len(secondCfg.Jobs) {
+		t.Errorf("jobs went from %d to %d", len(firstCfg.Jobs), len(secondCfg.Jobs))
+	}
+}

@@ -3,6 +3,7 @@ package compose
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -93,23 +94,26 @@ func TestScanClassifiesEveryMappingForm(t *testing.T) {
 		t.Errorf("mailhog/1025 replacement = %s", long.Replacement)
 	}
 
-	var unsupportedReasons []string
+	var reasons []string
 	for _, b := range scan.Bindings {
-		if b.Service == "edge" {
-			unsupportedReasons = append(unsupportedReasons, b.Reason)
-			if b.Status != domain.ComposePortUnsupported {
-				t.Errorf("edge binding %+v must be unsupported", b)
-			}
-			if b.Replacement != "" {
-				t.Errorf("an unsupported binding is never rewritten, got %q", b.Replacement)
-			}
+		if b.Service != "edge" {
+			continue
+		}
+		reasons = append(reasons, b.Reason)
+		if b.Status != domain.ComposePortUnsupported {
+			t.Errorf("edge binding %+v must be unsupported", b)
+		}
+		if b.Replacement != "" {
+			t.Errorf("an unsupported binding is never rewritten, got %q", b.Replacement)
 		}
 	}
-	if len(unsupportedReasons) != 2 {
-		t.Fatalf("edge must report both its mappings, got %v", unsupportedReasons)
+	if len(reasons) != 2 {
+		t.Fatalf("edge must report both its mappings, got %v", reasons)
 	}
-	if !strings.Contains(unsupportedReasons[0], "range") || !strings.Contains(unsupportedReasons[1], "no host port") {
-		t.Errorf("reasons = %v", unsupportedReasons)
+	for _, want := range []string{"range", "no host port"} {
+		if !slices.ContainsFunc(reasons, func(r string) bool { return strings.Contains(r, want) }) {
+			t.Errorf("no reason mentions %q, got %v", want, reasons)
+		}
 	}
 }
 
@@ -228,7 +232,7 @@ func TestPatchRefusesAFileChangedSinceTheScan(t *testing.T) {
 
 func TestScanAllKeysByRelativePath(t *testing.T) {
 	dir, file := writeCompose(t, richCompose)
-	scans := ScanAll(dir, []string{file, "absent.yml"})
+	scans := ScanAll(ScanAllParams{ProjectDir: dir, Files: []string{file, "absent.yml"}})
 	if len(scans) != 2 {
 		t.Fatalf("got %d scans, want 2", len(scans))
 	}
@@ -238,7 +242,7 @@ func TestScanAllKeysByRelativePath(t *testing.T) {
 	if scans["absent.yml"].Err == "" {
 		t.Error("the missing file must carry its error")
 	}
-	if ScanAll(dir, nil) != nil {
+	if ScanAll(ScanAllParams{ProjectDir: dir}) != nil {
 		t.Error("no file means no map")
 	}
 }

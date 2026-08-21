@@ -21,7 +21,6 @@ func ComposePatchLines(byFile map[string][]domain.ComposePortBinding) []string {
 	return lines
 }
 
-// ComposeWithheldLine says why one mapping was left out of run.toml.
 func ComposeWithheldLine(b domain.ComposePortBinding) string {
 	if b.Status == domain.ComposePortFrozen {
 		return fmt.Sprintf(domain.ComposeFrozenLineFmt, b.File, b.Service, b.Token)
@@ -56,8 +55,6 @@ func ComposeFixLines(params ComposeFixLinesParams) []string {
 	return append(lines, fmt.Sprintf(domain.ComposeFixCmdFmt, params.Job, params.Binding.Var, params.Binding.Base))
 }
 
-// ComposeDroppedLine names a detected declaration that was withdrawn and the
-// one it could not coexist with.
 func ComposeDroppedLine(d DroppedPort) string {
 	return fmt.Sprintf(domain.ComposeDroppedLineFmt,
 		d.Port.Name, d.Port.Job, d.Port.Base,
@@ -65,14 +62,12 @@ func ComposeDroppedLine(d DroppedPort) string {
 		d.Worktrees)
 }
 
-// ComposeUnreadableLine reports a compose file the scan could not open or parse.
 func ComposeUnreadableLine(scan domain.ComposeScan) string {
 	return fmt.Sprintf(domain.ComposeUnreadableFmt, scan.File, scan.Err)
 }
 
-// ComposePortsWrittenLines lists what each job gained, one port per line so a
-// job declaring six of them reads as a column rather than one line running off
-// the terminal.
+// ComposePortsWrittenLines emits one port per line: a job declaring six of them
+// would otherwise run off the terminal.
 func ComposePortsWrittenLines(added map[string]map[string]int) []string {
 	var lines []string
 	for _, job := range sortedKeys(added) {
@@ -83,12 +78,16 @@ func ComposePortsWrittenLines(added map[string]map[string]int) []string {
 	return lines
 }
 
-// ComposeJobName returns the job running a compose file, matched on the same
-// fragment BuildDockerJobs emits. Empty when no job runs it — a file the user
-// selected but whose job they later renamed or wrote by hand.
-func ComposeJobName(cfg domain.RunConfig, file string) string {
-	needle := DockerComposeFileFlag(file)
-	for _, job := range cfg.Jobs {
+type ComposeJobNameParams struct {
+	Config domain.RunConfig
+	File   string
+}
+
+// ComposeJobName matches on the same "-f <file> " fragment BuildDockerJobs
+// emits. Empty when no job runs the file.
+func ComposeJobName(params ComposeJobNameParams) string {
+	needle := DockerComposeFileFlag(params.File)
+	for _, job := range params.Config.Jobs {
 		if jobRunsComposeFile(job, needle) {
 			return job.Name
 		}
@@ -96,17 +95,21 @@ func ComposeJobName(cfg domain.RunConfig, file string) string {
 	return ""
 }
 
+type ComposeFilesNeedingAJobParams struct {
+	Config domain.RunConfig
+	Files  []string
+}
+
 // ComposeFilesNeedingAJob narrows a selection to the files no job runs yet.
 // Merging by job name alone re-adds a compose file whose job was renamed, which
-// then declares the same ports twice and loses both to the collision check —
-// so the file that already has a runner contributes its ports, not a second job.
-func ComposeFilesNeedingAJob(cfg domain.RunConfig, files []string) []string {
-	if len(cfg.Jobs) == 0 {
-		return files
+// then declares the same ports twice and loses both to the collision check.
+func ComposeFilesNeedingAJob(params ComposeFilesNeedingAJobParams) []string {
+	if len(params.Config.Jobs) == 0 {
+		return params.Files
 	}
-	needing := make([]string, 0, len(files))
-	for _, file := range files {
-		if ComposeJobName(cfg, file) == "" {
+	needing := make([]string, 0, len(params.Files))
+	for _, file := range params.Files {
+		if ComposeJobName(ComposeJobNameParams{Config: params.Config, File: file}) == "" {
 			needing = append(needing, file)
 		}
 	}

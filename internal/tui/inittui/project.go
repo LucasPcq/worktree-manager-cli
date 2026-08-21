@@ -811,9 +811,9 @@ func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
 	}
 
 	s.add(stepComposePatch, components.ConfirmStep(components.ConfirmStepParams{
-		Name:     "Templatize ports",
-		YesLabel: "rewrite",
-		NoLabel:  "leave as is",
+		Name:     domain.ComposePatchStepName,
+		YesLabel: domain.ComposePatchStepYes,
+		NoLabel:  domain.ComposePatchStepNo,
 		Decide: func(prev []components.Step) (bool, string, components.NewConfirmParams) {
 			patches := composePatchesFor(prev, docker, detection)
 			if len(patches) == 0 {
@@ -823,11 +823,12 @@ func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
 				return false, "--" + domain.FlagPatchCompose, components.NewConfirmParams{}
 			}
 			return true, "", components.NewConfirmParams{
-				Title: "Make these ports per-worktree?",
-				Description: "These host ports are written as literals, so every worktree would bind the same one.\n" +
-					"wtm can rewrite them to read a variable — the default keeps `docker compose up` working on its own:\n\n" +
-					strings.Join(rules.ComposePatchLines(patches), "\n") + "\n\n" +
-					"Declining leaves the files untouched; wtm then declares no port for them.",
+				Title: domain.ComposePatchStepTitle,
+				Description: strings.Join([]string{
+					domain.ComposePatchStepPrelude,
+					strings.Join(rules.ComposePatchLines(patches), "\n"),
+					domain.ComposePatchStepEpilogue,
+				}, "\n\n"),
 			}
 		},
 	}))

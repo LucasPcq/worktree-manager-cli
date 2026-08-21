@@ -203,6 +203,15 @@ const (
 	ComposeReadFileFmt     = "read %s: %w"
 	ComposeWriteFileFmt    = "write %s: %w"
 
+	// The wizard step that asks to templatize the selected files' literal ports.
+	ComposePatchStepName    = "Templatize ports"
+	ComposePatchStepYes     = "rewrite"
+	ComposePatchStepNo      = "leave as is"
+	ComposePatchStepTitle   = "Make these ports per-worktree?"
+	ComposePatchStepPrelude = "These host ports are written as literals, so every worktree would bind the same one.\n" +
+		"wtm can rewrite them to read a variable — the default keeps `docker compose up` working on its own:"
+	ComposePatchStepEpilogue = "Declining leaves the files untouched; wtm then declares no port for them."
+
 	// ComposeChangedTitle and ComposeOrphanTitle head the two report sections
 	// that say why a file contributed nothing.
 	ComposeChangedTitle = "Compose files skipped — they changed while wtm was reading them"

@@ -65,7 +65,14 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 	_ = components.RunLoading(components.LoadingParams{
 		Message: "Detecting services…",
 		Animate: interactive,
-		Work:    func() error { detection = detect.ProjectEnvironment(res.ProjectDir); return nil },
+		Work: func() error {
+			detection = detect.ProjectEnvironment(res.ProjectDir)
+			detection.ComposeScans = compose.ScanAll(compose.ScanAllParams{
+				ProjectDir: res.ProjectDir,
+				Files:      detection.DockerComposeFiles,
+			})
+			return nil
+		},
 	})
 
 	existing, err := runconfig.Load(res.StateDir)
@@ -150,7 +157,6 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// resolveServicesParams groups the inputs for resolveServicesAnswers.
 type resolveServicesParams struct {
 	Interactive  bool
 	ProjectDir   string
@@ -187,12 +193,12 @@ func resolveServicesAnswers(params resolveServicesParams) (domain.InitProjectAns
 	})
 }
 
-// composeJobsByFile names the job backing each selected compose file, so a port
-// wtm withheld can be offered as a command to paste rather than a placeholder.
+// composeJobsByFile turns a withheld port's fix into a command to paste rather
+// than a placeholder.
 func composeJobsByFile(cfg domain.RunConfig, files []string) map[string]string {
 	jobs := make(map[string]string, len(files))
 	for _, file := range files {
-		if job := rules.ComposeJobName(cfg, file); job != "" {
+		if job := rules.ComposeJobName(rules.ComposeJobNameParams{Config: cfg, File: file}); job != "" {
 			jobs[file] = job
 		}
 	}

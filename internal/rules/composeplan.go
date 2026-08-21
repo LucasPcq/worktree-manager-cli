@@ -27,8 +27,7 @@ type PlanComposePortsParams struct {
 	Patch bool
 }
 
-// PlanComposePorts turns the scans of the selected compose files into the
-// declarations run.toml should carry. It writes nothing and reads no disk.
+// PlanComposePorts writes nothing and reads no disk.
 func PlanComposePorts(params PlanComposePortsParams) ComposePortPlan {
 	plan := ComposePortPlan{
 		PortsByFile: map[string]map[string]int{},
@@ -66,7 +65,6 @@ func PlanComposePorts(params PlanComposePortsParams) ComposePortPlan {
 	return plan
 }
 
-// declarable says whether a mapping can back a run.toml declaration at all.
 func declarable(binding domain.ComposePortBinding, patch bool) bool {
 	return binding.Status == domain.ComposePortTemplated ||
 		(binding.Status == domain.ComposePortFrozen && patch)
@@ -168,8 +166,7 @@ type PruneCollidingPortsParams struct {
 	Detected map[string]map[string]int
 }
 
-// DroppedPort is a detected declaration withdrawn because it could not coexist
-// with another, and the declaration it clashed with.
+// DroppedPort pairs a withdrawn declaration with the one it clashed with.
 type DroppedPort struct {
 	Port      PortDeclaration
 	Against   PortDeclaration
@@ -251,21 +248,25 @@ func clonePorts(ports map[string]int) map[string]int {
 	return clone
 }
 
-// RemoveDroppedPorts filters a report of what was added down to what survived
-// the collision check, so the recap never announces a port that is not in the
+type RemoveDroppedPortsParams struct {
+	Added   map[string]map[string]int
+	Dropped []DroppedPort
+}
+
+// RemoveDroppedPorts keeps the recap from announcing a port that is not in the
 // file it just wrote.
-func RemoveDroppedPorts(added map[string]map[string]int, dropped []DroppedPort) map[string]map[string]int {
-	if len(dropped) == 0 {
-		return added
+func RemoveDroppedPorts(params RemoveDroppedPortsParams) map[string]map[string]int {
+	if len(params.Dropped) == 0 {
+		return params.Added
 	}
 
-	out := make(map[string]map[string]int, len(added))
-	for job, ports := range added {
+	out := make(map[string]map[string]int, len(params.Added))
+	for job, ports := range params.Added {
 		kept := map[string]int{}
 		for name, base := range ports {
 			kept[name] = base
 		}
-		for _, d := range dropped {
+		for _, d := range params.Dropped {
 			if d.Port.Job == job {
 				delete(kept, d.Port.Name)
 			}

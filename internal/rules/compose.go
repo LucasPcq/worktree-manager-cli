@@ -73,9 +73,8 @@ type ComposeShortPortParams struct {
 	Taken   map[string]bool
 }
 
-// ComposeShortPort reads one entry of a service's `ports:` list in short syntax
-// and says what wtm may do with it. Positions in the source file are the
-// scanner's job; everything else is decided here.
+// ComposeShortPort decides what wtm may do with one short-syntax entry.
+// Locating it in the file is the scanner's job.
 func ComposeShortPort(params ComposeShortPortParams) domain.ComposePortBinding {
 	binding := domain.ComposePortBinding{Service: params.Service}
 
@@ -130,8 +129,8 @@ type ComposeLongPortParams struct {
 	Taken     map[string]bool
 }
 
-// ComposeLongPort is ComposeShortPort for the long syntax, where the host port
-// stands alone under `published:` and needs no mapping to be reassembled.
+// ComposeLongPort is ComposeShortPort for the long syntax, where `published:`
+// carries the host port on its own.
 func ComposeLongPort(params ComposeLongPortParams) domain.ComposePortBinding {
 	binding := domain.ComposePortBinding{Service: params.Service}
 
@@ -392,8 +391,6 @@ func ApplyComposePortPatches(params ApplyComposePortPatchesParams) (string, erro
 	return strings.Join(lines, "\n"), nil
 }
 
-// composeFoundAt quotes what actually sits where a token was expected, so the
-// abort message shows the mismatch instead of only asserting it.
 func composeFoundAt(line string, start, length int) string {
 	if start < 0 || start >= len(line) {
 		return "end of line"
@@ -405,8 +402,8 @@ func composeFoundAt(line string, start, length int) string {
 	return strconv.Quote(line[start:end])
 }
 
-// SortedComposeFiles orders a per-file map so a run's output and its rewrites
-// follow the same sequence twice in a row.
+// SortedComposeFiles keeps a run's output and its rewrites in the same order
+// twice running.
 func SortedComposeFiles[T any](byFile map[string]T) []string { return sortedKeys(byFile) }
 
 func sortedKeys[T any](m map[string]T) []string {

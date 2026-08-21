@@ -1,21 +1,13 @@
 package domain
 
 // ComposePortStatus says what a compose port mapping allows wtm to do with it.
+// Only a frozen one is ever rewritten: a templated mapping already reads a
+// variable, and an unsupported one wtm refuses to touch.
 type ComposePortStatus string
 
 const (
-	// ComposePortTemplated is a mapping whose host side already reads an
-	// environment variable ("${DB_PORT:-5432}:5432"). Nothing to rewrite: the
-	// variable name and its default are taken as declared.
-	ComposePortTemplated ComposePortStatus = "templated"
-
-	// ComposePortFrozen is a literal host port ("5432:5432"). Declaring it in
-	// run.toml changes nothing until the mapping reads a variable, so it is the
-	// only status wtm offers to rewrite.
-	ComposePortFrozen ComposePortStatus = "frozen"
-
-	// ComposePortUnsupported is a mapping wtm refuses to touch — a range, an
-	// alias, or a form with no host port to shift. Reason says which.
+	ComposePortTemplated   ComposePortStatus = "templated"
+	ComposePortFrozen      ComposePortStatus = "frozen"
 	ComposePortUnsupported ComposePortStatus = "unsupported"
 )
 
@@ -25,33 +17,26 @@ type ComposePortBinding struct {
 	File    string
 	Service string
 	Status  ComposePortStatus
-	// Reason is filled for ComposePortUnsupported only.
-	Reason string
-	// Var is the environment variable the host port reads: the one already
-	// written for a templated mapping, the one wtm would introduce for a frozen
-	// one. Empty when unsupported.
-	Var string
-	// Base is the host port the main checkout binds — the declared literal, or
-	// the default of a templated mapping.
-	Base int
-	// Container is the port inside the container. It never shifts.
+	Reason  string
+	Var     string
+	// Base is the host port the main checkout binds; Container never shifts.
+	Base      int
 	Container int
-	// Line and Column locate the scalar in the source file, 1-based, Column
-	// pointing at its first character, opening quote included.
+	// Line and Column are 1-based, Column pointing at the scalar's first
+	// character, opening quote included.
 	Line   int
 	Column int
 	// Token is the scalar exactly as the file spells it, quotes included, and
-	// Replacement what it becomes when patched. Replacement is empty unless
-	// Status is ComposePortFrozen.
+	// Replacement what it becomes — empty unless Status is ComposePortFrozen.
 	Token       string
 	Replacement string
 }
 
-// ComposeScan is everything one docker-compose file says about its ports.
+// ComposeScan is everything one docker-compose file says about its ports. Err
+// is set when the file could not be read or parsed at all, and Bindings is then
+// empty: the file is reported rather than used.
 type ComposeScan struct {
-	File string
-	// Err is set when the file could not be read or parsed at all; Bindings is
-	// then empty and the file is reported rather than used.
+	File     string
 	Err      string
 	Bindings []ComposePortBinding
 }

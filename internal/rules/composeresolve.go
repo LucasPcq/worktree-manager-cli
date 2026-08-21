@@ -15,9 +15,8 @@ type ResolveComposePortsParams struct {
 	Unverifiable map[string]string
 }
 
-// ComposePortOutcome is the whole decision of a `run init`: the config to write,
-// the rewrites to perform, and everything the recap has to account for. Nothing
-// here touches disk, so the order of the steps below is testable on its own.
+// ComposePortOutcome is the whole decision of a `run init`. Nothing here
+// touches disk, so the order of the steps below is testable on its own.
 type ComposePortOutcome struct {
 	Config  domain.RunConfig
 	Merge   MergeResult
@@ -49,7 +48,10 @@ func ResolveComposePorts(params ResolveComposePortsParams) ComposePortOutcome {
 	ports, patches := withoutFiles(params.Plan, sortedKeys(params.Unverifiable))
 
 	forJobs := params.Answers
-	forJobs.DockerComposeFiles = ComposeFilesNeedingAJob(params.Existing, params.Answers.DockerComposeFiles)
+	forJobs.DockerComposeFiles = ComposeFilesNeedingAJob(ComposeFilesNeedingAJobParams{
+		Config: params.Existing,
+		Files:  params.Answers.DockerComposeFiles,
+	})
 	built := BuildInitRunConfig(forJobs, params.PackageManager)
 	merged, mergeResult := MergeRunConfigs(params.Existing, built)
 	outcome.Merge = mergeResult
@@ -64,7 +66,7 @@ func ResolveComposePorts(params ResolveComposePortsParams) ComposePortOutcome {
 
 	outcome.Config = pruned.Config
 	outcome.Dropped = pruned.Dropped
-	outcome.Written = RemoveDroppedPorts(backfilled.Added, pruned.Dropped)
+	outcome.Written = RemoveDroppedPorts(RemoveDroppedPortsParams{Added: backfilled.Added, Dropped: pruned.Dropped})
 	outcome.Patches = survivingPatches(pruned.Config, patches)
 	return outcome
 }
@@ -74,7 +76,7 @@ func ResolveComposePorts(params ResolveComposePortsParams) ComposePortOutcome {
 func survivingPatches(cfg domain.RunConfig, patches map[string][]domain.ComposePortBinding) map[string][]domain.ComposePortBinding {
 	kept := map[string][]domain.ComposePortBinding{}
 	for _, file := range SortedComposeFiles(patches) {
-		job := jobNamed(cfg, ComposeJobName(cfg, file))
+		job := jobNamed(cfg, ComposeJobName(ComposeJobNameParams{Config: cfg, File: file}))
 		for _, binding := range patches[file] {
 			if _, declared := job.Ports[binding.Var]; declared {
 				kept[file] = append(kept[file], binding)
@@ -87,7 +89,7 @@ func survivingPatches(cfg domain.RunConfig, patches map[string][]domain.ComposeP
 func orphanedComposeFiles(cfg domain.RunConfig, ports map[string]map[string]int) []string {
 	var orphaned []string
 	for _, file := range SortedComposeFiles(ports) {
-		if len(ports[file]) > 0 && ComposeJobName(cfg, file) == "" {
+		if len(ports[file]) > 0 && ComposeJobName(ComposeJobNameParams{Config: cfg, File: file}) == "" {
 			orphaned = append(orphaned, file)
 		}
 	}

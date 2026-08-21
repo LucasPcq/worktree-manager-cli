@@ -72,15 +72,18 @@ func referencedNames(root *yaml.Node) map[string]bool {
 	return taken
 }
 
-// ScanAll scans every file in order, keyed by the same relative path run.toml
-// and the wizard use.
-func ScanAll(projectDir string, files []string) map[string]domain.ComposeScan {
-	if len(files) == 0 {
+type ScanAllParams struct {
+	ProjectDir string
+	Files      []string
+}
+
+func ScanAll(params ScanAllParams) map[string]domain.ComposeScan {
+	if len(params.Files) == 0 {
 		return nil
 	}
-	scans := make(map[string]domain.ComposeScan, len(files))
-	for _, f := range files {
-		scans[f] = Scan(ScanParams{ProjectDir: projectDir, File: f})
+	scans := make(map[string]domain.ComposeScan, len(params.Files))
+	for _, f := range params.Files {
+		scans[f] = Scan(ScanParams{ProjectDir: params.ProjectDir, File: f})
 	}
 	return scans
 }
@@ -219,8 +222,6 @@ func locate(binding domain.ComposePortBinding, file string, node *yaml.Node, lin
 	return binding
 }
 
-// sourceToken returns the scalar exactly as the file spells it, quotes
-// included, by reading it back at the position the parser reported.
 func sourceToken(lines []string, node *yaml.Node) (string, bool) {
 	if node.Line < 1 || node.Line > len(lines) {
 		return "", false

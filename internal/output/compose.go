@@ -8,8 +8,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-// ComposePortsReportParams is everything a run of the compose port detection
-// has to tell the user, gathered so the recap prints it in one place.
 type ComposePortsReportParams struct {
 	// Patched are the rewrites that were applied, empty when none were.
 	Patched map[string][]domain.ComposePortBinding
