@@ -2,7 +2,6 @@ package rules
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -148,7 +147,7 @@ type EnvPortsWrittenLinesParams struct {
 // naming the file it was read from so the user can go check the value.
 func EnvPortsWrittenLines(params EnvPortsWrittenLinesParams) []string {
 	var lines []string
-	for _, job := range sortedJobNames(params.Written) {
+	for _, job := range sortedKeys(params.Written) {
 		for _, name := range sortedPortNames(params.Written[job]) {
 			lines = append(lines, fmt.Sprintf(
 				domain.EnvPortDetectedLineFmt, job, name, params.Written[job][name], params.Sources[job][name],
@@ -162,13 +161,4 @@ func EnvPortsWrittenLines(params EnvPortsWrittenLinesParams) []string {
 // the command actually reads the variable.
 func EnvPortsVerifyLine() string {
 	return fmt.Sprintf(domain.EnvPortsVerifyFmt, domain.EnvPortKeyName)
-}
-
-func sortedJobNames(byJob map[string]map[string]int) []string {
-	names := make([]string, 0, len(byJob))
-	for name := range byJob {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
 }

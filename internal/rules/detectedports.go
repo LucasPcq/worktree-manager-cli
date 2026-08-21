@@ -2,7 +2,6 @@ package rules
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -132,21 +131,12 @@ func mergeDetected(fromCompose, fromEnv map[string]map[string]int) map[string]ma
 
 func unreadableEnvScans(scans map[string]domain.EnvPortScan) []domain.EnvPortScan {
 	var unreadable []domain.EnvPortScan
-	for _, dir := range sortedEnvDirs(scans) {
+	for _, dir := range sortedKeys(scans) {
 		if scans[dir].Err != "" {
 			unreadable = append(unreadable, scans[dir])
 		}
 	}
 	return unreadable
-}
-
-func sortedEnvDirs(scans map[string]domain.EnvPortScan) []string {
-	dirs := make([]string, 0, len(scans))
-	for dir := range scans {
-		dirs = append(dirs, dir)
-	}
-	sort.Strings(dirs)
-	return dirs
 }
 
 // survivingPatches keeps a rewrite only when the config about to be written
