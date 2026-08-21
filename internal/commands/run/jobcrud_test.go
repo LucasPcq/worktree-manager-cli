@@ -576,3 +576,53 @@ func TestRunJobAdd_RejectsCollidingPort(t *testing.T) {
 		t.Errorf("the error should name both sides, got: %v", err)
 	}
 }
+
+// A cmd the shell cannot parse is refused when the job is written — the last
+// moment the problem can be named, rather than a job that dies at startup.
+func TestRunJobAdd_RejectsUnparseableCmd(t *testing.T) {
+	stateDir := setupTestProject(t)
+
+	_, _, err := runCmd(t,
+		domain.CmdJob, domain.CmdAdd, "broken",
+		"--"+domain.FlagCmd, `echo "unterminated`,
+		"--"+domain.FlagKind, string(domain.JobKindTask),
+	)
+	if err == nil {
+		t.Fatal("expected an unparseable cmd to be refused")
+	}
+	if !strings.Contains(err.Error(), "not a valid shell command") {
+		t.Errorf("got %v, want a shell syntax error naming the job", err)
+	}
+
+	cfg, loadErr := config.LoadRun(stateDir)
+	if loadErr != nil {
+		t.Fatalf("load run: %v", loadErr)
+	}
+	if len(cfg.Jobs) != 0 {
+		t.Errorf("expected nothing written, got %+v", cfg.Jobs)
+	}
+}
+
+// A cmd carrying a declared port as a CLI flag is exactly what the shell line
+// exists for, and must survive a write/read round-trip verbatim.
+func TestRunJobAdd_KeepsPortVariableInCmd(t *testing.T) {
+	stateDir := setupTestProject(t)
+
+	cmdLine := "pnpm dev --port ${PORT}"
+	if _, _, err := runCmd(t,
+		domain.CmdJob, domain.CmdAdd, "web",
+		"--"+domain.FlagCmd, cmdLine,
+		"--"+domain.FlagKind, string(domain.JobKindService),
+		"--"+domain.FlagPort, "PORT=3000",
+	); err != nil {
+		t.Fatalf("run job add: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if len(cfg.Jobs) != 1 || cfg.Jobs[0].Cmd != cmdLine {
+		t.Errorf("got %+v, want cmd %q", cfg.Jobs, cmdLine)
+	}
+}

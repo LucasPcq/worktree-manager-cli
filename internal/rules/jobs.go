@@ -20,7 +20,7 @@ func IsRunInitialized(cfg domain.RunConfig) bool {
 // meaning the launcher process exits after starting detached work
 // (e.g. docker compose up -d).
 func IsDetached(job domain.JobConfig) bool {
-	return job.Kind == domain.JobKindService && job.Stop != ""
+	return job.Kind == domain.JobKindService && !IsBlankCommand(job.Stop)
 }
 
 // IsAlreadyRunning reads the daemon's refusal to start a job that is already

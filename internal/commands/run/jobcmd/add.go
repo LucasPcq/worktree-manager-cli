@@ -21,13 +21,15 @@ func newAddCmd() *cobra.Command {
 		Short: "Add a job to run.toml",
 		Long: "Append a job to <git-common-dir>/wtm/run.toml.\n\n" +
 			"Pass --cmd (and optionally --kind, --stop, --cwd, --port) for non-interactive use.\n" +
-			"Without --cmd, prompts interactively for each field.",
+			"Without --cmd, prompts interactively for each field.\n\n" +
+			"--cmd and --stop are /bin/sh lines: quotes, && and ${VAR} behave as in a terminal,\n" +
+			"so a declared port can be passed as a flag — --cmd 'pnpm dev --port ${PORT}'.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: runAdd,
 	}
-	cmd.Flags().String(domain.FlagCmd, "", "Command to run (skips wizard when set with name)")
+	cmd.Flags().String(domain.FlagCmd, "", "Command to run, as a /bin/sh line (skips wizard when set with name)")
 	cmd.Flags().String(domain.FlagKind, string(domain.JobKindService), "Job kind: service or task")
-	cmd.Flags().String(domain.FlagStop, "", "Stop command (services only)")
+	cmd.Flags().String(domain.FlagStop, "", "Stop command, as a /bin/sh line (services only)")
 	cmd.Flags().String(domain.FlagCwd, "", "Working directory (relative to project root)")
 	cmd.Flags().StringArray(domain.FlagPort, nil, "Base port as NAME=PORT, repeatable (e.g. --port PORT=3000)")
 	shared.AddOutputFlag(cmd)
