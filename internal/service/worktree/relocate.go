@@ -247,10 +247,17 @@ func resolveParent(params RelocateParams, step domain.RelocateStep) string {
 	return params.BaseBranch
 }
 
+// isManaged reports whether wtm ever created or adopted this worktree, which is
+// what CreatedAt records. The file alone no longer answers it: a worktree that
+// merely ran a job has a meta.json holding its ordinal and nothing else, and it
+// is still external — relocate must keep offering to adopt it, and reparent must
+// keep refusing it a parent it never had.
 func isManaged(stateDir, branch string) bool {
-	metaPath := filepath.Join(rules.WorktreeMetaDir(stateDir, branch), domain.MetaFileName)
-	_, err := os.Stat(metaPath)
-	return err == nil
+	meta, err := loadMetadata(stateDir, branch)
+	if err != nil {
+		return false
+	}
+	return meta.CreatedAt != ""
 }
 
 func pathExists(path string) bool {

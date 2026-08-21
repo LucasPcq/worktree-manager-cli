@@ -163,3 +163,37 @@ func TestEnsureOrdinalRepairsDuplicate(t *testing.T) {
 		t.Errorf("feat/one = %d, want 1 (it was there first and keeps its number)", got)
 	}
 }
+
+// A worktree that merely ran a job has a meta.json holding its ordinal and
+// nothing else. It is still external: relocate must keep offering to adopt it,
+// or it would never get the parent sync needs.
+func TestEnsureOrdinalLeavesWorktreeExternal(t *testing.T) {
+	repo := newOrdinalRepo(t)
+	repo.addWorktree(t, "feat/external")
+
+	if isManaged(repo.stateDir, "feat/external") {
+		t.Fatal("fixture already looks managed")
+	}
+
+	repo.ensure(t, "feat/external")
+
+	if isManaged(repo.stateDir, "feat/external") {
+		t.Error("allocating an ordinal made an external worktree look wtm-managed")
+	}
+}
+
+func TestCreatedWorktreeIsManaged(t *testing.T) {
+	repo := newOrdinalRepo(t)
+	repo.addWorktree(t, "feat/adopted")
+
+	if err := writeMetadata(rules.WorktreeMetaDir(repo.stateDir, "feat/adopted"), domain.WorktreeMetadata{
+		SourceBranch: "main",
+		CreatedAt:    "2026-08-21T00:00:00Z",
+	}); err != nil {
+		t.Fatalf("write meta: %v", err)
+	}
+
+	if !isManaged(repo.stateDir, "feat/adopted") {
+		t.Error("a worktree wtm created or adopted is not seen as managed")
+	}
+}
