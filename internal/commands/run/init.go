@@ -87,7 +87,12 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	built := rules.BuildInitRunConfig(answers, detection.PackageManager)
+	// Job construction sees only the compose files nothing runs yet; the ports of
+	// the others still reach the job that does run them, via the backfill below.
+	forJobs := answers
+	forJobs.DockerComposeFiles = rules.ComposeFilesNeedingAJob(existing, answers.DockerComposeFiles)
+
+	built := rules.BuildInitRunConfig(forJobs, detection.PackageManager)
 	merged, mergeResult := rules.MergeRunConfigs(existing, built)
 
 	plan := rules.PlanComposePorts(rules.PlanComposePortsParams{

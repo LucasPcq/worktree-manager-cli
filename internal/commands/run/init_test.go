@@ -268,3 +268,36 @@ func TestRunInit_NeverWritesAConfigItsOwnLoaderRefuses(t *testing.T) {
 		}
 	}
 }
+
+// TestRunInit_BackfillsAJobWhoseNameWasChanged verifies a compose file already
+// run by a job does not get a second one just because that job was renamed —
+// the two would declare the same ports and both lose them to the collision
+// check, leaving the file with no isolation at all.
+func TestRunInit_BackfillsAJobWhoseNameWasChanged(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeCompose(t, "docker-compose.yml", composeWithPorts)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs: []domain.JobConfig{{
+			Name: "docker",
+			Kind: domain.JobKindService,
+			Cmd:  "docker compose -f docker-compose.yml up -d",
+			Stop: "docker compose -f docker-compose.yml down --remove-orphans",
+			Cwd:  ".",
+		}},
+	})
+
+	if _, _, err := runCmd(t, domain.CmdInit, "--"+domain.FlagNonInteractive); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if len(cfg.Jobs) != 1 || cfg.Jobs[0].Name != "docker" {
+		t.Fatalf("the renamed job must stay the only one, got %+v", cfg.Jobs)
+	}
+	if cfg.Jobs[0].Ports["CACHE_PORT"] != 6379 {
+		t.Errorf("ports = %v, want the detected port backfilled onto it", cfg.Jobs[0].Ports)
+	}
+}

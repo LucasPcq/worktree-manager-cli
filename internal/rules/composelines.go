@@ -88,3 +88,20 @@ func ComposeJobName(cfg domain.RunConfig, file string) string {
 	}
 	return ""
 }
+
+// ComposeFilesNeedingAJob narrows a selection to the files no job runs yet.
+// Merging by job name alone re-adds a compose file whose job was renamed, which
+// then declares the same ports twice and loses both to the collision check —
+// so the file that already has a runner contributes its ports, not a second job.
+func ComposeFilesNeedingAJob(cfg domain.RunConfig, files []string) []string {
+	if len(cfg.Jobs) == 0 {
+		return files
+	}
+	needing := make([]string, 0, len(files))
+	for _, file := range files {
+		if ComposeJobName(cfg, file) == "" {
+			needing = append(needing, file)
+		}
+	}
+	return needing
+}
