@@ -147,6 +147,12 @@ const (
 	// cannot open an environment variable name.
 	ComposeVarNamePrefix = "S"
 
+	// The docker-compose keys wtm reads.
+	ComposeServicesKey  = "services"
+	ComposePortsKey     = "ports"
+	ComposePublishedKey = "published"
+	ComposeTargetKey    = "target"
+
 	// The reasons a compose port mapping is left alone.
 	ComposePortReasonNoHost     = "no host port to shift — Docker picks one at random"
 	ComposePortReasonRange      = "port range mappings cannot be shifted as a block"
@@ -154,6 +160,7 @@ const (
 	ComposePortReasonOutOfRange = "port %d is outside %d-%d"
 	ComposePortReasonBadVarName = "%q is not a valid environment variable name"
 	ComposePortReasonAlias      = "the ports list is a YAML alias — templating it would change every anchor site"
+	ComposePortReasonUnreadable = "wtm could not read this mapping back from the file, so it will not rewrite it"
 
 	// ComposePatchMovedFmt aborts a patch whose target token is no longer where
 	// the scan found it.

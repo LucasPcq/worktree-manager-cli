@@ -1,0 +1,230 @@
+// Package compose reads the `ports:` a docker-compose file declares, and
+// rewrites them in place so each worktree binds its own. It is the content side
+// of docker-compose support; finding which files exist stays in service/detect.
+package compose
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+
+	"go.yaml.in/yaml/v3"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
+)
+
+type ScanParams struct {
+	ProjectDir string
+	// File is the path run.toml uses, relative to ProjectDir.
+	File string
+}
+
+// Scan reads one docker-compose file and locates every port mapping precisely
+// enough for Patch to rewrite it. A file it cannot read or parse comes back
+// with Err set rather than aborting: the caller reports it and carries on.
+func Scan(params ScanParams) domain.ComposeScan {
+	scan := domain.ComposeScan{File: params.File}
+
+	content, err := os.ReadFile(filepath.Join(params.ProjectDir, params.File))
+	if err != nil {
+		scan.Err = err.Error()
+		return scan
+	}
+
+	var root yaml.Node
+	if err := yaml.Unmarshal(content, &root); err != nil {
+		scan.Err = err.Error()
+		return scan
+	}
+	if len(root.Content) == 0 {
+		return scan
+	}
+
+	scan.Bindings = collectBindings(collectParams{
+		services: mappingValue(root.Content[0], domain.ComposeServicesKey),
+		lines:    strings.Split(string(content), "\n"),
+		file:     params.File,
+	})
+	return scan
+}
+
+// ScanAll scans every file in order, keyed by the same relative path run.toml
+// and the wizard use.
+func ScanAll(projectDir string, files []string) map[string]domain.ComposeScan {
+	if len(files) == 0 {
+		return nil
+	}
+	scans := make(map[string]domain.ComposeScan, len(files))
+	for _, f := range files {
+		scans[f] = Scan(ScanParams{ProjectDir: projectDir, File: f})
+	}
+	return scans
+}
+
+type collectParams struct {
+	services *yaml.Node
+	lines    []string
+	file     string
+}
+
+func collectBindings(params collectParams) []domain.ComposePortBinding {
+	if params.services == nil || params.services.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	var bindings []domain.ComposePortBinding
+	// Taken spans the whole file: two services normalizing to the same variable
+	// name would otherwise declare the same one twice.
+	taken := map[string]bool{}
+
+	for i := 0; i+1 < len(params.services.Content); i += 2 {
+		name := params.services.Content[i].Value
+		ports := mappingValue(params.services.Content[i+1], domain.ComposePortsKey)
+		if ports == nil {
+			continue
+		}
+
+		if ports.Kind == yaml.AliasNode {
+			bindings = append(bindings, unsupported(params.file, name, domain.ComposePortReasonAlias))
+			continue
+		}
+		if ports.Kind != yaml.SequenceNode {
+			continue
+		}
+
+		for _, entry := range ports.Content {
+			b, ok := bindingFor(bindingForParams{
+				file:    params.file,
+				service: name,
+				entry:   entry,
+				lines:   params.lines,
+				taken:   taken,
+			})
+			if !ok {
+				continue
+			}
+			if b.Var != "" {
+				taken[b.Var] = true
+			}
+			bindings = append(bindings, b)
+		}
+	}
+
+	return bindings
+}
+
+type bindingForParams struct {
+	file    string
+	service string
+	entry   *yaml.Node
+	lines   []string
+	taken   map[string]bool
+}
+
+func bindingFor(params bindingForParams) (domain.ComposePortBinding, bool) {
+	switch params.entry.Kind {
+	case yaml.AliasNode:
+		return unsupported(params.file, params.service, domain.ComposePortReasonAlias), true
+	case yaml.ScalarNode:
+		return shortBinding(params)
+	case yaml.MappingNode:
+		return longBinding(params)
+	default:
+		return domain.ComposePortBinding{}, false
+	}
+}
+
+func shortBinding(params bindingForParams) (domain.ComposePortBinding, bool) {
+	binding := rules.ComposeShortPort(rules.ComposeShortPortParams{
+		Service: params.service,
+		Mapping: params.entry.Value,
+		Taken:   params.taken,
+	})
+	return locate(binding, params.file, params.entry, params.lines), true
+}
+
+func longBinding(params bindingForParams) (domain.ComposePortBinding, bool) {
+	published := mappingValue(params.entry, domain.ComposePublishedKey)
+	target := mappingValue(params.entry, domain.ComposeTargetKey)
+	if published == nil || published.Kind != yaml.ScalarNode {
+		return unsupported(params.file, params.service, domain.ComposePortReasonNoHost), true
+	}
+
+	targetValue := ""
+	if target != nil {
+		targetValue = target.Value
+	}
+
+	binding := rules.ComposeLongPort(rules.ComposeLongPortParams{
+		Service:   params.service,
+		Published: published.Value,
+		Target:    targetValue,
+		Taken:     params.taken,
+	})
+	return locate(binding, params.file, published, params.lines), true
+}
+
+// locate pins a binding to the scalar it came from. A token wtm cannot read
+// back byte for byte from the source line is downgraded rather than patched
+// blind — the position is the only thing the rewrite trusts.
+func locate(binding domain.ComposePortBinding, file string, node *yaml.Node, lines []string) domain.ComposePortBinding {
+	binding.File = file
+	binding.Line = node.Line
+	binding.Column = node.Column
+
+	token, ok := sourceToken(lines, node)
+	if !ok {
+		return unsupported(file, binding.Service, domain.ComposePortReasonUnreadable)
+	}
+	binding.Token = token
+	return binding
+}
+
+// sourceToken returns the scalar exactly as the file spells it, quotes
+// included, by reading it back at the position the parser reported.
+func sourceToken(lines []string, node *yaml.Node) (string, bool) {
+	if node.Line < 1 || node.Line > len(lines) {
+		return "", false
+	}
+	line := lines[node.Line-1]
+	start := node.Column - 1
+	if start < 0 || start >= len(line) {
+		return "", false
+	}
+
+	if quote := line[start]; quote == '"' || quote == '\'' {
+		end := start + len(node.Value) + 2
+		if end > len(line) || line[end-1] != quote {
+			return "", false
+		}
+		return line[start:end], true
+	}
+
+	end := start + len(node.Value)
+	if end > len(line) || line[start:end] != node.Value {
+		return "", false
+	}
+	return line[start:end], true
+}
+
+func unsupported(file, service, reason string) domain.ComposePortBinding {
+	return domain.ComposePortBinding{
+		File:    file,
+		Service: service,
+		Status:  domain.ComposePortUnsupported,
+		Reason:  reason,
+	}
+}
+
+func mappingValue(node *yaml.Node, key string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
+		}
+	}
+	return nil
+}

@@ -398,3 +398,14 @@ func composeFoundAt(line string, start, length int) string {
 	}
 	return strconv.Quote(line[start:end])
 }
+
+// SortedComposeFiles orders a per-file map so a run's output and its rewrites
+// follow the same sequence twice in a row.
+func SortedComposeFiles[T any](byFile map[string]T) []string {
+	files := make([]string, 0, len(byFile))
+	for f := range byFile {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+	return files
+}
