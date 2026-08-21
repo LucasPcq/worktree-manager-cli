@@ -137,6 +137,30 @@ const (
 	PortMin = 1
 	PortMax = 65535
 
+	// ComposePortVarSuffix ends every variable name wtm introduces in a compose
+	// file, and ComposeTemplatedPortFmt is the host side it writes: the default
+	// keeps `docker compose up` working on its own, without wtm.
+	ComposePortVarSuffix    = "_PORT"
+	ComposeTemplatedPortFmt = "${%s:-%d}"
+
+	// ComposeVarNamePrefix fronts a service name starting with a digit, which
+	// cannot open an environment variable name.
+	ComposeVarNamePrefix = "S"
+
+	// The reasons a compose port mapping is left alone.
+	ComposePortReasonNoHost     = "no host port to shift — Docker picks one at random"
+	ComposePortReasonRange      = "port range mappings cannot be shifted as a block"
+	ComposePortReasonNotAPort   = "%q is not a port number"
+	ComposePortReasonOutOfRange = "port %d is outside %d-%d"
+	ComposePortReasonBadVarName = "%q is not a valid environment variable name"
+	ComposePortReasonAlias      = "the ports list is a YAML alias — templating it would change every anchor site"
+
+	// ComposePatchMovedFmt aborts a patch whose target token is no longer where
+	// the scan found it.
+	ComposePatchMovedFmt = "%s:%d: expected %s but found %s — the file changed since it was read"
+	// ComposePatchOutOfRangeFmt aborts a patch pointing past the end of the file.
+	ComposePatchOutOfRangeFmt = "%s:%d: line is past the end of the file"
+
 	// PortCollisionHorizon is how many worktrees a declared layout is checked
 	// against. Two base ports collide when they differ by a multiple of the
 	// block, but the multiple says how many worktrees it takes to get there:
@@ -794,8 +818,8 @@ const (
 	RunStreamStartedFmt = "%s started"
 	// RunPortsSuffixFmt appends the ports a job actually bound to the line
 	// announcing it, RunPortEntryFmt being one of them.
-	RunPortsSuffixFmt = "%s · %s"
-	RunPortEntryFmt   = "%s=%d"
+	RunPortsSuffixFmt   = "%s · %s"
+	RunPortEntryFmt     = "%s=%d"
 	RunStreamAlreadyFmt = "%s already running"
 	RunStreamDoneFmt    = "%s done"
 	RunStreamNextHint   = "wtm run logs to attach · wtm run down to stop"
