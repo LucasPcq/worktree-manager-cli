@@ -11,6 +11,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow/decide"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/branch"
+	envsvc "github.com/LucasPcq/wtm/internal/service/env"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 )
 
@@ -135,6 +136,10 @@ func (f *createFlow) run() (Outcome, error) {
 	}
 
 	if !result.AlreadyExists {
+		// Before the hooks: one of them may well read the .env this settles.
+		if portErr := f.settleEnvPorts(result.Path, branchName); portErr != nil {
+			return Outcome{}, portErr
+		}
 		if hookErr := f.runHooks(result.Path, branchName, fromBranch); hookErr != nil {
 			return Outcome{}, hookErr
 		}
@@ -142,6 +147,58 @@ func (f *createFlow) run() (Outcome, error) {
 
 	outcome := Outcome{Result: result, Branch: branchName, FromBranch: fromBranch}
 	return outcome, f.presenter.Created(outcome)
+}
+
+// settleEnvPorts moves the host ports a freshly provisioned .env holds onto the
+// ones this worktree binds. The values were just copied from main or from a
+// parent, so they carry that worktree's ports and nothing else would fix them.
+//
+// It applies without asking when nobody can be asked: leaving a .env pointing at
+// another worktree's services does not make the run safer, it makes it useless.
+func (f *createFlow) settleEnvPorts(worktreePath, branchName string) error {
+	params, err := worktree.ResolveEnvPorts(worktree.ResolveEnvPortsParams{
+		ProjectDir:   f.ctx.ProjectDir,
+		StateDir:     f.ctx.StateDir,
+		Branch:       branchName,
+		WorktreePath: worktreePath,
+		EnvFiles:     f.ctx.Config.Project.Env.Files,
+	})
+	if err != nil || params.Empty() {
+		return err
+	}
+
+	plan, err := envsvc.ComputeEnvPorts(params)
+	if err != nil {
+		return err
+	}
+	if anomalies := rules.EnvPortAnomalyLines(plan); len(anomalies) > 0 {
+		f.presenter.Status(flow.Notice{Kind: flow.NoticeWarning, Text: domain.EnvPortAnomaliesTitle, Lines: anomalies})
+	}
+	if len(plan.Rewrites()) == 0 {
+		return nil
+	}
+
+	// Asked, the table lives inside the question; applied without asking, it is a
+	// report of what just happened. Same lines, two different acts.
+	if f.prompter.Interactive() {
+		proceed, confirmErr := f.prompter.Confirm(flow.ConfirmParams{
+			Title:       domain.EnvPortsConfirmPrompt,
+			Description: rules.EnvPortPromptDescription(plan),
+			DefaultYes:  true,
+		})
+		if confirmErr != nil || !proceed {
+			return nil
+		}
+	} else {
+		f.presenter.Status(flow.Notice{
+			Kind:  flow.NoticeMessage,
+			Text:  rules.EnvPortOffsetLabel(plan.Offset),
+			Lines: rules.EnvPortTableLines(plan),
+		})
+	}
+
+	_, err = envsvc.ApplyEnvPorts(params)
+	return err
 }
 
 func (f *createFlow) runHooks(worktreePath, branchName, fromBranch string) error {

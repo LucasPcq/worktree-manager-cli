@@ -234,5 +234,53 @@ func ValidateRunPorts(cfg domain.RunConfig) []string {
 			"ports %s (job %q, base %d) and %s (job %q, base %d) collide %d worktree(s) apart with a port_offset_block of %d — move one base so the gap between them is not a multiple of %d",
 			c.A.Name, c.A.Job, c.A.Base, c.B.Name, c.B.Job, c.B.Base, c.Worktrees, block, block))
 	}
+
+	return append(errs, validateEnvPortLinks(cfg)...)
+}
+
+// validateEnvPortLinks checks what run.toml can answer for on its own: that each
+// link names a port the file declares, a key a shell could export, and a pair no
+// other link already claims. Whether the file it names is a configured env target
+// needs .wtm.toml and is checked by ValidateEnvPortTargets instead.
+func validateEnvPortLinks(cfg domain.RunConfig) []string {
+	bases := EnvPortBases(cfg)
+
+	var errs []string
+	seen := map[domain.EnvPortLink]bool{}
+	for _, link := range cfg.EnvPorts {
+		if link.File == "" {
+			errs = append(errs, fmt.Sprintf("env_port %s: file is required", link.Key))
+		}
+		if !IsEnvVarName(link.Key) {
+			errs = append(errs, fmt.Sprintf("env_port in %s: %q is not a valid environment variable name", link.File, link.Key))
+		}
+		if _, declared := bases[link.Port]; !declared {
+			errs = append(errs, fmt.Sprintf("env_port %s in %s references port %q, which no job declares", link.Key, link.File, link.Port))
+		}
+
+		pair := domain.EnvPortLink{File: link.File, Key: link.Key}
+		if seen[pair] {
+			errs = append(errs, fmt.Sprintf("env_port %s in %s is declared twice — a key can only follow one port", link.Key, link.File))
+		}
+		seen[pair] = true
+	}
+	return errs
+}
+
+// ValidateEnvPortTargets is the half of the link check that needs both configs:
+// a link may only name a .env the project actually provisions, otherwise wtm
+// would promise to rewrite a file nothing ever creates.
+func ValidateEnvPortTargets(links []domain.EnvPortLink, files []domain.EnvFile) []string {
+	targets := make(map[string]bool, len(files))
+	for _, f := range files {
+		targets[f.Target] = true
+	}
+
+	var errs []string
+	for _, link := range links {
+		if !targets[link.File] {
+			errs = append(errs, fmt.Sprintf("env_port %s references %s, which is not a configured env file — add it to [env] in %s or drop the link", link.Key, link.File, domain.ConfigFileName))
+		}
+	}
 	return errs
 }

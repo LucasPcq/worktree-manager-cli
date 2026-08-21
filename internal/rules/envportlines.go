@@ -1,0 +1,204 @@
+package rules
+
+import (
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+)
+
+// EnvPortTableLines renders the rewrites of a plan as one aligned table, each
+// file introduced by a rule bearing its name. Two things carry the structure and
+// both are load-bearing.
+//
+// The header, because without it the first three columns are unknowns until the
+// reader reaches the fourth and has to decode the line backwards. Read across, a
+// row now says "this key follows that port, which moves from here to there, and
+// becomes this".
+//
+// The named rule, because the alternative — indenting rows under a bare filename —
+// pushes them out of alignment with the header naming their columns. A rule
+// separates the groups without spending indentation to do it.
+//
+// Only the port shows a before and an after: it is the only thing that changes,
+// and printing both whole values would double the width for nothing. The value is
+// elided, which is not only about width — a DATABASE_URL printed whole puts a
+// password on screen.
+func EnvPortTableLines(plan domain.EnvPortPlan) []string {
+	entries := plan.Rewrites()
+	if len(entries) == 0 {
+		return nil
+	}
+
+	keyWidth, portWidth, moveWidth := envPortColumnWidths(entries)
+	row := func(key, port, move, value string) string {
+		return strings.TrimRight(fmt.Sprintf(domain.EnvPortTableRowFmt,
+			pad(key, keyWidth), pad(port, portWidth), pad(move, moveWidth), value), " ")
+	}
+
+	rows := []string{row(
+		domain.EnvPortHeaderKey,
+		domain.EnvPortHeaderFollows,
+		domain.EnvPortHeaderPort,
+		domain.EnvPortHeaderBecomes,
+	)}
+	for _, e := range entries {
+		rows = append(rows, row(e.Key, e.Port, envPortMove(e), ElideEnvValue(e.NewValue)))
+	}
+
+	return withFileRules(withFileRulesParams{Entries: entries, Rows: rows, Width: widestLine(rows)})
+}
+
+type withFileRulesParams struct {
+	Entries []domain.EnvPortEntry
+	// Rows is the header followed by one line per entry, in Entries order.
+	Rows  []string
+	Width int
+}
+
+// withFileRules reassembles the rendered rows into their file groups, each
+// opened by a rule naming the file.
+func withFileRules(params withFileRulesParams) []string {
+	byKey := map[domain.EnvPortLink]string{}
+	for i, e := range params.Entries {
+		byKey[domain.EnvPortLink{File: e.File, Key: e.Key}] = params.Rows[i+1]
+	}
+
+	lines := []string{params.Rows[0]}
+	for i, file := range envPortFiles(params.Entries) {
+		if i > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, fileRule(file, params.Width))
+		for _, e := range params.Entries {
+			if e.File == file {
+				lines = append(lines, byKey[domain.EnvPortLink{File: e.File, Key: e.Key}])
+			}
+		}
+	}
+	return lines
+}
+
+func fileRule(file string, width int) string {
+	head := fmt.Sprintf(domain.EnvPortFileRuleFmt, file)
+	if fill := width - len([]rune(head)); fill > 0 {
+		return head + strings.Repeat(domain.EnvPortRuleRune, fill)
+	}
+	return head
+}
+
+func widestLine(lines []string) int {
+	widest := 0
+	for _, l := range lines {
+		widest = max(widest, len([]rune(l)))
+	}
+	return widest
+}
+
+// EnvPortAnomalyLines names the links wtm refused to act on, in the same shape
+// as the table above: the key, the port it was meant to follow, and why nothing
+// was done. They are listed one by one rather than folded into a count — a link
+// that never matches is a mistake in run.toml, and the user can only fix the one
+// they can see.
+func EnvPortAnomalyLines(plan domain.EnvPortPlan) []string {
+	entries := plan.Anomalies()
+	if len(entries) == 0 {
+		return nil
+	}
+
+	keyWidth, portWidth := 0, 0
+	for _, e := range entries {
+		keyWidth = max(keyWidth, len(e.Key))
+		portWidth = max(portWidth, len(e.Port))
+	}
+
+	rows := []string{""}
+	for _, e := range entries {
+		rows = append(rows, strings.TrimRight(fmt.Sprintf(domain.EnvPortAnomalyRowFmt,
+			pad(e.Key, keyWidth), pad(e.Port, portWidth), envPortAnomalyReason(e)), " "))
+	}
+
+	// Row 0 is a placeholder for the header withFileRules expects; the reasons are
+	// prose and need no column names.
+	return withFileRules(withFileRulesParams{Entries: entries, Rows: rows, Width: widestLine(rows[1:])})[1:]
+}
+
+func envPortAnomalyReason(e domain.EnvPortEntry) string {
+	switch e.Status {
+	case domain.EnvPortStatusMissingKey:
+		return domain.EnvPortReasonMissingKey
+	case domain.EnvPortStatusAmbiguous:
+		return fmt.Sprintf(domain.EnvPortReasonAmbiguousFmt, e.Base)
+	default:
+		return fmt.Sprintf(domain.EnvPortReasonNotFoundFmt, e.Base)
+	}
+}
+
+func envPortMove(e domain.EnvPortEntry) string {
+	return fmt.Sprintf(domain.EnvPortMoveFmt, e.Base, e.Resolved)
+}
+
+func envPortColumnWidths(entries []domain.EnvPortEntry) (key, port, move int) {
+	key, port, move = len(domain.EnvPortHeaderKey), len(domain.EnvPortHeaderFollows), len(domain.EnvPortHeaderPort)
+	for _, e := range entries {
+		key = max(key, len(e.Key))
+		port = max(port, len(e.Port))
+		move = max(move, len([]rune(envPortMove(e))))
+	}
+	return key, port, move
+}
+
+// envPortFiles lists the files the entries touch, sorted so a report of the same
+// plan always reads the same way.
+func envPortFiles(entries []domain.EnvPortEntry) []string {
+	seen := map[string]bool{}
+	var files []string
+	for _, e := range entries {
+		if seen[e.File] {
+			continue
+		}
+		seen[e.File] = true
+		files = append(files, e.File)
+	}
+	sort.Strings(files)
+	return files
+}
+
+func pad(s string, width int) string {
+	return s + strings.Repeat(" ", max(0, width-len([]rune(s))))
+}
+
+// EnvPortLinkLines describes each link as both the prompt and the recap show it:
+// where the key lives, which port it follows, and the base found inside its
+// value — the number that answers "why this key?" before the link is written,
+// and "what moves?" after.
+func EnvPortLinkLines(links []domain.EnvPortLink, bases map[string]int) []string {
+	width := 0
+	for _, l := range links {
+		width = max(width, len([]rune(l.File+domain.EnvPortLinkSeparator+l.Key)))
+	}
+
+	lines := make([]string, 0, len(links))
+	for _, l := range links {
+		lines = append(lines, fmt.Sprintf(domain.EnvPortLinkFmt,
+			pad(l.File+domain.EnvPortLinkSeparator+l.Key, width), l.Port, bases[l.Port]))
+	}
+	return lines
+}
+
+// EnvPortPromptDescription is the table as a confirmation shows it: inside the
+// question, between it and the answers. Printed as a block above the prompt it
+// reads as a report of something already done, which is the opposite of what is
+// being asked.
+func EnvPortPromptDescription(plan domain.EnvPortPlan) string {
+	lines := append([]string{fmt.Sprintf(domain.EnvPortOffsetNoteFmt, plan.Offset), ""}, EnvPortTableLines(plan)...)
+	return strings.Join(lines, "\n")
+}
+
+// EnvPortOffsetLabel titles the table with the offset the whole worktree runs on,
+// so a reader who wonders why every port moved by the same amount has the answer.
+func EnvPortOffsetLabel(offset int) string {
+	return domain.EnvPortsTitle + " " + domain.EnvPortOffsetPrefix + strconv.Itoa(offset)
+}

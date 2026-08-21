@@ -1,0 +1,74 @@
+package output
+
+import (
+	"fmt"
+	"io"
+	"strconv"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/styles"
+)
+
+// EnvPortsReport prints the .env values a worktree's offset moves, and the links
+// wtm declined to act on. It is a section like the file blocks it follows, not a
+// boxed callout: the two describe the same run on the same files, and two visual
+// languages in one report make it read as two unrelated reports.
+//
+// It emits a raw body with no surrounding blank lines; the caller's frame owns
+// the padding. A plan with nothing to say prints nothing.
+func EnvPortsReport(w io.Writer, plan domain.EnvPortPlan, check bool) {
+	rows := rules.EnvPortTableLines(plan)
+	anomalies := rules.EnvPortAnomalyLines(plan)
+	if len(rows) == 0 && len(anomalies) == 0 {
+		return
+	}
+
+	Blank(w)
+
+	// A declined pass collapses to one line. The table was the proposal; once the
+	// answer is no, re-printing it in the result report is a list of things that
+	// did not happen. A --check run is a preview, so it keeps its table.
+	declined := len(rows) > 0 && !plan.Applied && !check
+	if declined {
+		Unchanged(w, fmt.Sprintf(domain.EnvPortsLeftAloneFmt, len(plan.Rewrites())))
+		printEnvPortAnomalies(w, anomalies)
+		return
+	}
+
+	SectionTitle(w, fmt.Sprintf(domain.EnvFileHeaderFmt,
+		domain.EnvPortsTitle,
+		styles.Muted.Render(domain.EnvPortOffsetPrefix+strconv.Itoa(plan.Offset))))
+
+	for _, line := range rows {
+		Message(w, line)
+	}
+	if len(rows) > 0 && len(anomalies) > 0 {
+		Blank(w)
+	}
+	printEnvPortAnomalies(w, anomalies)
+}
+
+// printEnvPortAnomalies lists the links wtm refused to act on. They survive a
+// declined pass: the user turned down the shift, not the news that a link never
+// matches anything.
+func printEnvPortAnomalies(w io.Writer, anomalies []string) {
+	if len(anomalies) == 0 {
+		return
+	}
+	Warning(w, domain.EnvPortAnomaliesTitle)
+	for _, line := range anomalies {
+		Message(w, line)
+	}
+}
+
+// EnvPortLinksReport names the links a `run init` just wrote. It is deliberately
+// not a count: a reader told "1 link written" has to open run.toml to learn what
+// they agreed to.
+func EnvPortLinksReport(w io.Writer, links []domain.EnvPortLink, bases map[string]int) {
+	if len(links) == 0 {
+		return
+	}
+	Blank(w)
+	Callout(w, domain.EnvPortsLinkedTitle, rules.EnvPortLinkLines(links, bases))
+}

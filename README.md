@@ -137,7 +137,7 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 
 | Command | Purpose |
 |---|---|
-| [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts, pre-fill ports) |
+| [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts, pre-fill ports, link .env keys) |
 | [`run up`](docs/wtm_run_up.md) / [`down`](docs/wtm_run_down.md) | Start / stop a profile's jobs (`up` attaches, `-d` detaches) |
 | [`run start`](docs/wtm_run_start.md) / [`stop`](docs/wtm_run_stop.md) | Start / stop a single job (`start` attaches, `-d` detaches) |
 | [`run ps`](docs/wtm_run_ps.md) / [`list`](docs/wtm_run_list.md) | Running jobs / declared jobs + profiles |
@@ -357,6 +357,45 @@ one — reads it back from the same variable, because `cmd` is a shell line:
 ```console
 $ wtm run job add web --cmd 'pnpm dev --port ${PORT}' --port PORT=3000
 ```
+
+#### Ports hard-coded in a `.env`
+
+Shifting a service's host port only helps if whatever connects to it follows. That is easy
+when the consumer reads `${DB_PORT}` — but in most projects the port is not in a variable
+of its own, it is **buried in a URL**: `DATABASE_URL=postgres://u:pw@localhost:5432/app`,
+`API_URL=http://localhost:3000/api`. An app running on the host, outside Docker, then talks
+to the wrong worktree.
+
+An `[[env_port]]` link says which key carries which port:
+
+```toml
+[[env_port]]
+file = ".env"
+key  = "DATABASE_URL"
+port = "POSTGRES_PORT"      # a port declared by one of the jobs above
+```
+
+The link names the key, never a position. wtm looks for the **declared base** inside the
+value and shifts only that number, leaving credentials, host, path and query exactly as
+they were:
+
+```diff
+-DATABASE_URL=postgres://u:pw@localhost:5432/app
++DATABASE_URL=postgres://u:pw@localhost:5442/app
+```
+
+`wtm run init` scans your configured `.env` targets and offers the keys whose value holds a
+declared base; `--link-env` writes them without asking. Nothing is ever inferred without one
+or the other. The rewrite then happens when a worktree is created — proposed interactively,
+applied under `--yes` — and whenever `wtm env` reconciles, whose recap offers "Apply, but
+leave the port values alone" beside the plain apply, so neither command imposes the pass
+(`--check` reports without writing, and counts a pending shift as drift). `wtm env --mode refresh` compares linked values **modulo the offset**, so a
+worktree holding `5442` against a `main` holding `5432` is not a conflict; a real difference
+in the same value still is.
+
+wtm reports rather than guesses when it cannot be sure: the key is missing, the base appears
+more than once in the value, or neither the base nor any offset of it is there. Rewriting on
+a guess could corrupt a URL, so those lines are named and left alone.
 
 Two base ports must not differ by a **multiple of the block**, or two worktrees end up on
 the same one — `3000` and `3010` are refused when `run.toml` is read, naming both sides,

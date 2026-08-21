@@ -262,3 +262,48 @@ func TestApplyEnvDiffRoundTripPreservesUnrelatedLines(t *testing.T) {
 		t.Errorf("RenderEnv = %q, want %q", got, want)
 	}
 }
+
+// A child holding its own worktree's port must not be reported as conflicting
+// with a source holding another worktree's — the two are the same setting, and
+// --on-conflict overwrite would otherwise undo the isolation on every run.
+func TestDiffEnvIgnoresThePortOffsetBetweenWorktrees(t *testing.T) {
+	diff := DiffEnv(EnvDiffParams{
+		Main:      ParseEnv("DATABASE_URL=postgres://u:pw@localhost:5432/app\n"),
+		Child:     ParseEnv("DATABASE_URL=postgres://u:pw@localhost:5442/app\n"),
+		Mode:      domain.EnvModeRefresh,
+		PortBases: map[string]int{"DATABASE_URL": 5432},
+		PortBlock: 10,
+	})
+
+	if diff.HasStatus(domain.EnvKeyConflict) {
+		t.Errorf("DiffEnv() reported a conflict for a value differing only by the offset: %+v", diff.Entries)
+	}
+}
+
+func TestDiffEnvStillReportsARealConflictOnALinkedKey(t *testing.T) {
+	diff := DiffEnv(EnvDiffParams{
+		Main:      ParseEnv("DATABASE_URL=postgres://u:old@localhost:5432/app\n"),
+		Child:     ParseEnv("DATABASE_URL=postgres://u:new@localhost:5442/app\n"),
+		Mode:      domain.EnvModeRefresh,
+		PortBases: map[string]int{"DATABASE_URL": 5432},
+		PortBlock: 10,
+	})
+
+	if !diff.HasStatus(domain.EnvKeyConflict) {
+		t.Errorf("DiffEnv() hid a password conflict behind the port reduction: %+v", diff.Entries)
+	}
+}
+
+func TestDiffEnvComparesUnlinkedKeysVerbatim(t *testing.T) {
+	diff := DiffEnv(EnvDiffParams{
+		Main:      ParseEnv("PORT=5432\n"),
+		Child:     ParseEnv("PORT=5442\n"),
+		Mode:      domain.EnvModeRefresh,
+		PortBases: map[string]int{"OTHER": 5432},
+		PortBlock: 10,
+	})
+
+	if !diff.HasStatus(domain.EnvKeyConflict) {
+		t.Errorf("DiffEnv() reduced a key no link follows: %+v", diff.Entries)
+	}
+}

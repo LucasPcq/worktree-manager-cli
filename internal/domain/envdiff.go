@@ -94,3 +94,10 @@ func (d EnvDiff) HasStatus(s EnvKeyStatus) bool {
 	}
 	return false
 }
+
+// EnvKeyRow is one key of a file block, ready to render: Status picks the glyph
+// and the colour, Text is the already-aligned "KEY  detail".
+type EnvKeyRow struct {
+	Status EnvKeyStatus
+	Text   string
+}
