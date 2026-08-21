@@ -266,6 +266,15 @@ name = "docker"
 kind = "service"            # long-running; with `stop` it's detached
 cmd  = "docker compose up -d"
 stop = "docker compose down"
+  [job.ports]              # host binding per worktree; template it as "${DB_PORT}:5432"
+  DB_PORT = 5432
+
+[[job]]
+name = "web"
+kind = "service"
+cmd  = "pnpm dev"
+  [job.ports]              # PORT=3000 on the main checkout, 3010 on the next worktree
+  PORT = 3000
 
 [[job]]
 name = "migrate"
@@ -274,7 +283,7 @@ cmd  = "pnpm migrate"
 
 [[profile]]
 name    = "full"
-jobs    = ["docker", "migrate"]
+jobs    = ["docker", "web", "migrate"]
 default = true
 ```
 
@@ -291,13 +300,33 @@ resource:
 | `WTM_BRANCH` | the branch, verbatim |
 | `WTM_WORKTREE` | the branch as a slug safe for a Docker project, network or volume name |
 | `WTM_ORDINAL` | the worktree's stable number. The main checkout is always `0`; every other worktree gets the smallest number free, kept for its whole life and released when it is cleaned |
-| `WTM_PORT_OFFSET` | `WTM_ORDINAL × 10` — the main checkout keeps the project's default ports |
+| `WTM_PORT_OFFSET` | `WTM_ORDINAL` × the block (`port_offset_block`, 10 by default) — the main checkout keeps the project's default ports |
 | `COMPOSE_PROJECT_NAME` | `<repo>-<WTM_WORKTREE>`, unless your own environment already defines it. The Docker daemon is machine-wide, so the repository qualifies the name: two clones both sitting on `main` do not share a stack |
 
 `COMPOSE_PROJECT_NAME` alone is what stops two worktrees from sharing containers,
 networks and volumes — nothing to declare, it works as soon as your jobs use
-`docker compose`. Ports are yours to shift for now: read `WTM_PORT_OFFSET` in your job's
-command or your compose file.
+`docker compose`.
+
+**Ports** are declared per job, and wtm injects `base + WTM_PORT_OFFSET` under the name
+you chose — the command itself needs no arithmetic:
+
+```console
+$ wtm run job add web --cmd "pnpm dev" --port PORT=3000
+$ wtm run up
+✓ web started · PORT=3010
+```
+
+A declaration overrides whatever the environment already sets for that variable, and the
+job's `stop` command runs with the same ports its `cmd` did. For Docker, template the host
+side of the mapping (`"${DB_PORT}:5432"`) and declare `DB_PORT = 5432`: the container port
+never moves, only the binding does.
+
+Two base ports must not differ by a **multiple of the block**, or two worktrees end up on
+the same one — `3000` and `3010` are refused when `run.toml` is read, naming both sides,
+which is the last moment the problem is still explainable. Neighbouring ports are fine:
+a uniform offset preserves the gaps, so `5434`/`5435`/`5436` become `5444`/`5445`/`5446`
+on the next worktree. Set `port_offset_block` at the top of `run.toml` when a project's
+ports genuinely need more room than 10.
 
 > **Upgrading:** jobs used to run with no `COMPOSE_PROJECT_NAME`, so `docker compose`
 > named the project after the working directory. Stacks started before this version are
