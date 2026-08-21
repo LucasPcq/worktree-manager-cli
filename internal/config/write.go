@@ -149,13 +149,32 @@ const runTemplateContent = `#:schema ./schemas/run.schema.json
 # No services were configured during init. Uncomment and adapt the examples
 # below, then manage them with ` + "`wtm run`" + `.
 
-# A long-running service (started detached, stopped via its stop command):
+# Spacing between two worktrees' ports. Each worktree holds an ordinal (0 for
+# the main checkout) and every base port below is shifted by ordinal x this
+# block. Two base ports must not differ by a multiple of it: 3000 and 3010
+# collide on the second worktree, while 5434/5435/5436 never do.
+# port_offset_block = 10
+
+# A long-running service (started detached, stopped via its stop command).
+# The port below is templated into docker-compose.yml as "${DB_PORT}:5432":
+# the container keeps 5432, only the host binding moves per worktree.
 # [[job]]
 # name = "db"
 # kind = "service"
 # cmd  = "docker compose up -d"
 # stop = "docker compose down --remove-orphans"
 # cwd  = "."
+#   [job.ports]
+#   DB_PORT = 5432
+
+# A dev server reading its port from the environment. On the main checkout it
+# gets PORT=3000; the next worktree gets PORT=3010, with no script to write.
+# [[job]]
+# name = "web"
+# kind = "service"
+# cmd  = "pnpm dev"
+#   [job.ports]
+#   PORT = 3000
 
 # A one-shot task (must exit 0; output streamed live):
 # [[job]]
@@ -167,7 +186,7 @@ const runTemplateContent = `#:schema ./schemas/run.schema.json
 # A named group of jobs started together:
 # [[profile]]
 # name    = "default"
-# jobs    = ["db"]
+# jobs    = ["db", "web"]
 # default = true
 `
 

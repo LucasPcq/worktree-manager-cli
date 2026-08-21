@@ -134,9 +134,50 @@ func LabelWithPorts(params LabelWithPortsParams) string {
 		return params.Label
 	}
 
-	entries := make([]string, 0, len(params.Ports))
-	for _, name := range sortedPortNames(params.Ports) {
-		entries = append(entries, fmt.Sprintf(domain.RunPortEntryFmt, name, params.Ports[name]))
+	return fmt.Sprintf(domain.RunPortsSuffixFmt, params.Label, strings.Join(PortEntries(params.Ports), " "))
+}
+
+// PortEntries writes ports back in the NAME=PORT form ParsePorts reads, sorted
+// so a rewritten declaration keeps a stable order.
+func PortEntries(ports map[string]int) []string {
+	entries := make([]string, 0, len(ports))
+	for _, name := range sortedPortNames(ports) {
+		entries = append(entries, fmt.Sprintf(domain.RunPortEntryFmt, name, ports[name]))
 	}
-	return fmt.Sprintf(domain.RunPortsSuffixFmt, params.Label, strings.Join(entries, " "))
+	return entries
+}
+
+// ParsePorts reads the NAME=PORT entries a --port flag repeats and the wizard
+// puts on one line. It rejects what ValidateRunPorts would reject anyway, but
+// here the user is still typing and can be told which entry is wrong.
+func ParsePorts(entries []string) (map[string]int, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	ports := make(map[string]int, len(entries))
+	for _, entry := range entries {
+		name, value, found := strings.Cut(entry, "=")
+		if !found {
+			return nil, fmt.Errorf("port %q: expected NAME=PORT", entry)
+		}
+		name, value = strings.TrimSpace(name), strings.TrimSpace(value)
+
+		if !IsEnvVarName(name) {
+			return nil, fmt.Errorf("port %q: %q is not a valid environment variable name", entry, name)
+		}
+		if _, duplicate := ports[name]; duplicate {
+			return nil, fmt.Errorf("port %s is declared twice", name)
+		}
+
+		base, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("port %s: %q is not a number", name, value)
+		}
+		if base < domain.PortMin || base > domain.PortMax {
+			return nil, fmt.Errorf("port %s is %d, outside %d-%d", name, base, domain.PortMin, domain.PortMax)
+		}
+		ports[name] = base
+	}
+	return ports, nil
 }

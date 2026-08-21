@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -207,5 +208,60 @@ func TestLabelWithPorts(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParsePorts(t *testing.T) {
+	ports, err := ParsePorts([]string{"PORT=3000", " DB_PORT = 5432 "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ports["PORT"] != 3000 || ports["DB_PORT"] != 5432 {
+		t.Errorf("got %v", ports)
+	}
+}
+
+func TestParsePortsNothing(t *testing.T) {
+	ports, err := ParsePorts(nil)
+	if err != nil || ports != nil {
+		t.Errorf("got %v, %v", ports, err)
+	}
+}
+
+func TestParsePortsRejections(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []string
+		want    string
+	}{
+		{"no equals sign", []string{"3000"}, "NAME=PORT"},
+		{"bad variable name", []string{"DB-PORT=5432"}, "not a valid environment variable name"},
+		{"not a number", []string{"PORT=abc"}, "not a number"},
+		{"out of range", []string{"PORT=70000"}, "outside"},
+		{"declared twice", []string{"PORT=3000", "PORT=4000"}, "twice"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParsePorts(tt.entries)
+			if err == nil {
+				t.Fatalf("expected %v to be refused", tt.entries)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("got %q, want it to mention %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// The flag and the wizard write the same form they read, so a job edited twice
+// keeps its ports.
+func TestPortEntriesRoundTrip(t *testing.T) {
+	ports := map[string]int{"PORT": 3000, "DB_PORT": 5432}
+	back, err := ParsePorts(PortEntries(ports))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(back) != len(ports) || back["PORT"] != 3000 || back["DB_PORT"] != 5432 {
+		t.Errorf("got %v, want %v", back, ports)
 	}
 }
