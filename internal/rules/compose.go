@@ -401,11 +401,13 @@ func composeFoundAt(line string, start, length int) string {
 
 // SortedComposeFiles orders a per-file map so a run's output and its rewrites
 // follow the same sequence twice in a row.
-func SortedComposeFiles[T any](byFile map[string]T) []string {
-	files := make([]string, 0, len(byFile))
-	for f := range byFile {
-		files = append(files, f)
+func SortedComposeFiles[T any](byFile map[string]T) []string { return sortedKeys(byFile) }
+
+func sortedKeys[T any](m map[string]T) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
 	}
-	sort.Strings(files)
-	return files
+	sort.Strings(keys)
+	return keys
 }

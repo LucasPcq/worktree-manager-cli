@@ -217,3 +217,29 @@ func clonePorts(ports map[string]int) map[string]int {
 	}
 	return clone
 }
+
+// RemoveDroppedPorts filters a report of what was added down to what survived
+// the collision check, so the recap never announces a port that is not in the
+// file it just wrote.
+func RemoveDroppedPorts(added map[string]map[string]int, dropped []DroppedPort) map[string]map[string]int {
+	if len(dropped) == 0 {
+		return added
+	}
+
+	out := make(map[string]map[string]int, len(added))
+	for job, ports := range added {
+		kept := map[string]int{}
+		for name, base := range ports {
+			kept[name] = base
+		}
+		for _, d := range dropped {
+			if d.Port.Job == job {
+				delete(kept, d.Port.Name)
+			}
+		}
+		if len(kept) > 0 {
+			out[job] = kept
+		}
+	}
+	return out
+}

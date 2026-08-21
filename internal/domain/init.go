@@ -31,8 +31,11 @@ type InitDetectionResult struct {
 	InstallCommand     string
 	DockerComposeFiles []string
 	DockerComposeCmd   string
-	MonorepoPackages   []string
-	PackageScripts     []PackageScript
+	// ComposeScans holds each detected file's port mappings, keyed by the same
+	// relative path as DockerComposeFiles.
+	ComposeScans     map[string]ComposeScan
+	MonorepoPackages []string
+	PackageScripts   []PackageScript
 }
 
 // InitGlobalAnswers holds the wizard answers for global config setup.
@@ -52,14 +55,18 @@ type RecapField struct {
 // key or the --skip-* flags); they drive whether each section is written as
 // active config or left commented as a template.
 type InitProjectAnswers struct {
-	BasePath               string
-	BaseBranch             string
-	EnvFiles               []EnvFile
-	EnvStrategy            EnvStrategy
-	OnCreate               []HookCommand
-	OnClean                []HookCommand
-	DockerComposeFiles     []string
-	DockerComposeCmd       string
+	BasePath           string
+	BaseBranch         string
+	EnvFiles           []EnvFile
+	EnvStrategy        EnvStrategy
+	OnCreate           []HookCommand
+	OnClean            []HookCommand
+	DockerComposeFiles []string
+	DockerComposeCmd   string
+	// PatchCompose authorizes rewriting the selected compose files so their
+	// frozen host ports read a variable. Never inferred: it is the wizard's
+	// answer, or the --patch-compose flag.
+	PatchCompose           bool
 	SelectedPackageScripts []PackageScript
 	SkipEnv                bool
 	SkipHooks              bool

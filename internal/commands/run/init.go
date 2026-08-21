@@ -14,6 +14,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/compose"
 	"github.com/LucasPcq/wtm/internal/service/detect"
 	"github.com/LucasPcq/wtm/internal/service/runconfig"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -32,11 +33,16 @@ func newInitCmd() *cobra.Command {
 			"In a TTY, opens a wizard to pick which ones to include; non-interactively (or piped),\n" +
 			"auto-generates from detection. Re-running merges new selections into the existing\n" +
 			"run.toml without overwriting what's already there.\n\n" +
+			"Ports declared in the selected compose files become per-worktree ports. A literal\n" +
+			"host port (\"5432:5432\") binds the same port everywhere, so wtm offers to rewrite it\n" +
+			"as \"${DB_PORT:-5432}:5432\" — the default keeps `docker compose up` working on its\n" +
+			"own. Declining leaves the file untouched and declares no port for it.\n\n" +
 			domain.ExperimentalRunNotice,
 		Args: cobra.NoArgs,
 		RunE: runRunInit,
 	}
 	cmd.Flags().Bool(domain.FlagNonInteractive, false, "Auto-generate from detection; never prompt")
+	cmd.Flags().Bool(domain.FlagPatchCompose, false, "Rewrite literal host ports in the selected compose files to read a variable")
 	return cmd
 }
 
@@ -52,6 +58,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 	}
 
 	nonInteractive, _ := cmd.Flags().GetBool(domain.FlagNonInteractive)
+	patchCompose, _ := cmd.Flags().GetBool(domain.FlagPatchCompose)
 	interactive := !nonInteractive && term.IsTerminal(int(os.Stdin.Fd()))
 
 	var detection domain.InitDetectionResult
@@ -67,10 +74,11 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 	}
 
 	answers, err := resolveServicesAnswers(resolveServicesParams{
-		Interactive: interactive,
-		ProjectDir:  res.ProjectDir,
-		Detection:   detection,
-		Existing:    existing,
+		Interactive:  interactive,
+		ProjectDir:   res.ProjectDir,
+		Detection:    detection,
+		Existing:     existing,
+		PatchCompose: patchCompose,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
@@ -81,6 +89,25 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 
 	built := rules.BuildInitRunConfig(answers, detection.PackageManager)
 	merged, mergeResult := rules.MergeRunConfigs(existing, built)
+
+	plan := rules.PlanComposePorts(rules.PlanComposePortsParams{
+		Scans: detection.ComposeScans,
+		Files: answers.DockerComposeFiles,
+		Patch: answers.PatchCompose,
+	})
+	if err := compose.PatchAll(res.ProjectDir, plan.Patches); err != nil {
+		return err
+	}
+
+	backfilled := rules.BackfillDockerPorts(rules.BackfillDockerPortsParams{
+		Config:      merged,
+		PortsByFile: plan.PortsByFile,
+	})
+	pruned := rules.PruneCollidingPorts(rules.PruneCollidingPortsParams{
+		Config:   backfilled.Config,
+		Detected: backfilled.Added,
+	})
+	merged = pruned.Config
 
 	if !rules.IsRunInitialized(merged) {
 		output.Frame(cmd.OutOrStdout(), func() {
@@ -105,6 +132,14 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		if len(mergeResult.Skipped) > 0 {
 			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Already present (kept): %s", strings.Join(mergeResult.Skipped, ", ")))
 		}
+		output.ComposePortsReport(cmd.OutOrStdout(), output.ComposePortsReportParams{
+			Patched:    plan.Patches,
+			Written:    rules.RemoveDroppedPorts(backfilled.Added, pruned.Dropped),
+			Withheld:   plan.Withheld,
+			JobsByFile: composeJobsByFile(merged, answers.DockerComposeFiles),
+			Dropped:    pruned.Dropped,
+			Unreadable: plan.Unreadable,
+		})
 		output.Blank(cmd.OutOrStdout())
 		output.Message(cmd.OutOrStdout(), "Next: `wtm run up` to start · `wtm run job add` to add more")
 		output.Blank(cmd.OutOrStdout())
@@ -115,10 +150,11 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 
 // resolveServicesParams groups the inputs for resolveServicesAnswers.
 type resolveServicesParams struct {
-	Interactive bool
-	ProjectDir  string
-	Detection   domain.InitDetectionResult
-	Existing    domain.RunConfig
+	Interactive  bool
+	ProjectDir   string
+	Detection    domain.InitDetectionResult
+	Existing     domain.RunConfig
+	PatchCompose bool
 }
 
 // resolveServicesAnswers gathers the services selection either from the wizard
@@ -127,7 +163,10 @@ type resolveServicesParams struct {
 // merge is additive rather than a fresh overwrite.
 func resolveServicesAnswers(params resolveServicesParams) (domain.InitProjectAnswers, error) {
 	if !params.Interactive {
-		return rules.AutoServicesAnswers(params.Detection), nil
+		return rules.AutoServicesAnswers(rules.AutoServicesAnswersParams{
+			Detection:    params.Detection,
+			PatchCompose: params.PatchCompose,
+		}), nil
 	}
 
 	var prefill *initwizard.SectionPrefill
@@ -138,5 +177,22 @@ func resolveServicesAnswers(params resolveServicesParams) (domain.InitProjectAns
 		}
 	}
 
-	return initwizard.RunServicesWizard(params.ProjectDir, params.Detection, prefill)
+	return initwizard.RunServicesWizard(initwizard.ServicesWizardParams{
+		ProjectDir:   params.ProjectDir,
+		Detection:    params.Detection,
+		Prefill:      prefill,
+		PatchCompose: params.PatchCompose,
+	})
+}
+
+// composeJobsByFile names the job backing each selected compose file, so a port
+// wtm withheld can be offered as a command to paste rather than a placeholder.
+func composeJobsByFile(cfg domain.RunConfig, files []string) map[string]string {
+	jobs := make(map[string]string, len(files))
+	for _, file := range files {
+		if job := rules.ComposeJobName(cfg, file); job != "" {
+			jobs[file] = job
+		}
+	}
+	return jobs
 }

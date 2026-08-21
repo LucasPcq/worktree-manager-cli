@@ -162,6 +162,29 @@ const (
 	ComposePortReasonAlias      = "the ports list is a YAML alias — templating it would change every anchor site"
 	ComposePortReasonUnreadable = "wtm could not read this mapping back from the file, so it will not rewrite it"
 
+	// The section titles of the compose port report.
+	ComposePatchedTitle  = "Compose ports templatized"
+	ComposePortsTitle    = "Ports declared"
+	ComposeWithheldTitle = "Ports left alone"
+	ComposeDroppedTitle  = "Ports withdrawn — they could not coexist"
+	// ComposeFixIndentFmt indents the geste under the port it belongs to.
+	ComposeFixIndentFmt = "  %s"
+
+	// ComposePatchLineFmt is one rewrite as both the wizard and the recap show
+	// it: where it is, and what it becomes.
+	ComposePatchLineFmt = "%s · %s   %s → %s"
+	// ComposeFrozenLineFmt names a host port left literal, and ComposeFixLineFmt
+	// the mapping to write instead. ComposeFixCmdFmt is the declaration that
+	// follows once the file reads a variable.
+	ComposeFrozenLineFmt   = "%s · %s   %s binds the same port in every worktree"
+	ComposeUnsupportedFmt  = "%s · %s   %s"
+	ComposeFixLineFmt      = "write %s"
+	ComposeFixCmdFmt       = "then: wtm run job edit %s --port %s=%d"
+	ComposeFixNoJobFmt     = "then declare it with `wtm run job edit <job> --port %s=%d`"
+	ComposeDroppedLineFmt  = "%s (job %q, base %d) is dropped — it meets %s (job %q, base %d) %d worktree(s) on"
+	ComposeUnreadableFmt   = "%s could not be read: %s"
+	ComposePortsWrittenFmt = "%s · %s"
+
 	// ComposePatchMovedFmt aborts a patch whose target token is no longer where
 	// the scan found it.
 	ComposePatchMovedFmt = "%s:%d: expected %s but found %s — the file changed since it was read"
@@ -245,6 +268,7 @@ const (
 	// init flags (non-interactive bootstrap).
 	FlagIfNotExists    = "if-not-exists"
 	FlagNonInteractive = "non-interactive"
+	FlagPatchCompose   = "patch-compose"
 	FlagShell          = "shell"
 	FlagBasePath       = "base-path"
 	FlagBaseBranch     = "base-branch"
