@@ -125,24 +125,18 @@ const (
 	EnvPortOffset         = "WTM_PORT_OFFSET"
 	EnvComposeProjectName = "COMPOSE_PROJECT_NAME"
 
-	// MainWorktreeOrdinal is the ordinal of the primary checkout, which keeps the
-	// project's default ports. It is never persisted: the main worktree has no
-	// meta.json, and 0 in a linked worktree's metadata means "not allocated yet".
+	// MainWorktreeOrdinal is never persisted: the main worktree has no meta.json,
+	// so 0 in a linked worktree's metadata means "not allocated yet".
 	MainWorktreeOrdinal = 0
 
-	// PortOffsetBlock spaces two worktrees' ports apart: WTM_PORT_OFFSET is the
-	// ordinal times this. Declared base ports must therefore be at least a block
-	// apart to stay in their own lane.
+	// PortOffsetBlock spaces two worktrees' ports apart, so declared base ports
+	// must be at least a block apart to stay in their own lane.
 	PortOffsetBlock = 10
 
-	// OrdinalLockFileName guards ordinal allocation inside the state dir: the
-	// scan and the write that follows it must be one atomic step, or two
-	// worktrees started at once would claim the same number.
+	// OrdinalLockFileName guards allocation: the scan and the write that follows
+	// it must be one step, or two worktrees started at once claim one number.
 	OrdinalLockFileName = "ordinal.lock"
 
-	// ComposeProjectFallback names the compose project of a branch whose slug
-	// would be empty, which no branch git accepts produces — it keeps the
-	// fallback total rather than emitting a name compose refuses.
 	ComposeProjectFallback = "wtm"
 
 	// Flag names.

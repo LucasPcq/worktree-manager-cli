@@ -69,9 +69,9 @@ type ManagedJob struct {
 	PID       int
 	WorkDir   string
 	StartedAt time.Time
-	// Env is the worktree-scoped environment the job was started with. Kept so
-	// the stop command runs in the same one — a `docker compose down` that lost
-	// COMPOSE_PROJECT_NAME tears down the wrong project, or nothing at all.
+	// Env is kept so the stop command runs in the environment the start did: a
+	// `docker compose down` that lost COMPOSE_PROJECT_NAME tears down the wrong
+	// project, or nothing at all.
 	Env map[string]string
 	// ExitCode, like Status, is written by the goroutine that reaps the process
 	// and read by List: both are only ever touched under the manager lock.
@@ -101,9 +101,7 @@ type StartParams struct {
 	WorkDir string
 	// LogDir is the worktree's log directory, resolved by the client. Empty
 	// persists nothing.
-	LogDir string
-	// Env is the worktree-scoped environment injected into the job, resolved by
-	// the client. It wins over what the daemon inherited.
+	LogDir   string
 	Env      map[string]string
 	Streamer io.Writer
 }

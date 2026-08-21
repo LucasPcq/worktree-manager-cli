@@ -45,7 +45,8 @@ type RunParams struct {
 	Jobs    []domain.JobConfig
 	WorkDir string
 	LogDir  string
-	// Env is what every job in this run learns about its worktree.
+	// Env is what every job in this run learns about the worktree it belongs to,
+	// resolved by the surface — the only side that can ask git.
 	Env map[string]string
 }
 
