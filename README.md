@@ -332,6 +332,11 @@ ports genuinely need more room than 10.
 > named the project after the working directory. Stacks started before this version are
 > under the old name and a new `run up` will not find them — stop them once with
 > `docker compose -p <old-name> down`.
+>
+> The run daemon is global and outlives the command that started it, so a daemon already
+> running keeps serving with the binary that forked it: right after an upgrade your jobs
+> may still start without their ports. `wtm run down` and let the next command fork a
+> fresh one.
 
 `run up` and `run start` **attach**: a full-screen view opens with one pane per job, and
 `wtm run logs` reopens it later. Leaving the view (`q`, or Ctrl+C outside focus mode)
