@@ -2,11 +2,12 @@ package rules
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-type ResolveComposePortsParams struct {
+type ResolveDetectedPortsParams struct {
 	Answers        domain.InitProjectAnswers
 	PackageManager domain.PackageManager
 	Existing       domain.RunConfig
@@ -15,11 +16,14 @@ type ResolveComposePortsParams struct {
 	// no longer be trusted. Such a file contributes nothing: a stale scan would
 	// declare ports the file may no longer expose.
 	Unverifiable map[string]string
+	// EnvScansByDir holds the ports each directory's env files declare, keyed by
+	// the directory a job's cwd names.
+	EnvScansByDir map[string]domain.EnvPortScan
 }
 
-// ComposePortOutcome is the whole decision of a `run init`. Nothing here
+// DetectedPortsOutcome is the whole decision of a `run init`. Nothing here
 // touches disk, so the order of the steps below is testable on its own.
-type ComposePortOutcome struct {
+type DetectedPortsOutcome struct {
 	Config  domain.RunConfig
 	Merge   MergeResult
 	Patches map[string][]domain.ComposePortBinding
@@ -31,17 +35,26 @@ type ComposePortOutcome struct {
 	// Changed and Orphaned name the files that contributed nothing, and why.
 	Changed  map[string]string
 	Orphaned []string
+
+	// EnvWritten is what the .env detection gave each job, and EnvSources the
+	// file each of those ports was read from. Kept apart from Written: the two
+	// sources warrant different advice, a compose mapping being honoured by
+	// Docker while a dev server has to read the variable itself.
+	EnvWritten map[string]map[string]int
+	EnvSources map[string]map[string]string
+	// EnvUnreadable are the directories whose env files could not be read.
+	EnvUnreadable []domain.EnvPortScan
 }
 
-// ResolveComposePorts runs the whole sequence in one place: build the jobs the
+// ResolveDetectedPorts runs the whole sequence in one place: build the jobs the
 // selection still needs, merge, backfill the detected ports, withdraw the ones
 // that cannot coexist, and keep only the rewrites whose declaration survived.
 //
 // The order matters and is the point of gathering it here. A mapping is only
 // ever rewritten once its declaration is known to be kept — otherwise wtm would
 // edit a project file for a port it then refuses to declare.
-func ResolveComposePorts(params ResolveComposePortsParams) ComposePortOutcome {
-	outcome := ComposePortOutcome{
+func ResolveDetectedPorts(params ResolveDetectedPortsParams) DetectedPortsOutcome {
+	outcome := DetectedPortsOutcome{
 		Withheld:   params.Plan.Withheld,
 		Unreadable: params.Plan.Unreadable,
 		Changed:    params.Unverifiable,
@@ -75,13 +88,65 @@ func ResolveComposePorts(params ResolveComposePortsParams) ComposePortOutcome {
 	})...)
 
 	backfilled := BackfillDockerPorts(BackfillDockerPortsParams{Config: merged, PortsByFile: ports})
-	pruned := PruneCollidingPorts(PruneCollidingPortsParams{Config: backfilled.Config, Detected: backfilled.Added})
+	fromEnv := BackfillScriptPorts(BackfillScriptPortsParams{
+		Config:         backfilled.Config,
+		PackageManager: params.PackageManager,
+		Scripts:        params.Answers.SelectedPackageScripts,
+		ScansByDir:     params.EnvScansByDir,
+	})
+
+	// Both detections are pruned together: a compose port and a .env port can
+	// meet just as two compose ports can, and only one pass sees both.
+	pruned := PruneCollidingPorts(PruneCollidingPortsParams{
+		Config:   fromEnv.Config,
+		Detected: mergeDetected(backfilled.Added, fromEnv.Added),
+	})
 
 	outcome.Config = pruned.Config
 	outcome.Dropped = pruned.Dropped
 	outcome.Written = RemoveDroppedPorts(RemoveDroppedPortsParams{Added: backfilled.Added, Dropped: pruned.Dropped})
+	outcome.EnvWritten = RemoveDroppedPorts(RemoveDroppedPortsParams{Added: fromEnv.Added, Dropped: pruned.Dropped})
+	outcome.EnvSources = fromEnv.Sources
+	outcome.EnvUnreadable = unreadableEnvScans(params.EnvScansByDir)
 	outcome.Patches = survivingPatches(pruned.Config, patches)
 	return outcome
+}
+
+// mergeDetected unions the two backfills for the prune. A job can appear in
+// both — a compose job never gains a .env port, but the map is keyed by job and
+// nothing structural forbids it.
+func mergeDetected(fromCompose, fromEnv map[string]map[string]int) map[string]map[string]int {
+	merged := make(map[string]map[string]int, len(fromCompose)+len(fromEnv))
+	for _, source := range []map[string]map[string]int{fromCompose, fromEnv} {
+		for job, ports := range source {
+			if merged[job] == nil {
+				merged[job] = map[string]int{}
+			}
+			for name, base := range ports {
+				merged[job][name] = base
+			}
+		}
+	}
+	return merged
+}
+
+func unreadableEnvScans(scans map[string]domain.EnvPortScan) []domain.EnvPortScan {
+	var unreadable []domain.EnvPortScan
+	for _, dir := range sortedEnvDirs(scans) {
+		if scans[dir].Err != "" {
+			unreadable = append(unreadable, scans[dir])
+		}
+	}
+	return unreadable
+}
+
+func sortedEnvDirs(scans map[string]domain.EnvPortScan) []string {
+	dirs := make([]string, 0, len(scans))
+	for dir := range scans {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	return dirs
 }
 
 // survivingPatches keeps a rewrite only when the config about to be written

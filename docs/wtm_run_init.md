@@ -16,6 +16,11 @@ host port ("5432:5432") binds the same port everywhere, so wtm offers to rewrite
 as "${DB_PORT:-5432}:5432" — the default keeps `docker compose up` working on its
 own. Declining leaves the file untouched and declares no port for it.
 
+Dev servers get theirs from the env files sitting next to their package.json —
+a PORT (or *_PORT) entry in .env.local, .env, or a committed .env.example. wtm
+only declares the port; check that the command actually reads the variable, and
+pass it as a flag otherwise: --cmd 'pnpm dev --port ${PORT}'.
+
 `wtm run` is experimental — the workflow is still stabilizing and commands may change.
 
 ```

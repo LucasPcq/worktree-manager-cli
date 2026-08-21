@@ -344,6 +344,14 @@ quoting style are untouched — and the `:-5432` default keeps `docker compose u
 on its own, with no dependency on wtm. Re-running `run init` backfills a compose job that
 predates declarative ports without overwriting one you set by hand.
 
+Dev servers are pre-filled the same way, from the env files next to their `package.json` —
+a `PORT` or `*_PORT` entry in `.env.local`, `.env`, or a committed `.env.example`. Each
+job takes the file in its own directory, so in a monorepo every package keeps its own port.
+wtm declares the port and nothing else: it never edits your `.env` and never rewrites a
+command. Checking that the command reads the variable is yours to do — `next dev` and most
+node servers read `PORT` from the environment, while a CLI that only takes a flag needs
+`--cmd 'pnpm dev --port ${PORT}'`.
+
 wtm declares only what it can actually isolate, and says why for the rest: a port range,
 a mapping with no host port, a `ports:` list carrying a YAML **anchor or alias** (rewriting
 it would move every service sharing it), a `${DB_PORT}` with no default (the file never

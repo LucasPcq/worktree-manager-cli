@@ -21,10 +21,10 @@ func frozenAt(file, service, name string, base int) domain.ComposePortBinding {
 	}
 }
 
-// TestResolveComposePortsNeverRewritesForAPortItThenWithdraws is the ordering
+// TestResolveDetectedPortsNeverRewritesForAPortItThenWithdraws is the ordering
 // the whole resolver exists for: two bases a block apart lose their
 // declarations, so neither mapping may be rewritten in the project's file.
-func TestResolveComposePortsNeverRewritesForAPortItThenWithdraws(t *testing.T) {
+func TestResolveDetectedPortsNeverRewritesForAPortItThenWithdraws(t *testing.T) {
 	file := "docker-compose.yml"
 	plan := PlanComposePorts(PlanComposePortsParams{
 		Files: []string{file},
@@ -35,7 +35,7 @@ func TestResolveComposePortsNeverRewritesForAPortItThenWithdraws(t *testing.T) {
 		}}},
 	})
 
-	got := ResolveComposePorts(ResolveComposePortsParams{
+	got := ResolveDetectedPorts(ResolveDetectedPortsParams{
 		Answers: composeAnswers(file),
 		Plan:    plan,
 	})
@@ -51,7 +51,7 @@ func TestResolveComposePortsNeverRewritesForAPortItThenWithdraws(t *testing.T) {
 	}
 }
 
-func TestResolveComposePortsRewritesOnlyTheSurvivingMapping(t *testing.T) {
+func TestResolveDetectedPortsRewritesOnlyTheSurvivingMapping(t *testing.T) {
 	file := "docker-compose.yml"
 	plan := PlanComposePorts(PlanComposePortsParams{
 		Files: []string{file},
@@ -67,7 +67,7 @@ func TestResolveComposePortsRewritesOnlyTheSurvivingMapping(t *testing.T) {
 		{Name: "web", Kind: domain.JobKindService, Cmd: "pnpm dev", Ports: map[string]int{"PORT": 3000}},
 	}}
 
-	got := ResolveComposePorts(ResolveComposePortsParams{
+	got := ResolveDetectedPorts(ResolveDetectedPortsParams{
 		Answers:  composeAnswers(file),
 		Existing: existing,
 		Plan:     plan,
@@ -81,7 +81,7 @@ func TestResolveComposePortsRewritesOnlyTheSurvivingMapping(t *testing.T) {
 	}
 }
 
-func TestResolveComposePortsWithdrawsAFileThatChangedUnderIt(t *testing.T) {
+func TestResolveDetectedPortsWithdrawsAFileThatChangedUnderIt(t *testing.T) {
 	file := "docker-compose.yml"
 	plan := PlanComposePorts(PlanComposePortsParams{
 		Files: []string{file},
@@ -91,7 +91,7 @@ func TestResolveComposePortsWithdrawsAFileThatChangedUnderIt(t *testing.T) {
 		}}},
 	})
 
-	got := ResolveComposePorts(ResolveComposePortsParams{
+	got := ResolveDetectedPorts(ResolveDetectedPortsParams{
 		Answers:      composeAnswers(file),
 		Plan:         plan,
 		Unverifiable: map[string]string{file: "the file changed since it was read"},
@@ -109,10 +109,10 @@ func TestResolveComposePortsWithdrawsAFileThatChangedUnderIt(t *testing.T) {
 	}
 }
 
-// TestResolveComposePortsReportsAFileWithNoJob covers the silent case: a job
+// TestResolveDetectedPortsReportsAFileWithNoJob covers the silent case: a job
 // name already taken by another file leaves the new one with no runner, so its
 // ports have nowhere to go.
-func TestResolveComposePortsReportsAFileWithNoJob(t *testing.T) {
+func TestResolveDetectedPortsReportsAFileWithNoJob(t *testing.T) {
 	file := "docker-compose.yml"
 	plan := PlanComposePorts(PlanComposePortsParams{
 		Files: []string{file},
@@ -126,7 +126,7 @@ func TestResolveComposePortsReportsAFileWithNoJob(t *testing.T) {
 		{Name: "docker-compose", Kind: domain.JobKindService, Cmd: "docker compose -f infra/docker-compose.yml up -d"},
 	}}
 
-	got := ResolveComposePorts(ResolveComposePortsParams{
+	got := ResolveDetectedPorts(ResolveDetectedPortsParams{
 		Answers:  composeAnswers(file),
 		Existing: existing,
 		Plan:     plan,
@@ -143,15 +143,15 @@ func TestResolveComposePortsReportsAFileWithNoJob(t *testing.T) {
 	}
 }
 
-func TestResolveComposePortsIsIdempotent(t *testing.T) {
+func TestResolveDetectedPortsIsIdempotent(t *testing.T) {
 	file := "docker-compose.yml"
 	scans := map[string]domain.ComposeScan{file: {File: file, Bindings: []domain.ComposePortBinding{
 		{File: file, Service: "postgres", Status: domain.ComposePortTemplated, Var: "DB_PORT", Base: 5432},
 	}}}
 	plan := PlanComposePorts(PlanComposePortsParams{Files: []string{file}, Patch: true, Scans: scans})
 
-	first := ResolveComposePorts(ResolveComposePortsParams{Answers: composeAnswers(file), Plan: plan})
-	second := ResolveComposePorts(ResolveComposePortsParams{
+	first := ResolveDetectedPorts(ResolveDetectedPortsParams{Answers: composeAnswers(file), Plan: plan})
+	second := ResolveDetectedPorts(ResolveDetectedPortsParams{
 		Answers:  composeAnswers(file),
 		Existing: first.Config,
 		Plan:     PlanComposePorts(PlanComposePortsParams{Files: []string{file}, Patch: true, Scans: scans}),
@@ -168,11 +168,11 @@ func TestResolveComposePortsIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestResolveComposePortsWithholdsAVariableTwoStackedFilesDisagreeOn covers the
+// TestResolveDetectedPortsWithholdsAVariableTwoStackedFilesDisagreeOn covers the
 // override pattern (-f base.yml -f dev.yml): one job receives both files' ports,
 // so the same variable can arrive twice with two bases. Declaring either would
 // move the other file's binding.
-func TestResolveComposePortsWithholdsAVariableTwoStackedFilesDisagreeOn(t *testing.T) {
+func TestResolveDetectedPortsWithholdsAVariableTwoStackedFilesDisagreeOn(t *testing.T) {
 	base, dev := "docker-compose.yml", "docker-compose.dev.yml"
 	stack := domain.RunConfig{Jobs: []domain.JobConfig{{
 		Name: "stack", Kind: domain.JobKindService,
@@ -188,7 +188,7 @@ func TestResolveComposePortsWithholdsAVariableTwoStackedFilesDisagreeOn(t *testi
 		},
 	})
 
-	got := ResolveComposePorts(ResolveComposePortsParams{
+	got := ResolveDetectedPorts(ResolveDetectedPortsParams{
 		Answers:  composeAnswers(base, dev),
 		Existing: stack,
 		Plan:     plan,
@@ -210,10 +210,10 @@ func TestResolveComposePortsWithholdsAVariableTwoStackedFilesDisagreeOn(t *testi
 	}
 }
 
-// TestResolveComposePortsLeavesAFileAloneWhenTheBaseIsAlreadyTaken guards the
+// TestResolveDetectedPortsLeavesAFileAloneWhenTheBaseIsAlreadyTaken guards the
 // other half: wtm must not rewrite a project file for a declaration it did not
 // make. The hand-written 9999 would hijack the binding the file spells as 5432.
-func TestResolveComposePortsLeavesAFileAloneWhenTheBaseIsAlreadyTaken(t *testing.T) {
+func TestResolveDetectedPortsLeavesAFileAloneWhenTheBaseIsAlreadyTaken(t *testing.T) {
 	file := "docker-compose.yml"
 	existing := domain.RunConfig{Jobs: []domain.JobConfig{{
 		Name: "docker-compose", Kind: domain.JobKindService,
@@ -229,7 +229,7 @@ func TestResolveComposePortsLeavesAFileAloneWhenTheBaseIsAlreadyTaken(t *testing
 		},
 	})
 
-	got := ResolveComposePorts(ResolveComposePortsParams{
+	got := ResolveDetectedPorts(ResolveDetectedPortsParams{
 		Answers:  composeAnswers(file),
 		Existing: existing,
 		Plan:     plan,
@@ -240,5 +240,124 @@ func TestResolveComposePortsLeavesAFileAloneWhenTheBaseIsAlreadyTaken(t *testing
 	}
 	if got.Config.Jobs[0].Ports["DB_PORT"] != 9999 {
 		t.Errorf("the hand-written value must survive, got %v", got.Config.Jobs[0].Ports)
+	}
+}
+
+// The two detections are pruned in one pass: a compose port and a .env port
+// that meet a few worktrees on both have to go, which neither backfill can see
+// on its own.
+func TestResolveDetectedPortsPrunesAcrossComposeAndEnv(t *testing.T) {
+	file := "docker-compose.yml"
+	plan := PlanComposePorts(PlanComposePortsParams{
+		Files: []string{file},
+		Patch: true,
+		Scans: map[string]domain.ComposeScan{file: {File: file, Bindings: []domain.ComposePortBinding{
+			frozenAt(file, "storefront", "STOREFRONT_PORT", 3000),
+		}}},
+	})
+
+	answers := composeAnswers(file)
+	answers.SelectedPackageScripts = []domain.PackageScript{
+		{Name: "dev", Workspace: "apps/web", PkgName: "web", Kind: domain.JobKindService},
+	}
+
+	got := ResolveDetectedPorts(ResolveDetectedPortsParams{
+		Answers:        answers,
+		PackageManager: domain.PkgManagerPnpm,
+		Plan:           plan,
+		EnvScansByDir: map[string]domain.EnvPortScan{
+			"apps/web": {
+				Dir:         "apps/web",
+				Ports:       map[string]int{"PORT": 3010},
+				SourceByVar: map[string]string{"PORT": "apps/web/.env"},
+			},
+		},
+	})
+
+	if len(got.Dropped) != 2 {
+		t.Fatalf("dropped %d, want both sides of the collision: %v", len(got.Dropped), got.Dropped)
+	}
+	if len(got.Written) != 0 {
+		t.Errorf("compose ports = %v, want none to survive", got.Written)
+	}
+	if len(got.EnvWritten) != 0 {
+		t.Errorf("env ports = %v, want none to survive", got.EnvWritten)
+	}
+	if len(got.Patches) != 0 {
+		t.Errorf("a withdrawn declaration must not rewrite the compose file, got %v", got.Patches)
+	}
+}
+
+func TestResolveDetectedPortsDeclaresEnvPortsAlongsideCompose(t *testing.T) {
+	file := "docker-compose.yml"
+	plan := PlanComposePorts(PlanComposePortsParams{
+		Files: []string{file},
+		Scans: map[string]domain.ComposeScan{file: {File: file, Bindings: []domain.ComposePortBinding{
+			{File: file, Service: "db", Status: domain.ComposePortTemplated, Var: "DB_PORT", Base: 5432},
+		}}},
+	})
+
+	answers := composeAnswers(file)
+	answers.SelectedPackageScripts = []domain.PackageScript{
+		{Name: "dev", Workspace: "apps/web", PkgName: "web", Kind: domain.JobKindService},
+	}
+
+	got := ResolveDetectedPorts(ResolveDetectedPortsParams{
+		Answers:        answers,
+		PackageManager: domain.PkgManagerPnpm,
+		Plan:           plan,
+		EnvScansByDir: map[string]domain.EnvPortScan{
+			"apps/web": {
+				Dir:         "apps/web",
+				Ports:       map[string]int{"PORT": 3000},
+				SourceByVar: map[string]string{"PORT": "apps/web/.env"},
+			},
+		},
+	})
+
+	if got.Written["docker-compose"]["DB_PORT"] != 5432 {
+		t.Errorf("compose ports = %v", got.Written)
+	}
+	if got.EnvWritten["web-dev"]["PORT"] != 3000 {
+		t.Errorf("env ports = %v", got.EnvWritten)
+	}
+	if got.EnvSources["web-dev"]["PORT"] != "apps/web/.env" {
+		t.Errorf("env sources = %v", got.EnvSources)
+	}
+
+	job := jobNamed(got.Config, "web-dev")
+	if job.Ports["PORT"] != 3000 {
+		t.Errorf("web-dev ports = %v, want the declaration written to run.toml", job.Ports)
+	}
+}
+
+// A hand-written base outranks a detected one: only the detection gives way.
+func TestResolveDetectedPortsKeepsAHandWrittenBaseOverAnEnvOne(t *testing.T) {
+	answers := domain.InitProjectAnswers{
+		SelectedPackageScripts: []domain.PackageScript{
+			{Name: "dev", Workspace: "apps/web", PkgName: "web", Kind: domain.JobKindService},
+		},
+	}
+
+	got := ResolveDetectedPorts(ResolveDetectedPortsParams{
+		Answers:        answers,
+		PackageManager: domain.PkgManagerPnpm,
+		Existing: domain.RunConfig{Jobs: []domain.JobConfig{
+			{Name: "legacy", Kind: domain.JobKindService, Cmd: "node server.js", Cwd: ".", Ports: map[string]int{"LEGACY_PORT": 3000}},
+		}},
+		EnvScansByDir: map[string]domain.EnvPortScan{
+			"apps/web": {
+				Dir:         "apps/web",
+				Ports:       map[string]int{"PORT": 3010},
+				SourceByVar: map[string]string{"PORT": "apps/web/.env"},
+			},
+		},
+	})
+
+	if jobNamed(got.Config, "legacy").Ports["LEGACY_PORT"] != 3000 {
+		t.Error("the hand-written base must survive")
+	}
+	if len(got.EnvWritten) != 0 {
+		t.Errorf("the detected base gives way, got %v", got.EnvWritten)
 	}
 }

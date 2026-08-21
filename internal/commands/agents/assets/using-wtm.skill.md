@@ -237,13 +237,25 @@ and **experimental**: the global `wtm init` does not configure it.
   `docker compose up` working without wtm. Non-interactively no project file is ever
   touched without that flag. Re-running `run init` backfills the ports of a compose job
   that predates them, without overwriting a port already declared.
+- `run init` also pre-fills the ports of **dev server jobs** from the env files next to
+  their `package.json`: a `PORT` (or `*_PORT`) entry with a numeric value, read from
+  `.env.local`, else `.env`, else a committed `.env.example`. A job is matched to a
+  directory by its `cwd`, so in a pnpm monorepo each package takes its own port and never
+  inherits the root's. Only `kind = "service"` jobs from package scripts are considered.
+  Nothing is written to the `.env` and no command is rewritten — wtm declares the port and
+  prints "Ports detected from .env" naming the source file. **Whether the command actually
+  reads the variable is not checked**: `next dev` and most node servers read `PORT` from
+  the environment, but a CLI that only takes a flag (vite) needs
+  `--cmd 'pnpm dev --port ${PORT}'`. Never assume a declared port means an isolated one.
 - What `run init` refuses to declare, and reports instead: port ranges, mappings with no
   host port, a `ports:` list carrying a YAML anchor or alias, `${VAR}` with no default,
   and a variable two services give two different defaults. It also **withdraws** a
   detected port when two bases differ by a multiple of the block — it would make
-  `run.toml` unloadable — and names both sides. So a "Ports withdrawn" or "Ports left
-  alone" section in the output is expected behavior, not a failure: read the fix it
-  prints (a compose line, then a `run job edit --port` command).
+  `run.toml` unloadable — and names both sides. Compose and `.env` ports are arbitrated
+  together, so either can be the one withdrawn; a base already written by hand always
+  outranks a detected one. So a "Ports withdrawn" or "Ports left alone" section in the
+  output is expected behavior, not a failure: read the fix it prints (a compose line, then
+  a `run job edit --port` command).
 - `run up [profile]` / `run down` — start / stop a profile. `run start <job>` / `run stop
   <job>` — one job. A failing job aborts the rest and exits non-zero, leaving started
   services up (fix and re-run).
