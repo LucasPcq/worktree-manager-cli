@@ -89,10 +89,20 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		}
 	}
 
+	ordinal, err := EnsureOrdinal(WorktreeRef{
+		ProjectDir: params.ProjectDir,
+		StateDir:   params.StateDir,
+		Branch:     params.Branch,
+	})
+	if err != nil {
+		return domain.CreateResult{}, fmt.Errorf("allocate ordinal: %w", err)
+	}
+
 	metadata := domain.WorktreeMetadata{
 		SourceBranch: sourceBranch,
 		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
 		EnvStrategy:  strategy,
+		Ordinal:      ordinal,
 	}
 
 	metaDir := rules.WorktreeMetaDir(params.StateDir, params.Branch)
@@ -105,6 +115,7 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 	if !params.SkipHooks {
 		if err := RunCreateHooks(domain.CreateHooksParams{
 			ProjectDir:   params.ProjectDir,
+			StateDir:     params.StateDir,
 			WorktreePath: worktreePath,
 			Branch:       params.Branch,
 			FromBranch:   params.FromBranch,
@@ -148,6 +159,11 @@ func RunCreateHooks(params domain.CreateHooksParams) error {
 			Root:       mainPath,
 			FromBranch: params.FromBranch,
 		},
+		Env: hookEnv(WorktreeRef{
+			ProjectDir: params.ProjectDir,
+			StateDir:   params.StateDir,
+			Branch:     params.Branch,
+		}),
 		Output: params.Output,
 	}); err != nil {
 		return fmt.Errorf("on_create hooks: %w", err)
@@ -202,8 +218,27 @@ func writeMetadata(metaDir string, metadata domain.WorktreeMetadata) error {
 		return fmt.Errorf("marshal metadata: %w", err)
 	}
 
+	// Written aside and renamed over: several commands read-modify-write this
+	// file, and a reader landing on a half-written one would see a worktree that
+	// holds no ordinal rather than one whose ordinal it could not read.
 	metaPath := filepath.Join(metaDir, domain.MetaFileName)
-	if err := os.WriteFile(metaPath, data, 0o644); err != nil {
+	tmp, err := os.CreateTemp(metaDir, domain.MetaFileName+".*")
+	if err != nil {
+		return fmt.Errorf("write %s: %w", metaPath, err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write %s: %w", metaPath, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("write %s: %w", metaPath, err)
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", metaPath, err)
+	}
+	if err := os.Rename(tmp.Name(), metaPath); err != nil {
 		return fmt.Errorf("write %s: %w", metaPath, err)
 	}
 

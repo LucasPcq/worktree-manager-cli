@@ -18,6 +18,10 @@ type WorktreeMetadata struct {
 	SourceBranch string      `json:"source_branch"`
 	CreatedAt    string      `json:"created_at"`
 	EnvStrategy  EnvStrategy `json:"env_strategy"`
+	// Ordinal is the worktree's stable number, what every port and resource name
+	// is derived from. Zero means unallocated: the main worktree is ordinal 0 by
+	// definition and never gets a meta.json of its own.
+	Ordinal int `json:"ordinal,omitempty"`
 }
 
 // WorktreeStatus holds the display state of a worktree for wtm ls.
@@ -109,6 +113,7 @@ type CreateParams struct {
 // after the worktree exists.
 type CreateHooksParams struct {
 	ProjectDir   string
+	StateDir     string
 	WorktreePath string
 	Branch       string
 	FromBranch   string
@@ -156,6 +161,7 @@ type CleanParams struct {
 // before the worktree directory is removed.
 type CleanHooksParams struct {
 	ProjectDir   string
+	StateDir     string
 	WorktreePath string
 	Branch       string
 	Hooks        []HookCommand
@@ -168,6 +174,7 @@ type CleanHooksParams struct {
 // local branch. Used when `git worktree remove` failed on undeletable files.
 type ForceCleanParams struct {
 	ProjectDir string
+	StateDir   string
 	Path       string
 	Branch     string
 	Force      bool

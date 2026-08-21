@@ -19,7 +19,11 @@ type RunHooksParams struct {
 	Hooks   []domain.HookCommand
 	WorkDir string
 	Vars    rules.TemplateVars
-	Output  io.Writer // if nil, uses os.Stdout/Stderr (CLI mode). Set to capture output (TUI mode).
+	// Env is what the hook learns about the worktree it runs in, the same
+	// vocabulary a run job gets. A hook that tears down docker needs the
+	// worktree's compose project as much as the job that brought it up.
+	Env    map[string]string
+	Output io.Writer // if nil, uses os.Stdout/Stderr (CLI mode). Set to capture output (TUI mode).
 }
 
 // RunHooks executes each hook command sequentially with template interpolation.
@@ -32,7 +36,12 @@ func RunHooks(params RunHooksParams) error {
 
 	for _, hook := range params.Hooks {
 		resolved := rules.ResolveTemplateVars(hook, params.Vars)
-		err := runSingleHook(resolved, params.WorkDir, output)
+		err := runSingleHook(runSingleHookParams{
+			Hook:       resolved,
+			DefaultDir: params.WorkDir,
+			Env:        params.Env,
+			Output:     output,
+		})
 		if err == nil {
 			continue
 		}
@@ -45,7 +54,17 @@ func RunHooks(params RunHooksParams) error {
 	return nil
 }
 
-func runSingleHook(hook domain.HookCommand, defaultDir string, output io.Writer) error {
+type runSingleHookParams struct {
+	Hook       domain.HookCommand
+	DefaultDir string
+	Env        map[string]string
+	Output     io.Writer
+}
+
+func runSingleHook(params runSingleHookParams) error {
+	hook := params.Hook
+	output := params.Output
+
 	parts := strings.Fields(hook.Cmd)
 	if len(parts) == 0 {
 		return nil
@@ -56,8 +75,9 @@ func runSingleHook(hook domain.HookCommand, defaultDir string, output io.Writer)
 	if hook.Cwd != "" {
 		cmd.Dir = hook.Cwd
 	} else {
-		cmd.Dir = defaultDir
+		cmd.Dir = params.DefaultDir
 	}
+	cmd.Env = hookEnv(params.Env)
 
 	var stderr bytes.Buffer
 	cmd.Stdout = output
@@ -97,4 +117,14 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dms", d.Milliseconds())
 	}
 	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
+// hookEnv layers the worktree's variables over this process's environment. Nil
+// leaves it as it is: unlike the run daemon, this process is the user's own
+// command, so what it inherited is the user's and not another worktree's.
+func hookEnv(overrides map[string]string) []string {
+	if len(overrides) == 0 {
+		return nil
+	}
+	return rules.MergeEnv(rules.MergeEnvParams{Env: os.Environ(), Overrides: overrides})
 }

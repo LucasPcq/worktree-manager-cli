@@ -52,6 +52,18 @@ var (
 	// user) instead of aborting.
 	ErrWorktreeRemoveFailed = errors.New("worktree removal failed")
 
+	// ErrOrdinalRefIncomplete is returned when an ordinal is asked for without
+	// naming the worktree it belongs to. Allocation writes to the state dir and
+	// keys on the branch, so an empty one would resolve relative to the current
+	// directory instead of failing.
+	ErrOrdinalRefIncomplete = errors.New("worktree reference incomplete: project dir, state dir and branch are all required")
+
+	// ErrOrdinalUnreadable is returned when a live worktree's metadata exists but
+	// cannot be read, so what it holds is unknown. Treating that as "holds
+	// nothing" would hand its number to another worktree, which is the collision
+	// the ordinal exists to prevent.
+	ErrOrdinalUnreadable = errors.New("cannot read a live worktree's ordinal")
+
 	// ErrGHNotInstalled is returned when the gh CLI is not found on PATH.
 	ErrGHNotInstalled = errors.New("gh CLI not found — install it from https://cli.github.com")
 

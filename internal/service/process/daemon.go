@@ -152,6 +152,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 			Job:      *req.Job,
 			WorkDir:  req.WorkDir,
 			LogDir:   req.LogDir,
+			Env:      req.Env,
 			Streamer: responseStreamWriter{encoder: encoder},
 		})
 		if err != nil {
@@ -173,6 +174,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 			Job:      *req.Job,
 			WorkDir:  req.WorkDir,
 			LogDir:   req.LogDir,
+			Env:      req.Env,
 			Streamer: responseStreamWriter{encoder: encoder},
 		}); err != nil {
 			encoder.Encode(Response{Status: StatusError, Message: err.Error()})
@@ -182,7 +184,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		return
 	}
 
-	if err := d.manager.Start(StartParams{Job: *req.Job, WorkDir: req.WorkDir, LogDir: req.LogDir}); err != nil {
+	if err := d.manager.Start(StartParams{Job: *req.Job, WorkDir: req.WorkDir, LogDir: req.LogDir, Env: req.Env}); err != nil {
 		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 		return
 	}

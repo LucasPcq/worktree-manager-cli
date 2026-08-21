@@ -69,6 +69,7 @@ type StartRequest struct {
 	Job     domain.JobConfig
 	WorkDir string
 	LogDir  string
+	Env     map[string]string
 	// OnOutput receives what the job writes while it starts — everything for a
 	// task or a detached launcher, nothing for a job the daemon backgrounds.
 	OnOutput func([]byte)

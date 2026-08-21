@@ -26,8 +26,9 @@ var isTTY = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 var showRunView = openRunView
 
 type runSeamParams struct {
-	StateDir string
-	Dir      string
+	ProjectDir string
+	StateDir   string
+	Dir        string
 	// Jobs are the worktree's declared jobs, which the view lists whether or not
 	// this run touches them.
 	Jobs []domain.JobConfig
@@ -41,12 +42,14 @@ type runSeam struct {
 	session runlogs.Session
 	workDir string
 	logDir  string
+	env     map[string]string
 }
 
 func openRunSeam(params runSeamParams) runSeam {
 	logDir := jobLogDir(jobLogDirParams{StateDir: params.StateDir, Dir: params.Dir})
 	service := runlogs.NewService(runlogs.ServiceParams{SocketPath: process.SocketPath()})
 	return runSeam{
+		env:     jobEnv(jobEnvParams{ProjectDir: params.ProjectDir, StateDir: params.StateDir, Dir: params.Dir}),
 		service: service,
 		session: runlogs.NewSession(runlogs.SessionParams{
 			Service: service,
@@ -71,6 +74,7 @@ func (s runSeam) starter(jobs []domain.JobConfig) runview.StartFunc {
 			Jobs:    jobs,
 			WorkDir: s.workDir,
 			LogDir:  s.logDir,
+			Env:     s.env,
 		})
 	}
 }

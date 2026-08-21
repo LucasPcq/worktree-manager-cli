@@ -67,6 +67,7 @@ func Clean(params domain.CleanParams) error {
 	if !params.SkipHooks {
 		if err := RunCleanHooks(domain.CleanHooksParams{
 			ProjectDir:   params.ProjectDir,
+			StateDir:     params.StateDir,
 			WorktreePath: wt.Path,
 			Branch:       params.Branch,
 			Hooks:        params.Config.Project.Hooks.OnClean,
@@ -90,6 +91,8 @@ func Clean(params domain.CleanParams) error {
 	}); err != nil {
 		return fmt.Errorf("delete branch: %w", err)
 	}
+
+	purgeState(WorktreeRef{ProjectDir: params.ProjectDir, StateDir: params.StateDir, Branch: params.Branch})
 
 	return nil
 }
@@ -120,6 +123,11 @@ func RunCleanHooks(params domain.CleanHooksParams) error {
 			Branch:   params.Branch,
 			Root:     mainPath,
 		},
+		Env: hookEnv(WorktreeRef{
+			ProjectDir: params.ProjectDir,
+			StateDir:   params.StateDir,
+			Branch:     params.Branch,
+		}),
 		Output: params.Output,
 	}); err != nil {
 		return fmt.Errorf("on_clean hooks: %w", err)
@@ -157,6 +165,8 @@ func ForceClean(params domain.ForceCleanParams) error {
 	}); err != nil {
 		return fmt.Errorf("delete branch: %w", err)
 	}
+
+	purgeState(WorktreeRef{ProjectDir: params.ProjectDir, StateDir: params.StateDir, Branch: params.Branch})
 
 	return nil
 }

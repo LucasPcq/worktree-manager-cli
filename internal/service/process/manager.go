@@ -69,6 +69,10 @@ type ManagedJob struct {
 	PID       int
 	WorkDir   string
 	StartedAt time.Time
+	// Env is kept so the stop command runs in the environment the start did: a
+	// `docker compose down` that lost COMPOSE_PROJECT_NAME tears down the wrong
+	// project, or nothing at all.
+	Env map[string]string
 	// ExitCode, like Status, is written by the goroutine that reaps the process
 	// and read by List: both are only ever touched under the manager lock.
 	ExitCode *int
@@ -98,6 +102,7 @@ type StartParams struct {
 	// LogDir is the worktree's log directory, resolved by the client. Empty
 	// persists nothing.
 	LogDir   string
+	Env      map[string]string
 	Streamer io.Writer
 }
 
@@ -136,7 +141,7 @@ func (m *Manager) Start(params StartParams) error {
 	} else {
 		cmd.Dir = params.WorkDir
 	}
-	cmd.Env = jobEnv(job.Kind)
+	cmd.Env = jobEnv(jobEnvParams{Kind: job.Kind, Overrides: params.Env})
 	// Tasks run through a plain pipe; without Setpgid they would inherit the
 	// daemon's process group, leaving us no safe way to signal the whole
 	// subtree on Stop. Services run through pty.Start, which forces Setsid
@@ -162,6 +167,7 @@ func (m *Manager) Start(params StartParams) error {
 		PID:       cmd.Process.Pid,
 		WorkDir:   params.WorkDir,
 		StartedAt: time.Now(),
+		Env:       params.Env,
 		output:    hub,
 		logs:      logs,
 		exited:    make(chan struct{}),
@@ -247,6 +253,14 @@ func spawnJob(cmd *exec.Cmd, kind domain.JobKind) (*os.File, error) {
 	return ptmx, nil
 }
 
+type jobEnvParams struct {
+	Kind domain.JobKind
+	// Overrides is what the client resolved about the worktree. It is applied
+	// before the kind's defaults below, so a worktree can never take the
+	// terminal contract away from a task.
+	Overrides map[string]string
+}
+
 // jobEnv returns the environment to use for spawned jobs. The daemon runs
 // with Setsid so its own TTY-related env may be missing or degraded.
 //
@@ -259,61 +273,42 @@ func spawnJob(cmd *exec.Cmd, kind domain.JobKind) (*os.File, error) {
 // FORCE_COLOR / COLORTERM so colored log output still works. CI=true is the
 // universal "I'm in a non-interactive env, output plain logs" hint that
 // turbo, jest, npm, etc. respect.
-func jobEnv(kind domain.JobKind) []string {
-	env := os.Environ()
-	if kind == domain.JobKindTask {
-		env = setEnv(env, "TERM", "dumb")
-		if _, ok := lookupEnv(env, "COLORTERM"); !ok {
+func jobEnv(params jobEnvParams) []string {
+	// The inherited worktree variables are dropped, not merely overridden: a
+	// request that resolved nothing must leave the job with no worktree identity
+	// rather than with the one the daemon was forked with.
+	env := rules.MergeEnv(rules.MergeEnvParams{
+		Env:       os.Environ(),
+		Clear:     domain.WorktreeScopedEnv,
+		Overrides: params.Overrides,
+	})
+
+	if params.Kind == domain.JobKindTask {
+		env = rules.SetEnv(env, "TERM", "dumb")
+		if _, ok := rules.LookupEnv(env, "COLORTERM"); !ok {
 			env = append(env, "COLORTERM=truecolor")
 		}
-		if _, ok := lookupEnv(env, "FORCE_COLOR"); !ok {
+		if _, ok := rules.LookupEnv(env, "FORCE_COLOR"); !ok {
 			env = append(env, "FORCE_COLOR=1")
 		}
-		if _, ok := lookupEnv(env, "CI"); !ok {
+		if _, ok := rules.LookupEnv(env, "CI"); !ok {
 			env = append(env, "CI=true")
 		}
 		return env
 	}
 
-	if _, ok := lookupEnv(env, "TERM"); !ok {
+	if _, ok := rules.LookupEnv(env, "TERM"); !ok {
 		env = append(env, "TERM=xterm-256color")
 	}
-	if _, ok := lookupEnv(env, "COLORTERM"); !ok {
+	if _, ok := rules.LookupEnv(env, "COLORTERM"); !ok {
 		env = append(env, "COLORTERM=truecolor")
 	}
-	if _, ok := lookupEnv(env, "FORCE_COLOR"); !ok {
+	if _, ok := rules.LookupEnv(env, "FORCE_COLOR"); !ok {
 		env = append(env, "FORCE_COLOR=1")
 	}
 	return env
 }
 
-// setEnv replaces any existing occurrence of key, so the override wins over
-// what the daemon inherited (e.g. TERM=dumb whatever the user's shell TERM).
-func setEnv(env []string, key, value string) []string {
-	prefix := key + "="
-	out := make([]string, 0, len(env)+1)
-	for _, e := range env {
-		if !strings.HasPrefix(e, prefix) {
-			out = append(out, e)
-		}
-	}
-	return append(out, prefix+value)
-}
-
-func lookupEnv(env []string, key string) (string, bool) {
-	prefix := key + "="
-	for _, e := range env {
-		if strings.HasPrefix(e, prefix) {
-			return strings.TrimPrefix(e, prefix), true
-		}
-	}
-	return "", false
-}
-
-// runTask keeps the task in the output hub while it runs, so `run logs <task>`
-// can attach to it too, and removes it from the map on exit whatever the
-// outcome. Its exit code therefore never travels on the job: it goes back in
-// the error returned here, and to a client in the daemon's own response.
 func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	defer close(job.exited)
 
@@ -806,6 +801,11 @@ func (m *Manager) stopWithCommand(job *ManagedJob) error {
 
 	cmd := exec.Command(parts[0], parts[1:]...)
 	cmd.Dir = job.WorkDir
+	cmd.Env = rules.MergeEnv(rules.MergeEnvParams{
+		Env:       os.Environ(),
+		Clear:     domain.WorktreeScopedEnv,
+		Overrides: job.Env,
+	})
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("stop %s: %s: %w", job.Name, strings.TrimSpace(string(out)), err)
 	}

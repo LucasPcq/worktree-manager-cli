@@ -282,6 +282,28 @@ Jobs are scoped per worktree at runtime: starting `docker` from worktree A runs 
 `cwd = A`; a separate process runs from worktree B. `wtm run down` only stops the current
 worktree's jobs unless you pass `--all`.
 
+Every job — and every `on_create` / `on_clean` hook — also runs with the worktree's own
+identity in its environment, so two worktrees running the same services never share a
+resource:
+
+| Variable | Value |
+| --- | --- |
+| `WTM_BRANCH` | the branch, verbatim |
+| `WTM_WORKTREE` | the branch as a slug safe for a Docker project, network or volume name |
+| `WTM_ORDINAL` | the worktree's stable number. The main checkout is always `0`; every other worktree gets the smallest number free, kept for its whole life and released when it is cleaned |
+| `WTM_PORT_OFFSET` | `WTM_ORDINAL × 10` — the main checkout keeps the project's default ports |
+| `COMPOSE_PROJECT_NAME` | `<repo>-<WTM_WORKTREE>`, unless your own environment already defines it. The Docker daemon is machine-wide, so the repository qualifies the name: two clones both sitting on `main` do not share a stack |
+
+`COMPOSE_PROJECT_NAME` alone is what stops two worktrees from sharing containers,
+networks and volumes — nothing to declare, it works as soon as your jobs use
+`docker compose`. Ports are yours to shift for now: read `WTM_PORT_OFFSET` in your job's
+command or your compose file.
+
+> **Upgrading:** jobs used to run with no `COMPOSE_PROJECT_NAME`, so `docker compose`
+> named the project after the working directory. Stacks started before this version are
+> under the old name and a new `run up` will not find them — stop them once with
+> `docker compose -p <old-name> down`.
+
 `run up` and `run start` **attach**: a full-screen view opens with one pane per job, and
 `wtm run logs` reopens it later. Leaving the view (`q`, or Ctrl+C outside focus mode)
 detaches — the daemon keeps the jobs running. `-d` starts them and hands the prompt back

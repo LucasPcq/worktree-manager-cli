@@ -130,6 +130,15 @@ a terminal, a human format and no `-d` before it picks the view):
 | `output.RunPrinter` | `-d`, a pipe, CI | renders each `Event` as a line on stdout/stderr |
 | `output.WriteRunOutcomeJSON` | `--output json` | the array of job results, with the failing job's `output` and `exit_code` |
 
+Everything a job needs to know about *which* worktree it belongs to is resolved by the
+client and travels down the seam beside `WorkDir` and `LogDir`: `RunParams.Env` →
+`StartRequest.Env` → `process.Request.Env` → `cmd.Env`. It cannot be inherited — the
+daemon is global, outlives the command that forked it, and its own environment belongs to
+whichever worktree happened to start it. `service/worktree.EnsureOrdinal` is what gives
+the worktree the stable number those variables derive from, and
+`service/worktree.JobEnv`/`BranchEnv` assemble them; the daemon keeps the resolved map on
+the `ManagedJob` so the job's stop command runs in the same environment its start did.
+
 `internal/commands/run/surface.go` is the whole wiring: open the seam, build the starter,
 switch on the rule. The one thing left in the command is `handleConcurrentJobs` — the
 question `run up` asks about another worktree's jobs. It is a `flow.Prompter` question in

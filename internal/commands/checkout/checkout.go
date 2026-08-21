@@ -321,6 +321,7 @@ func createFromPR(cmd *cobra.Command, result shared.ConfigResult, params createF
 	// on_create hooks as a distinct, titled phase (shared with create/extract).
 	// A reused branch has no start-point, so the hooks see its recorded parent.
 	if hookErr := shared.RunCreateHooksPhase(shared.CreateHooksPhaseParams{
+		StateDir:     result.StateDir,
 		Cmd:          cmd,
 		ShowHeader:   !params.jsonMode,
 		ProjectDir:   result.ProjectDir,

@@ -24,6 +24,11 @@ type Request struct {
 	// it, so the daemon never has to run git to find the state dir. Empty
 	// persists nothing.
 	LogDir string `json:"log_dir,omitempty"`
+	// Env is what the job learns about the worktree it belongs to. The client
+	// resolves it for the same reason it resolves LogDir, and one more: the
+	// daemon is global and long-lived, so the environment it inherited belongs
+	// to whichever worktree happened to fork it.
+	Env map[string]string `json:"env,omitempty"`
 	// Cols and Rows size the job's PTY: once on ActionAttach, then on every
 	// ActionResize as the pane rendering the job changes size.
 	Cols int `json:"cols,omitempty"`

@@ -219,6 +219,7 @@ func (f *pruneFlow) runHooks() error {
 				}
 				if err := worktree.RunCleanHooks(domain.CleanHooksParams{
 					ProjectDir:   f.ctx.ProjectDir,
+					StateDir:     f.ctx.StateDir,
 					WorktreePath: candidate.Path,
 					Branch:       candidate.Branch,
 					Hooks:        hooks,
