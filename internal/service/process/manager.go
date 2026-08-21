@@ -115,8 +115,7 @@ func (m *Manager) Start(params StartParams) error {
 	job := params.Job
 	key := jobKey(job.Name, params.WorkDir)
 
-	parts := strings.Fields(job.Cmd)
-	if len(parts) == 0 {
+	if rules.IsBlankCommand(job.Cmd) {
 		return fmt.Errorf("job %s has empty cmd", job.Name)
 	}
 
@@ -133,7 +132,8 @@ func (m *Manager) Start(params StartParams) error {
 		return fmt.Errorf("job %s %s", job.Name, domain.JobAlreadyRunningSuffix)
 	}
 
-	cmd := exec.Command(parts[0], parts[1:]...)
+	spec := rules.ShellCommand(job.Cmd)
+	cmd := exec.Command(spec.Name, spec.Args...)
 	if job.Cwd != "" && !filepath.IsAbs(job.Cwd) {
 		cmd.Dir = filepath.Join(params.WorkDir, job.Cwd)
 	} else if job.Cwd != "" {
@@ -797,12 +797,12 @@ func (m *Manager) markStopped(job *ManagedJob) {
 }
 
 func (m *Manager) stopWithCommand(job *ManagedJob) error {
-	parts := strings.Fields(job.Config.Stop)
-	if len(parts) == 0 {
+	if rules.IsBlankCommand(job.Config.Stop) {
 		return m.stopWithSignal(job)
 	}
 
-	cmd := exec.Command(parts[0], parts[1:]...)
+	spec := rules.ShellCommand(job.Config.Stop)
+	cmd := exec.Command(spec.Name, spec.Args...)
 	cmd.Dir = job.WorkDir
 	cmd.Env = rules.MergeEnv(rules.MergeEnvParams{
 		Env:       os.Environ(),

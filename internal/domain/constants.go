@@ -646,6 +646,17 @@ const (
 	// evicting no longer reports. It is given back at the live tail.
 	JobPaneScrollbackBurstFactor = 2
 
+	// ShellBin is the interpreter every command written in a config file runs
+	// through — a job's cmd and stop, and every lifecycle hook. POSIX sh rather
+	// than the user's own shell: a run.toml shared across a team must behave the
+	// same on every machine.
+	ShellBin = "/bin/sh"
+
+	// ShellCommandFlag runs the line that follows it, ShellSyntaxCheckFlag parses
+	// it without running anything.
+	ShellCommandFlag     = "-c"
+	ShellSyntaxCheckFlag = "-n"
+
 	// JobAlreadyRunningSuffix is the tail of the daemon error returned when a
 	// job is started while already running. Callers match on it to treat a
 	// repeat start (e.g. re-running `run up` while services are up) as a benign

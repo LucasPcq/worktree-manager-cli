@@ -65,12 +65,12 @@ func runSingleHook(params runSingleHookParams) error {
 	hook := params.Hook
 	output := params.Output
 
-	parts := strings.Fields(hook.Cmd)
-	if len(parts) == 0 {
+	if rules.IsBlankCommand(hook.Cmd) {
 		return nil
 	}
 
-	cmd := exec.Command(parts[0], parts[1:]...)
+	spec := rules.ShellCommand(hook.Cmd)
+	cmd := exec.Command(spec.Name, spec.Args...)
 
 	if hook.Cwd != "" {
 		cmd.Dir = hook.Cwd

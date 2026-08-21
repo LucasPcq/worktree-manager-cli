@@ -48,6 +48,13 @@ type RunConfig struct {
 	Profiles        []ProfileConfig `toml:"profile,omitempty"          json:"profile"`
 }
 
+// ExecSpec is a command ready for exec: the binary and the arguments it takes,
+// already resolved from whatever form the config wrote it in.
+type ExecSpec struct {
+	Name string
+	Args []string
+}
+
 // JobStatus represents the current state of a managed job.
 type JobStatus string
 

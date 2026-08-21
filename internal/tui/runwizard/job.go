@@ -56,7 +56,7 @@ func RunJobWizard(params JobWizardParams) (domain.JobConfig, error) {
 
 	cmdInput := components.NewTextInput(components.NewTextInputParams{
 		Title:       "Command",
-		Description: "Shell command to execute",
+		Description: "A /bin/sh line — quotes, && and ${VAR} all work (e.g. pnpm dev --port ${PORT}).",
 		Default:     params.Initial.Cmd,
 		Validate: func(s string) error {
 			if strings.TrimSpace(s) == "" {

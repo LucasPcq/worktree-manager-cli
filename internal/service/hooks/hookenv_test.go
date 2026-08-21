@@ -14,17 +14,9 @@ func TestRunHooksInjectsWorktreeEnv(t *testing.T) {
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "seen")
 
-	// A script rather than an inline command: a hook's cmd is split on
-	// whitespace, so a redirection has nowhere to live.
-	script := filepath.Join(dir, "hook.sh")
-	body := "#!/bin/sh\nprintenv " + domain.EnvComposeProjectName + " > " + marker + "\n"
-	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
-		t.Fatalf("write hook script: %v", err)
-	}
-
 	var out bytes.Buffer
 	if err := RunHooks(RunHooksParams{
-		Hooks:   []domain.HookCommand{{Cmd: script}},
+		Hooks:   []domain.HookCommand{{Cmd: "printenv " + domain.EnvComposeProjectName + " > " + marker}},
 		WorkDir: dir,
 		Env:     map[string]string{domain.EnvComposeProjectName: "feat-x"},
 		Output:  &out,
