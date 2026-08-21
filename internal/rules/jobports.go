@@ -1,9 +1,11 @@
 package rules
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -117,4 +119,24 @@ func sortedPortNames(ports map[string]int) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+type LabelWithPortsParams struct {
+	Label string
+	Ports map[string]int
+}
+
+// LabelWithPorts appends the ports a job bound to the line naming it, so the
+// user reading it knows where to reach that worktree's copy. A job declaring
+// none reads exactly as it did before.
+func LabelWithPorts(params LabelWithPortsParams) string {
+	if len(params.Ports) == 0 {
+		return params.Label
+	}
+
+	entries := make([]string, 0, len(params.Ports))
+	for _, name := range sortedPortNames(params.Ports) {
+		entries = append(entries, fmt.Sprintf(domain.RunPortEntryFmt, name, params.Ports[name]))
+	}
+	return fmt.Sprintf(domain.RunPortsSuffixFmt, params.Label, strings.Join(entries, " "))
 }

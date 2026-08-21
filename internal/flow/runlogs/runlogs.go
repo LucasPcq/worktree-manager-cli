@@ -83,6 +83,9 @@ type StartResult struct {
 	// ExitCode is what a task exited with, nil for a job whose lifetime does not
 	// end with this answer.
 	ExitCode *int
+	// Ports are the ports the job bound, base plus this worktree's offset. Empty
+	// for a job that declares none.
+	Ports map[string]int
 }
 
 type AttachRequest struct {
@@ -141,6 +144,9 @@ type Event struct {
 	// Outcome is the partial state PhaseAborted reports and the final state
 	// PhaseReady reports; zero on every other phase.
 	Outcome Outcome
+	// Ports are what a PhaseStarted or PhaseDone job bound, for a surface that
+	// tells the user where to reach it.
+	Ports map[string]int
 }
 
 // Sink is emitted to on the goroutine that called Run.

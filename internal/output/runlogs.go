@@ -7,6 +7,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 type RunPrinterParams struct {
@@ -42,9 +43,15 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 			Success(p.out, fmt.Sprintf(domain.RunStreamAlreadyFmt, event.Job))
 			return
 		}
-		Success(p.out, fmt.Sprintf(domain.RunStreamStartedFmt, event.Job))
+		Success(p.out, rules.LabelWithPorts(rules.LabelWithPortsParams{
+			Label: fmt.Sprintf(domain.RunStreamStartedFmt, event.Job),
+			Ports: event.Ports,
+		}))
 	case runlogs.PhaseDone:
-		Success(p.out, fmt.Sprintf(domain.RunStreamDoneFmt, event.Job))
+		Success(p.out, rules.LabelWithPorts(rules.LabelWithPortsParams{
+			Label: fmt.Sprintf(domain.RunStreamDoneFmt, event.Job),
+			Ports: event.Ports,
+		}))
 	case runlogs.PhaseFailed:
 		Error(p.err, event.Reason)
 	case runlogs.PhaseAborted:

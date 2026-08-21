@@ -136,13 +136,13 @@ func (r *runner) run() Outcome {
 		if job.Kind == domain.JobKindTask {
 			r.completed = append(r.completed, job.Name)
 			r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionDone})
-			r.emit(Event{Phase: PhaseDone, Job: job.Name, Step: i + 1})
+			r.emit(Event{Phase: PhaseDone, Job: job.Name, Step: i + 1, Ports: result.Ports})
 			continue
 		}
 
 		r.started = append(r.started, job.Name)
 		r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
-		r.emit(Event{Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning})
+		r.emit(Event{Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning, Ports: result.Ports})
 	}
 
 	outcome := r.outcome()

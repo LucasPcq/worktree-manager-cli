@@ -212,7 +212,11 @@ func (m Model) renderPaneTitle(params paneTitleParams) string {
 	if !params.Found {
 		return ""
 	}
-	left := styles.Bold.Render(params.View.Name) + styles.Muted.Render(domain.RunViewSeparator+string(params.View.Status))
+	status := rules.LabelWithPorts(rules.LabelWithPortsParams{
+		Label: string(params.View.Status),
+		Ports: m.sequence.ports[params.View.Name],
+	})
+	left := styles.Bold.Render(params.View.Name) + styles.Muted.Render(domain.RunViewSeparator+status)
 	return spread(spreadParams{Left: left, Right: styles.Muted.Render(m.paneOrigin(params.View)), Width: params.Width})
 }
 
