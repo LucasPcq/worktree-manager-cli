@@ -1685,6 +1685,18 @@ var EnvTemplateSuffixes = []string{
 // header's permanent top-left anchor — the letter spacing (one blank column
 // between W, T and M) is deliberate: run together the glyphs are harder to
 // read.
+// WorktreeScopedEnv names the variables that describe one worktree and must
+// never be inherited. The run daemon is global and outlives the command that
+// forked it, so its own environment holds whichever worktree started it; a job
+// gets these from its request or not at all.
+var WorktreeScopedEnv = []string{
+	EnvWorktree,
+	EnvBranch,
+	EnvOrdinal,
+	EnvPortOffset,
+	EnvComposeProjectName,
+}
+
 var DashboardWordmarkLines = [3]string{
 	`╻ ╻ ╺┳╸ ┏┳┓`,
 	`┃╻┃  ┃  ┃┃┃`,

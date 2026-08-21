@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
@@ -44,6 +45,7 @@ func BranchEnv(params WorktreeRef) (map[string]string, error) {
 
 	return rules.WorktreeJobEnv(rules.WorktreeJobEnvParams{
 		Branch:          params.Branch,
+		Project:         filepath.Base(params.ProjectDir),
 		Ordinal:         ordinal,
 		PortOffsetBlock: domain.PortOffsetBlock,
 		ComposeProject:  os.Getenv(domain.EnvComposeProjectName),

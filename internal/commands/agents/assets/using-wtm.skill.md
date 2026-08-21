@@ -251,8 +251,8 @@ and **experimental**: the global `wtm init` does not configure it.
   `WTM_BRANCH` (the branch verbatim), `WTM_WORKTREE` (its slug, safe as a Docker project
   or network name), `WTM_ORDINAL` (`0` for the main checkout, then the smallest free
   number, stable for the worktree's life), `WTM_PORT_OFFSET` (`WTM_ORDINAL × 10`), and
-  `COMPOSE_PROJECT_NAME` (= `WTM_WORKTREE`, left alone if the environment already sets
-  it). Write a job's `cmd` to read these rather than hardcoding a port: a job on the main
+  `COMPOSE_PROJECT_NAME` (= `<repo>-<WTM_WORKTREE>`, left alone if the environment
+  already sets it). Write a job's `cmd` to read these rather than hardcoding a port: a job on the main
   checkout gets offset `0`, so the default ports still apply there. Docker isolation is
   automatic; **port isolation is not** — a job that binds a fixed port still collides
   across worktrees unless its command derives the port from `WTM_PORT_OFFSET`.

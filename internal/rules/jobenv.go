@@ -7,7 +7,11 @@ import (
 )
 
 type WorktreeJobEnvParams struct {
-	Branch  string
+	Branch string
+	// Project names the repository, so a compose project is unique on the
+	// machine and not merely within this repo. Two clones both sitting on
+	// `main` would otherwise share one stack.
+	Project string
 	Ordinal int
 	// PortOffsetBlock spaces two worktrees' ports apart. Zero falls back to the
 	// default block rather than collapsing every worktree onto offset 0.
@@ -30,7 +34,7 @@ func WorktreeJobEnv(params WorktreeJobEnvParams) map[string]string {
 	slug := WorktreeSlug(params.Branch)
 	composeProject := params.ComposeProject
 	if composeProject == "" {
-		composeProject = slug
+		composeProject = ComposeProjectName(ComposeProjectNameParams{Project: params.Project, Worktree: slug})
 	}
 
 	return map[string]string{
@@ -40,4 +44,19 @@ func WorktreeJobEnv(params WorktreeJobEnvParams) map[string]string {
 		domain.EnvPortOffset:         strconv.Itoa(params.Ordinal * block),
 		domain.EnvComposeProjectName: composeProject,
 	}
+}
+
+type ComposeProjectNameParams struct {
+	Project  string
+	Worktree string
+}
+
+// ComposeProjectName qualifies a worktree's slug with its repository's. The
+// Docker daemon is machine-wide, so a name that is only unique within one
+// repository is not unique enough.
+func ComposeProjectName(params ComposeProjectNameParams) string {
+	if params.Project == "" {
+		return params.Worktree
+	}
+	return WorktreeSlug(params.Project) + "-" + params.Worktree
 }

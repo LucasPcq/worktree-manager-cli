@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 	"time"
 
@@ -120,23 +119,12 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%.1fs", d.Seconds())
 }
 
-// hookEnv layers the worktree's variables over the caller's environment. Nil
-// leaves the process environment as it is, so a caller with nothing to say
-// changes nothing.
+// hookEnv layers the worktree's variables over this process's environment. Nil
+// leaves it as it is: unlike the run daemon, this process is the user's own
+// command, so what it inherited is the user's and not another worktree's.
 func hookEnv(overrides map[string]string) []string {
 	if len(overrides) == 0 {
 		return nil
 	}
-
-	keys := make([]string, 0, len(overrides))
-	for key := range overrides {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	env := os.Environ()
-	for _, key := range keys {
-		env = append(env, key+"="+overrides[key])
-	}
-	return env
+	return rules.MergeEnv(rules.MergeEnvParams{Env: os.Environ(), Overrides: overrides})
 }

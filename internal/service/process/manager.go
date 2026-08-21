@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -256,6 +255,14 @@ func spawnJob(cmd *exec.Cmd, kind domain.JobKind) (*os.File, error) {
 	return ptmx, nil
 }
 
+type jobEnvParams struct {
+	Kind domain.JobKind
+	// Overrides is what the client resolved about the worktree. It is applied
+	// before the kind's defaults below, so a worktree can never take the
+	// terminal contract away from a task.
+	Overrides map[string]string
+}
+
 // jobEnv returns the environment to use for spawned jobs. The daemon runs
 // with Setsid so its own TTY-related env may be missing or degraded.
 //
@@ -268,84 +275,42 @@ func spawnJob(cmd *exec.Cmd, kind domain.JobKind) (*os.File, error) {
 // FORCE_COLOR / COLORTERM so colored log output still works. CI=true is the
 // universal "I'm in a non-interactive env, output plain logs" hint that
 // turbo, jest, npm, etc. respect.
-type jobEnvParams struct {
-	Kind domain.JobKind
-	// Overrides is the worktree-scoped environment. It is applied last, so a
-	// value wtm resolved always beats the one the daemon inherited.
-	Overrides map[string]string
-}
-
 func jobEnv(params jobEnvParams) []string {
-	env := applyOverrides(os.Environ(), params.Overrides)
-	kind := params.Kind
-	if kind == domain.JobKindTask {
-		env = setEnv(env, "TERM", "dumb")
-		if _, ok := lookupEnv(env, "COLORTERM"); !ok {
+	// The inherited worktree variables are dropped, not merely overridden: a
+	// request that resolved nothing must leave the job with no worktree identity
+	// rather than with the one the daemon was forked with.
+	env := rules.MergeEnv(rules.MergeEnvParams{
+		Env:       os.Environ(),
+		Clear:     domain.WorktreeScopedEnv,
+		Overrides: params.Overrides,
+	})
+
+	if params.Kind == domain.JobKindTask {
+		env = rules.SetEnv(env, "TERM", "dumb")
+		if _, ok := rules.LookupEnv(env, "COLORTERM"); !ok {
 			env = append(env, "COLORTERM=truecolor")
 		}
-		if _, ok := lookupEnv(env, "FORCE_COLOR"); !ok {
+		if _, ok := rules.LookupEnv(env, "FORCE_COLOR"); !ok {
 			env = append(env, "FORCE_COLOR=1")
 		}
-		if _, ok := lookupEnv(env, "CI"); !ok {
+		if _, ok := rules.LookupEnv(env, "CI"); !ok {
 			env = append(env, "CI=true")
 		}
 		return env
 	}
 
-	if _, ok := lookupEnv(env, "TERM"); !ok {
+	if _, ok := rules.LookupEnv(env, "TERM"); !ok {
 		env = append(env, "TERM=xterm-256color")
 	}
-	if _, ok := lookupEnv(env, "COLORTERM"); !ok {
+	if _, ok := rules.LookupEnv(env, "COLORTERM"); !ok {
 		env = append(env, "COLORTERM=truecolor")
 	}
-	if _, ok := lookupEnv(env, "FORCE_COLOR"); !ok {
+	if _, ok := rules.LookupEnv(env, "FORCE_COLOR"); !ok {
 		env = append(env, "FORCE_COLOR=1")
 	}
 	return env
 }
 
-// applyOverrides sets each pair on env, in sorted key order so the result does
-// not depend on map iteration.
-func applyOverrides(env []string, overrides map[string]string) []string {
-	keys := make([]string, 0, len(overrides))
-	for key := range overrides {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	for _, key := range keys {
-		env = setEnv(env, key, overrides[key])
-	}
-	return env
-}
-
-// setEnv replaces any existing occurrence of key, so the override wins over
-// what the daemon inherited (e.g. TERM=dumb whatever the user's shell TERM).
-func setEnv(env []string, key, value string) []string {
-	prefix := key + "="
-	out := make([]string, 0, len(env)+1)
-	for _, e := range env {
-		if !strings.HasPrefix(e, prefix) {
-			out = append(out, e)
-		}
-	}
-	return append(out, prefix+value)
-}
-
-func lookupEnv(env []string, key string) (string, bool) {
-	prefix := key + "="
-	for _, e := range env {
-		if strings.HasPrefix(e, prefix) {
-			return strings.TrimPrefix(e, prefix), true
-		}
-	}
-	return "", false
-}
-
-// runTask keeps the task in the output hub while it runs, so `run logs <task>`
-// can attach to it too, and removes it from the map on exit whatever the
-// outcome. Its exit code therefore never travels on the job: it goes back in
-// the error returned here, and to a client in the daemon's own response.
 func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 	defer close(job.exited)
 
@@ -838,7 +803,11 @@ func (m *Manager) stopWithCommand(job *ManagedJob) error {
 
 	cmd := exec.Command(parts[0], parts[1:]...)
 	cmd.Dir = job.WorkDir
-	cmd.Env = applyOverrides(os.Environ(), job.Env)
+	cmd.Env = rules.MergeEnv(rules.MergeEnvParams{
+		Env:       os.Environ(),
+		Clear:     domain.WorktreeScopedEnv,
+		Overrides: job.Env,
+	})
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("stop %s: %s: %w", job.Name, strings.TrimSpace(string(out)), err)
 	}

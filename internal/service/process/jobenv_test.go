@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func TestJobEnvOverridesBeatWhatTheDaemonInherited(t *testing.T) {
@@ -22,10 +23,10 @@ func TestJobEnvOverridesBeatWhatTheDaemonInherited(t *testing.T) {
 		},
 	})
 
-	if got, _ := lookupEnv(env, domain.EnvComposeProjectName); got != "feat-x" {
+	if got, _ := rules.LookupEnv(env, domain.EnvComposeProjectName); got != "feat-x" {
 		t.Errorf("%s = %q, want %q", domain.EnvComposeProjectName, got, "feat-x")
 	}
-	if got, _ := lookupEnv(env, domain.EnvOrdinal); got != "2" {
+	if got, _ := rules.LookupEnv(env, domain.EnvOrdinal); got != "2" {
 		t.Errorf("%s = %q, want %q", domain.EnvOrdinal, got, "2")
 	}
 }
@@ -38,14 +39,25 @@ func TestJobEnvKeepsTaskTerminalContract(t *testing.T) {
 		Overrides: map[string]string{"TERM": "xterm-256color"},
 	})
 
-	if got, _ := lookupEnv(env, "TERM"); got != "dumb" {
+	if got, _ := rules.LookupEnv(env, "TERM"); got != "dumb" {
 		t.Errorf("TERM = %q, want %q", got, "dumb")
 	}
 }
 
-func TestJobEnvWithoutOverridesIsUnchanged(t *testing.T) {
-	if len(jobEnv(jobEnvParams{Kind: domain.JobKindService})) != len(jobEnv(jobEnvParams{Kind: domain.JobKindService, Overrides: map[string]string{}})) {
-		t.Error("an empty override map changed the environment")
+// The daemon is global and outlives the command that forked it, so what it
+// inherited describes whichever worktree started it. A request that resolved
+// nothing must leave the job with no worktree identity at all — never with
+// another worktree's.
+func TestJobEnvDropsInheritedWorktreeIdentity(t *testing.T) {
+	t.Setenv(domain.EnvComposeProjectName, "another-worktree")
+	t.Setenv(domain.EnvOrdinal, "7")
+
+	env := jobEnv(jobEnvParams{Kind: domain.JobKindService})
+
+	for _, key := range domain.WorktreeScopedEnv {
+		if value, ok := rules.LookupEnv(env, key); ok {
+			t.Errorf("%s reached the job as %q, want it dropped", key, value)
+		}
 	}
 }
 

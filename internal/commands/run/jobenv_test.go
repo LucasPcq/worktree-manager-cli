@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
@@ -50,6 +51,17 @@ func enterWorktree(t *testing.T, path string) {
 	t.Cleanup(func() { _ = os.Chdir(prev) })
 }
 
+// composeProject is the name wtm derives for a worktree of the test project:
+// the repository's own directory qualifies it, so two clones on the same branch
+// do not share a stack.
+func composeProject(t *testing.T, worktreeSlug string) string {
+	t.Helper()
+	return rules.ComposeProjectName(rules.ComposeProjectNameParams{
+		Project:  filepath.Base(os.Getenv("WTM_PROJECT_DIR")),
+		Worktree: worktreeSlug,
+	})
+}
+
 func assertEnv(t *testing.T, env map[string]string, want map[string]string) {
 	t.Helper()
 	for key, value := range want {
@@ -74,7 +86,7 @@ func TestRunUpInjectsMainWorktreeEnv(t *testing.T) {
 		domain.EnvWorktree:           "main",
 		domain.EnvOrdinal:            "0",
 		domain.EnvPortOffset:         "0",
-		domain.EnvComposeProjectName: "main",
+		domain.EnvComposeProjectName: composeProject(t, "main"),
 	})
 }
 
@@ -92,7 +104,7 @@ func TestRunUpInjectsLinkedWorktreeEnv(t *testing.T) {
 		domain.EnvWorktree:           "feat-x",
 		domain.EnvOrdinal:            "1",
 		domain.EnvPortOffset:         "10",
-		domain.EnvComposeProjectName: "feat-x",
+		domain.EnvComposeProjectName: composeProject(t, "feat-x"),
 	})
 }
 

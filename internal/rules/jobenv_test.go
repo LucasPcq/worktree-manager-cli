@@ -97,6 +97,43 @@ func TestWorktreeJobEnv(t *testing.T) {
 	}
 }
 
+func TestComposeProjectName(t *testing.T) {
+	cases := []struct {
+		name     string
+		project  string
+		worktree string
+		want     string
+	}{
+		// The Docker daemon is machine-wide: two clones both sitting on `main`
+		// must not land on the same stack.
+		{"qualifié par le dépôt", "myproject", "main", "myproject-main"},
+		{"dépôt aux majuscules", "MyProject", "feat-x", "myproject-feat-x"},
+		{"dépôt inconnu", "", "feat-x", "feat-x"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := ComposeProjectName(ComposeProjectNameParams{Project: c.project, Worktree: c.worktree})
+			if got != c.want {
+				t.Errorf("ComposeProjectName(%q, %q) = %q, want %q", c.project, c.worktree, got, c.want)
+			}
+		})
+	}
+}
+
+func TestWorktreeJobEnvQualifiesTheComposeProject(t *testing.T) {
+	env := WorktreeJobEnv(WorktreeJobEnvParams{Branch: "main", Project: "myproject", Ordinal: 0})
+	if got := env[domain.EnvComposeProjectName]; got != "myproject-main" {
+		t.Errorf("%s = %q, want %q", domain.EnvComposeProjectName, got, "myproject-main")
+	}
+
+	// A name the user set for this run is an answer, not a value to qualify.
+	env = WorktreeJobEnv(WorktreeJobEnvParams{Branch: "main", Project: "myproject", ComposeProject: "perso"})
+	if got := env[domain.EnvComposeProjectName]; got != "perso" {
+		t.Errorf("%s = %q, want %q", domain.EnvComposeProjectName, got, "perso")
+	}
+}
+
 func TestPurgeableMetaDir(t *testing.T) {
 	cases := []struct {
 		name     string
