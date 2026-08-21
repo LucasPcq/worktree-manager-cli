@@ -157,8 +157,14 @@ type MergeResult struct {
 // entries are appended (names go into Added). dst is never mutated.
 func MergeRunConfigs(dst, src domain.RunConfig) (domain.RunConfig, MergeResult) {
 	out := domain.RunConfig{
-		Jobs:     make([]domain.JobConfig, len(dst.Jobs)),
-		Profiles: make([]domain.ProfileConfig, len(dst.Profiles)),
+		// Carried over explicitly: dropping it would silently reset the spacing a
+		// project chose precisely to keep its ports from colliding.
+		PortOffsetBlock: dst.PortOffsetBlock,
+		Jobs:            make([]domain.JobConfig, len(dst.Jobs)),
+		Profiles:        make([]domain.ProfileConfig, len(dst.Profiles)),
+	}
+	if out.PortOffsetBlock == 0 {
+		out.PortOffsetBlock = src.PortOffsetBlock
 	}
 	copy(out.Jobs, dst.Jobs)
 	copy(out.Profiles, dst.Profiles)

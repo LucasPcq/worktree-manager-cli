@@ -180,13 +180,22 @@ func initHookValue(skip bool, hooks []domain.HookCommand) string {
 	return fmt.Sprintf(domain.InitRecapHookMoreFmt, first, len(hooks)-1)
 }
 
+type AutoServicesAnswersParams struct {
+	Detection domain.InitDetectionResult
+	// PatchCompose only ever comes from --patch-compose here: a run with nobody
+	// to ask never rewrites a project file on its own.
+	PatchCompose bool
+}
+
 // AutoServicesAnswers builds the services portion of InitProjectAnswers from
 // detection alone — every detected docker-compose file and package script — for
 // the non-interactive `wtm run init` path. The base config fields are left
 // zero-valued: only the services fields feed BuildInitRunConfig.
-func AutoServicesAnswers(detection domain.InitDetectionResult) domain.InitProjectAnswers {
+func AutoServicesAnswers(params AutoServicesAnswersParams) domain.InitProjectAnswers {
+	detection := params.Detection
 	answers := domain.InitProjectAnswers{
 		SelectedPackageScripts: detection.PackageScripts,
+		PatchCompose:           params.PatchCompose,
 	}
 	if len(detection.DockerComposeFiles) > 0 {
 		answers.DockerComposeFiles = detection.DockerComposeFiles

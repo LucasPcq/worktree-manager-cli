@@ -137,6 +137,87 @@ const (
 	PortMin = 1
 	PortMax = 65535
 
+	// ComposePortVarSuffix ends every variable name wtm introduces in a compose
+	// file, and ComposeTemplatedPortFmt is the host side it writes: the default
+	// keeps `docker compose up` working on its own, without wtm.
+	ComposePortVarSuffix    = "_PORT"
+	ComposeTemplatedPortFmt = "${%s:-%d}"
+
+	// ComposeVarNamePrefix fronts a service name starting with a digit, which
+	// cannot open an environment variable name.
+	ComposeVarNamePrefix = "S"
+
+	// The docker-compose keys wtm reads.
+	ComposeServicesKey  = "services"
+	ComposePortsKey     = "ports"
+	ComposePublishedKey = "published"
+	ComposeTargetKey    = "target"
+
+	// The reasons a compose port mapping is left alone.
+	ComposePortReasonNoHost     = "no host port to shift — Docker picks one at random"
+	ComposePortReasonRange      = "port range mappings cannot be shifted as a block"
+	ComposePortReasonNotAPort   = "%q is not a port number"
+	ComposePortReasonOutOfRange = "port %d is outside %d-%d"
+	ComposePortReasonBadVarName = "%q is not a valid environment variable name"
+	ComposePortReasonAlias      = "the ports list is a YAML alias — templating it would change every anchor site"
+	ComposePortReasonUnreadable = "wtm could not read this mapping back from the file, so it will not rewrite it"
+	ComposePortReasonNoDefault  = "%s has no default — wtm cannot tell which port it stands for"
+	ComposePortReasonSharedVar  = "%s is declared with two different bases in this file — wtm cannot tell which one wins"
+	ComposePortReasonSharedJob  = "%s is declared with two different bases across the files job %q stacks — wtm cannot tell which one wins"
+	ComposePortReasonAnchor     = "the ports list carries a YAML anchor — rewriting it would move every service aliasing it"
+
+	// ComposeFixDefaultFmt suggests the default to add to an explicit template.
+	// The container port is a guess the reader confirms, not a value wtm writes.
+	ComposeFixDefaultFmt = "add a default, e.g. %s"
+
+	// The section titles of the compose port report.
+	ComposePatchedTitle  = "Compose ports templatized"
+	ComposePortsTitle    = "Ports declared"
+	ComposeWithheldTitle = "Ports left alone"
+	ComposeDroppedTitle  = "Ports withdrawn — they could not coexist"
+	// ComposeFixIndentFmt indents the geste under the port it belongs to.
+	ComposeFixIndentFmt = "  %s"
+
+	// ComposePatchLineFmt is one rewrite as both the wizard and the recap show
+	// it: where it is, and what it becomes.
+	ComposePatchLineFmt = "%s · %s   %s → %s"
+	// ComposeFrozenLineFmt names a host port left literal, and ComposeFixLineFmt
+	// the mapping to write instead. ComposeFixCmdFmt is the declaration that
+	// follows once the file reads a variable.
+	ComposeFrozenLineFmt  = "%s · %s   %s binds the same port in every worktree"
+	ComposeUnsupportedFmt = "%s · %s   %s"
+	ComposeFixLineFmt     = "write %s"
+	ComposeFixCmdFmt      = "then: wtm run job edit %s --port %s=%d"
+	ComposeFixNoJobFmt    = "then declare it with `wtm run job edit <job> --port %s=%d`"
+	ComposeDroppedLineFmt = "%s (job %q, base %d) is dropped — it meets %s (job %q, base %d) %d worktree(s) on"
+	ComposeUnreadableFmt  = "%s could not be read: %s"
+
+	// ComposePatchMovedFmt aborts a patch whose target token is no longer where
+	// the scan found it.
+	ComposePatchMovedFmt = "%s:%d: expected %s but found %s — the file changed since it was read"
+	// ComposePatchOutOfRangeFmt aborts a patch pointing past the end of the file.
+	ComposePatchOutOfRangeFmt = "%s:%d: line is past the end of the file"
+	// ComposePatchPartialFmt names the files already rewritten when a later one
+	// fails to write, so the user knows the tree is not as it was.
+	ComposePatchPartialFmt = "already rewritten: %s"
+	ComposeReadFileFmt     = "read %s: %w"
+	ComposeWriteFileFmt    = "write %s: %w"
+
+	// The wizard step that asks to templatize the selected files' literal ports.
+	ComposePatchStepName    = "Templatize ports"
+	ComposePatchStepYes     = "rewrite"
+	ComposePatchStepNo      = "leave as is"
+	ComposePatchStepTitle   = "Make these ports per-worktree?"
+	ComposePatchStepPrelude = "These host ports are written as literals, so every worktree would bind the same one.\n" +
+		"wtm can rewrite them to read a variable — the default keeps `docker compose up` working on its own:"
+	ComposePatchStepEpilogue = "Declining leaves the files untouched; wtm then declares no port for them."
+
+	// ComposeChangedTitle and ComposeOrphanTitle head the two report sections
+	// that say why a file contributed nothing.
+	ComposeChangedTitle = "Compose files skipped — they changed while wtm was reading them"
+	ComposeOrphanTitle  = "Compose files with no job to carry their ports"
+	ComposeOrphanFmt    = "%s · no job in run.toml runs this file, so its ports were not declared"
+
 	// PortCollisionHorizon is how many worktrees a declared layout is checked
 	// against. Two base ports collide when they differ by a multiple of the
 	// block, but the multiple says how many worktrees it takes to get there:
@@ -214,6 +295,7 @@ const (
 	// init flags (non-interactive bootstrap).
 	FlagIfNotExists    = "if-not-exists"
 	FlagNonInteractive = "non-interactive"
+	FlagPatchCompose   = "patch-compose"
 	FlagShell          = "shell"
 	FlagBasePath       = "base-path"
 	FlagBaseBranch     = "base-branch"
@@ -792,10 +874,11 @@ const (
 	// left running.
 	RunStreamStepFmt    = "[%d/%d] %s"
 	RunStreamStartedFmt = "%s started"
-	// RunPortsSuffixFmt appends the ports a job actually bound to the line
-	// announcing it, RunPortEntryFmt being one of them.
-	RunPortsSuffixFmt = "%s · %s"
-	RunPortEntryFmt   = "%s=%d"
+	// RunPortsSuffixFmt qualifies a name with the ports behind it — the line
+	// announcing a started job, and the recap of what a job gained.
+	// RunPortEntryFmt is one of those ports.
+	RunPortsSuffixFmt   = "%s · %s"
+	RunPortEntryFmt     = "%s=%d"
 	RunStreamAlreadyFmt = "%s already running"
 	RunStreamDoneFmt    = "%s done"
 	RunStreamNextHint   = "wtm run logs to attach · wtm run down to stop"
