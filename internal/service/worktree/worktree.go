@@ -89,7 +89,7 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 		}
 	}
 
-	ordinal, err := EnsureOrdinal(EnsureOrdinalParams{
+	ordinal, err := EnsureOrdinal(WorktreeRef{
 		ProjectDir: params.ProjectDir,
 		StateDir:   params.StateDir,
 		Branch:     params.Branch,
@@ -159,7 +159,7 @@ func RunCreateHooks(params domain.CreateHooksParams) error {
 			Root:       mainPath,
 			FromBranch: params.FromBranch,
 		},
-		Env: hookEnv(BranchEnvParams{
+		Env: hookEnv(WorktreeRef{
 			ProjectDir: params.ProjectDir,
 			StateDir:   params.StateDir,
 			Branch:     params.Branch,

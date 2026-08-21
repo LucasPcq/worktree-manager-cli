@@ -30,7 +30,7 @@ func (r ordinalRepo) addWorktree(t *testing.T, branch string) string {
 
 func (r ordinalRepo) ensure(t *testing.T, branch string) int {
 	t.Helper()
-	ordinal, err := EnsureOrdinal(EnsureOrdinalParams{
+	ordinal, err := EnsureOrdinal(WorktreeRef{
 		ProjectDir: r.dir,
 		StateDir:   r.stateDir,
 		Branch:     branch,

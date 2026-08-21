@@ -134,7 +134,7 @@ func TestCleanPurgesWorktreeState(t *testing.T) {
 	featPath := filepath.Join(t.TempDir(), "feat")
 	gitRun(t, source, "worktree", "add", "-q", "-b", "feat/x", featPath, "HEAD")
 
-	ordinal, err := EnsureOrdinal(EnsureOrdinalParams{ProjectDir: source, StateDir: stateDir, Branch: "feat/x"})
+	ordinal, err := EnsureOrdinal(WorktreeRef{ProjectDir: source, StateDir: stateDir, Branch: "feat/x"})
 	if err != nil {
 		t.Fatalf("EnsureOrdinal: %v", err)
 	}

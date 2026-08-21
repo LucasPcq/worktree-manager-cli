@@ -123,7 +123,7 @@ func RunCleanHooks(params domain.CleanHooksParams) error {
 			Branch:   params.Branch,
 			Root:     mainPath,
 		},
-		Env: hookEnv(BranchEnvParams{
+		Env: hookEnv(WorktreeRef{
 			ProjectDir: params.ProjectDir,
 			StateDir:   params.StateDir,
 			Branch:     params.Branch,

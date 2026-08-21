@@ -10,7 +10,10 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-type EnsureOrdinalParams struct {
+// WorktreeRef names one worktree: the repository it belongs to, where its state
+// is kept, and which branch it holds. It is what every worktree-scoped lookup
+// needs and all any of them needs.
+type WorktreeRef struct {
 	ProjectDir string
 	StateDir   string
 	Branch     string
@@ -23,7 +26,7 @@ type EnsureOrdinalParams struct {
 //
 // Allocation reads the ordinals of the worktrees git still lists, not every
 // meta.json in the state dir — a removed worktree must give its number back.
-func EnsureOrdinal(params EnsureOrdinalParams) (int, error) {
+func EnsureOrdinal(params WorktreeRef) (int, error) {
 	worktrees, err := infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: params.ProjectDir})
 	if err != nil {
 		return 0, fmt.Errorf("list worktrees: %w", err)
@@ -63,7 +66,7 @@ func EnsureOrdinal(params EnsureOrdinalParams) (int, error) {
 // with a live worktree. The second case is the self-repair — a duplicate that
 // slipped in (a meta.json copied by hand, a lock that could not be taken) is
 // corrected on the next run instead of silently colliding forever.
-func settledOrdinal(worktrees []domain.GitWorktree, params EnsureOrdinalParams) int {
+func settledOrdinal(worktrees []domain.GitWorktree, params WorktreeRef) int {
 	meta, err := loadMetadata(params.StateDir, params.Branch)
 	if err != nil || meta.Ordinal <= domain.MainWorktreeOrdinal {
 		return 0
@@ -76,7 +79,7 @@ func settledOrdinal(worktrees []domain.GitWorktree, params EnsureOrdinalParams) 
 	return meta.Ordinal
 }
 
-func allocateAndPersist(worktrees []domain.GitWorktree, params EnsureOrdinalParams) (int, error) {
+func allocateAndPersist(worktrees []domain.GitWorktree, params WorktreeRef) (int, error) {
 	ordinal := rules.AllocateOrdinal(otherOrdinals(worktrees, params))
 
 	meta, err := loadMetadata(params.StateDir, params.Branch)
@@ -93,7 +96,7 @@ func allocateAndPersist(worktrees []domain.GitWorktree, params EnsureOrdinalPara
 
 // otherOrdinals collects what every live worktree but this one holds. The main
 // checkout is included as ordinal 0 so allocation never hands it out.
-func otherOrdinals(worktrees []domain.GitWorktree, params EnsureOrdinalParams) []int {
+func otherOrdinals(worktrees []domain.GitWorktree, params WorktreeRef) []int {
 	taken := make([]int, 0, len(worktrees))
 	for _, wt := range worktrees {
 		if wt.Branch == params.Branch {

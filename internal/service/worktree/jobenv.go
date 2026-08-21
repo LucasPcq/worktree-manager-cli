@@ -26,28 +26,18 @@ func JobEnv(params JobEnvParams) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return BranchEnv(BranchEnvParams{
+	return BranchEnv(WorktreeRef{
 		ProjectDir: params.ProjectDir,
 		StateDir:   params.StateDir,
 		Branch:     branch,
 	})
 }
 
-type BranchEnvParams struct {
-	ProjectDir string
-	StateDir   string
-	Branch     string
-}
-
 // BranchEnv is JobEnv for a caller that already knows the branch — the
 // lifecycle hooks, which are handed one rather than a directory to ask git
 // about.
-func BranchEnv(params BranchEnvParams) (map[string]string, error) {
-	ordinal, err := EnsureOrdinal(EnsureOrdinalParams{
-		ProjectDir: params.ProjectDir,
-		StateDir:   params.StateDir,
-		Branch:     params.Branch,
-	})
+func BranchEnv(params WorktreeRef) (map[string]string, error) {
+	ordinal, err := EnsureOrdinal(params)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +52,7 @@ func BranchEnv(params BranchEnvParams) (map[string]string, error) {
 
 // hookEnv resolves the worktree variables a lifecycle hook runs with, degrading
 // to nothing rather than to another worktree's values.
-func hookEnv(params BranchEnvParams) map[string]string {
+func hookEnv(params WorktreeRef) map[string]string {
 	env, err := BranchEnv(params)
 	if err != nil {
 		return nil

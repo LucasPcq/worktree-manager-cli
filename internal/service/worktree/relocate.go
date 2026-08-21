@@ -217,7 +217,7 @@ type adoptWorktreeParams struct {
 }
 
 func adoptWorktree(params adoptWorktreeParams) error {
-	ordinal, err := EnsureOrdinal(EnsureOrdinalParams{
+	ordinal, err := EnsureOrdinal(WorktreeRef{
 		ProjectDir: params.ProjectDir,
 		StateDir:   params.StateDir,
 		Branch:     params.Branch,
