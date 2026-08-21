@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/runconfig"
 	"github.com/LucasPcq/wtm/internal/tui/runwizard"
 )
@@ -19,7 +20,7 @@ func newAddCmd() *cobra.Command {
 		Use:   domain.CmdAdd + " [name]",
 		Short: "Add a job to run.toml",
 		Long: "Append a job to <git-common-dir>/wtm/run.toml.\n\n" +
-			"Pass --cmd (and optionally --kind, --stop, --cwd) for non-interactive use.\n" +
+			"Pass --cmd (and optionally --kind, --stop, --cwd, --port) for non-interactive use.\n" +
 			"Without --cmd, prompts interactively for each field.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: runAdd,
@@ -28,6 +29,7 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().String(domain.FlagKind, string(domain.JobKindService), "Job kind: service or task")
 	cmd.Flags().String(domain.FlagStop, "", "Stop command (services only)")
 	cmd.Flags().String(domain.FlagCwd, "", "Working directory (relative to project root)")
+	cmd.Flags().StringArray(domain.FlagPort, nil, "Base port as NAME=PORT, repeatable (e.g. --port PORT=3000)")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -52,12 +54,18 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		name = args[0]
 	}
 
+	portFlags, _ := cmd.Flags().GetStringArray(domain.FlagPort)
+	ports, err := rules.ParsePorts(portFlags)
+	if err != nil {
+		return err
+	}
+
 	var newJob domain.JobConfig
 
 	if name == "" || cmdFlag == "" {
 		result, wizErr := runwizard.RunJobWizard(runwizard.JobWizardParams{
 			Existing: cfg,
-			Initial:  domain.JobConfig{Name: name},
+			Initial:  domain.JobConfig{Name: name, Ports: ports},
 		})
 		if errors.Is(wizErr, domain.ErrUserAborted) {
 			return nil
@@ -71,11 +79,12 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		stop, _ := cmd.Flags().GetString(domain.FlagStop)
 		cwd, _ := cmd.Flags().GetString(domain.FlagCwd)
 		newJob = domain.JobConfig{
-			Name: name,
-			Kind: domain.JobKind(kind),
-			Cmd:  cmdFlag,
-			Stop: stop,
-			Cwd:  cwd,
+			Name:  name,
+			Kind:  domain.JobKind(kind),
+			Cmd:   cmdFlag,
+			Stop:  stop,
+			Cwd:   cwd,
+			Ports: ports,
 		}
 	}
 

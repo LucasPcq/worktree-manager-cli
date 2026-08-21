@@ -508,3 +508,71 @@ func TestRunJobList_NotInitialized(t *testing.T) {
 		t.Errorf("expected ErrRunNotInitialized, got: %v", err)
 	}
 }
+
+func TestRunJobAdd_WithPorts(t *testing.T) {
+	stateDir := setupTestProject(t)
+
+	if _, _, err := runCmd(t,
+		domain.CmdJob, domain.CmdAdd, "web",
+		"--"+domain.FlagCmd, "pnpm dev",
+		"--"+domain.FlagKind, string(domain.JobKindService),
+		"--"+domain.FlagPort, "PORT=3000",
+		"--"+domain.FlagPort, "ADMIN=9000",
+		"--"+domain.FlagOutput, domain.OutputJSON,
+	); err != nil {
+		t.Fatalf("run job add: %v", err)
+	}
+
+	// Read back through the loader: the ports must survive the encode/decode
+	// round trip, not merely reach the config in memory.
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	ports := cfg.Jobs[0].Ports
+	if ports["PORT"] != 3000 || ports["ADMIN"] != 9000 {
+		t.Errorf("got %v, want PORT=3000 ADMIN=9000", ports)
+	}
+}
+
+func TestRunJobAdd_RejectsMalformedPort(t *testing.T) {
+	setupTestProject(t)
+
+	_, _, err := runCmd(t,
+		domain.CmdJob, domain.CmdAdd, "web",
+		"--"+domain.FlagCmd, "pnpm dev",
+		"--"+domain.FlagPort, "3000",
+	)
+	if err == nil {
+		t.Fatal("expected a malformed --port to be refused")
+	}
+	if !strings.Contains(err.Error(), "NAME=PORT") {
+		t.Errorf("the error should say the expected form, got: %v", err)
+	}
+}
+
+// A base that collides with one already declared is caught on save, with the
+// message that names both sides.
+func TestRunJobAdd_RejectsCollidingPort(t *testing.T) {
+	setupTestProject(t)
+
+	if _, _, err := runCmd(t,
+		domain.CmdJob, domain.CmdAdd, "web",
+		"--"+domain.FlagCmd, "pnpm dev",
+		"--"+domain.FlagPort, "PORT=3000",
+	); err != nil {
+		t.Fatalf("run job add: %v", err)
+	}
+
+	_, _, err := runCmd(t,
+		domain.CmdJob, domain.CmdAdd, "api",
+		"--"+domain.FlagCmd, "pnpm api",
+		"--"+domain.FlagPort, "API_PORT=3010",
+	)
+	if err == nil {
+		t.Fatal("expected the colliding base to be refused")
+	}
+	if !strings.Contains(err.Error(), "PORT") || !strings.Contains(err.Error(), "API_PORT") {
+		t.Errorf("the error should name both sides, got: %v", err)
+	}
+}

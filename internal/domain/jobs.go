@@ -23,6 +23,10 @@ type JobConfig struct {
 	Cmd  string  `toml:"cmd"            json:"cmd"`
 	Stop string  `toml:"stop,omitempty" json:"stop,omitempty"`
 	Cwd  string  `toml:"cwd,omitempty"  json:"cwd,omitempty"`
+	// Ports maps an environment variable to the port it takes on the main
+	// checkout. Every other worktree gets that base plus its own offset, so the
+	// same job binds a free port in each one.
+	Ports map[string]int `toml:"ports,omitempty" json:"ports,omitempty"`
 }
 
 // ProfileConfig defines a named, ordered group of jobs.
@@ -36,8 +40,12 @@ type ProfileConfig struct {
 // [[profile]] block declares one entry; the Go field names are kept plural
 // because they hold the slices of all entries.
 type RunConfig struct {
-	Jobs     []JobConfig     `toml:"job"              json:"job"`
-	Profiles []ProfileConfig `toml:"profile,omitempty" json:"profile"`
+	// PortOffsetBlock spaces two worktrees' declared ports apart. Zero means the
+	// default: a project only sets it to make room for base ports that would
+	// otherwise land a multiple of the block apart.
+	PortOffsetBlock int             `toml:"port_offset_block,omitempty" json:"port_offset_block,omitempty"`
+	Jobs            []JobConfig     `toml:"job"                        json:"job"`
+	Profiles        []ProfileConfig `toml:"profile,omitempty"          json:"profile"`
 }
 
 // JobStatus represents the current state of a managed job.

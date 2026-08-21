@@ -250,12 +250,24 @@ and **experimental**: the global `wtm init` does not configure it.
   in its environment, so parallel worktrees do not fight over the same resources:
   `WTM_BRANCH` (the branch verbatim), `WTM_WORKTREE` (its slug, safe as a Docker project
   or network name), `WTM_ORDINAL` (`0` for the main checkout, then the smallest free
-  number, stable for the worktree's life), `WTM_PORT_OFFSET` (`WTM_ORDINAL × 10`), and
-  `COMPOSE_PROJECT_NAME` (= `<repo>-<WTM_WORKTREE>`, left alone if the environment
-  already sets it). Write a job's `cmd` to read these rather than hardcoding a port: a job on the main
-  checkout gets offset `0`, so the default ports still apply there. Docker isolation is
-  automatic; **port isolation is not** — a job that binds a fixed port still collides
-  across worktrees unless its command derives the port from `WTM_PORT_OFFSET`.
+  number, stable for the worktree's life), `WTM_PORT_OFFSET` (`WTM_ORDINAL` times the
+  `port_offset_block` of run.toml, 10 by default), and `COMPOSE_PROJECT_NAME`
+  (= `<repo>-<WTM_WORKTREE>`, left alone if the environment already sets it). Docker
+  isolation is therefore automatic.
+- **Port isolation is declarative.** A job declares the ports it binds on the main
+  checkout, and wtm injects `base + WTM_PORT_OFFSET` under that name — so the command
+  needs no arithmetic of its own:
+  `wtm run job add web --cmd "pnpm dev" --port PORT=3000` (repeat `--port` per variable).
+  The main checkout gets `PORT=3000`, the next worktree `PORT=3010`. For Docker, template
+  the host side in `docker-compose.yml` (`"${DB_PORT}:5432"`) and declare
+  `--port DB_PORT=5432`: the container port never moves, only the binding. A declaration
+  **overrides** any inherited value for that variable, and the same ports are given to the
+  job's `stop` command. `run up` / `run start` print what was bound (`web started · PORT=3010`).
+- Two base ports must not differ by a multiple of the block, or two worktrees land on the
+  same port: `3000` and `3010` are refused **when run.toml is read** (with both sides named),
+  while `5434`/`5435`/`5436` are fine — a uniform offset preserves the gaps. Raise
+  `port_offset_block` in run.toml if a project's ports genuinely need more room. A job that
+  binds a port without declaring it still collides across worktrees.
 
 **GitHub**
 - `wtm checkout <number>` — fetch a PR's branch into a worktree; parent defaults to the

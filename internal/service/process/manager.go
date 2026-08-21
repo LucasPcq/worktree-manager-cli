@@ -141,7 +141,10 @@ func (m *Manager) Start(params StartParams) error {
 	} else {
 		cmd.Dir = params.WorkDir
 	}
-	cmd.Env = jobEnv(jobEnvParams{Kind: job.Kind, Overrides: params.Env})
+	// Resolved once and kept on the job: the stop command must run with the same
+	// ports its start did, or it tears down a stack it never brought up.
+	env := withJobPorts(job, params.Env)
+	cmd.Env = jobEnv(jobEnvParams{Kind: job.Kind, Overrides: env})
 	// Tasks run through a plain pipe; without Setpgid they would inherit the
 	// daemon's process group, leaving us no safe way to signal the whole
 	// subtree on Stop. Services run through pty.Start, which forces Setsid
@@ -167,7 +170,7 @@ func (m *Manager) Start(params StartParams) error {
 		PID:       cmd.Process.Pid,
 		WorkDir:   params.WorkDir,
 		StartedAt: time.Now(),
-		Env:       params.Env,
+		Env:       env,
 		output:    hub,
 		logs:      logs,
 		exited:    make(chan struct{}),

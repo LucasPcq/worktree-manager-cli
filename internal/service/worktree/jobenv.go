@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
@@ -47,9 +48,18 @@ func BranchEnv(params WorktreeRef) (map[string]string, error) {
 		Branch:          params.Branch,
 		Project:         filepath.Base(params.ProjectDir),
 		Ordinal:         ordinal,
-		PortOffsetBlock: domain.PortOffsetBlock,
+		PortOffsetBlock: portOffsetBlock(params.StateDir),
 		ComposeProject:  os.Getenv(domain.EnvComposeProjectName),
 	}), nil
+}
+
+// portOffsetBlock reads the spacing run.toml asks for. A file that cannot be
+// read or is refused falls back to the default block instead of failing: the
+// command that actually needs that run.toml will report the refusal itself, and
+// a lifecycle hook must not lose its worktree identity over it.
+func portOffsetBlock(stateDir string) int {
+	cfg, _ := config.LoadRun(stateDir)
+	return rules.EffectivePortOffsetBlock(cfg)
 }
 
 // hookEnv resolves the worktree variables a lifecycle hook runs with, degrading
