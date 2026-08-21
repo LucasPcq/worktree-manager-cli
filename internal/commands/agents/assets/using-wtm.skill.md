@@ -173,9 +173,13 @@ flagged; everything else is what the name implies.
   prompts, so `wtm env <wt> --check --output json` works on its own); omit a worktree arg only
   interactively (else it errors — there is no picker under `--yes`/JSON). JSON shape:
   `{branch,mode,check,files:[{target,strategy,source,applied,parent_branch,parent_fallback,diff:{mode,
-  entries:[{key,status,current_value,resolved_value,placeholder,source,export}]}}]}` where
+  entries:[{key,status,current_value,resolved_value,placeholder,source,export}]}}],ports:{offset,
+  applied,entries:[{file,key,port,base,resolved,status,current_value,new_value}]}}` where
   `status` is `resolved` / `missing_unresolved` / `conflict` / `orphan`. Round-trip is
   preserved: comments, ordering and formatting of the `.env` are kept; only decided keys change.
+  The `ports` block is the `[[env_port]]` pass (below), empty when the project declares none;
+  `ports.applied` says whether those rewrites were written, and the trailing summary counts
+  them alongside the files (a run that only shifted a port still reports what it wrote).
 - `wtm ui` — the full-screen dashboard (worktree state, divergence, PRs, plus create and
   delete). **Never invoke it** (see driving rule 2): it holds the terminal until a human
   quits it. Everything it shows is available to you as JSON via `wtm list` / `wtm tree`, and
@@ -228,6 +232,8 @@ and **experimental**: the global `wtm init` does not configure it.
   `16` (run module not initialized) until at least one job/profile is declared. Non-TTY it
   auto-generates; re-running merges without overwriting. `run job add` / `run profile add`
   also work before init (they create the first job).
+- `run init --link-env` also writes the `[[env_port]]` links without asking (see port
+  isolation below).
 - `run init` also **pre-fills the ports** of the compose files it picks up. A mapping
   already reading a variable (`"${DB_PORT:-5432}:5432"`) is declared as-is. A literal one
   (`"5432:5432"`) binds the same port in every worktree, so it is **not** declared: wtm
@@ -287,6 +293,26 @@ and **experimental**: the global `wtm init` does not configure it.
   variable verbatim: `wtm run job add web --cmd 'pnpm dev --port ${PORT}' --port PORT=3000`.
   A `cmd` the shell cannot parse is refused when the job is written, naming the job. POSIX
   `sh` is always used, never the user's interactive shell: no `[[ ]]`, no process substitution.
+- **A port hard-coded in a `.env` follows the worktree too**, via `[[env_port]]` links in
+  `run.toml`. A link names a key, not a position: `{file = ".env", key = "DATABASE_URL",
+  port = "POSTGRES_PORT"}` tells wtm that this key's value carries that port, and wtm finds
+  the declared base *inside* the value and shifts it — so `postgres://u:pw@localhost:5432/app`
+  becomes `…:5442/app` while the rest of the value (credentials, path, query) is untouched.
+  A bare `DB_PORT=5432` is the same mechanism. `wtm run init` scans the project's configured
+  `.env` targets, offers the keys whose value holds a declared base, and writes the confirmed
+  links; `--link-env` writes them without asking (nothing is ever inferred without one or the
+  other). The rewrite then happens at `wtm create` (proposed interactively, **applied under
+  `--yes`/no TTY** — a `.env` still pointing at another worktree's services is useless, not
+  safe) and at `wtm env`, where the interactive recap offers "Apply, but leave the port values
+  alone" beside the plain apply, and `--yes`/JSON apply it like `create` does. `--check` reports
+  without writing, and counts a pending shift as drift.
+  Three refusals, reported and never guessed: the key is absent from the file, the base
+  appears **more than once** in the value, or **neither the base nor any offset of it** is
+  there. A link naming a port no job declares, an invalid key, or the same `(file, key)`
+  twice makes `run.toml` refuse to load; a link naming a `.env` that is not a configured
+  `[env]` target of `.wtm.toml` is refused too. `wtm env --mode refresh` compares linked
+  values **modulo the offset**, so a worktree holding `5442` against a source holding `5432`
+  is not a conflict — but a genuine difference in the same value still is.
 - Two base ports must not differ by a multiple of the block, or two worktrees land on the
   same port: `3000` and `3010` are refused **when run.toml is read** (with both sides named),
   while `5434`/`5435`/`5436` are fine — a uniform offset preserves the gaps. Raise

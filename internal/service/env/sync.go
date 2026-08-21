@@ -21,6 +21,11 @@ type envPaths struct {
 	ParentBranch       string // recorded parent branch (for display), "" if none
 	Strategy           domain.EnvStrategy
 	Mode               domain.EnvMode
+	// Ports are the [[env_port]] links of the project, empty when it declares
+	// none. They are never a value source: they normalize the comparison so a
+	// value differing only by the worktree's offset is not a conflict, and the
+	// rewrite itself happens after every file is reconciled.
+	Ports EnvPortsParams
 }
 
 // EnvResolution is the decision set for one file: how to settle each conflict, the
@@ -58,6 +63,7 @@ type ComputeEnvParams struct {
 	Files              []domain.EnvFile
 	Strategy           domain.EnvStrategy
 	Mode               domain.EnvMode
+	Ports              EnvPortsParams
 }
 
 // ComputeEnvDiff reconciles every configured env file against its template and
@@ -74,6 +80,7 @@ func ComputeEnvDiff(params ComputeEnvParams) ([]domain.EnvFileResult, error) {
 		ParentBranch:       params.ParentBranch,
 		Strategy:           params.Strategy,
 		Mode:               params.Mode,
+		Ports:              params.Ports,
 	}
 
 	out := make([]domain.EnvFileResult, 0, len(params.Files))
@@ -99,7 +106,11 @@ type ApplyEnvSyncParams struct {
 	Files              []domain.EnvFile
 	Strategy           domain.EnvStrategy
 	Mode               domain.EnvMode
+	Ports              EnvPortsParams
 	Resolutions        map[string]EnvResolution
+	// SkipPortRewrite is the user declining the port pass. The links stay in
+	// Ports: they still normalize the diff, they just do not get written.
+	SkipPortRewrite bool
 }
 
 // ApplyEnvSync recomputes each file's drift and writes the reconciled content,
@@ -116,6 +127,7 @@ func ApplyEnvSync(params ApplyEnvSyncParams) (domain.EnvSyncResult, error) {
 		ParentBranch:       params.ParentBranch,
 		Strategy:           params.Strategy,
 		Mode:               params.Mode,
+		Ports:              params.Ports,
 	}
 
 	files := make([]domain.EnvFileResult, 0, len(params.Files))
@@ -131,11 +143,17 @@ func ApplyEnvSync(params ApplyEnvSyncParams) (domain.EnvSyncResult, error) {
 		files = append(files, fileResult(paths, c, applied))
 	}
 
+	ports, err := settleEnvPorts(params.Ports, !params.SkipPortRewrite)
+	if err != nil {
+		return domain.EnvSyncResult{}, err
+	}
+
 	return domain.EnvSyncResult{
 		Branch: params.Branch,
 		Mode:   params.Mode,
 		Check:  false,
 		Files:  files,
+		Ports:  ports,
 	}, nil
 }
 
@@ -151,6 +169,7 @@ type SyncEnvParams struct {
 	Files              []domain.EnvFile
 	Strategy           domain.EnvStrategy
 	Mode               domain.EnvMode
+	Ports              EnvPortsParams
 	Prune              bool
 	Check              bool
 	// OnConflict is the conflict decision applied to every conflict (keep — the safe
@@ -172,6 +191,7 @@ func SyncEnv(params SyncEnvParams) (domain.EnvSyncResult, error) {
 		ParentBranch:       params.ParentBranch,
 		Strategy:           params.Strategy,
 		Mode:               params.Mode,
+		Ports:              params.Ports,
 	}
 
 	files := make([]domain.EnvFileResult, 0, len(params.Files))
@@ -190,12 +210,37 @@ func SyncEnv(params SyncEnvParams) (domain.EnvSyncResult, error) {
 		files = append(files, fileResult(paths, c, applied))
 	}
 
+	// The ports come last, on files that are now reconciled: the value sources
+	// carry another worktree's port, so applying the offset before the merge
+	// would only see it overwritten.
+	ports, err := settleEnvPorts(params.Ports, !params.Check)
+	if err != nil {
+		return domain.EnvSyncResult{}, err
+	}
+
 	return domain.EnvSyncResult{
 		Branch: params.Branch,
 		Mode:   params.Mode,
 		Check:  params.Check,
 		Files:  files,
+		Ports:  ports,
 	}, nil
+}
+
+// settleEnvPorts applies the worktree's offset to the linked values, or merely
+// resolves what it would do when the caller is reporting rather than writing —
+// a --check run, or one where the user declined the pass. Either way the links
+// still feed the diff's comparison, which is why they are never simply dropped.
+func settleEnvPorts(params EnvPortsParams, write bool) (domain.EnvPortPlan, error) {
+	if params.Empty() {
+		return domain.EnvPortPlan{}, nil
+	}
+	if !write {
+		return ComputeEnvPorts(params)
+	}
+	plan, err := ApplyEnvPorts(params)
+	plan.Applied = err == nil
+	return plan, err
 }
 
 // fileResult projects a computed file into its result form.
@@ -233,11 +278,13 @@ func computeFile(paths envPaths, f domain.EnvFile) (computedFile, error) {
 	}
 
 	diff := rules.DiffEnv(rules.EnvDiffParams{
-		Template: template,
-		Parent:   parent,
-		Main:     main,
-		Child:    child,
-		Mode:     paths.Mode,
+		Template:  template,
+		Parent:    parent,
+		Main:      main,
+		Child:     child,
+		Mode:      paths.Mode,
+		PortBases: EnvPortBasesFor(paths.Ports, f.Target),
+		PortBlock: paths.Ports.Block,
 	})
 
 	return computedFile{

@@ -26,6 +26,7 @@ wtm run init [flags]
 
 ```
   -h, --help              help for init
+      --link-env          Link the .env keys holding a declared port, so each worktree gets its own
       --non-interactive   Auto-generate from detection; never prompt
       --patch-compose     Rewrite literal host ports in the selected compose files to read a variable
 ```

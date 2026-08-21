@@ -43,6 +43,7 @@ func newInitCmd() *cobra.Command {
 	}
 	cmd.Flags().Bool(domain.FlagNonInteractive, false, "Auto-generate from detection; never prompt")
 	cmd.Flags().Bool(domain.FlagPatchCompose, false, "Rewrite literal host ports in the selected compose files to read a variable")
+	cmd.Flags().Bool(domain.FlagLinkEnv, false, "Link the .env keys holding a declared port, so each worktree gets its own")
 	return cmd
 }
 
@@ -59,6 +60,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 
 	nonInteractive, _ := cmd.Flags().GetBool(domain.FlagNonInteractive)
 	patchCompose, _ := cmd.Flags().GetBool(domain.FlagPatchCompose)
+	linkEnv, _ := cmd.Flags().GetBool(domain.FlagLinkEnv)
 	interactive := !nonInteractive && term.IsTerminal(int(os.Stdin.Fd()))
 
 	var detection domain.InitDetectionResult
@@ -120,6 +122,15 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	links := resolveEnvPortLinks(resolveEnvPortLinksParams{
+		Interactive: interactive,
+		LinkEnv:     linkEnv,
+		ProjectDir:  res.ProjectDir,
+		EnvFiles:    res.Config.Project.Env.Files,
+		Config:      outcome.Config,
+	})
+	outcome.Config.EnvPorts = append(outcome.Config.EnvPorts, links...)
+
 	// The rewrites come first: a compose templatized without run.toml behind it
 	// keeps binding its defaults, while a run.toml declaring ports the compose
 	// does not read would announce an isolation that is not there.
@@ -149,6 +160,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			Changed:    outcome.Changed,
 			Orphaned:   outcome.Orphaned,
 		})
+		output.EnvPortLinksReport(cmd.OutOrStdout(), links, rules.EnvPortBases(outcome.Config))
 		output.Blank(cmd.OutOrStdout())
 		output.Message(cmd.OutOrStdout(), "Next: `wtm run up` to start · `wtm run job add` to add more")
 		output.Blank(cmd.OutOrStdout())
@@ -204,4 +216,50 @@ func composeJobsByFile(cfg domain.RunConfig, files []string) map[string]string {
 		}
 	}
 	return jobs
+}
+
+type resolveEnvPortLinksParams struct {
+	Interactive bool
+	// LinkEnv is --link-env already given on the command line: the links are
+	// authorized, so nothing is asked.
+	LinkEnv    bool
+	ProjectDir string
+	EnvFiles   []domain.EnvFile
+	Config     domain.RunConfig
+}
+
+// resolveEnvPortLinks offers the .env keys whose value holds one of the ports
+// this run just settled. Nothing is inferred: a link is written from --link-env
+// or from an explicit confirmation, never because the detection found a match.
+func resolveEnvPortLinks(params resolveEnvPortLinksParams) []domain.EnvPortLink {
+	candidates := detect.EnvPortCandidates(detect.EnvPortCandidatesParams{
+		ProjectDir: params.ProjectDir,
+		Files:      params.EnvFiles,
+		Bases:      rules.EnvPortBases(params.Config),
+		Existing:   params.Config.EnvPorts,
+	})
+	if len(candidates) == 0 {
+		return nil
+	}
+	if params.LinkEnv {
+		return candidates
+	}
+	if !params.Interactive {
+		return nil
+	}
+
+	// The candidates go in the prompt's own description rather than a block
+	// printed before it: the prompt renders on stderr inside its own frame, and a
+	// command frames its stdout exactly once.
+	confirmed, err := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
+		Title: domain.EnvPortLinkConfirm,
+		Description: strings.Join(append(
+			[]string{domain.EnvPortLinkDescription, ""},
+			rules.EnvPortLinkLines(candidates, rules.EnvPortBases(params.Config))...), "\n"),
+		DefaultYes: true,
+	}))
+	if err != nil || !confirmed {
+		return nil
+	}
+	return candidates
 }
