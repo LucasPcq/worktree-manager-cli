@@ -143,6 +143,8 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		return
 	}
 
+	ports := jobPorts(*req.Job, req.Env)
+
 	if req.Job.Kind == domain.JobKindTask {
 		// Tasks block until the command exits and stream their output back over
 		// the socket as StatusOutput chunks, so the CLI can render it live
@@ -161,7 +163,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 			return
 		}
 		zero := 0
-		encoder.Encode(Response{Status: StatusDone, Message: fmt.Sprintf("task %s done", req.Job.Name), ExitCode: &zero})
+		encoder.Encode(Response{Status: StatusDone, Message: fmt.Sprintf("task %s done", req.Job.Name), ExitCode: &zero, Ports: ports})
 		return
 	}
 
@@ -180,7 +182,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 			encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 			return
 		}
-		encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name)})
+		encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name), Ports: ports})
 		return
 	}
 
@@ -189,7 +191,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		return
 	}
 
-	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name)})
+	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name), Ports: ports})
 }
 
 func (d *daemonServer) handleStop(encoder *json.Encoder, req Request) {

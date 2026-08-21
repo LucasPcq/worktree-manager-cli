@@ -28,6 +28,21 @@ func (d *fakeDaemon) startEnv(t *testing.T, job string) map[string]string {
 	return nil
 }
 
+// startedJob is the job config the commands put on the wire, ports included.
+func (d *fakeDaemon) startedJob(t *testing.T, job string) domain.JobConfig {
+	t.Helper()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for _, req := range d.requests {
+		if req.Action == process.ActionStart && req.Job != nil && req.Job.Name == job {
+			return *req.Job
+		}
+	}
+	t.Fatalf("the daemon was never asked to start %q", job)
+	return domain.JobConfig{}
+}
+
 func addWorktree(t *testing.T, projectDir, branch string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), strings.ReplaceAll(branch, "/", "-"))
@@ -139,4 +154,56 @@ func TestRunUpKeepsUserComposeProjectName(t *testing.T) {
 		domain.EnvComposeProjectName: "perso",
 		domain.EnvOrdinal:            "1",
 	})
+}
+
+// The block is what turns an ordinal into an offset, so a project that widens
+// it must see WTM_PORT_OFFSET widen with it — the value is resolved by the
+// client, which is also the side that can read run.toml.
+func TestRunUpHonoursDeclaredPortOffsetBlock(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		PortOffsetBlock: 100,
+		Jobs:            []domain.JobConfig{apiJob},
+		Profiles:        []domain.ProfileConfig{{Name: "dev", Jobs: []string{"api"}, Default: true}},
+	})
+	daemon := startFakeDaemon(t, &fakeDaemon{})
+	fakeTTY(t, false)
+	enterWorktree(t, addWorktree(t, os.Getenv("WTM_PROJECT_DIR"), "feat/block"))
+
+	if _, _, err := runCmd(t, domain.CmdUp, "--"+domain.FlagDetach); err != nil {
+		t.Fatalf("run up: %v", err)
+	}
+
+	assertEnv(t, daemon.startEnv(t, "api"), map[string]string{
+		domain.EnvOrdinal:    "1",
+		domain.EnvPortOffset: "100",
+	})
+}
+
+// The ports themselves are resolved daemon-side, so what the client must get
+// right is sending the declaration and the offset that pair with each other.
+func TestRunUpSendsDeclaredPortsWithTheOffset(t *testing.T) {
+	stateDir := setupTestProject(t)
+	webJob := domain.JobConfig{
+		Name:  "web",
+		Kind:  domain.JobKindService,
+		Cmd:   "pnpm dev",
+		Ports: map[string]int{"PORT": 3000},
+	}
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs:     []domain.JobConfig{webJob},
+		Profiles: []domain.ProfileConfig{{Name: "dev", Jobs: []string{"web"}, Default: true}},
+	})
+	daemon := startFakeDaemon(t, &fakeDaemon{})
+	fakeTTY(t, false)
+	enterWorktree(t, addWorktree(t, os.Getenv("WTM_PROJECT_DIR"), "feat/ports"))
+
+	if _, _, err := runCmd(t, domain.CmdUp, "--"+domain.FlagDetach); err != nil {
+		t.Fatalf("run up: %v", err)
+	}
+
+	assertEnv(t, daemon.startEnv(t, "web"), map[string]string{domain.EnvPortOffset: "10"})
+	if got := daemon.startedJob(t, "web").Ports["PORT"]; got != 3000 {
+		t.Errorf("the daemon was sent base %d, want the declared 3000", got)
+	}
 }
