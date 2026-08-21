@@ -67,7 +67,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		job = args[0]
 	}
 
-	seam := openRunSeam(runSeamParams{StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs})
+	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs})
 	surface := rules.DecideRunSurface(rules.RunSurfaceParams{TTY: isTTY(), Format: domain.OutputText})
 	if surface == domain.RunSurfaceView {
 		return showRunView(viewParams{Cmd: cmd, Session: seam.session, Job: job})

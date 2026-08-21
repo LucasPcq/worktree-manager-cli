@@ -21,3 +21,25 @@ func jobLogDir(params jobLogDirParams) string {
 	}
 	return rules.WorktreeLogDir(rules.WorktreeLogDirParams{StateDir: params.StateDir, Branch: branch})
 }
+
+type jobEnvParams struct {
+	ProjectDir string
+	StateDir   string
+	Dir        string
+}
+
+// jobEnv resolves the worktree-scoped environment handed to every job of this
+// run. Like jobLogDir it degrades to nothing rather than to another worktree's
+// values: a run whose worktree cannot be named injects no isolation instead of
+// the wrong one.
+func jobEnv(params jobEnvParams) map[string]string {
+	env, err := worktree.JobEnv(worktree.JobEnvParams{
+		ProjectDir: params.ProjectDir,
+		StateDir:   params.StateDir,
+		Dir:        params.Dir,
+	})
+	if err != nil {
+		return nil
+	}
+	return env
+}

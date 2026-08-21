@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -69,6 +70,10 @@ type ManagedJob struct {
 	PID       int
 	WorkDir   string
 	StartedAt time.Time
+	// Env is the worktree-scoped environment the job was started with. Kept so
+	// the stop command runs in the same one — a `docker compose down` that lost
+	// COMPOSE_PROJECT_NAME tears down the wrong project, or nothing at all.
+	Env map[string]string
 	// ExitCode, like Status, is written by the goroutine that reaps the process
 	// and read by List: both are only ever touched under the manager lock.
 	ExitCode *int
@@ -97,7 +102,10 @@ type StartParams struct {
 	WorkDir string
 	// LogDir is the worktree's log directory, resolved by the client. Empty
 	// persists nothing.
-	LogDir   string
+	LogDir string
+	// Env is the worktree-scoped environment injected into the job, resolved by
+	// the client. It wins over what the daemon inherited.
+	Env      map[string]string
 	Streamer io.Writer
 }
 
@@ -136,7 +144,7 @@ func (m *Manager) Start(params StartParams) error {
 	} else {
 		cmd.Dir = params.WorkDir
 	}
-	cmd.Env = jobEnv(job.Kind)
+	cmd.Env = jobEnv(jobEnvParams{Kind: job.Kind, Overrides: params.Env})
 	// Tasks run through a plain pipe; without Setpgid they would inherit the
 	// daemon's process group, leaving us no safe way to signal the whole
 	// subtree on Stop. Services run through pty.Start, which forces Setsid
@@ -162,6 +170,7 @@ func (m *Manager) Start(params StartParams) error {
 		PID:       cmd.Process.Pid,
 		WorkDir:   params.WorkDir,
 		StartedAt: time.Now(),
+		Env:       params.Env,
 		output:    hub,
 		logs:      logs,
 		exited:    make(chan struct{}),
@@ -259,8 +268,16 @@ func spawnJob(cmd *exec.Cmd, kind domain.JobKind) (*os.File, error) {
 // FORCE_COLOR / COLORTERM so colored log output still works. CI=true is the
 // universal "I'm in a non-interactive env, output plain logs" hint that
 // turbo, jest, npm, etc. respect.
-func jobEnv(kind domain.JobKind) []string {
-	env := os.Environ()
+type jobEnvParams struct {
+	Kind domain.JobKind
+	// Overrides is the worktree-scoped environment. It is applied last, so a
+	// value wtm resolved always beats the one the daemon inherited.
+	Overrides map[string]string
+}
+
+func jobEnv(params jobEnvParams) []string {
+	env := applyOverrides(os.Environ(), params.Overrides)
+	kind := params.Kind
 	if kind == domain.JobKindTask {
 		env = setEnv(env, "TERM", "dumb")
 		if _, ok := lookupEnv(env, "COLORTERM"); !ok {
@@ -283,6 +300,21 @@ func jobEnv(kind domain.JobKind) []string {
 	}
 	if _, ok := lookupEnv(env, "FORCE_COLOR"); !ok {
 		env = append(env, "FORCE_COLOR=1")
+	}
+	return env
+}
+
+// applyOverrides sets each pair on env, in sorted key order so the result does
+// not depend on map iteration.
+func applyOverrides(env []string, overrides map[string]string) []string {
+	keys := make([]string, 0, len(overrides))
+	for key := range overrides {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		env = setEnv(env, key, overrides[key])
 	}
 	return env
 }
@@ -806,6 +838,7 @@ func (m *Manager) stopWithCommand(job *ManagedJob) error {
 
 	cmd := exec.Command(parts[0], parts[1:]...)
 	cmd.Dir = job.WorkDir
+	cmd.Env = applyOverrides(os.Environ(), job.Env)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("stop %s: %s: %w", job.Name, strings.TrimSpace(string(out)), err)
 	}

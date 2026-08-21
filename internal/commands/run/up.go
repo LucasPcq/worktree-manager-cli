@@ -90,7 +90,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	seam := openRunSeam(runSeamParams{StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs})
+	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs})
 	start := seam.starter(jobs)
 
 	switch rules.DecideRunSurface(rules.RunSurfaceParams{Detach: detach, TTY: isTTY(), Format: format}) {
