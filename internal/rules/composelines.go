@@ -21,11 +21,14 @@ func ComposePatchLines(byFile map[string][]domain.ComposePortBinding) []string {
 	return lines
 }
 
+// ComposeWithheldLine prefers the reason a mapping carries: a frozen port
+// withheld over a variable conflict is not withheld for being frozen, and
+// saying so would send the reader at a fix that recreates the conflict.
 func ComposeWithheldLine(b domain.ComposePortBinding) string {
-	if b.Status == domain.ComposePortFrozen {
-		return fmt.Sprintf(domain.ComposeFrozenLineFmt, b.File, b.Service, b.Token)
+	if b.Reason != "" {
+		return fmt.Sprintf(domain.ComposeUnsupportedFmt, b.File, b.Service, b.Reason)
 	}
-	return fmt.Sprintf(domain.ComposeUnsupportedFmt, b.File, b.Service, b.Reason)
+	return fmt.Sprintf(domain.ComposeFrozenLineFmt, b.File, b.Service, b.Token)
 }
 
 type ComposeFixLinesParams struct {
@@ -41,6 +44,10 @@ type ComposeFixLinesParams struct {
 func ComposeFixLines(params ComposeFixLinesParams) []string {
 	var lines []string
 	switch {
+	// A frozen mapping carrying a reason was withheld over a conflict, not over
+	// being frozen: templating it would not help.
+	case params.Binding.Status == domain.ComposePortFrozen && params.Binding.Reason != "":
+		return nil
 	case params.Binding.Status == domain.ComposePortFrozen && params.Binding.Replacement != "":
 		lines = []string{fmt.Sprintf(domain.ComposeFixLineFmt, params.Binding.Replacement)}
 	case ComposeNeedsDefault(params.Binding):
@@ -72,7 +79,7 @@ func ComposePortsWrittenLines(added map[string]map[string]int) []string {
 	var lines []string
 	for _, job := range sortedKeys(added) {
 		for _, entry := range PortEntries(added[job]) {
-			lines = append(lines, fmt.Sprintf(domain.ComposePortsWrittenFmt, job, entry))
+			lines = append(lines, fmt.Sprintf(domain.RunPortsSuffixFmt, job, entry))
 		}
 	}
 	return lines

@@ -22,7 +22,7 @@ type VerifyAllParams struct {
 func VerifyAll(params VerifyAllParams) map[string]string {
 	failures := map[string]string{}
 	for _, file := range rules.SortedComposeFiles(params.ByFile) {
-		if _, err := renderPatched(params.ProjectDir, file, params.ByFile[file]); err != nil {
+		if _, err := renderPatched(renderPatchedParams{ProjectDir: params.ProjectDir, File: file, Bindings: params.ByFile[file]}); err != nil {
 			failures[file] = err.Error()
 		}
 	}
@@ -42,7 +42,7 @@ func PatchAll(params PatchAllParams) error {
 
 	rendered := make([]patchedFile, 0, len(files))
 	for _, file := range files {
-		out, err := renderPatched(params.ProjectDir, file, params.ByFile[file])
+		out, err := renderPatched(renderPatchedParams{ProjectDir: params.ProjectDir, File: file, Bindings: params.ByFile[file]})
 		if err != nil {
 			return err
 		}
@@ -72,8 +72,21 @@ type patchedFile struct {
 	changed bool
 }
 
-func renderPatched(projectDir, file string, bindings []domain.ComposePortBinding) (patchedFile, error) {
+type renderPatchedParams struct {
+	ProjectDir string
+	File       string
+	Bindings   []domain.ComposePortBinding
+}
+
+func renderPatched(params renderPatchedParams) (patchedFile, error) {
+	projectDir, file, bindings := params.ProjectDir, params.File, params.Bindings
 	path := filepath.Join(projectDir, file)
+
+	// The rewrite lands on what the path points at: replacing a symlink with a
+	// regular file would fork the compose into two copies drifting apart.
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
 
 	info, err := os.Stat(path)
 	if err != nil {

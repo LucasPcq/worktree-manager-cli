@@ -364,3 +364,39 @@ func TestPatchAllPreservesFileMode(t *testing.T) {
 		t.Errorf("mode = %v, want 0600 kept across the rename", info.Mode().Perm())
 	}
 }
+
+func TestPatchAllFollowsASymlinkInsteadOfReplacingIt(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "infra"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	target := filepath.Join(dir, "infra", "compose.yml")
+	if err := os.WriteFile(target, []byte("services:\n  db:\n    ports:\n      - \"5432:5432\"\n"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+	link := "docker-compose.yml"
+	if err := os.Symlink(filepath.Join("infra", "compose.yml"), filepath.Join(dir, link)); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	scan := Scan(ScanParams{ProjectDir: dir, File: link})
+	if err := PatchAll(PatchAllParams{ProjectDir: dir, ByFile: map[string][]domain.ComposePortBinding{link: scan.Bindings}}); err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+
+	info, err := os.Lstat(filepath.Join(dir, link))
+	if err != nil {
+		t.Fatalf("lstat: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Error("the symlink was replaced by a regular file, forking the compose in two")
+	}
+
+	patched, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if !strings.Contains(string(patched), `"${DB_PORT:-5432}:5432"`) {
+		t.Errorf("the rewrite must land on the target:\n%s", patched)
+	}
+}

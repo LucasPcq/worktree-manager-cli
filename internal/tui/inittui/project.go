@@ -112,6 +112,7 @@ func RunServicesWizard(params ServicesWizardParams) (domain.InitProjectAnswers, 
 	s := newStepSet()
 	addServicesSteps(s, addServicesStepsParams{
 		Detection:    params.Detection,
+		Existing:     params.Existing,
 		Prefill:      params.Prefill,
 		PatchCompose: params.PatchCompose,
 	})
@@ -134,6 +135,7 @@ func RunServicesWizard(params ServicesWizardParams) (domain.InitProjectAnswers, 
 type ServicesWizardParams struct {
 	ProjectDir string
 	Detection  domain.InitDetectionResult
+	Existing   domain.RunConfig
 	Prefill    *SectionPrefill
 	// PatchCompose is --patch-compose already given on the command line: the
 	// rewrite is authorized, so the wizard states it instead of asking again.
@@ -458,6 +460,7 @@ func addHooksCleanSteps(s *stepSet, autoSkip func(components.WizardModel) bool, 
 
 type addServicesStepsParams struct {
 	Detection    domain.InitDetectionResult
+	Existing     domain.RunConfig
 	Prefill      *SectionPrefill
 	PatchCompose bool
 }
@@ -482,7 +485,11 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) {
 		})
 	}
 
-	addComposePatchStep(s, addComposePatchStepParams{Detection: detection, Authorized: params.PatchCompose})
+	addComposePatchStep(s, addComposePatchStepParams{
+		Detection:  detection,
+		Existing:   params.Existing,
+		Authorized: params.PatchCompose,
+	})
 
 	if len(detection.PackageScripts) > 0 {
 		pm := string(detection.PackageManager)
@@ -798,6 +805,9 @@ func detectedHooks(d domain.InitDetectionResult) string {
 // every line it would touch — the same lines the recap reports afterwards.
 type addComposePatchStepParams struct {
 	Detection domain.InitDetectionResult
+	// Existing is the config on disk: the same collision and conflict checks the
+	// recap runs must run here, or the step asks to rewrite lines it will not.
+	Existing domain.RunConfig
 	// Authorized is --patch-compose: the answer is already in, so the step
 	// states it rather than asking, and stays in the recap.
 	Authorized bool
@@ -815,7 +825,12 @@ func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
 		YesLabel: domain.ComposePatchStepYes,
 		NoLabel:  domain.ComposePatchStepNo,
 		Decide: func(prev []components.Step) (bool, string, components.NewConfirmParams) {
-			patches := composePatchesFor(prev, docker, detection)
+			patches := composePatchesFor(composePatchesForParams{
+				Prev:      prev,
+				Docker:    docker,
+				Detection: detection,
+				Existing:  params.Existing,
+			})
 			if len(patches) == 0 {
 				return false, "", components.NewConfirmParams{}
 			}
@@ -834,17 +849,37 @@ func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
 	}))
 }
 
-func composePatchesFor(prev []components.Step, docker int, detection domain.InitDetectionResult) map[string][]domain.ComposePortBinding {
-	if docker >= len(prev) {
+type composePatchesForParams struct {
+	Prev      []components.Step
+	Docker    int
+	Detection domain.InitDetectionResult
+	Existing  domain.RunConfig
+}
+
+// composePatchesFor runs the full resolution, not just the plan, so the lines
+// the step asks about are exactly the ones the recap will report as rewritten.
+func composePatchesFor(params composePatchesForParams) map[string][]domain.ComposePortBinding {
+	if params.Docker >= len(params.Prev) {
 		return nil
 	}
-	selected, ok := prev[docker].Model.(components.MultiSelectModel)
+	selected, ok := params.Prev[params.Docker].Model.(components.MultiSelectModel)
 	if !ok {
 		return nil
 	}
-	return rules.PlanComposePorts(rules.PlanComposePortsParams{
-		Scans: detection.ComposeScans,
-		Files: selected.Values(),
-		Patch: true,
+
+	answers := domain.InitProjectAnswers{
+		DockerComposeFiles: selected.Values(),
+		DockerComposeCmd:   params.Detection.DockerComposeCmd,
+		PatchCompose:       true,
+	}
+	return rules.ResolveComposePorts(rules.ResolveComposePortsParams{
+		Answers:        answers,
+		PackageManager: params.Detection.PackageManager,
+		Existing:       params.Existing,
+		Plan: rules.PlanComposePorts(rules.PlanComposePortsParams{
+			Scans: params.Detection.ComposeScans,
+			Files: selected.Values(),
+			Patch: true,
+		}),
 	}).Patches
 }

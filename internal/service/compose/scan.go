@@ -114,13 +114,13 @@ func collectBindings(params collectParams) []domain.ComposePortBinding {
 		}
 
 		if ports.Kind == yaml.AliasNode {
-			bindings = append(bindings, unsupported(params.file, name, domain.ComposePortReasonAlias))
+			bindings = append(bindings, unsupported(unsupportedParams{File: params.file, Service: name, Reason: domain.ComposePortReasonAlias}))
 			continue
 		}
 		// An anchored list is read by every service aliasing it, so rewriting it
 		// here would move their bindings too.
 		if ports.Anchor != "" {
-			bindings = append(bindings, unsupported(params.file, name, domain.ComposePortReasonAnchor))
+			bindings = append(bindings, unsupported(unsupportedParams{File: params.file, Service: name, Reason: domain.ComposePortReasonAnchor}))
 			continue
 		}
 		if ports.Kind != yaml.SequenceNode {
@@ -158,12 +158,12 @@ type bindingForParams struct {
 
 func bindingFor(params bindingForParams) (domain.ComposePortBinding, bool) {
 	if params.entry.Anchor != "" {
-		return unsupported(params.file, params.service, domain.ComposePortReasonAnchor), true
+		return unsupported(unsupportedParams{File: params.file, Service: params.service, Reason: domain.ComposePortReasonAnchor}), true
 	}
 
 	switch params.entry.Kind {
 	case yaml.AliasNode:
-		return unsupported(params.file, params.service, domain.ComposePortReasonAlias), true
+		return unsupported(unsupportedParams{File: params.file, Service: params.service, Reason: domain.ComposePortReasonAlias}), true
 	case yaml.ScalarNode:
 		return shortBinding(params)
 	case yaml.MappingNode:
@@ -179,14 +179,14 @@ func shortBinding(params bindingForParams) (domain.ComposePortBinding, bool) {
 		Mapping: params.entry.Value,
 		Taken:   params.taken,
 	})
-	return locate(binding, params.file, params.entry, params.lines), true
+	return locate(locateParams{Binding: binding, File: params.file, Node: params.entry, Lines: params.lines}), true
 }
 
 func longBinding(params bindingForParams) (domain.ComposePortBinding, bool) {
 	published := mappingValue(params.entry, domain.ComposePublishedKey)
 	target := mappingValue(params.entry, domain.ComposeTargetKey)
 	if published == nil || published.Kind != yaml.ScalarNode {
-		return unsupported(params.file, params.service, domain.ComposePortReasonNoHost), true
+		return unsupported(unsupportedParams{File: params.file, Service: params.service, Reason: domain.ComposePortReasonNoHost}), true
 	}
 
 	targetValue := ""
@@ -200,23 +200,31 @@ func longBinding(params bindingForParams) (domain.ComposePortBinding, bool) {
 		Target:    targetValue,
 		Taken:     params.taken,
 	})
-	return locate(binding, params.file, published, params.lines), true
+	return locate(locateParams{Binding: binding, File: params.file, Node: published, Lines: params.lines}), true
 }
 
 // locate pins a binding to the scalar it came from. A token wtm cannot read
 // back byte for byte from the source line is downgraded rather than patched
 // blind — the position is the only thing the rewrite trusts.
-func locate(binding domain.ComposePortBinding, file string, node *yaml.Node, lines []string) domain.ComposePortBinding {
-	binding.File = file
-	binding.Line = node.Line
-	binding.Column = node.Column
+type locateParams struct {
+	Binding domain.ComposePortBinding
+	File    string
+	Node    *yaml.Node
+	Lines   []string
+}
 
-	token, ok := sourceToken(lines, node)
+func locate(params locateParams) domain.ComposePortBinding {
+	binding := params.Binding
+	binding.File = params.File
+	binding.Line = params.Node.Line
+	binding.Column = params.Node.Column
+
+	token, ok := sourceToken(params.Lines, params.Node)
 	if !ok {
 		if binding.Reason != "" {
 			return binding
 		}
-		return unsupported(file, binding.Service, domain.ComposePortReasonUnreadable)
+		return unsupported(unsupportedParams{File: params.File, Service: binding.Service, Reason: domain.ComposePortReasonUnreadable})
 	}
 	binding.Token = token
 	return binding
@@ -247,12 +255,18 @@ func sourceToken(lines []string, node *yaml.Node) (string, bool) {
 	return line[start:end], true
 }
 
-func unsupported(file, service, reason string) domain.ComposePortBinding {
+type unsupportedParams struct {
+	File    string
+	Service string
+	Reason  string
+}
+
+func unsupported(params unsupportedParams) domain.ComposePortBinding {
 	return domain.ComposePortBinding{
-		File:    file,
-		Service: service,
+		File:    params.File,
+		Service: params.Service,
 		Status:  domain.ComposePortUnsupported,
-		Reason:  reason,
+		Reason:  params.Reason,
 	}
 }
 

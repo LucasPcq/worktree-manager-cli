@@ -167,3 +167,78 @@ func TestResolveComposePortsIsIdempotent(t *testing.T) {
 		t.Errorf("a second run rewrites nothing, got %v", second.Patches)
 	}
 }
+
+// TestResolveComposePortsWithholdsAVariableTwoStackedFilesDisagreeOn covers the
+// override pattern (-f base.yml -f dev.yml): one job receives both files' ports,
+// so the same variable can arrive twice with two bases. Declaring either would
+// move the other file's binding.
+func TestResolveComposePortsWithholdsAVariableTwoStackedFilesDisagreeOn(t *testing.T) {
+	base, dev := "docker-compose.yml", "docker-compose.dev.yml"
+	stack := domain.RunConfig{Jobs: []domain.JobConfig{{
+		Name: "stack", Kind: domain.JobKindService,
+		Cmd: "docker compose " + DockerComposeFileFlag(base) + DockerComposeFileFlag(dev) + "up -d",
+	}}}
+
+	plan := PlanComposePorts(PlanComposePortsParams{
+		Files: []string{base, dev},
+		Patch: true,
+		Scans: map[string]domain.ComposeScan{
+			base: {File: base, Bindings: []domain.ComposePortBinding{frozenAt(base, "db", "DB_PORT", 5432)}},
+			dev:  {File: dev, Bindings: []domain.ComposePortBinding{frozenAt(dev, "db", "DB_PORT", 5433)}},
+		},
+	})
+
+	got := ResolveComposePorts(ResolveComposePortsParams{
+		Answers:  composeAnswers(base, dev),
+		Existing: stack,
+		Plan:     plan,
+	})
+
+	if len(got.Patches) != 0 {
+		t.Errorf("neither file may be rewritten, got %v", got.Patches)
+	}
+	if len(got.Written) != 0 {
+		t.Errorf("nothing may be declared, got %v", got.Written)
+	}
+	if len(got.Withheld) != 2 {
+		t.Fatalf("both must be reported, got %+v", got.Withheld)
+	}
+	for _, b := range got.Withheld {
+		if b.Reason == "" || ComposeFixLines(ComposeFixLinesParams{Binding: b, Job: "stack"}) != nil {
+			t.Errorf("a conflict needs its own reason and no templating advice, got %+v", b)
+		}
+	}
+}
+
+// TestResolveComposePortsLeavesAFileAloneWhenTheBaseIsAlreadyTaken guards the
+// other half: wtm must not rewrite a project file for a declaration it did not
+// make. The hand-written 9999 would hijack the binding the file spells as 5432.
+func TestResolveComposePortsLeavesAFileAloneWhenTheBaseIsAlreadyTaken(t *testing.T) {
+	file := "docker-compose.yml"
+	existing := domain.RunConfig{Jobs: []domain.JobConfig{{
+		Name: "docker-compose", Kind: domain.JobKindService,
+		Cmd:   "docker compose " + DockerComposeFileFlag(file) + "up -d",
+		Ports: map[string]int{"DB_PORT": 9999},
+	}}}
+
+	plan := PlanComposePorts(PlanComposePortsParams{
+		Files: []string{file},
+		Patch: true,
+		Scans: map[string]domain.ComposeScan{
+			file: {File: file, Bindings: []domain.ComposePortBinding{frozenAt(file, "db", "DB_PORT", 5432)}},
+		},
+	})
+
+	got := ResolveComposePorts(ResolveComposePortsParams{
+		Answers:  composeAnswers(file),
+		Existing: existing,
+		Plan:     plan,
+	})
+
+	if len(got.Patches) != 0 {
+		t.Errorf("the base declared (9999) is not the one the mapping has (5432), got %v", got.Patches)
+	}
+	if got.Config.Jobs[0].Ports["DB_PORT"] != 9999 {
+		t.Errorf("the hand-written value must survive, got %v", got.Config.Jobs[0].Ports)
+	}
+}

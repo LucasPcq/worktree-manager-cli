@@ -188,6 +188,7 @@ func resolveServicesAnswers(params resolveServicesParams) (domain.InitProjectAns
 	return initwizard.RunServicesWizard(initwizard.ServicesWizardParams{
 		ProjectDir:   params.ProjectDir,
 		Detection:    params.Detection,
+		Existing:     params.Existing,
 		Prefill:      prefill,
 		PatchCompose: params.PatchCompose,
 	})

@@ -163,6 +163,7 @@ const (
 	ComposePortReasonUnreadable = "wtm could not read this mapping back from the file, so it will not rewrite it"
 	ComposePortReasonNoDefault  = "%s has no default — wtm cannot tell which port it stands for"
 	ComposePortReasonSharedVar  = "%s is declared with two different bases in this file — wtm cannot tell which one wins"
+	ComposePortReasonSharedJob  = "%s is declared with two different bases across the files job %q stacks — wtm cannot tell which one wins"
 	ComposePortReasonAnchor     = "the ports list carries a YAML anchor — rewriting it would move every service aliasing it"
 
 	// ComposeFixDefaultFmt suggests the default to add to an explicit template.
@@ -183,14 +184,13 @@ const (
 	// ComposeFrozenLineFmt names a host port left literal, and ComposeFixLineFmt
 	// the mapping to write instead. ComposeFixCmdFmt is the declaration that
 	// follows once the file reads a variable.
-	ComposeFrozenLineFmt   = "%s · %s   %s binds the same port in every worktree"
-	ComposeUnsupportedFmt  = "%s · %s   %s"
-	ComposeFixLineFmt      = "write %s"
-	ComposeFixCmdFmt       = "then: wtm run job edit %s --port %s=%d"
-	ComposeFixNoJobFmt     = "then declare it with `wtm run job edit <job> --port %s=%d`"
-	ComposeDroppedLineFmt  = "%s (job %q, base %d) is dropped — it meets %s (job %q, base %d) %d worktree(s) on"
-	ComposeUnreadableFmt   = "%s could not be read: %s"
-	ComposePortsWrittenFmt = "%s · %s"
+	ComposeFrozenLineFmt  = "%s · %s   %s binds the same port in every worktree"
+	ComposeUnsupportedFmt = "%s · %s   %s"
+	ComposeFixLineFmt     = "write %s"
+	ComposeFixCmdFmt      = "then: wtm run job edit %s --port %s=%d"
+	ComposeFixNoJobFmt    = "then declare it with `wtm run job edit <job> --port %s=%d`"
+	ComposeDroppedLineFmt = "%s (job %q, base %d) is dropped — it meets %s (job %q, base %d) %d worktree(s) on"
+	ComposeUnreadableFmt  = "%s could not be read: %s"
 
 	// ComposePatchMovedFmt aborts a patch whose target token is no longer where
 	// the scan found it.
@@ -874,8 +874,9 @@ const (
 	// left running.
 	RunStreamStepFmt    = "[%d/%d] %s"
 	RunStreamStartedFmt = "%s started"
-	// RunPortsSuffixFmt appends the ports a job actually bound to the line
-	// announcing it, RunPortEntryFmt being one of them.
+	// RunPortsSuffixFmt qualifies a name with the ports behind it — the line
+	// announcing a started job, and the recap of what a job gained.
+	// RunPortEntryFmt is one of those ports.
 	RunPortsSuffixFmt   = "%s · %s"
 	RunPortEntryFmt     = "%s=%d"
 	RunStreamAlreadyFmt = "%s already running"

@@ -13,9 +13,12 @@ import (
 // cannot actually isolate is reported, never declared.
 type ComposePortPlan struct {
 	PortsByFile map[string]map[string]int
-	Patches     map[string][]domain.ComposePortBinding
-	Withheld    []domain.ComposePortBinding
-	Unreadable  []domain.ComposeScan
+	// Declared keeps the bindings behind PortsByFile: a conflict only visible
+	// once the files are grouped by job has to name them.
+	Declared   map[string][]domain.ComposePortBinding
+	Patches    map[string][]domain.ComposePortBinding
+	Withheld   []domain.ComposePortBinding
+	Unreadable []domain.ComposeScan
 }
 
 type PlanComposePortsParams struct {
@@ -31,6 +34,7 @@ type PlanComposePortsParams struct {
 func PlanComposePorts(params PlanComposePortsParams) ComposePortPlan {
 	plan := ComposePortPlan{
 		PortsByFile: map[string]map[string]int{},
+		Declared:    map[string][]domain.ComposePortBinding{},
 		Patches:     map[string][]domain.ComposePortBinding{},
 	}
 
@@ -54,7 +58,8 @@ func PlanComposePorts(params PlanComposePortsParams) ComposePortPlan {
 				binding.Reason = fmt.Sprintf(domain.ComposePortReasonSharedVar, binding.Var)
 				plan.Withheld = append(plan.Withheld, binding)
 			default:
-				declareComposePort(plan.PortsByFile, file, binding)
+				declareComposePort(declareComposePortParams{Ports: plan.PortsByFile, File: file, Binding: binding})
+				plan.Declared[file] = append(plan.Declared[file], binding)
 				if binding.Status == domain.ComposePortFrozen {
 					plan.Patches[file] = append(plan.Patches[file], binding)
 				}
@@ -93,12 +98,18 @@ func sharedVarBases(bindings []domain.ComposePortBinding, patch bool) map[string
 // declareComposePort keeps the first declaration of a variable; a second one
 // with the same base is the same declaration, and a second one with a
 // different base never reaches here.
-func declareComposePort(ports map[string]map[string]int, file string, binding domain.ComposePortBinding) {
-	if ports[file] == nil {
-		ports[file] = map[string]int{}
+type declareComposePortParams struct {
+	Ports   map[string]map[string]int
+	File    string
+	Binding domain.ComposePortBinding
+}
+
+func declareComposePort(params declareComposePortParams) {
+	if params.Ports[params.File] == nil {
+		params.Ports[params.File] = map[string]int{}
 	}
-	if _, exists := ports[file][binding.Var]; !exists {
-		ports[file][binding.Var] = binding.Base
+	if _, exists := params.Ports[params.File][params.Binding.Var]; !exists {
+		params.Ports[params.File][params.Binding.Var] = params.Binding.Base
 	}
 }
 
