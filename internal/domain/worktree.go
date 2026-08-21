@@ -113,6 +113,7 @@ type CreateParams struct {
 // after the worktree exists.
 type CreateHooksParams struct {
 	ProjectDir   string
+	StateDir     string
 	WorktreePath string
 	Branch       string
 	FromBranch   string
@@ -160,6 +161,7 @@ type CleanParams struct {
 // before the worktree directory is removed.
 type CleanHooksParams struct {
 	ProjectDir   string
+	StateDir     string
 	WorktreePath string
 	Branch       string
 	Hooks        []HookCommand

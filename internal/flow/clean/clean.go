@@ -244,6 +244,7 @@ func (f *cleanFlow) runHooks(worktreePath, branchName string) error {
 		Run: func(sink io.Writer) error {
 			return worktree.RunCleanHooks(domain.CleanHooksParams{
 				ProjectDir:   f.ctx.ProjectDir,
+				StateDir:     f.ctx.StateDir,
 				WorktreePath: worktreePath,
 				Branch:       branchName,
 				Hooks:        hooks,

@@ -67,6 +67,7 @@ func Clean(params domain.CleanParams) error {
 	if !params.SkipHooks {
 		if err := RunCleanHooks(domain.CleanHooksParams{
 			ProjectDir:   params.ProjectDir,
+			StateDir:     params.StateDir,
 			WorktreePath: wt.Path,
 			Branch:       params.Branch,
 			Hooks:        params.Config.Project.Hooks.OnClean,
@@ -122,6 +123,11 @@ func RunCleanHooks(params domain.CleanHooksParams) error {
 			Branch:   params.Branch,
 			Root:     mainPath,
 		},
+		Env: hookEnv(BranchEnvParams{
+			ProjectDir: params.ProjectDir,
+			StateDir:   params.StateDir,
+			Branch:     params.Branch,
+		}),
 		Output: params.Output,
 	}); err != nil {
 		return fmt.Errorf("on_clean hooks: %w", err)

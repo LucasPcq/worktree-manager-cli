@@ -115,6 +115,7 @@ func Create(params domain.CreateParams) (domain.CreateResult, error) {
 	if !params.SkipHooks {
 		if err := RunCreateHooks(domain.CreateHooksParams{
 			ProjectDir:   params.ProjectDir,
+			StateDir:     params.StateDir,
 			WorktreePath: worktreePath,
 			Branch:       params.Branch,
 			FromBranch:   params.FromBranch,
@@ -158,6 +159,11 @@ func RunCreateHooks(params domain.CreateHooksParams) error {
 			Root:       mainPath,
 			FromBranch: params.FromBranch,
 		},
+		Env: hookEnv(BranchEnvParams{
+			ProjectDir: params.ProjectDir,
+			StateDir:   params.StateDir,
+			Branch:     params.Branch,
+		}),
 		Output: params.Output,
 	}); err != nil {
 		return fmt.Errorf("on_create hooks: %w", err)

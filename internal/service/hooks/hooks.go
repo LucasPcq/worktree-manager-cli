@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,7 +20,11 @@ type RunHooksParams struct {
 	Hooks   []domain.HookCommand
 	WorkDir string
 	Vars    rules.TemplateVars
-	Output  io.Writer // if nil, uses os.Stdout/Stderr (CLI mode). Set to capture output (TUI mode).
+	// Env is what the hook learns about the worktree it runs in, the same
+	// vocabulary a run job gets. A hook that tears down docker needs the
+	// worktree's compose project as much as the job that brought it up.
+	Env    map[string]string
+	Output io.Writer // if nil, uses os.Stdout/Stderr (CLI mode). Set to capture output (TUI mode).
 }
 
 // RunHooks executes each hook command sequentially with template interpolation.
@@ -32,7 +37,12 @@ func RunHooks(params RunHooksParams) error {
 
 	for _, hook := range params.Hooks {
 		resolved := rules.ResolveTemplateVars(hook, params.Vars)
-		err := runSingleHook(resolved, params.WorkDir, output)
+		err := runSingleHook(runSingleHookParams{
+			Hook:       resolved,
+			DefaultDir: params.WorkDir,
+			Env:        params.Env,
+			Output:     output,
+		})
 		if err == nil {
 			continue
 		}
@@ -45,7 +55,17 @@ func RunHooks(params RunHooksParams) error {
 	return nil
 }
 
-func runSingleHook(hook domain.HookCommand, defaultDir string, output io.Writer) error {
+type runSingleHookParams struct {
+	Hook       domain.HookCommand
+	DefaultDir string
+	Env        map[string]string
+	Output     io.Writer
+}
+
+func runSingleHook(params runSingleHookParams) error {
+	hook := params.Hook
+	output := params.Output
+
 	parts := strings.Fields(hook.Cmd)
 	if len(parts) == 0 {
 		return nil
@@ -56,8 +76,9 @@ func runSingleHook(hook domain.HookCommand, defaultDir string, output io.Writer)
 	if hook.Cwd != "" {
 		cmd.Dir = hook.Cwd
 	} else {
-		cmd.Dir = defaultDir
+		cmd.Dir = params.DefaultDir
 	}
+	cmd.Env = hookEnv(params.Env)
 
 	var stderr bytes.Buffer
 	cmd.Stdout = output
@@ -97,4 +118,25 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dms", d.Milliseconds())
 	}
 	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
+// hookEnv layers the worktree's variables over the caller's environment. Nil
+// leaves the process environment as it is, so a caller with nothing to say
+// changes nothing.
+func hookEnv(overrides map[string]string) []string {
+	if len(overrides) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(overrides))
+	for key := range overrides {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	env := os.Environ()
+	for _, key := range keys {
+		env = append(env, key+"="+overrides[key])
+	}
+	return env
 }

@@ -17,6 +17,7 @@ type CreateHooksPhaseParams struct {
 	// output; set it only on human-facing runs (never JSON).
 	ShowHeader   bool
 	ProjectDir   string
+	StateDir     string
 	WorktreePath string
 	Branch       string
 	FromBranch   string
@@ -34,6 +35,7 @@ func RunCreateHooksPhase(p CreateHooksPhaseParams) error {
 	}
 	return worktree.RunCreateHooks(domain.CreateHooksParams{
 		ProjectDir:   p.ProjectDir,
+		StateDir:     p.StateDir,
 		WorktreePath: p.WorktreePath,
 		Branch:       p.Branch,
 		FromBranch:   p.FromBranch,
@@ -47,6 +49,7 @@ type CleanHooksPhaseParams struct {
 	Cmd          *cobra.Command
 	ShowHeader   bool
 	ProjectDir   string
+	StateDir     string
 	WorktreePath string
 	Branch       string
 	Hooks        []domain.HookCommand
@@ -63,6 +66,7 @@ func RunCleanHooksPhase(p CleanHooksPhaseParams) error {
 	}
 	return worktree.RunCleanHooks(domain.CleanHooksParams{
 		ProjectDir:   p.ProjectDir,
+		StateDir:     p.StateDir,
 		WorktreePath: p.WorktreePath,
 		Branch:       p.Branch,
 		Hooks:        p.Hooks,
