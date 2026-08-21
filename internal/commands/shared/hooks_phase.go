@@ -9,8 +9,8 @@ import (
 )
 
 // CreateHooksPhaseParams holds inputs for running on_create hooks as a distinct,
-// titled phase, shared by every worktree-creating command (create, extract,
-// checkout) so hooks read the same way everywhere.
+// titled phase, shared by the worktree-creating commands that have not migrated
+// to flow/ (extract, checkout) so hooks read the same way in both.
 type CreateHooksPhaseParams struct {
 	Cmd *cobra.Command
 	// ShowHeader prints the "Running on_create hooks" title before the streamed
@@ -39,36 +39,6 @@ func RunCreateHooksPhase(p CreateHooksPhaseParams) error {
 		WorktreePath: p.WorktreePath,
 		Branch:       p.Branch,
 		FromBranch:   p.FromBranch,
-		Hooks:        p.Hooks,
-	})
-}
-
-// CleanHooksPhaseParams holds inputs for running on_clean hooks as a distinct,
-// titled phase, shared by the worktree-removing commands (clean, prune).
-type CleanHooksPhaseParams struct {
-	Cmd          *cobra.Command
-	ShowHeader   bool
-	ProjectDir   string
-	StateDir     string
-	WorktreePath string
-	Branch       string
-	Hooks        []domain.HookCommand
-}
-
-// RunCleanHooksPhase runs the on_clean hooks under a titled section. No-op when no
-// hooks are configured or the worktree path is unknown.
-func RunCleanHooksPhase(p CleanHooksPhaseParams) error {
-	if len(p.Hooks) == 0 || p.WorktreePath == "" {
-		return nil
-	}
-	if p.ShowHeader {
-		output.HooksSection(p.Cmd.ErrOrStderr(), domain.HooksTitleOnClean)
-	}
-	return worktree.RunCleanHooks(domain.CleanHooksParams{
-		ProjectDir:   p.ProjectDir,
-		StateDir:     p.StateDir,
-		WorktreePath: p.WorktreePath,
-		Branch:       p.Branch,
 		Hooks:        p.Hooks,
 	})
 }
