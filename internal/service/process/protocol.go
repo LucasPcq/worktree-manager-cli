@@ -55,4 +55,8 @@ type Response struct {
 	Jobs     []domain.JobInfo `json:"jobs,omitempty"`
 	Data     []byte           `json:"data,omitempty"`      // task output chunk
 	ExitCode *int             `json:"exit_code,omitempty"` // final task exit code
+	// Ports are the ports the job just started actually bound, base plus this
+	// worktree's offset. Reported rather than recomputed by the caller, so the
+	// line it prints says what happened instead of what should have.
+	Ports map[string]int `json:"ports,omitempty"`
 }

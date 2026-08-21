@@ -20,6 +20,7 @@ const (
 	stepJobKind
 	stepJobStop
 	stepJobCwd
+	stepJobPorts
 )
 
 // JobWizardParams configures the job wizard for both add and edit flows.
@@ -83,12 +84,23 @@ func RunJobWizard(params JobWizardParams) (domain.JobConfig, error) {
 		Default:     params.Initial.Cwd,
 	})
 
+	portsInput := components.NewTextInput(components.NewTextInputParams{
+		Title:       "Base ports",
+		Description: "Optional. NAME=PORT, space-separated (e.g. PORT=3000 DB_PORT=5432). Each worktree gets the base plus its own offset.",
+		Default:     strings.Join(rules.PortEntries(params.Initial.Ports), " "),
+		Validate: func(s string) error {
+			_, err := rules.ParsePorts(strings.Fields(s))
+			return err
+		},
+	})
+
 	steps := []components.Step{
 		{Name: "Name", Model: nameInput, Summary: components.TextSummary},
 		{Name: "Command", Model: cmdInput, Summary: components.TextSummary},
 		{Name: "Kind", Model: kindList, Summary: components.SelectSummary},
 		{Name: "Stop", Model: stopInput, Summary: components.OptionalTextSummary("(none)")},
 		{Name: "Cwd", Model: cwdInput, Summary: components.OptionalTextSummary("(project root)")},
+		{Name: "Ports", Model: portsInput, Summary: components.OptionalTextSummary("(none)")},
 	}
 
 	wiz := components.NewWizard(steps)
@@ -130,6 +142,11 @@ func extractJob(steps []components.Step) domain.JobConfig {
 	}
 	if c, ok := steps[stepJobCwd].Model.(components.TextInputModel); ok {
 		job.Cwd = c.Value()
+	}
+	if c, ok := steps[stepJobPorts].Model.(components.TextInputModel); ok {
+		// The step validated the line, so a parse error here cannot happen; a
+		// job with no ports is the same job it was before.
+		job.Ports, _ = rules.ParsePorts(strings.Fields(c.Value()))
 	}
 	return job
 }

@@ -168,6 +168,8 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 		}
 	}
 
+	errs = append(errs, ValidateRunPorts(cfg)...)
+
 	seenProfiles := map[string]bool{}
 	defaultCount := 0
 	for _, p := range cfg.Profiles {
@@ -195,4 +197,42 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 	}
 
 	return warnings, errs
+}
+
+// ValidateRunPorts checks what only run.toml can answer for: whether the
+// declared ports can be exported at all, and whether they can coexist. Unlike
+// the structural checks around it, this one is enforced when the file is read
+// rather than only when it is written — a port layout that cannot work produces
+// an EADDRINUSE with nothing pointing back at run.toml, and this is the last
+// moment the problem is still explainable.
+func ValidateRunPorts(cfg domain.RunConfig) []string {
+	var errs []string
+	for _, job := range cfg.Jobs {
+		for _, name := range sortedPortNames(job.Ports) {
+			if !IsEnvVarName(name) {
+				errs = append(errs, fmt.Sprintf("job %q: port %q is not a valid environment variable name", job.Name, name))
+			}
+			if base := job.Ports[name]; base < domain.PortMin || base > domain.PortMax {
+				errs = append(errs, fmt.Sprintf("job %q: port %s is %d, outside %d-%d", job.Name, name, base, domain.PortMin, domain.PortMax))
+			}
+		}
+	}
+
+	if cfg.PortOffsetBlock < 0 {
+		errs = append(errs, fmt.Sprintf("port_offset_block is %d — it must be positive (omit it for the default of %d)", cfg.PortOffsetBlock, domain.PortOffsetBlock))
+	}
+
+	block := EffectivePortOffsetBlock(cfg)
+	for _, c := range PortCollisions(cfg) {
+		if c.Worktrees == 0 {
+			errs = append(errs, fmt.Sprintf(
+				"ports %s (job %q) and %s (job %q) both declare base %d — they would bind the same port in every worktree",
+				c.A.Name, c.A.Job, c.B.Name, c.B.Job, c.A.Base))
+			continue
+		}
+		errs = append(errs, fmt.Sprintf(
+			"ports %s (job %q, base %d) and %s (job %q, base %d) collide %d worktree(s) apart with a port_offset_block of %d — move one base so the gap between them is not a multiple of %d",
+			c.A.Name, c.A.Job, c.A.Base, c.B.Name, c.B.Job, c.B.Base, c.Worktrees, block, block))
+	}
+	return errs
 }

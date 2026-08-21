@@ -147,7 +147,10 @@ func startTaskInline(params startJobParams) error {
 			Status: domain.JobActionDone,
 		})
 	}
-	output.Success(params.Cmd.OutOrStdout(), fmt.Sprintf(domain.RunStreamDoneFmt, params.Job.Name))
+	output.Success(params.Cmd.OutOrStdout(), rules.LabelWithPorts(rules.LabelWithPortsParams{
+		Label: fmt.Sprintf(domain.RunStreamDoneFmt, params.Job.Name),
+		Ports: resp.Ports,
+	}))
 	output.FrameEnd(params.Cmd.OutOrStdout())
 	return nil
 }
@@ -184,7 +187,10 @@ func startServiceDetached(params startJobParams) error {
 
 	out := params.Cmd.OutOrStdout()
 	output.Frame(out, func() {
-		output.Success(out, fmt.Sprintf(domain.RunStreamStartedFmt, params.Job.Name))
+		output.Success(out, rules.LabelWithPorts(rules.LabelWithPortsParams{
+			Label: fmt.Sprintf(domain.RunStreamStartedFmt, params.Job.Name),
+			Ports: resp.Ports,
+		}))
 	})
 	return nil
 }

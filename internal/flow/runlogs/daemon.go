@@ -38,7 +38,7 @@ func (s *daemonService) Start(ctx context.Context, req StartRequest) (StartResul
 	if resp.Status == process.StatusError {
 		return StartResult{Refused: true, Message: resp.Message, ExitCode: resp.ExitCode}, nil
 	}
-	return StartResult{ExitCode: resp.ExitCode}, nil
+	return StartResult{ExitCode: resp.ExitCode, Ports: resp.Ports}, nil
 }
 
 func (s *daemonService) List(workDir string) ([]domain.JobInfo, error) {
