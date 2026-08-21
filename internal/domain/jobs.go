@@ -46,6 +46,9 @@ type RunConfig struct {
 	PortOffsetBlock int             `toml:"port_offset_block,omitempty" json:"port_offset_block,omitempty"`
 	Jobs            []JobConfig     `toml:"job"                        json:"job"`
 	Profiles        []ProfileConfig `toml:"profile,omitempty"          json:"profile"`
+	// EnvPorts links a .env key to one of the ports declared above, so a value
+	// holding a hard-coded host port follows the worktree's offset.
+	EnvPorts []EnvPortLink `toml:"env_port,omitempty" json:"env_port,omitempty"`
 }
 
 // ExecSpec is a command ready for exec: the binary and the arguments it takes,

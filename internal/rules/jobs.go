@@ -160,9 +160,13 @@ func MergeRunConfigs(dst, src domain.RunConfig) (domain.RunConfig, MergeResult) 
 		// Carried over explicitly: dropping it would silently reset the spacing a
 		// project chose precisely to keep its ports from colliding.
 		PortOffsetBlock: dst.PortOffsetBlock,
-		Jobs:            make([]domain.JobConfig, len(dst.Jobs)),
-		Profiles:        make([]domain.ProfileConfig, len(dst.Profiles)),
+		// Same reason: a re-run of `run init` is additive, and the links the user
+		// already confirmed are not the detection's to discard.
+		EnvPorts: make([]domain.EnvPortLink, len(dst.EnvPorts)),
+		Jobs:     make([]domain.JobConfig, len(dst.Jobs)),
+		Profiles: make([]domain.ProfileConfig, len(dst.Profiles)),
 	}
+	copy(out.EnvPorts, dst.EnvPorts)
 	if out.PortOffsetBlock == 0 {
 		out.PortOffsetBlock = src.PortOffsetBlock
 	}

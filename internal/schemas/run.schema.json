@@ -18,7 +18,11 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "kind", "cmd"],
+        "required": [
+          "name",
+          "kind",
+          "cmd"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -27,7 +31,10 @@
           },
           "kind": {
             "type": "string",
-            "enum": ["service", "task"],
+            "enum": [
+              "service",
+              "task"
+            ],
             "description": "service = long-running process (pnpm dev, docker compose). task = one-shot script (pnpm migrate, pnpm seed) that must exit 0 before the profile continues."
           },
           "cmd": {
@@ -45,15 +52,31 @@
           "ports": {
             "type": "object",
             "description": "Base ports this job binds, as ENV_VAR = port. wtm injects ENV_VAR = port + WTM_PORT_OFFSET, so the main checkout keeps the declared port and every other worktree gets a free one. Write the command to read the variable (PORT for a dev server) or template it into docker-compose (\"${DB_PORT:-5432}:5432\", the default keeping the file usable without wtm).",
-            "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-            "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            "propertyNames": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
           }
         },
         "allOf": [
           {
-            "if": { "properties": { "kind": { "const": "task" } } },
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "task"
+                }
+              }
+            },
             "then": {
-              "not": { "required": ["stop"] },
+              "not": {
+                "required": [
+                  "stop"
+                ]
+              },
               "description": "Tasks cannot declare a stop command."
             }
           }
@@ -66,7 +89,10 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "jobs"],
+        "required": [
+          "name",
+          "jobs"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -76,13 +102,44 @@
           "jobs": {
             "type": "array",
             "description": "Ordered list of job names. Jobs run sequentially: tasks block, services start in the background. The same job cannot appear twice.",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "uniqueItems": true,
             "minItems": 1
           },
           "default": {
             "type": "boolean",
             "description": "If true, this profile runs when `wtm run up` is invoked without a profile argument. At most one profile in the file can have default = true (enforced at load time)."
+          }
+        }
+      }
+    },
+    "env_port": {
+      "type": "array",
+      "description": "Links a .env key to a declared port. wtm rewrites the port inside that key's value for each worktree, leaving the rest of the value untouched — so a hard-coded host:port in a URL follows the worktree's offset.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "file",
+          "key",
+          "port"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "The .env target holding the key, as configured under [env] in .wtm.toml (e.g. \".env\", \"apps/web/.env\")."
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "description": "The .env key whose value carries the port."
+          },
+          "port": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "description": "The port variable declared in a job's `ports` table, whose base is looked for inside the value."
           }
         }
       }
