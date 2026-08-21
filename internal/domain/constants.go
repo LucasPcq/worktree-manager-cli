@@ -129,9 +129,20 @@ const (
 	// so 0 in a linked worktree's metadata means "not allocated yet".
 	MainWorktreeOrdinal = 0
 
-	// PortOffsetBlock spaces two worktrees' ports apart, so declared base ports
-	// must be at least a block apart to stay in their own lane.
+	// PortOffsetBlock is the default spacing between two worktrees' ports, used
+	// when run.toml does not set one.
 	PortOffsetBlock = 10
+
+	// PortMin and PortMax bound a declared base port.
+	PortMin = 1
+	PortMax = 65535
+
+	// PortCollisionHorizon is how many worktrees a declared layout is checked
+	// against. Two base ports collide when they differ by a multiple of the
+	// block, but the multiple says how many worktrees it takes to get there:
+	// 3000 and 8080 are both 0 mod 10 and would only meet on the 508th, which is
+	// no reason to reject a config.
+	PortCollisionHorizon = 20
 
 	// OrdinalLockFileName guards allocation: the scan and the write that follows
 	// it must be one step, or two worktrees started at once claim one number.
@@ -161,6 +172,7 @@ const (
 	FlagKind       = "kind"
 	FlagStop       = "stop"
 	FlagCwd        = "cwd"
+	FlagPort       = "port"
 	FlagJobs       = "jobs"
 	FlagDefault    = "default"
 	FlagTo         = "to"
@@ -769,6 +781,10 @@ const (
 	// left running.
 	RunStreamStepFmt    = "[%d/%d] %s"
 	RunStreamStartedFmt = "%s started"
+	// RunPortsSuffixFmt appends the ports a job actually bound to the line
+	// announcing it, RunPortEntryFmt being one of them.
+	RunPortsSuffixFmt = "%s · %s"
+	RunPortEntryFmt   = "%s=%d"
 	RunStreamAlreadyFmt = "%s already running"
 	RunStreamDoneFmt    = "%s done"
 	RunStreamNextHint   = "wtm run logs to attach · wtm run down to stop"
