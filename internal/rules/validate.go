@@ -166,21 +166,9 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 		default:
 			errs = append(errs, fmt.Sprintf("job %q: unknown kind %q (expected service or task)", j.Name, j.Kind))
 		}
-
-		for _, name := range sortedPortNames(j.Ports) {
-			if !IsEnvVarName(name) {
-				errs = append(errs, fmt.Sprintf("job %q: port %q is not a valid environment variable name", j.Name, name))
-			}
-			if base := j.Ports[name]; base < domain.PortMin || base > domain.PortMax {
-				errs = append(errs, fmt.Sprintf("job %q: port %s is %d, outside %d-%d", j.Name, name, base, domain.PortMin, domain.PortMax))
-			}
-		}
 	}
 
-	if cfg.PortOffsetBlock < 0 {
-		errs = append(errs, fmt.Sprintf("port_offset_block is %d — it must be positive (omit it for the default of %d)", cfg.PortOffsetBlock, domain.PortOffsetBlock))
-	}
-	errs = append(errs, portCollisionErrors(cfg)...)
+	errs = append(errs, ValidateRunPorts(cfg)...)
 
 	seenProfiles := map[string]bool{}
 	defaultCount := 0
@@ -211,13 +199,30 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 	return warnings, errs
 }
 
-// portCollisionErrors phrases what a collision costs the user, because the
-// runtime cannot: a port taken by another worktree surfaces as an EADDRINUSE
-// with nothing pointing back at run.toml.
-func portCollisionErrors(cfg domain.RunConfig) []string {
-	block := EffectivePortOffsetBlock(cfg)
-
+// ValidateRunPorts checks what only run.toml can answer for: whether the
+// declared ports can be exported at all, and whether they can coexist. Unlike
+// the structural checks around it, this one is enforced when the file is read
+// rather than only when it is written — a port layout that cannot work produces
+// an EADDRINUSE with nothing pointing back at run.toml, and this is the last
+// moment the problem is still explainable.
+func ValidateRunPorts(cfg domain.RunConfig) []string {
 	var errs []string
+	for _, job := range cfg.Jobs {
+		for _, name := range sortedPortNames(job.Ports) {
+			if !IsEnvVarName(name) {
+				errs = append(errs, fmt.Sprintf("job %q: port %q is not a valid environment variable name", job.Name, name))
+			}
+			if base := job.Ports[name]; base < domain.PortMin || base > domain.PortMax {
+				errs = append(errs, fmt.Sprintf("job %q: port %s is %d, outside %d-%d", job.Name, name, base, domain.PortMin, domain.PortMax))
+			}
+		}
+	}
+
+	if cfg.PortOffsetBlock < 0 {
+		errs = append(errs, fmt.Sprintf("port_offset_block is %d — it must be positive (omit it for the default of %d)", cfg.PortOffsetBlock, domain.PortOffsetBlock))
+	}
+
+	block := EffectivePortOffsetBlock(cfg)
 	for _, c := range PortCollisions(cfg) {
 		if c.Worktrees == 0 {
 			errs = append(errs, fmt.Sprintf(

@@ -6,6 +6,12 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "port_offset_block": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 10,
+      "description": "Spacing between two worktrees' ports. Each worktree holds an ordinal (0 for the main checkout) and every declared base port is shifted by ordinal x this block. Two base ports must not differ by a multiple of it: 3000 and 3010 with a block of 10 collide on the second worktree, while 5434/5435/5436 never do. Defaults to 10."
+    },
     "job": {
       "type": "array",
       "description": "List of jobs the project can run.",
@@ -35,6 +41,12 @@
           "cwd": {
             "type": "string",
             "description": "Working directory relative to the worktree root. Defaults to the worktree root."
+          },
+          "ports": {
+            "type": "object",
+            "description": "Base ports this job binds, as ENV_VAR = port. wtm injects ENV_VAR = port + WTM_PORT_OFFSET, so the main checkout keeps the declared port and every other worktree gets a free one. Write the command to read the variable (PORT for a dev server) or template it into docker-compose (\"${DB_PORT}:5432\").",
+            "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+            "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 65535 }
           }
         },
         "allOf": [
