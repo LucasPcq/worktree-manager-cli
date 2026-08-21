@@ -53,7 +53,7 @@ func DetectedPortsReport(w io.Writer, params DetectedPortsReportParams) {
 			Written: params.EnvWritten,
 			Sources: params.EnvSources,
 		})
-		Callout(w, domain.EnvPortsTitle, append(lines, "", rules.EnvPortsVerifyLine()))
+		Callout(w, domain.EnvPortsDetectedTitle, append(lines, "", rules.EnvPortsVerifyLine()))
 	}
 
 	if len(params.Withheld) > 0 {

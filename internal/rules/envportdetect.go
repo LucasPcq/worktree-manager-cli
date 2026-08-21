@@ -151,7 +151,7 @@ func EnvPortsWrittenLines(params EnvPortsWrittenLinesParams) []string {
 	for _, job := range sortedJobNames(params.Written) {
 		for _, name := range sortedPortNames(params.Written[job]) {
 			lines = append(lines, fmt.Sprintf(
-				domain.EnvPortLineFmt, job, name, params.Written[job][name], params.Sources[job][name],
+				domain.EnvPortDetectedLineFmt, job, name, params.Written[job][name], params.Sources[job][name],
 			))
 		}
 	}

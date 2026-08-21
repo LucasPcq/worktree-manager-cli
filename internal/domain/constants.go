@@ -226,8 +226,8 @@ const (
 	// The .env port report. Unlike a compose mapping, a declared port only
 	// isolates the job if its command actually reads the variable — which wtm
 	// does not know and does not guess, so the notice asks.
-	EnvPortsTitle     = "Ports detected from .env"
-	EnvPortLineFmt    = "%s · %s=%d (%s)"
+	EnvPortsDetectedTitle     = "Ports detected from .env"
+	EnvPortDetectedLineFmt    = "%s · %s=%d (%s)"
 	EnvPortsVerifyFmt = "Check that these commands read the variable — otherwise pass it as a flag, e.g. `pnpm dev --port ${%s}`"
 	EnvPortUnreadable = "%s could not be read: %s"
 
