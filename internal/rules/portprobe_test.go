@@ -152,3 +152,24 @@ func TestPortProbeLinesSaysNothingWhenEverythingListens(t *testing.T) {
 		t.Errorf("a healthy probe has nothing to report, got %v", lines)
 	}
 }
+
+func TestServicesWithoutPorts(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "api-dev", Kind: domain.JobKindService, Ports: map[string]int{"API_PORT": 3001}},
+		{Name: "web-dev", Kind: domain.JobKindService},
+		{Name: "lint", Kind: domain.JobKindTask},
+	}}
+
+	got := rules.ServicesWithoutPorts(cfg)
+	if len(got) != 1 || got[0] != "web-dev" {
+		t.Errorf("ServicesWithoutPorts = %v, want [web-dev]", got)
+	}
+}
+
+func TestServicesWithoutPortsIgnoresTasks(t *testing.T) {
+	// Une task n'écoute pas : l'absence de port n'y est pas une lacune.
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{{Name: "seed", Kind: domain.JobKindTask}}}
+	if got := rules.ServicesWithoutPorts(cfg); len(got) != 0 {
+		t.Errorf("ServicesWithoutPorts = %v, want empty", got)
+	}
+}

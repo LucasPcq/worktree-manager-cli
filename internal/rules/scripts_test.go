@@ -42,3 +42,42 @@ func TestClassifyScriptKind(t *testing.T) {
 		})
 	}
 }
+
+func TestPreselectScript(t *testing.T) {
+	tests := []struct {
+		script string
+		want   bool
+	}{
+		{"dev", true},
+		{"dev:api", true},
+		{"api:dev", true},
+		{"web-dev", true},
+		{"start", false},
+		{"serve", false},
+		{"watch", false},
+		{"preview", false},
+		{"build", false},
+		{"lint", false},
+		{"format", false},
+		{"check-types", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.script, func(t *testing.T) {
+			if got := PreselectScript(tt.script); got != tt.want {
+				t.Errorf("PreselectScript(%q) = %v, want %v", tt.script, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPreselectScriptIsIndependentOfKind(t *testing.T) {
+	// `start` est classé service — il tourne — mais on ne le coche pas : ce
+	// n'est pas ce qu'on lance en dev. Les deux axes ne doivent pas se suivre.
+	if ClassifyScriptKind("start") != domain.JobKindService {
+		t.Fatal("le test suppose que start reste classé service")
+	}
+	if PreselectScript("start") {
+		t.Error("start ne doit pas être coché par défaut")
+	}
+}

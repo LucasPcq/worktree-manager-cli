@@ -259,6 +259,12 @@ const (
 	ComposeReadFileFmt     = "read %s: %w"
 	ComposeWriteFileFmt    = "write %s: %w"
 
+	// UnportedJobsTitle heads the services `run init` retained without a port to
+	// isolate. Nothing is asked for them — inventing a port would move the guess
+	// onto the user — but staying silent would hide that two worktrees will bind
+	// the same one, and the probe has nothing to check where nothing is declared.
+	UnportedJobsTitle = "Services with no declared port — two worktrees will bind the same one"
+
 	// The port probe report: what `run up` observed on the ports a job declared.
 	// It states what was seen, never what is at fault — wtm can tell that
 	// nothing answers, not why.
@@ -539,13 +545,27 @@ const (
 	PruneSkipUnpushed = "unpushed"
 	PruneSkipOpenPR   = "open_pr"
 
+	// ProfileAllName is the profile gathering every service the init retained.
+	// In a single-package repo it is the only one: one profile per package plus
+	// a global one collapse into each other, which is what keeps the rule free
+	// of a special case.
+	ProfileAllName = "all"
+	// ProfileRootCwd is the cwd of a job serving every profile — a compose
+	// stack, a root script. Sitting at the root is what makes a job shared.
+	ProfileRootCwd = "."
+
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches
 	// one of these keywords exactly, as a prefix ("<kw>:"), or as a suffix (":<kw>").
-	ScriptKeyDev   = "dev"
-	ScriptKeyStart = "start"
-	ScriptKeyServe = "serve"
-	ScriptKeyWatch = "watch"
+	ScriptKeyDev = "dev"
+	// ScriptPreselectKey is the only script name fragment `run init` checks by
+	// default. Deliberately blunt: reading the command to guess whether
+	// `vite preview` serves requests would rebuild a per-tool heuristic, and
+	// maintaining one is what the port probe refused to do for turbo.
+	ScriptPreselectKey = ScriptKeyDev
+	ScriptKeyStart     = "start"
+	ScriptKeyServe     = "serve"
+	ScriptKeyWatch     = "watch"
 
 	// FlagWithPRs includes GitHub PR info in non-interactive worktree listings.
 	// PRs are fetched lazily (streamed) in interactive mode, but a pipe/JSON

@@ -26,6 +26,13 @@ func StripScope(name string) string {
 	return name
 }
 
+// PreselectScript says whether `run init` checks a script by default. It is not
+// ClassifyScriptKind: that one decides whether a job blocks its profile, this
+// one decides whether the job is created at all.
+func PreselectScript(scriptName string) bool {
+	return strings.Contains(strings.ToLower(scriptName), domain.ScriptPreselectKey)
+}
+
 // ClassifyScriptKind returns JobKindService for long-running dev scripts and
 // JobKindTask for everything else.
 //

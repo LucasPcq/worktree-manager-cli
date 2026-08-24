@@ -146,3 +146,17 @@ func DedupePorts(ports []int) []int {
 	sort.Ints(unique)
 	return unique
 }
+
+// ServicesWithoutPorts names the services no port was declared for, in a stable
+// order. They run, but nothing shifts them per worktree, and the probe has
+// nothing to check where nothing is declared.
+func ServicesWithoutPorts(cfg domain.RunConfig) []string {
+	var jobs []string
+	for _, job := range cfg.Jobs {
+		if job.Kind == domain.JobKindService && len(job.Ports) == 0 {
+			jobs = append(jobs, job.Name)
+		}
+	}
+	sort.Strings(jobs)
+	return jobs
+}
