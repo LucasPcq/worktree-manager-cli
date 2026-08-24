@@ -193,9 +193,13 @@ type AutoServicesAnswersParams struct {
 // zero-valued: only the services fields feed BuildInitRunConfig.
 func AutoServicesAnswers(params AutoServicesAnswersParams) domain.InitProjectAnswers {
 	detection := params.Detection
-	answers := domain.InitProjectAnswers{
-		SelectedPackageScripts: detection.PackageScripts,
-		PatchCompose:           params.PatchCompose,
+	// Non-interactive takes the same answer the wizard offers, not every script
+	// it found: an init that cannot ask must not write jobs nobody chose.
+	answers := domain.InitProjectAnswers{PatchCompose: params.PatchCompose}
+	for _, script := range detection.PackageScripts {
+		if PreselectScript(script.Name) {
+			answers.SelectedPackageScripts = append(answers.SelectedPackageScripts, script)
+		}
 	}
 	if len(detection.DockerComposeFiles) > 0 {
 		answers.DockerComposeFiles = detection.DockerComposeFiles

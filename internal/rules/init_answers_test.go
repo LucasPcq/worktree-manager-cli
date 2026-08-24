@@ -169,7 +169,7 @@ func TestBuildProjectAnswers_NoServices(t *testing.T) {
 }
 
 // TestAutoServicesAnswers verifies the non-interactive `wtm run init` path pulls
-// every detected docker-compose file and package script into the answers.
+// every detected docker-compose file, and the scripts the wizard would check.
 func TestAutoServicesAnswers(t *testing.T) {
 	detection := domain.InitDetectionResult{
 		DockerComposeFiles: []string{"docker-compose.yml"},
@@ -182,6 +182,31 @@ func TestAutoServicesAnswers(t *testing.T) {
 	}
 	if len(got.SelectedPackageScripts) != 1 {
 		t.Errorf("scripts not carried: %v", got.SelectedPackageScripts)
+	}
+}
+
+// TestAutoServicesAnswersKeepsOnlyPreselectedScripts pins the whole point of the
+// rework: an init that cannot ask must not write jobs nobody chose.
+func TestAutoServicesAnswersKeepsOnlyPreselectedScripts(t *testing.T) {
+	detection := domain.InitDetectionResult{
+		PackageScripts: []domain.PackageScript{
+			{Name: "dev"},
+			{Name: "build"},
+			{Name: "lint"},
+			{Name: "start"},
+			{Name: "web:dev", Workspace: "apps/web", PkgName: "web"},
+		},
+	}
+
+	got := rules.AutoServicesAnswers(rules.AutoServicesAnswersParams{Detection: detection})
+
+	if len(got.SelectedPackageScripts) != 2 {
+		t.Fatalf("expected dev and web:dev only, got %+v", got.SelectedPackageScripts)
+	}
+	for _, script := range got.SelectedPackageScripts {
+		if script.Name != "dev" && script.Name != "web:dev" {
+			t.Errorf("%s ne devait pas être retenu", script.Name)
+		}
 	}
 }
 

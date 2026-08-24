@@ -103,3 +103,32 @@ func TestBuildDockerJobsKind(t *testing.T) {
 		t.Error("expected docker job to be detached")
 	}
 }
+
+func TestBuildScriptJobsHonoursAnExplicitKind(t *testing.T) {
+	cfg := BuildScriptJobs(BuildScriptJobsParams{
+		PackageManager: domain.PkgManagerPnpm,
+		Scripts: []domain.PackageScript{
+			// `preview` sert des requêtes : classé task par son nom, il bloquerait
+			// le profil pour toujours.
+			{Name: "preview", Workspace: "apps/web", PkgName: "web", Kind: domain.JobKindService},
+		},
+	})
+
+	if len(cfg.Jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(cfg.Jobs))
+	}
+	if cfg.Jobs[0].Kind != domain.JobKindService {
+		t.Errorf("kind = %s, want service", cfg.Jobs[0].Kind)
+	}
+}
+
+func TestBuildScriptJobsFallsBackToTheNameWhenKindIsUnset(t *testing.T) {
+	cfg := BuildScriptJobs(BuildScriptJobsParams{
+		PackageManager: domain.PkgManagerPnpm,
+		Scripts:        []domain.PackageScript{{Name: "dev", PkgName: "root"}},
+	})
+
+	if cfg.Jobs[0].Kind != domain.JobKindService {
+		t.Errorf("kind = %s, want service from the name", cfg.Jobs[0].Kind)
+	}
+}

@@ -28,6 +28,7 @@ const (
 	stepHooksClean     = "hooks_clean"
 	stepDocker         = "docker"
 	stepComposePatch   = "compose_patch"
+	stepScriptKinds    = "script_kinds"
 	stepScripts        = "scripts"
 )
 
@@ -462,6 +463,78 @@ func addHooksCleanSteps(s *stepSet, autoSkip func(components.WizardModel) bool, 
 	})
 }
 
+// addScriptKindStep only appears when a script was checked outside the dev ones.
+// The kind decides whether a job blocks its profile, and the name gets it wrong
+// in both directions: `preview` serves requests while `start` is production.
+func addScriptKindStep(s *stepSet, detection domain.InitDetectionResult) {
+	scripts := s.at(stepScripts)
+	if scripts < 0 {
+		return
+	}
+
+	s.add(stepScriptKinds, components.Step{
+		Name: domain.ScriptKindStepName,
+		Build: func(prev []components.Step) any {
+			return components.NewMultiSelect(components.NewMultiSelectParams{
+				Title:       domain.ScriptKindStepTitle,
+				Description: domain.ScriptKindStepDesc,
+				Items:       scriptKindItems(prev, scripts, detection.PackageScripts),
+			})
+		},
+		AutoSkip: func(w components.WizardModel) bool {
+			return len(scriptKindItems(w.Steps(), scripts, detection.PackageScripts)) == 0
+		},
+		SkipReason: func() string { return "" },
+		Summary:    multiSelectSummary,
+		Callout:    true,
+	})
+}
+
+// scriptKindItems are the checked scripts the name does not settle — the ones
+// the wizard pre-checked need no question.
+func scriptKindItems(prev []components.Step, scripts int, detected []domain.PackageScript) []components.MultiSelectItem {
+	var items []components.MultiSelectItem
+	for _, script := range selectedScripts(prev, scripts, detected) {
+		if rules.PreselectScript(script.Name) {
+			continue
+		}
+		items = append(items, components.MultiSelectItem{
+			Label:    fmt.Sprintf(domain.ScriptKindItemFmt, script.Name, script.Cmd),
+			Value:    script.Name,
+			Selected: rules.ClassifyScriptKind(script.Name) == domain.JobKindService,
+		})
+	}
+	return items
+}
+
+type scriptItemsParams struct {
+	Scripts        []domain.PackageScript
+	PackageManager domain.PackageManager
+	Prefill        *SectionPrefill
+}
+
+// scriptItems proposes every script and checks the fewest: a job nobody checked
+// is a job that is never written, which is what stops the init from producing
+// an inventory instead of a configuration.
+func scriptItems(params scriptItemsParams) []components.MultiSelectItem {
+	pm := string(params.PackageManager)
+	items := make([]components.MultiSelectItem, 0, len(params.Scripts))
+	for i, script := range params.Scripts {
+		scope := domain.ScriptScopeRoot
+		if script.Workspace != "" {
+			scope = script.Workspace
+		}
+		items = append(items, components.MultiSelectItem{
+			Label: fmt.Sprintf(domain.ScriptItemLabelFmt, scope, script.Name, pm, script.Name),
+			Value: strconv.Itoa(i),
+			Selected: prefillSelected(params.Prefill,
+				params.Prefill != nil && params.Prefill.ScriptIndices[i],
+				rules.PreselectScript(script.Name)),
+		})
+	}
+	return items
+}
+
 type addServicesStepsParams struct {
 	Detection    domain.InitDetectionResult
 	Existing     domain.RunConfig
@@ -491,32 +564,23 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) {
 	}
 
 	if len(detection.PackageScripts) > 0 {
-		pm := string(detection.PackageManager)
-		items := make([]components.MultiSelectItem, 0, len(detection.PackageScripts))
-		for i, script := range detection.PackageScripts {
-			scope := "root"
-			if script.Workspace != "" {
-				scope = script.Workspace
-			}
-			label := fmt.Sprintf("%s / %s — %s run %s", scope, script.Name, pm, script.Name)
-			selected := prefillSelected(prefill, prefill != nil && prefill.ScriptIndices[i], script.Kind == domain.JobKindService)
-			items = append(items, components.MultiSelectItem{
-				Label:    label,
-				Value:    strconv.Itoa(i),
-				Selected: selected,
-			})
-		}
 		s.add(stepScripts, components.Step{
-			Name: "Package scripts",
+			Name: domain.ScriptsStepName,
 			Model: components.NewMultiSelect(components.NewMultiSelectParams{
-				Title:       "Package.json scripts",
-				Description: "Each selected script becomes a job — dev-style scripts run as services, the rest as one-off tasks.",
-				Items:       items,
+				Title:       domain.ScriptsStepTitle,
+				Description: domain.ScriptsStepDesc,
+				Items: scriptItems(scriptItemsParams{
+					Scripts:        detection.PackageScripts,
+					PackageManager: detection.PackageManager,
+					Prefill:        prefill,
+				}),
 			}),
 			Summary: packageScriptsSummary,
 			Callout: true,
 		})
 	}
+
+	addScriptKindStep(s, detection)
 
 	// Declared last on purpose: the step resolves the ports of both selections,
 	// so it must be able to read them — a .env port can withdraw a compose
@@ -652,8 +716,36 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 			}
 		}
 	}
+	if i := at(stepScriptKinds); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.MultiSelectModel); ok {
+			answers.SelectedPackageScripts = applyScriptKinds(answers.SelectedPackageScripts, m.Values())
+		}
+	}
 
 	return answers
+}
+
+// applyScriptKinds settles the kind of every script the step asked about: those
+// it lists are services, the rest of what it asked about are tasks. A script the
+// step never asked about keeps the kind its name implies.
+func applyScriptKinds(scripts []domain.PackageScript, services []string) []domain.PackageScript {
+	asService := make(map[string]bool, len(services))
+	for _, name := range services {
+		asService[name] = true
+	}
+
+	settled := make([]domain.PackageScript, len(scripts))
+	copy(settled, scripts)
+	for i, script := range settled {
+		if rules.PreselectScript(script.Name) {
+			continue
+		}
+		settled[i].Kind = domain.JobKindTask
+		if asService[script.Name] {
+			settled[i].Kind = domain.JobKindService
+		}
+	}
+	return settled
 }
 
 // ── Summaries & gate helpers ────────────────────────────────────────────────

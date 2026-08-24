@@ -545,6 +545,22 @@ const (
 	PruneSkipUnpushed = "unpushed"
 	PruneSkipOpenPR   = "open_pr"
 
+	// The wizard step settling the kind of a script checked outside the dev ones.
+	ScriptKindStepName  = "Long-running?"
+	ScriptKindStepTitle = "Which of these keep running?"
+	ScriptKindStepDesc  = "A checked script runs as a service: started in the background, left up.\n" +
+		"An unchecked one is a task: it blocks the profile until it exits, and a\n" +
+		"non-zero exit aborts the run."
+	ScriptKindItemFmt = "%s — %s"
+
+	// The wizard step selecting which package scripts become jobs.
+	ScriptsStepName  = "Package scripts"
+	ScriptsStepTitle = "Package.json scripts"
+	ScriptsStepDesc  = "Only what you check becomes a job. Dev scripts are checked for you; check\n" +
+		"anything else you want `wtm run` to start or run."
+	ScriptScopeRoot    = "root"
+	ScriptItemLabelFmt = "%s / %s — %s run %s"
+
 	// The profile editor: its keys, its rows and its help bar.
 	ProfileListStepName      = "Profiles"
 	ProfileListKeyRename     = "r"

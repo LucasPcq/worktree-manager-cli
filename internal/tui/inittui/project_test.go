@@ -138,3 +138,59 @@ func TestComposePatchStepIsAbsentWithoutAnyScan(t *testing.T) {
 		t.Error("no compose file means no step at all")
 	}
 }
+
+func TestServicesStepPreselectsOnlyDevScripts(t *testing.T) {
+	scripts := []domain.PackageScript{
+		{Name: "dev", Workspace: "apps/web", PkgName: "web"},
+		{Name: "build", Workspace: "apps/web", PkgName: "web"},
+		{Name: "preview", Workspace: "apps/web", PkgName: "web"},
+		{Name: "start", Workspace: "apps/api", PkgName: "api"},
+	}
+
+	items := scriptItems(scriptItemsParams{
+		Scripts:        scripts,
+		PackageManager: domain.PkgManagerPnpm,
+	})
+
+	if len(items) != 4 {
+		t.Fatalf("tous les scripts restent proposés, got %d", len(items))
+	}
+	selected := map[string]bool{}
+	for i, item := range items {
+		selected[scripts[i].Name] = item.Selected
+	}
+	if !selected["dev"] {
+		t.Error("dev doit être coché")
+	}
+	for _, name := range []string{"build", "preview", "start"} {
+		if selected[name] {
+			t.Errorf("%s ne doit pas être coché", name)
+		}
+	}
+}
+
+func TestApplyScriptKindsSettlesOnlyWhatWasAsked(t *testing.T) {
+	scripts := []domain.PackageScript{
+		{Name: "dev"},
+		{Name: "preview"},
+		{Name: "seed"},
+	}
+
+	got := applyScriptKinds(scripts, []string{"preview"})
+
+	byName := map[string]domain.JobKind{}
+	for _, s := range got {
+		byName[s.Name] = s.Kind
+	}
+	if byName["preview"] != domain.JobKindService {
+		t.Errorf("preview coché = %s, want service", byName["preview"])
+	}
+	if byName["seed"] != domain.JobKindTask {
+		t.Errorf("seed décoché = %s, want task", byName["seed"])
+	}
+	// `dev` n'a jamais été posé en question : son nom suffit, et le laisser vide
+	// fait retomber BuildScriptJobs sur ClassifyScriptKind.
+	if byName["dev"] != "" {
+		t.Errorf("dev = %s, want unset", byName["dev"])
+	}
+}
