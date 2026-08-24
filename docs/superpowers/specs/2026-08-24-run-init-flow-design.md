@@ -1,7 +1,7 @@
 # `wtm run init` produit une configuration qui démarre
 
 **Date** : 2026-08-24
-**Statut** : brouillon — décisions ouvertes en fin de document
+**Statut** : design validé, prêt à planifier
 **Lot** : 2/2 (le lot 1, la vérification des ports, est livré)
 
 ## Le problème, mesuré
@@ -59,22 +59,48 @@ questions et ce qui est écrit :
 
 ## Étape 1 — l'intention
 
-Les tasks (`build`, `lint`, `format`, `check-types`) restent **proposées mais
-décochées**. Elles ne disparaissent pas du wizard — une migration ou un seed
-sont de vrais jobs ponctuels — mais rien n'est écrit tant qu'on ne les coche
-pas. Un job non coché n'existe pas : c'est ce qui supprime les dix entrées
-mortes.
+Tout est proposé, **le moins possible est coché** : seuls les scripts dont le nom
+contient `dev`. Le reste — `build`, `lint`, `format`, `check-types`, mais aussi
+`start`, `serve`, `watch`, `preview` — est visible et décoché. Un job non coché
+n'existe pas : c'est ce qui supprime les dix entrées mortes.
+
+Cette règle est volontairement bête. Lire la *commande* pour deviner si
+`vite preview` sert des requêtes reviendrait à reconstruire une heuristique par
+outil, à la maintenir et à la voir vieillir — exactement ce que le lot 1 a
+refusé de faire pour turbo. Le nom suffit à pré-cocher ; l'utilisateur tranche
+le reste.
+
+**Conséquence à traiter : le `kind` de ce qu'on coche à la main.** `kind`
+(`service` / `task`) ne sert pas qu'à cocher — il décide si le job **bloque le
+profil**. `ClassifyScriptKind` le déduit du nom, donc `preview` est classé
+`task` : coché à la main, il ferait attendre `run up` indéfiniment sur un
+serveur. Un script coché hors des `dev` doit donc pouvoir voir son `kind` fixé
+dans le wizard, avec la classification par le nom comme valeur de départ.
 
 ## Étape 2 — les ports
 
-Pour chaque service retenu, et pour lui seul. Trois cas :
+Pour chaque service retenu, et **seulement quand la détection a trouvé quelque
+chose** (port compose, port `.env`) : le port est pré-rempli, à confirmer ou à
+corriger. Si la commande a besoin d'un flag pour le lire, la commande à écrire
+est montrée.
 
-- la détection a trouvé (port compose, port `.env`) → pré-rempli, à confirmer ;
-- elle n'a rien trouvé → demandé ;
-- la commande a besoin d'un flag → la commande à écrire est montrée.
+**Quand la détection n'a rien trouvé, on ne demande rien.** Poser la question
+reviendrait à déplacer la devinette sur l'utilisateur, et une mauvaise réponse
+est pire qu'une absence de réponse : elle déclare une isolation qui n'existe
+pas.
 
-Le lot 1 ferme la boucle : `run up` dira si le port déclaré a réellement été
-lié, donc l'étape n'a pas à promettre ce qu'elle ne peut pas garantir.
+**Conséquence à traiter** : un service sans port déclaré n'a aucune isolation,
+et le lot 1 restera muet puisqu'il n'y a rien à sonder. Le recap de l'init doit
+donc les nommer — pas une question, une ligne de constat :
+
+```
+Services sans port déclaré — deux worktrees lieront le même
+  web-dev · aucun port détecté dans apps/web
+```
+
+Le lot 1 ferme la boucle pour tous les autres : `run up` dira si le port déclaré
+a réellement été lié, donc l'étape n'a pas à promettre ce qu'elle ne peut pas
+garantir.
 
 ## Étape 4 — les profils
 
@@ -83,9 +109,15 @@ sont deux apps ; `apps/app1/front` et `apps/app1/back` sont une seule. Même
 structure de répertoires, groupement opposé. La détection propose, elle ne
 décide pas.
 
-**Proposition de départ** : un profil par package ayant un job service, plus un
-profil réunissant tout. Dans un repo mono-package les deux se confondent — un
-seul profil, sans cas particulier à écrire.
+**Proposition de départ**, sur un repo vierge : un profil par package ayant un
+job service, plus un profil réunissant tout. Dans un repo mono-package les deux
+se confondent — un seul profil, sans cas particulier à écrire.
+
+**Sur un `run init` relancé, la proposition est la configuration déjà en
+place** : les profils existants sont affichés tels quels et servent de point de
+départ à l'édition. L'init n'infère pas un découpage par-dessus un découpage que
+l'utilisateur a déjà composé ; il montre ce qu'il y a et laisse décider. C'est
+aussi ce qui protège les modifications faites à la main dans `run.toml`.
 
 **Infra partagée** : les jobs dont le `cwd` est la racine (donc les jobs
 compose) entrent dans chaque profil. C'est ce qui donne « je lance juste l'api
@@ -102,6 +134,10 @@ gros du travail TUI de ce lot.
 quand l'un est marqué `default`. Décision prise : un défaut ne fonctionne que
 pour les apps simples qui démarrent toujours la même chose, ce qui n'est pas le
 cas courant sur un monorepo.
+
+`default = true` **reste dans le modèle**, avec un rôle réduit et honnête : il
+pré-sélectionne l'entrée du picker. C'est le comportement actuel de
+`pickProfile`, qui devient sa seule raison d'être.
 
 Le fallback actuel « zéro profil → lance tous les jobs » est traité dans le même
 lot : c'est lui qui lance le linter. L'init écrivant désormais toujours au moins
@@ -123,17 +159,30 @@ pas détruire ce qui a été écrit à la main dans `run.toml`.
 | `internal/tui/inittui/` | l'enchaînement des étapes |
 | `internal/commands/run/init.go` | câblage |
 
-## Décisions restant à prendre
+## Critères d'acceptation
 
-1. **`default = true` a-t-il encore un emploi ?** Le picker sortant toujours, il
-   ne sert plus qu'à pré-sélectionner l'entrée du picker. Le garder à ce titre,
-   ou le retirer du modèle ?
-2. **Que fait l'étape « ports » quand la détection n'a rien trouvé ?** Demander
-   une valeur de base, ou permettre de passer et laisser le job sans port
-   déclaré (donc sans isolation, et signalé comme tel par le lot 1) ?
-3. **La classification service/task doit-elle lire la commande** en plus du nom
-   du script ? `web-preview` (`vite preview`) est classé task alors qu'il sert,
-   `api-start` (`node dist/index.js`) est classé service alors qu'on ne le lance
-   pas en dev. Le nom seul se trompe dans les deux sens.
-4. **Un `run init` relancé** doit-il reproposer le découpage en profils, ou
-   ne toucher qu'aux jobs et laisser les profils existants intacts ?
+1. Sur un repo neuf à un `docker-compose.yml` et quatre scripts
+   (`dev`, `build`, `lint`, `start`), `run init` non interactif écrit **deux
+   jobs** (compose + `dev`) et **un profil**, et `run up` démarre ces deux-là et
+   rien d'autre — plus jamais `[1/5]`.
+2. Sur le monorepo d'exemple, l'init ne produit plus de job racine `dev`
+   concurrent des jobs par package sans qu'il ait été coché.
+3. Un `run init` relancé sur une configuration existante affiche les profils en
+   place et ne les remplace pas sans décision explicite.
+4. Un service retenu sans port détecté apparaît dans le recap sous « services
+   sans port déclaré », et l'init ne pose aucune question de port pour lui.
+5. Un script coché hors des `dev` peut voir son `kind` fixé dans le wizard, de
+   sorte que cocher `preview` ne fasse pas attendre `run up` indéfiniment.
+
+## Tests
+
+- **`rules`** : pré-cochage (seuls les noms contenant `dev`), proposition de
+  découpage en profils (mono-package → un seul profil ; multi-package → un par
+  package plus le global), ce qui compte comme infra partagée (`cwd` racine),
+  et la liste des services sans port déclaré.
+- **`tui/components`** : le composant d'édition groupée — renommer, fusionner,
+  retirer, créer — testé sur ses transitions, sans rendu.
+- **`tui/inittui`** : l'enchaînement des étapes, et le fait qu'un job non coché
+  n'entre pas dans la configuration produite.
+- **`commands/run`** : un init non interactif de bout en bout sur les deux repos
+  de référence, comparé au `run.toml` attendu.
