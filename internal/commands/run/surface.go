@@ -32,6 +32,8 @@ type runSeamParams struct {
 	// Jobs are the worktree's declared jobs, which the view lists whether or not
 	// this run touches them.
 	Jobs []domain.JobConfig
+	// Prober checks the declared ports once the jobs are up. Nil skips the check.
+	Prober runlogs.Prober
 }
 
 // runSeam is this command's end of internal/flow/runlogs: the daemon's view of
@@ -43,6 +45,7 @@ type runSeam struct {
 	workDir string
 	logDir  string
 	env     map[string]string
+	prober  runlogs.Prober
 }
 
 func openRunSeam(params runSeamParams) runSeam {
@@ -59,6 +62,7 @@ func openRunSeam(params runSeamParams) runSeam {
 		}),
 		workDir: params.Dir,
 		logDir:  logDir,
+		prober:  params.Prober,
 	}
 }
 
@@ -75,6 +79,7 @@ func (s runSeam) starter(jobs []domain.JobConfig) runview.StartFunc {
 			WorkDir: s.workDir,
 			LogDir:  s.logDir,
 			Env:     s.env,
+			Prober:  s.prober,
 		})
 	}
 }

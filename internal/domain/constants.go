@@ -142,6 +142,15 @@ const (
 	// when run.toml does not set one.
 	PortOffsetBlock = 10
 
+	// PortProbeTimeout is how long `run up` waits for a declared port to answer
+	// before reporting it silent. Generous on purpose: the poll returns as soon
+	// as every port has answered, so only a failure ever spends it whole.
+	PortProbeTimeout = 15 * time.Second
+	// PortProbeInterval paces the poll, PortProbeDialTimeout bounds one dial —
+	// a loopback port either answers at once or is not there.
+	PortProbeInterval    = 250 * time.Millisecond
+	PortProbeDialTimeout = 300 * time.Millisecond
+
 	// PortMin and PortMax bound a declared base port.
 	PortMin = 1
 	PortMax = 65535
@@ -249,6 +258,22 @@ const (
 	ComposePatchPartialFmt = "already rewritten: %s"
 	ComposeReadFileFmt     = "read %s: %w"
 	ComposeWriteFileFmt    = "write %s: %w"
+
+	// The port probe report: what `run up` observed on the ports a job declared.
+	// It states what was seen, never what is at fault — wtm can tell that
+	// nothing answers, not why.
+	PortProbeTitle     = "Ports declared but not bound"
+	PortProbeSilentFmt = "%s · nothing is listening on %s=%d"
+	PortProbeBaseFmt   = "  but %d is listening — the base port"
+	PortProbeBaseHint  = "  the command ran, but the variable did not reach it"
+
+	// PortProbeHostV4 and PortProbeHostV6 are both dialed: a service bound to
+	// ::1 only would otherwise read as silent.
+	PortProbeHostV4 = "127.0.0.1"
+	PortProbeHostV6 = "::1"
+
+	// FlagNoProbe skips the port check for one invocation.
+	FlagNoProbe = "no-probe"
 
 	// The .env port report ([[env_port]] links resolved for one worktree).
 	EnvPortsTitle       = "Env ports"

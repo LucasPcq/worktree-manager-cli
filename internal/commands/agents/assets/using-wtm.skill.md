@@ -304,6 +304,16 @@ and **experimental**: the global `wtm init` does not configure it.
   (= `<repo>-<WTM_WORKTREE>`, left alone if the environment already sets it). Docker
   isolation is automatic for everything compose names itself; a `container_name` or a
   volume/network pinned by `name` escapes it — see `run init --patch-compose` above.
+- **`run up` verifies the ports.** Declaring a port injects a variable; nothing forces
+  the command to read it. After the jobs start, wtm dials each declared port and reports
+  the silent ones under "Ports declared but not bound". When the *base* port answers
+  instead, the variable never reached the process — a `--port`-only CLI, a hard-coded
+  port, a `.env` that wins, or a task runner filtering env (**Turborepo's default
+  `envMode: "strict"` does exactly this**: a root `turbo run dev` job needs
+  `globalPassThroughEnv` in `turbo.json`). wtm never edits third-party config; report the
+  finding and tell the user what to change. The check never fails the run and never
+  changes the exit code — do not treat it as an error. `--no-probe` skips it;
+  `port_probe_timeout` in run.toml sets the budget (default 15s, negative disables).
 - **Port isolation is declarative.** A job declares the ports it binds on the main
   checkout, and wtm injects `base + WTM_PORT_OFFSET` under that name — so the command
   needs no arithmetic of its own:

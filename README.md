@@ -324,6 +324,30 @@ $ wtm run up
 ✓ web started · PORT=3010
 ```
 
+**wtm checks that the port was actually bound.** Declaring a port only injects a
+variable — nothing guarantees the command reads it. Once the jobs are up, `run up` dials
+each declared port and reports the ones nothing answers on:
+
+```console
+$ wtm run up
+✓ web started · WEB_PORT=5183
+
+  Ports declared but not bound
+  web · nothing is listening on WEB_PORT=5183
+    but 5173 is listening — the base port
+    the command ran, but the variable did not reach it
+```
+
+The second line is the signature of a variable that never arrived: a CLI that only takes
+`--port`, a hard-coded port, a `.env` that wins, or a task runner filtering the
+environment — **Turborepo does this by default** (`envMode: "strict"`), so a root
+`turbo run dev` job needs `globalPassThroughEnv` in `turbo.json` for the ports to reach
+its packages. wtm never edits those files; it tells you what it observed.
+
+It never fails the run, and a healthy stack costs nothing — the check stops as soon as
+every port answers. `--no-probe` skips it, and `port_probe_timeout` in run.toml sets the
+budget (default 15s, a negative value turns it off).
+
 A declaration overrides whatever the environment already sets for that variable, and the
 job's `stop` command runs with the same ports its `cmd` did. For Docker, template the host
 side of the mapping (`"${DB_PORT}:5432"`) and declare `DB_PORT = 5432`: the container port

@@ -43,9 +43,13 @@ type RunConfig struct {
 	// PortOffsetBlock spaces two worktrees' declared ports apart. Zero means the
 	// default: a project only sets it to make room for base ports that would
 	// otherwise land a multiple of the block apart.
-	PortOffsetBlock int             `toml:"port_offset_block,omitempty" json:"port_offset_block,omitempty"`
-	Jobs            []JobConfig     `toml:"job"                        json:"job"`
-	Profiles        []ProfileConfig `toml:"profile,omitempty"          json:"profile"`
+	PortOffsetBlock int `toml:"port_offset_block,omitempty" json:"port_offset_block,omitempty"`
+	// PortProbeTimeout is how many seconds `run up` waits for a declared port to
+	// answer before reporting it silent. Zero falls back to the default; a
+	// negative value disables the check.
+	PortProbeTimeout int             `toml:"port_probe_timeout,omitempty" json:"port_probe_timeout,omitempty"`
+	Jobs             []JobConfig     `toml:"job"                        json:"job"`
+	Profiles         []ProfileConfig `toml:"profile,omitempty"          json:"profile"`
 	// EnvPorts links a .env key to one of the ports declared above, so a value
 	// holding a hard-coded host port follows the worktree's offset.
 	EnvPorts []EnvPortLink `toml:"env_port,omitempty" json:"env_port,omitempty"`

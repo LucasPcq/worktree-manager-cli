@@ -122,8 +122,18 @@ const (
 	PhaseDone
 	PhaseFailed
 	PhaseAborted
+	PhaseProbed
 	PhaseReady
 )
+
+// Prober answers which of the given ports are listening. It is the seam over
+// service/portprobe: the flow states what it wants checked, the surface owns
+// the budget and the dialing.
+type Prober interface {
+	// Listening dials until settled says the answer is complete or the surface's
+	// own budget runs out.
+	Listening(ctx context.Context, ports []int, settled func(map[int]bool) bool) map[int]bool
+}
 
 // Event is one step of a profile's start sequence. Rendering it is the surface's
 // business: nothing here formats, colours or frames anything.
@@ -147,6 +157,8 @@ type Event struct {
 	// Ports are what a PhaseStarted or PhaseDone job bound, for a surface that
 	// tells the user where to reach it.
 	Ports map[string]int
+	// Probes is what PhaseProbed observed on one job's declared ports.
+	Probes []domain.PortProbe
 }
 
 // Sink is emitted to on the goroutine that called Run.

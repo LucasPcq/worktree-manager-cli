@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/LucasPcq/worktree-manager-cli/main/schemas/run.schema.json",
   "title": "wtm run config",
-  "description": "Schema for .wtm/run.toml — declares jobs (services and tasks) and profiles that compose them.",
+  "description": "Schema for .wtm/run.toml \u2014 declares jobs (services and tasks) and profiles that compose them.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -39,7 +39,7 @@
           },
           "cmd": {
             "type": "string",
-            "description": "Command to start the job, run as a `/bin/sh` line: quotes, `&&`, pipes, redirections and globs all mean what they mean in a terminal, and `${VAR}` expands from the job's environment — including the ports declared below. Write `pnpm dev --port ${PORT}` for a server that only takes its port as a CLI flag."
+            "description": "Command to start the job, run as a `/bin/sh` line: quotes, `&&`, pipes, redirections and globs all mean what they mean in a terminal, and `${VAR}` expands from the job's environment \u2014 including the ports declared below. Write `pnpm dev --port ${PORT}` for a server that only takes its port as a CLI flag."
           },
           "stop": {
             "type": "string",
@@ -117,7 +117,7 @@
     },
     "env_port": {
       "type": "array",
-      "description": "Links a .env key to a declared port. wtm rewrites the port inside that key's value for each worktree, leaving the rest of the value untouched — so a hard-coded host:port in a URL follows the worktree's offset.",
+      "description": "Links a .env key to a declared port. wtm rewrites the port inside that key's value for each worktree, leaving the rest of the value untouched \u2014 so a hard-coded host:port in a URL follows the worktree's offset.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -143,6 +143,11 @@
           }
         }
       }
+    },
+    "port_probe_timeout": {
+      "type": "integer",
+      "description": "Seconds `wtm run up` waits for a declared port to answer before reporting it silent. Omit for the default (15); a negative value disables the check.",
+      "default": 15
     }
   }
 }
