@@ -308,9 +308,12 @@ resource:
 | `WTM_PORT_OFFSET` | `WTM_ORDINAL` × the block (`port_offset_block`, 10 by default) — the main checkout keeps the project's default ports |
 | `COMPOSE_PROJECT_NAME` | `<repo>-<WTM_WORKTREE>`, unless your own environment already defines it. The Docker daemon is machine-wide, so the repository qualifies the name: two clones both sitting on `main` do not share a stack |
 
-`COMPOSE_PROJECT_NAME` alone is what stops two worktrees from sharing containers,
-networks and volumes — nothing to declare, it works as soon as your jobs use
-`docker compose`.
+`COMPOSE_PROJECT_NAME` is what keeps two worktrees' containers, networks and volumes
+apart — nothing to declare, it works as soon as your jobs use `docker compose`. It reaches
+everything compose names for you, and nothing your file names itself: a `container_name`,
+or a volume's or network's explicit `name`, is resolved by the Docker daemon directly, so
+the second worktree to start meets the first one's. `wtm run init` finds those and offers
+to front them with the project — see [absolute names](#absolute-names) below.
 
 **Ports** are declared per job, and wtm injects `base + WTM_PORT_OFFSET` under the name
 you chose — the command itself needs no arithmetic:
@@ -353,6 +356,27 @@ node servers read `PORT` from the environment, while a CLI that only takes a fla
 `--cmd 'pnpm dev --port ${PORT}'`. The port it declares is also the base the `[[env_port]]`
 links below follow, so a `.env` holding both `PORT=5173` and a `VITE_API_URL` pointing at
 it ends up with the two shifted together.
+
+<a id="absolute-names"></a>
+**Absolute names.** A compose file that pins its own names bypasses the project prefix,
+which is what makes a second worktree fail outright — Docker refuses a duplicate
+`container_name`, and a volume or network pinned by `name` is silently shared instead.
+`run init` reports them, and `--patch-compose` fronts each with the project:
+
+```diff
+   postgres:
+-    container_name: myapp-postgres
++    container_name: "${COMPOSE_PROJECT_NAME:-myapp}-postgres"
+```
+
+The `:-myapp` default reproduces the name the file used to pin, so `docker compose up`
+on its own is unchanged. Ports and names are one question, not two — accepting half of
+them still leaves two worktrees unable to run at once. A `name` under `external: true`
+is left alone (sharing it is the declaration's whole point), as is one that already reads
+a variable, and a volume declared as a bare key was never affected: compose already
+prefixes it with the project. **A volume that pinned its `name` gains one per worktree,
+each starting empty** — the data already written stays under the old name, and moving it
+across is yours to do.
 
 wtm declares only what it can actually isolate, and says why for the rest: a port range,
 a mapping with no host port, a `ports:` list carrying a YAML **anchor or alias** (rewriting

@@ -529,6 +529,41 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) {
 	})
 }
 
+// composePatchDescription lays out only the halves that have something to show:
+// a file with a literal port and no pinned name asks about ports alone.
+func composePatchDescription(patches map[string][]domain.ComposePortBinding, names map[string][]domain.ComposeAbsoluteName) string {
+	sections := []string{domain.ComposePatchStepIntro}
+
+	if len(patches) > 0 {
+		sections = append(sections, domain.ComposePatchStepPortsLead+"\n"+strings.Join(rules.ComposePatchLines(patches), "\n"))
+	}
+	if len(names) > 0 {
+		sections = append(sections, domain.ComposePatchStepNamesLead+"\n"+strings.Join(rules.ComposeNamePatchLines(names), "\n"))
+		if rules.ComposeNamesRenameAVolume(names) {
+			sections = append(sections, domain.ComposeNamesVolumeWarning)
+		}
+	}
+
+	return strings.Join(append(sections, domain.ComposePatchStepEpilogue), "\n\n")
+}
+
+// composeNamesFor plans against the wizard's live docker selection, so the
+// lines the step asks about are exactly the ones the recap will report.
+func composeNamesFor(prev []components.Step, docker int, detection domain.InitDetectionResult) map[string][]domain.ComposeAbsoluteName {
+	if docker >= len(prev) {
+		return nil
+	}
+	selected, ok := prev[docker].Model.(components.MultiSelectModel)
+	if !ok {
+		return nil
+	}
+	return rules.PlanComposeNames(rules.PlanComposeNamesParams{
+		Scans: detection.ComposeScans,
+		Files: selected.Values(),
+		Patch: true,
+	}).Patches
+}
+
 // ── Extraction ──────────────────────────────────────────────────────────────
 
 // extractProjectAnswers reads the answers from the final wizard model using the
@@ -843,19 +878,16 @@ func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
 				Existing:  params.Existing,
 				EnvScans:  params.EnvScans,
 			})
-			if len(patches) == 0 {
+			names := composeNamesFor(prev, docker, detection)
+			if len(patches) == 0 && len(names) == 0 {
 				return false, "", components.NewConfirmParams{}
 			}
 			if params.Authorized {
 				return false, "--" + domain.FlagPatchCompose, components.NewConfirmParams{}
 			}
 			return true, "", components.NewConfirmParams{
-				Title: domain.ComposePatchStepTitle,
-				Description: strings.Join([]string{
-					domain.ComposePatchStepPrelude,
-					strings.Join(rules.ComposePatchLines(patches), "\n"),
-					domain.ComposePatchStepEpilogue,
-				}, "\n\n"),
+				Title:       domain.ComposePatchStepTitle,
+				Description: composePatchDescription(patches, names),
 			}
 		},
 	}))

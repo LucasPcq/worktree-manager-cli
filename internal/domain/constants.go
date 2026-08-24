@@ -157,10 +157,30 @@ const (
 	ComposeVarNamePrefix = "S"
 
 	// The docker-compose keys wtm reads.
-	ComposeServicesKey  = "services"
-	ComposePortsKey     = "ports"
-	ComposePublishedKey = "published"
-	ComposeTargetKey    = "target"
+	ComposeServicesKey      = "services"
+	ComposePortsKey         = "ports"
+	ComposePublishedKey     = "published"
+	ComposeTargetKey        = "target"
+	ComposeContainerNameKey = "container_name"
+	ComposeVolumesKey       = "volumes"
+	ComposeNetworksKey      = "networks"
+	ComposeNameKey          = "name"
+	ComposeExternalKey      = "external"
+
+	// ComposeIsolatedNameFmt is what an absolute name becomes: the compose
+	// project fronts it, so it moves with the worktree. The default keeps
+	// `docker compose up` working on its own, without wtm, and reproduces the
+	// name the file used to pin.
+	ComposeIsolatedNameFmt = "${" + EnvComposeProjectName + ":-%s}-%s"
+	// ComposeIsolatedBareNameFmt covers the name that is already exactly the
+	// project's: there is no suffix left to keep it apart from.
+	ComposeIsolatedBareNameFmt = "${" + EnvComposeProjectName + ":-%s}"
+
+	// The reasons an absolute name is left alone.
+	ComposeNameReasonAnchor     = "the name carries a YAML anchor — rewriting it would move every site aliasing it"
+	ComposeNameReasonAlias      = "the name is a YAML alias — templating it would change every anchor site"
+	ComposeNameReasonUnreadable = "wtm could not read this name back from the file, so it will not rewrite it"
+	ComposeNameReasonNoProject  = "wtm could not name the repository, so it has nothing to front the name with"
 
 	// The reasons a compose port mapping is left alone.
 	ComposePortReasonNoHost     = "no host port to shift — Docker picks one at random"
@@ -187,9 +207,27 @@ const (
 	// ComposeFixIndentFmt indents the geste under the port it belongs to.
 	ComposeFixIndentFmt = "  %s"
 
+	// The section titles of the absolute-name report.
+	ComposeNamesPatchedTitle  = "Compose names scoped to the worktree"
+	ComposeNamesWithheldTitle = "Names left alone"
+	// ComposeNamesVolumeWarning follows a renamed volume: the isolation is the
+	// point, but the data already written does not travel into it, and a reader
+	// who is not told reads the empty volume as data loss.
+	ComposeNamesVolumeWarning = "a volume that pinned its name gains one per worktree, each starting empty — the\n" +
+		"data already written stays in the volume under the old name"
+
 	// ComposePatchLineFmt is one rewrite as both the wizard and the recap show
 	// it: where it is, and what it becomes.
 	ComposePatchLineFmt = "%s · %s   %s → %s"
+	// ComposeNameLineFmt is one absolute-name rewrite, and ComposeNameKindFmt
+	// qualifies the owner with what it is — a service and a volume may share a
+	// name without sharing a line.
+	ComposeNameLineFmt = "%s · %s %s   %s → %s"
+	// ComposeNameWithheldFmt names an absolute name wtm refuses to rewrite, and
+	// ComposeNameCollidesFmt is the detail a name withheld for want of
+	// authorization carries — there is no refusal to report, only the effect.
+	ComposeNameWithheldFmt = "%s · %s %s   %s"
+	ComposeNameCollidesFmt = "%s is the same name in every worktree"
 	// ComposeFrozenLineFmt names a host port left literal, and ComposeFixLineFmt
 	// the mapping to write instead. ComposeFixCmdFmt is the declaration that
 	// follows once the file reads a variable.
@@ -295,14 +333,23 @@ const (
 	EnvPortLinkConfirm     = "Link these keys so each worktree gets its own ports?"
 	EnvPortLinkDescription = "wtm rewrites the port inside each value when a worktree is created or reconciled. The rest of the value is left alone."
 
-	// The wizard step that asks to templatize the selected files' literal ports.
-	ComposePatchStepName    = "Templatize ports"
-	ComposePatchStepYes     = "rewrite"
-	ComposePatchStepNo      = "leave as is"
-	ComposePatchStepTitle   = "Make these ports per-worktree?"
-	ComposePatchStepPrelude = "These host ports are written as literals, so every worktree would bind the same one.\n" +
-		"wtm can rewrite them to read a variable — the default keeps `docker compose up` working on its own:"
-	ComposePatchStepEpilogue = "Declining leaves the files untouched; wtm then declares no port for them."
+	// The wizard step that asks to make the selected compose files per-worktree.
+	// Ports and absolute names are one question: accepting half of them still
+	// leaves two worktrees unable to run at once, so there is no useful answer
+	// that takes one without the other.
+	ComposePatchStepName  = "Templatize compose"
+	ComposePatchStepYes   = "rewrite"
+	ComposePatchStepNo    = "leave as is"
+	ComposePatchStepTitle = "Make these compose files per-worktree?"
+	ComposePatchStepIntro = "As written, these files bind or name the same thing in every worktree, so a\n" +
+		"second one cannot run alongside the first. wtm can rewrite them — every default\n" +
+		"keeps `docker compose up` working on its own, without wtm:"
+	// ComposePatchStepPortsLead and ComposePatchStepNamesLead head each half of
+	// the step, so the reader can tell a bind from a name at a glance.
+	ComposePatchStepPortsLead = "Host ports written as literals — every worktree would bind the same one:"
+	ComposePatchStepNamesLead = "Names the Docker daemon resolves, which COMPOSE_PROJECT_NAME never reaches:"
+	ComposePatchStepEpilogue  = "Declining leaves the files untouched; wtm then declares no port for them, and two\n" +
+		"worktrees cannot run these services at once."
 
 	// ComposeChangedTitle and ComposeOrphanTitle head the two report sections
 	// that say why a file contributed nothing.

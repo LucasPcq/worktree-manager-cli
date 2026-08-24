@@ -64,8 +64,10 @@ type InitProjectAnswers struct {
 	DockerComposeFiles []string
 	DockerComposeCmd   string
 	// PatchCompose authorizes rewriting the selected compose files so their
-	// frozen host ports read a variable. Never inferred: it is the wizard's
-	// answer, or the --patch-compose flag.
+	// frozen host ports and the names they pin absolutely read a variable. One
+	// axis, not two: accepting half of them still leaves two worktrees unable to
+	// run at once. Never inferred — it is the wizard's answer, or the
+	// --patch-compose flag.
 	PatchCompose           bool
 	SelectedPackageScripts []PackageScript
 	SkipEnv                bool

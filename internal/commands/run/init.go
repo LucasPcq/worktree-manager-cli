@@ -37,6 +37,11 @@ func newInitCmd() *cobra.Command {
 			"host port (\"5432:5432\") binds the same port everywhere, so wtm offers to rewrite it\n" +
 			"as \"${DB_PORT:-5432}:5432\" — the default keeps `docker compose up` working on its\n" +
 			"own. Declining leaves the file untouched and declares no port for it.\n\n" +
+			"The names those files pin absolutely get the same treatment. A container_name, or\n" +
+			"a volume's or network's explicit name, is resolved by the Docker daemon rather than\n" +
+			"by the compose project, so COMPOSE_PROJECT_NAME never reaches it and a second\n" +
+			"worktree collides on it. wtm offers to front them with the project — a renamed\n" +
+			"volume starts empty, its data staying under the name it used to carry.\n\n" +
 			"Dev servers get theirs from the env files sitting next to their package.json —\n" +
 			"a PORT (or *_PORT) entry in .env.local, .env, or a committed .env.example. wtm\n" +
 			"only declares the port; check that the command actually reads the variable, and\n" +
@@ -46,7 +51,7 @@ func newInitCmd() *cobra.Command {
 		RunE: runRunInit,
 	}
 	cmd.Flags().Bool(domain.FlagNonInteractive, false, "Auto-generate from detection; never prompt")
-	cmd.Flags().Bool(domain.FlagPatchCompose, false, "Rewrite literal host ports in the selected compose files to read a variable")
+	cmd.Flags().Bool(domain.FlagPatchCompose, false, "Rewrite the selected compose files' literal host ports and absolute names to read a variable")
 	cmd.Flags().Bool(domain.FlagLinkEnv, false, "Link the .env keys holding a declared port, so each worktree gets its own")
 	return cmd
 }
@@ -77,6 +82,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			detection.ComposeScans = compose.ScanAll(compose.ScanAllParams{
 				ProjectDir: res.ProjectDir,
 				Files:      detection.DockerComposeFiles,
+				Project:    filepath.Base(res.ProjectDir),
 			})
 			envScans = detect.ScanEnvPorts(detect.ScanEnvPortsParams{
 				ProjectDir: res.ProjectDir,
@@ -111,16 +117,24 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		Files: answers.DockerComposeFiles,
 		Patch: answers.PatchCompose,
 	})
+	namePlan := rules.PlanComposeNames(rules.PlanComposeNamesParams{
+		Scans: detection.ComposeScans,
+		Files: answers.DockerComposeFiles,
+		Patch: answers.PatchCompose,
+	})
+	unverifiable := compose.VerifyAll(compose.VerifyAllParams{
+		ProjectDir:  res.ProjectDir,
+		ByFile:      plan.Patches,
+		NamesByFile: namePlan.Patches,
+	})
+	namePatches := rules.ComposeNamesWithoutFiles(namePlan.Patches, rules.SortedComposeFiles(unverifiable))
 	outcome := rules.ResolveDetectedPorts(rules.ResolveDetectedPortsParams{
 		Answers:        answers,
 		PackageManager: detection.PackageManager,
 		Existing:       existing,
 		Plan:           plan,
-		Unverifiable: compose.VerifyAll(compose.VerifyAllParams{
-			ProjectDir: res.ProjectDir,
-			ByFile:     plan.Patches,
-		}),
-		EnvScansByDir: envScans,
+		Unverifiable:   unverifiable,
+		EnvScansByDir:  envScans,
 	})
 
 	if !rules.IsRunInitialized(outcome.Config) {
@@ -145,7 +159,11 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 	// The rewrites come first: a compose templatized without run.toml behind it
 	// keeps binding its defaults, while a run.toml declaring ports the compose
 	// does not read would announce an isolation that is not there.
-	if err := compose.PatchAll(compose.PatchAllParams{ProjectDir: res.ProjectDir, ByFile: outcome.Patches}); err != nil {
+	if err := compose.PatchAll(compose.PatchAllParams{
+		ProjectDir:  res.ProjectDir,
+		ByFile:      outcome.Patches,
+		NamesByFile: namePatches,
+	}); err != nil {
 		return err
 	}
 	if err := runconfig.Save(runconfig.SaveParams{StateDir: res.StateDir, Config: outcome.Config}); err != nil {
@@ -173,6 +191,10 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			EnvWritten:    outcome.EnvWritten,
 			EnvSources:    outcome.EnvSources,
 			EnvUnreadable: outcome.EnvUnreadable,
+		})
+		output.ComposeNamesReport(cmd.OutOrStdout(), output.ComposeNamesReportParams{
+			Patched:  namePatches,
+			Withheld: namePlan.Withheld,
 		})
 		output.EnvPortLinksReport(cmd.OutOrStdout(), links, rules.EnvPortBases(outcome.Config))
 		output.Blank(cmd.OutOrStdout())

@@ -243,6 +243,18 @@ and **experimental**: the global `wtm init` does not configure it.
   `docker compose up` working without wtm. Non-interactively no project file is ever
   touched without that flag. Re-running `run init` backfills the ports of a compose job
   that predates them, without overwriting a port already declared.
+- `run init` also finds the **absolute names** a compose file pins: a service's
+  `container_name`, or a top-level volume's or network's explicit `name`. These are
+  resolved by the Docker daemon, not by the compose project, so `COMPOSE_PROJECT_NAME`
+  never reaches them and a second worktree collides — Docker refuses a duplicate
+  `container_name` outright, and a pinned volume or network is silently shared. wtm
+  reports them and, under the same **`--patch-compose`**, fronts each with the project
+  (`container_name: "${COMPOSE_PROJECT_NAME:-myapp}-postgres"`); the default reproduces
+  the name the file used to pin, so `docker compose up` alone is unchanged. Ports and
+  names are **one confirmation**, not two: accepting half still leaves two worktrees
+  unable to run at once. A name under `external: true` or one already reading a variable
+  is left alone. A volume that pinned its `name` gains one per worktree, **each starting
+  empty** — the data already written stays under the old name; say so before patching.
 - `run init` also pre-fills the ports of **dev server jobs** from the env files next to
   their `package.json`: a `PORT` (or `*_PORT`) entry with a numeric value, read from
   `.env.local`, else `.env`, else a committed `.env.example`. A job is matched to a
@@ -290,7 +302,8 @@ and **experimental**: the global `wtm init` does not configure it.
   number, stable for the worktree's life), `WTM_PORT_OFFSET` (`WTM_ORDINAL` times the
   `port_offset_block` of run.toml, 10 by default), and `COMPOSE_PROJECT_NAME`
   (= `<repo>-<WTM_WORKTREE>`, left alone if the environment already sets it). Docker
-  isolation is therefore automatic.
+  isolation is automatic for everything compose names itself; a `container_name` or a
+  volume/network pinned by `name` escapes it — see `run init --patch-compose` above.
 - **Port isolation is declarative.** A job declares the ports it binds on the main
   checkout, and wtm injects `base + WTM_PORT_OFFSET` under that name — so the command
   needs no arithmetic of its own:

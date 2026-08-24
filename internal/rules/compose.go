@@ -348,21 +348,46 @@ type ApplyComposePortPatchesParams struct {
 	Bindings []domain.ComposePortBinding
 }
 
-// ApplyComposePortPatches rewrites the host port of each binding in place,
-// addressing it by the line and column the scan recorded. The file is never
-// re-serialized, so comments, indentation, anchors and quoting style survive
-// untouched. A token that is no longer where it was scanned aborts the whole
-// patch rather than overwriting whatever took its place.
+// ApplyComposePortPatches rewrites the host port of each binding in place.
 func ApplyComposePortPatches(params ApplyComposePortPatchesParams) (string, error) {
-	targets := make([]domain.ComposePortBinding, 0, len(params.Bindings))
-	for _, b := range params.Bindings {
-		if b.Replacement != "" {
-			targets = append(targets, b)
+	return ApplyComposeEdits(ApplyComposeEditsParams{
+		Content: params.Content,
+		Edits:   ComposePortEdits(params.Bindings),
+	})
+}
+
+// ComposePortEdits reduces the bindings to the splice the patcher performs.
+func ComposePortEdits(bindings []domain.ComposePortBinding) []domain.ComposeEdit {
+	edits := make([]domain.ComposeEdit, 0, len(bindings))
+	for _, b := range bindings {
+		if b.Replacement == "" {
+			continue
 		}
+		edits = append(edits, domain.ComposeEdit{
+			File: b.File, Line: b.Line, Column: b.Column,
+			Token: b.Token, Replacement: b.Replacement,
+		})
 	}
-	if len(targets) == 0 {
+	return edits
+}
+
+type ApplyComposeEditsParams struct {
+	Content string
+	Edits   []domain.ComposeEdit
+}
+
+// ApplyComposeEdits splices each edit in place, addressing it by the line and
+// column the scan recorded. The file is never re-serialized, so comments,
+// indentation, anchors and quoting style survive untouched. A token that is no
+// longer where it was scanned aborts the whole patch rather than overwriting
+// whatever took its place.
+func ApplyComposeEdits(params ApplyComposeEditsParams) (string, error) {
+	if len(params.Edits) == 0 {
 		return params.Content, nil
 	}
+
+	targets := make([]domain.ComposeEdit, len(params.Edits))
+	copy(targets, params.Edits)
 
 	// Descending, so splicing one token never shifts the next one's column.
 	sort.Slice(targets, func(i, j int) bool {
@@ -373,19 +398,19 @@ func ApplyComposePortPatches(params ApplyComposePortPatchesParams) (string, erro
 	})
 
 	lines := strings.Split(params.Content, "\n")
-	for _, b := range targets {
-		if b.Line < 1 || b.Line > len(lines) {
-			return "", fmt.Errorf(domain.ComposePatchOutOfRangeFmt, b.File, b.Line)
+	for _, e := range targets {
+		if e.Line < 1 || e.Line > len(lines) {
+			return "", fmt.Errorf(domain.ComposePatchOutOfRangeFmt, e.File, e.Line)
 		}
 
-		line := lines[b.Line-1]
-		start := b.Column - 1
-		end := start + len(b.Token)
-		if start < 0 || end > len(line) || line[start:end] != b.Token {
-			return "", fmt.Errorf(domain.ComposePatchMovedFmt, b.File, b.Line, b.Token, composeFoundAt(line, start, len(b.Token)))
+		line := lines[e.Line-1]
+		start := e.Column - 1
+		end := start + len(e.Token)
+		if start < 0 || end > len(line) || line[start:end] != e.Token {
+			return "", fmt.Errorf(domain.ComposePatchMovedFmt, e.File, e.Line, e.Token, composeFoundAt(line, start, len(e.Token)))
 		}
 
-		lines[b.Line-1] = line[:start] + b.Replacement + line[end:]
+		lines[e.Line-1] = line[:start] + e.Replacement + line[end:]
 	}
 
 	return strings.Join(lines, "\n"), nil

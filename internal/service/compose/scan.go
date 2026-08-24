@@ -18,6 +18,11 @@ type ScanParams struct {
 	ProjectDir string
 	// File is the path run.toml uses, relative to ProjectDir.
 	File string
+	// Project names the repository, the same value COMPOSE_PROJECT_NAME is
+	// built from. It becomes the default of every name wtm scopes, so a
+	// checkout wtm is not driving keeps the name the file used to pin. Empty
+	// leaves the absolute names reported but never rewritten.
+	Project string
 }
 
 // Scan reads one docker-compose file and locates every port mapping precisely
@@ -41,11 +46,18 @@ func Scan(params ScanParams) domain.ComposeScan {
 		return scan
 	}
 
+	lines := strings.Split(string(content), "\n")
 	scan.Bindings = collectBindings(collectParams{
 		services: mappingValue(root.Content[0], domain.ComposeServicesKey),
-		lines:    strings.Split(string(content), "\n"),
+		lines:    lines,
 		file:     params.File,
 		taken:    referencedNames(&root),
+	})
+	scan.Names = collectNames(collectNamesParams{
+		root:    root.Content[0],
+		lines:   lines,
+		file:    params.File,
+		project: params.Project,
 	})
 	return scan
 }
@@ -75,6 +87,7 @@ func referencedNames(root *yaml.Node) map[string]bool {
 type ScanAllParams struct {
 	ProjectDir string
 	Files      []string
+	Project    string
 }
 
 func ScanAll(params ScanAllParams) map[string]domain.ComposeScan {
@@ -83,7 +96,7 @@ func ScanAll(params ScanAllParams) map[string]domain.ComposeScan {
 	}
 	scans := make(map[string]domain.ComposeScan, len(params.Files))
 	for _, f := range params.Files {
-		scans[f] = Scan(ScanParams{ProjectDir: params.ProjectDir, File: f})
+		scans[f] = Scan(ScanParams{ProjectDir: params.ProjectDir, File: f, Project: params.Project})
 	}
 	return scans
 }
