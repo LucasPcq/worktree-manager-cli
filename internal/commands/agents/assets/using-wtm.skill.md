@@ -232,6 +232,15 @@ and **experimental**: the global `wtm init` does not configure it.
   `16` (run module not initialized) until at least one job/profile is declared. Non-TTY it
   auto-generates; re-running merges without overwriting. `run job add` / `run profile add`
   also work before init (they create the first job).
+- **`run init` composes a startable configuration.** It proposes every compose file and
+  package script but checks only scripts whose name contains `dev` — and not a root `dev`
+  a workspace package also declares, which is an orchestrator (`turbo run dev`) that would
+  double-start those packages. **Nothing unchecked becomes a job.** It then asks to review
+  the detected ports, and to compose the **profiles** `run up` offers: one per package plus
+  one gathering everything, editable (rename / merge / remove / new). Root-cwd jobs join
+  every profile. Non-interactively it takes the same answers without asking. A checked
+  script outside the `dev` ones gets its `kind` asked, because a task blocks its profile
+  until it exits. A service with no detected port is reported, not asked about.
 - `run init --link-env` also writes the `[[env_port]]` links without asking (see port
   isolation below).
 - `run init` also **pre-fills the ports** of the compose files it picks up. A mapping

@@ -126,7 +126,7 @@ func resolveProfileJobs(args []string, cfg domain.RunConfig) ([]domain.JobConfig
 	if len(cfg.Profiles) <= 1 {
 		profile, ok := rules.DefaultProfile(cfg)
 		if !ok {
-			return cfg.Jobs, nil
+			return rules.JobsWithoutProfile(cfg), nil
 		}
 		return rules.ProfileJobs(cfg, profile), nil
 	}

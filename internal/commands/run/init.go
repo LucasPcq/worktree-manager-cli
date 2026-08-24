@@ -147,6 +147,21 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	// The wizard's two composition steps outrank detection. Non-interactively
+	// nothing was asked, so the proposal stands as answered: a profile is what
+	// makes `run up` start something rather than everything.
+	if len(answers.Profiles) == 0 {
+		answers.Profiles = rules.ProposeProfiles(rules.ProposeProfilesParams{
+			Config:   outcome.Config,
+			Existing: existing.Profiles,
+		})
+	}
+	outcome.Config = rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
+		Config:   outcome.Config,
+		Ports:    answers.Ports,
+		Profiles: answers.Profiles,
+	})
+
 	links := resolveEnvPortLinks(resolveEnvPortLinksParams{
 		Interactive: interactive,
 		LinkEnv:     linkEnv,
@@ -192,6 +207,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			EnvSources:    outcome.EnvSources,
 			EnvUnreadable: outcome.EnvUnreadable,
 		})
+		output.UnportedJobsReport(cmd.OutOrStdout(), rules.ServicesWithoutPorts(outcome.Config))
 		output.ComposeNamesReport(cmd.OutOrStdout(), output.ComposeNamesReportParams{
 			Patched:  namePatches,
 			Withheld: namePlan.Withheld,

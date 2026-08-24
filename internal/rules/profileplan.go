@@ -69,3 +69,36 @@ func ProposeProfiles(params ProposeProfilesParams) []domain.ProfileConfig {
 	}
 	return append(profiles, global)
 }
+
+type ApplyInitAnswersParams struct {
+	Config   domain.RunConfig
+	Ports    []domain.PortEntry
+	Profiles []domain.ProfileConfig
+}
+
+// ApplyInitAnswers folds the wizard's two composition steps back into the
+// config about to be written. Neither is inferred: a port the user corrected
+// and a split they composed outrank what detection proposed.
+func ApplyInitAnswers(params ApplyInitAnswersParams) domain.RunConfig {
+	cfg := params.Config
+	cfg.Jobs = make([]domain.JobConfig, len(params.Config.Jobs))
+	copy(cfg.Jobs, params.Config.Jobs)
+
+	for _, entry := range params.Ports {
+		for i, job := range cfg.Jobs {
+			if job.Name != entry.Job {
+				continue
+			}
+			if _, declared := job.Ports[entry.Name]; !declared {
+				continue
+			}
+			cfg.Jobs[i].Ports = clonePorts(cfg.Jobs[i].Ports)
+			cfg.Jobs[i].Ports[entry.Name] = entry.Base
+		}
+	}
+
+	if len(params.Profiles) > 0 {
+		cfg.Profiles = params.Profiles
+	}
+	return cfg
+}

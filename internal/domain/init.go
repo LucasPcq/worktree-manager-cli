@@ -70,7 +70,13 @@ type InitProjectAnswers struct {
 	// --patch-compose flag.
 	PatchCompose           bool
 	SelectedPackageScripts []PackageScript
-	SkipEnv                bool
-	SkipHooks              bool
-	SkipClean              bool
+	// Ports is what the wizard settled for the detected ports, and Profiles the
+	// split `run up` will offer. Empty Profiles means the run could not ask: the
+	// proposal is then taken as answered, since a profile is what makes `run up`
+	// start something rather than everything.
+	Ports     []PortEntry
+	Profiles  []ProfileConfig
+	SkipEnv   bool
+	SkipHooks bool
+	SkipClean bool
 }

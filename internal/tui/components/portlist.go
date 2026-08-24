@@ -17,19 +17,11 @@ const (
 	portInputWidth     = 12
 )
 
-// PortEntry is one declared port as the wizard shows it: the job it belongs to,
-// the variable it is injected under, and the base the main checkout binds.
-type PortEntry struct {
-	Job  string
-	Name string
-	Base int
-}
-
 // PortListModel reviews the ports detection pre-filled. Enter on a row edits its
 // base, Enter on the Done row confirms — the same shape as HookListModel, so a
 // reader who knows one knows the other.
 type PortListModel struct {
-	entries []PortEntry
+	entries []domain.PortEntry
 	cursor  int
 	width   int
 	height  int
@@ -46,7 +38,7 @@ type PortListModel struct {
 type NewPortListParams struct {
 	Title       string
 	Description string
-	Entries     []PortEntry
+	Entries     []domain.PortEntry
 }
 
 func NewPortList(params NewPortListParams) PortListModel {
@@ -58,10 +50,10 @@ func NewPortList(params NewPortListParams) PortListModel {
 	}
 }
 
-func (m PortListModel) Entries() []PortEntry { return m.entries }
-func (m PortListModel) Done() bool           { return m.done }
-func (m PortListModel) Aborted() bool        { return m.aborted }
-func (m PortListModel) Init() tea.Cmd        { return nil }
+func (m PortListModel) Entries() []domain.PortEntry { return m.entries }
+func (m PortListModel) Done() bool                  { return m.done }
+func (m PortListModel) Aborted() bool               { return m.aborted }
+func (m PortListModel) Init() tea.Cmd               { return nil }
 
 func (m *PortListModel) SetSize(params SetSizeParams) {
 	m.width, m.height = params.Width, params.Height

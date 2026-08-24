@@ -353,6 +353,21 @@ job's `stop` command runs with the same ports its `cmd` did. For Docker, templat
 side of the mapping (`"${DB_PORT}:5432"`) and declare `DB_PORT = 5432`: the container port
 never moves, only the binding does.
 
+`wtm run init` composes a configuration you can start, not an inventory of the repo. It
+proposes everything it finds and **checks the fewest things**: only scripts whose name
+contains `dev`, and not a root `dev` a workspace package also declares — that one is an
+orchestrator (`turbo run dev`, `pnpm -r dev`) and running it beside the packages it fans
+out to would start each of them twice on the same ports. Nothing unchecked is written.
+
+It then walks you through the ports detection pre-filled, and the **profiles** `wtm run
+up` will offer: one per package, plus one gathering everything, which you rename, merge
+or drop. Jobs at the repository root — a compose stack — join every profile, so starting
+one package alone still brings its infrastructure up. In a single-package repo the split
+collapses to one profile.
+
+A service detection found no port for is reported rather than asked about: inventing one
+would move the guess onto you, and `wtm run up` will say the port was never bound anyway.
+
 `wtm run init` writes those Docker declarations for you. It reads the `ports:` of the
 compose files you pick: a mapping that already reads a variable is declared as-is, while a
 literal `"5432:5432"` would bind the same port in every worktree and is therefore **not**

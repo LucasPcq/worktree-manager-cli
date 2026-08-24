@@ -112,3 +112,40 @@ func TestProposeProfilesKeepsTheExistingSplit(t *testing.T) {
 		t.Fatalf("expected the existing split, got %v", profileNames(profiles))
 	}
 }
+
+func TestApplyInitAnswersCorrectsAPort(t *testing.T) {
+	cfg := rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
+		Config: domain.RunConfig{Jobs: []domain.JobConfig{
+			{Name: "web-dev", Kind: domain.JobKindService, Ports: map[string]int{"WEB_PORT": 5173}},
+		}},
+		Ports: []domain.PortEntry{{Job: "web-dev", Name: "WEB_PORT", Base: 4000}},
+	})
+
+	if got := cfg.Jobs[0].Ports["WEB_PORT"]; got != 4000 {
+		t.Errorf("port = %d, want the corrected 4000", got)
+	}
+}
+
+func TestApplyInitAnswersNeverInventsAPort(t *testing.T) {
+	// Une entrée qui ne correspond à aucune déclaration ne doit rien créer :
+	// l'étape ne revoit que ce que la détection a trouvé.
+	cfg := rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
+		Config: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web-dev", Kind: domain.JobKindService}}},
+		Ports:  []domain.PortEntry{{Job: "web-dev", Name: "WEB_PORT", Base: 4000}},
+	})
+
+	if len(cfg.Jobs[0].Ports) != 0 {
+		t.Errorf("ports = %v, want none", cfg.Jobs[0].Ports)
+	}
+}
+
+func TestApplyInitAnswersWritesTheComposedSplit(t *testing.T) {
+	cfg := rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
+		Config:   domain.RunConfig{Jobs: []domain.JobConfig{composeJob, apiJob}},
+		Profiles: []domain.ProfileConfig{{Name: "app1", Jobs: []string{"docker-compose", "api-dev"}, Default: true}},
+	})
+
+	if len(cfg.Profiles) != 1 || cfg.Profiles[0].Name != "app1" {
+		t.Errorf("profiles = %+v", cfg.Profiles)
+	}
+}

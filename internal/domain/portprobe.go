@@ -23,3 +23,11 @@ type PortProbe struct {
 	// are the same port and there is nothing to tell apart.
 	BaseListening int
 }
+
+// PortEntry is one declared port as a surface shows it: the job it belongs to,
+// the variable it is injected under, and the base the main checkout binds.
+type PortEntry struct {
+	Job  string
+	Name string
+	Base int
+}

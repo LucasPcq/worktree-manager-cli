@@ -64,7 +64,7 @@ func TestPreselectScript(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.script, func(t *testing.T) {
-			if got := PreselectScript(tt.script); got != tt.want {
+			if got := PreselectScript(PreselectScriptParams{Script: domain.PackageScript{Name: tt.script}}); got != tt.want {
 				t.Errorf("PreselectScript(%q) = %v, want %v", tt.script, got, tt.want)
 			}
 		})
@@ -77,7 +77,34 @@ func TestPreselectScriptIsIndependentOfKind(t *testing.T) {
 	if ClassifyScriptKind("start") != domain.JobKindService {
 		t.Fatal("le test suppose que start reste classé service")
 	}
-	if PreselectScript("start") {
+	if PreselectScript(PreselectScriptParams{Script: domain.PackageScript{Name: "start"}}) {
 		t.Error("start ne doit pas être coché par défaut")
+	}
+}
+
+func TestPreselectScriptLeavesAnOrchestratorUnchecked(t *testing.T) {
+	// Un `dev` racine que des packages déclarent aussi est un orchestrateur :
+	// le cocher démarrerait deux fois chaque package, sur les mêmes ports.
+	all := []domain.PackageScript{
+		{Name: "dev"},
+		{Name: "dev", Workspace: "apps/api", PkgName: "api"},
+		{Name: "dev", Workspace: "apps/web", PkgName: "web"},
+	}
+
+	if PreselectScript(PreselectScriptParams{Script: all[0], All: all}) {
+		t.Error("le dev racine ne doit pas être coché quand des packages en ont un")
+	}
+	for _, script := range all[1:] {
+		if !PreselectScript(PreselectScriptParams{Script: script, All: all}) {
+			t.Errorf("%s doit rester coché", script.Workspace)
+		}
+	}
+}
+
+func TestPreselectScriptKeepsALoneRootDev(t *testing.T) {
+	// Sans package concurrent, le dev racine est le seul serveur du repo.
+	all := []domain.PackageScript{{Name: "dev"}, {Name: "build"}}
+	if !PreselectScript(PreselectScriptParams{Script: all[0], All: all}) {
+		t.Error("un dev racine sans concurrent doit rester coché")
 	}
 }

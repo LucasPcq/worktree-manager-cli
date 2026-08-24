@@ -173,3 +173,36 @@ func TestServicesWithoutPortsIgnoresTasks(t *testing.T) {
 		t.Errorf("ServicesWithoutPorts = %v, want empty", got)
 	}
 }
+
+func TestPortEntriesFor(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "docker-compose", Kind: domain.JobKindService, Ports: map[string]int{"REDIS_PORT": 6379, "POSTGRES_PORT": 5432}},
+		{Name: "web-dev", Kind: domain.JobKindService},
+		{Name: "seed", Kind: domain.JobKindTask, Ports: map[string]int{"SEED_PORT": 9000}},
+	}}
+
+	got := rules.PortEntriesFor(cfg)
+
+	if len(got) != 2 {
+		t.Fatalf("expected the 2 compose ports, got %+v", got)
+	}
+	// Ordre stable : le job dans l'ordre déclaré, les ports par nom.
+	if got[0].Name != "POSTGRES_PORT" || got[1].Name != "REDIS_PORT" {
+		t.Errorf("order = %s, %s", got[0].Name, got[1].Name)
+	}
+	if got[0].Job != "docker-compose" || got[0].Base != 5432 {
+		t.Errorf("entry = %+v", got[0])
+	}
+}
+
+func TestPortEntriesForSkipsWhatHasNothingToReview(t *testing.T) {
+	// Une task n'écoute pas, et un service sans port détecté ne doit rien
+	// demander : poser la question déplacerait la devinette sur l'utilisateur.
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "web-dev", Kind: domain.JobKindService},
+		{Name: "lint", Kind: domain.JobKindTask},
+	}}
+	if got := rules.PortEntriesFor(cfg); len(got) != 0 {
+		t.Errorf("PortEntriesFor = %+v, want empty", got)
+	}
+}

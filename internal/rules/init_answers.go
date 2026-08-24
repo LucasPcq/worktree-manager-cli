@@ -197,7 +197,7 @@ func AutoServicesAnswers(params AutoServicesAnswersParams) domain.InitProjectAns
 	// it found: an init that cannot ask must not write jobs nobody chose.
 	answers := domain.InitProjectAnswers{PatchCompose: params.PatchCompose}
 	for _, script := range detection.PackageScripts {
-		if PreselectScript(script.Name) {
+		if PreselectScript(PreselectScriptParams{Script: script, All: detection.PackageScripts}) {
 			answers.SelectedPackageScripts = append(answers.SelectedPackageScripts, script)
 		}
 	}

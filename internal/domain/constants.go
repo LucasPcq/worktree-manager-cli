@@ -577,6 +577,11 @@ const (
 	ProfileListDefaultSuffix = "  (default)"
 	ProfileListNameRequired  = "a profile needs a name"
 	ProfileListNameTakenFmt  = "a profile named %q already exists"
+	ProfileListSummaryFmt    = "%d profiles"
+	ProfileStepTitle         = "What should `wtm run up` start?"
+	ProfileStepDesc          = "A profile is a set of jobs started together. Jobs at the repository root —\n" +
+		"a compose stack — join every profile, so starting one package alone still\n" +
+		"brings its infrastructure up."
 
 	// The wizard step reviewing the ports detection pre-filled.
 	PortListStepName  = "Ports"
@@ -584,11 +589,12 @@ const (
 	PortListStepDesc  = "Each is injected under its name, shifted by the worktree's offset. Only what\n" +
 		"detection actually found is listed — a job with no detected port declares\n" +
 		"none, and `wtm run up` will say so rather than pretend it is isolated."
-	PortListEntryFmt = "%s · %s = %d"
-	PortListEditFmt  = "%s · %s = %s"
-	PortListDoneRow  = "✓ Done"
-	PortListHelp     = "  ↑↓ navigate • enter select • esc back"
-	PortListEditHelp = "  type a port • enter save • esc cancel"
+	PortListEntryFmt   = "%s · %s = %d"
+	PortListEditFmt    = "%s · %s = %s"
+	PortListDoneRow    = "✓ Done"
+	PortListHelp       = "  ↑↓ navigate • enter select • esc back"
+	PortListEditHelp   = "  type a port • enter save • esc cancel"
+	PortListSummaryFmt = "%d ports"
 	// PortListRangeErrFmt refuses a value outside the usable range rather than
 	// overwriting a detected port that works.
 	PortListRangeErrFmt = "%q is not a port between %d and %d"

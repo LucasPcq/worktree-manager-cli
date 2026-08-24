@@ -160,3 +160,20 @@ func ServicesWithoutPorts(cfg domain.RunConfig) []string {
 	sort.Strings(jobs)
 	return jobs
 }
+
+// PortEntriesFor is every declared port a surface can review, in a stable
+// order: the jobs as declared, their ports by name. A service detection found
+// no port for contributes nothing — asking would move the guess onto the user,
+// and ServicesWithoutPorts names it instead.
+func PortEntriesFor(cfg domain.RunConfig) []domain.PortEntry {
+	var entries []domain.PortEntry
+	for _, job := range cfg.Jobs {
+		if !ShouldProbeJob(job.Kind, job.Ports) {
+			continue
+		}
+		for _, name := range sortedPortNames(job.Ports) {
+			entries = append(entries, domain.PortEntry{Job: job.Name, Name: name, Base: job.Ports[name]})
+		}
+	}
+	return entries
+}

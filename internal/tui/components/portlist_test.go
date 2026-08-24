@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-func twoPorts() []PortEntry {
-	return []PortEntry{
+func twoPorts() []domain.PortEntry {
+	return []domain.PortEntry{
 		{Job: "docker-compose", Name: "POSTGRES_PORT", Base: 5432},
 		{Job: "web-dev", Name: "WEB_PORT", Base: 5173},
 	}
