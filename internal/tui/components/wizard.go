@@ -515,6 +515,12 @@ func (m WizardModel) renderHelpBar() string {
 	if er, ok := m.steps[m.current].Model.(EnvResolveModel); ok {
 		return styles.HelpBar.Render(er.helpHint())
 	}
+	if pl, ok := m.steps[m.current].Model.(PortListModel); ok {
+		return styles.HelpBar.Render(pl.helpHint())
+	}
+	if pr, ok := m.steps[m.current].Model.(ProfileListModel); ok {
+		return styles.HelpBar.Render(pr.helpHint())
+	}
 	if sl, ok := m.steps[m.current].Model.(SelectListModel); ok && sl.filtering {
 		return styles.HelpBar.Render(sl.filterHelpHint())
 	}

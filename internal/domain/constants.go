@@ -545,6 +545,38 @@ const (
 	PruneSkipUnpushed = "unpushed"
 	PruneSkipOpenPR   = "open_pr"
 
+	// The profile editor: its keys, its rows and its help bar.
+	ProfileListStepName      = "Profiles"
+	ProfileListKeyRename     = "r"
+	ProfileListKeyMerge      = "f"
+	ProfileListKeyRemove     = "d"
+	ProfileListKeyNew        = "n"
+	ProfileListHelp          = "  ↑↓ navigate • r rename • f merge • d remove • n new • enter select"
+	ProfileListNamingHelp    = "  enter save • esc cancel"
+	ProfileListMergeHint     = "  f on another profile to merge it into %q • esc cancel"
+	ProfileListMarkPrefix    = "→ "
+	ProfileListDoneRow       = "✓ Done"
+	ProfileListEntryFmt      = "%s — %s"
+	ProfileListJobSep        = ", "
+	ProfileListDefaultSuffix = "  (default)"
+	ProfileListNameRequired  = "a profile needs a name"
+	ProfileListNameTakenFmt  = "a profile named %q already exists"
+
+	// The wizard step reviewing the ports detection pre-filled.
+	PortListStepName  = "Ports"
+	PortListStepTitle = "Ports detected for the jobs you kept"
+	PortListStepDesc  = "Each is injected under its name, shifted by the worktree's offset. Only what\n" +
+		"detection actually found is listed — a job with no detected port declares\n" +
+		"none, and `wtm run up` will say so rather than pretend it is isolated."
+	PortListEntryFmt = "%s · %s = %d"
+	PortListEditFmt  = "%s · %s = %s"
+	PortListDoneRow  = "✓ Done"
+	PortListHelp     = "  ↑↓ navigate • enter select • esc back"
+	PortListEditHelp = "  type a port • enter save • esc cancel"
+	// PortListRangeErrFmt refuses a value outside the usable range rather than
+	// overwriting a detected port that works.
+	PortListRangeErrFmt = "%q is not a port between %d and %d"
+
 	// ProfileAllName is the profile gathering every service the init retained.
 	// In a single-package repo it is the only one: one profile per package plus
 	// a global one collapse into each other, which is what keeps the rule free
