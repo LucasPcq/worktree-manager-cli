@@ -27,6 +27,37 @@
 
 ---
 
+## Terrain d'essai
+
+Un dépôt réel est disponible pour tout ce qui ne se teste pas en `go test` : **`~/Documents/Dev/monorepo-exemple-wtm`**, déjà initialisé pour wtm, avec ses worktrees dans `~/Documents/Dev/monorepo-exemple-wtm.worktrees` (`main` et `test` existent déjà — la paire de worktrees du test d'acceptation est donc là sans rien créer).
+
+C'est exactement le cas qui a dicté le nommage : un monorepo pnpm + turbo, deux apps, des profils par app.
+
+```
+apps/web            Vite 8 + React 19   → job web-dev, WEB_DEV_PORT = 5173
+apps/api            Hono + tsx watch    → job api-dev, PORT = 3001
+docker-compose.yml  postgres + redis    → job docker-compose, POSTGRES_PORT = 5432, REDIS_PORT = 6379
+profils             api · web · all (défaut)
+```
+
+Ce qu'il permet de vérifier à la main, lot par lot :
+
+| Lot | Vérification |
+| --- | --- |
+| 1 | Ajouter `url = { port = "WEB_DEV_PORT" }` à `web-dev` et `url = { port = "PORT", host = "api.app-1" }` à `api-dev`, puis `wtm run list` : le fichier est relu sans erreur. Mettre le même `host` sur les deux : le chargement doit refuser en nommant les deux jobs. |
+| 2-3 | `wtm run up web` puis `wtm run url` et `wtm run open` — d'abord depuis `main`, puis depuis le worktree `test`, dont l'ordinal décale les ports. |
+| 5-6 | `wtm run up all` dans les deux worktrees, et les quatre URLs ouvertes. **Vite 8 autorise `.localhost` par défaut** : si `web-dev` répond sous son nom sans toucher à `vite.config.ts`, l'hypothèse centrale de la spec est vérifiée sur le terrain. L'API Hono sert de seconde route, en HTTP nu. |
+| 6 | `postgres` et `redis` restent joignables **par leur port seulement** — c'est la limite « HTTP seulement » rendue concrète, pas une régression. |
+| 7 | **Non couvert : le dépôt n'a pas de Next.js.** L'avertissement `allowedDevOrigins` se valide par ses tests unitaires ; pour un essai manuel, il faut un `next.config.ts` jetable dans un `apps/` de brouillon. À dire explicitement plutôt qu'à cocher sans avoir regardé. |
+
+Deux choses à savoir avant de s'y appuyer :
+
+Son `run.toml` porte `port_offset_block = 0`. Ce n'est pas une panne : `rules.EffectivePortOffsetBlock` traite zéro comme « non renseigné » et applique le bloc par défaut. C'est le défaut d'écriture de [LUC-205](https://linear.app/lucaspcq/issue/LUC-205), hors périmètre ici — ne pas le corriger en passant.
+
+Son `docker-compose.yml` nomme déjà ses conteneurs via `COMPOSE_PROJECT_NAME`, donc les deux worktrees peuvent monter leur stack en même temps. C'est ce qui rend le test d'acceptation à deux worktrees réellement exécutable.
+
+---
+
 ## Structure des fichiers
 
 **Créés**
@@ -1913,7 +1944,8 @@ git commit -m "feat(run): dire à un projet Next la ligne qui lui manque pour r�
 - [ ] `make test && make vet && make lint && make docs` — l'arbre `docs/` régénéré ne doit produire aucune différence non commitée.
 - [ ] Invoquer le subagent **build-validator**.
 - [ ] Relire `using-wtm.skill.md` d'un bloc : les deux commandes, le champ `url`, `[proxy]`, la limite Linux, `--raw`.
-- [ ] Vérifier à la main, dans deux worktrees du même dépôt : `wtm run up` dans chacun, les deux URLs ouvertes côte à côte, une session ouverte dans l'un ne doit pas déconnecter l'autre. **C'est le test d'acceptation de la feature** — il ne s'automatise pas ici.
+- [ ] Vérifier à la main dans `~/Documents/Dev/monorepo-exemple-wtm` (voir « Terrain d'essai ») : `wtm run up all` depuis `main` **et** depuis le worktree `test`, les URLs des deux `web-dev` ouvertes côte à côte, une session ouverte dans l'un ne doit pas déconnecter l'autre. **C'est le test d'acceptation de la feature** — il ne s'automatise pas ici.
+- [ ] Dans le même dépôt, confirmer que `web-dev` (Vite 8) répond sous son nom **sans** avoir touché à `vite.config.ts`. Si ce n'est pas le cas, l'hypothèse « Vite autorise `.localhost` par défaut » de la spec est fausse et il faut la corriger avant de documenter quoi que ce soit.
 
 ## Hors périmètre
 
