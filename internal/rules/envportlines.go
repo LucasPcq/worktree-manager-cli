@@ -170,6 +170,10 @@ func pad(s string, width int) string {
 	return s + strings.Repeat(" ", max(0, width-len([]rune(s))))
 }
 
+// Pad right-pads a label so a surface can align a column the same way the line
+// builders here do.
+func Pad(s string, width int) string { return pad(s, width) }
+
 // EnvPortLinkLines describes each link as both the prompt and the recap show it:
 // where the key lives, which port it follows, and the base found inside its
 // value — the number that answers "why this key?" before the link is written,

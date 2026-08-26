@@ -156,14 +156,3 @@ func EnvPortsWrittenLines(params EnvPortsWrittenLinesParams) []string {
 	}
 	return lines
 }
-
-// PortsIgnoredLines names the jobs whose command never mentions the port wtm
-// injects. It proves nothing — a command can read the variable on its own — so
-// it names the job and the variable and leaves the conclusion to the reader.
-func PortsIgnoredLines(fixes []domain.JobCmdFix) []string {
-	lines := make([]string, 0, len(fixes)+2)
-	for _, fix := range fixes {
-		lines = append(lines, fmt.Sprintf(domain.PortsIgnoredLineFmt, fix.Job, strings.Join(fix.Vars, ", "), fix.Cmd))
-	}
-	return append(lines, "", domain.PortsIgnoredHint)
-}

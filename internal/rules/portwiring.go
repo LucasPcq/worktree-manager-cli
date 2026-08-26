@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -41,4 +42,36 @@ func JobsMissingPortRef(params JobsMissingPortRefParams) []domain.JobCmdFix {
 	}
 	sort.SliceStable(fixes, func(i, j int) bool { return fixes[i].Job < fixes[j].Job })
 	return fixes
+}
+
+type PortIsolationLinesParams struct {
+	Unported []string
+	Ignoring []domain.JobCmdFix
+}
+
+// PortIsolationLines names every job that will bind the same port in every
+// worktree, and why. A job with no port and a job whose command ignores the one
+// it was given fail the same way, so they are listed together.
+func PortIsolationLines(params PortIsolationLinesParams) []string {
+	if len(params.Unported) == 0 && len(params.Ignoring) == 0 {
+		return nil
+	}
+
+	width := 0
+	for _, job := range params.Unported {
+		width = max(width, len([]rune(job)))
+	}
+	for _, fix := range params.Ignoring {
+		width = max(width, len([]rune(fix.Job)))
+	}
+
+	var lines []string
+	for _, job := range params.Unported {
+		lines = append(lines, fmt.Sprintf(domain.PortIsolationLineFmt, pad(job, width), domain.PortIsolationNoPort))
+	}
+	for _, fix := range params.Ignoring {
+		lines = append(lines, fmt.Sprintf(domain.PortIsolationLineFmt, pad(fix.Job, width),
+			fmt.Sprintf(domain.PortIsolationIgnoresFmt, strings.Join(fix.Vars, ", "))))
+	}
+	return append(lines, "", domain.PortIsolationHint)
 }

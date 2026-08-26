@@ -259,12 +259,6 @@ const (
 	ComposeReadFileFmt     = "read %s: %w"
 	ComposeWriteFileFmt    = "write %s: %w"
 
-	// UnportedJobsTitle heads the services `run init` retained without a port to
-	// isolate. Nothing is asked for them — inventing a port would move the guess
-	// onto the user — but staying silent would hide that two worktrees will bind
-	// the same one, and the probe has nothing to check where nothing is declared.
-	UnportedJobsTitle = "Services with no declared port — two worktrees will bind the same one"
-
 	// The port probe report: what `run up` observed on the ports a job declared.
 	// It states what was seen, never what is at fault — wtm can tell that
 	// nothing answers, not why.
@@ -365,11 +359,21 @@ const (
 	EnvLinkStepName         = "Env keys"
 	RecapStepName           = "Review"
 	RecapNotAsked           = "not asked"
+	RecapJobLineFmt         = "%s   %s"
+	RecapRowIndent          = "  "
+	RecapPortFmt            = "%s %d"
+	RecapPortSep            = " · "
+	RecapNoPort             = "⚠ no port declared"
+	RecapTask               = "task"
+	RecapDefaultSuffix      = "   (default)"
+	RecapJobsTitle          = "Jobs"
+	RecapProfilesTitle      = "Profiles"
+	RecapAnswersTitle       = "Answers"
 	RecapStepIntro          = "This is what `wtm run init` is about to write."
 	RecapLineFmt            = "  %s: %s"
 	RecapWriteLabel         = "Write run.toml"
 	RecapWriteValue         = "write"
-	RecapIgnoredPortWarnFmt = "⚠ %s: the command still does not mention the port wtm gives it — leave it only if it reads the variable on its own."
+	RecapIgnoredPortWarnFmt = "⚠ %s: the command never mentions the port it is given — leave it only if it\n  reads the variable on its own."
 	RecapUndeclaredWarnFmt  = "⚠ %s will bind the same port in every worktree — go back to Ports to declare one."
 	EnvPortLinkConfirm      = "Link these keys so each worktree gets its own ports?"
 	EnvPortLinkDescription  = "wtm rewrites the port inside each value when a worktree is created or reconciled. The rest of the value is left alone."
@@ -406,12 +410,14 @@ const (
 	// The .env port report. Unlike a compose mapping, a declared port only
 	// isolates the job if its command actually reads the variable — which wtm
 	// does not know and does not guess, so the notice asks.
-	EnvPortsDetectedTitle  = "Ports detected from .env"
-	EnvPortDetectedLineFmt = "%s · %s=%d (%s)"
-	EnvPortsVerifyTitle    = "These commands never mention the port they are given"
-	PortsIgnoredLineFmt    = "%s · %s   %s"
-	PortsIgnoredHint       = "Reference the variable in the command (`--port ${PORT}`), or leave it if the command reads it on its own — `wtm run job edit <job>`"
-	EnvPortUnreadable      = "%s could not be read: %s"
+	EnvPortsDetectedTitle   = "Ports detected from .env"
+	EnvPortDetectedLineFmt  = "%s · %s=%d (%s)"
+	PortIsolationTitle      = "These jobs will bind the same port in every worktree"
+	PortIsolationLineFmt    = "%s   %s"
+	PortIsolationNoPort     = "no port declared"
+	PortIsolationIgnoresFmt = "declares %s, but its command never mentions it"
+	PortIsolationHint       = "Declare a port, or reference it in the command: `wtm run job edit <job>`"
+	EnvPortUnreadable       = "%s could not be read: %s"
 
 	// PortCollisionHorizon is how many worktrees a declared layout is checked
 	// against. Two base ports collide when they differ by a multiple of the

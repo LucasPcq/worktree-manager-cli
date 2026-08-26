@@ -217,17 +217,21 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			EnvWritten:    outcome.EnvWritten,
 			EnvSources:    outcome.EnvSources,
 			EnvUnreadable: outcome.EnvUnreadable,
-			IgnoringJobs: rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
-				Config: outcome.Config,
-				Exempt: composeJobNames(outcome.Config, answers.DockerComposeFiles),
-			}),
 		})
-		output.UnportedJobsReport(cmd.OutOrStdout(), rules.ServicesWithoutPorts(outcome.Config))
 		output.ComposeNamesReport(cmd.OutOrStdout(), output.ComposeNamesReportParams{
 			Patched:  namePatches,
 			Withheld: namePlan.Withheld,
 		})
 		output.EnvPortLinksReport(cmd.OutOrStdout(), links, rules.EnvPortBases(outcome.Config))
+		// Last, and alone in a frame: everything above is what the run did, this
+		// is what it could not do without the reader.
+		output.PortIsolationReport(cmd.OutOrStdout(), output.PortIsolationReportParams{
+			Unported: rules.ServicesWithoutPorts(outcome.Config),
+			Ignoring: rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
+				Config: outcome.Config,
+				Exempt: composeJobNames(outcome.Config, answers.DockerComposeFiles),
+			}),
+		})
 		output.Blank(cmd.OutOrStdout())
 		output.Message(cmd.OutOrStdout(), "Next: `wtm run up` to start · `wtm run job add` to add more")
 		output.Blank(cmd.OutOrStdout())

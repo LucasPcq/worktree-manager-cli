@@ -116,7 +116,7 @@ func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (
 // error when nothing is detected — the caller reports how to add jobs manually.
 func RunServicesWizard(params ServicesWizardParams) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
-	addServicesSteps(s, addServicesStepsParams{
+	written := addServicesSteps(s, addServicesStepsParams{
 		Detection:    params.Detection,
 		Existing:     params.Existing,
 		Prefill:      params.Prefill,
@@ -128,7 +128,11 @@ func RunServicesWizard(params ServicesWizardParams) (domain.InitProjectAnswers, 
 	if len(s.steps) == 0 {
 		return domain.InitProjectAnswers{}, nil
 	}
-	s.add(stepRecap, servicesRecapStep(s.at(stepPorts), s.at(stepCmds)))
+	s.add(stepRecap, servicesRecapStep(servicesRecapParams{
+		Written: written,
+		Cmds:    s.at(stepCmds),
+		Answers: []int{s.at(stepEnvLink), s.at(stepComposePatch)},
+	}))
 
 	final, err := runWizard(runWizardParams{steps: s.steps, projectDir: params.ProjectDir})
 	if err != nil {
@@ -259,22 +263,30 @@ func reinitConfirmStep(p components.NewConfirmParams) components.Step {
 // servicesRecapStep restates what the run is about to write and warns about what
 // will still collide. It is the point the flow was missing: every answer visible
 // at once, before anything is written, with a way back to the step that set it.
-func servicesRecapStep(ports, cmds int) components.Step {
+type servicesRecapParams struct {
+	// Written resolves the config as it will land on disk.
+	Written func([]components.Step) domain.RunConfig
+	Cmds    int
+	// Answers are the steps whose outcome no config field carries — the yes/no
+	// ones — listed under their own heading rather than mixed into the content.
+	Answers []int
+}
+
+func servicesRecapStep(params servicesRecapParams) components.Step {
 	return components.RecapStep(components.RecapStepParams{
 		Name: domain.RecapStepName,
 		Build: func(prev []components.Step) components.RecapContent {
-			lines := []string{domain.RecapStepIntro, ""}
-			for _, step := range prev {
-				lines = append(lines, recapLine(step))
+			cfg := params.Written(prev)
+
+			lines := []string{"", domain.RecapStepIntro}
+			lines = appendSection(lines, domain.RecapJobsTitle, rules.RecapJobLines(cfg))
+			lines = appendSection(lines, domain.RecapProfilesTitle, rules.RecapProfileLines(cfg))
+			lines = appendSection(lines, domain.RecapAnswersTitle, answerLines(prev, params.Answers))
+
+			for _, warning := range recapWarnings(cfg, prev, params.Cmds) {
+				lines = append(lines, "", warning)
 			}
-			if undeclared := undeclaredJobs(prev, ports); len(undeclared) > 0 {
-				lines = append(lines, "",
-					fmt.Sprintf(domain.RecapUndeclaredWarnFmt, strings.Join(undeclared, domain.CmdListVarSep)))
-			}
-			if ignoring := jobsIgnoringTheirPort(prev, cmds); len(ignoring) > 0 {
-				lines = append(lines, "",
-					fmt.Sprintf(domain.RecapIgnoredPortWarnFmt, strings.Join(ignoring, domain.CmdListVarSep)))
-			}
+
 			return components.RecapContent{
 				Description: strings.Join(lines, "\n"),
 				Actions:     []components.SelectItem{{Label: domain.RecapWriteLabel, Value: domain.RecapWriteValue}},
@@ -283,18 +295,57 @@ func servicesRecapStep(ports, cmds int) components.Step {
 	})
 }
 
-// recapLine keeps every step on the recap, an unasked one included: what was not
-// asked is as much a part of the outcome as what was. Each summary spells its own
-// empty case out, so a step nobody answered reads as such instead of as a zero.
-func recapLine(step components.Step) string {
-	if step.Summary == nil {
-		return fmt.Sprintf(domain.RecapLineFmt, step.Name, domain.RecapNotAsked)
+// appendSection separates each group with a blank line: run together, the jobs,
+// the profiles and the answers read as one undifferentiated list.
+func appendSection(lines []string, title string, rows []string) []string {
+	if len(rows) == 0 {
+		return lines
 	}
-	summary := step.Summary(step.Model)
-	if summary == "" {
-		summary = domain.RecapNotAsked
+	lines = append(lines, "", title)
+	for _, row := range rows {
+		lines = append(lines, domain.RecapRowIndent+row)
 	}
-	return fmt.Sprintf(domain.RecapLineFmt, step.Name, summary)
+	return lines
+}
+
+// answerLines restates the yes/no steps, an unasked one included: what was not
+// asked is as much a part of the outcome as what was.
+func answerLines(prev []components.Step, at []int) []string {
+	width := 0
+	for _, i := range at {
+		if i >= 0 && i < len(prev) {
+			width = max(width, len([]rune(prev[i].Name)))
+		}
+	}
+
+	var lines []string
+	for _, i := range at {
+		if i < 0 || i >= len(prev) {
+			continue
+		}
+		step := prev[i]
+		answer := domain.RecapNotAsked
+		if step.Summary != nil {
+			if summary := step.Summary(step.Model); summary != "" {
+				answer = summary
+			}
+		}
+		lines = append(lines, fmt.Sprintf(domain.RecapJobLineFmt, rules.Pad(step.Name, width), answer))
+	}
+	return lines
+}
+
+func recapWarnings(cfg domain.RunConfig, prev []components.Step, cmds int) []string {
+	var warnings []string
+	if undeclared := rules.ServicesWithoutPorts(cfg); len(undeclared) > 0 {
+		warnings = append(warnings,
+			fmt.Sprintf(domain.RecapUndeclaredWarnFmt, strings.Join(undeclared, domain.CmdListVarSep)))
+	}
+	if ignoring := jobsIgnoringTheirPort(prev, cmds); len(ignoring) > 0 {
+		warnings = append(warnings,
+			fmt.Sprintf(domain.RecapIgnoredPortWarnFmt, strings.Join(ignoring, domain.CmdListVarSep)))
+	}
+	return warnings
 }
 
 // stillMissesItsPort re-reads a command as it stands after the step.
@@ -305,18 +356,6 @@ func stillMissesItsPort(fix domain.JobCmdFix) bool {
 		}
 	}
 	return false
-}
-
-// undeclaredJobs names the services still bound to the same port everywhere —
-// the one warning the flow can no longer act on once run.toml is written.
-func undeclaredJobs(prev []components.Step, ports int) []string {
-	var jobs []string
-	for _, entry := range portEntriesOf(prev, ports) {
-		if entry.Base <= 0 {
-			jobs = append(jobs, entry.Job)
-		}
-	}
-	return jobs
 }
 
 // jobsIgnoringTheirPort names the commands the user chose to leave as they are.
@@ -649,7 +688,7 @@ func kindListSummary(model any) string {
 // addPortsAndProfilesSteps turns the selection into a configuration: the ports
 // detection pre-filled, then the split `run up` will offer. Both read the live
 // selections, so both are declared after the steps they read.
-func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) {
+func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (written func([]components.Step) domain.RunConfig) {
 	docker, scripts := s.at(stepDocker), s.at(stepScripts)
 	detection := params.Detection
 
@@ -700,6 +739,16 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) {
 			Ports:  portEntriesOf(prev, ports),
 		})
 	}
+	// written is settled plus the answers the later steps add, which is what the
+	// recap has to show: the config as it will land on disk, not a stage of it.
+	written = func(prev []components.Step) domain.RunConfig {
+		return rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
+			Config:   resolved(prev).Config,
+			Ports:    portEntriesOf(prev, ports),
+			Cmds:     cmdFixesOf(prev, s.at(stepCmds)),
+			Profiles: profilesOf(prev, s.at(stepProfiles)),
+		})
+	}
 
 	cmdSkipReason := ""
 	s.add(stepCmds, components.Step{
@@ -745,9 +794,11 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) {
 		Summary:    profileListSummary,
 		Callout:    true,
 	})
+	defer func() { _ = written }()
 
 	s.add(stepEnvLink, components.ConfirmStep(components.ConfirmStepParams{
-		Name: domain.EnvLinkStepName,
+		Name:    domain.EnvLinkStepName,
+		Callout: true,
 		Decide: func(prev []components.Step) (bool, string, components.NewConfirmParams) {
 			candidates := envLinkCandidates(settled(prev), params.EnvLines)
 			if len(candidates) == 0 {
@@ -762,6 +813,32 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) {
 			}
 		},
 	}))
+
+	return written
+}
+
+// cmdFixesOf and profilesOf read a step back, tolerating one this wizard never
+// built.
+func cmdFixesOf(prev []components.Step, at int) []domain.JobCmdFix {
+	if at < 0 || at >= len(prev) {
+		return nil
+	}
+	cl, ok := prev[at].Model.(components.CmdListModel)
+	if !ok {
+		return nil
+	}
+	return cl.Fixes()
+}
+
+func profilesOf(prev []components.Step, at int) []domain.ProfileConfig {
+	if at < 0 || at >= len(prev) {
+		return nil
+	}
+	pl, ok := prev[at].Model.(components.ProfileListModel)
+	if !ok {
+		return nil
+	}
+	return pl.Profiles()
 }
 
 // portEntriesFor exempts the compose jobs: their `ports:` list is complete, so
@@ -906,7 +983,7 @@ type addServicesStepsParams struct {
 	EnvLines     map[string][]domain.EnvLine
 }
 
-func addServicesSteps(s *stepSet, params addServicesStepsParams) {
+func addServicesSteps(s *stepSet, params addServicesStepsParams) (written func([]components.Step) domain.RunConfig) {
 	detection, prefill := params.Detection, params.Prefill
 	if len(detection.DockerComposeFiles) > 0 {
 		items := make([]components.MultiSelectItem, 0, len(detection.DockerComposeFiles))
@@ -948,7 +1025,7 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) {
 	// Declared last on purpose: the step resolves the ports of both selections,
 	// so it must be able to read them — a .env port can withdraw a compose
 	// declaration, and the step would otherwise offer a rewrite that never runs.
-	addPortsAndProfilesSteps(s, addServicesStepsParams{
+	written = addPortsAndProfilesSteps(s, addServicesStepsParams{
 		Detection: detection,
 		Existing:  params.Existing,
 		EnvScans:  params.EnvScans,
@@ -961,6 +1038,8 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) {
 		Authorized: params.PatchCompose,
 		EnvScans:   params.EnvScans,
 	})
+
+	return written
 }
 
 // composePatchDescription lays out only the halves that have something to show:
@@ -1331,6 +1410,7 @@ func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
 		Name:     domain.ComposePatchStepName,
 		YesLabel: domain.ComposePatchStepYes,
 		NoLabel:  domain.ComposePatchStepNo,
+		Callout:  true,
 		Decide: func(prev []components.Step) (bool, string, components.NewConfirmParams) {
 			patches := composePatchesFor(composePatchesForParams{
 				Prev:      prev,

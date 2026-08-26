@@ -70,5 +70,5 @@ func EnvPortLinksReport(w io.Writer, links []domain.EnvPortLink, bases map[domai
 		return
 	}
 	Blank(w)
-	Callout(w, domain.EnvPortsLinkedTitle, rules.EnvPortLinkLines(links, bases))
+	Section(w, domain.EnvPortsLinkedTitle, rules.EnvPortLinkLines(links, bases))
 }

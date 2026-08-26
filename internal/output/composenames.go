@@ -21,7 +21,7 @@ func ComposeNamesReport(w io.Writer, params ComposeNamesReportParams) {
 			lines = append(lines, "", domain.ComposeNamesVolumeWarning)
 		}
 		Blank(w)
-		Callout(w, domain.ComposeNamesPatchedTitle, lines)
+		Section(w, domain.ComposeNamesPatchedTitle, lines)
 	}
 
 	if len(params.Withheld) > 0 {
