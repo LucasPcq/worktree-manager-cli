@@ -68,43 +68,6 @@ func TestFormatSyncResult_KeptConflictShowsFooter(t *testing.T) {
 	}
 }
 
-func TestSprintSyncPlan_EmptyPlan(t *testing.T) {
-	if got := SprintSyncPlan(domain.SyncPlan{BaseBranch: "main"}); got != "" {
-		t.Fatalf("empty plan should render empty, got %q", got)
-	}
-}
-
-func TestSprintSyncPlan_ListsStepsPlain(t *testing.T) {
-	plan := domain.SyncPlan{
-		BaseBranch: "main",
-		Steps: []domain.SyncStep{
-			{Branch: "feat/a", SourceBranch: "main"},
-			{Branch: "feat/b", SourceBranch: "feat/a"},
-		},
-	}
-
-	got := SprintSyncPlan(plan)
-
-	want := "Sync plan (base: main)\n1. feat/a ← main\n2. feat/b ← feat/a"
-	if got != want {
-		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
-	}
-	// Plain output: no ANSI escapes, so it can be re-styled inside a wizard desc.
-	if strings.Contains(got, "\x1b[") {
-		t.Errorf("expected plain (unstyled) output, got ANSI escapes: %q", got)
-	}
-}
-
-func TestSprintSyncPlan_UnknownParent(t *testing.T) {
-	plan := domain.SyncPlan{
-		BaseBranch: "main",
-		Steps:      []domain.SyncStep{{Branch: "feat/a"}},
-	}
-	if got := SprintSyncPlan(plan); !strings.Contains(got, "unknown parent") {
-		t.Fatalf("expected 'unknown parent' fallback, got %q", got)
-	}
-}
-
 func TestFormatWorktreeState_RebasingPrecedesDirty(t *testing.T) {
 	rebasing := formatWorktreeState(domain.WorktreeStatus{IsDirty: true, RebaseInProgress: true})
 	if !strings.Contains(rebasing, "rebasing") {
@@ -147,5 +110,100 @@ func TestFormatSyncResult_AbortedConflictNoFooter(t *testing.T) {
 	}
 	if strings.Contains(out, "Conflicts left in progress") {
 		t.Errorf("did not expect footer in aborted mode, got:\n%s", out)
+	}
+}
+
+func TestFormatSyncResultParentUpdates(t *testing.T) {
+	var buf bytes.Buffer
+	FormatSyncResult(&buf, domain.SyncResult{
+		BaseBranch: "main",
+		ParentUpdates: []domain.ParentUpdate{
+			{Branch: "feature", Status: domain.ParentFastForwarded, OldTip: "aaa1111", NewTip: "bbb2222"},
+			{Branch: "legacy", Status: domain.ParentBehind, Behind: 3, Children: []string{"dev", "other"}},
+			{Branch: "split", Status: domain.ParentDiverged},
+		},
+		Steps: []domain.SyncStepResult{
+			{Branch: "dev", SourceBranch: "feature", Status: domain.SyncStatusUpToDate},
+		},
+	})
+
+	out := buf.String()
+	for _, want := range []string{
+		"feature fast-forwarded to origin/feature",
+		"aaa1111 → bbb2222",
+		"legacy is 3 commits behind origin/legacy",
+		"dev, other rebased onto it as is",
+		"--ff-parents",
+		"split has diverged from origin/split",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recap should contain %q, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestFormatSyncResultNoParentUpdatesPrintsNothingExtra(t *testing.T) {
+	var buf bytes.Buffer
+	FormatSyncResult(&buf, domain.SyncResult{
+		BaseBranch: "main",
+		Steps:      []domain.SyncStepResult{{Branch: "dev", Status: domain.SyncStatusUpToDate}},
+	})
+	if strings.Contains(buf.String(), "behind") || strings.Contains(buf.String(), "fast-forwarded to") {
+		t.Errorf("a run with no parent updates should print no parent block, got:\n%s", buf.String())
+	}
+}
+
+// A cascade where every step rebases onto some other parent never touches the
+// base, so the recap may not name it. The plan-header half of this guarantee is
+// covered by rules.TestSprintSyncPlanOmitsUntargetedBase.
+func TestSyncResultOmitsUntargetedBase(t *testing.T) {
+	var buf bytes.Buffer
+	FormatSyncResult(&buf, domain.SyncResult{
+		BaseBranch: "main",
+		Steps:      []domain.SyncStepResult{{Branch: "dev-1", SourceBranch: "feature", Status: domain.SyncStatusUpToDate}},
+	})
+	if strings.Contains(buf.String(), "Base") || strings.Contains(buf.String(), "main") {
+		t.Errorf("recap must not report an untargeted base, got:\n%s", buf.String())
+	}
+}
+
+func TestFormatSyncResultReportsTargetedBase(t *testing.T) {
+	var buf bytes.Buffer
+	FormatSyncResult(&buf, domain.SyncResult{
+		BaseBranch:   "main",
+		BaseTargeted: true,
+		BaseUpdated:  true,
+		BaseOldTip:   "aaa1111",
+		BaseNewTip:   "bbb2222",
+		Steps:        []domain.SyncStepResult{{Branch: "feat", SourceBranch: "main", Status: domain.SyncStatusSynced}},
+	})
+	if !strings.Contains(buf.String(), "main") || !strings.Contains(buf.String(), "aaa1111") {
+		t.Errorf("a targeted base should still be reported, got:\n%s", buf.String())
+	}
+}
+
+// A fast-forward that was asked for and failed must name the obstacle, never
+// re-suggest the flag the user already passed — otherwise the same command is
+// replayed forever on a stale parent.
+func TestFormatSyncResultFailedFastForwardNamesTheObstacle(t *testing.T) {
+	var buf bytes.Buffer
+	FormatSyncResult(&buf, domain.SyncResult{
+		BaseBranch: "main",
+		ParentUpdates: []domain.ParentUpdate{{
+			Branch:   "feature",
+			Status:   domain.ParentFFFailed,
+			Detail:   "worktree has uncommitted changes",
+			Children: []string{"dev-1"},
+		}},
+		Steps: []domain.SyncStepResult{{Branch: "dev-1", Status: domain.SyncStatusUpToDate}},
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "could not be fast-forwarded to origin/feature") ||
+		!strings.Contains(out, "worktree has uncommitted changes") {
+		t.Errorf("recap should name the obstacle, got:\n%s", out)
+	}
+	if strings.Contains(out, "--ff-parents") {
+		t.Errorf("must not suggest the flag already passed, got:\n%s", out)
 	}
 }

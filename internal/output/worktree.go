@@ -90,7 +90,7 @@ func formatTag(isParent bool, isActive bool) string {
 		tags = styles.Muted.Render("(parent)")
 	}
 	if isActive {
-		active := styles.Success.Render("● active")
+		active := styles.Success.Render(domain.WorktreeActiveTag)
 		if tags != "" {
 			tags += "  " + active
 		} else {
@@ -258,14 +258,24 @@ type CreateResultParams struct {
 	From          string
 	EnvStrategy   string
 	Path          string
+	// ExistingBranch reports that an existing local branch was checked out as-is,
+	// which retitles the headline and relabels From as the sync parent.
+	ExistingBranch bool
+	// ReusedNote, set only when ExistingBranch, states how the reused branch
+	// relates to origin (behind, diverged, or up to date) — the caller resolves
+	// its text and severity (shared.ReusedBranchNote); this only renders it.
+	ReusedNote        string
+	ReusedNoteWarning bool
 	// GoCommand is the ready-to-run jump-in command (e.g. "wtm go feat-x").
 	GoCommand string
 }
 
 // FormatCreateResult prints the create conclusion: a ✓ headline, an aligned
 // summary (from / env / path), then a highlighted `wtm go` step to jump straight
-// into the new worktree. The idempotent already-exists case collapses to a single
-// line + the jump-in step. Raw body — the caller's frame owns the outer padding.
+// into the new worktree. A reused branch says so in the headline and labels its
+// source "parent", since it was not a start-point. The idempotent already-exists
+// case collapses to a single line + the jump-in step. Raw body — the caller's
+// frame owns the outer padding.
 func FormatCreateResult(w io.Writer, p CreateResultParams) {
 	if p.AlreadyExists {
 		Success(w, fmt.Sprintf("Worktree %s already exists at %s", p.Branch, p.Path))
@@ -274,13 +284,28 @@ func FormatCreateResult(w io.Writer, p CreateResultParams) {
 		return
 	}
 
-	Success(w, fmt.Sprintf("Created worktree %s", p.Branch))
+	headline := fmt.Sprintf("Created worktree %s", p.Branch)
+	sourceLabel := domain.CreateRecapLabelFrom
+	if p.ExistingBranch {
+		headline = fmt.Sprintf(domain.BranchReusedHeadline, p.Branch)
+		sourceLabel = domain.CreateRecapLabelParent
+	}
+
+	Success(w, headline)
 	Blank(w)
 	writeAlignedFields(w, []domain.RecapField{
-		{Label: domain.CreateRecapLabelFrom, Value: p.From},
+		{Label: sourceLabel, Value: p.From},
 		{Label: domain.CreateRecapLabelEnv, Value: p.EnvStrategy},
 		{Label: domain.CreateRecapLabelPath, Value: p.Path},
 	})
+	if p.ReusedNote != "" {
+		Blank(w)
+		if p.ReusedNoteWarning {
+			Warning(w, p.ReusedNote)
+		} else {
+			Message(w, p.ReusedNote)
+		}
+	}
 	Blank(w)
 	GoHint(w, p.GoCommand)
 }

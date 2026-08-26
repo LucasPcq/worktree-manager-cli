@@ -29,6 +29,9 @@ type SyncStep struct {
 type SyncPlan struct {
 	BaseBranch string
 	Steps      []SyncStep
+	// BaseTargeted is rules.BaseIsTarget for this cascade; when false the base is
+	// neither refreshed nor named.
+	BaseTargeted bool
 }
 
 // SyncStepStatus is the outcome of a single step in a sync run.
@@ -62,6 +65,40 @@ const (
 	SyncStatusUnknownParent SyncStepStatus = "unknown_parent"
 )
 
+// ParentStatus is the state of a parent no step covers — a branch with no
+// worktree, or a worktree left out of the selection. Nothing in the cascade
+// refreshes such a parent, so a run inspects it separately.
+type ParentStatus string
+
+const (
+	// ParentBehind: strictly behind origin/<parent>, left as is.
+	ParentBehind ParentStatus = "behind"
+	// ParentFastForwarded: advanced to origin/<parent> before its children rebased.
+	ParentFastForwarded ParentStatus = "fast_forwarded"
+	// ParentDiverged: both refs moved, no fast-forward exists, left untouched.
+	ParentDiverged ParentStatus = "diverged"
+	// ParentFFFailed: the refresh was asked for and could not happen. Distinct from
+	// ParentBehind so the recap names the obstacle instead of re-suggesting the
+	// flag already given.
+	ParentFFFailed ParentStatus = "ff_failed"
+)
+
+// ParentUpdate is one such parent. Only those worth reporting get an entry: one
+// already carrying its remote, or without a remote counterpart, produces none.
+type ParentUpdate struct {
+	Branch string       `json:"branch"`
+	Status ParentStatus `json:"status"`
+	OldTip string       `json:"old_tip"`
+	NewTip string       `json:"new_tip"`
+	// Behind counts the commits the local ref lacks; zero for a diverged parent,
+	// where no fast-forward distance exists.
+	Behind int `json:"behind"`
+	// Children are the steps rebased onto this parent.
+	Children []string `json:"children"`
+	// Detail carries why a fast-forward could not happen (ParentFFFailed).
+	Detail string `json:"detail,omitempty"`
+}
+
 // SyncStepResult carries the full detail of one step so the recap can reassure
 // the user (parent, target commit, before→after, replayed count) before pushing.
 type SyncStepResult struct {
@@ -90,13 +127,17 @@ type SyncStepResult struct {
 
 // SyncResult is the outcome of a full cascade sync.
 type SyncResult struct {
-	BaseBranch  string           `json:"base_branch"`
-	BaseUpdated bool             `json:"base_updated"`
-	BaseOldTip  string           `json:"base_old_tip"`
-	BaseNewTip  string           `json:"base_new_tip"`
-	Steps       []SyncStepResult `json:"steps"`
+	BaseBranch string `json:"base_branch"`
+	// BaseTargeted is false when every step rebases onto some other parent: the
+	// base is then left untouched rather than moved as a side effect.
+	BaseTargeted bool             `json:"base_targeted"`
+	BaseUpdated  bool             `json:"base_updated"`
+	BaseOldTip   string           `json:"base_old_tip"`
+	BaseNewTip   string           `json:"base_new_tip"`
+	Steps        []SyncStepResult `json:"steps"`
 	// SelectedBranches lists the branches the run was asked to sync: the explicit
 	// args, or every managed worktree when --all was used. It makes the JSON
 	// output self-describing for agents (which branches this cascade covered).
-	SelectedBranches []string `json:"selected_branches"`
+	SelectedBranches []string       `json:"selected_branches"`
+	ParentUpdates    []ParentUpdate `json:"parent_updates,omitempty"`
 }

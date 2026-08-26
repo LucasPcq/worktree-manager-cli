@@ -21,11 +21,29 @@ func LoadPRs(projectDir string) ([]domain.PRInfo, domain.GHConnection) {
 	return LoadPRsFiltered(projectDir, domain.PRFilterAll)
 }
 
+// LoadPRsWithChecks is LoadPRs plus the CI rollup and the review decision. Only
+// the dashboard renders those, and asking for them costs a per-pull-request
+// resolution, so the other surfaces stay on the narrow field set.
+func LoadPRsWithChecks(projectDir string) ([]domain.PRInfo, domain.GHConnection) {
+	return loadPRs(loadPRsParams{ProjectDir: projectDir, Filter: domain.PRFilterAll, WithChecks: true})
+}
+
 // LoadPRsFiltered is LoadPRs with an explicit filter (all, mine, review-requested).
 func LoadPRsFiltered(projectDir string, filter domain.PRFilter) ([]domain.PRInfo, domain.GHConnection) {
+	return loadPRs(loadPRsParams{ProjectDir: projectDir, Filter: filter})
+}
+
+type loadPRsParams struct {
+	ProjectDir string
+	Filter     domain.PRFilter
+	WithChecks bool
+}
+
+func loadPRs(params loadPRsParams) ([]domain.PRInfo, domain.GHConnection) {
 	prs, err := ghservice.ListPRs(ghservice.ListPRsParams{
-		ProjectDir: projectDir,
-		Filter:     filter,
+		ProjectDir: params.ProjectDir,
+		Filter:     params.Filter,
+		WithChecks: params.WithChecks,
 	})
 	if err == nil {
 		return prs, domain.GHConnectionOK
@@ -45,23 +63,6 @@ func LoadPRsFiltered(projectDir string, filter domain.PRFilter) ([]domain.PRInfo
 func LoadPRsAllStatesGraceful(projectDir string) []domain.PRInfo {
 	prs, _ := ghservice.ListPRsAllStates(projectDir)
 	return prs
-}
-
-// LoadPRsAllStates is LoadPRsAllStatesGraceful with the GitHub CLI connection
-// status preserved, so a caller (e.g. prune) can tell "gh unavailable" apart
-// from "no PRs" and alert the user. Mirrors LoadPRsFiltered's mapping.
-func LoadPRsAllStates(projectDir string) ([]domain.PRInfo, domain.GHConnection) {
-	prs, err := ghservice.ListPRsAllStates(projectDir)
-	if err == nil {
-		return prs, domain.GHConnectionOK
-	}
-	if errors.Is(err, domain.ErrGHNotInstalled) {
-		return nil, domain.GHConnectionNotInstalled
-	}
-	if errors.Is(err, domain.ErrGHNotAuthenticated) {
-		return nil, domain.GHConnectionNotAuthenticated
-	}
-	return nil, domain.GHConnectionOK
 }
 
 // LoadJobsGraceful fetches the daemon's running jobs, returning nil when the daemon is not running.

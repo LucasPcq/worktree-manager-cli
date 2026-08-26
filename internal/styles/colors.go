@@ -4,32 +4,30 @@ package styles
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	// ColorPrimary is the main accent color.
-	ColorPrimary = lipgloss.AdaptiveColor{Light: "#0F62FE", Dark: "#78A9FF"}
+	// ColorPrimary carries navigation and selection: nothing else.
+	ColorPrimary = lipgloss.AdaptiveColor{Light: "#5B4BE0", Dark: "#9B8CFF"}
 
-	// ColorMuted is used for secondary or deemphasized text.
-	ColorMuted = lipgloss.AdaptiveColor{Light: "#6F6F6F", Dark: "#8D8D8D"}
+	// ColorSignature dresses only the wordmark and the call to action. Its hue
+	// is kept apart from ColorWarning (see colors_test.go): both are warm and
+	// sit next to each other in the header.
+	ColorSignature = lipgloss.AdaptiveColor{Light: "#A6391A", Dark: "#E8734A"}
 
-	// ColorSuccess indicates a positive state (clean, ok).
-	ColorSuccess = lipgloss.AdaptiveColor{Light: "#198038", Dark: "#42BE65"}
+	ColorMuted   = lipgloss.AdaptiveColor{Light: "#6F6F6F", Dark: "#8D8D8D"}
+	ColorSuccess = lipgloss.AdaptiveColor{Light: "#158A4A", Dark: "#4ADE80"}
+	ColorWarning = lipgloss.AdaptiveColor{Light: "#B07800", Dark: "#F0C000"}
+	ColorDanger  = lipgloss.AdaptiveColor{Light: "#C21E28", Dark: "#FA6E76"}
 
-	// ColorWarning indicates an attention-needed state (dirty).
-	ColorWarning = lipgloss.AdaptiveColor{Light: "#DA6D00", Dark: "#F1C21B"}
-
-	// ColorDanger indicates a destructive or dangerous action.
-	ColorDanger = lipgloss.AdaptiveColor{Light: "#DA1E28", Dark: "#FA4D56"}
-
-	// ColorBadgeFg is the contrasted foreground for badge chips.
-	ColorBadgeFg = lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#161616"}
-
-	// ColorSelectedBg is the background for the highlighted row in a list.
-	ColorSelectedBg = lipgloss.AdaptiveColor{Light: "#D0E2FF", Dark: "#0043CE"}
-
-	// ColorSelectedFg is the foreground for the highlighted row in a list.
-	ColorSelectedFg = lipgloss.AdaptiveColor{Light: "#001D6C", Dark: "#FFFFFF"}
+	ColorBadgeFg    = lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#161616"}
+	ColorSelectedBg = lipgloss.AdaptiveColor{Light: "#DCD7FB", Dark: "#3B2FA8"}
+	ColorSelectedFg = lipgloss.AdaptiveColor{Light: "#1A1150", Dark: "#FFFFFF"}
 
 	// ColorRowTint is the subtle background tint of the focused SelectList row,
 	// paired with a colored left border + chevron. Lighter than ColorSelectedBg
 	// so it marks the selection without overpowering the text.
-	ColorRowTint = lipgloss.AdaptiveColor{Light: "#E8EFFB", Dark: "#252D3D"}
+	ColorRowTint = lipgloss.AdaptiveColor{Light: "#EFEBFD", Dark: "#282341"}
+
+	// ColorFlashTint is the brief highlight a just-created row's cursor lands
+	// on before it settles into ColorRowTint: warmer and brighter, so the eye
+	// finds it without a toast.
+	ColorFlashTint = lipgloss.AdaptiveColor{Light: "#FBE4D8", Dark: "#4A2C1D"}
 )

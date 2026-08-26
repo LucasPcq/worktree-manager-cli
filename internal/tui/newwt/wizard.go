@@ -29,12 +29,24 @@ const (
 	createConfirm     = "create"
 )
 
+// SourceUpdateParams identifies the branches a reconcile decision arbitrates
+// between: Branch is the worktree's own branch (which may already exist locally,
+// in which case it — not the source — is what needs updating), Source is the
+// start-point / parent.
+type SourceUpdateParams struct {
+	Branch string
+	Source string
+}
+
 // SourceUpdatePrompt decides the conditional "reconcile source" step. In the
 // wizard, only a fast-forward offer (Show && !AbortOnDecline) is an actionable
 // choice; a diverged source (Show && AbortOnDecline) is surfaced as a ⚠ line in
 // the recap instead of a gate. The standalone --from path still renders Params as
 // a single confirm, so those fields are preserved.
 type SourceUpdatePrompt struct {
+	// Branch names the branch an accepted fast-forward applies to — the source for
+	// a new branch, the worktree's own branch when it already exists locally.
+	Branch string
 	// Show controls whether the confirmation appears at all (standalone path) or a
 	// fast-forward choice appears (wizard path).
 	Show bool
@@ -65,10 +77,16 @@ type WizardParams struct {
 	// which case EnvOverride carries the chosen strategy.
 	IncludeEnv  bool
 	EnvOverride string
-	// SourceUpdate, when set, decides the source-update step: given the source
-	// branch it offers a fast-forward (behind-only) or reports a diverged branch as
-	// a ⚠ recap line. Injected by the command layer so the TUI stays free of git logic.
-	SourceUpdate func(source string) SourceUpdatePrompt
+	// SourceUpdate, when set, decides the source-update step: given the worktree's
+	// branch and its source it offers a fast-forward (behind-only) or reports a
+	// diverged branch as a ⚠ recap line. Injected by the command layer so the TUI
+	// stays free of git logic.
+	SourceUpdate func(SourceUpdateParams) SourceUpdatePrompt
+	// Target, when set, reports whether the worktree's branch already exists
+	// locally, so the source step, the recap and the warnings speak of a reused
+	// branch and a sync parent rather than a start-point. Injected by the command
+	// layer so the TUI stays free of git logic.
+	Target func(branch string) domain.BranchTarget
 	// EnvFallback, when set, decides whether the "parent" env strategy will fall
 	// back to copying .env from main — surfaced as a ⚠ recap line.
 	EnvFallback func(source, envOverride string) (show bool, params components.NewConfirmParams)
@@ -79,9 +97,14 @@ type WizardResult struct {
 	BranchName      string
 	FromBranch      string
 	EnvFromOverride string
-	// FastForwardSource is true when the user accepted a fast-forward offer for a
-	// behind-only source; the command fast-forwards it before creating.
-	FastForwardSource bool
+	// FastForwardBranch names the branch whose fast-forward offer the user
+	// accepted — the source for a new branch, the worktree's own branch when it
+	// already exists locally. Empty when nothing is to be fast-forwarded.
+	FastForwardBranch string
+	// Reused reports whether BranchName is an existing local branch that will be
+	// checked out as-is rather than created — the host recap uses it to say so
+	// instead of a misleading "from <source>".
+	Reused bool
 }
 
 // CreateFlow is the create sub-flow (branch/source/source-update steps) ready to
@@ -109,20 +132,33 @@ func CreateSteps(params WizardParams, enabled func(steps []components.Step) bool
 		steps = append(steps, gateStep(branchStep(), enabled))
 	}
 	if params.Source == "" {
-		steps = append(steps, gateStep(sourceStep(holder, params.DefaultBranch), enabled))
+		steps = append(steps, gateStep(sourceStep(sourceStepParams{
+			Holder:        holder,
+			DefaultBranch: params.DefaultBranch,
+			Wizard:        params,
+		}), enabled))
 	}
 	if params.IncludeEnv {
 		steps = append(steps, gateStep(envStep(params.ConfigStrategy), enabled))
 	}
-	// The source-update fast-forward: a ChoiceStep when the source is picked, else
-	// (fixed by --from) a concrete step added only when a fast-forward is offered —
-	// a ChoiceStep cannot be a first step. A diverged source is not a gate here; it
-	// becomes a ⚠ line in the recap.
+	// The source-update fast-forward: a ChoiceStep whenever a step precedes it (it
+	// cannot be a first step), else — source fixed by --from and branch fixed by
+	// the positional arg — a concrete step added only when a fast-forward is
+	// offered. A diverged branch is not a gate here; it becomes a ⚠ recap line.
 	if params.SourceUpdate != nil {
-		if params.Source == "" {
-			steps = append(steps, gateStep(sourceUpdateStep(params.SourceUpdate), enabled))
-		} else if p := params.SourceUpdate(params.Source); p.Show && !p.AbortOnDecline {
-			steps = append(steps, gateStep(sourceUpdateConcreteStep(p), enabled))
+		decide := func(prev []components.Step) SourceUpdatePrompt {
+			return params.SourceUpdate(SourceUpdateParams{
+				Branch: resolveBranchName(prev, params),
+				Source: resolveSource(prev, params),
+			})
+		}
+		switch {
+		case params.Source == "" || params.IncludeBranch:
+			steps = append(steps, gateStep(sourceUpdateStep(decide), enabled))
+		default:
+			if p := decide(nil); p.Show && !p.AbortOnDecline {
+				steps = append(steps, gateStep(sourceUpdateConcreteStep(p), enabled))
+			}
 		}
 	}
 
@@ -158,7 +194,8 @@ func ReadCreateResult(steps []components.Step, params WizardParams) WizardResult
 	result := WizardResult{
 		FromBranch:        resolveSource(steps, params),
 		EnvFromOverride:   resolveEnv(steps, params),
-		FastForwardSource: stepValueByName(steps, stepSourceUpd) == sourceFastForward,
+		FastForwardBranch: fastForwardBranch(steps, params),
+		Reused:            reusesBranch(steps, params),
 	}
 	if child, ok := stepModelByName(steps, stepBranchName).(components.TextInputModel); ok {
 		result.BranchName = child.Value()
@@ -183,18 +220,31 @@ func branchStep() components.Step {
 	}
 }
 
-func sourceStep(holder *[]domain.BranchCandidate, defaultBranch string) components.Step {
-	sourceList := func() any {
+// sourceStepParams holds inputs for sourceStep. Wizard carries the branch-name
+// answer and the Target decider, so the step can retitle itself once the branch
+// is known to already exist.
+type sourceStepParams struct {
+	Holder        *[]domain.BranchCandidate
+	DefaultBranch string
+	Wizard        WizardParams
+}
+
+func sourceStep(params sourceStepParams) components.Step {
+	sourceList := func(prev []components.Step) any {
+		description := "Branch to base the new worktree on"
+		if reusesBranch(prev, params.Wizard) {
+			description = domain.RecapParentRecordedForSync
+		}
 		return components.NewSelectList(components.NewSelectListParams{
 			Title:       stepSourceName,
-			Description: "Branch to base the new worktree on",
-			Items:       buildBranchItems(*holder, defaultBranch),
+			Description: description,
+			Items:       buildBranchItems(*params.Holder, params.DefaultBranch),
 		})
 	}
 	return components.Step{
 		Name:       stepSourceName,
-		Model:      sourceList(),
-		Build:      func([]components.Step) any { return sourceList() },
+		Model:      sourceList(nil),
+		Build:      sourceList,
 		CanRefresh: true,
 		Summary:    components.SelectSummary,
 	}
@@ -254,10 +304,12 @@ func RunWizard(params WizardParams) (WizardResult, error) {
 }
 
 // sourceUpdateItems are the fast-forward-vs-keep options, shared by the ChoiceStep
-// (picked source) and concrete (fixed source) variants.
-func sourceUpdateItems() []components.SelectItem {
+// (picked source) and concrete (fixed source) variants. The branch is named in the
+// label because the offer targets the source for a new branch and the worktree's
+// own branch when it already exists.
+func sourceUpdateItems(branch string) []components.SelectItem {
 	return []components.SelectItem{
-		{Label: "Fast-forward the source to origin", Value: sourceFastForward},
+		{Label: fmt.Sprintf(domain.SourceFastForwardOptionFmt, branch), Value: sourceFastForward},
 		{Separator: true},
 		{Label: "Keep it as-is", Value: sourceKeep},
 	}
@@ -271,7 +323,7 @@ func sourceUpdateConcreteStep(p SourceUpdatePrompt) components.Step {
 		Name: stepSourceUpd,
 		Model: components.NewSelectList(components.NewSelectListParams{
 			Description: p.Params.Description,
-			Items:       sourceUpdateItems(),
+			Items:       sourceUpdateItems(p.Branch),
 		}),
 		Summary: sourceUpdateSummary,
 	}
@@ -280,16 +332,16 @@ func sourceUpdateConcreteStep(p SourceUpdatePrompt) components.Step {
 // sourceUpdateStep builds the optional fast-forward select. It applies only for a
 // behind-only source (a fast-forward offer); a diverged or up-to-date source
 // auto-skips with a reason (the diverged warning re-appears in the recap).
-func sourceUpdateStep(decide func(source string) SourceUpdatePrompt) components.Step {
+func sourceUpdateStep(decide func(prev []components.Step) SourceUpdatePrompt) components.Step {
 	return components.ChoiceStep(components.ChoiceStepParams{
 		Name:    stepSourceUpd,
 		Summary: sourceUpdateSummary,
 		Decide: func(prev []components.Step) (bool, string, components.NewSelectListParams) {
-			p := decide(stepValueByName(prev, stepSourceName))
+			p := decide(prev)
 			if p.Show && !p.AbortOnDecline {
 				return true, "", components.NewSelectListParams{
 					Description: p.Params.Description,
-					Items:       sourceUpdateItems(),
+					Items:       sourceUpdateItems(p.Branch),
 				}
 			}
 			return false, p.SkipReason, components.NewSelectListParams{}
@@ -304,9 +356,9 @@ func sourceUpdateSummary(model any) string {
 		return ""
 	}
 	if sl.Value() == sourceFastForward {
-		return "fast-forward source"
+		return "fast-forward to origin"
 	}
-	return "keep source as-is"
+	return "keep as-is"
 }
 
 // resolveSource returns the source branch: the --from preset, else the picked one.
@@ -315,6 +367,41 @@ func resolveSource(steps []components.Step, params WizardParams) string {
 		return params.Source
 	}
 	return stepValueByName(steps, stepSourceName)
+}
+
+// resolveBranchName returns the worktree's branch: the typed one when the branch
+// step runs, else the positional argument that fixed it.
+func resolveBranchName(steps []components.Step, params WizardParams) string {
+	if !params.IncludeBranch {
+		return params.BranchName
+	}
+	return textValueByName(steps, stepBranchName)
+}
+
+// reusesBranch reports whether the worktree will check out an existing local
+// branch rather than create one, per the injected Target decider.
+func reusesBranch(steps []components.Step, params WizardParams) bool {
+	if params.Target == nil {
+		return false
+	}
+	name := resolveBranchName(steps, params)
+	if name == "" {
+		return false
+	}
+	return params.Target(name).State == domain.BranchTargetExisting
+}
+
+// fastForwardBranch names the branch an accepted fast-forward applies to, asking
+// the same decider the step did. Empty when the offer was declined, skipped, or
+// never made.
+func fastForwardBranch(steps []components.Step, params WizardParams) string {
+	if params.SourceUpdate == nil || stepValueByName(steps, stepSourceUpd) != sourceFastForward {
+		return ""
+	}
+	return params.SourceUpdate(SourceUpdateParams{
+		Branch: resolveBranchName(steps, params),
+		Source: resolveSource(steps, params),
+	}).Branch
 }
 
 // resolveEnv returns the env override: the --env-from preset, else the picked one.
@@ -335,24 +422,37 @@ func buildCreateRecap(prev []components.Step, params WizardParams) string {
 		envLabel = "config default"
 	}
 
-	branchName := params.BranchName
-	if params.IncludeBranch {
-		branchName = textValueByName(prev, stepBranchName)
+	branchName := resolveBranchName(prev, params)
+	reused := reusesBranch(prev, params)
+	ffBranch := fastForwardBranch(prev, params)
+
+	branchLabel := branchName
+	if reused {
+		branchLabel += domain.BranchReusedSuffix
 	}
 
+	// The source line is a start-point for a new branch and only the recorded sync
+	// parent for a reused one; the fast-forward annotation follows its subject.
+	sourceField := "Source:  "
+	if reused {
+		sourceField = "Parent:  "
+	}
 	sourceLabel := source
-	if stepValueByName(prev, stepSourceUpd) == sourceFastForward {
+	if ffBranch != "" && ffBranch == source {
 		sourceLabel += " (fast-forward to origin)"
 	}
 
 	var lines []string
-	if branchName != "" {
-		lines = append(lines, "Branch:  "+branchName)
+	if branchLabel != "" {
+		lines = append(lines, "Branch:  "+branchLabel)
 	}
 	lines = append(lines,
-		"Source:  "+sourceLabel,
+		sourceField+sourceLabel,
 		"Env:     "+envLabel,
 	)
+	if ffBranch != "" && ffBranch != source {
+		lines = append(lines, fmt.Sprintf(domain.RecapUpdateFastForward, ffBranch))
+	}
 
 	if warnings := CreateWarnings(prev, params); len(warnings) > 0 {
 		lines = append(lines, "")
@@ -369,7 +469,11 @@ func CreateWarnings(steps []components.Step, params WizardParams) []string {
 	env := resolveEnv(steps, params)
 	var warnings []string
 	if params.SourceUpdate != nil {
-		if p := params.SourceUpdate(source); p.Show && p.AbortOnDecline && p.Params.Warning != "" {
+		p := params.SourceUpdate(SourceUpdateParams{
+			Branch: resolveBranchName(steps, params),
+			Source: source,
+		})
+		if p.Show && p.AbortOnDecline && p.Params.Warning != "" {
 			warnings = append(warnings, "⚠ "+p.Params.Warning)
 		}
 	}

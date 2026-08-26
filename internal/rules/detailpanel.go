@@ -1,0 +1,503 @@
+package rules
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+)
+
+type VitalChipsParams struct {
+	Status       domain.WorktreeStatus
+	LastCommitAt time.Time
+	Now          time.Time
+}
+
+// VitalChips builds the vital strip. State comes first — it is the fastest
+// read — and it is the only coloured chip. `created` never appears here: it
+// belongs to LINKS.
+func VitalChips(params VitalChipsParams) []domain.Chip {
+	chips := []domain.Chip{stateChip(params.Status)}
+
+	if params.Status.CommitsAhead > 0 {
+		chips = append(chips, domain.Chip{
+			Text: fmt.Sprintf(domain.ChipBaseFmt, params.Status.CommitsAhead),
+			Kind: domain.ChipKindNeutral,
+		})
+	}
+	if origin := originChipText(params.Status); origin != "" {
+		chips = append(chips, domain.Chip{Text: origin, Kind: domain.ChipKindNeutral})
+	}
+	if age := RelativeAge(RelativeAgeParams{At: params.LastCommitAt, Now: params.Now}); age != "" {
+		chips = append(chips, domain.Chip{
+			Text: fmt.Sprintf(domain.ChipActiveFmt, age),
+			Kind: domain.ChipKindNeutral,
+		})
+	}
+	return chips
+}
+
+// stateChip: a paused rebase outranks "dirty". A mid-rebase branch is always
+// dirty too, but the rebase is what is actionable.
+func stateChip(status domain.WorktreeStatus) domain.Chip {
+	if status.RebaseInProgress {
+		return domain.Chip{Text: domain.ChipRebasing, State: true, Kind: domain.ChipKindRebasing}
+	}
+	if status.IsDirty {
+		return domain.Chip{Text: domain.ChipDirty, State: true, Kind: domain.ChipKindDirty}
+	}
+	return domain.Chip{Text: domain.ChipClean, State: true, Kind: domain.ChipKindClean}
+}
+
+func originChipText(status domain.WorktreeStatus) string {
+	switch status.OriginState {
+	case domain.DivergenceUnknown:
+		// No origin counterpart to compare against: nothing to show.
+		return ""
+	case domain.DivergenceUpToDate:
+		// Same commit as origin is the non-event the strip must not recite.
+		return ""
+	case domain.DivergenceDiverged:
+		return fmt.Sprintf(domain.ChipOriginDivergedFmt, status.OriginAhead, status.OriginBehind)
+	case domain.DivergenceAhead:
+		return fmt.Sprintf(domain.ChipOriginAheadFmt, status.OriginAhead)
+	case domain.DivergenceBehind:
+		return fmt.Sprintf(domain.ChipOriginBehindFmt, status.OriginBehind)
+	default:
+		return ""
+	}
+}
+
+type DetailSectionsParams struct {
+	Status domain.WorktreeStatus
+	Detail domain.WorktreeDetail
+	PR     *domain.PRInfo
+	// PRUnavailable names why PR data could not be read (e.g. the GitHub CLI is
+	// missing or not authenticated), empty when it is fine. It is a plain reason
+	// string so the renderer stays dumb: rules/ still decides whether REVIEW
+	// shows, the caller only supplies why the read failed.
+	PRUnavailable string
+	Parent        string
+	// DetailLoaded is false on the very first render for a branch, before its
+	// WorktreeDetail has ever landed (§8 state 3). CHANGES and ACTIVITY — the
+	// two sections that depend on Detail — render a single "loading…"
+	// placeholder line instead of vanishing, so LINKS does not jump once the
+	// real data arrives. CHANGES is only expected when WorktreeStatus already
+	// says the tree is dirty; ACTIVITY is expected unconditionally, since a
+	// branch with no commit history at all is not a case this panel needs to
+	// special-case.
+	DetailLoaded bool
+	Height       int
+	// Now anchors every relative age this call renders (ACTIVITY's "… ago"), so
+	// the whole panel is reproducible from its inputs instead of reading the
+	// wall clock mid-build.
+	Now time.Time
+}
+
+// DetailSections emits the sections in a fixed order, and only the ones that
+// have something to say: a section's position varies between worktrees, its
+// rank never does.
+//
+// CHANGES and ACTIVITY each get a fixed row cap (listBudgets) rather than a
+// share of whatever height happens to be left over: leftover height simply
+// stays empty. FitSections is what reacts to a real height shortage, by
+// dropping whole sections — never by stretching or shrinking a list's cap.
+func DetailSections(params DetailSectionsParams) []domain.DetailSection {
+	var review *domain.DetailSection
+	if params.PR != nil || params.PRUnavailable != "" {
+		section := reviewSection(reviewSectionParams{PR: params.PR, Unavailable: params.PRUnavailable})
+		review = &section
+	}
+	links := linksSection(params)
+
+	changesErr := familyFailure(params.Detail.Failures, domain.DetailFamilyChanges)
+	commitsErr := familyFailure(params.Detail.Failures, domain.DetailFamilyCommits)
+	diffErr := familyFailure(params.Detail.Failures, domain.DetailFamilyBranchDiff)
+	wantChanges := changedCount(params.Detail.Changes) > 0 || changesErr != nil
+	wantActivity := len(params.Detail.Commits) > 0 || commitsErr != nil
+	if !params.DetailLoaded {
+		wantChanges, wantActivity = params.Status.IsDirty, true
+	}
+
+	changesBudget, activityBudget := listBudgets(wantChanges, wantActivity)
+
+	sections := make([]domain.DetailSection, 0, 4)
+	if review != nil {
+		sections = append(sections, *review)
+	}
+	if wantChanges {
+		sections = append(sections, changesSection(changesSectionParams{
+			Changes: params.Detail.Changes, Budget: changesBudget, Failure: changesErr, Loaded: params.DetailLoaded,
+		}))
+	}
+	if wantActivity {
+		sections = append(sections, activitySection(activitySectionParams{
+			Commits: params.Detail.Commits, Budget: activityBudget, Now: params.Now, Failure: commitsErr, Loaded: params.DetailLoaded,
+			Diff: params.Detail.BranchDiff, DiffFailure: diffErr,
+		}))
+	}
+	return append(sections, links)
+}
+
+// familyFailure reads a family's failure out of Failures without ever
+// promoting a nil error into a "failed" reading: a family absent from the map,
+// or present with a nil error, was read successfully.
+func familyFailure(failures map[domain.DetailFamily]error, family domain.DetailFamily) error {
+	if err, failed := failures[family]; failed && err != nil {
+		return err
+	}
+	return nil
+}
+
+// failureLine is the shared §8 state 4 form: every family that failed to read
+// says why, in the same words, instead of that family's section going quietly
+// empty.
+func failureLine(err error) string {
+	return fmt.Sprintf(domain.DashboardUnavailableFmt, err)
+}
+
+func changedCount(changes domain.WorkingChanges) int {
+	return changes.Modified + changes.Untracked + changes.Staged
+}
+
+// listBudgets gives each shown list a fixed maximum row count —
+// DashboardDetailChanges for CHANGES, DashboardDetailCommits for ACTIVITY —
+// instead of splitting whatever height happens to be left over between them.
+// The previous rule handed the leftover to CHANGES on a dirty worktree and to
+// ACTIVITY on a clean one, which read as randomness rather than a rule: five
+// commits on a clean worktree, two plus "… 3 more" the moment it turns dirty,
+// with nothing on screen explaining why. A fixed cap is predictable even when
+// its reasoning is invisible; leftover height simply stays empty. A real
+// height shortage is FitSections' job, by dropping a whole section, never by
+// shrinking a list's cap.
+func listBudgets(wantChanges, wantActivity bool) (changesBudget, activityBudget int) {
+	if wantChanges {
+		changesBudget = domain.DashboardDetailChanges
+	}
+	if wantActivity {
+		activityBudget = domain.DashboardDetailCommits
+	}
+	return changesBudget, activityBudget
+}
+
+// splitBudget divides a list of `total` items into what's shown and what's
+// folded into a "… N more" line, reserving one row for that line once the
+// budget is exceeded.
+func splitBudget(total, budget int) (shown, more int) {
+	if budget <= 0 {
+		return 0, total
+	}
+	if total <= budget {
+		return total, 0
+	}
+	return budget - 1, total - (budget - 1)
+}
+
+type reviewSectionParams struct {
+	PR          *domain.PRInfo
+	Unavailable string
+}
+
+// reviewSection reads either a real PR or a reason PR data could not be read
+// — never both, and the caller only ever supplies one (DetailSections only
+// builds this section when at least one is set). A failed read renders the
+// same "unavailable — reason" form as the LINKS "Env" field (§8 state 4): an
+// absence caused by a broken tool must never look like an absence caused by
+// there being nothing.
+func reviewSection(params reviewSectionParams) domain.DetailSection {
+	if params.PR == nil {
+		line := fmt.Sprintf(domain.DashboardUnavailableFmt, params.Unavailable)
+		return domain.DetailSection{Key: domain.DetailSectionReview, Title: domain.DetailSectionReview, Lines: []string{line}}
+	}
+
+	lines := []string{domain.DetailListIndent + fmt.Sprintf(domain.DetailReviewHeaderFmt, params.PR.Number, params.PR.Title, params.PR.State)}
+	if second := reviewChecksLine(params.PR.Checks, params.PR.ReviewDecision); second != "" {
+		lines = append(lines, domain.DetailListIndent+second)
+	}
+	return domain.DetailSection{Key: domain.DetailSectionReview, Title: domain.DetailSectionReview, Lines: lines}
+}
+
+// reviewChecksLine renders the REVIEW section's second line: a checks
+// fragment (omitted when no check ever ran) and a review-decision fragment
+// (omitted when nothing has been decided yet), joined only when both apply.
+func reviewChecksLine(checks domain.PRChecks, decision string) string {
+	var fragments []string
+	if checks.Passed+checks.Failed+checks.Pending > 0 {
+		fragments = append(fragments, checksFragment(checks))
+	}
+	if label := reviewDecisionLabel(decision); label != "" {
+		fragments = append(fragments, fmt.Sprintf(domain.DetailReviewDecisionFmt, label))
+	}
+	return strings.Join(fragments, domain.DashboardMetaSeparator)
+}
+
+func checksFragment(checks domain.PRChecks) string {
+	fragment := fmt.Sprintf(domain.DetailChecksFmt, checks.Passed, checks.Failed)
+	if checks.Pending > 0 {
+		fragment += fmt.Sprintf(domain.DetailChecksPendingFmt, checks.Pending)
+	}
+	return fragment
+}
+
+func reviewDecisionLabel(decision string) string {
+	switch decision {
+	case domain.GHReviewDecisionApproved:
+		return domain.DetailReviewDecisionApproved
+	case domain.GHReviewDecisionChangesRequested:
+		return domain.DetailReviewDecisionChangesRequested
+	case domain.GHReviewDecisionReviewRequired:
+		return domain.DetailReviewDecisionReviewRequired
+	default:
+		return ""
+	}
+}
+
+type changesSectionParams struct {
+	Changes domain.WorkingChanges
+	Budget  int
+	// Failure, when set, replaces the file list with why it could not be read.
+	Failure error
+	// Loaded is false on the very first render (§8 state 3): the section
+	// renders a single loading placeholder instead of a guess at its content.
+	Loaded bool
+}
+
+func changesSection(params changesSectionParams) domain.DetailSection {
+	section := domain.DetailSection{Key: domain.DetailSectionChanges, Title: domain.DetailSectionChanges}
+	switch {
+	case !params.Loaded:
+		section.Lines = []string{domain.DashboardLoadingField}
+		return section
+	case params.Failure != nil:
+		section.Lines = []string{failureLine(params.Failure)}
+		return section
+	}
+
+	var lines []string
+	shown, more := splitBudget(len(params.Changes.Files), params.Budget)
+	for _, file := range params.Changes.Files[:shown] {
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFileFmt, fileGlyph(file), file.Path))
+	}
+	if more > 0 {
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailMoreFmt, more))
+	}
+	section.TitleRight = changesSummary(params.Changes)
+	section.Lines = lines
+	return section
+}
+
+func changesSummary(changes domain.WorkingChanges) string {
+	var parts []string
+	if changes.Modified > 0 {
+		parts = append(parts, fmt.Sprintf(domain.ChangesModifiedFmt, changes.Modified))
+	}
+	if changes.Untracked > 0 {
+		parts = append(parts, fmt.Sprintf(domain.ChangesUntrackedFmt, changes.Untracked))
+	}
+	if changes.Staged > 0 {
+		parts = append(parts, fmt.Sprintf(domain.ChangesStagedFmt, changes.Staged))
+	}
+	summary := strings.Join(parts, domain.DashboardMetaSeparator)
+
+	diff := diffStatText(domain.DiffStat{Insertions: changes.Insertions, Deletions: changes.Deletions})
+	if diff == "" {
+		return summary
+	}
+	if summary == "" {
+		return diff
+	}
+	return summary + domain.DetailListIndent + diff
+}
+
+// diffStatText renders a diff's volume ("+214 −38"), or "" when there is
+// nothing to report — never a fabricated "+0 −0" for an unread diff.
+func diffStatText(stat domain.DiffStat) string {
+	if stat.Insertions == 0 && stat.Deletions == 0 {
+		return ""
+	}
+	return fmt.Sprintf(domain.ChangesDiffStatFmt, stat.Insertions, stat.Deletions)
+}
+
+// fileGlyph reads the porcelain XY code as-is: the worktree column (Y) wins
+// when set, since it's what you'd act on next; the index column (X) is the
+// fallback for a purely staged change.
+func fileGlyph(file domain.PorcelainEntry) string {
+	if file.Status == domain.PorcelainUntracked {
+		return domain.DetailUntrackedGlyph
+	}
+	if len(file.Status) < 2 {
+		return domain.DetailUntrackedGlyph
+	}
+	if rune(file.Status[1]) != domain.PorcelainUnmodified {
+		return string(file.Status[1])
+	}
+	return string(file.Status[0])
+}
+
+type activitySectionParams struct {
+	Commits []domain.CommitSummary
+	Budget  int
+	Now     time.Time
+	// Failure, when set, replaces the commit list with why it could not be read.
+	Failure error
+	// Loaded is false on the very first render (§8 state 3): the section
+	// renders a single loading placeholder instead of a guess at its content.
+	Loaded bool
+	// Diff is the branch's committed volume against its base, rendered on the
+	// title row — ACTIVITY's counterpart to CHANGES' uncommitted volume.
+	Diff domain.DiffStat
+	// DiffFailure, when set, replaces Diff on the title row with why it could
+	// not be read: a failed read never fabricates a "+0 −0".
+	DiffFailure error
+}
+
+func activitySection(params activitySectionParams) domain.DetailSection {
+	section := domain.DetailSection{Key: domain.DetailSectionActivity, Title: domain.DetailSectionActivity}
+	switch {
+	case !params.Loaded:
+		section.Lines = []string{domain.DashboardLoadingField}
+		return section
+	case params.Failure != nil:
+		section.Lines = []string{failureLine(params.Failure)}
+		return section
+	}
+
+	shown, more := splitBudget(len(params.Commits), params.Budget)
+	lines := make([]string, 0, shown+1)
+	for _, commit := range params.Commits[:shown] {
+		lines = append(lines, domain.DetailListIndent+commitLine(commit, params.Now))
+	}
+	if more > 0 {
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailMoreFmt, more))
+	}
+	section.TitleRight = activityDiffText(params.Diff, params.DiffFailure)
+	section.Lines = lines
+	return section
+}
+
+func activityDiffText(stat domain.DiffStat, err error) string {
+	if err != nil {
+		return failureLine(err)
+	}
+	if stat.FilesChanged == 0 {
+		return diffStatText(stat)
+	}
+	files := fmt.Sprintf(domain.ActivityFilesChangedFmt, stat.FilesChanged)
+	diff := diffStatText(stat)
+	if diff == "" {
+		return files
+	}
+	return files + domain.DetailListIndent + diff
+}
+
+// commitLine reuses commit.SHA as-is: infra.RecentCommits already asks git for
+// its abbreviated `%h`, so re-truncating it here would only risk cutting an
+// abbreviation git had to grow to stay unambiguous.
+func commitLine(commit domain.CommitSummary, now time.Time) string {
+	line := fmt.Sprintf(domain.DetailCommitFmt, commit.SHA, commit.Subject)
+	if meta := commitMeta(commit, now); meta != "" {
+		line += domain.DetailListIndent + meta
+	}
+	return line
+}
+
+// commitMeta never formats a zero CommitSummary.At as a date: RelativeAge
+// already returns "" for it, meaning unknown, never the epoch.
+func commitMeta(commit domain.CommitSummary, now time.Time) string {
+	var parts []string
+	if commit.Author != "" {
+		parts = append(parts, commit.Author)
+	}
+	if age := RelativeAge(RelativeAgeParams{At: commit.At, Now: now}); age != "" {
+		parts = append(parts, age)
+	}
+	return strings.Join(parts, domain.DashboardMetaSeparator)
+}
+
+func linksSection(params DetailSectionsParams) domain.DetailSection {
+	var lines []string
+
+	if params.Parent != "" {
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelParent, params.Parent))
+	}
+	if len(params.Detail.Children) > 0 {
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelChildren,
+			strings.Join(params.Detail.Children, domain.DetailListSep)))
+	}
+	if age := RelativeAge(RelativeAgeParams{At: params.Status.CreatedAt, Now: params.Now}); age != "" {
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelCreated, age))
+	}
+	if env := envLine(params.Detail); env != "" {
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelEnv, env))
+	}
+	lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailFieldFmt, domain.DashboardLabelPath, params.Status.Path))
+
+	return domain.DetailSection{Key: domain.DetailSectionLinks, Title: domain.DetailSectionLinks, Lines: lines}
+}
+
+// envLine distinguishes three situations the LINKS "Env" field can be in: a
+// family that failed to read says why; a legitimate absence (no env files
+// declared) says so without an alert glyph; a configured family with no drift
+// has nothing to say and is omitted, like an up-to-date origin.
+func envLine(detail domain.WorktreeDetail) string {
+	if err := familyFailure(detail.Failures, domain.DetailFamilyEnv); err != nil {
+		return failureLine(err)
+	}
+	if !detail.EnvDrift.Configured {
+		return domain.DashboardNotConfigured
+	}
+	return envDriftSummary(detail.EnvDrift)
+}
+
+func envDriftSummary(drift domain.EnvDriftSummary) string {
+	var parts []string
+	if drift.Missing > 0 {
+		parts = append(parts, fmt.Sprintf(domain.EnvMissingFmt, drift.Missing))
+	}
+	if drift.Conflicting > 0 {
+		parts = append(parts, fmt.Sprintf(domain.EnvConflictingFmt, drift.Conflicting))
+	}
+	if drift.Orphan > 0 {
+		parts = append(parts, fmt.Sprintf(domain.EnvOrphanFmt, drift.Orphan))
+	}
+	return strings.Join(parts, domain.DashboardMetaSeparator)
+}
+
+type FitSectionsParams struct {
+	Sections []domain.DetailSection
+	Height   int
+}
+
+// FitSections drops sections from the end of DetailSectionDropOrder while the
+// stack exceeds the height. The vital strip and the blockers line never come
+// through here: they don't fall.
+func FitSections(params FitSectionsParams) []domain.DetailSection {
+	kept := params.Sections
+	for sectionsHeight(kept) > params.Height && len(kept) > 0 {
+		kept = dropLowestPriority(kept)
+	}
+	return kept
+}
+
+// sectionsHeight counts, per section, its title, the blank line under it and
+// its body lines.
+func sectionsHeight(sections []domain.DetailSection) int {
+	total := 0
+	for _, section := range sections {
+		total += domain.DetailSectionChrome + len(section.Lines)
+	}
+	return total
+}
+
+func dropLowestPriority(sections []domain.DetailSection) []domain.DetailSection {
+	for i := len(domain.DetailSectionDropOrder) - 1; i >= 0; i-- {
+		key := domain.DetailSectionDropOrder[i]
+		for index, section := range sections {
+			if section.Key == key {
+				return append(sections[:index:index], sections[index+1:]...)
+			}
+		}
+	}
+	return nil
+}

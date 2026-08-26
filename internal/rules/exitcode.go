@@ -25,6 +25,8 @@ func ExitCode(err error) int {
 		return domain.ExitCodeRunNotInitialized
 	case errors.Is(err, domain.ErrExtractConflict):
 		return domain.ExitCodeExtractConflict
+	case errors.Is(err, domain.ErrUpgradeFromSource), errors.Is(err, domain.ErrUpgradeNotWritable):
+		return domain.ExitCodeUpgradeUnsupported
 	default:
 		return domain.ExitCodeError
 	}

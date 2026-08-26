@@ -116,6 +116,26 @@ func TestLoadMinimalConfigAppliesDefaults(t *testing.T) {
 	}
 }
 
+func TestGlobalConfigDecodesUIAnimations(t *testing.T) {
+	var cfg domain.GlobalConfig
+	if err := decodeStrictBytes("config.toml", []byte("shell = \"zsh\"\n\n[ui]\nanimations = false\n"), &cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.UI.Animations == nil || *cfg.UI.Animations != false {
+		t.Errorf("UI.Animations = %v, want a pointer to false", cfg.UI.Animations)
+	}
+}
+
+func TestGlobalConfigLeavesUIAnimationsNilWhenAbsent(t *testing.T) {
+	var cfg domain.GlobalConfig
+	if err := decodeStrictBytes("config.toml", []byte("shell = \"zsh\"\n"), &cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.UI.Animations != nil {
+		t.Errorf("UI.Animations = %v, want nil: an absent key must not read as an explicit false", cfg.UI.Animations)
+	}
+}
+
 func TestLoadMissingProjectConfigReturnsError(t *testing.T) {
 	dir := t.TempDir()
 

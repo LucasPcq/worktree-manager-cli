@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"io"
+	"time"
+)
 
 // Worktree represents a git worktree managed by wtm.
 type Worktree struct {
@@ -110,6 +113,8 @@ type CreateHooksParams struct {
 	Branch       string
 	FromBranch   string
 	Hooks        []HookCommand
+	// Output receives the hook output as it is produced; nil keeps stderr.
+	Output io.Writer
 }
 
 // CreateResult holds the output of a successful worktree creation.
@@ -118,6 +123,18 @@ type CreateResult struct {
 	Path          string           `json:"path"`
 	Metadata      WorktreeMetadata `json:"metadata"`
 	AlreadyExists bool             `json:"already_exists"`
+	// ExistingBranch reports that the worktree checked out a local branch that
+	// already existed instead of creating one; the source branch was then only
+	// recorded as the sync parent, not used as a start-point.
+	ExistingBranch bool `json:"existing_branch"`
+	// OriginState is the reused branch's divergence from origin, using the same
+	// labels as `list` and `tree`. Empty when the branch was created.
+	OriginState string `json:"origin_state,omitempty"`
+	// OriginAhead/OriginBehind are the reused branch's commit counts vs its origin
+	// counterpart, backing the human-readable reuse note. Zero when the branch was
+	// created (OriginState empty) or up to date.
+	OriginAhead  int `json:"origin_ahead,omitempty"`
+	OriginBehind int `json:"origin_behind,omitempty"`
 }
 
 // CleanParams holds inputs for cleaning a worktree.
@@ -142,6 +159,8 @@ type CleanHooksParams struct {
 	WorktreePath string
 	Branch       string
 	Hooks        []HookCommand
+	// Output receives the hook output as it is produced; nil keeps stderr.
+	Output io.Writer
 }
 
 // ForceCleanParams holds inputs for the forced worktree recovery: delete the
@@ -227,4 +246,12 @@ type ResolveResult struct {
 	Branch    string
 	Ambiguous bool
 	Matches   []GitWorktree
+}
+
+// CleanBlocker names one reason a removal is refused. Listing them one by one is
+// what lets a surface have each lifted on its own, instead of behind a single
+// blanket "force".
+type CleanBlocker struct {
+	Key   string
+	Label string
 }

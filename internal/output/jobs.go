@@ -32,6 +32,12 @@ type PRCheckoutJSON struct {
 	Author string `json:"author"`
 	URL    string `json:"url"`
 	Draft  bool   `json:"is_draft"`
+	// ExistingBranch reports that a local branch of that name already existed and
+	// was checked out as-is, instead of being created from origin.
+	ExistingBranch bool `json:"existing_branch"`
+	// OriginState is the reused branch's divergence from origin, using the same
+	// labels as `list` and `tree`. Empty when the branch was created.
+	OriginState string `json:"origin_state,omitempty"`
 }
 
 // WriteJobResultsJSON writes the JSON array describing each job outcome.

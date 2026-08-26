@@ -30,6 +30,9 @@ func newExtractCmd() *cobra.Command {
 			"The source worktree is the first thing chosen: pass its branch as [source],\n" +
 			"or omit it to pick interactively from the worktrees that have changes. A source\n" +
 			"is required when there is no terminal or with --output json.\n\n" +
+			"A --to branch that already exists locally is checked out as-is, keeping its\n" +
+			"commits. Its parent can't be inferred, so --from then names the branch recorded\n" +
+			"for `wtm sync` — asked in the wizard, required without it.\n\n" +
 			"Untracked files are listed one by one, including inside brand-new directories,\n" +
 			"so you can take part of a new folder; gitignored files are never listed.\n\n" +
 			"On conflict it aborts by default, leaving the source intact; --on-conflict resolve\n" +
@@ -45,7 +48,7 @@ func newExtractCmd() *cobra.Command {
 	cmd.Flags().Bool(domain.FlagFF, false, "Fast-forward the parent branch to origin before creating the target (non-interactive; skipped when it has diverged)")
 	cmd.Flags().Bool(domain.FlagKeep, false, "Copy instead of move (keep the changes in the source)")
 	cmd.Flags().String(domain.FlagOnConflict, "", "On conflict: abort (default) or resolve (write conflict markers in the target)")
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (requires a source arg, --files and --to; errors if a selection is missing)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip all prompts; resolve every decision from flags and safe defaults (requires a source arg, --files and --to; --from is also required when --to already exists locally; errors if a selection is missing)")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -413,11 +416,11 @@ func resolveSelectionAndTarget(p resolveParams) (extractSelection, error) {
 	}
 
 	wizard, err := runWizard(runWizardParams{
-		cmd:         p.cmd,
-		cfg:         p.cfg,
-		statuses:    p.statuses,
-		source:      p.source,
-		loadFiles:   p.loadFiles,
+		cmd:        p.cmd,
+		cfg:        p.cfg,
+		statuses:   p.statuses,
+		source:     p.source,
+		loadFiles:  p.loadFiles,
 		needSource: p.needSource,
 		needFiles:  needFiles,
 		needTarget: needTarget,
@@ -535,17 +538,27 @@ func runWizard(params runWizardParams) (extracttui.RunResult, error) {
 // steps are auto-skipped (and their source is "") when the target is an existing
 // worktree.
 func extractCreateParams(cfg shared.ConfigResult, sourceBranch string) newpicker.WizardParams {
+	// Cached per branch name for the run, like create's own wizard: the recap and
+	// the source-update step both classify the same branch repeatedly.
+	cachedTarget := memoizedTarget(cfg.ProjectDir)
+	target := func(b string) domain.BranchTarget {
+		if b == "" {
+			return domain.BranchTarget{}
+		}
+		return cachedTarget(b)
+	}
 	return newpicker.WizardParams{
 		ProjectDir:     cfg.ProjectDir,
 		Branches:       branchCandidates(cfg.ProjectDir),
 		DefaultBranch:  defaultParent(defaultParentParams{cfg: cfg, sourceBranch: sourceBranch}),
 		ConfigStrategy: cfg.Config.Project.Env.Strategy,
 		IncludeBranch:  true,
-		SourceUpdate: func(source string) newpicker.SourceUpdatePrompt {
-			if source == "" {
+		Target:         target,
+		SourceUpdate: func(up newpicker.SourceUpdateParams) newpicker.SourceUpdatePrompt {
+			if up.Source == "" {
 				return newpicker.SourceUpdatePrompt{}
 			}
-			return sourceUpdatePrompt(cfg.ProjectDir, source)
+			return sourceUpdatePrompt(sourceUpdatePromptParams{ProjectDir: cfg.ProjectDir, Target: target, Update: up})
 		},
 		EnvFallback: func(source, _ string) (bool, components.NewConfirmParams) {
 			if source == "" {
@@ -587,17 +600,29 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 		}); err == nil {
 			return extractTarget{path: wt.Path, branch: wt.Branch}, nil
 		}
+		target := branch.Target(branch.BranchParams{ProjectDir: params.cfg.ProjectDir, Branch: toFlag})
 		fromFlag, _ := params.cmd.Flags().GetString(domain.FlagFrom)
+		// --to has no wizard step of its own (it fully resolves the target), so the
+		// parent guard applies whether or not the run is otherwise interactive — same
+		// rationale as create's non-interactive path: an existing branch was created
+		// outside wtm, so nothing says what it was branched off.
+		if rules.ParentMustBeExplicit(target.State) && fromFlag == "" {
+			return extractTarget{}, fmt.Errorf(domain.ParentRequiredFmt, toFlag, domain.FlagFrom)
+		}
 		fromBranch := defaultParent(defaultParentParams{cfg: params.cfg, sourceBranch: params.sourceBranch, override: fromFlag})
+		// --ff (and the interactive fast-forward offer) updates whichever branch the
+		// worktree actually starts from: the parent for a branch git is about to
+		// create, the target itself when it already exists locally.
+		ffSubjectBranch := ffSubject(ffSubjectParams{Target: target, FromBranch: fromBranch, Branch: toFlag})
 		// The fast-forward prompt is a decision like any other: only interactive runs
 		// ask. Under --yes / no TTY / JSON it is non-prompting — fast-forward only when
-		// --ff was passed, otherwise leave the parent as-is.
+		// --ff was passed, otherwise leave the branch as-is.
 		if params.interactive {
-			if !maybeFastForwardSource(params.cfg.ProjectDir, fromBranch) {
+			if !maybeFastForwardSource(params.cfg.ProjectDir, ffSubjectBranch) {
 				return extractTarget{}, domain.ErrUserAborted
 			}
 		} else if ffFlag, _ := params.cmd.Flags().GetBool(domain.FlagFF); ffFlag {
-			_ = branch.FastForwardIfBehind(branch.BranchParams{ProjectDir: params.cfg.ProjectDir, Branch: fromBranch})
+			_ = branch.FastForwardIfBehind(branch.BranchParams{ProjectDir: params.cfg.ProjectDir, Branch: ffSubjectBranch})
 		}
 		return createTarget(createTargetParams{
 			cmd:        params.cmd,
@@ -622,7 +647,8 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 	// "Create new" — the branch/source/fast-forward were collected in the combined
 	// wizard (already confirmed on its recap). Only the accepted fast-forward is
 	// executed here; its failure-recovery prompt is a legitimate post-exec standalone.
-	if params.create.FastForwardSource && !executeFastForwardSource(params.cfg.ProjectDir, params.create.FromBranch) {
+	if params.create.FastForwardBranch != "" &&
+		!executeFastForwardSource(params.cfg.ProjectDir, params.create.FastForwardBranch) {
 		return extractTarget{}, domain.ErrUserAborted
 	}
 	return createTarget(createTargetParams{

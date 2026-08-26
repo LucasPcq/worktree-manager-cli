@@ -33,10 +33,10 @@ func TestCreateWorktreeExistingBranch(t *testing.T) {
 	wtPath := filepath.Join(t.TempDir(), "existing-wt")
 
 	err := CreateWorktree(CreateWorktreeParams{
-		ProjectDir: dir,
-		Path:       wtPath,
-		Branch:     "existing-branch",
-		FromBranch: "HEAD",
+		ProjectDir:  dir,
+		Path:        wtPath,
+		Branch:      "existing-branch",
+		ReuseBranch: true,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

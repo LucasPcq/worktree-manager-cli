@@ -52,6 +52,11 @@ type WizardParams struct {
 	// given the resolved source and env override it decides whether the "parent"
 	// strategy falls back to copying .env from main. Injected by the command layer.
 	EnvFallback func(source, envOverride string) (show bool, params components.NewConfirmParams)
+	// Target, when set, classifies a branch name so the recap can say the PR's
+	// branch will be reused rather than checked out fresh. Injected by the command
+	// layer so this package stays free of git logic. Does not fetch — reuse is
+	// knowable, and worth saying, before the origin fetch that follows the recap.
+	Target func(branch string) domain.BranchTarget
 }
 
 // WizardResult holds the answers from the checkout wizard. FromBranch and
@@ -92,6 +97,8 @@ func runPreselected(params WizardParams) (WizardResult, error) {
 	preselected := *params.Preselected
 	steps = append(steps, recapStep(params, func([]components.Step) string {
 		return prDisplay(preselected)
+	}, func([]components.Step) string {
+		return preselected.Branch
 	}))
 
 	wiz := components.NewWizardWithParams(components.WizardParams{
@@ -133,14 +140,22 @@ func runPicker(params WizardParams) (WizardResult, error) {
 	if params.IncludeEnv {
 		steps = append(steps, envStep(params.ConfigStrategy))
 	}
-	steps = append(steps, recapStep(params, func(prev []components.Step) string {
+	selectedPR := func(prev []components.Step) (domain.PRInfo, bool) {
 		sl, ok := stepModel(prev, stepPR)
 		if !ok {
-			return ""
+			return domain.PRInfo{}, false
 		}
 		num, _ := strconv.Atoi(sl.Value())
-		if pr, found := findPR(loadedPRs, num); found {
+		return findPR(loadedPRs, num)
+	}
+	steps = append(steps, recapStep(params, func(prev []components.Step) string {
+		if pr, found := selectedPR(prev); found {
 			return prDisplay(pr)
+		}
+		return ""
+	}, func(prev []components.Step) string {
+		if pr, found := selectedPR(prev); found {
+			return pr.Branch
 		}
 		return ""
 	}))
@@ -289,13 +304,14 @@ func baseBranchForSelection(prev []components.Step, prs []domain.PRInfo) string 
 // recapStep builds the final, unconditional recap for checkout: it recaps the PR,
 // parent, and env, folds the env fallback into a ⚠ line, and offers
 // "Yes, checkout" then the constant "No, cancel". prLabel resolves the chosen PR's
-// display text (fixed for a preselected PR, or looked up from the picked number).
-func recapStep(params WizardParams, prLabel func(prev []components.Step) string) components.Step {
+// display text and prBranch its branch name (both fixed for a preselected PR, or
+// looked up from the picked number).
+func recapStep(params WizardParams, prLabel, prBranch func(prev []components.Step) string) components.Step {
 	return components.RecapStep(components.RecapStepParams{
 		Name: stepConfirm,
 		Build: func(prev []components.Step) components.RecapContent {
 			return components.RecapContent{
-				Description: buildCheckoutRecap(prev, params, prLabel),
+				Description: buildCheckoutRecap(prev, params, prLabel, prBranch),
 				Actions: []components.SelectItem{
 					{Label: "Yes, checkout", Value: checkoutConfirm},
 				},
@@ -304,11 +320,18 @@ func recapStep(params WizardParams, prLabel func(prev []components.Step) string)
 	})
 }
 
-// buildCheckoutRecap recaps the selections with a ⚠ line for the env fallback.
-func buildCheckoutRecap(prev []components.Step, params WizardParams, prLabel func(prev []components.Step) string) string {
+// buildCheckoutRecap recaps the selections with a ⚠ line for the env fallback and a
+// reuse line when the PR's branch already exists locally — the one thing a user
+// confirming "checkout PR #42" would otherwise not know before it is checked out.
+func buildCheckoutRecap(prev []components.Step, params WizardParams, prLabel, prBranch func(prev []components.Step) string) string {
 	var lines []string
 	if pr := prLabel(prev); pr != "" {
 		lines = append(lines, "PR:      "+pr)
+	}
+	if params.Target != nil {
+		if b := prBranch(prev); b != "" && params.Target(b).State == domain.BranchTargetExisting {
+			lines = append(lines, "Branch:  "+b+domain.BranchReusedSuffix)
+		}
 	}
 	source := resolveSource(prev, params.FromOverride, params.Preselected)
 	if source != "" {

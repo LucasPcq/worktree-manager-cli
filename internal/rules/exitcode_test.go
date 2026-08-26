@@ -33,3 +33,24 @@ func TestExitCode(t *testing.T) {
 		})
 	}
 }
+
+func TestExitCodeUpgradeErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"from source", domain.ErrUpgradeFromSource, domain.ExitCodeUpgradeUnsupported},
+		{"not writable", domain.ErrUpgradeNotWritable, domain.ExitCodeUpgradeUnsupported},
+		{"wrapped not writable", fmt.Errorf("upgrade: %w", domain.ErrUpgradeNotWritable), domain.ExitCodeUpgradeUnsupported},
+		{"checksum mismatch stays generic", domain.ErrChecksumMismatch, domain.ExitCodeError},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rules.ExitCode(tc.err); got != tc.want {
+				t.Fatalf("ExitCode(%v) = %d, want %d", tc.err, got, tc.want)
+			}
+		})
+	}
+}

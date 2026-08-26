@@ -1,0 +1,415 @@
+package flowui
+
+import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/tui/branchrefresh"
+	"github.com/LucasPcq/wtm/internal/tui/components"
+)
+
+type (
+	loadRequestMsg struct {
+		idx     int
+		answers flow.Answers
+	}
+	loadDoneMsg struct {
+		idx     int
+		content flow.StepContent
+		err     error
+	}
+)
+
+func (p *plan) componentStep(step flow.Step, conditional bool) (components.Step, error) {
+	if conditional {
+		// A recap owns its model — its cancel row, and the plan its Load fills in —
+		// so its Skip gates the step instead of replacing it with a choice list.
+		if step.Kind == flow.StepRecap {
+			return p.gated(step, p.recapStep(step)), nil
+		}
+		// Every other conditional step is drawn as a choice list, so one of another
+		// kind would be silently downgraded to a picker rather than refused.
+		if step.Kind != flow.StepSelect {
+			return components.Step{}, conditionalKindErr(step)
+		}
+		return p.choiceStep(step), nil
+	}
+	switch step.Kind {
+	case flow.StepText:
+		return p.textStep(step), nil
+	case flow.StepSelect:
+		return p.selectStep(step)
+	case flow.StepBranchSelect:
+		return p.branchStep(step)
+	case flow.StepMultiSelect:
+		return p.multiSelectStep(step)
+	case flow.StepRecap:
+		return p.recapStep(step), nil
+	}
+	return components.Step{}, unsupportedKindErr(step)
+}
+
+func (p *plan) textStep(step flow.Step) components.Step {
+	return components.Step{
+		Name: step.Label,
+		Model: components.NewTextInput(components.NewTextInputParams{
+			Title:       step.Title,
+			Description: step.Description,
+			Validate:    step.Validate,
+		}),
+		Summary: summaryFor(step),
+	}
+}
+
+func (p *plan) selectStep(step flow.Step) (components.Step, error) {
+	content, err := p.content(step, p.known())
+	if err != nil {
+		return components.Step{}, err
+	}
+	built := components.Step{
+		Name:    step.Label,
+		Model:   selectList(content),
+		Summary: summaryFor(step),
+	}
+	if step.Build != nil {
+		built.Build = func(prev []components.Step) any {
+			return selectList(p.rebuild(step, prev))
+		}
+	}
+	return built, nil
+}
+
+func (p *plan) multiSelectStep(step flow.Step) (components.Step, error) {
+	content, err := p.content(step, p.known())
+	if err != nil {
+		return components.Step{}, err
+	}
+	built := components.Step{
+		Name:    step.Label,
+		Model:   multiSelect(step, content),
+		Summary: summaryFor(step),
+	}
+	if step.Build != nil {
+		built.Build = func(prev []components.Step) any {
+			return multiSelect(step, p.rebuild(step, prev))
+		}
+	}
+	return built, nil
+}
+
+func multiSelect(step flow.Step, content flow.StepContent) components.MultiSelectModel {
+	items := make([]components.MultiSelectItem, 0, len(content.Options))
+	for _, option := range content.Options {
+		if option.Separator {
+			continue
+		}
+		items = append(items, components.MultiSelectItem{
+			Label:    option.Label,
+			Value:    option.Value,
+			Selected: option.Selected,
+			Tag:      option.Tag,
+			Variant:  components.TagVariantOf(option.Tone),
+		})
+	}
+	return components.NewMultiSelect(components.NewMultiSelectParams{
+		Title:       content.Title,
+		Description: content.Description,
+		Items:       items,
+		Validate:    step.ValidateSet,
+	})
+}
+
+func (p *plan) branchStep(step flow.Step) (components.Step, error) {
+	p.candidates = step.Branches
+	p.refresh = step.Refresh
+
+	model := func(answers flow.Answers) (any, error) {
+		content, err := p.content(step, answers)
+		if err != nil {
+			return nil, err
+		}
+		return components.NewSelectList(components.NewSelectListParams{
+			Title:       content.Title,
+			Description: content.Description,
+			Items:       p.branchItems(step.Pinned, content.ExcludeBranches),
+		}), nil
+	}
+
+	initial, err := model(p.known())
+	if err != nil {
+		return components.Step{}, err
+	}
+	built := components.Step{
+		Name:  step.Label,
+		Model: initial,
+		Build: func(prev []components.Step) any {
+			rebuilt, buildErr := model(p.answersFrom(prev))
+			if buildErr != nil {
+				p.loadErr = buildErr
+				return placeholder(step)
+			}
+			return rebuilt
+		},
+		CanRefresh: step.Refresh != nil,
+		Summary:    summaryFor(step),
+	}
+	if step.Refresh != nil {
+		p.initCmd = tea.Batch(p.initCmd, branchrefresh.CmdFunc(step.Refresh))
+		if p.loadingText == "" {
+			p.loadingText = domain.LoadingBranchesText
+		}
+	}
+	return built, nil
+}
+
+// branchItems applies the step's exclusions over whatever the refresh last
+// returned, so narrowing and refreshing do not fight over the same list.
+func (p *plan) branchItems(pinned string, exclude []string) []components.SelectItem {
+	candidates := flow.KeepBranches(p.candidates, exclude)
+	found := ""
+	for _, candidate := range candidates {
+		if candidate.Name == pinned {
+			found = pinned
+			break
+		}
+	}
+	return components.BranchItems(components.BranchItemsParams{
+		Candidates:   candidates,
+		Pinned:       found,
+		PinnedSuffix: domain.PinnedSuffixDefault,
+	})
+}
+
+// gated turns a step's Skip into the wizard's entry-time decision while the step
+// keeps the model its kind built. The wizard runs Build immediately before
+// AutoSkip on every advance, so the decision is refreshed there.
+func (p *plan) gated(step flow.Step, built components.Step) components.Step {
+	applies := true
+	reason := ""
+	model := built.Model
+	rebuild := built.Build
+	built.Build = func(prev []components.Step) any {
+		skip, why := step.Skip(p.answersFrom(prev))
+		applies, reason = !skip, why
+		if rebuild != nil {
+			return rebuild(prev)
+		}
+		return model
+	}
+	built.AutoSkip = func(components.WizardModel) bool { return !applies }
+	built.SkipReason = func() string { return reason }
+	return built
+}
+
+func (p *plan) choiceStep(step flow.Step) components.Step {
+	return components.ChoiceStep(components.ChoiceStepParams{
+		Name:    step.Label,
+		Summary: summaryFor(step),
+		Decide: func(prev []components.Step) (bool, string, components.NewSelectListParams) {
+			if skip, reason := step.Skip(p.answersFrom(prev)); skip {
+				return false, reason, components.NewSelectListParams{}
+			}
+			content := p.rebuild(step, prev)
+			return true, "", components.NewSelectListParams{
+				Title:       content.Title,
+				Description: content.Description,
+				Items:       toItems(content.Options),
+			}
+		},
+	})
+}
+
+func (p *plan) recapStep(step flow.Step) components.Step {
+	if step.Load != nil {
+		return p.loadedRecapStep(step)
+	}
+	build := func(answers flow.Answers) any {
+		content, err := p.content(step, answers)
+		if err != nil {
+			p.loadErr = err
+			return placeholder(step)
+		}
+		return recapList(content)
+	}
+	return components.Step{
+		Name:    step.Label,
+		Model:   build(p.known()),
+		Recap:   true,
+		Summary: summaryFor(step),
+		Build:   func(prev []components.Step) any { return build(p.answersFrom(prev)) },
+	}
+}
+
+// loadedRecapStep shows an empty recap — where Enter is a no-op — until the loaded
+// body replaces it, so a run is never confirmed before its consequences are visible.
+func (p *plan) loadedRecapStep(step flow.Step) components.Step {
+	idx := len(p.steps)
+	if p.loads == nil {
+		p.loads = map[int]flow.Step{}
+	}
+	p.loads[idx] = step
+
+	// The wizard runs OnEnter on every step it advances to, but never on the one it
+	// starts on, so a load landing first is fired from the init command instead —
+	// otherwise the run would sit on the placeholder for ever.
+	if idx == 0 {
+		p.initCmd = tea.Batch(p.initCmd, func() tea.Msg {
+			return loadRequestMsg{idx: idx, answers: p.known()}
+		})
+		p.loadingText = step.LoadingMessage
+	}
+
+	return components.Step{
+		Name:    step.Label,
+		Model:   placeholder(step),
+		Recap:   true,
+		Summary: summaryFor(step),
+		OnEnter: func(prev []components.Step) tea.Cmd {
+			answers := p.answersFrom(prev)
+			return func() tea.Msg { return loadRequestMsg{idx: idx, answers: answers} }
+		},
+	}
+}
+
+func (p *plan) handler() components.WizardMsgHandler {
+	var handlers []components.WizardMsgHandler
+	if p.refresh != nil {
+		handlers = append(handlers, branchrefresh.HandlerFunc(p.refresh, &p.candidates))
+	}
+	if len(p.loads) > 0 {
+		handlers = append(handlers, p.loadHandler())
+	}
+	return combine(handlers...)
+}
+
+func (p *plan) loadHandler() components.WizardMsgHandler {
+	return func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+		switch m := msg.(type) {
+		case loadRequestMsg:
+			step, ok := p.loads[m.idx]
+			if !ok {
+				return nil, false
+			}
+			w.UpdateStepModel(m.idx, func(any) any { return placeholder(step) })
+			return tea.Batch(w.StartLoading(step.LoadingMessage), runLoad(m.idx, step, m.answers)), true
+		case loadDoneMsg:
+			step, ok := p.loads[m.idx]
+			if !ok {
+				return nil, false
+			}
+			content := m.content
+			if m.err != nil {
+				p.loadErr = m.err
+				content = flow.StepContent{Title: step.Title, Description: m.err.Error()}
+			}
+			w.UpdateStepModel(m.idx, func(any) any { return recapList(content) })
+			w.SetLoading(false)
+			return nil, true
+		}
+		return nil, false
+	}
+}
+
+func runLoad(idx int, step flow.Step, answers flow.Answers) tea.Cmd {
+	return func() tea.Msg {
+		content, err := step.Load(answers)
+		return loadDoneMsg{idx: idx, content: content, err: err}
+	}
+}
+
+func combine(handlers ...components.WizardMsgHandler) components.WizardMsgHandler {
+	if len(handlers) == 0 {
+		return nil
+	}
+	return func(w *components.WizardModel, msg tea.Msg) (tea.Cmd, bool) {
+		for _, handle := range handlers {
+			if cmd, handled := handle(w, msg); handled {
+				return cmd, true
+			}
+		}
+		return nil, false
+	}
+}
+
+// content merges what a step declares statically with what it derives from the
+// answers, so a Build only returns the parts that change.
+func (p *plan) content(step flow.Step, answers flow.Answers) (flow.StepContent, error) {
+	content := flow.StepContent{Title: step.Title, Description: step.Description, Options: step.Options}
+	if step.Build == nil {
+		return content, nil
+	}
+	built, err := step.Build(answers)
+	if err != nil {
+		return flow.StepContent{}, err
+	}
+	if built.Title != "" {
+		content.Title = built.Title
+	}
+	if built.Description != "" {
+		content.Description = built.Description
+	}
+	if len(built.Options) > 0 {
+		content.Options = built.Options
+	}
+	return content, nil
+}
+
+func (p *plan) rebuild(step flow.Step, prev []components.Step) flow.StepContent {
+	content, err := p.content(step, p.answersFrom(prev))
+	if err != nil {
+		p.loadErr = err
+		return flow.StepContent{Title: step.Title, Description: step.Description}
+	}
+	return content
+}
+
+func selectList(content flow.StepContent) components.SelectListModel {
+	return components.NewSelectList(components.NewSelectListParams{
+		Title:       content.Title,
+		Description: content.Description,
+		Items:       toItems(content.Options),
+	})
+}
+
+func recapList(content flow.StepContent) components.SelectListModel {
+	items := append(toItems(content.Options),
+		components.SelectItem{Separator: true},
+		components.SelectItem{Label: domain.WizardCancelLabel, Value: domain.WizardCancelValue},
+	)
+	return components.NewSelectList(components.NewSelectListParams{
+		Title:       content.Title,
+		Description: content.Description,
+		Items:       items,
+	})
+}
+
+func placeholder(step flow.Step) components.SelectListModel {
+	return components.NewSelectList(components.NewSelectListParams{Title: step.Title})
+}
+
+func toItems(options []flow.Option) []components.SelectItem {
+	items := make([]components.SelectItem, 0, len(options))
+	for _, option := range options {
+		items = append(items, components.SelectItem{
+			Label:     option.Label,
+			Value:     option.Value,
+			Separator: option.Separator,
+			Danger:    option.Danger,
+		})
+	}
+	return items
+}
+
+func summaryFor(step flow.Step) func(any) string {
+	if step.Summarize == nil {
+		switch step.Kind {
+		case flow.StepText:
+			return components.TextSummary
+		case flow.StepMultiSelect:
+			return components.MultiSelectSummary(domain.SummaryNone)
+		}
+		return components.SelectSummary
+	}
+	return func(model any) string { return step.Summarize(answerOf(step.Kind, model)) }
+}

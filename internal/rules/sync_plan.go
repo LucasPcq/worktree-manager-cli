@@ -3,6 +3,7 @@ package rules
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -119,4 +120,113 @@ func parentDepth(params parentDepthParams) (int, error) {
 		depth++
 		current = parent
 	}
+}
+
+// ParentsOutsideCascadeParams holds inputs for ParentsOutsideCascade.
+type ParentsOutsideCascadeParams struct {
+	Steps      []domain.SyncStep
+	BaseBranch string
+}
+
+// ParentsOutsideCascade lists the parents a cascade rebases onto but never
+// refreshes. The base is excluded — it has its own fast-forward — and so is an
+// unset parent. Status is left for the caller to resolve against the remote.
+func ParentsOutsideCascade(params ParentsOutsideCascadeParams) []domain.ParentUpdate {
+	covered := make(map[string]struct{}, len(params.Steps))
+	for _, step := range params.Steps {
+		covered[step.Branch] = struct{}{}
+	}
+
+	at := make(map[string]int, len(params.Steps))
+	parents := make([]domain.ParentUpdate, 0, len(params.Steps))
+	for _, step := range params.Steps {
+		parent := step.SourceBranch
+		if parent == "" || parent == params.BaseBranch {
+			continue
+		}
+		if _, skip := covered[parent]; skip {
+			continue
+		}
+		if i, seen := at[parent]; seen {
+			parents[i].Children = append(parents[i].Children, step.Branch)
+			continue
+		}
+		at[parent] = len(parents)
+		parents = append(parents, domain.ParentUpdate{Branch: parent, Children: []string{step.Branch}})
+	}
+	return parents
+}
+
+// ParentBranchesParams holds inputs for ParentBranches.
+type ParentBranchesParams struct {
+	Nodes      []domain.WorktreeNode
+	BaseBranch string
+}
+
+// ParentBranches lists the distinct recorded parents, base and unset excluded.
+// It is what a run inspects before the selection is known: which parents end up
+// uncovered depends on the selection, the state of each against its remote does not.
+func ParentBranches(params ParentBranchesParams) []string {
+	seen := make(map[string]struct{}, len(params.Nodes))
+	branches := make([]string, 0, len(params.Nodes))
+	for _, node := range params.Nodes {
+		parent := node.SourceBranch
+		if parent == "" || parent == params.BaseBranch {
+			continue
+		}
+		if _, dup := seen[parent]; dup {
+			continue
+		}
+		seen[parent] = struct{}{}
+		branches = append(branches, parent)
+	}
+	return branches
+}
+
+// StaleParentsForParams holds inputs for StaleParentsFor.
+type StaleParentsForParams struct {
+	Uncovered  []domain.ParentUpdate
+	Classified []domain.ParentUpdate
+}
+
+// StaleParentsFor pairs the parents a selection leaves uncovered with what an
+// earlier inspection found: Children from the selection, Status and tips from the
+// inspection, keeping only what a fast-forward would advance.
+func StaleParentsFor(params StaleParentsForParams) []domain.ParentUpdate {
+	status := make(map[string]domain.ParentUpdate, len(params.Classified))
+	for _, update := range params.Classified {
+		status[update.Branch] = update
+	}
+
+	stale := make([]domain.ParentUpdate, 0, len(params.Uncovered))
+	for _, parent := range params.Uncovered {
+		found, ok := status[parent.Branch]
+		if !ok || found.Status != domain.ParentBehind {
+			continue
+		}
+		found.Children = parent.Children
+		stale = append(stale, found)
+	}
+	return stale
+}
+
+// SprintSyncPlan returns the cascade preview as a plain (unstyled) string: a
+// header line plus one "branch ← parent" line per step, in execution order.
+// Unlike a styled render it emits no ANSI, so it can be embedded in a wizard step
+// description that re-renders it in its own muted style.
+// Returns "" when the plan has no rebase steps (e.g. a base-only refresh).
+func SprintSyncPlan(plan domain.SyncPlan) string {
+	if len(plan.Steps) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(domain.SyncPlanHeader)
+	for i, step := range plan.Steps {
+		parent := step.SourceBranch
+		if parent == "" {
+			parent = "unknown parent"
+		}
+		fmt.Fprintf(&b, "\n%d. %s ← %s", i+1, step.Branch, parent)
+	}
+	return b.String()
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/agents"
 	"github.com/LucasPcq/wtm/internal/commands/checkout"
@@ -17,10 +18,14 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/run"
 	"github.com/LucasPcq/wtm/internal/commands/schema"
 	"github.com/LucasPcq/wtm/internal/commands/shell"
+	"github.com/LucasPcq/wtm/internal/commands/ui"
+	"github.com/LucasPcq/wtm/internal/commands/upgrade"
 	"github.com/LucasPcq/wtm/internal/commands/wt"
+	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/selfupdate"
 )
 
 func init() {
@@ -37,6 +42,10 @@ func init() {
 		rootCmd.AddCommand(cmd)
 	}
 	rootCmd.AddCommand(run.NewCmd())
+
+	uiCmd := ui.NewCmd(ui.NewCmdParams{Version: effectiveVersion})
+	uiCmd.GroupID = domain.CmdGroupWorktrees
+	rootCmd.AddCommand(uiCmd)
 
 	resolveCmd := resolve.NewCmd()
 	resolveCmd.GroupID = domain.CmdGroupNavigate
@@ -66,16 +75,71 @@ func init() {
 	schemaCmd.GroupID = domain.CmdGroupSetup
 	rootCmd.AddCommand(schemaCmd)
 
+	rootCmd.Version = effectiveVersion
+
+	upgradeCmd := upgrade.NewCmd(upgrade.NewCmdParams{Version: effectiveVersion})
+	upgradeCmd.GroupID = domain.CmdGroupSetup
+	rootCmd.AddCommand(upgradeCmd)
+
 	rootCmd.AddCommand(daemon.NewCmd())
 }
 
+// version is the goreleaser ldflag target. Its initializer must stay a constant
+// expression — -X silently stops applying otherwise — so the build-info fallback
+// lives in effectiveVersion instead of here.
 var version = domain.Version
 
+// effectiveVersion is what every consumer reads: the linked version, or the
+// module version recovered from the build info for a `go install` binary.
+// Resolved as a package-level initializer, not inside init(): Go orders var
+// initialization by dependency, so every command constructed below already sees
+// the final value regardless of the order they are registered in.
+var effectiveVersion = selfupdate.ResolveVersion(version)
+
+var (
+	updateCheck        *selfupdate.Check
+	updateCheckStarted bool
+)
+
+// topLevelName is the executed command's name directly under root, which is what
+// the exclusion list names: the runnable leaves are `completion zsh` and
+// `schema dump`, not their parents, so cmd.Name() would let both slip through.
+func topLevelName(cmd *cobra.Command) string {
+	for cmd.HasParent() && cmd.Parent().HasParent() {
+		cmd = cmd.Parent()
+	}
+
+	return cmd.Name()
+}
+
+// startUpdateCheck arms the passive check once per run. It is called from both
+// PersistentPreRun and the help function because cobra short-circuits on the
+// --help flag before any Run hook fires; the guard keeps the second caller from
+// discarding an in-flight check started by the first.
+func startUpdateCheck(cmd *cobra.Command) {
+	if updateCheckStarted {
+		return
+	}
+	updateCheckStarted = true
+
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	updateCheck = selfupdate.StartCheck(selfupdate.StartCheckParams{
+		Version:     effectiveVersion,
+		Format:      format,
+		Command:     topLevelName(cmd),
+		StderrIsTTY: term.IsTerminal(int(os.Stderr.Fd())),
+		ConfigCheck: globalUpdateCheck,
+	})
+}
+
 var rootCmd = &cobra.Command{
-	Use:           domain.AppName,
-	Short:         "Orchestrate git worktrees and team dev workflows from the terminal",
-	Version:       version,
-	RunE:          rootRunE,
+	Use:     domain.AppName,
+	Short:   "Orchestrate git worktrees and team dev workflows from the terminal",
+	Version: version,
+	RunE:    rootRunE,
+	PersistentPreRun: func(cmd *cobra.Command, _ []string) {
+		startUpdateCheck(cmd)
+	},
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
@@ -84,10 +148,34 @@ func rootRunE(cmd *cobra.Command, _ []string) error {
 	return cmd.Help()
 }
 
+func globalUpdateCheck() *bool {
+	cfg, err := config.LoadGlobal()
+	if err != nil {
+		return nil
+	}
+
+	return cfg.Update.Check
+}
+
+// printUpdateNotice drains the passive check started in PersistentPreRun. It is
+// nil-safe: a suppressed check leaves updateCheck nil.
+func printUpdateNotice() {
+	current, latest, method, ok := updateCheck.Notice(domain.UpdateNoticeWait)
+	if !ok {
+		return
+	}
+
+	output.Frame(os.Stderr, func() {
+		output.UpdateNotice(os.Stderr, output.UpdateNoticeParams{Current: current, Latest: latest, Method: method})
+	})
+}
+
 func init() {
 	// Override the global help function to add consistent padding around help text.
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		startUpdateCheck(cmd)
+
 		w := cmd.OutOrStdout()
 		output.Blank(w)
 
@@ -124,6 +212,9 @@ func Execute() {
 			output.Error(os.Stderr, err.Error())
 			output.Blank(os.Stderr)
 		}
+		printUpdateNotice()
 		os.Exit(rules.ExitCode(err))
 	}
+
+	printUpdateNotice()
 }

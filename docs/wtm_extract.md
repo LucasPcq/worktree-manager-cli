@@ -11,6 +11,10 @@ The source worktree is the first thing chosen: pass its branch as [source],
 or omit it to pick interactively from the worktrees that have changes. A source
 is required when there is no terminal or with --output json.
 
+A --to branch that already exists locally is checked out as-is, keeping its
+commits. Its parent can't be inferred, so --from then names the branch recorded
+for `wtm sync` — asked in the wizard, required without it.
+
 Untracked files are listed one by one, including inside brand-new directories,
 so you can take part of a new folder; gitignored files are never listed.
 
@@ -33,7 +37,7 @@ wtm extract [source] [flags]
       --on-conflict string   On conflict: abort (default) or resolve (write conflict markers in the target)
       --output string        Output format: text or json (default "text")
       --to string            Target worktree branch; created if it does not exist
-  -y, --yes                  Skip all prompts; resolve every decision from flags and safe defaults (requires a source arg, --files and --to; errors if a selection is missing)
+  -y, --yes                  Skip all prompts; resolve every decision from flags and safe defaults (requires a source arg, --files and --to; --from is also required when --to already exists locally; errors if a selection is missing)
 ```
 
 ### SEE ALSO

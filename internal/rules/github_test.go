@@ -8,24 +8,25 @@ import (
 
 func TestValidatePRForCheckout_Valid(t *testing.T) {
 	pr := domain.PRInfo{Number: 1, Branch: "feature/auth", IsFork: false}
-	if err := ValidatePRForCheckout(pr, []string{"main", "dev"}); err != nil {
+	if err := ValidatePRForCheckout(pr); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
 
 func TestValidatePRForCheckout_Fork(t *testing.T) {
 	pr := domain.PRInfo{Number: 2, Branch: "feature/auth", IsFork: true}
-	err := ValidatePRForCheckout(pr, nil)
+	err := ValidatePRForCheckout(pr)
 	if err == nil {
 		t.Error("expected error for fork PR, got nil")
 	}
 }
 
-func TestValidatePRForCheckout_BranchExists(t *testing.T) {
+// An existing local branch is no longer a conflict: the worktree checks it out
+// as-is (LUC-172). Only a branch another worktree holds is refused, downstream.
+func TestValidatePRForCheckout_ExistingLocalBranchAllowed(t *testing.T) {
 	pr := domain.PRInfo{Number: 3, Branch: "feature/add-auth", IsFork: false}
-	err := ValidatePRForCheckout(pr, []string{"main", "feature/add-auth"})
-	if err == nil {
-		t.Error("expected error for existing branch, got nil")
+	if err := ValidatePRForCheckout(pr); err != nil {
+		t.Errorf("an existing local branch must not block checkout: %v", err)
 	}
 }
 

@@ -122,3 +122,24 @@ func worktreeCreatedAt(stateDir, branch, fallbackPath string) time.Time {
 	}
 	return info.ModTime()
 }
+
+type ListAllParams struct {
+	ProjectDir string
+}
+
+// ListAll returns the raw worktrees; List enriches them with metadata, divergence
+// and dirtiness.
+func ListAll(params ListAllParams) ([]domain.GitWorktree, error) {
+	return infra.ListWorktrees(infra.ListWorktreesParams{ProjectDir: params.ProjectDir})
+}
+
+type LastFetchAtParams struct {
+	ProjectDir string
+}
+
+// LastFetchAt dates the last successful fetch, zero when the repository has
+// never fetched. A thin wrapper so callers above service/ (the dashboard's
+// header, in particular) never reach into infra/ directly.
+func LastFetchAt(params LastFetchAtParams) time.Time {
+	return infra.LastFetchAt(infra.LastFetchAtParams{ProjectDir: params.ProjectDir})
+}

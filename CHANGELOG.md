@@ -1,5 +1,135 @@
 # Changelog
 
+## v0.27.0 — `wtm upgrade`, `wtm fast-forward` et une aide qui se lit
+
+Deux nouvelles commandes : `wtm upgrade` met le CLI à jour tout seul, `wtm fast-forward` avance une branche sur son homologue distant sans rien rejouer. L'overlay d'aide du dashboard est repris de zéro pour redevenir une référence consultable.
+
+### New features
+
+- **`wtm upgrade` — mettre wtm à jour depuis wtm.** La commande fait ce qu'il faut selon l'installation : un binaire autonome est remplacé sur place après vérification de son SHA256 contre les checksums de la release, un binaire Homebrew ou `go install` est confié à son gestionnaire plutôt que désynchronisé, et un binaire compilé depuis les sources est refusé. `--check` dit ce qui est disponible sans rien toucher, `--version` épingle une release précise.
+- **Une notification passive de mise à jour.** wtm signale en fin de commande qu'une version plus récente existe, sans jamais bloquer ni ralentir la commande en cours. Le header de `wtm ui` affiche la version installée et l'appel à la mise à jour.
+- **`wtm fast-forward` — avancer une branche sur `origin/<branche>`.** Rien d'autre : pas de rebase sur le parent, pas de merge. Une branche qui a divergé est refusée — c'est `wtm sync` qui rejoue les commits locaux, et `--force` ne lève pas ce refus. Disponible au clavier depuis le dashboard comme en CLI (`--all`, ou sélection interactive).
+
+### Improvements
+
+- **L'overlay d'aide du dashboard se lit comme un document.** Les 17 lignes à plat deviennent quatre sections (NAV, ACT, MOUSE, VIEW), appariées sur un écran large et empilées sur un écran étroit ; la souris devient une section à part au lieu d'un suffixe sur chaque touche. L'overlay se dimensionne sur l'écran et fait défiler ce qui dépasse — sur un écran court, sa bordure basse était coupée sans un mot — et il répond enfin à la molette et au clic, lui qui était la seule surface à documenter la souris en l'ignorant. `h`/`l`, que le dashboard bindait sans les lister, y figurent désormais.
+
+### Bug fixes
+
+- **`wtm sync` interactif affichait un picker vide au lieu de son récapitulatif.** L'étape de confirmation montrait « No matches » et le plan n'était jamais chargé.
+- **Le placeholder de chargement n'affiche plus « No matches ».** Ce message répond à un filtre, pas à un chargement en cours (le plan de `sync`, la vérification des worktrees de `clean`).
+
+## v0.26.1 — Le panneau détail ne clignote plus
+
+### Bug fixes
+
+- **Le panneau détail de `wtm ui` se rechargeait tout seul toutes les trois secondes** — le
+  poll qui rafraîchit la liste rechargeait aussi le détail du worktree sélectionné, si bien
+  qu'un panneau qu'on était en train de lire passait en gris derrière un marqueur
+  `refreshing` en continu. Le poll ne touche plus au détail : il se recharge quand la
+  sélection change, quand une opération vient de toucher sa branche, et sur la touche `r`
+  — jamais sur une horloge. La liste, elle, garde son poll court.
+
+## v0.26.0 — `wtm ui` : un dashboard pour piloter ses worktrees
+
+Cette version apporte `wtm ui`, un dashboard plein écran d'où se pilotent les commandes
+mutantes, et la couche `internal/flow` qui le rend possible : chaque commande décrit son
+déroulé une seule fois, indépendamment de la surface, et le CLI comme le dashboard le
+rejouent. Aucune commande, aucun flag et aucune charge `--output json` existants n'ont
+changé.
+
+### New features
+
+- **`wtm ui` — le dashboard plein écran.** `create`, `clean`, `reparent`, `prune` et
+  `sync` s'y lancent avec leurs questions, leurs refus de sécurité et leur sortie
+  streamée dans un panneau dédié. Navigation clavier et souris, aide complète sur `?`.
+- **Un onglet Tree** pour voir la forêt de branches empilées, et le reparentage directement
+  depuis le dashboard.
+- **Un panneau détail qui décrit le travail d'un worktree**, pas seulement son
+  emplacement : dernier commit et activité récente, état réel du working tree
+  (`4 modified · 2 untracked · 1 staged` avec son volume de diff), enfants, drift `.env`,
+  ce qui empêche une suppression, et la pull request dépliée avec ses checks CI et sa
+  décision de review. Une section n'apparaît que si elle a quelque chose à dire — le
+  panneau ne récite pas `none` ni `up to date`.
+  Il distingue aussi trois absences qui se ressemblent : une donnée en cours de
+  rechargement, une absence légitime (`not configured`) et une panne
+  (`⚠ unavailable — <raison>`). Un `gh` cassé ne se lit pas « pas de PR ».
+- **La pull request s'ouvre dans le navigateur** depuis le panneau, à la touche `p` ou au
+  clic sur sa ligne.
+- **`wtm list` marque le worktree courant.** Son tag `● active` existait dans le code mais
+  n'était jamais renseigné : il fonctionne désormais, dans la sortie texte comme dans le
+  sélecteur interactif, et `wtm resolve` le montre aussi. Le dashboard le signale de son
+  côté dans son header, sa liste, son arbre et son détail.
+- **`ui.animations`** — nouvelle clé de config globale (`~/.config/wtm/config.toml`). Les
+  animations du dashboard sont actives par défaut ; `false` les éteint toutes d'un coup,
+  utile sur une liaison lente.
+
+### Improvements
+
+- **Nouvelle palette de couleurs**, appliquée à la sortie humaine de **toutes** les
+  commandes, pas seulement au dashboard : accents retravaillés et rôles clarifiés
+  (navigation, identité, état, structure). Les couleurs restent adaptatives clair/sombre
+  et `NO_COLOR` est toujours respecté.
+
+### Bug fixes
+
+- **`wtm sync`** : l'état du parent est affiné et l'étape parent reste visible ; les
+  parents que la cascade ne couvre pas sont désormais rafraîchis.
+- **La configuration globale documentée était invalide.** Le `README` montrait une clé
+  `agent` sous `~/.config/wtm/config.toml`, absente du schéma — et le décodage refusant
+  les clés inconnues, copier le bloc documenté faisait échouer **toutes** les commandes
+  avec `unknown keys in config.toml: agent`.
+
+## v0.25.0 — Réutiliser une branche locale existante (`create`, `checkout`, `extract`)
+
+### New features
+
+- **`checkout <PR>` réutilise une branche locale existante** — refusait auparavant la PR
+  dès que la branche locale existait, en demandant un `wtm clean` (donc de supprimer des
+  commits non poussés). Elle réutilise désormais la branche telle quelle et propose un
+  fast-forward interactif quand elle est en retard sur origin — jamais sous `--yes`/JSON,
+  qui ne touchent aucune ref. Le recap annonce la réutilisation avant même le fetch, pas
+  après.
+- **`create <branche-existante>` et `extract --to <branche-existante>` réutilisent
+  proprement** — la source devient un simple parent de sync optionnel côté wizard,
+  `--ff` change de sujet pour cibler la branche réutilisée plutôt qu'une source hors
+  sujet, et le recap comme la sortie finale annoncent la réutilisation
+  (`Branch: x (existing local branch — reused)` + `Parent:`) au lieu du `from:` trompeur
+  d'avant.
+- **Une branche déjà checked out ailleurs est signalée proprement** — remontait une
+  erreur git brute en exit `1` ; lève désormais `ErrWorktreeExists` (exit `10`) avec un
+  hint `wtm go <branche>`. `--if-not-exists` renvoie le worktree existant, y compris
+  quand c'est le worktree main qui détient la branche.
+- **Nouveaux champs JSON** — `existing_branch`, `origin_state`, `origin_ahead` et
+  `origin_behind` sur `create` et `checkout` signalent la réutilisation et sa
+  divergence avec origin (`up-to-date`/`behind`/`ahead`/`diverged`).
+
+### Breaking changes
+
+- **`wtm create <branche-existante> --yes` exige désormais `--from`** — `extract --to
+  <branche-existante> --yes` aussi. Le parent d'une branche créée hors de wtm ne peut
+  pas être deviné sans risquer que `sync`, `tree` et `reparent` traitent la supposition
+  comme un fait ; la commande échoue en nommant le flag plutôt que de dégrader
+  silencieusement vers `base_branch`. Une branche neuve garde son défaut `base_branch`,
+  et `checkout <PR>` garde le sien (la base de la PR est un fait GitHub, pas une
+  supposition).
+
+### Improvements
+
+- **L'état de la branche cible n'est inspecté qu'une fois par run** — `branch.Target`
+  (nouveau `service/branch/target.go`) est désormais mémoïsé par nom de branche pour la
+  durée d'un wizard interactif, évitant des dizaines d'appels git redondants par run
+  (`create` en tournait ~20-25 auparavant).
+- **`wtm checkout` a maintenant des tests** — jusqu'ici sans aucune couverture, il en
+  gagne deux (réutilisation de branche, non-mutation des refs sous `--yes`), en testant
+  la logique de création directement, sans dépendance réseau à GitHub.
+- Nouveaux tests de bout en bout : `--yes` qui ne fast-forward jamais une branche en
+  retard, `--ff` qui retargete la branche réutilisée et pas la source, `origin_state`
+  vérifié en JSON, garde-fou `--from` sur `extract`.
+- Chaînes utilisateur dupliquées ("Fast-forward %s to origin", "Updating %s from
+  origin…", la ligne de recap "Update: fast-forward…") centralisées dans
+  `domain/constants.go`.
+
 ## v0.24.1 — `wtm extract` : les fichiers non trackés enfin gérés pour de bon
 
 ### Bug fixes

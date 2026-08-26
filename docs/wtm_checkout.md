@@ -5,6 +5,8 @@ Create a worktree from an existing pull request
 ### Synopsis
 
 Create a worktree from a pull request.
+A local branch of the PR's name is checked out as-is, keeping commits you never
+pushed; interactive runs offer to fast-forward it when it is behind origin.
 Without arguments, shows an interactive picker of open PRs.
 
 ```

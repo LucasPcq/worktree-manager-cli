@@ -1,6 +1,6 @@
 ---
 name: using-wtm
-description: Use this skill whenever the user wants to create, list, switch, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or check out a GitHub pull request into a worktree — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker.
+description: Use this skill whenever the user wants to create, list, switch, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or check out a GitHub pull request into a worktree — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker, and never launch the `wtm ui` dashboard.
 ---
 
 # Using wtm
@@ -24,24 +24,44 @@ self-documenting:
 1. **Always pass arguments.** Without one, most commands drop into an interactive picker
    you can't navigate. Get the branch / PR number / profile / job name from a prior
    discovery call (below) first.
-2. **Always add `--output json`** on data commands. JSON goes to stdout; human text and
-   warnings go to stderr — ignore stderr unless the exit code is non-zero.
-3. **Trust exit codes.** `0` = success. Beyond generic `1`, wtm returns granular codes
+2. **Never launch `wtm ui`.** It is a full-screen alt-screen dashboard meant for a human
+   at a keyboard: it takes over the terminal until someone presses `q`, and there is no way
+   for you to read it or get out of it. Treat it exactly like an interactive picker — do not
+   run it to "look at" the worktrees; run `wtm list --output json` (or `wtm tree`) instead.
+   Suggest `wtm ui` to the *user* when they want to browse worktrees themselves. wtm defends
+   itself here (it errors on `--output json` and with no TTY), but don't rely on that.
+3. **Always add `--output json`** on data commands. JSON goes to stdout; human text and
+   warnings go to stderr — ignore stderr unless the exit code is non-zero. wtm may also
+   print a one-line update notice there (at most once a day, never under `--output json`,
+   never in CI or without a TTY); it never touches stdout, so parsing is unaffected.
+4. **Trust exit codes.** `0` = success. Beyond generic `1`, wtm returns granular codes
    (table below) so you can branch precisely. On failure, surface the stderr text.
-4. **JSON mode requires `--yes` on every mutating command.** JSON is non-interactive, so any
+5. **JSON mode requires `--yes` on every mutating command.** JSON is non-interactive, so any
    command that changes state (`create`, `clean`, `prune`, `sync`, `relocate`, `reparent`,
    `extract`, `checkout`) needs `--yes` — it errors otherwise. Two orthogonal axes: **`--yes`**
    resolves confirmations/decisions from flags and safe defaults; **`--force`** only lifts
    safety refusals and does *not* imply `--yes` (`--force` alone is rejected in JSON). Required
    selections must still be passed explicitly: `clean` needs a branch (add `--force` to also
    remove unsafe worktrees); `sync` needs branch args or `--all` (`--yes` won't push — pass
-   `--push`); `extract` needs the source arg, `--files`, and `--to` (`--yes` defaults
+   `--push` — and won't fast-forward parents — pass `--ff-parents`); `extract` needs the source arg, `--files`, and `--to` (`--yes` defaults
    on-conflict to abort — pass `--on-conflict resolve`); `reparent` needs worktrees and `--to`;
-   `checkout` needs the PR `<number>`; `relocate` uses `--to` to change base_path.
+   `checkout` needs the PR `<number>`; `relocate` uses `--to` to change base_path; `create`
+   needs `--from` when the branch already exists locally (its parent can't be inferred).
    Read-only data commands (`list`, `tree`, `resolve`, `config show`, `run list`/`ps`) take
    `--output json` with no `--yes`. Check `--help` when unsure.
-5. **Operations are idempotent — safe to retry.** `create --if-not-exists` no-ops on an
-   existing worktree; `clean` no-ops on an absent one; `run up`/`down`/`stop` re-run cleanly.
+6. **Operations are idempotent — safe to retry.** `create --if-not-exists` no-ops on an
+   existing worktree (including one holding the branch outside `base_path`, whose path it
+   returns — even the **main** worktree's own path, if that's where the branch is checked
+   out; it is still `already_exists: true`, just not a directory under `base_path`); `clean`
+   no-ops on an absent one; `run up`/`down`/`stop` re-run cleanly. Note the flag is about
+   the **worktree**, not the branch: an existing branch with no worktree is still created.
+7. **An existing local branch is not an obstacle.** `create <branch>` and `checkout <number>`
+   both check out a same-named local branch as-is, keeping commits that were never pushed —
+   they never delete or reset it, so there is no `wtm clean` to run first. The response sets
+   `existing_branch: true` and `origin_state`. Only a branch **another worktree already holds**
+   is refused (exit `10`) — enter it with `wtm go <branch>` instead. What wtm will not do is
+   **guess its parent**: `create` requires `--from` there, while `checkout` takes the PR's
+   base branch (a fact, not a guess).
 
 ## Exit codes
 
@@ -50,12 +70,13 @@ self-documenting:
 | `0` | success |
 | `1` | generic error |
 | `2` | bad usage / invalid flags |
-| `10` | worktree (or its path) already exists |
+| `10` | worktree (or its path) already exists — or the branch is checked out in another worktree |
 | `11` | branch not found |
 | `12` | config not found — repo not initialized (`wtm init`) |
 | `14` | service/job not declared in `run.toml` |
 | `15` | `extract`: selected changes conflict with the target worktree |
 | `16` | run module not initialized — run `wtm run init` first |
+| `17` | `upgrade`: this install cannot be upgraded — built from source, or the binary is not writable |
 
 ## Discovery first — get names before you act
 
@@ -86,6 +107,14 @@ flagged; everything else is what the name implies.
   Add `--ff` to fast-forward a behind-only `--from` branch to origin first (so the worktree
   starts up to date); a diverged branch is left as-is (no prompt in JSON mode). `extract`
   accepts the same `--ff` for the parent branch of a newly-created target.
+  **When `<branch>` already exists locally** it is checked out as-is, and `--from` stops
+  being a start-point: it names the **parent to record for `wtm sync`**. That parent
+  cannot be inferred (the branch was created outside wtm), so **`--from` is required
+  there** — the command errors instead of guessing the base branch, because `sync` and
+  `tree` would treat the guess as fact. Ask the user which branch it stacks on if you
+  don't know. `--ff` switches subject too, updating `<branch>` itself rather than the
+  source. The response adds `existing_branch: true` and `origin_state`
+  (`up-to-date`/`behind`/`ahead`/`diverged`) so you can tell reuse from creation.
 - `wtm clean <branch>` / `wtm prune [filters]` — remove one / batch-remove finished
   worktrees. **In JSON mode surviving children are left orphaned unless you pass
   `--reparent-children`** (they reparent onto the grandparent). `prune` decides "finished"
@@ -97,9 +126,15 @@ flagged; everything else is what the name implies.
   **refuse unsafe worktrees** — dirty, unpushed commits, or an open PR — unless you pass
   `--force`; in JSON/`--yes` mode those are reported under `skipped` (reason `dirty`/
   `unpushed`/`open_pr`) instead of being removed, so committed work is never silently lost.
+  One exception for `prune`: when **every** match is unsafe, nothing survives the
+  selection and the JSON is empty — `pruned: []` and `skipped: []` both. Read an empty
+  result as "nothing was removed", not as "nothing matched".
   Both also run any configured **`on_clean`** hooks in the worktree just before removing it
   (e.g. `docker compose down`); a hook that exits non-zero **aborts the removal** unless its
-  entry sets `continue_on_error`. If `git worktree remove` then fails on undeletable files
+  entry sets `continue_on_error`. For `prune`, every selected worktree is hooked before the
+  first one is removed, so a hook failing partway aborts with nothing deleted — but the
+  worktrees already hooked have had their teardown run, which is why `on_clean` hooks must
+  be idempotent. If `git worktree remove` then fails on undeletable files
   (e.g. root-owned Docker files), interactive runs offer a `sudo rm -rf` fallback — this
   never triggers in JSON/`--yes` mode, where the failure is surfaced as an error.
 - `wtm extract <source> --files <a,b> --to <branch>` — move part of the `<source>`
@@ -107,7 +142,9 @@ flagged; everything else is what the name implies.
   `--yes` plus the source arg, `--files`, and `--to` — all **required** (omitting any errors
   naming the missing flag; there is no picker). On conflict it changes nothing and exits `15`;
   retry with `--on-conflict resolve` to apply git conflict markers (`--yes` defaults on-conflict
-  to abort).
+  to abort). **When `--to` names a branch that already exists locally**, the same rule as
+  `create` applies: its parent can't be inferred, so `--from` is **required** there too
+  (the command errors naming the flag rather than guessing).
   `--files` takes paths exactly as reported (spaces and non-ASCII are never quoted or escaped),
   including each untracked file of a brand-new directory individually; pass a directory
   (`--files newmod/`) to take everything below it. Gitignored files are never listed — `.env`
@@ -139,16 +176,55 @@ flagged; everything else is what the name implies.
   entries:[{key,status,current_value,resolved_value,placeholder,source,export}]}}]}` where
   `status` is `resolved` / `missing_unresolved` / `conflict` / `orphan`. Round-trip is
   preserved: comments, ordering and formatting of the `.env` are kept; only decided keys change.
+- `wtm ui` — the full-screen dashboard (worktree state, divergence, PRs, plus create and
+  delete). **Never invoke it** (see driving rule 2): it holds the terminal until a human
+  quits it. Everything it shows is available to you as JSON via `wtm list` / `wtm tree`, and
+  everything it does via `wtm create` / `wtm clean`.
 - `wtm relocate` — realign worktrees with `base_path` and adopt externally-created ones.
   `--to <path>` sets a new `base_path` non-interactively; the interactive wizard also lets
   the user change it. You can't drive the wizard — in JSON mode pass `--yes` (and `--to` to
   change base_path).
 
 **Stacked branches**
+- `wtm fast-forward <branch…>` (alias `ff`) / `wtm fast-forward --all` — advance the
+  selected worktrees to `origin/<branch>` and **nothing else**: no rebase onto the parent,
+  no merge. Use it to pull down work pushed to a branch you already agree with; use `sync`
+  when the branch has to be replayed onto its parent. With neither branch args nor `--all`
+  it refuses naming `--all` rather than opening a picker (same rule as `sync` and `prune`),
+  so always pass `--output json --yes` (driving rule 5). `--output json` requires `--yes`.
+  Two refusals, only one of them liftable: a **diverged** branch is refused and `--force`
+  does **not** lift it (advancing it would drop local commits — run `wtm sync` instead); a
+  worktree with **uncommitted changes** is refused and `--force` does lift it, though git
+  still refuses if a modified file would be overwritten. A run over several branches keeps
+  going past the ones it could not move and reports every one.
+  JSON: an array of `{branch, status, old_tip, new_tip, behind, detail?}`, where `status`
+  is `already up to date`, `fast-forwarded from origin`, `diverged`, `no origin counterpart`,
+  or `failed` (`detail` says why). A run in which any branch is `failed` exits non-zero;
+  `diverged` and `no origin counterpart` are reported facts, not failures.
 - `wtm sync <branch…>` / `wtm sync --all` — rebase the selected worktrees onto their
   recorded parent, in cascade (parents before children), fetching first. A conflict aborts
   that branch's rebase (its descendants are skipped) unless `--keep-conflict` leaves it in
   progress. Local only — in JSON mode pass `--yes` (and `--push` to force-push with lease).
+  Without a TTY, in plain output, with neither `--yes` nor `--dry-run`, it refuses naming
+  `--yes` instead of trying to open a picker (same rule as `prune`) — another reason to
+  always pass `--output json --yes` (driving rule 5) rather than relying on a terminal.
+  A parent **no step covers** — a branch with no worktree, or one left out of the
+  selection — is not refreshed by the cascade. Every run reports what it found about
+  those parents in `parent_updates`: `{branch, status, old_tip, new_tip, behind,
+  children, detail}`, where `behind` counts the commits the local ref lacks and
+  `children` names the worktrees rebased onto it. `status` is one of `behind` (left
+  as is — re-run with `--ff-parents` to refresh it), `fast_forwarded`, `diverged`
+  (no fast-forward exists; reconcile it by hand, the flag will never move it), or
+  `ff_failed` (the refresh was asked for and could not happen — `detail` says why,
+  e.g. a dirty parent worktree; passing the flag again will not help). Pass
+  `--ff-parents` to refresh them first, `--no-ff-parents` to never. `--dry-run`
+  reports them without any network call and never refreshes, so `--ff-parents` is a
+  no-op there.
+  The **base is only involved when it is actually a target**: a step rebases onto it,
+  the selection names it, or the run covers everything (`--all`, which includes the
+  root). Otherwise it is neither fetched nor fast-forwarded and `base_targeted` is
+  `false` — an explicit selection whose every worktree hangs off another parent
+  leaves the base completely alone.
 - `wtm reparent <branch…> --to <parent>` — change the recorded parent of one or more
   worktrees to the same new parent (metadata only; the rebase happens on the next `sync`).
   Use after a middle branch merges. In JSON mode pass `--yes` with the worktrees and `--to`.
@@ -178,9 +254,11 @@ and **experimental**: the global `wtm init` does not configure it.
 **GitHub**
 - `wtm checkout <number>` — fetch a PR's branch into a worktree; parent defaults to the
   PR's base. In JSON mode pass `--yes` and the PR `<number>` (both **required**; no picker);
-  `--yes` resolves the parent → PR base and env → config default. Fork
-  PRs are out of scope — fall back to `gh pr checkout <number>`. Creating a PR is out of
-  scope too — use `gh pr create`.
+  `--yes` resolves the parent → PR base and env → config default. A local branch of the
+  PR's name is **reused as-is**, never reset — the response then sets `existing_branch: true`
+  and `origin_state`; under `--yes` no ref is touched even when the branch is behind, so
+  read `origin_state` and decide yourself. Fork PRs are out of scope — fall back to
+  `gh pr checkout <number>`. Creating a PR is out of scope too — use `gh pr create`.
 
 **Setup**
 - `wtm config show` inspects config; `wtm config edit` and the `wtm init` wizard are
@@ -189,6 +267,16 @@ and **experimental**: the global `wtm init` does not configure it.
   reconfigure one section later with `wtm init --only env|hooks|worktrees --non-interactive --yes`.
   Services are **not** part of `wtm init` — configure them with `wtm run init`.
   See their `--help` for the full flag set.
+- `wtm upgrade` updates **the CLI itself**, never worktrees — that is `wtm sync`. **Do not
+  run it unless the user asked**: it replaces the binary you are driving. `--check` is the
+  safe form — it reports availability and changes nothing. `--yes` skips the confirmation and
+  is **required** with `--output json` unless `--check` is passed; without it the command
+  exits `1` naming `--yes`. `--version <v>` pins a release and applies to a **standalone**
+  install only — on a Homebrew or `go install` binary it errors. JSON is exactly
+  `{"installed", "latest", "up_to_date", "method", "action"}`, where `method` is
+  `homebrew|go-install|standalone|source` and `action` is `replaced|delegated|none|checked`.
+  Exit `17` means the install cannot be upgraded (built from source, or the binary needs
+  sudo); network and checksum failures exit `1`.
 
 ## Failure handling
 
@@ -196,7 +284,13 @@ On non-zero exit, read stderr, then:
 
 - `12` (config not found) → repo not initialized. Run `wtm init --non-interactive` with
   flags, or ask the user to run interactive `wtm init`.
+- `17` (`upgrade` unsupported) → nothing to retry. Report the message: a source build updates
+  with `git pull && make install`, an unwritable binary needs the user to re-run with sudo.
 - `11` (branch not found) → wrong name; re-run the relevant discovery call.
+- `10` (worktree already exists) → either the path is taken, or the branch is checked out
+  in another worktree. Enter it with `wtm go <branch>` (get its path from `wtm resolve
+  <branch>`), or pick a different branch name. `--if-not-exists` turns this into a success
+  returning the existing worktree's path.
 - `14` (job not found) → not declared in `run.toml`; check `wtm run list`.
 - `15` (extract conflict) → nothing changed; retry with `--on-conflict resolve` or a
   different `--to`. Covers both a file modified on both sides and one that merely already
@@ -217,6 +311,8 @@ On non-zero exit, read stderr, then:
 ## Escalate to the user when
 
 - A command needs shell integration (`go`/`switch` with no wrapper installed).
+- The user wants to *browse* their worktrees rather than get an answer from you — tell them
+  to run `wtm ui` themselves; never run it for them.
 - A destructive action (`clean`/`prune --force`) wasn't explicitly authorized — don't add
   `--force` on your own initiative.
 - `wtm config edit` is the natural answer — ask the user to run it, or read with `wtm
