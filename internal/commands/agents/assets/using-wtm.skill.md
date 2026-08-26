@@ -240,7 +240,10 @@ and **experimental**: the global `wtm init` does not configure it.
   one gathering everything, editable (rename / merge / remove / new). Root-cwd jobs join
   every profile. Non-interactively it takes the same answers without asking. A checked
   script outside the `dev` ones gets its `kind` asked, because a task blocks its profile
-  until it exits. A service with no detected port is reported, not asked about.
+  until it exits. **A service with no detected port is asked about too** — declaring one is
+  what keeps a second worktree from binding the same port — and a job whose command never
+  mentions the variable wtm injects gets that command offered for editing. The wizard ends
+  on a **review step**: choosing "No, cancel" there aborts the run and writes nothing.
 - `run init --link-env` also writes the `[[env_port]]` links without asking (see port
   isolation below).
 - `run init` also **pre-fills the ports** of the compose files it picks up. A mapping

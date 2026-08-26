@@ -126,16 +126,16 @@ func TestApplyInitAnswersCorrectsAPort(t *testing.T) {
 	}
 }
 
-func TestApplyInitAnswersNeverInventsAPort(t *testing.T) {
-	// Une entrée qui ne correspond à aucune déclaration ne doit rien créer :
-	// l'étape ne revoit que ce que la détection a trouvé.
+func TestApplyInitAnswersNeverInventsAJob(t *testing.T) {
+	// Une entrée qui ne correspond à aucun job ne doit rien créer : l'étape
+	// revoit les jobs retenus, elle n'en ajoute pas.
 	cfg := rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
 		Config: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web-dev", Kind: domain.JobKindService}}},
-		Ports:  []domain.PortEntry{{Job: "web-dev", Name: "WEB_PORT", Base: 4000}},
+		Ports:  []domain.PortEntry{{Job: "ghost", Name: "WEB_PORT", Base: 4000}},
 	})
 
-	if len(cfg.Jobs[0].Ports) != 0 {
-		t.Errorf("ports = %v, want none", cfg.Jobs[0].Ports)
+	if len(cfg.Jobs) != 1 || len(cfg.Jobs[0].Ports) != 0 {
+		t.Errorf("config = %+v, want it untouched", cfg.Jobs)
 	}
 }
 

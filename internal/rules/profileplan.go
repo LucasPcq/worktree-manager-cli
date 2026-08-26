@@ -74,6 +74,7 @@ type ApplyInitAnswersParams struct {
 	Config   domain.RunConfig
 	Ports    []domain.PortEntry
 	Profiles []domain.ProfileConfig
+	Cmds     []domain.JobCmdFix
 }
 
 // ApplyInitAnswers folds the wizard's two composition steps back into the
@@ -84,16 +85,26 @@ func ApplyInitAnswers(params ApplyInitAnswersParams) domain.RunConfig {
 	cfg.Jobs = make([]domain.JobConfig, len(params.Config.Jobs))
 	copy(cfg.Jobs, params.Config.Jobs)
 
+	// A zero base is an answer too: the user was offered the port and declined
+	// it. Writing it would declare a port nothing binds.
 	for _, entry := range params.Ports {
+		if entry.Base <= 0 {
+			continue
+		}
 		for i, job := range cfg.Jobs {
 			if job.Name != entry.Job {
 				continue
 			}
-			if _, declared := job.Ports[entry.Name]; !declared {
-				continue
-			}
 			cfg.Jobs[i].Ports = clonePorts(cfg.Jobs[i].Ports)
 			cfg.Jobs[i].Ports[entry.Name] = entry.Base
+		}
+	}
+
+	for _, fix := range params.Cmds {
+		for i, job := range cfg.Jobs {
+			if job.Name == fix.Job && fix.Cmd != "" {
+				cfg.Jobs[i].Cmd = fix.Cmd
+			}
 		}
 	}
 

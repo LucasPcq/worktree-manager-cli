@@ -31,6 +31,11 @@ type DetectedPortsReportParams struct {
 	EnvWritten    map[string]map[string]int
 	EnvSources    map[string]map[string]string
 	EnvUnreadable []domain.EnvPortScan
+
+	// IgnoringJobs are the jobs whose command never mentions the port wtm gives
+	// them. Empty means the question does not arise — the wizard settled it, or
+	// every command already reads its variable.
+	IgnoringJobs []domain.JobCmdFix
 }
 
 // DetectedPortsReport prints what the detection did and, just as importantly,
@@ -53,7 +58,12 @@ func DetectedPortsReport(w io.Writer, params DetectedPortsReportParams) {
 			Written: params.EnvWritten,
 			Sources: params.EnvSources,
 		})
-		Callout(w, domain.EnvPortsDetectedTitle, append(lines, "", rules.EnvPortsVerifyLine()))
+		Callout(w, domain.EnvPortsDetectedTitle, lines)
+	}
+
+	if len(params.IgnoringJobs) > 0 {
+		Blank(w)
+		Callout(w, domain.EnvPortsVerifyTitle, rules.PortsIgnoredLines(params.IgnoringJobs))
 	}
 
 	if len(params.Withheld) > 0 {

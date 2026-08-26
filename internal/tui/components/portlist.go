@@ -99,7 +99,9 @@ func (m PortListModel) startEdit() PortListModel {
 	input.Width = portInputWidth
 	// Empty, with the detected port as placeholder: a port is retyped, never
 	// edited character by character, and an empty entry keeps what was detected.
-	input.Placeholder = strconv.Itoa(m.entries[m.cursor].Base)
+	if base := m.entries[m.cursor].Base; base > 0 {
+		input.Placeholder = strconv.Itoa(base)
+	}
 	input.Focus()
 
 	m.input = input
@@ -155,7 +157,7 @@ func (m PortListModel) saveEdit() PortListModel {
 func (m PortListModel) View() string {
 	var b strings.Builder
 	for i, entry := range m.entries {
-		label := fmt.Sprintf(domain.PortListEntryFmt, entry.Job, entry.Name, entry.Base)
+		label := entryLabel(entry)
 		if m.editing && i == m.cursor {
 			label = fmt.Sprintf(domain.PortListEditFmt, entry.Job, entry.Name, m.input.View())
 		}
@@ -171,6 +173,15 @@ func (m PortListModel) View() string {
 }
 
 // helpHint is the wizard help bar for this step.
+// entryLabel spells an undeclared service out rather than rendering it as port
+// zero: it is the one row on this step that asks for something.
+func entryLabel(entry domain.PortEntry) string {
+	if entry.Base <= 0 {
+		return fmt.Sprintf(domain.PortListUndeclaredFmt, entry.Job, entry.Name) + "   " + domain.PortListUndeclared
+	}
+	return fmt.Sprintf(domain.PortListEntryFmt, entry.Job, entry.Name, entry.Base)
+}
+
 func (m PortListModel) helpHint() string {
 	if m.editing {
 		return domain.PortListEditHelp

@@ -43,9 +43,12 @@ func newInitCmd() *cobra.Command {
 			"worktree collides on it. wtm offers to front them with the project — a renamed\n" +
 			"volume starts empty, its data staying under the name it used to carry.\n\n" +
 			"Dev servers get theirs from the env files sitting next to their package.json —\n" +
-			"a PORT (or *_PORT) entry in .env.local, .env, or a committed .env.example. wtm\n" +
-			"only declares the port; check that the command actually reads the variable, and\n" +
-			"pass it as a flag otherwise: --cmd 'pnpm dev --port ${PORT}'.\n\n" +
+			"a PORT (or *_PORT) entry in .env.local, .env, or a committed .env.example. A\n" +
+			"service nothing was found for is offered anyway: declaring its port is what keeps\n" +
+			"a second worktree from binding the same one.\n\n" +
+			"wtm injects the variable, it never edits the command. When a command never\n" +
+			"mentions the port it is given, the wizard offers it for editing on the spot\n" +
+			"(`pnpm dev --port ${PORT}`) rather than reporting it once it is too late.\n\n" +
 			domain.ExperimentalRunNotice,
 		Args: cobra.NoArgs,
 		RunE: runRunInit,
@@ -104,6 +107,10 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		Existing:     existing,
 		PatchCompose: patchCompose,
 		EnvScans:     envScans,
+		EnvLines: detect.EnvLines(detect.EnvPortCandidatesParams{
+			ProjectDir: res.ProjectDir,
+			Files:      res.Config.Project.Env.Files,
+		}),
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
@@ -160,11 +167,15 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		Config:   outcome.Config,
 		Ports:    answers.Ports,
 		Profiles: answers.Profiles,
+		Cmds:     answers.Cmds,
 	})
 
 	links := resolveEnvPortLinks(resolveEnvPortLinksParams{
-		Interactive: interactive,
-		LinkEnv:     linkEnv,
+		// The wizard already put the question as a step; asking again outside it
+		// is the orphaned prompt this flow used to end on.
+		Interactive: interactive && !answers.EnvLinksAsked,
+		LinkEnv:     linkEnv || (answers.EnvLinksAsked && answers.LinkEnv),
+		Declined:    answers.EnvLinksAsked && !answers.LinkEnv,
 		ProjectDir:  res.ProjectDir,
 		EnvFiles:    res.Config.Project.Env.Files,
 		Config:      outcome.Config,
@@ -206,6 +217,10 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			EnvWritten:    outcome.EnvWritten,
 			EnvSources:    outcome.EnvSources,
 			EnvUnreadable: outcome.EnvUnreadable,
+			IgnoringJobs: rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
+				Config: outcome.Config,
+				Exempt: composeJobNames(outcome.Config, answers.DockerComposeFiles),
+			}),
 		})
 		output.UnportedJobsReport(cmd.OutOrStdout(), rules.ServicesWithoutPorts(outcome.Config))
 		output.ComposeNamesReport(cmd.OutOrStdout(), output.ComposeNamesReportParams{
@@ -228,6 +243,7 @@ type resolveServicesParams struct {
 	Existing     domain.RunConfig
 	PatchCompose bool
 	EnvScans     map[string]domain.EnvPortScan
+	EnvLines     map[string][]domain.EnvLine
 }
 
 // resolveServicesAnswers gathers the services selection either from the wizard
@@ -257,7 +273,18 @@ func resolveServicesAnswers(params resolveServicesParams) (domain.InitProjectAns
 		Prefill:      prefill,
 		PatchCompose: params.PatchCompose,
 		EnvScans:     params.EnvScans,
+		EnvLines:     params.EnvLines,
 	})
+}
+
+// composeJobNames are the jobs whose ports the compose file carries, not their
+// command — the one family a missing reference says nothing about.
+func composeJobNames(cfg domain.RunConfig, files []string) []string {
+	var names []string
+	for _, job := range composeJobsByFile(cfg, files) {
+		names = append(names, job)
+	}
+	return names
 }
 
 // composeJobsByFile turns a withheld port's fix into a command to paste rather
@@ -274,9 +301,12 @@ func composeJobsByFile(cfg domain.RunConfig, files []string) map[string]string {
 
 type resolveEnvPortLinksParams struct {
 	Interactive bool
-	// LinkEnv is --link-env already given on the command line: the links are
-	// authorized, so nothing is asked.
-	LinkEnv    bool
+	// LinkEnv is --link-env already given on the command line, or the wizard's
+	// own answer: the links are authorized, so nothing is asked.
+	LinkEnv bool
+	// Declined is the wizard's refusal, which outranks everything: the question
+	// was put and answered no.
+	Declined   bool
 	ProjectDir string
 	EnvFiles   []domain.EnvFile
 	Config     domain.RunConfig
@@ -292,7 +322,7 @@ func resolveEnvPortLinks(params resolveEnvPortLinksParams) []domain.EnvPortLink 
 		Bases:      rules.EnvPortBases(params.Config),
 		Existing:   params.Config.EnvPorts,
 	})
-	if len(candidates) == 0 {
+	if len(candidates) == 0 || params.Declined {
 		return nil
 	}
 	if params.LinkEnv {

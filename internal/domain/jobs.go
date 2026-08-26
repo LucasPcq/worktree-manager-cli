@@ -134,3 +134,11 @@ type JobKindChoice struct {
 	Workspace string
 	Kind      JobKind
 }
+
+// JobCmdFix is a job whose command never mentions a port variable wtm injects
+// for it. The command will bind whatever it binds today, ignoring the offset.
+type JobCmdFix struct {
+	Job  string
+	Cmd  string
+	Vars []string
+}

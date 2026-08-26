@@ -74,9 +74,16 @@ type InitProjectAnswers struct {
 	// split `run up` will offer. Empty Profiles means the run could not ask: the
 	// proposal is then taken as answered, since a profile is what makes `run up`
 	// start something rather than everything.
-	Ports     []PortEntry
-	Profiles  []ProfileConfig
-	SkipEnv   bool
-	SkipHooks bool
-	SkipClean bool
+	Ports    []PortEntry
+	Profiles []ProfileConfig
+	// Cmds is the commands the wizard amended so they read the port wtm injects.
+	Cmds []JobCmdFix
+	// LinkEnv is what the wizard settled for the .env keys holding a declared
+	// port; EnvLinksAsked says the question was put at all, so a run that asked
+	// and got "no" is not mistaken for one that never asked.
+	LinkEnv       bool
+	EnvLinksAsked bool
+	SkipEnv       bool
+	SkipHooks     bool
+	SkipClean     bool
 }

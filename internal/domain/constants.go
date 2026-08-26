@@ -358,11 +358,20 @@ const (
 	// The [[env_port]] detection of `wtm run init`.
 	// EnvPortLinkFmt is one link as the prompt and the recap both show it:
 	// "<file> · <key>   follows POSTGRES_PORT (5432)".
-	EnvPortLinkFmt         = "%s   follows %s (%d)"
-	EnvPortLinkSeparator   = " · "
-	EnvPortsLinkedTitle    = "Env keys now following a port"
-	EnvPortLinkConfirm     = "Link these keys so each worktree gets its own ports?"
-	EnvPortLinkDescription = "wtm rewrites the port inside each value when a worktree is created or reconciled. The rest of the value is left alone."
+	EnvPortLinkFmt          = "%s   follows %s (%d)"
+	EnvPortLinkSeparator    = " · "
+	EnvPortsLinkedTitle     = "Env keys now following a port"
+	EnvLinkStepName         = "Env keys"
+	RecapStepName           = "Review"
+	RecapNotAsked           = "not asked"
+	RecapStepIntro          = "This is what `wtm run init` is about to write."
+	RecapLineFmt            = "  %s: %s"
+	RecapWriteLabel         = "Write run.toml"
+	RecapWriteValue         = "write"
+	RecapIgnoredPortWarnFmt = "⚠ %s: the command still does not mention the port wtm gives it — leave it only if it reads the variable on its own."
+	RecapUndeclaredWarnFmt  = "⚠ %s will bind the same port in every worktree — go back to Ports to declare one."
+	EnvPortLinkConfirm      = "Link these keys so each worktree gets its own ports?"
+	EnvPortLinkDescription  = "wtm rewrites the port inside each value when a worktree is created or reconciled. The rest of the value is left alone."
 
 	// The wizard step that asks to make the selected compose files per-worktree.
 	// Ports and absolute names are one question: accepting half of them still
@@ -398,7 +407,9 @@ const (
 	// does not know and does not guess, so the notice asks.
 	EnvPortsDetectedTitle  = "Ports detected from .env"
 	EnvPortDetectedLineFmt = "%s · %s=%d (%s)"
-	EnvPortsVerifyFmt      = "Check that these commands read the variable — otherwise pass it as a flag, e.g. `pnpm dev --port ${%s}`"
+	EnvPortsVerifyTitle    = "These commands never mention the port they are given"
+	PortsIgnoredLineFmt    = "%s · %s   %s"
+	PortsIgnoredHint       = "Reference the variable in the command (`--port ${PORT}`), or leave it if the command reads it on its own — `wtm run job edit <job>`"
 	EnvPortUnreadable      = "%s could not be read: %s"
 
 	// PortCollisionHorizon is how many worktrees a declared layout is checked
@@ -578,13 +589,18 @@ const (
 	SkipReasonKindsSettled    = "every checked script is a dev server"
 	SkipReasonNoService       = "no long-running service to configure"
 	SkipReasonNoPortDetected  = "no port detected for the jobs you kept"
+	SkipReasonCommandsRead    = "every command already reads the port it is given"
+	SkipReasonNoEnvKeyFollows = "no .env key holds a declared port"
 
 	// The wizard step selecting which package scripts become jobs.
 	ScriptsStepName  = "Package scripts"
 	ScriptsStepTitle = "Package.json scripts"
 	ScriptsStepDesc  = "Only what you check becomes a job. Dev scripts are checked for you; check\n" +
 		"anything else you want `wtm run` to start or run."
-	ScriptScopeRoot    = "root"
+	ScriptScopeRoot = "root"
+	// PortNameDefault is the variable an undeclared service is offered under: the
+	// one a process reads without being told to.
+	PortNameDefault    = "PORT"
 	ScriptLabelFmt     = "%s / %s"
 	ScriptItemLabelFmt = "%s / %s — %s run %s"
 
@@ -610,18 +626,50 @@ const (
 		"a compose stack — join every profile, so starting one package alone still\n" +
 		"brings its infrastructure up."
 
+	// The step amending a command that never mentions the port wtm injects for it.
+	CmdListStepName  = "Commands"
+	CmdListStepTitle = "These commands ignore the port wtm gives them"
+	CmdListStepDesc  = "wtm injects the variable into the job's environment. It does not touch the command.\n" +
+		"\n" +
+		"Each job below declares a port whose variable appears nowhere in its command, so\n" +
+		"the command will bind whatever it binds today — the same port in every worktree.\n" +
+		"\n" +
+		"Reference the variable (`--port ${PORT}`), or leave it as it is if the command\n" +
+		"already reads it from the environment on its own."
+	CmdListEntryFmt   = "%s · %s   %s"
+	CmdListEditFmt    = "%s · %s"
+	CmdListVarSep     = ", "
+	CmdListReferenced = "✓"
+	CmdListDoneRow    = "✓ Done"
+	CmdListHelp       = "  ↑↓ navigate • enter edit • esc back"
+	CmdListEditHelp   = "  edit the command • enter save • esc cancel"
+	CmdListEmptyErr   = "a job needs a command"
+	CmdListSummaryFmt = "%d of %d now reference their port"
+	CmdListCharLimit  = 512
+	CmdListMinWidth   = 30
+	CmdListWidthInset = 20
+
 	// The wizard step reviewing the ports detection pre-filled.
 	PortListStepName  = "Ports"
-	PortListStepTitle = "Ports detected for the jobs you kept"
-	PortListStepDesc  = "Each is injected under its name, shifted by the worktree's offset. Only what\n" +
-		"detection actually found is listed — a job with no detected port declares\n" +
-		"none, and `wtm run up` will say so rather than pretend it is isolated."
-	PortListEntryFmt   = "%s · %s = %d"
-	PortListEditFmt    = "%s · %s = %s"
-	PortListDoneRow    = "✓ Done"
-	PortListHelp       = "  ↑↓ navigate • enter select • esc back"
-	PortListEditHelp   = "  type a port • enter save • esc cancel"
-	PortListSummaryFmt = "%d ports"
+	PortListStepTitle = "One port per service, so two worktrees never collide"
+	PortListStepDesc  = "Each port below is injected into its job under the variable's name, shifted by\n" +
+		"the worktree's offset — 3001 on main, 3011 on the next worktree.\n" +
+		"\n" +
+		"A service with no port declared binds the same one everywhere: the second\n" +
+		"worktree to start it will fail. Detection filled in what it could find in your\n" +
+		"compose files and .env; declare the rest, or leave one blank to accept it."
+	PortListEntryFmt = "%s · %s = %d"
+	// PortListUndeclaredFmt renders a service nothing was detected for. It reads
+	// as a gap to fill rather than as port zero, and the warning is what says
+	// why filling it matters.
+	PortListUndeclaredFmt        = "%s · %s = —"
+	PortListUndeclared           = "not declared — every worktree binds the same port"
+	PortListEditFmt              = "%s · %s = %s"
+	PortListDoneRow              = "✓ Done"
+	PortListHelp                 = "  ↑↓ navigate • enter select • esc back"
+	PortListEditHelp             = "  type a port • enter save • esc cancel"
+	PortListSummaryFmt           = "%d ports"
+	PortListSummaryUndeclaredFmt = "%d ports, %d service(s) left undeclared"
 	// PortListRangeErrFmt refuses a value outside the usable range rather than
 	// overwriting a detected port that works.
 	PortListRangeErrFmt = "%q is not a port between %d and %d"

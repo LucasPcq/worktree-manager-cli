@@ -183,8 +183,8 @@ func TestPortEntriesFor(t *testing.T) {
 
 	got := rules.PortEntriesFor(cfg)
 
-	if len(got) != 2 {
-		t.Fatalf("expected the 2 compose ports, got %+v", got)
+	if len(got) != 3 {
+		t.Fatalf("expected the 2 compose ports and the undeclared service, got %+v", got)
 	}
 	// Ordre stable : le job dans l'ordre déclaré, les ports par nom.
 	if got[0].Name != "POSTGRES_PORT" || got[1].Name != "REDIS_PORT" {
@@ -195,12 +195,11 @@ func TestPortEntriesFor(t *testing.T) {
 	}
 }
 
-func TestPortEntriesForSkipsWhatHasNothingToReview(t *testing.T) {
-	// Une task n'écoute pas, et un service sans port détecté ne doit rien
-	// demander : poser la question déplacerait la devinette sur l'utilisateur.
+func TestPortEntriesForSkipsATask(t *testing.T) {
+	// Une task n'écoute pas : rien à décaler, donc rien à demander.
 	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
-		{Name: "web-dev", Kind: domain.JobKindService},
 		{Name: "lint", Kind: domain.JobKindTask},
+		{Name: "seed", Kind: domain.JobKindTask, Ports: map[string]int{"SEED_PORT": 9000}},
 	}}
 	if got := rules.PortEntriesFor(cfg); len(got) != 0 {
 		t.Errorf("PortEntriesFor = %+v, want empty", got)

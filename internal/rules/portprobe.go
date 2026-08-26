@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -161,14 +162,27 @@ func ServicesWithoutPorts(cfg domain.RunConfig) []string {
 	return jobs
 }
 
-// PortEntriesFor is every declared port a surface can review, in a stable
-// order: the jobs as declared, their ports by name. A service detection found
-// no port for contributes nothing — asking would move the guess onto the user,
-// and ServicesWithoutPorts names it instead.
+// PortEntriesFor is every service a surface can review, in a stable order: the
+// jobs as declared, their ports by name. A service detection found no port for
+// gets a row too, with no base — it is the one the user alone can settle, and
+// leaving it out is what let an init end on a config that only starts on main.
 func PortEntriesFor(cfg domain.RunConfig) []domain.PortEntry {
+	taken := map[string]bool{}
+	for _, job := range cfg.Jobs {
+		for name := range job.Ports {
+			taken[name] = true
+		}
+	}
+
 	var entries []domain.PortEntry
 	for _, job := range cfg.Jobs {
-		if !ShouldProbeJob(job.Kind, job.Ports) {
+		if job.Kind != domain.JobKindService {
+			continue
+		}
+		if len(job.Ports) == 0 {
+			name := freePortName(job.Name, taken)
+			taken[name] = true
+			entries = append(entries, domain.PortEntry{Job: job.Name, Name: name})
 			continue
 		}
 		for _, name := range sortedPortNames(job.Ports) {
@@ -176,4 +190,28 @@ func PortEntriesFor(cfg domain.RunConfig) []domain.PortEntry {
 		}
 	}
 	return entries
+}
+
+// freePortName proposes PORT, falling back to one derived from the job when
+// another job already carries it. Two jobs may each hold their own PORT — their
+// environments are separate — but the env-file linking flattens variables to one
+// base, so a name proposed twice would make a .env key follow the wrong port.
+func freePortName(job string, taken map[string]bool) string {
+	if !taken[domain.PortNameDefault] {
+		return domain.PortNameDefault
+	}
+	return EnvVarNameFor(job) + "_" + domain.PortNameDefault
+}
+
+// EnvVarNameFor turns a job name into the shape an environment variable takes.
+func EnvVarNameFor(job string) string {
+	var b strings.Builder
+	for _, r := range strings.ToUpper(job) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteRune('_')
+	}
+	return b.String()
 }

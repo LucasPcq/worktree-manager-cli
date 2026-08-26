@@ -1,6 +1,7 @@
 package components
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -105,5 +106,51 @@ func TestPortListConfirmsOnTheDoneRow(t *testing.T) {
 	m = portEnter(m)
 	if !m.Done() {
 		t.Error("la ligne Done valide l'étape")
+	}
+}
+
+func undeclaredList() PortListModel {
+	return NewPortList(NewPortListParams{
+		Title: "t",
+		Entries: []domain.PortEntry{
+			{Job: "api-dev", Name: "PORT", Base: 3001},
+			{Job: "web-dev", Name: "PORT"},
+		},
+	})
+}
+
+func TestPortListMarksAServiceWithNoPort(t *testing.T) {
+	view := undeclaredList().View()
+
+	if !strings.Contains(view, domain.PortListUndeclared) {
+		t.Errorf("an undeclared service must read as one, not as port 0:\n%s", view)
+	}
+	if strings.Contains(view, "= 0") {
+		t.Errorf("a zero base must never render as a port:\n%s", view)
+	}
+}
+
+func TestPortListDeclaresAPortForAServiceThatHadNone(t *testing.T) {
+	m := undeclaredList()
+	m, _ = m.Update(key(tea.KeyDown))
+	m, _ = m.Update(key(tea.KeyEnter))
+	for _, r := range "5173" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(key(tea.KeyEnter))
+
+	if got := m.Entries()[1].Base; got != 5173 {
+		t.Errorf("base = %d, want the port the user declared", got)
+	}
+}
+
+func TestPortListEmptyAnswerLeavesAServiceUndeclared(t *testing.T) {
+	m := undeclaredList()
+	m, _ = m.Update(key(tea.KeyDown))
+	m, _ = m.Update(key(tea.KeyEnter))
+	m, _ = m.Update(key(tea.KeyEnter))
+
+	if got := m.Entries()[1].Base; got != 0 {
+		t.Errorf("base = %d, want it left undeclared", got)
 	}
 }
