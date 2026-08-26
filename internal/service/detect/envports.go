@@ -13,7 +13,7 @@ type EnvPortCandidatesParams struct {
 	// any other worktree's copy already carries an offset.
 	ProjectDir string
 	Files      []domain.EnvFile
-	Bases      map[string]int
+	Bases      map[domain.PortRef]int
 	Existing   []domain.EnvPortLink
 }
 

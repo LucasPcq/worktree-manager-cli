@@ -359,6 +359,7 @@ const (
 	// EnvPortLinkFmt is one link as the prompt and the recap both show it:
 	// "<file> · <key>   follows POSTGRES_PORT (5432)".
 	EnvPortLinkFmt          = "%s   follows %s (%d)"
+	EnvPortJobSeparator     = "."
 	EnvPortLinkSeparator    = " · "
 	EnvPortsLinkedTitle     = "Env keys now following a port"
 	EnvLinkStepName         = "Env keys"

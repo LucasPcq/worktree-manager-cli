@@ -1,28 +1,41 @@
 package rules
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// EnvPortBases flattens every port a run config declares into name -> base.
-// Names are unique across jobs — ValidateRunPorts refuses a file where two jobs
-// declare the same one on different bases.
-func EnvPortBases(cfg domain.RunConfig) map[string]int {
-	bases := map[string]int{}
+// EnvPortBases is every port a run config declares, keyed by the job that
+// carries it and its name. It is deliberately not keyed by name alone: two jobs
+// may each declare a PORT, and flattening them made a link follow whichever base
+// happened to be written last.
+func EnvPortBases(cfg domain.RunConfig) map[domain.PortRef]int {
+	bases := map[domain.PortRef]int{}
 	for _, job := range cfg.Jobs {
 		for name, base := range job.Ports {
-			bases[name] = base
+			bases[domain.PortRef{Job: job.Name, Name: name}] = base
 		}
 	}
 	return bases
 }
 
+// EnvPortBaseFor resolves the base one link follows. A link naming no job names
+// no base either: the port name alone can belong to two jobs, and picking one is
+// how a key came to follow the wrong port.
+func EnvPortBaseFor(bases map[domain.PortRef]int, link domain.EnvPortLink) (base int, found bool) {
+	if link.Job == "" {
+		return 0, false
+	}
+	base, found = bases[domain.PortRef{Job: link.Job, Name: link.Port}]
+	return base, found
+}
+
 type PlanEnvPortsParams struct {
 	Links []domain.EnvPortLink
-	Bases map[string]int
+	Bases map[domain.PortRef]int
 	// Offset is the worktree's port offset — zero for the main checkout, where
 	// every substitution is the identity.
 	Offset int
@@ -40,7 +53,7 @@ func PlanEnvPorts(params PlanEnvPortsParams) domain.EnvPortPlan {
 	plan := domain.EnvPortPlan{Offset: params.Offset}
 
 	for _, link := range params.Links {
-		base, declared := params.Bases[link.Port]
+		base, declared := EnvPortBaseFor(params.Bases, link)
 		if !declared {
 			continue
 		}
@@ -141,10 +154,10 @@ func ApplyEnvPorts(lines []domain.EnvLine, entries []domain.EnvPortEntry) []doma
 
 // EnvPortBasesByKey is the base each linked .env key follows, keyed by the key
 // itself — what the reconciliation diff needs to compare two worktrees' values.
-func EnvPortBasesByKey(links []domain.EnvPortLink, bases map[string]int) map[string]int {
+func EnvPortBasesByKey(links []domain.EnvPortLink, bases map[domain.PortRef]int) map[string]int {
 	byKey := map[string]int{}
 	for _, link := range links {
-		if base, declared := bases[link.Port]; declared {
+		if base, declared := EnvPortBaseFor(bases, link); declared {
 			byKey[link.Key] = base
 		}
 	}
@@ -278,7 +291,7 @@ func ElideEnvValue(value string) string {
 type EnvPortCandidatesParams struct {
 	// Lines is each configured env target's parsed content, keyed by target.
 	Lines map[string][]domain.EnvLine
-	Bases map[string]int
+	Bases map[domain.PortRef]int
 	// Existing are the links run.toml already declares, which are never offered
 	// again — a re-run of the detection is additive, like the compose one.
 	Existing []domain.EnvPortLink
@@ -299,28 +312,44 @@ func EnvPortCandidates(params EnvPortCandidatesParams) []domain.EnvPortLink {
 			if line.Kind != domain.EnvLinePair || declared[domain.EnvPortLink{File: file, Key: line.Key}] {
 				continue
 			}
-			if port := solePortIn(line.Value, params.Bases); port != "" {
-				candidates = append(candidates, domain.EnvPortLink{File: file, Key: line.Key, Port: port})
+			if ref, sole := solePortIn(line.Value, params.Bases); sole {
+				candidates = append(candidates, domain.EnvPortLink{
+					File: file, Key: line.Key, Job: ref.Job, Port: ref.Name,
+				})
 			}
 		}
 	}
 	return candidates
 }
 
-// solePortIn names the one declared port whose base sits exactly once in value,
-// and "" when none or several do.
-func solePortIn(value string, bases map[string]int) string {
-	found := ""
-	for _, name := range sortedKeys(bases) {
-		if len(portOffsets(value, bases[name])) != 1 {
+// solePortIn names the one declared port whose base sits exactly once in value.
+// Two ports sharing a base cannot both be it, so neither is offered.
+func solePortIn(value string, bases map[domain.PortRef]int) (ref domain.PortRef, sole bool) {
+	for _, candidate := range sortedPortRefs(bases) {
+		if len(portOffsets(value, bases[candidate])) != 1 {
 			continue
 		}
-		if found != "" {
-			return ""
+		if sole {
+			return domain.PortRef{}, false
 		}
-		found = name
+		ref, sole = candidate, true
 	}
-	return found
+	return ref, sole
+}
+
+// sortedPortRefs orders the declarations so a match is picked the same way twice.
+func sortedPortRefs(bases map[domain.PortRef]int) []domain.PortRef {
+	refs := make([]domain.PortRef, 0, len(bases))
+	for ref := range bases {
+		refs = append(refs, ref)
+	}
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].Job != refs[j].Job {
+			return refs[i].Job < refs[j].Job
+		}
+		return refs[i].Name < refs[j].Name
+	})
+	return refs
 }
 
 // EnvPortPlanTouches reports whether a plan rewrites anything in one env target.

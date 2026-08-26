@@ -13,8 +13,8 @@ import (
 // and once the answer is no a result report listing what did not happen is noise.
 func TestPrintEnvReportCollapsesADeclinedPortPass(t *testing.T) {
 	plan := rules.PlanEnvPorts(rules.PlanEnvPortsParams{
-		Links:  []domain.EnvPortLink{{File: ".env", Key: "DATABASE_URL", Port: "POSTGRES_PORT"}},
-		Bases:  map[string]int{"POSTGRES_PORT": 5432},
+		Links:  []domain.EnvPortLink{{File: ".env", Key: "DATABASE_URL", Job: "svc", Port: "POSTGRES_PORT"}},
+		Bases:  map[domain.PortRef]int{{Job: "svc", Name: "POSTGRES_PORT"}: 5432},
 		Offset: 10,
 		Lines:  map[string][]domain.EnvLine{".env": rules.ParseEnv("DATABASE_URL=postgres://localhost:5432/app\n")},
 	})

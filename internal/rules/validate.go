@@ -254,8 +254,8 @@ func validateEnvPortLinks(cfg domain.RunConfig) []string {
 		if !IsEnvVarName(link.Key) {
 			errs = append(errs, fmt.Sprintf("env_port in %s: %q is not a valid environment variable name", link.File, link.Key))
 		}
-		if _, declared := bases[link.Port]; !declared {
-			errs = append(errs, fmt.Sprintf("env_port %s in %s references port %q, which no job declares", link.Key, link.File, link.Port))
+		if _, declared := EnvPortBaseFor(bases, link); !declared {
+			errs = append(errs, envPortLinkError(bases, link))
 		}
 
 		pair := domain.EnvPortLink{File: link.File, Key: link.Key}
@@ -265,6 +265,27 @@ func validateEnvPortLinks(cfg domain.RunConfig) []string {
 		seen[pair] = true
 	}
 	return errs
+}
+
+// envPortLinkError names the jobs that do declare the port, so the fix is the
+// line to write rather than a hunt through run.toml.
+func envPortLinkError(bases map[domain.PortRef]int, link domain.EnvPortLink) string {
+	var jobs []string
+	for _, ref := range sortedPortRefs(bases) {
+		if ref.Name == link.Port {
+			jobs = append(jobs, ref.Job)
+		}
+	}
+
+	if len(jobs) == 0 {
+		return fmt.Sprintf("env_port %s in %s references port %q, which no job declares", link.Key, link.File, link.Port)
+	}
+	if link.Job == "" {
+		return fmt.Sprintf("env_port %s in %s: job is required — %q is declared by %s",
+			link.Key, link.File, link.Port, strings.Join(jobs, ", "))
+	}
+	return fmt.Sprintf("env_port %s in %s references port %q of job %q, which does not declare it — %s does",
+		link.Key, link.File, link.Port, link.Job, strings.Join(jobs, ", "))
 }
 
 // ValidateEnvPortTargets is the half of the link check that needs both configs:

@@ -23,10 +23,10 @@ func portsParams(dir string) EnvPortsParams {
 	return EnvPortsParams{
 		WorktreePath: dir,
 		Links: []domain.EnvPortLink{
-			{File: ".env", Key: "DATABASE_URL", Port: "POSTGRES_PORT"},
-			{File: "apps/web/.env", Key: "VITE_API_URL", Port: "API_PORT"},
+			{File: ".env", Key: "DATABASE_URL", Job: "svc", Port: "POSTGRES_PORT"},
+			{File: "apps/web/.env", Key: "VITE_API_URL", Job: "svc", Port: "API_PORT"},
 		},
-		Bases:  map[string]int{"POSTGRES_PORT": 5432, "API_PORT": 3000},
+		Bases:  map[domain.PortRef]int{{Job: "svc", Name: "POSTGRES_PORT"}: 5432, {Job: "svc", Name: "API_PORT"}: 3000},
 		Offset: 10,
 		Block:  10,
 	}

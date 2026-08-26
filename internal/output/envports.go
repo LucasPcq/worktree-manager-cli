@@ -65,7 +65,7 @@ func printEnvPortAnomalies(w io.Writer, anomalies []string) {
 // EnvPortLinksReport names the links a `run init` just wrote. It is deliberately
 // not a count: a reader told "1 link written" has to open run.toml to learn what
 // they agreed to.
-func EnvPortLinksReport(w io.Writer, links []domain.EnvPortLink, bases map[string]int) {
+func EnvPortLinksReport(w io.Writer, links []domain.EnvPortLink, bases map[domain.PortRef]int) {
 	if len(links) == 0 {
 		return
 	}

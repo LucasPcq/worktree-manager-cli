@@ -124,6 +124,7 @@
         "required": [
           "file",
           "key",
+          "job",
           "port"
         ],
         "properties": {
@@ -135,6 +136,10 @@
             "type": "string",
             "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
             "description": "The .env key whose value carries the port."
+          },
+          "job": {
+            "type": "string",
+            "description": "The job whose port the key follows. Two jobs may each declare a PORT \u2014 their environments are separate \u2014 so the port name alone does not identify a base. Required: every port belongs to exactly one job."
           },
           "port": {
             "type": "string",

@@ -9,8 +9,8 @@ import (
 func planOne(t *testing.T, content string, base int, offset int) domain.EnvPortEntry {
 	t.Helper()
 	plan := PlanEnvPorts(PlanEnvPortsParams{
-		Links:  []domain.EnvPortLink{{File: ".env", Key: "URL", Port: "DB_PORT"}},
-		Bases:  map[string]int{"DB_PORT": base},
+		Links:  []domain.EnvPortLink{{File: ".env", Key: "URL", Job: "svc", Port: "DB_PORT"}},
+		Bases:  map[domain.PortRef]int{{Job: "svc", Name: "DB_PORT"}: base},
 		Offset: offset,
 		Lines:  map[string][]domain.EnvLine{".env": ParseEnv(content)},
 	})
@@ -83,8 +83,8 @@ func TestPlanEnvPortsRespectsDigitBoundaries(t *testing.T) {
 
 func TestPlanEnvPortsSkipsUndeclaredPort(t *testing.T) {
 	plan := PlanEnvPorts(PlanEnvPortsParams{
-		Links:  []domain.EnvPortLink{{File: ".env", Key: "URL", Port: "GONE"}},
-		Bases:  map[string]int{"DB_PORT": 5432},
+		Links:  []domain.EnvPortLink{{File: ".env", Key: "URL", Job: "svc", Port: "GONE"}},
+		Bases:  map[domain.PortRef]int{{Job: "svc", Name: "DB_PORT"}: 5432},
 		Offset: 10,
 		Lines:  map[string][]domain.EnvLine{".env": ParseEnv("URL=5432\n")},
 	})
@@ -203,7 +203,7 @@ func TestEnvPortBases(t *testing.T) {
 	}}
 
 	got := EnvPortBases(cfg)
-	want := map[string]int{"POSTGRES_PORT": 5432, "API_PORT": 3000}
+	want := map[domain.PortRef]int{{Job: "db", Name: "POSTGRES_PORT"}: 5432, {Job: "api", Name: "API_PORT"}: 3000}
 	if len(got) != len(want) {
 		t.Fatalf("EnvPortBases() = %v, want %v", got, want)
 	}
