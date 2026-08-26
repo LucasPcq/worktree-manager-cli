@@ -13,7 +13,9 @@ import (
 
 // Step defines one step in a wizard.
 // Model must be a SelectListModel, TextInputModel, ConfirmModel, MultiSelectModel,
-// ReorderListModel, HookListModel, or EnvResolveModel.
+// ReorderListModel, HookListModel, EnvResolveModel, PortListModel, or
+// ProfileListModel. Adding one means teaching every switch below about it —
+// TestWizardRendersEveryStepModel and its neighbours are what enforce that.
 type Step struct {
 	Name  string
 	Model any
@@ -312,6 +314,14 @@ func (m WizardModel) updateStep(step *Step, msg tea.Msg) (advanced bool, back bo
 		updated, c := child.Update(msg)
 		step.Model = updated
 		return updated.Done(), updated.Aborted(), c
+	case PortListModel:
+		updated, c := child.Update(msg)
+		step.Model = updated
+		return updated.Done(), updated.Aborted(), c
+	case ProfileListModel:
+		updated, c := child.Update(msg)
+		step.Model = updated
+		return updated.Done(), updated.Aborted(), c
 	}
 	return false, false, nil
 }
@@ -586,6 +596,14 @@ func (m *WizardModel) propagateSize(stepIdx int) {
 		child.height = h
 		child.input.Width = max(10, m.width-8)
 		m.steps[stepIdx].Model = child
+	case PortListModel:
+		child.width = m.width
+		child.height = h
+		m.steps[stepIdx].Model = child
+	case ProfileListModel:
+		child.width = m.width
+		child.height = h
+		m.steps[stepIdx].Model = child
 	}
 }
 
@@ -666,6 +684,10 @@ func (m WizardModel) initStep(stepIdx int) tea.Cmd {
 		return child.Init()
 	case EnvResolveModel:
 		return child.Init()
+	case PortListModel:
+		return child.Init()
+	case ProfileListModel:
+		return child.Init()
 	}
 	return nil
 }
@@ -685,6 +707,10 @@ func (m WizardModel) viewStep(stepIdx int) string {
 	case HookListModel:
 		return child.View()
 	case EnvResolveModel:
+		return child.View()
+	case PortListModel:
+		return child.View()
+	case ProfileListModel:
 		return child.View()
 	}
 	return ""
@@ -725,6 +751,16 @@ func (m *WizardModel) resetStep(stepIdx int) {
 		child.aborted = false
 		child.editing = false
 		m.steps[stepIdx].Model = child
+	case PortListModel:
+		child.done = false
+		child.aborted = false
+		child.editing = false
+		m.steps[stepIdx].Model = child
+	case ProfileListModel:
+		child.done = false
+		child.aborted = false
+		child.naming = false
+		m.steps[stepIdx].Model = child
 	}
 }
 
@@ -753,6 +789,10 @@ func (m WizardModel) stepDescription(step Step) string {
 	case HookListModel:
 		return child.desc
 	case EnvResolveModel:
+		return child.desc
+	case PortListModel:
+		return child.desc
+	case ProfileListModel:
 		return child.desc
 	}
 	return ""
