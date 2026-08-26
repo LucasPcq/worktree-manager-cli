@@ -38,24 +38,7 @@ func ComposePortVarName(params ComposePortVarNameParams) string {
 }
 
 func normalizeComposeVarSegment(service string) string {
-	var b strings.Builder
-	for _, r := range strings.ToUpper(service) {
-		switch {
-		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('_')
-		}
-	}
-
-	name := strings.Trim(collapseUnderscores(b.String()), "_")
-	if name == "" {
-		return domain.ComposeVarNamePrefix
-	}
-	if name[0] >= '0' && name[0] <= '9' {
-		return domain.ComposeVarNamePrefix + name
-	}
-	return name
+	return EnvVarNameFor(service)
 }
 
 func collapseUnderscores(s string) string {
@@ -341,19 +324,6 @@ func renderComposeShortMapping(params renderComposeShortMappingParams) string {
 		mapping = params.IP + ":" + mapping
 	}
 	return strconv.Quote(mapping)
-}
-
-type ApplyComposePortPatchesParams struct {
-	Content  string
-	Bindings []domain.ComposePortBinding
-}
-
-// ApplyComposePortPatches rewrites the host port of each binding in place.
-func ApplyComposePortPatches(params ApplyComposePortPatchesParams) (string, error) {
-	return ApplyComposeEdits(ApplyComposeEditsParams{
-		Content: params.Content,
-		Edits:   ComposePortEdits(params.Bindings),
-	})
 }
 
 // ComposePortEdits reduces the bindings to the splice the patcher performs.

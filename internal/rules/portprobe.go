@@ -227,15 +227,27 @@ func freePortName(job string, taken map[string]bool) string {
 	return EnvVarNameFor(job) + "_" + domain.PortNameDefault
 }
 
-// EnvVarNameFor turns a job name into the shape an environment variable takes.
-func EnvVarNameFor(job string) string {
+// EnvVarNameFor turns a name into the shape an environment variable takes. The
+// result is always a usable identifier: it is written into run.toml and injected
+// into a process, and ValidateRunPorts refuses anything else — a name starting
+// with a digit would turn an init into a config that cannot be loaded back.
+func EnvVarNameFor(name string) string {
 	var b strings.Builder
-	for _, r := range strings.ToUpper(job) {
-		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+	for _, r := range strings.ToUpper(name) {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
 			b.WriteRune(r)
-			continue
+		default:
+			b.WriteByte('_')
 		}
-		b.WriteRune('_')
 	}
-	return b.String()
+
+	varName := strings.Trim(collapseUnderscores(b.String()), "_")
+	if varName == "" {
+		return domain.ComposeVarNamePrefix
+	}
+	if varName[0] >= '0' && varName[0] <= '9' {
+		return domain.ComposeVarNamePrefix + varName
+	}
+	return varName
 }

@@ -348,16 +348,6 @@ func recapWarnings(cfg domain.RunConfig, prev []components.Step, cmds int) []str
 	return warnings
 }
 
-// stillMissesItsPort re-reads a command as it stands after the step.
-func stillMissesItsPort(fix domain.JobCmdFix) bool {
-	for _, name := range fix.Vars {
-		if !strings.Contains(fix.Cmd, name) {
-			return true
-		}
-	}
-	return false
-}
-
 // jobsIgnoringTheirPort names the commands the user chose to leave as they are.
 // wtm cannot know whether they read the variable on their own, so the recap
 // states it rather than deciding for them.
@@ -371,7 +361,7 @@ func jobsIgnoringTheirPort(prev []components.Step, at int) []string {
 	}
 	var jobs []string
 	for _, fix := range cl.Fixes() {
-		if stillMissesItsPort(fix) {
+		if rules.CmdMissesItsPort(fix) {
 			jobs = append(jobs, fix.Job)
 		}
 	}
@@ -757,11 +747,11 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (writte
 			return components.NewCmdList(components.NewCmdListParams{
 				Title:       domain.CmdListStepTitle,
 				Description: domain.CmdListStepDesc,
-				Fixes:       cmdFixesFor(settled(prev), prev, docker, detection),
+				Fixes:       cmdFixesFor(settled(prev), prev, docker),
 			})
 		},
 		AutoSkip: func(w components.WizardModel) bool {
-			if len(cmdFixesFor(settled(w.Steps()), w.Steps(), docker, detection)) > 0 {
+			if len(cmdFixesFor(settled(w.Steps()), w.Steps(), docker)) > 0 {
 				return false
 			}
 			cmdSkipReason = domain.SkipReasonCommandsRead
@@ -851,13 +841,10 @@ func portEntriesFor(cfg domain.RunConfig, prev []components.Step, docker int) []
 }
 
 func composeJobsIn(cfg domain.RunConfig, prev []components.Step, docker int) []string {
-	var jobs []string
-	for _, file := range selectedComposeFiles(prev, docker) {
-		if job := rules.ComposeJobName(rules.ComposeJobNameParams{Config: cfg, File: file}); job != "" {
-			jobs = append(jobs, job)
-		}
-	}
-	return jobs
+	return rules.ComposeJobsFor(rules.ComposeJobsParams{
+		Config: cfg,
+		Files:  selectedComposeFiles(prev, docker),
+	})
 }
 
 // portEntriesOf reads back what the ports step settled, so a later step sees the
@@ -875,7 +862,7 @@ func portEntriesOf(prev []components.Step, at int) []domain.PortEntry {
 
 // cmdFixesFor exempts the compose jobs: a stack reads its ports from the file
 // wtm templated, never from the command that starts it.
-func cmdFixesFor(cfg domain.RunConfig, prev []components.Step, docker int, detection domain.InitDetectionResult) []domain.JobCmdFix {
+func cmdFixesFor(cfg domain.RunConfig, prev []components.Step, docker int) []domain.JobCmdFix {
 	return rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
 		Config: cfg,
 		Exempt: composeJobsIn(cfg, prev, docker),
@@ -911,7 +898,7 @@ func cmdListSummary(model any) string {
 	}
 	fixed := 0
 	for _, fix := range cl.Fixes() {
-		if !stillMissesItsPort(fix) {
+		if !rules.CmdMissesItsPort(fix) {
 			fixed++
 		}
 	}

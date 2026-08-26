@@ -1,6 +1,9 @@
 package components
 
 import (
+	"os"
+	"reflect"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -58,6 +61,92 @@ func TestWizardReadsEveryStepDescription(t *testing.T) {
 			m := NewWizard([]Step{step})
 			if got := m.stepDescription(step); got != "the description" {
 				t.Errorf("description = %q, want the one it was built with", got)
+			}
+		})
+	}
+}
+
+func TestWizardSizesEveryStepModel(t *testing.T) {
+	for _, step := range everyStepModel() {
+		t.Run(step.Name, func(t *testing.T) {
+			m := NewWizard([]Step{step})
+			m.width, m.height = 120, 40
+			m.propagateSize(0)
+
+			if same := reflect.DeepEqual(m.steps[0].Model, step.Model); same {
+				t.Error("the model came back untouched: its type is missing from propagateSize, so the step never resizes")
+			}
+		})
+	}
+}
+
+func TestEveryTypeSwitchInWizardHandlesEveryStepModel(t *testing.T) {
+	// The behavioural tests above can only assert what a model observably does;
+	// initStep returns nil for most of them. This reads the dispatch itself, so
+	// every switch is covered — including the ones whose omission is silent.
+	src, err := os.ReadFile("wizard.go")
+	if err != nil {
+		t.Fatalf("read wizard.go: %v", err)
+	}
+
+	want := map[string]bool{}
+	for _, step := range everyStepModel() {
+		want[reflect.TypeOf(step.Model).Name()] = true
+	}
+
+	for _, block := range typeSwitchBlocks(string(src)) {
+		for name := range want {
+			if !strings.Contains(block.body, "case "+name+":") {
+				t.Errorf("the type switch at line %d does not handle %s — that step would silently do nothing there",
+					block.line, name)
+			}
+		}
+	}
+}
+
+type typeSwitch struct {
+	line int
+	body string
+}
+
+// typeSwitchBlocks finds each type switch that BINDS the concrete value
+// (`switch child := … .(type)`) and returns its body. Binding is what tells a
+// dispatch apart from a lookup: renderHelpBar switches on the type without
+// binding it and answers the rest from a default, so an omission there is not a
+// hole. In a dispatch it is — the step silently does nothing.
+func typeSwitchBlocks(src string) []typeSwitch {
+	var blocks []typeSwitch
+	lines := strings.Split(src, "\n")
+	for i, line := range lines {
+		if !strings.Contains(line, ".(type) {") || !strings.Contains(line, ":=") {
+			continue
+		}
+		depth, body := 0, strings.Builder{}
+		for _, l := range lines[i:] {
+			depth += strings.Count(l, "{") - strings.Count(l, "}")
+			body.WriteString(l + "\n")
+			if depth == 0 {
+				break
+			}
+		}
+		blocks = append(blocks, typeSwitch{line: i + 1, body: body.String()})
+	}
+	return blocks
+}
+
+func TestWizardResetsEveryStepModel(t *testing.T) {
+	// resetStep clears done/aborted on back-navigation; a type missing from it
+	// keeps a stale flag and the wizard walks straight forward again.
+	for _, step := range everyStepModel() {
+		t.Run(step.Name, func(t *testing.T) {
+			s := step
+			_, _, _ = (WizardModel{}).updateStep(&s, key(tea.KeyEsc))
+
+			m := NewWizard([]Step{s})
+			m.resetStep(0)
+
+			if _, back, _ := (WizardModel{}).updateStep(&m.steps[0], tea.WindowSizeMsg{}); back {
+				t.Error("the step is still marked aborted: its type is missing from resetStep")
 			}
 		})
 	}

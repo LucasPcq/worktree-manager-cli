@@ -117,12 +117,10 @@ func (m Model) applyRunFinished(msg runFinishedMsg) (Model, tea.Cmd) {
 	return model, tea.Batch(resized, model.refreshCmd())
 }
 
-// report is what an aborted profile has to say, one line per thing it says.
-// Building it from the outcome rather than from a running tally is what keeps
-// it true after a detach: the outcome is the run's own account of itself.
 // report is the notice area: what the run has to say once it has stopped
 // moving. An abort outranks a silent port — a profile that never finished is
-// the bigger news, and both at once would bury it.
+// the bigger news, and both at once would bury it. It is built from the outcome
+// rather than from a running tally, which is what keeps it true after a detach.
 func (m Model) report() []string {
 	outcome := m.sequence.outcome
 	if m.dismissed {

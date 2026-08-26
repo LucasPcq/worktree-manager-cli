@@ -103,6 +103,10 @@ type JobActionResult struct {
 	// ExitCode is what the failing job exited with, absent for one that never
 	// got as far as running.
 	ExitCode *int `json:"exit_code,omitempty"`
+	// Ports is what the probe found on each port this job declared. A reader of
+	// this document never saw the live stream, and "started" alone does not say
+	// whether anything is listening.
+	Ports []PortProbe `json:"ports,omitempty"`
 }
 
 // LogRecord is one sanitized line of a job's output, as persisted in that job's

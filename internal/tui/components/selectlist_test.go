@@ -89,3 +89,27 @@ func TestSelectListFilterNarrowsAndSelects(t *testing.T) {
 		t.Fatalf("expected bugfix-c selected, got %q", m.Value())
 	}
 }
+
+func TestSelectListStartsOnTheNamedValue(t *testing.T) {
+	m := NewSelectList(NewSelectListParams{
+		Title: "t",
+		Items: []SelectItem{{Label: "api", Value: "api"}, {Label: "all", Value: "all"}},
+		Start: "all",
+	})
+
+	if got := m.Value(); got != "all" {
+		t.Errorf("the cursor starts on %q, want the named value", got)
+	}
+}
+
+func TestSelectListIgnoresAnUnknownStart(t *testing.T) {
+	m := NewSelectList(NewSelectListParams{
+		Title: "t",
+		Items: []SelectItem{{Label: "api", Value: "api"}, {Label: "all", Value: "all"}},
+		Start: "ghost",
+	})
+
+	if got := m.Value(); got != "api" {
+		t.Errorf("value = %q, want the first item when the start is unknown", got)
+	}
+}

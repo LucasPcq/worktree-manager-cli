@@ -109,7 +109,13 @@ func WriteRunOutcomeJSON(w io.Writer, outcome runlogs.Outcome) error {
 	results := make([]domain.JobActionResult, len(outcome.Results))
 	copy(results, outcome.Results)
 
+	probes := map[string][]domain.PortProbe{}
+	for _, probe := range outcome.Probes {
+		probes[probe.Job] = append(probes[probe.Job], probe)
+	}
+
 	for i := range results {
+		results[i].Ports = probes[results[i].Name]
 		if results[i].Name != outcome.Failed || results[i].Status != domain.JobActionError {
 			continue
 		}

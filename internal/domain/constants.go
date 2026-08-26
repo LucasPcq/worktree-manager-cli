@@ -305,7 +305,6 @@ const (
 	EnvPortReasonMissingKey   = "no such key in this file"
 	EnvPortReasonAmbiguousFmt = "%d appears more than once"
 	EnvPortReasonNotFoundFmt  = "no %d to shift in the value"
-	EnvPortsAppliedFmt        = "Env ports updated for this worktree (%d value(s))"
 	EnvPortsConfirmPrompt     = "Update these .env values to this worktree's ports?"
 
 	// The trailing verdict of `wtm env`.
@@ -370,7 +369,6 @@ const (
 	RecapProfilesTitle      = "Profiles"
 	RecapAnswersTitle       = "Answers"
 	RecapStepIntro          = "This is what `wtm run init` is about to write."
-	RecapLineFmt            = "  %s: %s"
 	RecapWriteLabel         = "Write run.toml"
 	RecapWriteValue         = "write"
 	RecapIgnoredPortWarnFmt = "⚠ %s: the command never mentions the port it is given — leave it only if it\n  reads the variable on its own."
@@ -446,7 +444,6 @@ const (
 	FlagYes        = "yes"
 	FlagAll        = "all"
 	FlagGlobal     = "global"
-	FlagMerge      = "merge"
 	FlagReplace    = "replace"
 	FlagMine       = "mine"
 	FlagReview     = "review"
@@ -1824,12 +1821,7 @@ const (
 
 	DashboardLabelPath    = "Path"
 	DashboardLabelParent  = "Parent"
-	DashboardLabelRebase  = "Rebase"
 	DashboardLabelCreated = "Created"
-
-	DashboardRebaseInProgress = "in progress"
-	DashboardUpToDate         = "up to date"
-	DashboardUnknownParent    = "unknown"
 
 	DashboardHelpWide = "↑↓ select · n new · m actions · a bulk · tab view · o output · r refresh · ? help · q quit"
 	// DashboardHelpTree drops "n new": the Tree tab lays out what exists, and a new

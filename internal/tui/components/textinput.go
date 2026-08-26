@@ -74,9 +74,6 @@ func (m *TextInputModel) SetWidth(w int) {
 	m.input.Width = max(10, w-4)
 }
 
-// SetHeight is a no-op (satisfies Sizable).
-func (m *TextInputModel) SetHeight(_ int) {}
-
 // Init starts the cursor blink.
 func (m TextInputModel) Init() tea.Cmd {
 	return textinput.Blink

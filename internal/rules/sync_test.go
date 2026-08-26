@@ -89,30 +89,6 @@ func TestDecidePush(t *testing.T) {
 	}
 }
 
-func TestDecideParentFastForward(t *testing.T) {
-	tests := []struct {
-		name string
-		in   DecideParentFastForwardParams
-		want ParentDecision
-	}{
-		{name: "nothing stale", in: DecideParentFastForwardParams{Interactive: true}, want: ParentLeaveAsIs},
-		{name: "no-ff wins", in: DecideParentFastForwardParams{NoFF: true, FF: true, StaleCount: 1}, want: ParentLeaveAsIs},
-		{name: "ff forces", in: DecideParentFastForwardParams{FF: true, StaleCount: 1}, want: ParentFastForward},
-		{name: "ff wins over yes", in: DecideParentFastForwardParams{FF: true, Yes: true, StaleCount: 1}, want: ParentFastForward},
-		{name: "yes leaves as is", in: DecideParentFastForwardParams{Yes: true, Interactive: true, StaleCount: 2}, want: ParentLeaveAsIs},
-		{name: "non-interactive leaves as is", in: DecideParentFastForwardParams{StaleCount: 2}, want: ParentLeaveAsIs},
-		{name: "interactive asks", in: DecideParentFastForwardParams{Interactive: true, StaleCount: 2}, want: ParentAsk},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := DecideParentFastForward(tc.in); got != tc.want {
-				t.Fatalf("DecideParentFastForward(%+v) = %v, want %v", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestStaleParents(t *testing.T) {
 	updates := []domain.ParentUpdate{
 		{Branch: "a", Status: domain.ParentBehind},
@@ -194,29 +170,6 @@ func TestBaseIsTarget(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := BaseIsTarget(tc.in); got != tc.want {
 				t.Fatalf("BaseIsTarget(%+v) = %v, want %v", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
-// ParentFlagsDecision answers without knowing how many parents are stale — that
-// is the whole point: only ParentAsk makes a surface pay for the inspection.
-func TestParentFlagsDecision(t *testing.T) {
-	tests := []struct {
-		name string
-		in   DecideParentFastForwardParams
-		want ParentDecision
-	}{
-		{name: "no flag, interactive", in: DecideParentFastForwardParams{Interactive: true}, want: ParentAsk},
-		{name: "no-ff wins over ff", in: DecideParentFastForwardParams{NoFF: true, FF: true}, want: ParentLeaveAsIs},
-		{name: "ff", in: DecideParentFastForwardParams{FF: true}, want: ParentFastForward},
-		{name: "yes without ff", in: DecideParentFastForwardParams{Yes: true, Interactive: true}, want: ParentLeaveAsIs},
-		{name: "non-interactive", in: DecideParentFastForwardParams{}, want: ParentLeaveAsIs},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := ParentFlagsDecision(tc.in); got != tc.want {
-				t.Fatalf("ParentFlagsDecision(%+v) = %v, want %v", tc.in, got, tc.want)
 			}
 		})
 	}

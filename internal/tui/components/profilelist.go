@@ -45,8 +45,14 @@ type NewProfileListParams struct {
 }
 
 func NewProfileList(params NewProfileListParams) ProfileListModel {
+	// Copied, never aliased: the proposal it starts from can be the loaded
+	// config's own slice, and renaming a profile through it edited run.toml —
+	// a rename the user then escaped out of survived.
+	profiles := make([]domain.ProfileConfig, len(params.Profiles))
+	copy(profiles, params.Profiles)
+
 	return ProfileListModel{
-		profiles: params.Profiles,
+		profiles: profiles,
 		mark:     noMark,
 		title:    params.Title,
 		desc:     params.Description,

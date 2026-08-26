@@ -132,3 +132,30 @@ func TestProfileListConfirmsOnTheDoneRow(t *testing.T) {
 		t.Error("la ligne Done valide l'étape")
 	}
 }
+
+func TestProfileListNeverWritesThroughToItsCaller(t *testing.T) {
+	// ProposeProfiles hands back the config's own slice when a split already
+	// exists. Renaming through it edited the loaded run.toml, so a rename the
+	// user then escaped out of survived.
+	existing := []domain.ProfileConfig{
+		{Name: "api", Jobs: []string{"docker-compose"}},
+		{Name: "web", Jobs: []string{"web-dev"}},
+	}
+	m := NewProfileList(NewProfileListParams{Title: "t", Profiles: existing})
+
+	m = profKey(m, 'r')
+	for _, r := range "renamed" {
+		m = profKey(m, r)
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if got := m.Profiles()[0].Name; got != "renamed" {
+		t.Fatalf("the rename did not take in the model (%q) — the test would pass for the wrong reason", got)
+	}
+	if existing[0].Name != "api" {
+		t.Errorf("the caller's slice was renamed to %q", existing[0].Name)
+	}
+	if existing[0].Default || existing[1].Default {
+		t.Error("the caller's slice gained a default")
+	}
+}

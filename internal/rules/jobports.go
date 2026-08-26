@@ -43,19 +43,6 @@ func JobPorts(params JobPortsParams) map[string]int {
 	return resolved
 }
 
-// JobPortEnv is JobPorts as a child process reads it.
-func JobPortEnv(params JobPortsParams) map[string]string {
-	resolved := JobPorts(params)
-	if resolved == nil {
-		return nil
-	}
-	env := make(map[string]string, len(resolved))
-	for name, port := range resolved {
-		env[name] = strconv.Itoa(port)
-	}
-	return env
-}
-
 // PortDeclaration is one `NAME = base` entry, carrying the job it came from so
 // a collision can name both sides.
 type PortDeclaration struct {

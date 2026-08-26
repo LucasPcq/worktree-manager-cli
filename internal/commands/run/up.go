@@ -155,14 +155,14 @@ func pickProfile(cfg domain.RunConfig) (domain.ProfileConfig, error) {
 		Title:       "Select profile",
 		Description: "Which profile to start?",
 		Items:       items,
+		// The one thing `default` still does now the picker always opens: it
+		// says which entry the run lands on.
+		Start: defaultProfile.Name,
 	})
 
 	selected, err := components.RunStandaloneSelect(sl)
 	if err != nil {
 		return domain.ProfileConfig{}, domain.ErrUserAborted
-	}
-	if selected == "" {
-		selected = defaultProfile.Name
 	}
 
 	profile, ok := rules.FindProfile(cfg, selected)

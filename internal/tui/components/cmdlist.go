@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -159,12 +160,7 @@ func (m CmdListModel) View() string {
 // stillMissing re-reads the command as it stands, so a row that has been fixed
 // stops naming the variable it was flagged for and the list reads as a checklist.
 func stillMissing(fix domain.JobCmdFix) string {
-	var missing []string
-	for _, name := range fix.Vars {
-		if !strings.Contains(fix.Cmd, name) {
-			missing = append(missing, name)
-		}
-	}
+	missing := rules.PortVarsMissingFrom(fix)
 	if len(missing) == 0 {
 		return domain.CmdListReferenced
 	}

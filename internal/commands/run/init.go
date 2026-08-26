@@ -229,7 +229,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			Unported: rules.ServicesWithoutPorts(outcome.Config),
 			Ignoring: rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
 				Config: outcome.Config,
-				Exempt: composeJobNames(outcome.Config, answers.DockerComposeFiles),
+				Exempt: rules.ComposeJobsFor(rules.ComposeJobsParams{Config: outcome.Config, Files: answers.DockerComposeFiles}),
 			}),
 		})
 		output.Blank(cmd.OutOrStdout())
@@ -279,16 +279,6 @@ func resolveServicesAnswers(params resolveServicesParams) (domain.InitProjectAns
 		EnvScans:     params.EnvScans,
 		EnvLines:     params.EnvLines,
 	})
-}
-
-// composeJobNames are the jobs whose ports the compose file carries, not their
-// command — the one family a missing reference says nothing about.
-func composeJobNames(cfg domain.RunConfig, files []string) []string {
-	var names []string
-	for _, job := range composeJobsByFile(cfg, files) {
-		names = append(names, job)
-	}
-	return names
 }
 
 // composeJobsByFile turns a withheld port's fix into a command to paste rather

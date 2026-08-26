@@ -101,8 +101,8 @@ type runner struct {
 	// order so the check runs once, at the end, when everything is up.
 	probeTargets []probeTarget
 	results      []domain.JobActionResult
-	started   []string
-	completed []string
+	started      []string
+	completed    []string
 	// captured is what the job being started has written so far, kept only until
 	// the next job starts: an abort is the one moment it has to be readable.
 	captured []byte

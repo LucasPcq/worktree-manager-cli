@@ -199,3 +199,35 @@ func TestPortEntriesForTrustsAComposeJobsDeclaration(t *testing.T) {
 		t.Errorf("a compose job needs no extra row: %+v", got)
 	}
 }
+
+func TestPortEntriesForAlwaysProposesAUsableVariableName(t *testing.T) {
+	// The name is written into run.toml and injected as an environment variable:
+	// one ValidateRunPorts would refuse turns an init into a config that cannot
+	// be loaded back.
+	for _, job := range []string{"2-api", "api dev", "--", "web.dev", "Ⓐ", "a--b"} {
+		// PORT is taken, so the name has to be derived from the job — the path
+		// where a job name that is not already an identifier shows up.
+		cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+			{Name: "taken", Kind: domain.JobKindService, Ports: map[string]int{"PORT": 3001}},
+			{Name: job, Kind: domain.JobKindService},
+		}}
+		got := PortEntriesFor(PortEntriesForParams{Config: cfg})
+		if len(got) != 2 {
+			t.Fatalf("job %q: expected the taken port plus one offered row, got %+v", job, got)
+		}
+		if !IsEnvVarName(got[1].Name) {
+			t.Errorf("job %q was offered %q, which is not a usable variable name", job, got[1].Name)
+		}
+	}
+}
+
+func TestPortEntriesForDerivesAReadableNameWhenPortIsTaken(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "api-dev", Kind: domain.JobKindService, Ports: map[string]int{"PORT": 3001}},
+		{Name: "web-dev", Kind: domain.JobKindService},
+	}}
+
+	if got := PortEntriesFor(PortEntriesForParams{Config: cfg})[1].Name; got != "WEB_DEV_PORT" {
+		t.Errorf("name = %q, want WEB_DEV_PORT", got)
+	}
+}

@@ -48,6 +48,7 @@ func NewSelectList(params NewSelectListParams) SelectListModel {
 	}
 	m.refilter()
 	m.snapToSelectable()
+	m.startOn(params.Start)
 	return m
 }
 
@@ -56,6 +57,23 @@ type NewSelectListParams struct {
 	Title       string
 	Description string
 	Items       []SelectItem
+	// Start is the value the cursor opens on. An empty or unknown one leaves it
+	// on the first selectable item.
+	Start string
+}
+
+// startOn places the cursor on the named value, so a list with a standing answer
+// opens on it instead of making the reader find it.
+func (m *SelectListModel) startOn(value string) {
+	if value == "" {
+		return
+	}
+	for i, idx := range m.filtered {
+		if m.items[idx].Value == value && !m.items[idx].Separator {
+			m.cursor = i
+			return
+		}
+	}
 }
 
 // Chosen returns true after the user confirmed a selection.

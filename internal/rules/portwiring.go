@@ -32,7 +32,7 @@ func JobsMissingPortRef(params JobsMissingPortRefParams) []domain.JobCmdFix {
 		}
 		var missing []string
 		for _, name := range sortedPortNames(job.Ports) {
-			if !strings.Contains(job.Cmd, name) {
+			if !cmdMentions(job.Cmd, name) {
 				missing = append(missing, name)
 			}
 		}
@@ -42,6 +42,45 @@ func JobsMissingPortRef(params JobsMissingPortRefParams) []domain.JobCmdFix {
 	}
 	sort.SliceStable(fixes, func(i, j int) bool { return fixes[i].Job < fixes[j].Job })
 	return fixes
+}
+
+// CmdMissesItsPort reports whether a command still fails to mention any of the
+// variables it was flagged for. It is the same reading JobsMissingPortRef does,
+// re-applied to a command a surface has since edited.
+func CmdMissesItsPort(fix domain.JobCmdFix) bool {
+	return len(PortVarsMissingFrom(fix)) > 0
+}
+
+// PortVarsMissingFrom is which of the flagged variables the command still does
+// not mention, in the order they were flagged.
+func PortVarsMissingFrom(fix domain.JobCmdFix) []string {
+	var missing []string
+	for _, name := range fix.Vars {
+		if !cmdMentions(fix.Cmd, name) {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+func cmdMentions(cmd, name string) bool { return strings.Contains(cmd, name) }
+
+type ComposeJobsParams struct {
+	Config domain.RunConfig
+	Files  []string
+}
+
+// ComposeJobsFor names the jobs the given compose files back. It is the exempt
+// list two callers need — the ports step and the final report — and computing it
+// twice let the wizard and the report exempt different jobs.
+func ComposeJobsFor(params ComposeJobsParams) []string {
+	var jobs []string
+	for _, file := range params.Files {
+		if job := ComposeJobName(ComposeJobNameParams{Config: params.Config, File: file}); job != "" {
+			jobs = append(jobs, job)
+		}
+	}
+	return jobs
 }
 
 type PortIsolationLinesParams struct {
