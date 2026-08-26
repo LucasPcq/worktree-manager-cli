@@ -474,39 +474,70 @@ func addScriptKindStep(s *stepSet, detection domain.InitDetectionResult) {
 		return
 	}
 
+	skipReason := ""
 	s.add(stepScriptKinds, components.Step{
 		Name: domain.ScriptKindStepName,
 		Build: func(prev []components.Step) any {
-			return components.NewMultiSelect(components.NewMultiSelectParams{
+			return components.NewKindList(components.NewKindListParams{
 				Title:       domain.ScriptKindStepTitle,
 				Description: domain.ScriptKindStepDesc,
-				Items:       scriptKindItems(prev, scripts, detection.PackageScripts),
+				Entries:     scriptKindChoices(prev, scripts, detection.PackageScripts),
 			})
 		},
 		AutoSkip: func(w components.WizardModel) bool {
-			return len(scriptKindItems(w.Steps(), scripts, detection.PackageScripts)) == 0
+			asked := len(scriptKindChoices(w.Steps(), scripts, detection.PackageScripts)) == 0
+			if asked {
+				skipReason = rules.ScriptKindsSkipReason(len(selectedScripts(w.Steps(), scripts, detection.PackageScripts)))
+			}
+			return asked
 		},
-		SkipReason: func() string { return "" },
-		Summary:    multiSelectSummary,
+		SkipReason: func() string { return skipReason },
+		Summary:    kindListSummary,
 		Callout:    true,
 	})
 }
 
-// scriptKindItems are the checked scripts the name does not settle — the ones
-// the wizard pre-checked need no question.
-func scriptKindItems(prev []components.Step, scripts int, detected []domain.PackageScript) []components.MultiSelectItem {
-	var items []components.MultiSelectItem
+// scriptKindChoices are the checked scripts the name does not settle — the ones
+// the wizard pre-checked need no question. The label carries the package: two
+// workspaces both declaring "build" are two separate answers.
+func scriptKindChoices(prev []components.Step, scripts int, detected []domain.PackageScript) []domain.JobKindChoice {
+	var choices []domain.JobKindChoice
 	for _, script := range selectedScripts(prev, scripts, detected) {
 		if rules.PreselectScript(rules.PreselectScriptParams{Script: script, All: detected}) {
 			continue
 		}
-		items = append(items, components.MultiSelectItem{
-			Label:    fmt.Sprintf(domain.ScriptKindItemFmt, script.Name, script.Cmd),
-			Value:    script.Name,
-			Selected: rules.ClassifyScriptKind(script.Name) == domain.JobKindService,
+		choices = append(choices, domain.JobKindChoice{
+			Label:     scriptLabel(script),
+			Cmd:       script.Cmd,
+			Name:      script.Name,
+			Workspace: script.Workspace,
+			Kind:      rules.ClassifyScriptKind(script.Name),
 		})
 	}
-	return items
+	return choices
+}
+
+// scriptLabel names a script by its package, the way the selection step does.
+func scriptLabel(script domain.PackageScript) string {
+	scope := domain.ScriptScopeRoot
+	if script.Workspace != "" {
+		scope = script.Workspace
+	}
+	return fmt.Sprintf(domain.ScriptLabelFmt, scope, script.Name)
+}
+
+func kindListSummary(model any) string {
+	kl, ok := model.(components.KindListModel)
+	if !ok {
+		return ""
+	}
+	services := 0
+	for _, entry := range kl.Entries() {
+		if entry.Kind == domain.JobKindService {
+			services++
+		}
+	}
+	return fmt.Sprintf(domain.KindListSummaryFmt, services, len(kl.Entries())-services)
 }
 
 // addPortsAndProfilesSteps turns the selection into a configuration: the ports
@@ -533,6 +564,7 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) {
 		})
 	}
 
+	portsSkipReason := ""
 	s.add(stepPorts, components.Step{
 		Name: domain.PortListStepName,
 		Build: func(prev []components.Step) any {
@@ -543,9 +575,14 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) {
 			})
 		},
 		AutoSkip: func(w components.WizardModel) bool {
-			return len(rules.PortEntriesFor(resolved(w.Steps()).Config)) == 0
+			cfg := resolved(w.Steps()).Config
+			if len(rules.PortEntriesFor(cfg)) > 0 {
+				return false
+			}
+			portsSkipReason = rules.PortsSkipReason(cfg)
+			return true
 		},
-		SkipReason: func() string { return "" },
+		SkipReason: func() string { return portsSkipReason },
 		Summary:    portListSummary,
 		Callout:    true,
 	})
@@ -568,7 +605,7 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) {
 				Existing: params.Existing.Profiles,
 			})) == 0
 		},
-		SkipReason: func() string { return "" },
+		SkipReason: func() string { return domain.SkipReasonNoService },
 		Summary:    profileListSummary,
 		Callout:    true,
 	})
@@ -816,35 +853,15 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 		}
 	}
 	if i := at(stepScriptKinds); i >= 0 && !final.Skipped(i) {
-		if m, ok := steps[i].Model.(components.MultiSelectModel); ok {
-			answers.SelectedPackageScripts = applyScriptKinds(answers.SelectedPackageScripts, m.Values())
+		if m, ok := steps[i].Model.(components.KindListModel); ok {
+			answers.SelectedPackageScripts = rules.ApplyScriptKinds(rules.ApplyScriptKindsParams{
+				Scripts: answers.SelectedPackageScripts,
+				Choices: m.Entries(),
+			})
 		}
 	}
 
 	return answers
-}
-
-// applyScriptKinds settles the kind of every script the step asked about: those
-// it lists are services, the rest of what it asked about are tasks. A script the
-// step never asked about keeps the kind its name implies.
-func applyScriptKinds(scripts []domain.PackageScript, services []string) []domain.PackageScript {
-	asService := make(map[string]bool, len(services))
-	for _, name := range services {
-		asService[name] = true
-	}
-
-	settled := make([]domain.PackageScript, len(scripts))
-	copy(settled, scripts)
-	for i, script := range settled {
-		if rules.PreselectScript(rules.PreselectScriptParams{Script: script, All: scripts}) {
-			continue
-		}
-		settled[i].Kind = domain.JobKindTask
-		if asService[script.Name] {
-			settled[i].Kind = domain.JobKindService
-		}
-	}
-	return settled
 }
 
 // ── Summaries & gate helpers ────────────────────────────────────────────────

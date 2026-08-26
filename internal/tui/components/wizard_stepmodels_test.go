@@ -23,6 +23,7 @@ func everyStepModel() []Step {
 		{Name: "hooks", Model: NewHookList(NewHookListParams{Title: "t", Description: desc, Hooks: []domain.HookCommand{{Cmd: "echo"}}})},
 		{Name: "env", Model: NewEnvResolve(NewEnvResolveParams{Title: "t", Description: desc, Files: []domain.EnvFileResult{{Target: ".env", Diff: domain.EnvDiff{Entries: []domain.EnvKeyDiff{{Key: "PORT", Status: domain.EnvKeyMissing}}}}}})},
 		{Name: "ports", Model: NewPortList(NewPortListParams{Title: "t", Description: desc, Entries: []domain.PortEntry{{Job: "web", Name: "PORT", Base: 3000}}})},
+		{Name: "kinds", Model: NewKindList(NewKindListParams{Title: "t", Description: desc, Entries: []domain.JobKindChoice{{Label: "root / build", Cmd: "turbo run build", Name: "build", Kind: domain.JobKindTask}}})},
 		{Name: "profiles", Model: NewProfileList(NewProfileListParams{Title: "t", Description: desc, Profiles: []domain.ProfileConfig{{Name: "all"}}})},
 	}
 }

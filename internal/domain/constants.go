@@ -546,12 +546,38 @@ const (
 	PruneSkipOpenPR   = "open_pr"
 
 	// The wizard step settling the kind of a script checked outside the dev ones.
-	ScriptKindStepName  = "Long-running?"
-	ScriptKindStepTitle = "Which of these keep running?"
-	ScriptKindStepDesc  = "A checked script runs as a service: started in the background, left up.\n" +
-		"An unchecked one is a task: it blocks the profile until it exits, and a\n" +
-		"non-zero exit aborts the run."
-	ScriptKindItemFmt = "%s — %s"
+	// The description spells both kinds out: arriving here having checked
+	// "build", nothing in the word "type" says which one a build is.
+	ScriptKindStepName  = "Job type"
+	ScriptKindStepTitle = "How should each of these run?"
+	ScriptKindStepDesc  = "Each script you checked becomes a job. Its type is what `wtm run up` does with it.\n" +
+		"\n" +
+		"  ● service   started, then left running in the background\n" +
+		"              a dev server, a watcher, an API — something with no natural end\n" +
+		"              → run up hands the terminal back, the job keeps going\n" +
+		"\n" +
+		"  ● task      run to completion before the profile carries on\n" +
+		"              a build, a migration, a seed — something that finishes\n" +
+		"              → a non-zero exit aborts the run\n" +
+		"\n" +
+		"wtm guessed from the name. Correct what it got wrong."
+
+	// The job-type picker: one row per job, both kinds shown, the current one filled.
+	KindListEntryFmt   = "%s — %s"
+	KindListRadiosFmt  = "%s task   %s service"
+	KindRadioOn        = "●"
+	KindRadioOff       = "○"
+	KindListHelp       = "  ↑↓ navigate • ←→ set type • enter confirm"
+	KindListSummaryFmt = "%d services, %d tasks"
+	KindListGap        = 2
+
+	// Why a wizard step was never put. An auto-skipped step leaves this line in
+	// the recap: a step that vanishes silently while the counter jumps over it
+	// reads as a bug.
+	SkipReasonNoScriptChecked = "no script checked"
+	SkipReasonKindsSettled    = "every checked script is a dev server"
+	SkipReasonNoService       = "no long-running service to configure"
+	SkipReasonNoPortDetected  = "no port detected for the jobs you kept"
 
 	// The wizard step selecting which package scripts become jobs.
 	ScriptsStepName  = "Package scripts"
@@ -559,6 +585,7 @@ const (
 	ScriptsStepDesc  = "Only what you check becomes a job. Dev scripts are checked for you; check\n" +
 		"anything else you want `wtm run` to start or run."
 	ScriptScopeRoot    = "root"
+	ScriptLabelFmt     = "%s / %s"
 	ScriptItemLabelFmt = "%s / %s — %s run %s"
 
 	// The profile editor: its keys, its rows and its help bar.

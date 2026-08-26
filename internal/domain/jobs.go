@@ -122,3 +122,15 @@ const (
 	RunSurfaceStream
 	RunSurfaceMachine
 )
+
+// JobKindChoice is one job whose kind the wizard asks about. Label is how the
+// job reads on screen ("apps/web / build"), Name the script it came from.
+type JobKindChoice struct {
+	Label string
+	Cmd   string
+	// Name and Workspace together identify the script: two packages of a
+	// monorepo both declaring "build" are two separate answers.
+	Name      string
+	Workspace string
+	Kind      JobKind
+}

@@ -168,29 +168,3 @@ func TestServicesStepPreselectsOnlyDevScripts(t *testing.T) {
 		}
 	}
 }
-
-func TestApplyScriptKindsSettlesOnlyWhatWasAsked(t *testing.T) {
-	scripts := []domain.PackageScript{
-		{Name: "dev"},
-		{Name: "preview"},
-		{Name: "seed"},
-	}
-
-	got := applyScriptKinds(scripts, []string{"preview"})
-
-	byName := map[string]domain.JobKind{}
-	for _, s := range got {
-		byName[s.Name] = s.Kind
-	}
-	if byName["preview"] != domain.JobKindService {
-		t.Errorf("preview coché = %s, want service", byName["preview"])
-	}
-	if byName["seed"] != domain.JobKindTask {
-		t.Errorf("seed décoché = %s, want task", byName["seed"])
-	}
-	// `dev` n'a jamais été posé en question : son nom suffit, et le laisser vide
-	// fait retomber BuildScriptJobs sur ClassifyScriptKind.
-	if byName["dev"] != "" {
-		t.Errorf("dev = %s, want unset", byName["dev"])
-	}
-}
