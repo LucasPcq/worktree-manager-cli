@@ -166,30 +166,54 @@ func ServicesWithoutPorts(cfg domain.RunConfig) []string {
 // jobs as declared, their ports by name. A service detection found no port for
 // gets a row too, with no base — it is the one the user alone can settle, and
 // leaving it out is what let an init end on a config that only starts on main.
-func PortEntriesFor(cfg domain.RunConfig) []domain.PortEntry {
+type PortEntriesForParams struct {
+	Config domain.RunConfig
+	// ComposeJobs are the jobs whose ports come from a compose file's `ports:`
+	// list. That list is the whole story, so nothing more is offered for them.
+	ComposeJobs []string
+}
+
+func PortEntriesFor(params PortEntriesForParams) []domain.PortEntry {
+	fromCompose := make(map[string]bool, len(params.ComposeJobs))
+	for _, name := range params.ComposeJobs {
+		fromCompose[name] = true
+	}
 	taken := map[string]bool{}
-	for _, job := range cfg.Jobs {
+	for _, job := range params.Config.Jobs {
 		for name := range job.Ports {
 			taken[name] = true
 		}
 	}
 
 	var entries []domain.PortEntry
-	for _, job := range cfg.Jobs {
+	for _, job := range params.Config.Jobs {
 		if job.Kind != domain.JobKindService {
-			continue
-		}
-		if len(job.Ports) == 0 {
-			name := freePortName(job.Name, taken)
-			taken[name] = true
-			entries = append(entries, domain.PortEntry{Job: job.Name, Name: name})
 			continue
 		}
 		for _, name := range sortedPortNames(job.Ports) {
 			entries = append(entries, domain.PortEntry{Job: job.Name, Name: name, Base: job.Ports[name]})
 		}
+		if fromCompose[job.Name] || declaresAListeningPort(job) {
+			continue
+		}
+		name := freePortName(job.Name, taken)
+		taken[name] = true
+		entries = append(entries, domain.PortEntry{Job: job.Name, Name: name})
 	}
 	return entries
+}
+
+// declaresAListeningPort reads the one direction the .env convention carries: a
+// key named exactly PORT is the port a process binds, while a *_PORT is as
+// likely to be something it dials (DB_PORT, REDIS_PORT). A job holding only the
+// latter has not said what it listens on, and wtm must not conclude for it.
+func declaresAListeningPort(job domain.JobConfig) bool {
+	for name := range job.Ports {
+		if name == domain.PortNameDefault {
+			return true
+		}
+	}
+	return false
 }
 
 // freePortName proposes PORT, falling back to one derived from the job when

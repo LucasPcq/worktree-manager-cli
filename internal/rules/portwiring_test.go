@@ -73,7 +73,7 @@ func TestPortEntriesForOffersAServiceThatDeclaredNothing(t *testing.T) {
 		{Name: "seed", Kind: domain.JobKindTask},
 	}}
 
-	got := PortEntriesFor(cfg)
+	got := PortEntriesFor(PortEntriesForParams{Config: cfg})
 
 	if len(got) != 2 {
 		t.Fatalf("every service must get a row, declared or not: %+v", got)
@@ -125,7 +125,7 @@ func TestPortEntriesForAvoidsAVariableAnotherJobAlreadyUses(t *testing.T) {
 		{Name: "web-dev", Kind: domain.JobKindService},
 	}}
 
-	got := PortEntriesFor(cfg)
+	got := PortEntriesFor(PortEntriesForParams{Config: cfg})
 
 	if got[1].Name == "PORT" {
 		t.Errorf("web-dev was offered %q, already taken by api-dev", got[1].Name)
@@ -140,7 +140,7 @@ func TestPortEntriesForKeepsThePlainNameWhenItIsFree(t *testing.T) {
 		{Name: "web-dev", Kind: domain.JobKindService},
 	}}
 
-	if got := PortEntriesFor(cfg)[0].Name; got != domain.PortNameDefault {
+	if got := PortEntriesFor(PortEntriesForParams{Config: cfg})[0].Name; got != domain.PortNameDefault {
 		t.Errorf("name = %q, want the plain default when nothing takes it", got)
 	}
 }
@@ -151,9 +151,51 @@ func TestPortEntriesForSeparatesTwoUndeclaredServices(t *testing.T) {
 		{Name: "admin-dev", Kind: domain.JobKindService},
 	}}
 
-	got := PortEntriesFor(cfg)
+	got := PortEntriesFor(PortEntriesForParams{Config: cfg})
 
 	if got[0].Name == got[1].Name {
 		t.Errorf("both services were offered %q", got[0].Name)
+	}
+}
+
+func TestPortEntriesForOffersAListeningPortToAServiceThatOnlyDeclaredADependency(t *testing.T) {
+	// DB_PORT is the port of something the job talks to, not the one it binds.
+	// wtm cannot tell the direction apart, so it stops short of concluding and
+	// offers the row the user alone can fill.
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "api-dev", Kind: domain.JobKindService, Cwd: "apps/api", Ports: map[string]int{"DB_PORT": 9999}},
+	}}
+
+	got := PortEntriesFor(PortEntriesForParams{Config: cfg})
+
+	if len(got) != 2 {
+		t.Fatalf("expected DB_PORT plus an offered row, got %+v", got)
+	}
+	if got[1].Name != domain.PortNameDefault || got[1].Base != 0 {
+		t.Errorf("offered row = %+v, want an empty PORT", got[1])
+	}
+}
+
+func TestPortEntriesForAsksNothingMoreOfAServiceThatDeclaredItsPort(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "api-dev", Kind: domain.JobKindService, Cwd: "apps/api", Ports: map[string]int{"PORT": 3001, "DB_PORT": 9999}},
+	}}
+
+	if got := PortEntriesFor(PortEntriesForParams{Config: cfg}); len(got) != 2 {
+		t.Errorf("PORT is declared, nothing more to ask: %+v", got)
+	}
+}
+
+func TestPortEntriesForTrustsAComposeJobsDeclaration(t *testing.T) {
+	// A compose file's `ports:` list is the whole story: nothing is missing from
+	// it, so offering another row would ask about a port that does not exist.
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "docker-compose", Kind: domain.JobKindService, Ports: map[string]int{"POSTGRES_PORT": 5432}},
+	}}
+
+	got := PortEntriesFor(PortEntriesForParams{Config: cfg, ComposeJobs: []string{"docker-compose"}})
+
+	if len(got) != 1 {
+		t.Errorf("a compose job needs no extra row: %+v", got)
 	}
 }

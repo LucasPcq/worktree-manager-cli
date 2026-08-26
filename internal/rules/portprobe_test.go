@@ -181,7 +181,7 @@ func TestPortEntriesFor(t *testing.T) {
 		{Name: "seed", Kind: domain.JobKindTask, Ports: map[string]int{"SEED_PORT": 9000}},
 	}}
 
-	got := rules.PortEntriesFor(cfg)
+	got := rules.PortEntriesFor(rules.PortEntriesForParams{Config: cfg, ComposeJobs: []string{"docker-compose"}})
 
 	if len(got) != 3 {
 		t.Fatalf("expected the 2 compose ports and the undeclared service, got %+v", got)
@@ -201,7 +201,7 @@ func TestPortEntriesForSkipsATask(t *testing.T) {
 		{Name: "lint", Kind: domain.JobKindTask},
 		{Name: "seed", Kind: domain.JobKindTask, Ports: map[string]int{"SEED_PORT": 9000}},
 	}}
-	if got := rules.PortEntriesFor(cfg); len(got) != 0 {
+	if got := rules.PortEntriesFor(rules.PortEntriesForParams{Config: cfg}); len(got) != 0 {
 		t.Errorf("PortEntriesFor = %+v, want empty", got)
 	}
 }

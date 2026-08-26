@@ -636,13 +636,15 @@ const (
 		"\n" +
 		"Reference the variable (`--port ${PORT}`), or leave it as it is if the command\n" +
 		"already reads it from the environment on its own."
-	CmdListEntryFmt   = "%s · %s   %s"
-	CmdListEditFmt    = "%s · %s"
+	CmdListEntryFmt = "%s · %s   %s"
+	// CmdListEditFmt keeps the variable on the row being edited: it is what the
+	// user has to type, and hiding it behind the input leaves nothing to go on.
+	CmdListEditFmt    = "%s · reference ${%s} →  %s"
 	CmdListVarSep     = ", "
 	CmdListReferenced = "✓"
 	CmdListDoneRow    = "✓ Done"
 	CmdListHelp       = "  ↑↓ navigate • enter edit • esc back"
-	CmdListEditHelp   = "  edit the command • enter save • esc cancel"
+	CmdListEditHelp   = "  reference the variable in the command • enter save • esc cancel"
 	CmdListEmptyErr   = "a job needs a command"
 	CmdListSummaryFmt = "%d of %d now reference their port"
 	CmdListCharLimit  = 512

@@ -102,3 +102,14 @@ func TestCmdListRowStopsFlaggingAFixedCommand(t *testing.T) {
 		t.Errorf("a fixed row must read as done:\n%s", first)
 	}
 }
+
+func TestCmdListKeepsTheVariableVisibleWhileEditing(t *testing.T) {
+	// The variable to type is the one thing the row exists for: hiding it behind
+	// the input leaves nothing to go on.
+	m, _ := cmdList().Update(key(tea.KeyEnter))
+
+	first := strings.SplitN(m.View(), "\n", 2)[0]
+	if !strings.Contains(first, "PORT") {
+		t.Errorf("the edited row no longer names the variable:\n%s", first)
+	}
+}

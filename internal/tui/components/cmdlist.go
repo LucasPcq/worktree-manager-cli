@@ -143,7 +143,7 @@ func (m CmdListModel) View() string {
 	for i, fix := range m.fixes {
 		label := fmt.Sprintf(domain.CmdListEntryFmt, fix.Job, stillMissing(fix), fix.Cmd)
 		if m.editing && i == m.cursor {
-			label = fmt.Sprintf(domain.CmdListEditFmt, fix.Job, m.input.View())
+			label = fmt.Sprintf(domain.CmdListEditFmt, fix.Job, strings.Join(fix.Vars, domain.CmdListVarSep), m.input.View())
 		}
 		m.renderRow(&b, label, i == m.cursor)
 		b.WriteString("\n")

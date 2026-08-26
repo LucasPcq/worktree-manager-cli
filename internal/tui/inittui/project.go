@@ -677,12 +677,12 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) {
 			return components.NewPortList(components.NewPortListParams{
 				Title:       domain.PortListStepTitle,
 				Description: domain.PortListStepDesc,
-				Entries:     rules.PortEntriesFor(resolved(prev).Config),
+				Entries:     portEntriesFor(resolved(prev).Config, prev, docker),
 			})
 		},
 		AutoSkip: func(w components.WizardModel) bool {
 			cfg := resolved(w.Steps()).Config
-			if len(rules.PortEntriesFor(cfg)) > 0 {
+			if len(portEntriesFor(cfg, w.Steps(), docker)) > 0 {
 				return false
 			}
 			portsSkipReason = rules.PortsSkipReason(cfg)
@@ -764,6 +764,25 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) {
 	}))
 }
 
+// portEntriesFor exempts the compose jobs: their `ports:` list is complete, so
+// they are the one family the step has nothing more to ask about.
+func portEntriesFor(cfg domain.RunConfig, prev []components.Step, docker int) []domain.PortEntry {
+	return rules.PortEntriesFor(rules.PortEntriesForParams{
+		Config:      cfg,
+		ComposeJobs: composeJobsIn(cfg, prev, docker),
+	})
+}
+
+func composeJobsIn(cfg domain.RunConfig, prev []components.Step, docker int) []string {
+	var jobs []string
+	for _, file := range selectedComposeFiles(prev, docker) {
+		if job := rules.ComposeJobName(rules.ComposeJobNameParams{Config: cfg, File: file}); job != "" {
+			jobs = append(jobs, job)
+		}
+	}
+	return jobs
+}
+
 // portEntriesOf reads back what the ports step settled, so a later step sees the
 // port the user just declared rather than the one detection failed to find.
 func portEntriesOf(prev []components.Step, at int) []domain.PortEntry {
@@ -780,13 +799,10 @@ func portEntriesOf(prev []components.Step, at int) []domain.PortEntry {
 // cmdFixesFor exempts the compose jobs: a stack reads its ports from the file
 // wtm templated, never from the command that starts it.
 func cmdFixesFor(cfg domain.RunConfig, prev []components.Step, docker int, detection domain.InitDetectionResult) []domain.JobCmdFix {
-	var exempt []string
-	for _, file := range selectedComposeFiles(prev, docker) {
-		if job := rules.ComposeJobName(rules.ComposeJobNameParams{Config: cfg, File: file}); job != "" {
-			exempt = append(exempt, job)
-		}
-	}
-	return rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{Config: cfg, Exempt: exempt})
+	return rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
+		Config: cfg,
+		Exempt: composeJobsIn(cfg, prev, docker),
+	})
 }
 
 func selectedComposeFiles(prev []components.Step, docker int) []string {
