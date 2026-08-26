@@ -211,3 +211,22 @@ func TestMergeRunConfigsKeepsThePortOffsetBlock(t *testing.T) {
 		t.Errorf("block = %d; a project sets it precisely to keep its ports apart", got.PortOffsetBlock)
 	}
 }
+
+func TestJobsWithoutProfileKeepsOnlyServices(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "docker-compose", Kind: domain.JobKindService},
+		{Name: "dev", Kind: domain.JobKindService},
+		{Name: "lint", Kind: domain.JobKindTask},
+		{Name: "build", Kind: domain.JobKindTask},
+	}}
+
+	got := JobsWithoutProfile(cfg)
+	if len(got) != 2 {
+		t.Fatalf("expected the 2 services, got %d: %+v", len(got), got)
+	}
+	for _, job := range got {
+		if job.Kind != domain.JobKindService {
+			t.Errorf("%s is a task and must not run without a profile", job.Name)
+		}
+	}
+}

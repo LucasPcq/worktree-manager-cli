@@ -39,12 +39,12 @@ type DetectedPortsReportParams struct {
 func DetectedPortsReport(w io.Writer, params DetectedPortsReportParams) {
 	if len(params.Patched) > 0 {
 		Blank(w)
-		Callout(w, domain.ComposePatchedTitle, rules.ComposePatchLines(params.Patched))
+		Section(w, domain.ComposePatchedTitle, rules.ComposePatchLines(params.Patched))
 	}
 
 	if len(params.Written) > 0 {
 		Blank(w)
-		Callout(w, domain.ComposePortsTitle, rules.ComposePortsWrittenLines(params.Written))
+		Section(w, domain.ComposePortsTitle, rules.ComposePortsWrittenLines(params.Written))
 	}
 
 	if len(params.EnvWritten) > 0 {
@@ -53,7 +53,7 @@ func DetectedPortsReport(w io.Writer, params DetectedPortsReportParams) {
 			Written: params.EnvWritten,
 			Sources: params.EnvSources,
 		})
-		Callout(w, domain.EnvPortsDetectedTitle, append(lines, "", rules.EnvPortsVerifyLine()))
+		Section(w, domain.EnvPortsDetectedTitle, lines)
 	}
 
 	if len(params.Withheld) > 0 {

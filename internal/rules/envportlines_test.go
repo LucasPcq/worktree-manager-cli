@@ -11,11 +11,11 @@ func samplePlan(t *testing.T) domain.EnvPortPlan {
 	t.Helper()
 	return PlanEnvPorts(PlanEnvPortsParams{
 		Links: []domain.EnvPortLink{
-			{File: ".env", Key: "DATABASE_URL", Port: "POSTGRES_PORT"},
-			{File: ".env", Key: "REDIS_URL", Port: "REDIS_PORT"},
-			{File: "apps/web/.env", Key: "VITE_API_URL", Port: "API_PORT"},
+			{File: ".env", Key: "DATABASE_URL", Job: "svc", Port: "POSTGRES_PORT"},
+			{File: ".env", Key: "REDIS_URL", Job: "svc", Port: "REDIS_PORT"},
+			{File: "apps/web/.env", Key: "VITE_API_URL", Job: "svc", Port: "API_PORT"},
 		},
-		Bases:  map[string]int{"POSTGRES_PORT": 5432, "REDIS_PORT": 6379, "API_PORT": 3000},
+		Bases:  map[domain.PortRef]int{{Job: "svc", Name: "POSTGRES_PORT"}: 5432, {Job: "svc", Name: "REDIS_PORT"}: 6379, {Job: "svc", Name: "API_PORT"}: 3000},
 		Offset: 10,
 		Lines: map[string][]domain.EnvLine{
 			".env":          ParseEnv("DATABASE_URL=postgres://user:motdepasse@localhost:5432/app\nREDIS_URL=redis://localhost:6379\n"),
@@ -46,8 +46,8 @@ func TestEnvPortTableLinesGroupsFilesUnderNamedRules(t *testing.T) {
 // one column, so byte offsets would disagree for the wrong reason.
 func TestEnvPortTableLinesWidensColumnsToFitTheHeader(t *testing.T) {
 	plan := PlanEnvPorts(PlanEnvPortsParams{
-		Links:  []domain.EnvPortLink{{File: ".env", Key: "DB", Port: "P"}},
-		Bases:  map[string]int{"P": 5432},
+		Links:  []domain.EnvPortLink{{File: ".env", Key: "DB", Job: "svc", Port: "P"}},
+		Bases:  map[domain.PortRef]int{{Job: "svc", Name: "P"}: 5432},
 		Offset: 10,
 		Lines:  map[string][]domain.EnvLine{".env": ParseEnv("DB=http://x:5432\n")},
 	})
@@ -100,11 +100,11 @@ func TestEnvPortTableLinesEmptyPlanRendersNothing(t *testing.T) {
 func TestEnvPortAnomalyLinesNamesEachRefusal(t *testing.T) {
 	plan := PlanEnvPorts(PlanEnvPortsParams{
 		Links: []domain.EnvPortLink{
-			{File: ".env", Key: "MISSING", Port: "DB_PORT"},
-			{File: ".env", Key: "TWICE", Port: "API_PORT"},
-			{File: ".env", Key: "ELSEWHERE", Port: "DB_PORT"},
+			{File: ".env", Key: "MISSING", Job: "svc", Port: "DB_PORT"},
+			{File: ".env", Key: "TWICE", Job: "svc", Port: "API_PORT"},
+			{File: ".env", Key: "ELSEWHERE", Job: "svc", Port: "DB_PORT"},
 		},
-		Bases:  map[string]int{"DB_PORT": 5432, "API_PORT": 3000},
+		Bases:  map[domain.PortRef]int{{Job: "svc", Name: "DB_PORT"}: 5432, {Job: "svc", Name: "API_PORT"}: 3000},
 		Offset: 10,
 		Lines: map[string][]domain.EnvLine{
 			".env": ParseEnv("TWICE=http://a:3000/b:3000\nELSEWHERE=postgres://localhost:6000/app\n"),
@@ -133,15 +133,15 @@ func TestEnvPortAnomalyLinesNamesEachRefusal(t *testing.T) {
 func TestEnvPortLinkLines(t *testing.T) {
 	got := strings.Join(EnvPortLinkLines(
 		[]domain.EnvPortLink{
-			{File: ".env", Key: "DATABASE_URL", Port: "POSTGRES_PORT"},
-			{File: "apps/web/.env", Key: "REDIS_URL", Port: "REDIS_PORT"},
+			{File: ".env", Key: "DATABASE_URL", Job: "svc", Port: "POSTGRES_PORT"},
+			{File: "apps/web/.env", Key: "REDIS_URL", Job: "svc", Port: "REDIS_PORT"},
 		},
-		map[string]int{"POSTGRES_PORT": 5432, "REDIS_PORT": 6379},
+		map[domain.PortRef]int{{Job: "svc", Name: "POSTGRES_PORT"}: 5432, {Job: "svc", Name: "REDIS_PORT"}: 6379},
 	), "\n")
 
 	want := strings.Join([]string{
-		".env · DATABASE_URL         follows POSTGRES_PORT (5432)",
-		"apps/web/.env · REDIS_URL   follows REDIS_PORT (6379)",
+		".env · DATABASE_URL         follows svc.POSTGRES_PORT (5432)",
+		"apps/web/.env · REDIS_URL   follows svc.REDIS_PORT (6379)",
 	}, "\n")
 
 	if got != want {

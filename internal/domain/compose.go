@@ -32,11 +32,67 @@ type ComposePortBinding struct {
 	Replacement string
 }
 
-// ComposeScan is everything one docker-compose file says about its ports. Err
-// is set when the file could not be read or parsed at all, and Bindings is then
-// empty: the file is reported rather than used.
+// ComposeScan is everything one docker-compose file says about what a second
+// worktree would collide on: its ports, and the names it pins absolutely. Err
+// is set when the file could not be read or parsed at all, and the two lists
+// are then empty: the file is reported rather than used.
 type ComposeScan struct {
 	File     string
 	Err      string
 	Bindings []ComposePortBinding
+	Names    []ComposeAbsoluteName
+}
+
+// ComposeNameKind names which absolute identifier a finding pins. All three
+// are resolved by the Docker daemon, not by the compose project, so they
+// ignore COMPOSE_PROJECT_NAME entirely — which is what makes two worktrees
+// running the same file collide on them.
+type ComposeNameKind string
+
+const (
+	ComposeNameContainer ComposeNameKind = "container"
+	ComposeNameVolume    ComposeNameKind = "volume"
+	ComposeNameNetwork   ComposeNameKind = "network"
+)
+
+// ComposeNameStatus says what wtm may do with an absolute name.
+type ComposeNameStatus string
+
+const (
+	ComposeNameTemplated   ComposeNameStatus = "templated"
+	ComposeNameAbsolute    ComposeNameStatus = "absolute"
+	ComposeNameUnsupported ComposeNameStatus = "unsupported"
+)
+
+// ComposeAbsoluteName is one `container_name:` — or one `name:` under a
+// top-level volume or network — located precisely enough to be rewritten
+// without re-serializing the file.
+type ComposeAbsoluteName struct {
+	File string
+	Kind ComposeNameKind
+	// Owner is the service, volume or network key the name belongs to.
+	Owner  string
+	Status ComposeNameStatus
+	Reason string
+	// Name is the value as the file spells it, quotes stripped.
+	Name string
+	// Line and Column are 1-based, Column pointing at the scalar's first
+	// character, opening quote included.
+	Line   int
+	Column int
+	// Token is the scalar exactly as the file spells it, quotes included, and
+	// Replacement what it becomes — empty unless Status is ComposeNameAbsolute.
+	Token       string
+	Replacement string
+}
+
+// ComposeEdit is one in-place rewrite of a compose file: the scalar exactly as
+// the file spells it, where the scan found it, and what it becomes. Ports and
+// absolute names both reduce to this, so a single splice serves the two.
+type ComposeEdit struct {
+	File        string
+	Line        int
+	Column      int
+	Token       string
+	Replacement string
 }

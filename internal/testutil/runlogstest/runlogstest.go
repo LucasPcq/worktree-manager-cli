@@ -37,6 +37,10 @@ type Service struct {
 	// Lines maps a job name to its persisted history.
 	Lines map[string][]string
 
+	// Ports maps a job name to the ports the daemon answers it bound, already
+	// resolved for the worktree.
+	Ports map[string]map[string]int
+
 	// Starting runs before the daemon answers a job's start and Answered once it
 	// has, for a test that has to act mid-sequence: cancelling from the first is
 	// a detach the client gives up on mid-stream, from the second one that lands
@@ -70,13 +74,13 @@ func (s *Service) Start(ctx context.Context, req runlogs.StartRequest) (runlogs.
 		s.Answered(req.Job.Name)
 	}
 	if message, refused := s.Refusals[req.Job.Name]; refused {
-		result := runlogs.StartResult{Refused: true, Message: message}
+		result := runlogs.StartResult{Refused: true, Message: message, Ports: s.Ports[req.Job.Name]}
 		if code, scripted := s.ExitCodes[req.Job.Name]; scripted {
 			result.ExitCode = &code
 		}
 		return result, nil
 	}
-	return runlogs.StartResult{}, nil
+	return runlogs.StartResult{Ports: s.Ports[req.Job.Name]}, nil
 }
 
 func (s *Service) List(string) ([]domain.JobInfo, error) {

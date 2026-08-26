@@ -33,7 +33,7 @@ func BuildScriptJobs(params BuildScriptJobsParams) domain.RunConfig {
 
 		jobs = append(jobs, domain.JobConfig{
 			Name: name,
-			Kind: ClassifyScriptKind(s.Name),
+			Kind: scriptKind(s),
 			Cmd:  ScriptJobCmd(params.PackageManager, s.Name),
 			Cwd:  ScriptJobCwd(s.Workspace),
 		})
@@ -81,6 +81,16 @@ func resolveRunnerPrefix(pm domain.PackageManager) string {
 
 // scriptJobName returns the base job name for a package script:
 // root scripts use the script name directly; workspace scripts prepend the package name.
+// scriptKind prefers the kind the caller settled. The name is only a guess, and
+// it is wrong in both directions: `preview` serves requests while `start` is
+// production. A kind chosen in the wizard outranks it.
+func scriptKind(s domain.PackageScript) domain.JobKind {
+	if s.Kind != "" {
+		return s.Kind
+	}
+	return ClassifyScriptKind(s.Name)
+}
+
 func scriptJobName(s domain.PackageScript) string {
 	if s.Workspace == "" {
 		return s.Name

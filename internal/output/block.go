@@ -98,6 +98,17 @@ func Callout(w io.Writer, title string, lines []string) {
 	fmt.Fprintf(w, "%s\n", box)
 }
 
+// Section prints a bold title above indented lines, with no frame. It is what a
+// command reports having done; Callout's bordered frame is reserved for what the
+// reader still has to act on. Mixing the two made every outcome look equally
+// urgent, which is the same as flagging none of them.
+func Section(w io.Writer, title string, lines []string) {
+	SectionTitle(w, title)
+	for _, line := range lines {
+		fmt.Fprintf(w, "%s%s%s\n", Indent, Indent, line)
+	}
+}
+
 // AnnounceItem is a label-value pair displayed inside an Announce block.
 type AnnounceItem struct {
 	Label string

@@ -16,10 +16,20 @@ host port ("5432:5432") binds the same port everywhere, so wtm offers to rewrite
 as "${DB_PORT:-5432}:5432" — the default keeps `docker compose up` working on its
 own. Declining leaves the file untouched and declares no port for it.
 
+The names those files pin absolutely get the same treatment. A container_name, or
+a volume's or network's explicit name, is resolved by the Docker daemon rather than
+by the compose project, so COMPOSE_PROJECT_NAME never reaches it and a second
+worktree collides on it. wtm offers to front them with the project — a renamed
+volume starts empty, its data staying under the name it used to carry.
+
 Dev servers get theirs from the env files sitting next to their package.json —
-a PORT (or *_PORT) entry in .env.local, .env, or a committed .env.example. wtm
-only declares the port; check that the command actually reads the variable, and
-pass it as a flag otherwise: --cmd 'pnpm dev --port ${PORT}'.
+a PORT (or *_PORT) entry in .env.local, .env, or a committed .env.example. A
+service nothing was found for is offered anyway: declaring its port is what keeps
+a second worktree from binding the same one.
+
+wtm injects the variable, it never edits the command. When a command never
+mentions the port it is given, the wizard offers it for editing on the spot
+(`pnpm dev --port ${PORT}`) rather than reporting it once it is too late.
 
 `wtm run` is experimental — the workflow is still stabilizing and commands may change.
 
@@ -33,7 +43,7 @@ wtm run init [flags]
   -h, --help              help for init
       --link-env          Link the .env keys holding a declared port, so each worktree gets its own
       --non-interactive   Auto-generate from detection; never prompt
-      --patch-compose     Rewrite literal host ports in the selected compose files to read a variable
+      --patch-compose     Rewrite the selected compose files' literal host ports and absolute names to read a variable
 ```
 
 ### SEE ALSO

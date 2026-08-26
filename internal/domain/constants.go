@@ -142,6 +142,15 @@ const (
 	// when run.toml does not set one.
 	PortOffsetBlock = 10
 
+	// PortProbeTimeout is how long `run up` waits for a declared port to answer
+	// before reporting it silent. Generous on purpose: the poll returns as soon
+	// as every port has answered, so only a failure ever spends it whole.
+	PortProbeTimeout = 15 * time.Second
+	// PortProbeInterval paces the poll, PortProbeDialTimeout bounds one dial —
+	// a loopback port either answers at once or is not there.
+	PortProbeInterval    = 250 * time.Millisecond
+	PortProbeDialTimeout = 300 * time.Millisecond
+
 	// PortMin and PortMax bound a declared base port.
 	PortMin = 1
 	PortMax = 65535
@@ -157,10 +166,30 @@ const (
 	ComposeVarNamePrefix = "S"
 
 	// The docker-compose keys wtm reads.
-	ComposeServicesKey  = "services"
-	ComposePortsKey     = "ports"
-	ComposePublishedKey = "published"
-	ComposeTargetKey    = "target"
+	ComposeServicesKey      = "services"
+	ComposePortsKey         = "ports"
+	ComposePublishedKey     = "published"
+	ComposeTargetKey        = "target"
+	ComposeContainerNameKey = "container_name"
+	ComposeVolumesKey       = "volumes"
+	ComposeNetworksKey      = "networks"
+	ComposeNameKey          = "name"
+	ComposeExternalKey      = "external"
+
+	// ComposeIsolatedNameFmt is what an absolute name becomes: the compose
+	// project fronts it, so it moves with the worktree. The default keeps
+	// `docker compose up` working on its own, without wtm, and reproduces the
+	// name the file used to pin.
+	ComposeIsolatedNameFmt = "${" + EnvComposeProjectName + ":-%s}-%s"
+	// ComposeIsolatedBareNameFmt covers the name that is already exactly the
+	// project's: there is no suffix left to keep it apart from.
+	ComposeIsolatedBareNameFmt = "${" + EnvComposeProjectName + ":-%s}"
+
+	// The reasons an absolute name is left alone.
+	ComposeNameReasonAnchor     = "the name carries a YAML anchor — rewriting it would move every site aliasing it"
+	ComposeNameReasonAlias      = "the name is a YAML alias — templating it would change every anchor site"
+	ComposeNameReasonUnreadable = "wtm could not read this name back from the file, so it will not rewrite it"
+	ComposeNameReasonNoProject  = "wtm could not name the repository, so it has nothing to front the name with"
 
 	// The reasons a compose port mapping is left alone.
 	ComposePortReasonNoHost     = "no host port to shift — Docker picks one at random"
@@ -187,9 +216,27 @@ const (
 	// ComposeFixIndentFmt indents the geste under the port it belongs to.
 	ComposeFixIndentFmt = "  %s"
 
+	// The section titles of the absolute-name report.
+	ComposeNamesPatchedTitle  = "Compose names scoped to the worktree"
+	ComposeNamesWithheldTitle = "Names left alone"
+	// ComposeNamesVolumeWarning follows a renamed volume: the isolation is the
+	// point, but the data already written does not travel into it, and a reader
+	// who is not told reads the empty volume as data loss.
+	ComposeNamesVolumeWarning = "a volume that pinned its name gains one per worktree, each starting empty — the\n" +
+		"data already written stays in the volume under the old name"
+
 	// ComposePatchLineFmt is one rewrite as both the wizard and the recap show
 	// it: where it is, and what it becomes.
 	ComposePatchLineFmt = "%s · %s   %s → %s"
+	// ComposeNameLineFmt is one absolute-name rewrite, and ComposeNameKindFmt
+	// qualifies the owner with what it is — a service and a volume may share a
+	// name without sharing a line.
+	ComposeNameLineFmt = "%s · %s %s   %s → %s"
+	// ComposeNameWithheldFmt names an absolute name wtm refuses to rewrite, and
+	// ComposeNameCollidesFmt is the detail a name withheld for want of
+	// authorization carries — there is no refusal to report, only the effect.
+	ComposeNameWithheldFmt = "%s · %s %s   %s"
+	ComposeNameCollidesFmt = "%s is the same name in every worktree"
 	// ComposeFrozenLineFmt names a host port left literal, and ComposeFixLineFmt
 	// the mapping to write instead. ComposeFixCmdFmt is the declaration that
 	// follows once the file reads a variable.
@@ -211,6 +258,22 @@ const (
 	ComposePatchPartialFmt = "already rewritten: %s"
 	ComposeReadFileFmt     = "read %s: %w"
 	ComposeWriteFileFmt    = "write %s: %w"
+
+	// The port probe report: what `run up` observed on the ports a job declared.
+	// It states what was seen, never what is at fault — wtm can tell that
+	// nothing answers, not why.
+	PortProbeTitle     = "Ports declared but not bound"
+	PortProbeSilentFmt = "%s · nothing is listening on %s=%d"
+	PortProbeBaseFmt   = "  but %d is listening — the base port"
+	PortProbeBaseHint  = "  the command ran, but the variable did not reach it"
+
+	// PortProbeHostV4 and PortProbeHostV6 are both dialed: a service bound to
+	// ::1 only would otherwise read as silent.
+	PortProbeHostV4 = "127.0.0.1"
+	PortProbeHostV6 = "::1"
+
+	// FlagNoProbe skips the port check for one invocation.
+	FlagNoProbe = "no-probe"
 
 	// The .env port report ([[env_port]] links resolved for one worktree).
 	EnvPortsTitle       = "Env ports"
@@ -242,7 +305,6 @@ const (
 	EnvPortReasonMissingKey   = "no such key in this file"
 	EnvPortReasonAmbiguousFmt = "%d appears more than once"
 	EnvPortReasonNotFoundFmt  = "no %d to shift in the value"
-	EnvPortsAppliedFmt        = "Env ports updated for this worktree (%d value(s))"
 	EnvPortsConfirmPrompt     = "Update these .env values to this worktree's ports?"
 
 	// The trailing verdict of `wtm env`.
@@ -289,20 +351,48 @@ const (
 	// The [[env_port]] detection of `wtm run init`.
 	// EnvPortLinkFmt is one link as the prompt and the recap both show it:
 	// "<file> · <key>   follows POSTGRES_PORT (5432)".
-	EnvPortLinkFmt         = "%s   follows %s (%d)"
-	EnvPortLinkSeparator   = " · "
-	EnvPortsLinkedTitle    = "Env keys now following a port"
-	EnvPortLinkConfirm     = "Link these keys so each worktree gets its own ports?"
-	EnvPortLinkDescription = "wtm rewrites the port inside each value when a worktree is created or reconciled. The rest of the value is left alone."
+	EnvPortLinkFmt          = "%s   follows %s (%d)"
+	EnvPortJobSeparator     = "."
+	EnvPortLinkSeparator    = " · "
+	EnvPortsLinkedTitle     = "Env keys now following a port"
+	EnvLinkStepName         = "Env keys"
+	RecapStepName           = "Review"
+	RecapNotAsked           = "not asked"
+	RecapJobLineFmt         = "%s   %s"
+	RecapRowIndent          = "  "
+	RecapPortFmt            = "%s %d"
+	RecapPortSep            = " · "
+	RecapNoPort             = "⚠ no port declared"
+	RecapTask               = "task"
+	RecapDefaultSuffix      = "   (default)"
+	RecapJobsTitle          = "Jobs"
+	RecapProfilesTitle      = "Profiles"
+	RecapAnswersTitle       = "Answers"
+	RecapStepIntro          = "This is what `wtm run init` is about to write."
+	RecapWriteLabel         = "Write run.toml"
+	RecapWriteValue         = "write"
+	RecapIgnoredPortWarnFmt = "⚠ %s: the command never mentions the port it is given — leave it only if it\n  reads the variable on its own."
+	RecapUndeclaredWarnFmt  = "⚠ %s will bind the same port in every worktree — go back to Ports to declare one."
+	EnvPortLinkConfirm      = "Link these keys so each worktree gets its own ports?"
+	EnvPortLinkDescription  = "wtm rewrites the port inside each value when a worktree is created or reconciled. The rest of the value is left alone."
 
-	// The wizard step that asks to templatize the selected files' literal ports.
-	ComposePatchStepName    = "Templatize ports"
-	ComposePatchStepYes     = "rewrite"
-	ComposePatchStepNo      = "leave as is"
-	ComposePatchStepTitle   = "Make these ports per-worktree?"
-	ComposePatchStepPrelude = "These host ports are written as literals, so every worktree would bind the same one.\n" +
-		"wtm can rewrite them to read a variable — the default keeps `docker compose up` working on its own:"
-	ComposePatchStepEpilogue = "Declining leaves the files untouched; wtm then declares no port for them."
+	// The wizard step that asks to make the selected compose files per-worktree.
+	// Ports and absolute names are one question: accepting half of them still
+	// leaves two worktrees unable to run at once, so there is no useful answer
+	// that takes one without the other.
+	ComposePatchStepName  = "Templatize compose"
+	ComposePatchStepYes   = "rewrite"
+	ComposePatchStepNo    = "leave as is"
+	ComposePatchStepTitle = "Make these compose files per-worktree?"
+	ComposePatchStepIntro = "As written, these files bind or name the same thing in every worktree, so a\n" +
+		"second one cannot run alongside the first. wtm can rewrite them — every default\n" +
+		"keeps `docker compose up` working on its own, without wtm:"
+	// ComposePatchStepPortsLead and ComposePatchStepNamesLead head each half of
+	// the step, so the reader can tell a bind from a name at a glance.
+	ComposePatchStepPortsLead = "Host ports written as literals — every worktree would bind the same one:"
+	ComposePatchStepNamesLead = "Names the Docker daemon resolves, which COMPOSE_PROJECT_NAME never reaches:"
+	ComposePatchStepEpilogue  = "Declining leaves the files untouched; wtm then declares no port for them, and two\n" +
+		"worktrees cannot run these services at once."
 
 	// ComposeChangedTitle and ComposeOrphanTitle head the two report sections
 	// that say why a file contributed nothing.
@@ -318,10 +408,14 @@ const (
 	// The .env port report. Unlike a compose mapping, a declared port only
 	// isolates the job if its command actually reads the variable — which wtm
 	// does not know and does not guess, so the notice asks.
-	EnvPortsDetectedTitle  = "Ports detected from .env"
-	EnvPortDetectedLineFmt = "%s · %s=%d (%s)"
-	EnvPortsVerifyFmt      = "Check that these commands read the variable — otherwise pass it as a flag, e.g. `pnpm dev --port ${%s}`"
-	EnvPortUnreadable      = "%s could not be read: %s"
+	EnvPortsDetectedTitle   = "Ports detected from .env"
+	EnvPortDetectedLineFmt  = "%s · %s=%d (%s)"
+	PortIsolationTitle      = "These jobs will bind the same port in every worktree"
+	PortIsolationLineFmt    = "%s   %s"
+	PortIsolationNoPort     = "no port declared"
+	PortIsolationIgnoresFmt = "declares %s, but its command never mentions it"
+	PortIsolationHint       = "Declare a port, or reference it in the command: `wtm run job edit <job>`"
+	EnvPortUnreadable       = "%s could not be read: %s"
 
 	// PortCollisionHorizon is how many worktrees a declared layout is checked
 	// against. Two base ports collide when they differ by a multiple of the
@@ -350,7 +444,6 @@ const (
 	FlagYes        = "yes"
 	FlagAll        = "all"
 	FlagGlobal     = "global"
-	FlagMerge      = "merge"
 	FlagReplace    = "replace"
 	FlagMine       = "mine"
 	FlagReview     = "review"
@@ -467,13 +560,147 @@ const (
 	PruneSkipUnpushed = "unpushed"
 	PruneSkipOpenPR   = "open_pr"
 
+	// The wizard step settling the kind of a script checked outside the dev ones.
+	// The description spells both kinds out: arriving here having checked
+	// "build", nothing in the word "type" says which one a build is.
+	ScriptKindStepName  = "Job type"
+	ScriptKindStepTitle = "How should each of these run?"
+	ScriptKindStepDesc  = "Each script you checked becomes a job. Its type is what `wtm run up` does with it.\n" +
+		"\n" +
+		"  ● service   started, then left running in the background\n" +
+		"              a dev server, a watcher, an API — something with no natural end\n" +
+		"              → run up hands the terminal back, the job keeps going\n" +
+		"\n" +
+		"  ● task      run to completion before the profile carries on\n" +
+		"              a build, a migration, a seed — something that finishes\n" +
+		"              → a non-zero exit aborts the run\n" +
+		"\n" +
+		"wtm guessed from the name. Correct what it got wrong."
+
+	// The job-type picker: one row per job, both kinds shown, the current one filled.
+	KindListEntryFmt   = "%s — %s"
+	KindListRadiosFmt  = "%s task   %s service"
+	KindRadioOn        = "●"
+	KindRadioOff       = "○"
+	KindListHelp       = "  ↑↓ navigate • ←→ set type • enter confirm"
+	KindListSummaryFmt = "%d services, %d tasks"
+	KindListGap        = 2
+
+	// Why a wizard step was never put. An auto-skipped step leaves this line in
+	// the recap: a step that vanishes silently while the counter jumps over it
+	// reads as a bug.
+	SkipReasonNoScriptChecked = "no script checked"
+	SkipReasonKindsSettled    = "every checked script is a dev server"
+	SkipReasonNoService       = "no long-running service to configure"
+	SkipReasonNoPortDetected  = "no port detected for the jobs you kept"
+	SkipReasonCommandsRead    = "every command already reads the port it is given"
+	SkipReasonNoEnvKeyFollows = "no .env key holds a declared port"
+
+	// The wizard step selecting which package scripts become jobs.
+	ScriptsStepName  = "Package scripts"
+	ScriptsStepTitle = "Package.json scripts"
+	ScriptsStepDesc  = "Only what you check becomes a job. Dev scripts are checked for you; check\n" +
+		"anything else you want `wtm run` to start or run."
+	ScriptScopeRoot = "root"
+	// PortNameDefault is the variable an undeclared service is offered under: the
+	// one a process reads without being told to.
+	PortNameDefault    = "PORT"
+	ScriptLabelFmt     = "%s / %s"
+	ScriptItemLabelFmt = "%s / %s — %s run %s"
+
+	// The profile editor: its keys, its rows and its help bar.
+	ProfileListStepName      = "Profiles"
+	ProfileListKeyRename     = "r"
+	ProfileListKeyMerge      = "f"
+	ProfileListKeyRemove     = "d"
+	ProfileListKeyNew        = "n"
+	ProfileListHelp          = "  ↑↓ navigate • r rename • f merge • d remove • n new • enter select"
+	ProfileListNamingHelp    = "  enter save • esc cancel"
+	ProfileListMergeHint     = "  f on another profile to merge it into %q • esc cancel"
+	ProfileListMarkPrefix    = "→ "
+	ProfileListDoneRow       = "✓ Done"
+	ProfileListEntryFmt      = "%s — %s"
+	ProfileListJobSep        = ", "
+	ProfileListDefaultSuffix = "  (default)"
+	ProfileListNameRequired  = "a profile needs a name"
+	ProfileListNameTakenFmt  = "a profile named %q already exists"
+	ProfileListSummaryFmt    = "%d profiles"
+	ProfileStepTitle         = "What should `wtm run up` start?"
+	ProfileStepDesc          = "A profile is a set of jobs started together. Jobs at the repository root —\n" +
+		"a compose stack — join every profile, so starting one package alone still\n" +
+		"brings its infrastructure up."
+
+	// The step amending a command that never mentions the port wtm injects for it.
+	CmdListStepName  = "Commands"
+	CmdListStepTitle = "These commands ignore the port wtm gives them"
+	CmdListStepDesc  = "wtm injects the variable into the job's environment. It does not touch the command.\n" +
+		"\n" +
+		"Each job below declares a port whose variable appears nowhere in its command, so\n" +
+		"the command will bind whatever it binds today — the same port in every worktree.\n" +
+		"\n" +
+		"Reference the variable (`--port ${PORT}`), or leave it as it is if the command\n" +
+		"already reads it from the environment on its own."
+	CmdListEntryFmt = "%s · %s   %s"
+	// CmdListEditFmt keeps the variable on the row being edited: it is what the
+	// user has to type, and hiding it behind the input leaves nothing to go on.
+	CmdListEditFmt    = "%s · reference ${%s} →  %s"
+	CmdListVarSep     = ", "
+	CmdListReferenced = "✓"
+	CmdListDoneRow    = "✓ Done"
+	CmdListHelp       = "  ↑↓ navigate • enter edit • esc back"
+	CmdListEditHelp   = "  reference the variable in the command • enter save • esc cancel"
+	CmdListEmptyErr   = "a job needs a command"
+	CmdListSummaryFmt = "%d of %d now reference their port"
+	CmdListCharLimit  = 512
+	CmdListMinWidth   = 30
+	CmdListWidthInset = 20
+
+	// The wizard step reviewing the ports detection pre-filled.
+	PortListStepName  = "Ports"
+	PortListStepTitle = "One port per service, so two worktrees never collide"
+	PortListStepDesc  = "Each port below is injected into its job under the variable's name, shifted by\n" +
+		"the worktree's offset — 3001 on main, 3011 on the next worktree.\n" +
+		"\n" +
+		"A service with no port declared binds the same one everywhere: the second\n" +
+		"worktree to start it will fail. Detection filled in what it could find in your\n" +
+		"compose files and .env; declare the rest, or leave one blank to accept it."
+	PortListEntryFmt = "%s · %s = %d"
+	// PortListUndeclaredFmt renders a service nothing was detected for. It reads
+	// as a gap to fill rather than as port zero, and the warning is what says
+	// why filling it matters.
+	PortListUndeclaredFmt        = "%s · %s = —"
+	PortListUndeclared           = "not declared — every worktree binds the same port"
+	PortListEditFmt              = "%s · %s = %s"
+	PortListDoneRow              = "✓ Done"
+	PortListHelp                 = "  ↑↓ navigate • enter select • esc back"
+	PortListEditHelp             = "  type a port • enter save • esc cancel"
+	PortListSummaryFmt           = "%d ports"
+	PortListSummaryUndeclaredFmt = "%d ports, %d service(s) left undeclared"
+	// PortListRangeErrFmt refuses a value outside the usable range rather than
+	// overwriting a detected port that works.
+	PortListRangeErrFmt = "%q is not a port between %d and %d"
+
+	// ProfileAllName is the profile gathering every service the init retained.
+	// In a single-package repo it is the only one: one profile per package plus
+	// a global one collapse into each other, which is what keeps the rule free
+	// of a special case.
+	ProfileAllName = "all"
+	// ProfileRootCwd is the cwd of a job serving every profile — a compose
+	// stack, a root script. Sitting at the root is what makes a job shared.
+	ProfileRootCwd = "."
+
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches
 	// one of these keywords exactly, as a prefix ("<kw>:"), or as a suffix (":<kw>").
-	ScriptKeyDev   = "dev"
-	ScriptKeyStart = "start"
-	ScriptKeyServe = "serve"
-	ScriptKeyWatch = "watch"
+	ScriptKeyDev = "dev"
+	// ScriptPreselectKey is the only script name fragment `run init` checks by
+	// default. Deliberately blunt: reading the command to guess whether
+	// `vite preview` serves requests would rebuild a per-tool heuristic, and
+	// maintaining one is what the port probe refused to do for turbo.
+	ScriptPreselectKey = ScriptKeyDev
+	ScriptKeyStart     = "start"
+	ScriptKeyServe     = "serve"
+	ScriptKeyWatch     = "watch"
 
 	// FlagWithPRs includes GitHub PR info in non-interactive worktree listings.
 	// PRs are fetched lazily (streamed) in interactive mode, but a pipe/JSON
@@ -1594,12 +1821,7 @@ const (
 
 	DashboardLabelPath    = "Path"
 	DashboardLabelParent  = "Parent"
-	DashboardLabelRebase  = "Rebase"
 	DashboardLabelCreated = "Created"
-
-	DashboardRebaseInProgress = "in progress"
-	DashboardUpToDate         = "up to date"
-	DashboardUnknownParent    = "unknown"
 
 	DashboardHelpWide = "↑↓ select · n new · m actions · a bulk · tab view · o output · r refresh · ? help · q quit"
 	// DashboardHelpTree drops "n new": the Tree tab lays out what exists, and a new

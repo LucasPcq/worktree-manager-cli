@@ -40,22 +40,6 @@ func TestJobPorts(t *testing.T) {
 	}
 }
 
-func TestJobPortsNoDeclaration(t *testing.T) {
-	if got := JobPorts(JobPortsParams{PortOffset: 10}); got != nil {
-		t.Errorf("a job declaring nothing gets nothing, got %v", got)
-	}
-	if got := JobPortEnv(JobPortsParams{PortOffset: 10}); got != nil {
-		t.Errorf("a job declaring nothing gets nothing, got %v", got)
-	}
-}
-
-func TestJobPortEnv(t *testing.T) {
-	env := JobPortEnv(JobPortsParams{Ports: map[string]int{"PORT": 3000}, PortOffset: 30})
-	if env["PORT"] != "3030" {
-		t.Errorf("got %v, want PORT=3030", env)
-	}
-}
-
 func TestIsEnvVarName(t *testing.T) {
 	valid := []string{"PORT", "_PORT", "DB_PORT2", "port"}
 	for _, name := range valid {

@@ -29,6 +29,9 @@ type Outcome struct {
 	// FailedExitCode is the code the daemon reported for it, nil when it never
 	// got as far as running.
 	FailedExitCode *int
+	// Probes is what the port check observed, empty when no Prober was installed
+	// or when the sequence aborted before there was anything to check.
+	Probes []domain.PortProbe
 }
 
 func (o Outcome) Aborted() bool { return o.Failed != "" }
@@ -48,6 +51,9 @@ type RunParams struct {
 	// Env is what every job in this run learns about the worktree it belongs to,
 	// resolved by the surface — the only side that can ask git.
 	Env map[string]string
+	// Prober checks that the ports the jobs declared were actually bound. Nil
+	// skips the check entirely, which is what --no-probe and a zero budget do.
+	Prober Prober
 }
 
 // Run starts a profile's jobs in their declared order and reports each step to
@@ -73,6 +79,7 @@ func Run(ctx context.Context, params RunParams) (Outcome, error) {
 		workDir: params.WorkDir,
 		logDir:  params.LogDir,
 		env:     params.Env,
+		prober:  params.Prober,
 	}
 	if r.sink == nil {
 		r.sink = noSink{}
@@ -88,10 +95,14 @@ type runner struct {
 	workDir string
 	logDir  string
 	env     map[string]string
+	prober  Prober
 
-	results   []domain.JobActionResult
-	started   []string
-	completed []string
+	// probeTargets are the started services that declared ports, kept in start
+	// order so the check runs once, at the end, when everything is up.
+	probeTargets []probeTarget
+	results      []domain.JobActionResult
+	started      []string
+	completed    []string
 	// captured is what the job being started has written so far, kept only until
 	// the next job starts: an abort is the one moment it has to be readable.
 	captured []byte
@@ -142,12 +153,77 @@ func (r *runner) run() Outcome {
 
 		r.started = append(r.started, job.Name)
 		r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
+		if rules.ShouldProbeJob(job.Kind, result.Ports) {
+			r.probeTargets = append(r.probeTargets, probeTarget{job: job.Name, resolved: result.Ports})
+		}
 		r.emit(Event{Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning, Ports: result.Ports})
 	}
 
+	probes := r.probe()
+
 	outcome := r.outcome()
+	outcome.Probes = probes
 	r.emit(Event{Phase: PhaseReady, Outcome: outcome})
 	return outcome
+}
+
+type probeTarget struct {
+	job string
+	// resolved is what the daemon answered it bound, base plus offset. Read back
+	// rather than recomputed, so the number injected and the number checked
+	// cannot drift apart.
+	resolved map[string]int
+}
+
+// probe checks every started service's declared ports in one pass, once they
+// are all up: a service started first would otherwise be checked before the one
+// it waits on has even been asked to start.
+func (r *runner) probe() []domain.PortProbe {
+	if r.prober == nil || len(r.probeTargets) == 0 || r.ctx.Err() != nil {
+		return nil
+	}
+
+	offset := rules.PortOffsetFromEnv(r.env)
+	var wanted []int
+	for _, target := range r.probeTargets {
+		wanted = append(wanted, rules.PortsToDial(rules.DiagnosePortProbesParams{
+			Resolved: target.resolved,
+			Offset:   offset,
+		})...)
+	}
+
+	listening := r.prober.Listening(r.ctx, rules.DedupePorts(wanted), func(answered map[int]bool) bool {
+		return r.settled(answered, offset)
+	})
+
+	var probes []domain.PortProbe
+	for _, target := range r.probeTargets {
+		found := rules.DiagnosePortProbes(rules.DiagnosePortProbesParams{
+			Job:       target.job,
+			Resolved:  target.resolved,
+			Listening: listening,
+			Offset:    offset,
+		})
+		r.emit(Event{Phase: PhaseProbed, Job: target.job, Probes: found})
+		probes = append(probes, found...)
+	}
+	return probes
+}
+
+// settled ends the poll as soon as every declared port answers — the healthy
+// case, which must not wait out the budget.
+func (r *runner) settled(answered map[int]bool, offset int) bool {
+	for _, target := range r.probeTargets {
+		if !rules.AllPortsListening(rules.DiagnosePortProbes(rules.DiagnosePortProbesParams{
+			Job:       target.job,
+			Resolved:  target.resolved,
+			Listening: answered,
+			Offset:    offset,
+		})) {
+			return false
+		}
+	}
+	return true
 }
 
 type abortParams struct {

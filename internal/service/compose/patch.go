@@ -11,8 +11,9 @@ import (
 )
 
 type VerifyAllParams struct {
-	ProjectDir string
-	ByFile     map[string][]domain.ComposePortBinding
+	ProjectDir  string
+	ByFile      map[string][]domain.ComposePortBinding
+	NamesByFile map[string][]domain.ComposeAbsoluteName
 }
 
 // VerifyAll reports, per file, why its recorded positions can no longer be
@@ -21,28 +22,52 @@ type VerifyAllParams struct {
 // anything is committed to disk rather than discovering it half way through.
 func VerifyAll(params VerifyAllParams) map[string]string {
 	failures := map[string]string{}
-	for _, file := range rules.SortedComposeFiles(params.ByFile) {
-		if _, err := renderPatched(renderPatchedParams{ProjectDir: params.ProjectDir, File: file, Bindings: params.ByFile[file]}); err != nil {
+	for _, file := range editedFiles(params.ByFile, params.NamesByFile) {
+		if _, err := renderPatched(renderPatchedParams{
+			ProjectDir: params.ProjectDir,
+			File:       file,
+			Bindings:   params.ByFile[file],
+			Names:      params.NamesByFile[file],
+		}); err != nil {
 			failures[file] = err.Error()
 		}
 	}
 	return failures
 }
 
+// editedFiles is every file either family of edits touches, in one stable
+// order: a file carrying only a name rewrite is patched like any other.
+func editedFiles(byFile map[string][]domain.ComposePortBinding, namesByFile map[string][]domain.ComposeAbsoluteName) []string {
+	merged := make(map[string]struct{}, len(byFile)+len(namesByFile))
+	for file := range byFile {
+		merged[file] = struct{}{}
+	}
+	for file := range namesByFile {
+		merged[file] = struct{}{}
+	}
+	return rules.SortedComposeFiles(merged)
+}
+
 type PatchAllParams struct {
-	ProjectDir string
-	ByFile     map[string][]domain.ComposePortBinding
+	ProjectDir  string
+	ByFile      map[string][]domain.ComposePortBinding
+	NamesByFile map[string][]domain.ComposeAbsoluteName
 }
 
 // PatchAll rewrites every file's host ports. It renders all of them first and
 // only then writes, so a position that no longer matches aborts before any file
 // on disk has been touched.
 func PatchAll(params PatchAllParams) error {
-	files := rules.SortedComposeFiles(params.ByFile)
+	files := editedFiles(params.ByFile, params.NamesByFile)
 
 	rendered := make([]patchedFile, 0, len(files))
 	for _, file := range files {
-		out, err := renderPatched(renderPatchedParams{ProjectDir: params.ProjectDir, File: file, Bindings: params.ByFile[file]})
+		out, err := renderPatched(renderPatchedParams{
+			ProjectDir: params.ProjectDir,
+			File:       file,
+			Bindings:   params.ByFile[file],
+			Names:      params.NamesByFile[file],
+		})
 		if err != nil {
 			return err
 		}
@@ -76,6 +101,7 @@ type renderPatchedParams struct {
 	ProjectDir string
 	File       string
 	Bindings   []domain.ComposePortBinding
+	Names      []domain.ComposeAbsoluteName
 }
 
 func renderPatched(params renderPatchedParams) (patchedFile, error) {
@@ -97,9 +123,9 @@ func renderPatched(params renderPatchedParams) (patchedFile, error) {
 		return patchedFile{}, fmt.Errorf(domain.ComposeReadFileFmt, file, err)
 	}
 
-	patched, err := rules.ApplyComposePortPatches(rules.ApplyComposePortPatchesParams{
-		Content:  string(content),
-		Bindings: bindings,
+	patched, err := rules.ApplyComposeEdits(rules.ApplyComposeEditsParams{
+		Content: string(content),
+		Edits:   append(rules.ComposePortEdits(bindings), rules.ComposeNameEdits(params.Names)...),
 	})
 	if err != nil {
 		return patchedFile{}, err

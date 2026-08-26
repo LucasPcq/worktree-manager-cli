@@ -8,6 +8,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // sequence is what the view knows of a profile being started. It decides
@@ -116,13 +117,17 @@ func (m Model) applyRunFinished(msg runFinishedMsg) (Model, tea.Cmd) {
 	return model, tea.Batch(resized, model.refreshCmd())
 }
 
-// report is what an aborted profile has to say, one line per thing it says.
-// Building it from the outcome rather than from a running tally is what keeps
-// it true after a detach: the outcome is the run's own account of itself.
+// report is the notice area: what the run has to say once it has stopped
+// moving. An abort outranks a silent port — a profile that never finished is
+// the bigger news, and both at once would bury it. It is built from the outcome
+// rather than from a running tally, which is what keeps it true after a detach.
 func (m Model) report() []string {
 	outcome := m.sequence.outcome
-	if m.dismissed || !outcome.Aborted() {
+	if m.dismissed {
 		return nil
+	}
+	if !outcome.Aborted() {
+		return m.probeReport()
 	}
 
 	lines := []string{
@@ -136,6 +141,19 @@ func (m Model) report() []string {
 		lines = append(lines, fmt.Sprintf(domain.RunViewAbortNotStartedFmt, joinJobs(outcome.NotStarted)))
 	}
 	return append(lines, domain.RunViewAbortDismiss)
+}
+
+// probeReport names the declared ports nothing answered on, once the sequence
+// is over. A run still starting has nothing to conclude yet.
+func (m Model) probeReport() []string {
+	if m.sequence.active || !m.sequence.outcome.Recorded() {
+		return nil
+	}
+	lines := rules.PortProbeLines(m.sequence.outcome.Probes)
+	if len(lines) == 0 {
+		return nil
+	}
+	return append(append([]string{domain.PortProbeTitle}, lines...), domain.RunViewAbortDismiss)
 }
 
 func joinJobs(jobs []string) string {

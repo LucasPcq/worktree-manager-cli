@@ -13,7 +13,7 @@ import (
 type EnvPortsParams struct {
 	WorktreePath string
 	Links        []domain.EnvPortLink
-	Bases        map[string]int
+	Bases        map[domain.PortRef]int
 	Offset       int
 	// Block is the spacing between two worktrees' ports, which the reconciliation
 	// diff needs to recognize another worktree's spelling of the same port.

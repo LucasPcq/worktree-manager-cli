@@ -359,23 +359,6 @@ func WriteReparentJSON(w io.Writer, results []domain.ReparentResult) error {
 	return encodeJSON(w, WriteReparentJSONParams{Reparented: results})
 }
 
-// FormatReparentProposal renders the proposed reparenting of a cleaned worktree's
-// orphaned children onto the grandparent: a leading blank separator (from the
-// preceding "Will delete" recap) followed by an announce block listing each
-// child's old → new parent. Raw body — the command's frame owns the outer padding.
-func FormatReparentProposal(w io.Writer, plan domain.CleanReparentPlan) {
-	Blank(w)
-
-	items := make([]AnnounceItem, 0, len(plan.Children))
-	for _, child := range plan.Children {
-		items = append(items, AnnounceItem{
-			Label: child.Branch,
-			Value: fmt.Sprintf("%s → %s", child.OldParent, child.NewParent),
-		})
-	}
-	Announce(w, fmt.Sprintf("Reparent orphaned children onto %s:", plan.Grandparent), items)
-}
-
 // encodeJSON writes v as indented JSON to w.
 func encodeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)

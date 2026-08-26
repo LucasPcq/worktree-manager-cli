@@ -170,11 +170,15 @@ func pad(s string, width int) string {
 	return s + strings.Repeat(" ", max(0, width-len([]rune(s))))
 }
 
+// Pad right-pads a label so a surface can align a column the same way the line
+// builders here do.
+func Pad(s string, width int) string { return pad(s, width) }
+
 // EnvPortLinkLines describes each link as both the prompt and the recap show it:
 // where the key lives, which port it follows, and the base found inside its
 // value — the number that answers "why this key?" before the link is written,
 // and "what moves?" after.
-func EnvPortLinkLines(links []domain.EnvPortLink, bases map[string]int) []string {
+func EnvPortLinkLines(links []domain.EnvPortLink, bases map[domain.PortRef]int) []string {
 	width := 0
 	for _, l := range links {
 		width = max(width, len([]rune(l.File+domain.EnvPortLinkSeparator+l.Key)))
@@ -182,10 +186,17 @@ func EnvPortLinkLines(links []domain.EnvPortLink, bases map[string]int) []string
 
 	lines := make([]string, 0, len(links))
 	for _, l := range links {
+		base, _ := EnvPortBaseFor(bases, l)
 		lines = append(lines, fmt.Sprintf(domain.EnvPortLinkFmt,
-			pad(l.File+domain.EnvPortLinkSeparator+l.Key, width), l.Port, bases[l.Port]))
+			pad(l.File+domain.EnvPortLinkSeparator+l.Key, width), portLabel(l), base))
 	}
 	return lines
+}
+
+// portLabel names the job alongside the port: the name alone does not say which
+// one a key follows.
+func portLabel(link domain.EnvPortLink) string {
+	return link.Job + domain.EnvPortJobSeparator + link.Port
 }
 
 // EnvPortPromptDescription is the table as a confirmation shows it: inside the

@@ -13,12 +13,12 @@ func planWithRewrites(t *testing.T, n int) domain.EnvPortPlan {
 	t.Helper()
 
 	links := make([]domain.EnvPortLink, 0, n)
-	bases := make(map[string]int, n)
+	bases := make(map[domain.PortRef]int, n)
 	var content strings.Builder
 	for i := range n {
 		key := "K" + strconv.Itoa(i)
-		links = append(links, domain.EnvPortLink{File: ".env", Key: key, Port: key})
-		bases[key] = 5000 + i
+		links = append(links, domain.EnvPortLink{File: ".env", Key: key, Job: "svc", Port: key})
+		bases[domain.PortRef{Job: "svc", Name: key}] = 5000 + i
 		content.WriteString(key + "=http://localhost:" + strconv.Itoa(5000+i) + "\n")
 	}
 

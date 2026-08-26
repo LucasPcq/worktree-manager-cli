@@ -15,7 +15,7 @@ func cfgWithLinks(links ...domain.EnvPortLink) domain.RunConfig {
 }
 
 func TestValidateRunPortsAcceptsAWellFormedLink(t *testing.T) {
-	cfg := cfgWithLinks(domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Port: "POSTGRES_PORT"})
+	cfg := cfgWithLinks(domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Job: "db", Port: "POSTGRES_PORT"})
 	if errs := ValidateRunPorts(cfg); len(errs) > 0 {
 		t.Errorf("ValidateRunPorts() = %v, want no error", errs)
 	}
@@ -29,12 +29,12 @@ func TestValidateRunPortsRejectsBadLinks(t *testing.T) {
 	}{
 		{
 			"port no job declares",
-			cfgWithLinks(domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Port: "GHOST_PORT"}),
+			cfgWithLinks(domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Job: "db", Port: "GHOST_PORT"}),
 			"no job declares",
 		},
 		{
 			"key that is not an environment variable name",
-			cfgWithLinks(domain.EnvPortLink{File: ".env", Key: "not-a-var", Port: "POSTGRES_PORT"}),
+			cfgWithLinks(domain.EnvPortLink{File: ".env", Key: "not-a-var", Job: "db", Port: "POSTGRES_PORT"}),
 			"not a valid environment variable name",
 		},
 		{
@@ -45,8 +45,8 @@ func TestValidateRunPortsRejectsBadLinks(t *testing.T) {
 		{
 			"same key linked twice in one file",
 			cfgWithLinks(
-				domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Port: "POSTGRES_PORT"},
-				domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Port: "POSTGRES_PORT"},
+				domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Job: "db", Port: "POSTGRES_PORT"},
+				domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Job: "db", Port: "POSTGRES_PORT"},
 			),
 			"declared twice",
 		},
@@ -66,8 +66,8 @@ func TestValidateRunPortsRejectsBadLinks(t *testing.T) {
 // where each app has its own .env is the normal case, not a mistake.
 func TestValidateRunPortsAllowsTheSameKeyInTwoFiles(t *testing.T) {
 	cfg := cfgWithLinks(
-		domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Port: "POSTGRES_PORT"},
-		domain.EnvPortLink{File: "apps/web/.env", Key: "DATABASE_URL", Port: "POSTGRES_PORT"},
+		domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Job: "db", Port: "POSTGRES_PORT"},
+		domain.EnvPortLink{File: "apps/web/.env", Key: "DATABASE_URL", Job: "db", Port: "POSTGRES_PORT"},
 	)
 	if errs := ValidateRunPorts(cfg); len(errs) > 0 {
 		t.Errorf("ValidateRunPorts() = %v, want no error", errs)
@@ -88,7 +88,7 @@ func TestValidateEnvPortTargets(t *testing.T) {
 }
 
 func TestEnvPortCandidates(t *testing.T) {
-	bases := map[string]int{"POSTGRES_PORT": 5432, "API_PORT": 3000}
+	bases := map[domain.PortRef]int{{Job: "db", Name: "POSTGRES_PORT"}: 5432, {Job: "db", Name: "API_PORT"}: 3000}
 	lines := map[string][]domain.EnvLine{
 		".env": ParseEnv(strings.Join([]string{
 			"DATABASE_URL=postgres://u:pw@localhost:5432/app",
@@ -106,9 +106,11 @@ func TestEnvPortCandidates(t *testing.T) {
 		Existing: []domain.EnvPortLink{{File: ".env", Key: "ALREADY", Port: "POSTGRES_PORT"}},
 	})
 
+	// Each candidate names the job whose port it follows: that is what the link
+	// needs to resolve to one base rather than to a name two jobs may share.
 	want := []domain.EnvPortLink{
-		{File: ".env", Key: "DATABASE_URL", Port: "POSTGRES_PORT"},
-		{File: ".env", Key: "API_URL", Port: "API_PORT"},
+		{File: ".env", Key: "DATABASE_URL", Job: "db", Port: "POSTGRES_PORT"},
+		{File: ".env", Key: "API_URL", Job: "db", Port: "API_PORT"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("EnvPortCandidates() = %+v, want %+v", got, want)
