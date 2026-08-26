@@ -164,14 +164,14 @@ const composeSource = `services:
         published: 8080
 `
 
-func TestApplyComposePortPatches(t *testing.T) {
-	patched, err := ApplyComposePortPatches(ApplyComposePortPatchesParams{
+func TestApplyComposeEdits(t *testing.T) {
+	patched, err := ApplyComposeEdits(ApplyComposeEditsParams{
 		Content: composeSource,
-		Bindings: []domain.ComposePortBinding{
+		Edits: ComposePortEdits([]domain.ComposePortBinding{
 			{Line: 5, Column: 9, Token: `"5432:5432"`, Replacement: `"${POSTGRES_PORT:-5432}:5432"`},
 			{Line: 6, Column: 9, Token: "9187:9187", Replacement: `"${POSTGRES_PORT_9187:-9187}:9187"`},
 			{Line: 10, Column: 20, Token: "8080", Replacement: `"${WEB_PORT:-8080}"`},
-		},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
@@ -193,10 +193,10 @@ func TestApplyComposePortPatches(t *testing.T) {
 	}
 }
 
-func TestApplyComposePortPatchesRefusesAMovedToken(t *testing.T) {
-	_, err := ApplyComposePortPatches(ApplyComposePortPatchesParams{
-		Content:  composeSource,
-		Bindings: []domain.ComposePortBinding{{File: "docker-compose.yml", Line: 5, Column: 9, Token: `"6379:6379"`, Replacement: `x`}},
+func TestApplyComposeEditsRefuseAMovedToken(t *testing.T) {
+	_, err := ApplyComposeEdits(ApplyComposeEditsParams{
+		Content: composeSource,
+		Edits:   ComposePortEdits([]domain.ComposePortBinding{{File: "docker-compose.yml", Line: 5, Column: 9, Token: `"6379:6379"`, Replacement: `x`}}),
 	})
 	if err == nil {
 		t.Fatal("a token that is no longer where it was scanned must abort the patch")
@@ -206,18 +206,18 @@ func TestApplyComposePortPatchesRefusesAMovedToken(t *testing.T) {
 	}
 }
 
-func TestApplyComposePortPatchesRefusesAnOutOfRangeLine(t *testing.T) {
-	_, err := ApplyComposePortPatches(ApplyComposePortPatchesParams{
-		Content:  composeSource,
-		Bindings: []domain.ComposePortBinding{{Line: 99, Column: 1, Token: "x", Replacement: "y"}},
+func TestApplyComposeEditsRefuseAnOutOfRangeLine(t *testing.T) {
+	_, err := ApplyComposeEdits(ApplyComposeEditsParams{
+		Content: composeSource,
+		Edits:   ComposePortEdits([]domain.ComposePortBinding{{Line: 99, Column: 1, Token: "x", Replacement: "y"}}),
 	})
 	if err == nil {
 		t.Fatal("a line past the end of the file must abort the patch")
 	}
 }
 
-func TestApplyComposePortPatchesLeavesTheFileAloneWithoutBindings(t *testing.T) {
-	got, err := ApplyComposePortPatches(ApplyComposePortPatchesParams{Content: composeSource})
+func TestApplyComposeEditsLeaveTheFileAloneWithoutEdits(t *testing.T) {
+	got, err := ApplyComposeEdits(ApplyComposeEditsParams{Content: composeSource})
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}

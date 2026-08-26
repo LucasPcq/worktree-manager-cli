@@ -7,7 +7,18 @@ package domain
 type EnvPortLink struct {
 	File string `toml:"file" json:"file"`
 	Key  string `toml:"key"  json:"key"`
+	// Job names which job's port the key follows. Two jobs may each declare a
+	// PORT — their environments are separate — so the port name alone does not
+	// identify a base. Every port belongs to exactly one job, so this is always
+	// knowable and always required.
+	Job  string `toml:"job"  json:"job"`
 	Port string `toml:"port" json:"port"`
+}
+
+// PortRef identifies one declared port: the job that carries it and its name.
+type PortRef struct {
+	Job  string
+	Name string
 }
 
 // EnvPortStatus is the verdict for one link against the value the .env holds.

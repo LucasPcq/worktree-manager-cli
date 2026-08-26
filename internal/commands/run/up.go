@@ -24,6 +24,9 @@ func newUpCmd() *cobra.Command {
 		Short: "Start a profile's jobs",
 		Long: "Start every job in a profile, in declared order.\n" +
 			"Without arguments, uses the default profile (or shows a picker if multiple exist).\n" +
+			"Once the jobs are up, each declared port is checked: a port nothing answers on is\n" +
+			"reported rather than announced as bound. It never fails the run — see --no-probe\n" +
+			"and run.toml's port_probe_timeout.\n" +
 			"Tasks block the profile and abort it on failure; services launch in the background.\n" +
 			"The run view opens on the jobs as they start; leaving it detaches without stopping them, and -d skips it.",
 		Args: cobra.MaximumNArgs(1),
@@ -33,6 +36,7 @@ func newUpCmd() *cobra.Command {
 	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop jobs on other worktrees before starting")
 	cmd.Flags().Bool(domain.FlagParallel, false, "Start without stopping other worktrees")
 	cmd.Flags().BoolP(domain.FlagDetach, "d", false, "Start the jobs and return immediately instead of opening their output")
+	cmd.Flags().Bool(domain.FlagNoProbe, false, "Skip the check that each declared port was actually bound")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -90,7 +94,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs})
+	noProbe, _ := cmd.Flags().GetBool(domain.FlagNoProbe)
+	seam := openRunSeam(runSeamParams{
+		ProjectDir: result.ProjectDir,
+		StateDir:   result.StateDir,
+		Dir:        dir,
+		Jobs:       runCfg.Jobs,
+		Prober:     newProber(rules.PortProbeBudget(runCfg), noProbe),
+	})
 	start := seam.starter(jobs)
 
 	switch rules.DecideRunSurface(rules.RunSurfaceParams{Detach: detach, TTY: isTTY(), Format: format}) {
@@ -115,7 +126,7 @@ func resolveProfileJobs(args []string, cfg domain.RunConfig) ([]domain.JobConfig
 	if len(cfg.Profiles) <= 1 {
 		profile, ok := rules.DefaultProfile(cfg)
 		if !ok {
-			return cfg.Jobs, nil
+			return rules.JobsWithoutProfile(cfg), nil
 		}
 		return rules.ProfileJobs(cfg, profile), nil
 	}
@@ -144,14 +155,14 @@ func pickProfile(cfg domain.RunConfig) (domain.ProfileConfig, error) {
 		Title:       "Select profile",
 		Description: "Which profile to start?",
 		Items:       items,
+		// The one thing `default` still does now the picker always opens: it
+		// says which entry the run lands on.
+		Start: defaultProfile.Name,
 	})
 
 	selected, err := components.RunStandaloneSelect(sl)
 	if err != nil {
 		return domain.ProfileConfig{}, domain.ErrUserAborted
-	}
-	if selected == "" {
-		selected = defaultProfile.Name
 	}
 
 	profile, ok := rules.FindProfile(cfg, selected)

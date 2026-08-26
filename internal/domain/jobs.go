@@ -43,9 +43,13 @@ type RunConfig struct {
 	// PortOffsetBlock spaces two worktrees' declared ports apart. Zero means the
 	// default: a project only sets it to make room for base ports that would
 	// otherwise land a multiple of the block apart.
-	PortOffsetBlock int             `toml:"port_offset_block,omitempty" json:"port_offset_block,omitempty"`
-	Jobs            []JobConfig     `toml:"job"                        json:"job"`
-	Profiles        []ProfileConfig `toml:"profile,omitempty"          json:"profile"`
+	PortOffsetBlock int `toml:"port_offset_block,omitempty" json:"port_offset_block,omitempty"`
+	// PortProbeTimeout is how many seconds `run up` waits for a declared port to
+	// answer before reporting it silent. Zero falls back to the default; a
+	// negative value disables the check.
+	PortProbeTimeout int             `toml:"port_probe_timeout,omitempty" json:"port_probe_timeout,omitempty"`
+	Jobs             []JobConfig     `toml:"job"                        json:"job"`
+	Profiles         []ProfileConfig `toml:"profile,omitempty"          json:"profile"`
 	// EnvPorts links a .env key to one of the ports declared above, so a value
 	// holding a hard-coded host port follows the worktree's offset.
 	EnvPorts []EnvPortLink `toml:"env_port,omitempty" json:"env_port,omitempty"`
@@ -99,6 +103,10 @@ type JobActionResult struct {
 	// ExitCode is what the failing job exited with, absent for one that never
 	// got as far as running.
 	ExitCode *int `json:"exit_code,omitempty"`
+	// Ports is what the probe found on each port this job declared. A reader of
+	// this document never saw the live stream, and "started" alone does not say
+	// whether anything is listening.
+	Ports []PortProbe `json:"ports,omitempty"`
 }
 
 // LogRecord is one sanitized line of a job's output, as persisted in that job's
@@ -118,3 +126,23 @@ const (
 	RunSurfaceStream
 	RunSurfaceMachine
 )
+
+// JobKindChoice is one job whose kind the wizard asks about. Label is how the
+// job reads on screen ("apps/web / build"), Name the script it came from.
+type JobKindChoice struct {
+	Label string
+	Cmd   string
+	// Name and Workspace together identify the script: two packages of a
+	// monorepo both declaring "build" are two separate answers.
+	Name      string
+	Workspace string
+	Kind      JobKind
+}
+
+// JobCmdFix is a job whose command never mentions a port variable wtm injects
+// for it. The command will bind whatever it binds today, ignoring the offset.
+type JobCmdFix struct {
+	Job  string
+	Cmd  string
+	Vars []string
+}

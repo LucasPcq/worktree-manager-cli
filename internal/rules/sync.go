@@ -165,14 +165,6 @@ func ParentFlagsDecision(params DecideParentFastForwardParams) ParentDecision {
 	return ParentAsk
 }
 
-// DecideParentFastForward is ParentFlagsDecision once the count is known.
-func DecideParentFastForward(params DecideParentFastForwardParams) ParentDecision {
-	if params.StaleCount == 0 {
-		return ParentLeaveAsIs
-	}
-	return ParentFlagsDecision(params)
-}
-
 // StaleParents keeps the parents a fast-forward would actually advance: a
 // diverged one is reported but never actionable.
 func StaleParents(updates []domain.ParentUpdate) []domain.ParentUpdate {

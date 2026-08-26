@@ -492,3 +492,57 @@ func TestRunInit_HandWrittenPortSurvivesDetection(t *testing.T) {
 		t.Errorf("PORT = %d, want the hand-written 7777", job.Ports["PORT"])
 	}
 }
+
+// TestRunInit_ProducesAStartableConfig is the whole point of the rework: an
+// init that writes a configuration, not an inventory. Before it, this fixture
+// produced five jobs and no profile, so `run up` started the linter, the build
+// and the production server alongside the dev one.
+func TestRunInit_ProducesAStartableConfig(t *testing.T) {
+	stateDir := setupTestProject(t)
+	projectDir := os.Getenv("WTM_PROJECT_DIR")
+
+	writeCompose(t, "docker-compose.yml", "services:\n  db:\n    image: alpine\n    ports:\n      - \"5432:5432\"\n")
+	pkg := `{"name":"demo","scripts":{"dev":"vite","build":"tsc","lint":"eslint .","start":"node dist/i.js"}}`
+	if err := os.WriteFile(filepath.Join(projectDir, "package.json"), []byte(pkg), 0o644); err != nil {
+		t.Fatalf("write package.json: %v", err)
+	}
+
+	if _, _, err := runCmd(t, domain.CmdInit, "--"+domain.FlagNonInteractive); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+
+	if len(cfg.Jobs) != 2 {
+		t.Fatalf("expected compose + dev only, got %+v", cfg.Jobs)
+	}
+	for _, job := range cfg.Jobs {
+		switch job.Name {
+		case "build", "lint", "start":
+			t.Errorf("%s ne doit pas devenir un job", job.Name)
+		}
+	}
+	if len(cfg.Profiles) != 1 {
+		t.Fatalf("expected exactly one profile, got %+v", cfg.Profiles)
+	}
+	if !cfg.Profiles[0].Default {
+		t.Error("le profil unique doit porter Default")
+	}
+	for _, job := range cfg.Jobs {
+		if !hasProfileJob(cfg.Profiles[0], job.Name) {
+			t.Errorf("%s n'est dans aucun profil, donc run up ne le lancera pas", job.Name)
+		}
+	}
+}
+
+func hasProfileJob(profile domain.ProfileConfig, name string) bool {
+	for _, job := range profile.Jobs {
+		if job == name {
+			return true
+		}
+	}
+	return false
+}

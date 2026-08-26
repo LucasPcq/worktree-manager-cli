@@ -54,11 +54,24 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 		}))
 	case runlogs.PhaseFailed:
 		Error(p.err, event.Reason)
+	case runlogs.PhaseProbed:
+		p.probed(event.Probes)
 	case runlogs.PhaseAborted:
 		p.aborted(event.Outcome)
 	case runlogs.PhaseReady:
 		p.ready(event.Outcome)
 	}
+}
+
+// probed reports only what the check could not confirm: a port that answered
+// says nothing the "started" line did not already say.
+func (p *RunPrinter) probed(probes []domain.PortProbe) {
+	lines := rules.PortProbeLines(probes)
+	if len(lines) == 0 {
+		return
+	}
+	Blank(p.err)
+	Callout(p.err, domain.PortProbeTitle, lines)
 }
 
 // aborted reports the partial state a failed job left behind: where the profile
@@ -96,7 +109,13 @@ func WriteRunOutcomeJSON(w io.Writer, outcome runlogs.Outcome) error {
 	results := make([]domain.JobActionResult, len(outcome.Results))
 	copy(results, outcome.Results)
 
+	probes := map[string][]domain.PortProbe{}
+	for _, probe := range outcome.Probes {
+		probes[probe.Job] = append(probes[probe.Job], probe)
+	}
+
 	for i := range results {
+		results[i].Ports = probes[results[i].Name]
 		if results[i].Name != outcome.Failed || results[i].Status != domain.JobActionError {
 			continue
 		}

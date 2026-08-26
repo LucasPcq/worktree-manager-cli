@@ -37,16 +37,24 @@ func newInitCmd() *cobra.Command {
 			"host port (\"5432:5432\") binds the same port everywhere, so wtm offers to rewrite it\n" +
 			"as \"${DB_PORT:-5432}:5432\" — the default keeps `docker compose up` working on its\n" +
 			"own. Declining leaves the file untouched and declares no port for it.\n\n" +
+			"The names those files pin absolutely get the same treatment. A container_name, or\n" +
+			"a volume's or network's explicit name, is resolved by the Docker daemon rather than\n" +
+			"by the compose project, so COMPOSE_PROJECT_NAME never reaches it and a second\n" +
+			"worktree collides on it. wtm offers to front them with the project — a renamed\n" +
+			"volume starts empty, its data staying under the name it used to carry.\n\n" +
 			"Dev servers get theirs from the env files sitting next to their package.json —\n" +
-			"a PORT (or *_PORT) entry in .env.local, .env, or a committed .env.example. wtm\n" +
-			"only declares the port; check that the command actually reads the variable, and\n" +
-			"pass it as a flag otherwise: --cmd 'pnpm dev --port ${PORT}'.\n\n" +
+			"a PORT (or *_PORT) entry in .env.local, .env, or a committed .env.example. A\n" +
+			"service nothing was found for is offered anyway: declaring its port is what keeps\n" +
+			"a second worktree from binding the same one.\n\n" +
+			"wtm injects the variable, it never edits the command. When a command never\n" +
+			"mentions the port it is given, the wizard offers it for editing on the spot\n" +
+			"(`pnpm dev --port ${PORT}`) rather than reporting it once it is too late.\n\n" +
 			domain.ExperimentalRunNotice,
 		Args: cobra.NoArgs,
 		RunE: runRunInit,
 	}
 	cmd.Flags().Bool(domain.FlagNonInteractive, false, "Auto-generate from detection; never prompt")
-	cmd.Flags().Bool(domain.FlagPatchCompose, false, "Rewrite literal host ports in the selected compose files to read a variable")
+	cmd.Flags().Bool(domain.FlagPatchCompose, false, "Rewrite the selected compose files' literal host ports and absolute names to read a variable")
 	cmd.Flags().Bool(domain.FlagLinkEnv, false, "Link the .env keys holding a declared port, so each worktree gets its own")
 	return cmd
 }
@@ -77,6 +85,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			detection.ComposeScans = compose.ScanAll(compose.ScanAllParams{
 				ProjectDir: res.ProjectDir,
 				Files:      detection.DockerComposeFiles,
+				Project:    filepath.Base(res.ProjectDir),
 			})
 			envScans = detect.ScanEnvPorts(detect.ScanEnvPortsParams{
 				ProjectDir: res.ProjectDir,
@@ -98,6 +107,10 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		Existing:     existing,
 		PatchCompose: patchCompose,
 		EnvScans:     envScans,
+		EnvLines: detect.EnvLines(detect.EnvPortCandidatesParams{
+			ProjectDir: res.ProjectDir,
+			Files:      res.Config.Project.Env.Files,
+		}),
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
@@ -111,16 +124,24 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		Files: answers.DockerComposeFiles,
 		Patch: answers.PatchCompose,
 	})
+	namePlan := rules.PlanComposeNames(rules.PlanComposeNamesParams{
+		Scans: detection.ComposeScans,
+		Files: answers.DockerComposeFiles,
+		Patch: answers.PatchCompose,
+	})
+	unverifiable := compose.VerifyAll(compose.VerifyAllParams{
+		ProjectDir:  res.ProjectDir,
+		ByFile:      plan.Patches,
+		NamesByFile: namePlan.Patches,
+	})
+	namePatches := rules.ComposeNamesWithoutFiles(namePlan.Patches, rules.SortedComposeFiles(unverifiable))
 	outcome := rules.ResolveDetectedPorts(rules.ResolveDetectedPortsParams{
 		Answers:        answers,
 		PackageManager: detection.PackageManager,
 		Existing:       existing,
 		Plan:           plan,
-		Unverifiable: compose.VerifyAll(compose.VerifyAllParams{
-			ProjectDir: res.ProjectDir,
-			ByFile:     plan.Patches,
-		}),
-		EnvScansByDir: envScans,
+		Unverifiable:   unverifiable,
+		EnvScansByDir:  envScans,
 	})
 
 	if !rules.IsRunInitialized(outcome.Config) {
@@ -133,9 +154,28 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
+	// The wizard's two composition steps outrank detection. Non-interactively
+	// nothing was asked, so the proposal stands as answered: a profile is what
+	// makes `run up` start something rather than everything.
+	if len(answers.Profiles) == 0 {
+		answers.Profiles = rules.ProposeProfiles(rules.ProposeProfilesParams{
+			Config:   outcome.Config,
+			Existing: existing.Profiles,
+		})
+	}
+	outcome.Config = rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
+		Config:   outcome.Config,
+		Ports:    answers.Ports,
+		Profiles: answers.Profiles,
+		Cmds:     answers.Cmds,
+	})
+
 	links := resolveEnvPortLinks(resolveEnvPortLinksParams{
-		Interactive: interactive,
-		LinkEnv:     linkEnv,
+		// The wizard already put the question as a step; asking again outside it
+		// is the orphaned prompt this flow used to end on.
+		Interactive: interactive && !answers.EnvLinksAsked,
+		LinkEnv:     linkEnv || (answers.EnvLinksAsked && answers.LinkEnv),
+		Declined:    answers.EnvLinksAsked && !answers.LinkEnv,
 		ProjectDir:  res.ProjectDir,
 		EnvFiles:    res.Config.Project.Env.Files,
 		Config:      outcome.Config,
@@ -145,7 +185,11 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 	// The rewrites come first: a compose templatized without run.toml behind it
 	// keeps binding its defaults, while a run.toml declaring ports the compose
 	// does not read would announce an isolation that is not there.
-	if err := compose.PatchAll(compose.PatchAllParams{ProjectDir: res.ProjectDir, ByFile: outcome.Patches}); err != nil {
+	if err := compose.PatchAll(compose.PatchAllParams{
+		ProjectDir:  res.ProjectDir,
+		ByFile:      outcome.Patches,
+		NamesByFile: namePatches,
+	}); err != nil {
 		return err
 	}
 	if err := runconfig.Save(runconfig.SaveParams{StateDir: res.StateDir, Config: outcome.Config}); err != nil {
@@ -174,7 +218,20 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			EnvSources:    outcome.EnvSources,
 			EnvUnreadable: outcome.EnvUnreadable,
 		})
+		output.ComposeNamesReport(cmd.OutOrStdout(), output.ComposeNamesReportParams{
+			Patched:  namePatches,
+			Withheld: namePlan.Withheld,
+		})
 		output.EnvPortLinksReport(cmd.OutOrStdout(), links, rules.EnvPortBases(outcome.Config))
+		// Last, and alone in a frame: everything above is what the run did, this
+		// is what it could not do without the reader.
+		output.PortIsolationReport(cmd.OutOrStdout(), output.PortIsolationReportParams{
+			Unported: rules.ServicesWithoutPorts(outcome.Config),
+			Ignoring: rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
+				Config: outcome.Config,
+				Exempt: rules.ComposeJobsFor(rules.ComposeJobsParams{Config: outcome.Config, Files: answers.DockerComposeFiles}),
+			}),
+		})
 		output.Blank(cmd.OutOrStdout())
 		output.Message(cmd.OutOrStdout(), "Next: `wtm run up` to start · `wtm run job add` to add more")
 		output.Blank(cmd.OutOrStdout())
@@ -190,6 +247,7 @@ type resolveServicesParams struct {
 	Existing     domain.RunConfig
 	PatchCompose bool
 	EnvScans     map[string]domain.EnvPortScan
+	EnvLines     map[string][]domain.EnvLine
 }
 
 // resolveServicesAnswers gathers the services selection either from the wizard
@@ -219,6 +277,7 @@ func resolveServicesAnswers(params resolveServicesParams) (domain.InitProjectAns
 		Prefill:      prefill,
 		PatchCompose: params.PatchCompose,
 		EnvScans:     params.EnvScans,
+		EnvLines:     params.EnvLines,
 	})
 }
 
@@ -236,9 +295,12 @@ func composeJobsByFile(cfg domain.RunConfig, files []string) map[string]string {
 
 type resolveEnvPortLinksParams struct {
 	Interactive bool
-	// LinkEnv is --link-env already given on the command line: the links are
-	// authorized, so nothing is asked.
-	LinkEnv    bool
+	// LinkEnv is --link-env already given on the command line, or the wizard's
+	// own answer: the links are authorized, so nothing is asked.
+	LinkEnv bool
+	// Declined is the wizard's refusal, which outranks everything: the question
+	// was put and answered no.
+	Declined   bool
 	ProjectDir string
 	EnvFiles   []domain.EnvFile
 	Config     domain.RunConfig
@@ -254,7 +316,7 @@ func resolveEnvPortLinks(params resolveEnvPortLinksParams) []domain.EnvPortLink 
 		Bases:      rules.EnvPortBases(params.Config),
 		Existing:   params.Config.EnvPorts,
 	})
-	if len(candidates) == 0 {
+	if len(candidates) == 0 || params.Declined {
 		return nil
 	}
 	if params.LinkEnv {

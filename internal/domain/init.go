@@ -64,11 +64,26 @@ type InitProjectAnswers struct {
 	DockerComposeFiles []string
 	DockerComposeCmd   string
 	// PatchCompose authorizes rewriting the selected compose files so their
-	// frozen host ports read a variable. Never inferred: it is the wizard's
-	// answer, or the --patch-compose flag.
+	// frozen host ports and the names they pin absolutely read a variable. One
+	// axis, not two: accepting half of them still leaves two worktrees unable to
+	// run at once. Never inferred — it is the wizard's answer, or the
+	// --patch-compose flag.
 	PatchCompose           bool
 	SelectedPackageScripts []PackageScript
-	SkipEnv                bool
-	SkipHooks              bool
-	SkipClean              bool
+	// Ports is what the wizard settled for the detected ports, and Profiles the
+	// split `run up` will offer. Empty Profiles means the run could not ask: the
+	// proposal is then taken as answered, since a profile is what makes `run up`
+	// start something rather than everything.
+	Ports    []PortEntry
+	Profiles []ProfileConfig
+	// Cmds is the commands the wizard amended so they read the port wtm injects.
+	Cmds []JobCmdFix
+	// LinkEnv is what the wizard settled for the .env keys holding a declared
+	// port; EnvLinksAsked says the question was put at all, so a run that asked
+	// and got "no" is not mistaken for one that never asked.
+	LinkEnv       bool
+	EnvLinksAsked bool
+	SkipEnv       bool
+	SkipHooks     bool
+	SkipClean     bool
 }

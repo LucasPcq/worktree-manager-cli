@@ -156,9 +156,3 @@ func EnvPortsWrittenLines(params EnvPortsWrittenLinesParams) []string {
 	}
 	return lines
 }
-
-// EnvPortsVerifyLine is the one thing wtm cannot check for the user: whether
-// the command actually reads the variable.
-func EnvPortsVerifyLine() string {
-	return fmt.Sprintf(domain.EnvPortsVerifyFmt, domain.EnvPortKeyName)
-}

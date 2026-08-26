@@ -138,3 +138,33 @@ func TestComposePatchStepIsAbsentWithoutAnyScan(t *testing.T) {
 		t.Error("no compose file means no step at all")
 	}
 }
+
+func TestServicesStepPreselectsOnlyDevScripts(t *testing.T) {
+	scripts := []domain.PackageScript{
+		{Name: "dev", Workspace: "apps/web", PkgName: "web"},
+		{Name: "build", Workspace: "apps/web", PkgName: "web"},
+		{Name: "preview", Workspace: "apps/web", PkgName: "web"},
+		{Name: "start", Workspace: "apps/api", PkgName: "api"},
+	}
+
+	items := scriptItems(scriptItemsParams{
+		Scripts:        scripts,
+		PackageManager: domain.PkgManagerPnpm,
+	})
+
+	if len(items) != 4 {
+		t.Fatalf("tous les scripts restent proposés, got %d", len(items))
+	}
+	selected := map[string]bool{}
+	for i, item := range items {
+		selected[scripts[i].Name] = item.Selected
+	}
+	if !selected["dev"] {
+		t.Error("dev doit être coché")
+	}
+	for _, name := range []string{"build", "preview", "start"} {
+		if selected[name] {
+			t.Errorf("%s ne doit pas être coché", name)
+		}
+	}
+}

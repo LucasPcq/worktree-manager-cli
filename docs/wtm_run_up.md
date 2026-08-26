@@ -6,6 +6,9 @@ Start a profile's jobs
 
 Start every job in a profile, in declared order.
 Without arguments, uses the default profile (or shows a picker if multiple exist).
+Once the jobs are up, each declared port is checked: a port nothing answers on is
+reported rather than announced as bound. It never fails the run — see --no-probe
+and run.toml's port_probe_timeout.
 Tasks block the profile and abort it on failure; services launch in the background.
 The run view opens on the jobs as they start; leaving it detaches without stopping them, and -d skips it.
 
@@ -19,6 +22,7 @@ wtm run up [profile] [flags]
   -d, --detach          Start the jobs and return immediately instead of opening their output
       --exclusive       Stop jobs on other worktrees before starting
   -h, --help            help for up
+      --no-probe        Skip the check that each declared port was actually bound
       --output string   Output format: text or json (default "text")
       --parallel        Start without stopping other worktrees
 ```

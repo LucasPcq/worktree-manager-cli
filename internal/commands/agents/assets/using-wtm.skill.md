@@ -232,6 +232,18 @@ and **experimental**: the global `wtm init` does not configure it.
   `16` (run module not initialized) until at least one job/profile is declared. Non-TTY it
   auto-generates; re-running merges without overwriting. `run job add` / `run profile add`
   also work before init (they create the first job).
+- **`run init` composes a startable configuration.** It proposes every compose file and
+  package script but checks only scripts whose name contains `dev` — and not a root `dev`
+  a workspace package also declares, which is an orchestrator (`turbo run dev`) that would
+  double-start those packages. **Nothing unchecked becomes a job.** It then asks to review
+  the detected ports, and to compose the **profiles** `run up` offers: one per package plus
+  one gathering everything, editable (rename / merge / remove / new). Root-cwd jobs join
+  every profile. Non-interactively it takes the same answers without asking. A checked
+  script outside the `dev` ones gets its `kind` asked, because a task blocks its profile
+  until it exits. **A service with no detected port is asked about too** — declaring one is
+  what keeps a second worktree from binding the same port — and a job whose command never
+  mentions the variable wtm injects gets that command offered for editing. The wizard ends
+  on a **review step**: choosing "No, cancel" there aborts the run and writes nothing.
 - `run init --link-env` also writes the `[[env_port]]` links without asking (see port
   isolation below).
 - `run init` also **pre-fills the ports** of the compose files it picks up. A mapping
@@ -243,6 +255,18 @@ and **experimental**: the global `wtm init` does not configure it.
   `docker compose up` working without wtm. Non-interactively no project file is ever
   touched without that flag. Re-running `run init` backfills the ports of a compose job
   that predates them, without overwriting a port already declared.
+- `run init` also finds the **absolute names** a compose file pins: a service's
+  `container_name`, or a top-level volume's or network's explicit `name`. These are
+  resolved by the Docker daemon, not by the compose project, so `COMPOSE_PROJECT_NAME`
+  never reaches them and a second worktree collides — Docker refuses a duplicate
+  `container_name` outright, and a pinned volume or network is silently shared. wtm
+  reports them and, under the same **`--patch-compose`**, fronts each with the project
+  (`container_name: "${COMPOSE_PROJECT_NAME:-myapp}-postgres"`); the default reproduces
+  the name the file used to pin, so `docker compose up` alone is unchanged. Ports and
+  names are **one confirmation**, not two: accepting half still leaves two worktrees
+  unable to run at once. A name under `external: true` or one already reading a variable
+  is left alone. A volume that pinned its `name` gains one per worktree, **each starting
+  empty** — the data already written stays under the old name; say so before patching.
 - `run init` also pre-fills the ports of **dev server jobs** from the env files next to
   their `package.json`: a `PORT` (or `*_PORT`) entry with a numeric value, read from
   `.env.local`, else `.env`, else a committed `.env.example`. A job is matched to a
@@ -290,7 +314,18 @@ and **experimental**: the global `wtm init` does not configure it.
   number, stable for the worktree's life), `WTM_PORT_OFFSET` (`WTM_ORDINAL` times the
   `port_offset_block` of run.toml, 10 by default), and `COMPOSE_PROJECT_NAME`
   (= `<repo>-<WTM_WORKTREE>`, left alone if the environment already sets it). Docker
-  isolation is therefore automatic.
+  isolation is automatic for everything compose names itself; a `container_name` or a
+  volume/network pinned by `name` escapes it — see `run init --patch-compose` above.
+- **`run up` verifies the ports.** Declaring a port injects a variable; nothing forces
+  the command to read it. After the jobs start, wtm dials each declared port and reports
+  the silent ones under "Ports declared but not bound". When the *base* port answers
+  instead, the variable never reached the process — a `--port`-only CLI, a hard-coded
+  port, a `.env` that wins, or a task runner filtering env (**Turborepo's default
+  `envMode: "strict"` does exactly this**: a root `turbo run dev` job needs
+  `globalPassThroughEnv` in `turbo.json`). wtm never edits third-party config; report the
+  finding and tell the user what to change. The check never fails the run and never
+  changes the exit code — do not treat it as an error. `--no-probe` skips it;
+  `port_probe_timeout` in run.toml sets the budget (default 15s, negative disables).
 - **Port isolation is declarative.** A job declares the ports it binds on the main
   checkout, and wtm injects `base + WTM_PORT_OFFSET` under that name — so the command
   needs no arithmetic of its own:
@@ -310,7 +345,8 @@ and **experimental**: the global `wtm init` does not configure it.
   `sh` is always used, never the user's interactive shell: no `[[ ]]`, no process substitution.
 - **A port hard-coded in a `.env` follows the worktree too**, via `[[env_port]]` links in
   `run.toml`. A link names a key, not a position: `{file = ".env", key = "DATABASE_URL",
-  port = "POSTGRES_PORT"}` tells wtm that this key's value carries that port, and wtm finds
+  job = "db", port = "POSTGRES_PORT"}` tells wtm that this key's value carries that job's
+  port, and wtm finds
   the declared base *inside* the value and shifts it — so `postgres://u:pw@localhost:5432/app`
   becomes `…:5442/app` while the rest of the value (credentials, path, query) is untouched.
   A bare `DB_PORT=5432` is the same mechanism. `wtm run init` scans the project's configured
@@ -324,7 +360,10 @@ and **experimental**: the global `wtm init` does not configure it.
   Three refusals, reported and never guessed: the key is absent from the file, the base
   appears **more than once** in the value, or **neither the base nor any offset of it** is
   there. A link naming a port no job declares, an invalid key, or the same `(file, key)`
-  twice makes `run.toml` refuse to load; a link naming a `.env` that is not a configured
+  twice makes `run.toml` refuse to load; so does a link missing `job`, which is **required** —
+  two apps may each declare a `PORT`, and the name alone would not say which base the key
+  follows. The error names the jobs that do declare the port, so the fix is the line to
+  write. A link naming a `.env` that is not a configured
   `[env]` target of `.wtm.toml` is refused too. `wtm env --mode refresh` compares linked
   values **modulo the offset**, so a worktree holding `5442` against a source holding `5432`
   is not a conflict — but a genuine difference in the same value still is.

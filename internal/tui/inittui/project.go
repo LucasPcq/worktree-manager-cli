@@ -28,6 +28,12 @@ const (
 	stepHooksClean     = "hooks_clean"
 	stepDocker         = "docker"
 	stepComposePatch   = "compose_patch"
+	stepScriptKinds    = "script_kinds"
+	stepPorts          = "ports"
+	stepCmds           = "cmds"
+	stepEnvLink        = "env_link"
+	stepRecap          = "recap"
+	stepProfiles       = "profiles"
 	stepScripts        = "scripts"
 )
 
@@ -110,21 +116,30 @@ func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (
 // error when nothing is detected — the caller reports how to add jobs manually.
 func RunServicesWizard(params ServicesWizardParams) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
-	addServicesSteps(s, addServicesStepsParams{
+	written := addServicesSteps(s, addServicesStepsParams{
 		Detection:    params.Detection,
 		Existing:     params.Existing,
 		Prefill:      params.Prefill,
 		PatchCompose: params.PatchCompose,
 		EnvScans:     params.EnvScans,
+		EnvLines:     params.EnvLines,
 	})
 
 	if len(s.steps) == 0 {
 		return domain.InitProjectAnswers{}, nil
 	}
+	s.add(stepRecap, servicesRecapStep(servicesRecapParams{
+		Written: written,
+		Cmds:    s.at(stepCmds),
+		Answers: []int{s.at(stepEnvLink), s.at(stepComposePatch)},
+	}))
 
 	final, err := runWizard(runWizardParams{steps: s.steps, projectDir: params.ProjectDir})
 	if err != nil {
 		return domain.InitProjectAnswers{}, err
+	}
+	if recapCancelled(final, s.at(stepRecap)) {
+		return domain.InitProjectAnswers{}, domain.ErrUserAborted
 	}
 
 	answers := extractProjectAnswers(final, params.Detection, s.idx)
@@ -144,6 +159,9 @@ type ServicesWizardParams struct {
 	// EnvScans feeds the same resolution the recap runs, so the rewrite step
 	// cannot announce a patch a .env port later withdraws.
 	EnvScans map[string]domain.EnvPortScan
+	// EnvLines is the project's env files read once, so the link step can match
+	// them against a config still being composed.
+	EnvLines map[string][]domain.EnvLine
 }
 
 // SectionWizardParams holds inputs for RunSectionWizard.
@@ -240,6 +258,123 @@ func reinitConfirmStep(p components.NewConfirmParams) components.Step {
 			}
 		},
 	})
+}
+
+// servicesRecapStep restates what the run is about to write and warns about what
+// will still collide. It is the point the flow was missing: every answer visible
+// at once, before anything is written, with a way back to the step that set it.
+type servicesRecapParams struct {
+	// Written resolves the config as it will land on disk.
+	Written func([]components.Step) domain.RunConfig
+	Cmds    int
+	// Answers are the steps whose outcome no config field carries — the yes/no
+	// ones — listed under their own heading rather than mixed into the content.
+	Answers []int
+}
+
+func servicesRecapStep(params servicesRecapParams) components.Step {
+	return components.RecapStep(components.RecapStepParams{
+		Name: domain.RecapStepName,
+		Build: func(prev []components.Step) components.RecapContent {
+			cfg := params.Written(prev)
+
+			lines := []string{"", domain.RecapStepIntro}
+			lines = appendSection(lines, domain.RecapJobsTitle, rules.RecapJobLines(cfg))
+			lines = appendSection(lines, domain.RecapProfilesTitle, rules.RecapProfileLines(cfg))
+			lines = appendSection(lines, domain.RecapAnswersTitle, answerLines(prev, params.Answers))
+
+			for _, warning := range recapWarnings(cfg, prev, params.Cmds) {
+				lines = append(lines, "", warning)
+			}
+
+			return components.RecapContent{
+				Description: strings.Join(lines, "\n"),
+				Actions:     []components.SelectItem{{Label: domain.RecapWriteLabel, Value: domain.RecapWriteValue}},
+			}
+		},
+	})
+}
+
+// appendSection separates each group with a blank line: run together, the jobs,
+// the profiles and the answers read as one undifferentiated list.
+func appendSection(lines []string, title string, rows []string) []string {
+	if len(rows) == 0 {
+		return lines
+	}
+	lines = append(lines, "", title)
+	for _, row := range rows {
+		lines = append(lines, domain.RecapRowIndent+row)
+	}
+	return lines
+}
+
+// answerLines restates the yes/no steps, an unasked one included: what was not
+// asked is as much a part of the outcome as what was.
+func answerLines(prev []components.Step, at []int) []string {
+	width := 0
+	for _, i := range at {
+		if i >= 0 && i < len(prev) {
+			width = max(width, len([]rune(prev[i].Name)))
+		}
+	}
+
+	var lines []string
+	for _, i := range at {
+		if i < 0 || i >= len(prev) {
+			continue
+		}
+		step := prev[i]
+		answer := domain.RecapNotAsked
+		if step.Summary != nil {
+			if summary := step.Summary(step.Model); summary != "" {
+				answer = summary
+			}
+		}
+		lines = append(lines, fmt.Sprintf(domain.RecapJobLineFmt, rules.Pad(step.Name, width), answer))
+	}
+	return lines
+}
+
+func recapWarnings(cfg domain.RunConfig, prev []components.Step, cmds int) []string {
+	var warnings []string
+	if undeclared := rules.ServicesWithoutPorts(cfg); len(undeclared) > 0 {
+		warnings = append(warnings,
+			fmt.Sprintf(domain.RecapUndeclaredWarnFmt, strings.Join(undeclared, domain.CmdListVarSep)))
+	}
+	if ignoring := jobsIgnoringTheirPort(prev, cmds); len(ignoring) > 0 {
+		warnings = append(warnings,
+			fmt.Sprintf(domain.RecapIgnoredPortWarnFmt, strings.Join(ignoring, domain.CmdListVarSep)))
+	}
+	return warnings
+}
+
+// jobsIgnoringTheirPort names the commands the user chose to leave as they are.
+// wtm cannot know whether they read the variable on their own, so the recap
+// states it rather than deciding for them.
+func jobsIgnoringTheirPort(prev []components.Step, at int) []string {
+	if at < 0 || at >= len(prev) {
+		return nil
+	}
+	cl, ok := prev[at].Model.(components.CmdListModel)
+	if !ok {
+		return nil
+	}
+	var jobs []string
+	for _, fix := range cl.Fixes() {
+		if rules.CmdMissesItsPort(fix) {
+			jobs = append(jobs, fix.Job)
+		}
+	}
+	return jobs
+}
+
+func recapCancelled(final components.WizardModel, at int) bool {
+	steps := final.Steps()
+	if at < 0 || at >= len(steps) {
+		return false
+	}
+	sl, ok := steps[at].Model.(components.SelectListModel)
+	return ok && sl.Value() == domain.WizardCancelValue
 }
 
 // runWizardParams holds inputs for runWizard. When holder is non-nil the wizard
@@ -462,15 +597,380 @@ func addHooksCleanSteps(s *stepSet, autoSkip func(components.WizardModel) bool, 
 	})
 }
 
+// addScriptKindStep only appears when a script was checked outside the dev ones.
+// The kind decides whether a job blocks its profile, and the name gets it wrong
+// in both directions: `preview` serves requests while `start` is production.
+func addScriptKindStep(s *stepSet, detection domain.InitDetectionResult) {
+	scripts := s.at(stepScripts)
+	if scripts < 0 {
+		return
+	}
+
+	skipReason := ""
+	s.add(stepScriptKinds, components.Step{
+		Name: domain.ScriptKindStepName,
+		Build: func(prev []components.Step) any {
+			return components.NewKindList(components.NewKindListParams{
+				Title:       domain.ScriptKindStepTitle,
+				Description: domain.ScriptKindStepDesc,
+				Entries:     scriptKindChoices(prev, scripts, detection.PackageScripts),
+			})
+		},
+		AutoSkip: func(w components.WizardModel) bool {
+			asked := len(scriptKindChoices(w.Steps(), scripts, detection.PackageScripts)) == 0
+			if asked {
+				skipReason = rules.ScriptKindsSkipReason(len(selectedScripts(w.Steps(), scripts, detection.PackageScripts)))
+			}
+			return asked
+		},
+		SkipReason: func() string { return skipReason },
+		Summary:    kindListSummary,
+		Callout:    true,
+	})
+}
+
+// scriptKindChoices are the checked scripts the name does not settle — the ones
+// the wizard pre-checked need no question. The label carries the package: two
+// workspaces both declaring "build" are two separate answers.
+func scriptKindChoices(prev []components.Step, scripts int, detected []domain.PackageScript) []domain.JobKindChoice {
+	var choices []domain.JobKindChoice
+	for _, script := range selectedScripts(prev, scripts, detected) {
+		if rules.PreselectScript(rules.PreselectScriptParams{Script: script, All: detected}) {
+			continue
+		}
+		choices = append(choices, domain.JobKindChoice{
+			Label:     scriptLabel(script),
+			Cmd:       script.Cmd,
+			Name:      script.Name,
+			Workspace: script.Workspace,
+			Kind:      rules.ClassifyScriptKind(script.Name),
+		})
+	}
+	return choices
+}
+
+// scriptLabel names a script by its package, the way the selection step does.
+func scriptLabel(script domain.PackageScript) string {
+	scope := domain.ScriptScopeRoot
+	if script.Workspace != "" {
+		scope = script.Workspace
+	}
+	return fmt.Sprintf(domain.ScriptLabelFmt, scope, script.Name)
+}
+
+func kindListSummary(model any) string {
+	kl, ok := model.(components.KindListModel)
+	if !ok {
+		return ""
+	}
+	if len(kl.Entries()) == 0 {
+		return domain.RecapNotAsked
+	}
+	services := 0
+	for _, entry := range kl.Entries() {
+		if entry.Kind == domain.JobKindService {
+			services++
+		}
+	}
+	return fmt.Sprintf(domain.KindListSummaryFmt, services, len(kl.Entries())-services)
+}
+
+// addPortsAndProfilesSteps turns the selection into a configuration: the ports
+// detection pre-filled, then the split `run up` will offer. Both read the live
+// selections, so both are declared after the steps they read.
+func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (written func([]components.Step) domain.RunConfig) {
+	docker, scripts := s.at(stepDocker), s.at(stepScripts)
+	detection := params.Detection
+
+	resolved := func(prev []components.Step) rules.DetectedPortsOutcome {
+		answers := answersFromSteps(answersFromStepsParams{
+			Prev: prev, Docker: docker, Scripts: scripts, Detection: detection,
+		})
+		return rules.ResolveDetectedPorts(rules.ResolveDetectedPortsParams{
+			Answers:        answers,
+			PackageManager: detection.PackageManager,
+			Existing:       params.Existing,
+			Plan: rules.PlanComposePorts(rules.PlanComposePortsParams{
+				Scans: detection.ComposeScans,
+				Files: answers.DockerComposeFiles,
+				Patch: true,
+			}),
+			EnvScansByDir: params.EnvScans,
+		})
+	}
+
+	portsSkipReason := ""
+	s.add(stepPorts, components.Step{
+		Name: domain.PortListStepName,
+		Build: func(prev []components.Step) any {
+			return components.NewPortList(components.NewPortListParams{
+				Title:       domain.PortListStepTitle,
+				Description: domain.PortListStepDesc,
+				Entries:     portEntriesFor(resolved(prev).Config, prev, docker),
+			})
+		},
+		AutoSkip: func(w components.WizardModel) bool {
+			cfg := resolved(w.Steps()).Config
+			if len(portEntriesFor(cfg, w.Steps(), docker)) > 0 {
+				return false
+			}
+			portsSkipReason = rules.PortsSkipReason(cfg)
+			return true
+		},
+		SkipReason: func() string { return portsSkipReason },
+		Summary:    portListSummary,
+		Callout:    true,
+	})
+
+	ports := s.at(stepPorts)
+	settled := func(prev []components.Step) domain.RunConfig {
+		return rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
+			Config: resolved(prev).Config,
+			Ports:  portEntriesOf(prev, ports),
+		})
+	}
+	// written is settled plus the answers the later steps add, which is what the
+	// recap has to show: the config as it will land on disk, not a stage of it.
+	written = func(prev []components.Step) domain.RunConfig {
+		return rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
+			Config:   resolved(prev).Config,
+			Ports:    portEntriesOf(prev, ports),
+			Cmds:     cmdFixesOf(prev, s.at(stepCmds)),
+			Profiles: profilesOf(prev, s.at(stepProfiles)),
+		})
+	}
+
+	cmdSkipReason := ""
+	s.add(stepCmds, components.Step{
+		Name: domain.CmdListStepName,
+		Build: func(prev []components.Step) any {
+			return components.NewCmdList(components.NewCmdListParams{
+				Title:       domain.CmdListStepTitle,
+				Description: domain.CmdListStepDesc,
+				Fixes:       cmdFixesFor(settled(prev), prev, docker),
+			})
+		},
+		AutoSkip: func(w components.WizardModel) bool {
+			if len(cmdFixesFor(settled(w.Steps()), w.Steps(), docker)) > 0 {
+				return false
+			}
+			cmdSkipReason = domain.SkipReasonCommandsRead
+			return true
+		},
+		SkipReason: func() string { return cmdSkipReason },
+		Summary:    cmdListSummary,
+		Callout:    true,
+	})
+
+	s.add(stepProfiles, components.Step{
+		Name: domain.ProfileListStepName,
+		Build: func(prev []components.Step) any {
+			return components.NewProfileList(components.NewProfileListParams{
+				Title:       domain.ProfileStepTitle,
+				Description: domain.ProfileStepDesc,
+				Profiles: rules.ProposeProfiles(rules.ProposeProfilesParams{
+					Config:   resolved(prev).Config,
+					Existing: params.Existing.Profiles,
+				}),
+			})
+		},
+		AutoSkip: func(w components.WizardModel) bool {
+			return len(rules.ProposeProfiles(rules.ProposeProfilesParams{
+				Config:   resolved(w.Steps()).Config,
+				Existing: params.Existing.Profiles,
+			})) == 0
+		},
+		SkipReason: func() string { return domain.SkipReasonNoService },
+		Summary:    profileListSummary,
+		Callout:    true,
+	})
+	defer func() { _ = written }()
+
+	s.add(stepEnvLink, components.ConfirmStep(components.ConfirmStepParams{
+		Name:    domain.EnvLinkStepName,
+		Callout: true,
+		Decide: func(prev []components.Step) (bool, string, components.NewConfirmParams) {
+			candidates := envLinkCandidates(settled(prev), params.EnvLines)
+			if len(candidates) == 0 {
+				return false, domain.SkipReasonNoEnvKeyFollows, components.NewConfirmParams{}
+			}
+			return true, "", components.NewConfirmParams{
+				Title: domain.EnvPortLinkConfirm,
+				Description: strings.Join(append(
+					[]string{domain.EnvPortLinkDescription, ""},
+					rules.EnvPortLinkLines(candidates, rules.EnvPortBases(settled(prev)))...), "\n"),
+				DefaultYes: true,
+			}
+		},
+	}))
+
+	return written
+}
+
+// cmdFixesOf and profilesOf read a step back, tolerating one this wizard never
+// built.
+func cmdFixesOf(prev []components.Step, at int) []domain.JobCmdFix {
+	if at < 0 || at >= len(prev) {
+		return nil
+	}
+	cl, ok := prev[at].Model.(components.CmdListModel)
+	if !ok {
+		return nil
+	}
+	return cl.Fixes()
+}
+
+func profilesOf(prev []components.Step, at int) []domain.ProfileConfig {
+	if at < 0 || at >= len(prev) {
+		return nil
+	}
+	pl, ok := prev[at].Model.(components.ProfileListModel)
+	if !ok {
+		return nil
+	}
+	return pl.Profiles()
+}
+
+// portEntriesFor exempts the compose jobs: their `ports:` list is complete, so
+// they are the one family the step has nothing more to ask about.
+func portEntriesFor(cfg domain.RunConfig, prev []components.Step, docker int) []domain.PortEntry {
+	return rules.PortEntriesFor(rules.PortEntriesForParams{
+		Config:      cfg,
+		ComposeJobs: composeJobsIn(cfg, prev, docker),
+	})
+}
+
+func composeJobsIn(cfg domain.RunConfig, prev []components.Step, docker int) []string {
+	return rules.ComposeJobsFor(rules.ComposeJobsParams{
+		Config: cfg,
+		Files:  selectedComposeFiles(prev, docker),
+	})
+}
+
+// portEntriesOf reads back what the ports step settled, so a later step sees the
+// port the user just declared rather than the one detection failed to find.
+func portEntriesOf(prev []components.Step, at int) []domain.PortEntry {
+	if at < 0 || at >= len(prev) {
+		return nil
+	}
+	pl, ok := prev[at].Model.(components.PortListModel)
+	if !ok {
+		return nil
+	}
+	return pl.Entries()
+}
+
+// cmdFixesFor exempts the compose jobs: a stack reads its ports from the file
+// wtm templated, never from the command that starts it.
+func cmdFixesFor(cfg domain.RunConfig, prev []components.Step, docker int) []domain.JobCmdFix {
+	return rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
+		Config: cfg,
+		Exempt: composeJobsIn(cfg, prev, docker),
+	})
+}
+
+func selectedComposeFiles(prev []components.Step, docker int) []string {
+	if docker < 0 || docker >= len(prev) {
+		return nil
+	}
+	selected, ok := prev[docker].Model.(components.MultiSelectModel)
+	if !ok {
+		return nil
+	}
+	return selected.Values()
+}
+
+func envLinkCandidates(cfg domain.RunConfig, lines map[string][]domain.EnvLine) []domain.EnvPortLink {
+	return rules.EnvPortCandidates(rules.EnvPortCandidatesParams{
+		Lines:    lines,
+		Bases:    rules.EnvPortBases(cfg),
+		Existing: cfg.EnvPorts,
+	})
+}
+
+func cmdListSummary(model any) string {
+	cl, ok := model.(components.CmdListModel)
+	if !ok {
+		return ""
+	}
+	if len(cl.Fixes()) == 0 {
+		return domain.RecapNotAsked
+	}
+	fixed := 0
+	for _, fix := range cl.Fixes() {
+		if !rules.CmdMissesItsPort(fix) {
+			fixed++
+		}
+	}
+	return fmt.Sprintf(domain.CmdListSummaryFmt, fixed, len(cl.Fixes()))
+}
+
+func portListSummary(model any) string {
+	pl, ok := model.(components.PortListModel)
+	if !ok {
+		return ""
+	}
+	declared := 0
+	for _, entry := range pl.Entries() {
+		if entry.Base > 0 {
+			declared++
+		}
+	}
+	if undeclared := len(pl.Entries()) - declared; undeclared > 0 {
+		return fmt.Sprintf(domain.PortListSummaryUndeclaredFmt, declared, undeclared)
+	}
+	return fmt.Sprintf(domain.PortListSummaryFmt, declared)
+}
+
+func profileListSummary(model any) string {
+	pl, ok := model.(components.ProfileListModel)
+	if !ok {
+		return ""
+	}
+	if len(pl.Profiles()) == 0 {
+		return domain.RecapNotAsked
+	}
+	return fmt.Sprintf(domain.ProfileListSummaryFmt, len(pl.Profiles()))
+}
+
+type scriptItemsParams struct {
+	Scripts        []domain.PackageScript
+	PackageManager domain.PackageManager
+	Prefill        *SectionPrefill
+}
+
+// scriptItems proposes every script and checks the fewest: a job nobody checked
+// is a job that is never written, which is what stops the init from producing
+// an inventory instead of a configuration.
+func scriptItems(params scriptItemsParams) []components.MultiSelectItem {
+	pm := string(params.PackageManager)
+	items := make([]components.MultiSelectItem, 0, len(params.Scripts))
+	for i, script := range params.Scripts {
+		scope := domain.ScriptScopeRoot
+		if script.Workspace != "" {
+			scope = script.Workspace
+		}
+		items = append(items, components.MultiSelectItem{
+			Label: fmt.Sprintf(domain.ScriptItemLabelFmt, scope, script.Name, pm, script.Name),
+			Value: strconv.Itoa(i),
+			Selected: prefillSelected(params.Prefill,
+				params.Prefill != nil && params.Prefill.ScriptIndices[i],
+				rules.PreselectScript(rules.PreselectScriptParams{Script: script, All: params.Scripts})),
+		})
+	}
+	return items
+}
+
 type addServicesStepsParams struct {
 	Detection    domain.InitDetectionResult
 	Existing     domain.RunConfig
 	Prefill      *SectionPrefill
 	PatchCompose bool
 	EnvScans     map[string]domain.EnvPortScan
+	EnvLines     map[string][]domain.EnvLine
 }
 
-func addServicesSteps(s *stepSet, params addServicesStepsParams) {
+func addServicesSteps(s *stepSet, params addServicesStepsParams) (written func([]components.Step) domain.RunConfig) {
 	detection, prefill := params.Detection, params.Prefill
 	if len(detection.DockerComposeFiles) > 0 {
 		items := make([]components.MultiSelectItem, 0, len(detection.DockerComposeFiles))
@@ -491,42 +991,77 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) {
 	}
 
 	if len(detection.PackageScripts) > 0 {
-		pm := string(detection.PackageManager)
-		items := make([]components.MultiSelectItem, 0, len(detection.PackageScripts))
-		for i, script := range detection.PackageScripts {
-			scope := "root"
-			if script.Workspace != "" {
-				scope = script.Workspace
-			}
-			label := fmt.Sprintf("%s / %s — %s run %s", scope, script.Name, pm, script.Name)
-			selected := prefillSelected(prefill, prefill != nil && prefill.ScriptIndices[i], script.Kind == domain.JobKindService)
-			items = append(items, components.MultiSelectItem{
-				Label:    label,
-				Value:    strconv.Itoa(i),
-				Selected: selected,
-			})
-		}
 		s.add(stepScripts, components.Step{
-			Name: "Package scripts",
+			Name: domain.ScriptsStepName,
 			Model: components.NewMultiSelect(components.NewMultiSelectParams{
-				Title:       "Package.json scripts",
-				Description: "Each selected script becomes a job — dev-style scripts run as services, the rest as one-off tasks.",
-				Items:       items,
+				Title:       domain.ScriptsStepTitle,
+				Description: domain.ScriptsStepDesc,
+				Items: scriptItems(scriptItemsParams{
+					Scripts:        detection.PackageScripts,
+					PackageManager: detection.PackageManager,
+					Prefill:        prefill,
+				}),
 			}),
 			Summary: packageScriptsSummary,
 			Callout: true,
 		})
 	}
 
+	addScriptKindStep(s, detection)
+
 	// Declared last on purpose: the step resolves the ports of both selections,
 	// so it must be able to read them — a .env port can withdraw a compose
 	// declaration, and the step would otherwise offer a rewrite that never runs.
+	written = addPortsAndProfilesSteps(s, addServicesStepsParams{
+		Detection: detection,
+		Existing:  params.Existing,
+		EnvScans:  params.EnvScans,
+		EnvLines:  params.EnvLines,
+	})
+
 	addComposePatchStep(s, addComposePatchStepParams{
 		Detection:  detection,
 		Existing:   params.Existing,
 		Authorized: params.PatchCompose,
 		EnvScans:   params.EnvScans,
 	})
+
+	return written
+}
+
+// composePatchDescription lays out only the halves that have something to show:
+// a file with a literal port and no pinned name asks about ports alone.
+func composePatchDescription(patches map[string][]domain.ComposePortBinding, names map[string][]domain.ComposeAbsoluteName) string {
+	sections := []string{domain.ComposePatchStepIntro}
+
+	if len(patches) > 0 {
+		sections = append(sections, domain.ComposePatchStepPortsLead+"\n"+strings.Join(rules.ComposePatchLines(patches), "\n"))
+	}
+	if len(names) > 0 {
+		sections = append(sections, domain.ComposePatchStepNamesLead+"\n"+strings.Join(rules.ComposeNamePatchLines(names), "\n"))
+		if rules.ComposeNamesRenameAVolume(names) {
+			sections = append(sections, domain.ComposeNamesVolumeWarning)
+		}
+	}
+
+	return strings.Join(append(sections, domain.ComposePatchStepEpilogue), "\n\n")
+}
+
+// composeNamesFor plans against the wizard's live docker selection, so the
+// lines the step asks about are exactly the ones the recap will report.
+func composeNamesFor(prev []components.Step, docker int, detection domain.InitDetectionResult) map[string][]domain.ComposeAbsoluteName {
+	if docker >= len(prev) {
+		return nil
+	}
+	selected, ok := prev[docker].Model.(components.MultiSelectModel)
+	if !ok {
+		return nil
+	}
+	return rules.PlanComposeNames(rules.PlanComposeNamesParams{
+		Scans: detection.ComposeScans,
+		Files: selected.Values(),
+		Patch: true,
+	}).Patches
 }
 
 // ── Extraction ──────────────────────────────────────────────────────────────
@@ -615,6 +1150,34 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 				}
 				answers.SelectedPackageScripts = append(answers.SelectedPackageScripts, detection.PackageScripts[n])
 			}
+		}
+	}
+	if i := at(stepPorts); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.PortListModel); ok {
+			answers.Ports = m.Entries()
+		}
+	}
+	if i := at(stepProfiles); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.ProfileListModel); ok {
+			answers.Profiles = m.Profiles()
+		}
+	}
+	if i := at(stepCmds); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.CmdListModel); ok {
+			answers.Cmds = m.Fixes()
+		}
+	}
+	if i := at(stepEnvLink); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.ConfirmModel); ok {
+			answers.EnvLinksAsked, answers.LinkEnv = true, m.Confirmed()
+		}
+	}
+	if i := at(stepScriptKinds); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.KindListModel); ok {
+			answers.SelectedPackageScripts = rules.ApplyScriptKinds(rules.ApplyScriptKindsParams{
+				Scripts: answers.SelectedPackageScripts,
+				Choices: m.Entries(),
+			})
 		}
 	}
 
@@ -834,6 +1397,7 @@ func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
 		Name:     domain.ComposePatchStepName,
 		YesLabel: domain.ComposePatchStepYes,
 		NoLabel:  domain.ComposePatchStepNo,
+		Callout:  true,
 		Decide: func(prev []components.Step) (bool, string, components.NewConfirmParams) {
 			patches := composePatchesFor(composePatchesForParams{
 				Prev:      prev,
@@ -843,19 +1407,16 @@ func addComposePatchStep(s *stepSet, params addComposePatchStepParams) {
 				Existing:  params.Existing,
 				EnvScans:  params.EnvScans,
 			})
-			if len(patches) == 0 {
+			names := composeNamesFor(prev, docker, detection)
+			if len(patches) == 0 && len(names) == 0 {
 				return false, "", components.NewConfirmParams{}
 			}
 			if params.Authorized {
 				return false, "--" + domain.FlagPatchCompose, components.NewConfirmParams{}
 			}
 			return true, "", components.NewConfirmParams{
-				Title: domain.ComposePatchStepTitle,
-				Description: strings.Join([]string{
-					domain.ComposePatchStepPrelude,
-					strings.Join(rules.ComposePatchLines(patches), "\n"),
-					domain.ComposePatchStepEpilogue,
-				}, "\n\n"),
+				Title:       domain.ComposePatchStepTitle,
+				Description: composePatchDescription(patches, names),
 			}
 		},
 	}))
@@ -873,31 +1434,51 @@ type composePatchesForParams struct {
 // composePatchesFor runs the full resolution, not just the plan, so the lines
 // the step asks about are exactly the ones the recap will report as rewritten.
 func composePatchesFor(params composePatchesForParams) map[string][]domain.ComposePortBinding {
-	if params.Docker >= len(params.Prev) {
-		return nil
-	}
-	selected, ok := params.Prev[params.Docker].Model.(components.MultiSelectModel)
-	if !ok {
+	answers := answersFromSteps(answersFromStepsParams{
+		Prev:      params.Prev,
+		Docker:    params.Docker,
+		Scripts:   params.Scripts,
+		Detection: params.Detection,
+	})
+	if len(answers.DockerComposeFiles) == 0 {
 		return nil
 	}
 
-	answers := domain.InitProjectAnswers{
-		DockerComposeFiles:     selected.Values(),
-		DockerComposeCmd:       params.Detection.DockerComposeCmd,
-		PatchCompose:           true,
-		SelectedPackageScripts: selectedScripts(params.Prev, params.Scripts, params.Detection.PackageScripts),
-	}
 	return rules.ResolveDetectedPorts(rules.ResolveDetectedPortsParams{
 		Answers:        answers,
 		PackageManager: params.Detection.PackageManager,
 		Existing:       params.Existing,
 		Plan: rules.PlanComposePorts(rules.PlanComposePortsParams{
 			Scans: params.Detection.ComposeScans,
-			Files: selected.Values(),
+			Files: answers.DockerComposeFiles,
 			Patch: true,
 		}),
 		EnvScansByDir: params.EnvScans,
 	}).Patches
+}
+
+type answersFromStepsParams struct {
+	Prev      []components.Step
+	Docker    int
+	Scripts   int
+	Detection domain.InitDetectionResult
+}
+
+// answersFromSteps reads the wizard's live selections as an answers struct, so a
+// step that must plan against them sees exactly what the recap will. Several
+// steps need this and they must not each build it their own way.
+func answersFromSteps(params answersFromStepsParams) domain.InitProjectAnswers {
+	answers := domain.InitProjectAnswers{
+		DockerComposeCmd:       params.Detection.DockerComposeCmd,
+		PatchCompose:           true,
+		SelectedPackageScripts: selectedScripts(params.Prev, params.Scripts, params.Detection.PackageScripts),
+	}
+	if params.Docker >= 0 && params.Docker < len(params.Prev) {
+		if selected, ok := params.Prev[params.Docker].Model.(components.MultiSelectModel); ok {
+			answers.DockerComposeFiles = selected.Values()
+		}
+	}
+	return answers
 }
 
 // selectedScripts reads a scripts multi-select back into the scripts it names,
