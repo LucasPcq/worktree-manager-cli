@@ -16,6 +16,15 @@ const (
 	JobKindTask JobKind = "task"
 )
 
+// JobURLConfig is a job's [[job]].url table: which of its declared ports speaks
+// HTTP, and the host label it is published under. Port names a key of Ports, not
+// a number — the number depends on the worktree, only the declaration is stable.
+// Host is optional and defaults to the job's name.
+type JobURLConfig struct {
+	Port string `toml:"port"           json:"port"`
+	Host string `toml:"host,omitempty" json:"host,omitempty"`
+}
+
 // JobConfig defines a managed job from .wtm/run.toml.
 type JobConfig struct {
 	Name string  `toml:"name"           json:"name"`
@@ -27,6 +36,25 @@ type JobConfig struct {
 	// checkout. Every other worktree gets that base plus its own offset, so the
 	// same job binds a free port in each one.
 	Ports map[string]int `toml:"ports,omitempty" json:"ports,omitempty"`
+	// URL publishes one of the ports above under a name. Absent means the job
+	// keeps no name and stays reachable by its port, as before.
+	URL *JobURLConfig `toml:"url,omitempty" json:"url,omitempty"`
+}
+
+// JobURLEntry is one published job as a surface reports it: the job's name and
+// where it answers in this worktree.
+// JobURLChoice is one job's answer to "should this be reachable by name": the
+// port to publish and whether to publish it. Publish false is an answer too — it
+// withdraws a url the config already carried.
+type JobURLChoice struct {
+	Job     string
+	Port    string
+	Publish bool
+}
+
+type JobURLEntry struct {
+	Job string `json:"job"`
+	URL string `json:"url"`
 }
 
 // ProfileConfig defines a named, ordered group of jobs.
@@ -82,6 +110,8 @@ type JobInfo struct {
 	// StartedAt is when the daemon spawned the process. Zero for a job it never
 	// spawned — one named by a picker, or read back after a daemon restart.
 	StartedAt time.Time `json:"started_at,omitzero"`
+	// URL is where the job is reachable, absent for one that publishes no name.
+	URL string `json:"url,omitempty"`
 	// ExitCode stays nil until the job's own process is reaped, and -1 says a
 	// signal killed it. A detached launcher exiting does not end its job, so it
 	// keeps a nil code for as long as the service it started is registered.
@@ -107,6 +137,8 @@ type JobActionResult struct {
 	// this document never saw the live stream, and "started" alone does not say
 	// whether anything is listening.
 	Ports []PortProbe `json:"ports,omitempty"`
+	// URL is where the job is reachable, absent for one that publishes no name.
+	URL string `json:"url,omitempty"`
 }
 
 // LogRecord is one sanitized line of a job's output, as persisted in that job's
@@ -137,6 +169,14 @@ type JobKindChoice struct {
 	Name      string
 	Workspace string
 	Kind      JobKind
+}
+
+// DevOriginFix is a published Next job that would refuse requests arriving under
+// its own name, and the line its config is missing.
+type DevOriginFix struct {
+	Job    string
+	Config string
+	Line   string
 }
 
 // JobCmdFix is a job whose command never mentions a port variable wtm injects

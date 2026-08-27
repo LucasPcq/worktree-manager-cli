@@ -18,7 +18,11 @@ func RecapJobLines(cfg domain.RunConfig) []string {
 
 	lines := make([]string, 0, len(cfg.Jobs))
 	for _, job := range cfg.Jobs {
-		lines = append(lines, fmt.Sprintf(domain.RecapJobLineFmt, pad(job.Name, width), recapPorts(job)))
+		line := fmt.Sprintf(domain.RecapJobLineFmt, pad(job.Name, width), recapPorts(job))
+		if job.URL != nil {
+			line += domain.RecapURLSuffix
+		}
+		lines = append(lines, line)
 	}
 	return lines
 }

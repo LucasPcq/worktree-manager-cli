@@ -49,6 +49,10 @@ func newInitCmd() *cobra.Command {
 			"wtm injects the variable, it never edits the command. When a command never\n" +
 			"mentions the port it is given, the wizard offers it for editing on the spot\n" +
 			"(`pnpm dev --port ${PORT}`) rather than reporting it once it is too late.\n\n" +
+			"Every service that declares the port it listens on is then offered a name of its\n" +
+			"own — <job>.<worktree>.<repo>.localhost, served by the proxy — so two worktrees\n" +
+			"stop sharing a cookie jar. A port a job only dials (DB_PORT, REDIS_PORT) is never\n" +
+			"offered: a name nothing answers under is worse than no name at all.\n\n" +
 			domain.ExperimentalRunNotice,
 		Args: cobra.NoArgs,
 		RunE: runRunInit,
@@ -164,10 +168,12 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		})
 	}
 	outcome.Config = rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
-		Config:   outcome.Config,
-		Ports:    answers.Ports,
-		Profiles: answers.Profiles,
-		Cmds:     answers.Cmds,
+		Config:    outcome.Config,
+		Ports:     answers.Ports,
+		Profiles:  answers.Profiles,
+		Cmds:      answers.Cmds,
+		URLs:      answers.URLs,
+		URLsAsked: answers.URLsAsked,
 	})
 
 	links := resolveEnvPortLinks(resolveEnvPortLinksParams{

@@ -26,11 +26,12 @@ type daemonService struct {
 
 func (s *daemonService) Start(ctx context.Context, req StartRequest) (StartResult, error) {
 	resp, err := s.client.SendStreamContext(ctx, process.Request{
-		Action:  process.ActionStart,
-		Job:     &req.Job,
-		WorkDir: req.WorkDir,
-		LogDir:  req.LogDir,
-		Env:     req.Env,
+		Action:    process.ActionStart,
+		Job:       &req.Job,
+		WorkDir:   req.WorkDir,
+		LogDir:    req.LogDir,
+		Env:       req.Env,
+		RouteHost: req.RouteHost,
 	}, req.OnOutput)
 	if err != nil {
 		return StartResult{}, err
@@ -38,7 +39,7 @@ func (s *daemonService) Start(ctx context.Context, req StartRequest) (StartResul
 	if resp.Status == process.StatusError {
 		return StartResult{Refused: true, Message: resp.Message, ExitCode: resp.ExitCode}, nil
 	}
-	return StartResult{ExitCode: resp.ExitCode, Ports: resp.Ports}, nil
+	return StartResult{ExitCode: resp.ExitCode, Ports: resp.Ports, ProxyPort: resp.ProxyPort}, nil
 }
 
 func (s *daemonService) List(workDir string) ([]domain.JobInfo, error) {

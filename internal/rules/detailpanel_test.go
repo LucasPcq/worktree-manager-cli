@@ -147,7 +147,7 @@ func TestFitSectionsDropsFromTheBottom(t *testing.T) {
 		{Key: domain.DetailSectionLinks, Lines: []string{"g", "h"}},
 	}
 
-	// DetailSectionChrome = 3 (spec §6: title + blank above + blank below), so
+	// DetailSectionChrome = 3 (title + blank above + blank below), so
 	// two 2-line sections cost 2*(3+2) = 10, not 8 as before that correction.
 	got := sectionKeys(FitSections(FitSectionsParams{Sections: sections, Height: 10}))
 	want := []string{domain.DetailSectionReview, domain.DetailSectionChanges}
@@ -242,10 +242,9 @@ func TestChangesSectionSummaryIsOnTitleRowNotALine(t *testing.T) {
 	}
 }
 
-func TestSectionsHeightMatchesSpecMockup(t *testing.T) {
-	// docs/superpowers/specs/2026-08-19-wtm-ui-identity-design.md §6, lines
-	// 130-134: a leading blank, the REVIEW title, a blank under it, then 2 body
-	// lines — 5 rows total, not 4. Pins DetailSectionChrome = 3.
+func TestSectionsHeightCountsTheChromeAroundEachSection(t *testing.T) {
+	// A leading blank, the REVIEW title, a blank under it, then 2 body lines —
+	// 5 rows total, not 4. Pins DetailSectionChrome = 3.
 	review := domain.DetailSection{
 		Key: domain.DetailSectionReview,
 		Lines: []string{
@@ -254,7 +253,7 @@ func TestSectionsHeightMatchesSpecMockup(t *testing.T) {
 		},
 	}
 	if got := sectionsHeight([]domain.DetailSection{review}); got != 5 {
-		t.Errorf("sectionsHeight(REVIEW, 2 lignes de corps) = %d, want 5 (spec §6)", got)
+		t.Errorf("sectionsHeight(REVIEW, 2 lignes de corps) = %d, want 5 (3 de chrome + 2 lignes)", got)
 	}
 }
 

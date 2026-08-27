@@ -23,12 +23,25 @@ type sequence struct {
 	// ports is what each job bound as it started, kept for the pane title: the
 	// run is the only moment the daemon reports them.
 	ports map[string]map[string]int
+	// urls is where each job answers, kept for the same reason as ports: the run
+	// is the only moment it is reported.
+	urls map[string]string
+	// devOrigins are the config lines the started jobs are missing, collected as
+	// they are reported so the recap can name them all at once.
+	devOrigins []domain.DevOriginFix
+	// notices are the facts the run reported about itself rather than about one
+	// of its jobs — a proxy that could not bind, so far.
+	notices []string
 	// reason is what the daemon answered for the job that ended the sequence.
 	reason  string
 	outcome runlogs.Outcome
 }
 
 type eventMsg struct{ event runlogs.Event }
+
+// openFailedMsg reports a browser that never opened, so the key press does not
+// read as a no-op.
+type openFailedMsg struct{ err error }
 
 type runFinishedMsg struct {
 	outcome runlogs.Outcome
@@ -72,13 +85,15 @@ func (m Model) applyEvent(msg eventMsg) (Model, tea.Cmd) {
 		m.sequence.states[event.Job] = domain.JobStepStarting
 	case runlogs.PhaseStarted:
 		m.sequence.states[event.Job], m.sequence.job = domain.JobStepStarted, ""
-		m.sequence.rememberPorts(event)
+		m.sequence.remember(event)
 	case runlogs.PhaseDone:
 		m.sequence.states[event.Job], m.sequence.job = domain.JobStepDone, ""
-		m.sequence.rememberPorts(event)
+		m.sequence.remember(event)
 	case runlogs.PhaseFailed:
 		m.sequence.states[event.Job], m.sequence.job = domain.JobStepFailed, ""
 		m.sequence.reason = event.Reason
+	case runlogs.PhaseNotice:
+		m.sequence.notices = append(m.sequence.notices, event.Notice)
 	case runlogs.PhaseAborted, runlogs.PhaseReady:
 		m.sequence.active, m.sequence.job = false, ""
 		m.sequence.outcome = event.Outcome
@@ -156,21 +171,53 @@ func (m Model) probeReport() []string {
 	}
 	lines := rules.PortProbeLines(m.sequence.outcome.Probes)
 	if len(lines) == 0 {
-		return nil
+		return m.devOriginsReport()
 	}
 	return append(append([]string{domain.PortProbeTitle}, lines...), domain.RunViewAbortDismiss)
+}
+
+// devOriginsReport names the Next projects that will refuse their own name. It
+// yields to the port report above for the same reason that one yields to an
+// abort: one notice area, the more urgent finding first.
+func (m Model) devOriginsReport() []string {
+	if len(m.sequence.devOrigins) == 0 {
+		return m.noticeReport()
+	}
+	lines := []string{domain.DevOriginsTitle}
+	for _, fix := range m.sequence.devOrigins {
+		lines = append(lines, fix.Line)
+	}
+	return append(lines, domain.RunViewAbortDismiss)
+}
+
+// noticeReport is the last thing the notice area falls back to: what the run
+// has to say about itself once no job has anything more urgent.
+func (m Model) noticeReport() []string {
+	if len(m.sequence.notices) == 0 {
+		return nil
+	}
+	lines := append([]string{domain.ProxyUnavailableTitle}, m.sequence.notices...)
+	return append(lines, domain.RunViewAbortDismiss)
 }
 
 func joinJobs(jobs []string) string {
 	return strings.Join(jobs, domain.RunViewRecapListSep)
 }
 
-func (s *sequence) rememberPorts(event runlogs.Event) {
-	if len(event.Ports) == 0 {
+func (s *sequence) remember(event runlogs.Event) {
+	if len(event.Ports) > 0 {
+		if s.ports == nil {
+			s.ports = map[string]map[string]int{}
+		}
+		s.ports[event.Job] = event.Ports
+	}
+	s.devOrigins = append(s.devOrigins, event.DevOrigins...)
+
+	if event.URL == "" {
 		return
 	}
-	if s.ports == nil {
-		s.ports = map[string]map[string]int{}
+	if s.urls == nil {
+		s.urls = map[string]string{}
 	}
-	s.ports[event.Job] = event.Ports
+	s.urls[event.Job] = event.URL
 }

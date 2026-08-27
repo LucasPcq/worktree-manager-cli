@@ -45,6 +45,7 @@ func TestWorktreeJobEnv(t *testing.T) {
 				domain.EnvOrdinal:            "0",
 				domain.EnvPortOffset:         "0",
 				domain.EnvComposeProjectName: "main",
+				domain.EnvProject:            domain.HostLabelFallback,
 			},
 		},
 		{
@@ -56,6 +57,7 @@ func TestWorktreeJobEnv(t *testing.T) {
 				domain.EnvOrdinal:            "3",
 				domain.EnvPortOffset:         "30",
 				domain.EnvComposeProjectName: "feat-x",
+				domain.EnvProject:            domain.HostLabelFallback,
 			},
 		},
 		{
@@ -67,6 +69,7 @@ func TestWorktreeJobEnv(t *testing.T) {
 				domain.EnvOrdinal:            "2",
 				domain.EnvPortOffset:         "20",
 				domain.EnvComposeProjectName: "feat-x",
+				domain.EnvProject:            domain.HostLabelFallback,
 			},
 		},
 		{
@@ -78,6 +81,19 @@ func TestWorktreeJobEnv(t *testing.T) {
 				domain.EnvOrdinal:            "1",
 				domain.EnvPortOffset:         "10",
 				domain.EnvComposeProjectName: "perso",
+				domain.EnvProject:            domain.HostLabelFallback,
+			},
+		},
+		{
+			name:   "le dépôt est assaini pour servir de label d'hôte",
+			params: WorktreeJobEnvParams{Branch: "feat/x", Ordinal: 1, PortOffsetBlock: 10, Project: "My.App"},
+			want: map[string]string{
+				domain.EnvWorktree:           "feat-x",
+				domain.EnvBranch:             "feat/x",
+				domain.EnvOrdinal:            "1",
+				domain.EnvPortOffset:         "10",
+				domain.EnvComposeProjectName: "my-app-feat-x",
+				domain.EnvProject:            "my-app",
 			},
 		},
 	}

@@ -19,4 +19,5 @@ const (
 	keyScrollUp  = "shift+up"
 	keyScrollDwn = "shift+down"
 	keyLive      = "G"
+	keyOpenURL   = domain.KeyOpenURL
 )

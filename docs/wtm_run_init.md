@@ -31,6 +31,11 @@ wtm injects the variable, it never edits the command. When a command never
 mentions the port it is given, the wizard offers it for editing on the spot
 (`pnpm dev --port ${PORT}`) rather than reporting it once it is too late.
 
+Every service that declares the port it listens on is then offered a name of its
+own — <job>.<worktree>.<repo>.localhost, served by the proxy — so two worktrees
+stop sharing a cookie jar. A port a job only dials (DB_PORT, REDIS_PORT) is never
+offered: a name nothing answers under is worse than no name at all.
+
 `wtm run` is experimental — the workflow is still stabilizing and commands may change.
 
 ```

@@ -1,0 +1,71 @@
+package rules
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+)
+
+type JobURLParams struct {
+	Job domain.JobConfig
+	// Ports is what the job actually bound in this worktree, base plus offset.
+	Ports map[string]int
+	// Host is the route the proxy serves this job under. Empty means no proxy —
+	// the direct address is then the honest answer, not a degraded one.
+	Host      string
+	ProxyPort int
+}
+
+// JobURL is where a job is reachable, empty for one that publishes nothing. This
+// is the single place a surface asks; the proxy changes what it answers, not who
+// asks.
+func JobURL(params JobURLParams) string {
+	if params.Job.URL == nil {
+		return ""
+	}
+	port, bound := params.Ports[params.Job.URL.Port]
+	if !bound {
+		return ""
+	}
+	if params.Host != "" && params.ProxyPort > 0 {
+		return fmt.Sprintf(domain.ProxyURLFmt, params.Host, params.ProxyPort)
+	}
+	return fmt.Sprintf(domain.DirectURLFmt, port)
+}
+
+// ParseJobURL reads the `url` a wizard step or a flag pair expresses as one
+// line: the port name to publish, optionally followed by the host to publish it
+// under. Blank means the job publishes nothing.
+func ParseJobURL(s string) (*domain.JobURLConfig, error) {
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	if len(fields) > 2 {
+		return nil, fmt.Errorf("url takes a port name and an optional host, got %d values", len(fields))
+	}
+	if !IsEnvVarName(fields[0]) {
+		return nil, fmt.Errorf("url port %q is not a valid environment variable name", fields[0])
+	}
+	cfg := &domain.JobURLConfig{Port: fields[0]}
+	if len(fields) == 2 {
+		if !IsHostLabels(fields[1]) {
+			return nil, fmt.Errorf("url host %q is not a valid hostname — lowercase letters, digits and dashes, dot-separated", fields[1])
+		}
+		cfg.Host = fields[1]
+	}
+	return cfg, nil
+}
+
+// FormatJobURL is ParseJobURL's inverse, for a wizard step pre-filled with what
+// the job already declares.
+func FormatJobURL(cfg *domain.JobURLConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	if cfg.Host == "" {
+		return cfg.Port
+	}
+	return cfg.Port + " " + cfg.Host
+}

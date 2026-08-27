@@ -21,6 +21,8 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newPsCmd())
+	cmd.AddCommand(newURLCmd())
+	cmd.AddCommand(newOpenCmd())
 	cmd.AddCommand(newUpCmd())
 	cmd.AddCommand(newDownCmd())
 	cmd.AddCommand(newStartCmd())

@@ -30,6 +30,7 @@ const (
 	stepComposePatch   = "compose_patch"
 	stepScriptKinds    = "script_kinds"
 	stepPorts          = "ports"
+	stepURLs           = "urls"
 	stepCmds           = "cmds"
 	stepEnvLink        = "env_link"
 	stepRecap          = "recap"
@@ -733,10 +734,12 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (writte
 	// recap has to show: the config as it will land on disk, not a stage of it.
 	written = func(prev []components.Step) domain.RunConfig {
 		return rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
-			Config:   resolved(prev).Config,
-			Ports:    portEntriesOf(prev, ports),
-			Cmds:     cmdFixesOf(prev, s.at(stepCmds)),
-			Profiles: profilesOf(prev, s.at(stepProfiles)),
+			Config:    resolved(prev).Config,
+			Ports:     portEntriesOf(prev, ports),
+			Cmds:      cmdFixesOf(prev, s.at(stepCmds)),
+			Profiles:  profilesOf(prev, s.at(stepProfiles)),
+			URLs:      urlAnswerOf(prev, s.at(stepURLs)),
+			URLsAsked: urlStepAnswered(prev, s.at(stepURLs)),
 		})
 	}
 
@@ -759,6 +762,25 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (writte
 		},
 		SkipReason: func() string { return cmdSkipReason },
 		Summary:    cmdListSummary,
+		Callout:    true,
+	})
+
+	// Declared after the commands step: a job whose command was just shown to
+	// ignore its port is one the reader can now decline to publish knowingly.
+	s.add(stepURLs, components.Step{
+		Name: domain.URLListStepName,
+		Build: func(prev []components.Step) any {
+			return components.NewMultiSelect(components.NewMultiSelectParams{
+				Title:       domain.URLListStepTitle,
+				Description: domain.URLListStepDesc,
+				Items:       urlItemsFor(settled(prev)),
+			})
+		},
+		AutoSkip: func(w components.WizardModel) bool {
+			return len(urlItemsFor(settled(w.Steps()))) == 0
+		},
+		SkipReason: func() string { return domain.SkipReasonNoListeningPort },
+		Summary:    urlListSummary,
 		Callout:    true,
 	})
 
@@ -858,6 +880,47 @@ func portEntriesOf(prev []components.Step, at int) []domain.PortEntry {
 		return nil
 	}
 	return pl.Entries()
+}
+
+// urlItemsFor offers every candidate pre-answered yes. Publishing is additive —
+// the job keeps its own port either way — so the cost of a wrong default falls
+// on the reader unchecking a line, not on a run that fails.
+func urlItemsFor(cfg domain.RunConfig) []components.MultiSelectItem {
+	candidates := rules.URLCandidatesFor(rules.URLCandidatesForParams{Config: cfg})
+	items := make([]components.MultiSelectItem, 0, len(candidates))
+	for _, candidate := range candidates {
+		items = append(items, components.MultiSelectItem{
+			Label:    fmt.Sprintf(domain.URLListEntryFmt, candidate.Job, candidate.Port),
+			Value:    candidate.Job,
+			Selected: true,
+		})
+	}
+	return items
+}
+
+// urlAnswerOf and urlStepAnswered read the step back as the raw answer it is.
+// Which jobs that answer publishes is settled by ApplyInitAnswers, once the
+// ports are in: a job with no port yet is not a candidate, and resolving here
+// would judge it too early.
+func urlAnswerOf(prev []components.Step, at int) []string {
+	ms, ok := urlStep(prev, at)
+	if !ok {
+		return nil
+	}
+	return ms.Values()
+}
+
+func urlStepAnswered(prev []components.Step, at int) bool {
+	_, ok := urlStep(prev, at)
+	return ok
+}
+
+func urlStep(prev []components.Step, at int) (components.MultiSelectModel, bool) {
+	if at < 0 || at >= len(prev) {
+		return components.MultiSelectModel{}, false
+	}
+	ms, ok := prev[at].Model.(components.MultiSelectModel)
+	return ms, ok
 }
 
 // cmdFixesFor exempts the compose jobs: a stack reads its ports from the file
@@ -1167,6 +1230,11 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 			answers.Cmds = m.Fixes()
 		}
 	}
+	if i := at(stepURLs); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.MultiSelectModel); ok {
+			answers.URLsAsked, answers.URLs = true, m.Values()
+		}
+	}
 	if i := at(stepEnvLink); i >= 0 && !final.Skipped(i) {
 		if m, ok := steps[i].Model.(components.ConfirmModel); ok {
 			answers.EnvLinksAsked, answers.LinkEnv = true, m.Confirmed()
@@ -1215,6 +1283,14 @@ func multiSelectSummary(model any) string {
 		return ""
 	}
 	return fmt.Sprintf("%d files selected", len(ms.Values()))
+}
+
+func urlListSummary(model any) string {
+	ms, ok := model.(components.MultiSelectModel)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf(domain.URLListSummaryFmt, len(ms.Values()))
 }
 
 func packageScriptsSummary(model any) string {

@@ -262,3 +262,11 @@ func styleJobStatus(status domain.JobStatus) string {
 		return styles.Muted.Render(string(status))
 	}
 }
+
+// WriteJobURLsJSON writes the payload for `wtm run url --output json`.
+func WriteJobURLsJSON(w io.Writer, entries []domain.JobURLEntry) error {
+	if entries == nil {
+		entries = []domain.JobURLEntry{}
+	}
+	return encodeJSON(w, entries)
+}

@@ -21,6 +21,7 @@ const (
 	stepJobStop
 	stepJobCwd
 	stepJobPorts
+	stepJobURL
 )
 
 // JobWizardParams configures the job wizard for both add and edit flows.
@@ -94,6 +95,16 @@ func RunJobWizard(params JobWizardParams) (domain.JobConfig, error) {
 		},
 	})
 
+	urlInput := components.NewTextInput(components.NewTextInputParams{
+		Title:       "Published URL",
+		Description: "Optional. Name one of the ports above to give this job its own hostname, plus an optional host (e.g. PORT, or PORT api.app-1). Leave blank for a job that does not speak HTTP.",
+		Default:     rules.FormatJobURL(params.Initial.URL),
+		Validate: func(s string) error {
+			_, err := rules.ParseJobURL(s)
+			return err
+		},
+	})
+
 	steps := []components.Step{
 		{Name: "Name", Model: nameInput, Summary: components.TextSummary},
 		{Name: "Command", Model: cmdInput, Summary: components.TextSummary},
@@ -101,6 +112,7 @@ func RunJobWizard(params JobWizardParams) (domain.JobConfig, error) {
 		{Name: "Stop", Model: stopInput, Summary: components.OptionalTextSummary("(none)")},
 		{Name: "Cwd", Model: cwdInput, Summary: components.OptionalTextSummary("(project root)")},
 		{Name: "Ports", Model: portsInput, Summary: components.OptionalTextSummary("(none)")},
+		{Name: "URL", Model: urlInput, Summary: components.OptionalTextSummary("(not published)")},
 	}
 
 	wiz := components.NewWizard(steps)
@@ -147,6 +159,11 @@ func extractJob(steps []components.Step) domain.JobConfig {
 		// The step validated the line, so a parse error here cannot happen; a
 		// job with no ports is the same job it was before.
 		job.Ports, _ = rules.ParsePorts(strings.Fields(c.Value()))
+	}
+	if c, ok := steps[stepJobURL].Model.(components.TextInputModel); ok {
+		// Validated by the step, like the ports above. Dropping this is what
+		// used to erase a published job's name on `run job edit`.
+		job.URL, _ = rules.ParseJobURL(c.Value())
 	}
 	return job
 }

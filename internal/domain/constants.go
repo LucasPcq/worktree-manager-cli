@@ -133,6 +133,9 @@ const (
 	EnvOrdinal            = "WTM_ORDINAL"
 	EnvPortOffset         = "WTM_PORT_OFFSET"
 	EnvComposeProjectName = "COMPOSE_PROJECT_NAME"
+	// EnvProject is the repository's slug, as the hostname and the compose
+	// project name both derive from it.
+	EnvProject = "WTM_PROJECT"
 
 	// MainWorktreeOrdinal is never persisted: the main worktree has no meta.json,
 	// so 0 in a linked worktree's metadata means "not allocated yet".
@@ -154,6 +157,64 @@ const (
 	// PortMin and PortMax bound a declared base port.
 	PortMin = 1
 	PortMax = 65535
+
+	// HostLabelMaxLen is the DNS limit on a single label of a hostname.
+	HostLabelMaxLen = 63
+	// HostLabelFallback names a segment whose source slugified to nothing.
+	HostLabelFallback = "wtm"
+
+	// DirectURLFmt is a job's URL without the proxy: its own port on the loopback.
+	DirectURLFmt = "http://localhost:%d"
+
+	// ProxyTLD is the special-use TLD every wtm route lives under (RFC 6761).
+	ProxyTLD = "localhost"
+	// ProxyDefaultPort is what the run proxy listens on when the config says nothing.
+	ProxyDefaultPort = 4000
+	// ProxyURLFmt is a job's named URL.
+	ProxyURLFmt = "http://%s:%d"
+	// ProxyLoopbackFmt is what the proxy binds: the IPv4 loopback, never every
+	// interface.
+	ProxyLoopbackFmt = "127.0.0.1:%d"
+	// ProxyTargetFmt is how a route names the job behind it. It resolves to both
+	// loopback families on purpose, and is not ProxyLoopbackFmt: a dev server
+	// that binds ::1 only — Vite does — is unreachable over 127.0.0.1, which is
+	// the same asymmetry PortProbeHostV4/V6 exist for.
+	ProxyTargetFmt = "localhost:%d"
+	// ProxyScheme is what the proxy dials a job with: the job listens on plain
+	// HTTP on the loopback, whatever the browser used to reach the proxy.
+	ProxyScheme = "http"
+
+	// The two pages the proxy serves itself, in plain text: service/ may not
+	// import lipgloss, and a browser landing here needs the fact, not a style.
+	ProxyUnknownHostFmt  = "wtm: no job is published under %s\n\n"
+	ProxyKnownRoutesHead = "Routes wtm is currently serving:\n"
+	ProxyRouteLineFmt    = "  %s  ->  %s (job %s, worktree %s of %s)\n"
+	ProxyNoRoutesLine    = "  (none — start a job that declares a url)\n"
+	ProxySilentTargetFmt = "wtm: job %s is published under %s but nothing answers on %s\n"
+	// ProxyBindFailedFmt is what the daemon records when the port is taken, and
+	// ProxyUnavailableFmt what a client says instead of a name nothing serves.
+	ProxyBindFailedFmt    = "run proxy: port %d is taken (%v) — jobs keep their own ports"
+	ProxyUnavailableFmt   = "Port %d is taken, so jobs answer on their own ports — free it, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyUnavailableTitle = "Named URLs are off"
+
+	// DevOriginsKey is the Next option that lets a subdomain of .localhost reach
+	// the dev server's assets, and DevOriginsConfigNames the files it lives in.
+	DevOriginsKey   = "allowedDevOrigins"
+	DevOriginsTitle = "Next dev origins"
+	// DevOriginsFixFmt names the one line a Next project needs before a
+	// subdomain of .localhost may reach its dev assets.
+	DevOriginsFixFmt = "%s: add allowedDevOrigins: [\"*.%s:%d\"] to %s — Next blocks dev requests from other hosts"
+
+	// GOOS* name the platforms whose URL opener differs; everything else uses
+	// the freedesktop one.
+	GOOSDarwin  = "darwin"
+	GOOSWindows = "windows"
+
+	// Opener* are the commands that hand a URL to the desktop.
+	OpenerDarwin     = "open"
+	OpenerWindows    = "rundll32"
+	OpenerWindowsArg = "url.dll,FileProtocolHandler"
+	OpenerUnix       = "xdg-open"
 
 	// ComposePortVarSuffix ends every variable name wtm introduces in a compose
 	// file, and ComposeTemplatedPortFmt is the host side it writes: the default
@@ -365,6 +426,7 @@ const (
 	RecapNoPort             = "⚠ no port declared"
 	RecapTask               = "task"
 	RecapDefaultSuffix      = "   (default)"
+	RecapURLSuffix          = "   (url)"
 	RecapJobsTitle          = "Jobs"
 	RecapProfilesTitle      = "Profiles"
 	RecapAnswersTitle       = "Answers"
@@ -458,6 +520,14 @@ const (
 	FlagKeep       = "keep"
 	FlagFiles      = "files"
 	FlagOnConflict = "on-conflict"
+	// FlagProxyPort tells the forked daemon where to serve the named URLs.
+	FlagProxyPort = "proxy-port"
+	// FlagURLPort and FlagURLHost declare a job's [[job]].url without a wizard.
+	FlagURLPort = "url-port"
+	FlagURLHost = "url-host"
+	// FlagRaw asks for a job's own port rather than the name the proxy serves it
+	// under: an address every OS resolves and no proxy has to be up for.
+	FlagRaw = "raw"
 
 	// `wtm env` flags. FlagFrom (source override), FlagOnConflict (keep/overwrite),
 	// FlagYes and FlagOutput are shared with other commands. FlagMode selects
@@ -596,6 +666,7 @@ const (
 	SkipReasonNoPortDetected  = "no port detected for the jobs you kept"
 	SkipReasonCommandsRead    = "every command already reads the port it is given"
 	SkipReasonNoEnvKeyFollows = "no .env key holds a declared port"
+	SkipReasonNoListeningPort = "no service declares the port it listens on"
 
 	// The wizard step selecting which package scripts become jobs.
 	ScriptsStepName  = "Package scripts"
@@ -659,6 +730,18 @@ const (
 	CmdListCharLimit  = 512
 	CmdListMinWidth   = 30
 	CmdListWidthInset = 20
+
+	// The wizard step choosing which jobs answer under their own name.
+	URLListStepName  = "URLs"
+	URLListStepTitle = "Which jobs should answer under their own name"
+	URLListStepDesc  = "A published job is reachable at <job>.<worktree>.<project>.localhost, served by\n" +
+		"wtm's proxy — so two worktrees of the same app no longer share a cookie jar.\n" +
+		"\n" +
+		"Only the port a job listens on is published. Uncheck anything that does not\n" +
+		"speak HTTP: a name nothing answers under is worse than no name at all."
+	// URLListEntryFmt is one candidate: the job, then the port it publishes.
+	URLListEntryFmt   = "%s · %s"
+	URLListSummaryFmt = "%d jobs published"
 
 	// The wizard step reviewing the ports detection pre-filled.
 	PortListStepName  = "Ports"
@@ -984,6 +1067,9 @@ const (
 	CmdStop     = "stop"
 	CmdLogs     = "logs"
 	CmdPs       = "ps"
+	CmdDaemon   = "daemon"
+	CmdURL      = "url"
+	CmdOpen     = "open"
 	CmdCheckout = "checkout"
 	CmdExport   = "export"
 	CmdImport   = "import"
@@ -1175,7 +1261,7 @@ const (
 
 	// RunViewHelpBrowse and RunViewHelpFilter are the footer's key reminders,
 	// one per mode the keyboard can be in.
-	RunViewHelpBrowse = "↑↓ job · / filter · pgup/pgdn scroll · enter focus · r refresh · q detach"
+	RunViewHelpBrowse = "↑↓ job · / filter · pgup/pgdn scroll · enter focus · o open · r refresh · q detach"
 	RunViewHelpFilter = "type to filter · enter apply · esc clear"
 
 	// RunViewFocusKey passes every keystroke to the job. Taking them back needs
@@ -1239,8 +1325,26 @@ const (
 	// RunPortsSuffixFmt qualifies a name with the ports behind it — the line
 	// announcing a started job, and the recap of what a job gained.
 	// RunPortEntryFmt is one of those ports.
-	RunPortsSuffixFmt   = "%s · %s"
-	RunPortEntryFmt     = "%s=%d"
+	RunPortsSuffixFmt = "%s · %s"
+	RunPortEntryFmt   = "%s=%d"
+	// HyperlinkFmt wraps text in an OSC-8 sequence, the escape a terminal turns
+	// into a clickable link: URL first, then the text it stands behind.
+	HyperlinkFmt = "\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\"
+
+	// RunViewOpenFailedFmt reports a browser that never opened, so `o` does not
+	// read as a key that does nothing.
+	RunViewOpenFailedFmt = "could not open the browser: %v"
+
+	// RunURLListSep joins the published jobs an error names.
+	RunURLListSep = ", "
+
+	// RunURLPickerTitle heads the picker `run open` offers when several jobs
+	// publish and the run is interactive enough to ask.
+	RunURLPickerTitle = "Which job to open"
+
+	// RunURLSuffixSep sets a job's URL apart from the line announcing it, far
+	// enough that a terminal-detected link does not swallow the ports before it.
+	RunURLSuffixSep     = "   "
 	RunStreamAlreadyFmt = "%s already running"
 	RunStreamDoneFmt    = "%s done"
 	RunStreamNextHint   = "wtm run logs to attach · wtm run down to stop"
@@ -1997,6 +2101,9 @@ const (
 	// reachable without a mouse and over a plain ssh terminal.
 	KeyOpenPR = "p"
 
+	// KeyOpenURL opens the selected job's URL in a browser.
+	KeyOpenURL = "o"
+
 	KeyHelp = "?"
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so
 	// a persistent dashboard is never left by accident.
@@ -2049,9 +2156,8 @@ const (
 
 	// DetailSectionChrome is what one section spends beyond its body lines: a
 	// blank separator row before its title, the title row itself, and a blank
-	// row under it. Verified against the spec §6 mockup
-	// (docs/superpowers/specs/2026-08-19-wtm-ui-identity-design.md, lines
-	// 130-134): REVIEW spans 5 rows for 2 body lines, so chrome is 5-2=3, not 2.
+	// row under it. REVIEW spans 5 rows for 2 body lines, so chrome is 5-2=3,
+	// not 2.
 	// There is no DetailFixedRows: DetailSections reserves exactly what REVIEW
 	// and LINKS actually cost, computed via sectionsHeight, instead of a
 	// constant that had to secretly agree with every section builder.

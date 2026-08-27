@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/LucasPcq/worktree-manager-cli/main/schemas/run.schema.json",
   "title": "wtm run config",
-  "description": "Schema for .wtm/run.toml \u2014 declares jobs (services and tasks) and profiles that compose them.",
+  "description": "Schema for .wtm/run.toml — declares jobs (services and tasks) and profiles that compose them.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -39,7 +39,7 @@
           },
           "cmd": {
             "type": "string",
-            "description": "Command to start the job, run as a `/bin/sh` line: quotes, `&&`, pipes, redirections and globs all mean what they mean in a terminal, and `${VAR}` expands from the job's environment \u2014 including the ports declared below. Write `pnpm dev --port ${PORT}` for a server that only takes its port as a CLI flag."
+            "description": "Command to start the job, run as a `/bin/sh` line: quotes, `&&`, pipes, redirections and globs all mean what they mean in a terminal, and `${VAR}` expands from the job's environment — including the ports declared below. Write `pnpm dev --port ${PORT}` for a server that only takes its port as a CLI flag."
           },
           "stop": {
             "type": "string",
@@ -59,6 +59,25 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 65535
+            }
+          },
+          "url": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "port"
+            ],
+            "description": "Publishes one of this job's declared ports under a name, so the worktree gets its own hostname instead of a port to remember — and its own cookie jar, since cookies ignore the port. Omit for a job that does not speak HTTP.",
+            "properties": {
+              "port": {
+                "type": "string",
+                "description": "Name of the port to publish. Must be one of the keys declared in `ports` above — the name, not the number: the number depends on the worktree."
+              },
+              "host": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$",
+                "description": "Host segment this job is published under, defaulting to the job's name. May contain dots to create an intermediate level: `web.app-1` puts the job under `.app-1.<worktree>.<project>.localhost`, which the app's siblings then share a cookie parent with."
+              }
             }
           }
         },
@@ -117,7 +136,7 @@
     },
     "env_port": {
       "type": "array",
-      "description": "Links a .env key to a declared port. wtm rewrites the port inside that key's value for each worktree, leaving the rest of the value untouched \u2014 so a hard-coded host:port in a URL follows the worktree's offset.",
+      "description": "Links a .env key to a declared port. wtm rewrites the port inside that key's value for each worktree, leaving the rest of the value untouched — so a hard-coded host:port in a URL follows the worktree's offset.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -139,7 +158,7 @@
           },
           "job": {
             "type": "string",
-            "description": "The job whose port the key follows. Two jobs may each declare a PORT \u2014 their environments are separate \u2014 so the port name alone does not identify a base. Required: every port belongs to exactly one job."
+            "description": "The job whose port the key follows. Two jobs may each declare a PORT — their environments are separate — so the port name alone does not identify a base. Required: every port belongs to exactly one job."
           },
           "port": {
             "type": "string",

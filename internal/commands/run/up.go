@@ -85,7 +85,9 @@ func runUp(cmd *cobra.Command, args []string) error {
 	if err := components.RunLoading(components.LoadingParams{
 		Message: domain.RunDaemonConnecting,
 		Animate: rules.IsHumanFormat(format),
-		Work:    func() error { return process.EnsureDaemon(socketPath) },
+		Work: func() error {
+			return process.EnsureDaemon(process.DaemonParams{SocketPath: socketPath, ProxyPort: rules.ProxyPort(result.Config.Global)})
+		},
 	}); err != nil {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
@@ -101,6 +103,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		Dir:        dir,
 		Jobs:       profile.Jobs,
 		Prober:     newProber(rules.PortProbeBudget(runCfg), noProbe),
+		ProxyPort:  rules.ProxyPort(result.Config.Global),
 	})
 	start := seam.starter(profile)
 
@@ -110,7 +113,12 @@ func runUp(cmd *cobra.Command, args []string) error {
 	case domain.RunSurfaceMachine:
 		return runForMachine(streamParams{Cmd: cmd, Start: start})
 	default:
-		return runOnStream(streamParams{Cmd: cmd, Profile: profile.Name, Start: start})
+		return runOnStream(streamParams{
+			Cmd:        cmd,
+			Profile:    profile.Name,
+			Start:      start,
+			Hyperlinks: rules.IsHumanFormat(format) && isTTY(),
+		})
 	}
 }
 

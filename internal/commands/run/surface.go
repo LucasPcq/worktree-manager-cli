@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -11,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/service/integration"
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/tui/runview"
 )
@@ -36,18 +38,23 @@ type runSeamParams struct {
 	Jobs []domain.JobConfig
 	// Prober checks the declared ports once the jobs are up. Nil skips the check.
 	Prober runlogs.Prober
+	// ProxyPort is where the run proxy serves the jobs' names. Zero leaves them
+	// on their own ports.
+	ProxyPort int
 }
 
 // runSeam is this command's end of internal/flow/runlogs: the daemon's view of
 // the worktree's jobs and the start sequence a surface drives. Opening it
 // assumes the daemon is already up — the caller is what made sure of that.
 type runSeam struct {
-	service runlogs.Service
-	session runlogs.Session
-	workDir string
-	logDir  string
-	env     map[string]string
-	prober  runlogs.Prober
+	service   runlogs.Service
+	session   runlogs.Session
+	workDir   string
+	logDir    string
+	env       map[string]string
+	prober    runlogs.Prober
+	project   string
+	proxyPort int
 }
 
 func openRunSeam(params runSeamParams) runSeam {
@@ -62,9 +69,11 @@ func openRunSeam(params runSeamParams) runSeam {
 			WorkDir: params.Dir,
 			LogDir:  logDir,
 		}),
-		workDir: params.Dir,
-		logDir:  logDir,
-		prober:  params.Prober,
+		workDir:   params.Dir,
+		logDir:    logDir,
+		prober:    params.Prober,
+		project:   filepath.Base(params.ProjectDir),
+		proxyPort: params.ProxyPort,
 	}
 }
 
@@ -75,14 +84,16 @@ func openRunSeam(params runSeamParams) runSeam {
 func (s runSeam) starter(profile resolvedProfile) runview.StartFunc {
 	return func(ctx context.Context, sink runlogs.Sink) (runlogs.Outcome, error) {
 		return runlogs.Run(ctx, runlogs.RunParams{
-			Service: s.service,
-			Sink:    sink,
-			Jobs:    profile.Jobs,
-			Profile: profile.Name,
-			WorkDir: s.workDir,
-			LogDir:  s.logDir,
-			Env:     s.env,
-			Prober:  s.prober,
+			Service:   s.service,
+			Sink:      sink,
+			Jobs:      profile.Jobs,
+			Profile:   profile.Name,
+			WorkDir:   s.workDir,
+			LogDir:    s.logDir,
+			Env:       s.env,
+			Prober:    s.prober,
+			Project:   s.project,
+			ProxyPort: s.proxyPort,
 		})
 	}
 }
@@ -105,6 +116,7 @@ func openRunView(params viewParams) error {
 		Job:     params.Job,
 		Profile: params.Profile,
 		Start:   params.Start,
+		Open:    integration.OpenURL,
 	})
 	if err != nil {
 		return err
@@ -124,6 +136,8 @@ type streamParams struct {
 	Cmd     *cobra.Command
 	Profile string
 	Start   runview.StartFunc
+	// Hyperlinks says whether a job's URL may be wrapped in an OSC-8 sequence.
+	Hyperlinks bool
 }
 
 // runOnStream reports a start sequence as lines on the terminal it was launched
@@ -134,9 +148,10 @@ func runOnStream(params streamParams) error {
 
 	output.FrameStart(out)
 	outcome, err := params.Start(params.Cmd.Context(), output.NewRunPrinter(output.RunPrinterParams{
-		Out:     out,
-		Err:     errOut,
-		Profile: params.Profile,
+		Out:        out,
+		Err:        errOut,
+		Profile:    params.Profile,
+		Hyperlinks: params.Hyperlinks,
 	}))
 	if err != nil {
 		return err

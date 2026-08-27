@@ -85,7 +85,9 @@ self-documenting:
 | Worktree **forest** (parent→child + which need sync) | `wtm tree --output json` |
 | Open PRs | `gh pr list --json number,title,headRefName,state,isDraft,url` |
 | Declared jobs + profiles | `wtm run list --output json` |
-| Jobs running right now (+ `started_at`, `exit_code`) | `wtm run ps --output json` |
+| Jobs running right now (+ `started_at`, `exit_code`, `url`) | `wtm run ps --output json` |
+| Where a job answers in this worktree | `wtm run url --output json` |
+| What a `run up` started, with each job's `url` | `wtm run up -d --output json` |
 | What a job printed | `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (read it as a file) |
 | Resolved project config | `wtm config show --output json` |
 | A branch's worktree path | `wtm resolve <branch> --output json` |
@@ -239,7 +241,11 @@ and **experimental**: the global `wtm init` does not configure it.
   the detected ports, and to compose the **profiles** `run up` offers: one per package plus
   one gathering everything, editable (rename / merge / remove / new). Root-cwd jobs join
   every profile, tasks are ordered ahead of the services that depend on them, and past
-  six packages only the `all` profile is proposed rather than a list to scroll. Two
+  six packages only the `all` profile is proposed rather than a list to scroll. It then
+  asks **which jobs answer under their own name** — every service declaring the port it
+  listens on (`PORT`, or `<JOB>_PORT`) is proposed checked, and unchecking one withdraws
+  the `url` it already had. A non-interactive run publishes the same set without asking.
+  A port a job merely dials (`DB_PORT`, `REDIS_PORT`) is never proposed. Two
   packages whose directories end in the same name (`apps/a/back`, `apps/b/back`) get
   distinct profile names instead of being merged. Non-interactively it takes the same
   answers without asking. A checked
@@ -305,6 +311,24 @@ and **experimental**: the global `wtm init` does not configure it.
   `-d` starts the jobs and returns immediately, which is the behaviour you want. A `task`
   runs inline and blocks until it exits whatever you pass, so `run start <task>` needs no
   `-d`.
+- `run url [job]` writes a job's URL on stdout and nothing else, so it composes:
+  `curl "$(wtm run url web)/health"`. **A job only has a URL if `run.toml` declares one**
+  (`url = { port = "PORT" }` on that job, naming one of its own declared ports) — `wtm run
+  init` declares it for the services it detects, and `run job add --url-port` for the rest.
+  `--output json` lists every published job as `[{job, url}]` and never picks for you.
+  In text mode, one published job needs no argument; **several and no argument is an
+  error, never a picker** — name the job. `run open [job]` opens the same URL in a
+  browser; it may offer a picker, but only in a fully interactive run, so **always name
+  the job**.
+- **The URL is a name, not a port.** With the proxy on (the default), a published job
+  answers at `http://<job>.<worktree>.<repo>.localhost:4000` — that order on purpose, so a
+  cookie set on `.<worktree>.<repo>.localhost` stays inside that worktree. The proxy runs
+  inside the background daemon and dies with it. **`--raw` prints `http://localhost:<port>`
+  instead** — no proxy has to be up, and every OS resolves it, so **prefer `--raw` for
+  anything you dial yourself** (curl, a health check, a test runner). Two limits worth
+  knowing: only HTTP jobs get a name (postgres and redis stay on their ports, by design),
+  and outside a browser `*.localhost` is not guaranteed to resolve on Linux — one more
+  reason `--raw` is the agent's form.
 - `run logs [job]` opens that same view on a terminal. Without one it writes every running
   job's output as `[job] line` on stdout and only ends when the jobs do — do not call it
   expecting it to return. Prefer reading the journal instead: every job's output is
@@ -337,13 +361,34 @@ and **experimental**: the global `wtm init` does not configure it.
 - **Port isolation is declarative.** A job declares the ports it binds on the main
   checkout, and wtm injects `base + WTM_PORT_OFFSET` under that name — so the command
   needs no arithmetic of its own:
-  `wtm run job add web --cmd "pnpm dev" --port PORT=3000` (repeat `--port` per variable).
+  `wtm run job add web --cmd "pnpm dev" --port PORT=3000` (repeat `--port` per variable);
+  add `--url-port PORT` (and optionally `--url-host api.app-1`) to publish it under a name.
   The main checkout gets `PORT=3000`, the next worktree `PORT=3010`. For Docker, template
   the host side in `docker-compose.yml` (`"${DB_PORT}:5432"`) and declare
   `--port DB_PORT=5432`: the container port never moves, only the binding. `wtm run init
   --patch-compose` does both steps for you. A declaration
   **overrides** any inherited value for that variable, and the same ports are given to the
   job's `stop` command. `run up` / `run start` print what was bound (`web started · PORT=3010`).
+- **Next projects need one line before their own name reaches them.** When the proxy
+  serves a job whose directory holds a `next.config.*` without `allowedDevOrigins`,
+  `run up` prints the exact line to add under "Next dev origins". wtm never edits
+  third-party config — report the finding and let the user apply it. Like the port check,
+  it never fails the run and never changes the exit code. Vite needs nothing: it allows
+  `.localhost` already.
+- **`[proxy]` in `~/.config/wtm/config.toml`** tunes the proxy for the whole machine:
+  `port` (default `4000`) and `enabled` (default on). Switching it off is not a failure —
+  every URL wtm prints falls back to the direct `http://localhost:<port>` form. Same if
+  the port is already taken: the jobs still start, wtm prints the direct form and says
+  once why the names are off. **The URL wtm reports is always one that works** — it comes
+  from what the daemon is really serving, not from what the config asked for.
+- **A job can publish one of its ports under a name.** `wtm run init` proposes this for
+  every service that declares the port it listens on, so most jobs get it without an edit.
+  `url = { port = "PORT" }` on a
+  `[[job]]` says which of its declared ports speaks HTTP; `host` overrides the segment it
+  is published under (defaulting to the job's name), and must be lowercase letters, digits
+  and dashes, dot-separated. Two jobs claiming the same host makes `run.toml` refuse to
+  load, naming both. A job with no `url` keeps no name and stays reachable by its port —
+  that is the right answer for anything that does not speak HTTP (postgres, redis).
 - **A job's `cmd` and `stop` are `/bin/sh` lines**, not whitespace-split argv: quotes, `&&`,
   pipes, redirections and globs work, and `${VAR}` expands from the job's environment. So a
   server that ignores `PORT` and only takes a CLI flag (vite) still gets isolated — pass the
