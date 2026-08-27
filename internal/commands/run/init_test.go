@@ -546,3 +546,68 @@ func hasProfileJob(profile domain.ProfileConfig, name string) bool {
 	}
 	return false
 }
+
+// Un init non interactif publie ce que le wizard aurait pré-coché : le service
+// qui déclare le port qu'il écoute répond sous son propre nom, sans qu'il faille
+// éditer run.toml après coup.
+func TestRunInitPublishesTheServiceItPorts(t *testing.T) {
+	stateDir := setupTestProject(t)
+	projectDir := os.Getenv("WTM_PROJECT_DIR")
+	pkg := `{"name":"app","scripts":{"dev":"vite --port ${PORT}"}}`
+	if err := os.WriteFile(filepath.Join(projectDir, "package.json"), []byte(pkg), 0o644); err != nil {
+		t.Fatalf("write package.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, ".env"), []byte("PORT=3000\n"), 0o644); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+
+	if _, _, err := runCmd(t, domain.CmdInit, "--"+domain.FlagNonInteractive); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	job := findJob(t, cfg, "dev")
+	if job.URL == nil {
+		t.Fatalf("job dev n'a pas d'url : %+v", job)
+	}
+	if _, ok := job.Ports[job.URL.Port]; !ok {
+		t.Errorf("url.port = %q, absent des ports du job %v", job.URL.Port, job.Ports)
+	}
+}
+
+// Un job dont aucun port n'est celui qu'il écoute ne reçoit pas de nom : le
+// publier annoncerait une adresse que rien ne sert.
+func TestRunInitLeavesADialledPortUnpublished(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "api", Kind: domain.JobKindService, Cmd: "echo hi", Ports: map[string]int{"DB_PORT": 5432}},
+		},
+	})
+
+	if _, _, err := runCmd(t, domain.CmdInit, "--"+domain.FlagNonInteractive); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if job := findJob(t, cfg, "api"); job.URL != nil {
+		t.Errorf("url = %+v, want aucune : DB_PORT est un port composé, pas écouté", job.URL)
+	}
+}
+
+func findJob(t *testing.T, cfg domain.RunConfig, name string) domain.JobConfig {
+	t.Helper()
+	for _, job := range cfg.Jobs {
+		if job.Name == name {
+			return job
+		}
+	}
+	t.Fatalf("job %q absent de %+v", name, cfg.Jobs)
+	return domain.JobConfig{}
+}

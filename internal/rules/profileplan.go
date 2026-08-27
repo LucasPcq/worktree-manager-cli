@@ -140,6 +140,11 @@ type ApplyInitAnswersParams struct {
 	Ports    []domain.PortEntry
 	Profiles []domain.ProfileConfig
 	Cmds     []domain.JobCmdFix
+	// URLs and URLsAsked are the URLs step's answer, resolved here rather than
+	// by the caller: a job only becomes publishable once its port is applied,
+	// which is what this function has just done.
+	URLs      []string
+	URLsAsked bool
 }
 
 // ApplyInitAnswers folds the wizard's two composition steps back into the
@@ -173,8 +178,36 @@ func ApplyInitAnswers(params ApplyInitAnswersParams) domain.RunConfig {
 		}
 	}
 
+	urls := ResolveURLChoices(ResolveURLChoicesParams{
+		Config:    cfg,
+		Published: params.URLs,
+		Asked:     params.URLsAsked,
+	})
+	for _, choice := range urls {
+		for i, job := range cfg.Jobs {
+			if job.Name != choice.Job {
+				continue
+			}
+			cfg.Jobs[i].URL = publishedURL(job.URL, choice)
+		}
+	}
+
 	if len(params.Profiles) > 0 {
 		cfg.Profiles = params.Profiles
 	}
 	return cfg
+}
+
+// publishedURL answers a job's url choice without ever writing through the
+// existing pointer: the config it came from is the caller's, and a host the
+// step never offered is the caller's too.
+func publishedURL(current *domain.JobURLConfig, choice domain.JobURLChoice) *domain.JobURLConfig {
+	if !choice.Publish {
+		return nil
+	}
+	url := domain.JobURLConfig{Port: choice.Port}
+	if current != nil {
+		url.Host = current.Host
+	}
+	return &url
 }

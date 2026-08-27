@@ -137,7 +137,7 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 
 | Command | Purpose |
 |---|---|
-| [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts, pre-fill ports, link .env keys) |
+| [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts, pre-fill ports, publish URLs, link .env keys) |
 | [`run up`](docs/wtm_run_up.md) / [`down`](docs/wtm_run_down.md) | Start / stop a profile's jobs (`up` attaches, `-d` detaches) |
 | [`run start`](docs/wtm_run_start.md) / [`stop`](docs/wtm_run_stop.md) | Start / stop a single job (`start` attaches, `-d` detaches) |
 | [`run ps`](docs/wtm_run_ps.md) / [`list`](docs/wtm_run_list.md) | Running jobs / declared jobs + profiles |
@@ -360,6 +360,11 @@ contains `dev`, and not a root `dev` a workspace package also declares — that 
 orchestrator (`turbo run dev`, `pnpm -r dev`) and running it beside the packages it fans
 out to would start each of them twice on the same ports. Nothing unchecked is written.
 
+It also asks which jobs should answer under their own name, and proposes every service that
+declares the port it listens on — `PORT`, or `<JOB>_PORT` for the ones after the first. A
+port a job only dials (`DB_PORT`, `REDIS_PORT`) is never proposed: a name nothing answers
+under is worse than no name at all. Unchecking a job withdraws the `url` it already had.
+
 It then walks you through the ports detection pre-filled, and the **profiles** `wtm run
 up` will offer: one per package, plus one gathering everything, which you rename, merge
 or drop. Jobs at the repository root — a compose stack — join every profile, so starting
@@ -518,7 +523,8 @@ enabled = true         # false sends every URL back to http://localhost:<port>
 
 `[proxy]` serves each worktree's HTTP jobs under their own hostname
 (`http://<job>.<worktree>.<repo>.localhost:4000`), so two worktrees stop sharing one
-cookie jar — a job opts in with `url = { port = "PORT" }` in `run.toml`. Both keys default
+cookie jar — a job opts in with `url = { port = "PORT" }` in `run.toml`, which `wtm run
+init` writes for the services it detects. Both keys default
 to the values above; the proxy lives in the background daemon and dies with it, and a port
 it cannot bind costs the names, never the jobs.
 

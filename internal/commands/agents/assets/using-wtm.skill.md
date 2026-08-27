@@ -241,7 +241,11 @@ and **experimental**: the global `wtm init` does not configure it.
   the detected ports, and to compose the **profiles** `run up` offers: one per package plus
   one gathering everything, editable (rename / merge / remove / new). Root-cwd jobs join
   every profile, tasks are ordered ahead of the services that depend on them, and past
-  six packages only the `all` profile is proposed rather than a list to scroll. Two
+  six packages only the `all` profile is proposed rather than a list to scroll. It then
+  asks **which jobs answer under their own name** — every service declaring the port it
+  listens on (`PORT`, or `<JOB>_PORT`) is proposed checked, and unchecking one withdraws
+  the `url` it already had. A non-interactive run publishes the same set without asking.
+  A port a job merely dials (`DB_PORT`, `REDIS_PORT`) is never proposed. Two
   packages whose directories end in the same name (`apps/a/back`, `apps/b/back`) get
   distinct profile names instead of being merged. Non-interactively it takes the same
   answers without asking. A checked
@@ -309,7 +313,8 @@ and **experimental**: the global `wtm init` does not configure it.
   `-d`.
 - `run url [job]` writes a job's URL on stdout and nothing else, so it composes:
   `curl "$(wtm run url web)/health"`. **A job only has a URL if `run.toml` declares one**
-  (`url = { port = "PORT" }` on that job, naming one of its own declared ports).
+  (`url = { port = "PORT" }` on that job, naming one of its own declared ports) — `wtm run
+  init` declares it for the services it detects, and `run job add --url-port` for the rest.
   `--output json` lists every published job as `[{job, url}]` and never picks for you.
   In text mode, one published job needs no argument; **several and no argument is an
   error, never a picker** — name the job. `run open [job]` opens the same URL in a
@@ -376,7 +381,9 @@ and **experimental**: the global `wtm init` does not configure it.
   the port is already taken: the jobs still start, wtm prints the direct form and says
   once why the names are off. **The URL wtm reports is always one that works** — it comes
   from what the daemon is really serving, not from what the config asked for.
-- **A job can publish one of its ports under a name.** `url = { port = "PORT" }` on a
+- **A job can publish one of its ports under a name.** `wtm run init` proposes this for
+  every service that declares the port it listens on, so most jobs get it without an edit.
+  `url = { port = "PORT" }` on a
   `[[job]]` says which of its declared ports speaks HTTP; `host` overrides the segment it
   is published under (defaulting to the job's name), and must be lowercase letters, digits
   and dashes, dot-separated. Two jobs claiming the same host makes `run.toml` refuse to

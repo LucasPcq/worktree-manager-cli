@@ -426,6 +426,7 @@ const (
 	RecapNoPort             = "⚠ no port declared"
 	RecapTask               = "task"
 	RecapDefaultSuffix      = "   (default)"
+	RecapURLSuffix          = "   (url)"
 	RecapJobsTitle          = "Jobs"
 	RecapProfilesTitle      = "Profiles"
 	RecapAnswersTitle       = "Answers"
@@ -665,6 +666,7 @@ const (
 	SkipReasonNoPortDetected  = "no port detected for the jobs you kept"
 	SkipReasonCommandsRead    = "every command already reads the port it is given"
 	SkipReasonNoEnvKeyFollows = "no .env key holds a declared port"
+	SkipReasonNoListeningPort = "no service declares the port it listens on"
 
 	// The wizard step selecting which package scripts become jobs.
 	ScriptsStepName  = "Package scripts"
@@ -728,6 +730,18 @@ const (
 	CmdListCharLimit  = 512
 	CmdListMinWidth   = 30
 	CmdListWidthInset = 20
+
+	// The wizard step choosing which jobs answer under their own name.
+	URLListStepName  = "URLs"
+	URLListStepTitle = "Which jobs should answer under their own name"
+	URLListStepDesc  = "A published job is reachable at <job>.<worktree>.<project>.localhost, served by\n" +
+		"wtm's proxy — so two worktrees of the same app no longer share a cookie jar.\n" +
+		"\n" +
+		"Only the port a job listens on is published. Uncheck anything that does not\n" +
+		"speak HTTP: a name nothing answers under is worse than no name at all."
+	// URLListEntryFmt is one candidate: the job, then the port it publishes.
+	URLListEntryFmt   = "%s · %s"
+	URLListSummaryFmt = "%d jobs published"
 
 	// The wizard step reviewing the ports detection pre-filled.
 	PortListStepName  = "Ports"

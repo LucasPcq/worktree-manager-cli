@@ -43,6 +43,15 @@ type JobConfig struct {
 
 // JobURLEntry is one published job as a surface reports it: the job's name and
 // where it answers in this worktree.
+// JobURLChoice is one job's answer to "should this be reachable by name": the
+// port to publish and whether to publish it. Publish false is an answer too — it
+// withdraws a url the config already carried.
+type JobURLChoice struct {
+	Job     string
+	Port    string
+	Publish bool
+}
+
 type JobURLEntry struct {
 	Job string `json:"job"`
 	URL string `json:"url"`
