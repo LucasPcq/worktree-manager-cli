@@ -57,3 +57,25 @@ func parent(host string) string {
 	}
 	return host
 }
+
+func TestProxyPort(t *testing.T) {
+	on, off := true, false
+
+	tests := []struct {
+		name string
+		cfg  domain.GlobalConfig
+		want int
+	}{
+		{"absent : le défaut", domain.GlobalConfig{}, domain.ProxyDefaultPort},
+		{"port choisi", domain.GlobalConfig{Proxy: domain.ProxyConfig{Port: 5000}}, 5000},
+		{"éteint explicitement", domain.GlobalConfig{Proxy: domain.ProxyConfig{Enabled: &off, Port: 5000}}, 0},
+		{"allumé sans port", domain.GlobalConfig{Proxy: domain.ProxyConfig{Enabled: &on}}, domain.ProxyDefaultPort},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ProxyPort(tt.cfg); got != tt.want {
+				t.Errorf("ProxyPort = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

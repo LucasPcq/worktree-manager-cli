@@ -64,7 +64,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if err := components.RunLoading(components.LoadingParams{
 		Message: domain.RunDaemonConnecting,
 		Animate: rules.IsHumanFormat(format),
-		Work:    func() error { return process.EnsureDaemon(socketPath) },
+		Work: func() error {
+			return process.EnsureDaemon(process.DaemonParams{SocketPath: socketPath, ProxyPort: rules.ProxyPort(result.Config.Global)})
+		},
 	}); err != nil {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
@@ -79,7 +81,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		Format: format,
 	})
 	if surface == domain.RunSurfaceView {
-		seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs})
+		seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
 		return showRunView(viewParams{
 			Cmd:     cmd,
 			Session: seam.session,

@@ -33,3 +33,16 @@ func RouteHost(params RouteHostParams) string {
 		domain.ProxyTLD,
 	}, ".")
 }
+
+// ProxyPort is the port the run proxy listens on, zero when it is switched off.
+// Zero is what every caller reads to fall back to a job's own port, so the
+// feature degrades to what it replaced instead of failing.
+func ProxyPort(cfg domain.GlobalConfig) int {
+	if cfg.Proxy.Enabled != nil && !*cfg.Proxy.Enabled {
+		return 0
+	}
+	if cfg.Proxy.Port > 0 {
+		return cfg.Proxy.Port
+	}
+	return domain.ProxyDefaultPort
+}

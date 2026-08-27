@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -37,18 +38,23 @@ type runSeamParams struct {
 	Jobs []domain.JobConfig
 	// Prober checks the declared ports once the jobs are up. Nil skips the check.
 	Prober runlogs.Prober
+	// ProxyPort is where the run proxy serves the jobs' names. Zero leaves them
+	// on their own ports.
+	ProxyPort int
 }
 
 // runSeam is this command's end of internal/flow/runlogs: the daemon's view of
 // the worktree's jobs and the start sequence a surface drives. Opening it
 // assumes the daemon is already up — the caller is what made sure of that.
 type runSeam struct {
-	service runlogs.Service
-	session runlogs.Session
-	workDir string
-	logDir  string
-	env     map[string]string
-	prober  runlogs.Prober
+	service   runlogs.Service
+	session   runlogs.Session
+	workDir   string
+	logDir    string
+	env       map[string]string
+	prober    runlogs.Prober
+	project   string
+	proxyPort int
 }
 
 func openRunSeam(params runSeamParams) runSeam {
@@ -63,9 +69,11 @@ func openRunSeam(params runSeamParams) runSeam {
 			WorkDir: params.Dir,
 			LogDir:  logDir,
 		}),
-		workDir: params.Dir,
-		logDir:  logDir,
-		prober:  params.Prober,
+		workDir:   params.Dir,
+		logDir:    logDir,
+		prober:    params.Prober,
+		project:   filepath.Base(params.ProjectDir),
+		proxyPort: params.ProxyPort,
 	}
 }
 
@@ -76,14 +84,16 @@ func openRunSeam(params runSeamParams) runSeam {
 func (s runSeam) starter(profile resolvedProfile) runview.StartFunc {
 	return func(ctx context.Context, sink runlogs.Sink) (runlogs.Outcome, error) {
 		return runlogs.Run(ctx, runlogs.RunParams{
-			Service: s.service,
-			Sink:    sink,
-			Jobs:    profile.Jobs,
-			Profile: profile.Name,
-			WorkDir: s.workDir,
-			LogDir:  s.logDir,
-			Env:     s.env,
-			Prober:  s.prober,
+			Service:   s.service,
+			Sink:      sink,
+			Jobs:      profile.Jobs,
+			Profile:   profile.Name,
+			WorkDir:   s.workDir,
+			LogDir:    s.logDir,
+			Env:       s.env,
+			Prober:    s.prober,
+			Project:   s.project,
+			ProxyPort: s.proxyPort,
 		})
 	}
 }

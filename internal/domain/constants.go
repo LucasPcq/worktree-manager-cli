@@ -501,6 +501,8 @@ const (
 	FlagKeep       = "keep"
 	FlagFiles      = "files"
 	FlagOnConflict = "on-conflict"
+	// FlagProxyPort tells the forked daemon where to serve the named URLs.
+	FlagProxyPort = "proxy-port"
 	// FlagRaw asks for a job's own port rather than the name the proxy serves it
 	// under: an address every OS resolves and no proxy has to be up for.
 	FlagRaw = "raw"
@@ -1030,6 +1032,7 @@ const (
 	CmdStop     = "stop"
 	CmdLogs     = "logs"
 	CmdPs       = "ps"
+	CmdDaemon   = "daemon"
 	CmdURL      = "url"
 	CmdOpen     = "open"
 	CmdCheckout = "checkout"

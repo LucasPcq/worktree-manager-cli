@@ -3,6 +3,7 @@ package run
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -71,10 +72,22 @@ func publishedJobs(cmd *cobra.Command) ([]domain.JobURLEntry, error) {
 	env := jobEnv(jobEnvParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir})
 	offset, _ := strconv.Atoi(env[domain.EnvPortOffset])
 
+	raw, _ := cmd.Flags().GetBool(domain.FlagRaw)
+	proxyPort := rules.ProxyPort(result.Config.Global)
+	if raw {
+		proxyPort = 0
+	}
+	project := filepath.Base(result.ProjectDir)
+
 	var entries []domain.JobURLEntry
 	for _, job := range runCfg.Jobs {
 		ports := rules.JobPorts(rules.JobPortsParams{Ports: job.Ports, PortOffset: offset})
-		url := rules.JobURL(rules.JobURLParams{Job: job, Ports: ports})
+		url := rules.JobURL(rules.JobURLParams{
+			Job:       job,
+			Ports:     ports,
+			Host:      rules.RouteHost(rules.RouteHostParams{Job: job, Worktree: env[domain.EnvWorktree], Project: project}),
+			ProxyPort: proxyPort,
+		})
 		if url == "" {
 			continue
 		}

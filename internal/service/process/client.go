@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -183,24 +184,24 @@ func IsDaemonRunning(socketPath string) bool {
 }
 
 // EnsureDaemon checks if the daemon is running; if not, starts it and waits.
-func EnsureDaemon(socketPath string) error {
-	if IsDaemonRunning(socketPath) {
+func EnsureDaemon(params DaemonParams) error {
+	if IsDaemonRunning(params.SocketPath) {
 		return nil
 	}
 
 	// Remove stale socket if present
-	if _, err := os.Stat(socketPath); err == nil {
-		os.Remove(socketPath)
+	if _, err := os.Stat(params.SocketPath); err == nil {
+		os.Remove(params.SocketPath)
 	}
 
-	if err := StartDaemon(socketPath); err != nil {
+	if err := StartDaemon(params); err != nil {
 		return err
 	}
 
 	// Poll until the daemon is ready
 	deadline := time.Now().Add(daemonStartTimeout)
 	for time.Now().Before(deadline) {
-		if IsDaemonRunning(socketPath) {
+		if IsDaemonRunning(params.SocketPath) {
 			return nil
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -209,14 +210,20 @@ func EnsureDaemon(socketPath string) error {
 	return fmt.Errorf("daemon did not start within %v", daemonStartTimeout)
 }
 
-// StartDaemon forks "wtm daemon" as a detached background process.
-func StartDaemon(socketPath string) error {
+// StartDaemon forks "wtm daemon" as a detached background process. The proxy
+// port travels on the command line because only a client can read the user's
+// global config — the daemon is global and outlives any one of them.
+func StartDaemon(params DaemonParams) error {
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("find executable: %w", err)
 	}
 
-	cmd := exec.Command(exePath, "daemon")
+	args := []string{domain.CmdDaemon}
+	if params.ProxyPort > 0 {
+		args = append(args, "--"+domain.FlagProxyPort, strconv.Itoa(params.ProxyPort))
+	}
+	cmd := exec.Command(exePath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	cmd.Stdout = nil
 	cmd.Stderr = nil

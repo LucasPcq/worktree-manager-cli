@@ -70,6 +70,9 @@ type StartRequest struct {
 	WorkDir string
 	LogDir  string
 	Env     map[string]string
+	// RouteHost is the hostname the proxy is to serve this job under, empty when
+	// the job publishes none or the proxy is off.
+	RouteHost string
 	// OnOutput receives what the job writes while it starts — everything for a
 	// task or a detached launcher, nothing for a job the daemon backgrounds.
 	OnOutput func([]byte)

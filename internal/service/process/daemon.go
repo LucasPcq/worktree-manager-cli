@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/proxy"
 )
 
 var daemonIdleTimeout = time.Duration(domain.DaemonIdleTimeoutSeconds) * time.Second
@@ -21,6 +23,9 @@ var daemonIdleTimeout = time.Duration(domain.DaemonIdleTimeoutSeconds) * time.Se
 // DaemonParams holds inputs for starting the daemon.
 type DaemonParams struct {
 	SocketPath string
+	// ProxyPort is where the run proxy listens, resolved by the client from the
+	// global config. Zero leaves the proxy off, and jobs keep their own ports.
+	ProxyPort int
 }
 
 type daemonServer struct {
@@ -45,11 +50,22 @@ func RunDaemon(params DaemonParams) error {
 		return fmt.Errorf("listen: %w", err)
 	}
 
+	registry := proxy.NewRegistry()
 	d := &daemonServer{
-		manager:    NewManager(),
+		manager:    NewManagerWithRoutes(registry),
 		listener:   listener,
 		socketPath: params.SocketPath,
 		shutdown:   make(chan struct{}),
+	}
+
+	if params.ProxyPort > 0 {
+		server := proxy.NewServer(proxy.ServerParams{Port: params.ProxyPort, Registry: registry})
+		if startErr := server.Start(); startErr != nil {
+			// A busy port costs the names, never the jobs.
+			log.Printf("run proxy: %v — jobs keep their own ports", startErr)
+		} else {
+			defer server.Close()
+		}
 	}
 
 	// Handle signals
@@ -151,11 +167,12 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		// (`run up` / `run start`). Start blocks until every chunk has been
 		// flushed, so the terminal response below never races the stream.
 		err := d.manager.Start(StartParams{
-			Job:      *req.Job,
-			WorkDir:  req.WorkDir,
-			LogDir:   req.LogDir,
-			Env:      req.Env,
-			Streamer: responseStreamWriter{encoder: encoder},
+			Job:       *req.Job,
+			WorkDir:   req.WorkDir,
+			LogDir:    req.LogDir,
+			Env:       req.Env,
+			RouteHost: req.RouteHost,
+			Streamer:  responseStreamWriter{encoder: encoder},
 		})
 		if err != nil {
 			code := exitCodeOf(err)
@@ -173,11 +190,12 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 	// shows the launcher's lines as they happen, then send the terminal "started".
 	if rules.IsDetached(*req.Job) {
 		if err := d.manager.Start(StartParams{
-			Job:      *req.Job,
-			WorkDir:  req.WorkDir,
-			LogDir:   req.LogDir,
-			Env:      req.Env,
-			Streamer: responseStreamWriter{encoder: encoder},
+			Job:       *req.Job,
+			WorkDir:   req.WorkDir,
+			LogDir:    req.LogDir,
+			Env:       req.Env,
+			RouteHost: req.RouteHost,
+			Streamer:  responseStreamWriter{encoder: encoder},
 		}); err != nil {
 			encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 			return
@@ -186,7 +204,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		return
 	}
 
-	if err := d.manager.Start(StartParams{Job: *req.Job, WorkDir: req.WorkDir, LogDir: req.LogDir, Env: req.Env}); err != nil {
+	if err := d.manager.Start(StartParams{Job: *req.Job, WorkDir: req.WorkDir, LogDir: req.LogDir, Env: req.Env, RouteHost: req.RouteHost}); err != nil {
 		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 		return
 	}

@@ -311,9 +311,18 @@ and **experimental**: the global `wtm init` does not configure it.
   (`url = { port = "PORT" }` on that job, naming one of its own declared ports).
   `--output json` lists every published job as `[{job, url}]` and never picks for you.
   In text mode, one published job needs no argument; **several and no argument is an
-  error, never a picker** — name the job. `--raw` forces the direct
-  `http://localhost:<port>` form. `run open [job]` opens the same URL in a browser; it may
-  offer a picker, but only in a fully interactive run, so **always name the job**.
+  error, never a picker** — name the job. `run open [job]` opens the same URL in a
+  browser; it may offer a picker, but only in a fully interactive run, so **always name
+  the job**.
+- **The URL is a name, not a port.** With the proxy on (the default), a published job
+  answers at `http://<job>.<worktree>.<repo>.localhost:4000` — that order on purpose, so a
+  cookie set on `.<worktree>.<repo>.localhost` stays inside that worktree. The proxy runs
+  inside the background daemon and dies with it. **`--raw` prints `http://localhost:<port>`
+  instead** — no proxy has to be up, and every OS resolves it, so **prefer `--raw` for
+  anything you dial yourself** (curl, a health check, a test runner). Two limits worth
+  knowing: only HTTP jobs get a name (postgres and redis stay on their ports, by design),
+  and outside a browser `*.localhost` is not guaranteed to resolve on Linux — one more
+  reason `--raw` is the agent's form.
 - `run logs [job]` opens that same view on a terminal. Without one it writes every running
   job's output as `[job] line` on stdout and only ends when the jobs do — do not call it
   expecting it to return. Prefer reading the journal instead: every job's output is
@@ -353,6 +362,9 @@ and **experimental**: the global `wtm init` does not configure it.
   --patch-compose` does both steps for you. A declaration
   **overrides** any inherited value for that variable, and the same ports are given to the
   job's `stop` command. `run up` / `run start` print what was bound (`web started · PORT=3010`).
+- **`[proxy]` in `~/.config/wtm/config.toml`** tunes the proxy for the whole machine:
+  `port` (default `4000`) and `enabled` (default on). Switching it off is not a failure —
+  every URL wtm prints falls back to the direct `http://localhost:<port>` form.
 - **A job can publish one of its ports under a name.** `url = { port = "PORT" }` on a
   `[[job]]` says which of its declared ports speaks HTTP; `host` overrides the segment it
   is published under (defaulting to the job's name), and must be lowercase letters, digits

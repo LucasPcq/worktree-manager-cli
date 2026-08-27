@@ -423,3 +423,39 @@ func TestRunEmitsJobURL(t *testing.T) {
 		}
 	}
 }
+
+func TestRunEmitsTheNamedURLWhenTheProxyServes(t *testing.T) {
+	job := domain.JobConfig{
+		Name:  "web",
+		Kind:  domain.JobKindService,
+		Cmd:   "pnpm dev",
+		Ports: map[string]int{"PORT": 3000},
+		URL:   &domain.JobURLConfig{Port: "PORT"},
+	}
+	service := &runlogstest.Service{Ports: map[string]map[string]int{"web": {"PORT": 3010}}}
+	sink := &runlogstest.Sink{}
+
+	if _, err := runlogs.Run(context.Background(), runlogs.RunParams{
+		Service:   service,
+		Sink:      sink,
+		Jobs:      []domain.JobConfig{job},
+		WorkDir:   "/w",
+		Env:       map[string]string{domain.EnvWorktree: "feat-auth"},
+		Project:   "myapp",
+		ProxyPort: 4000,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	const want = "http://web.feat-auth.myapp.localhost:4000"
+	for _, e := range sink.Events {
+		if e.Phase == runlogs.PhaseStarted && e.URL != want {
+			t.Errorf("started URL = %q, want %q", e.URL, want)
+		}
+	}
+	// The daemon is told the same name the event shows, or the browser would
+	// resolve a route nothing registered.
+	if service.Started[0].RouteHost != "web.feat-auth.myapp.localhost" {
+		t.Errorf("RouteHost = %q, want the host the URL names", service.Started[0].RouteHost)
+	}
+}

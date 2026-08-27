@@ -61,6 +61,12 @@ type RunParams struct {
 	// Prober checks that the ports the jobs declared were actually bound. Nil
 	// skips the check entirely, which is what --no-probe and a zero budget do.
 	Prober Prober
+	// Project names the repository, the last segment of every route. Empty
+	// leaves the jobs on their own ports.
+	Project string
+	// ProxyPort is where the proxy serves those routes. Zero means it is off,
+	// and a job's URL is then its own address.
+	ProxyPort int
 }
 
 // Run starts a profile's jobs in their declared order and reports each step to
@@ -79,15 +85,17 @@ func Run(ctx context.Context, params RunParams) (Outcome, error) {
 	}
 
 	r := &runner{
-		ctx:     ctx,
-		service: params.Service,
-		sink:    params.Sink,
-		jobs:    params.Jobs,
-		profile: params.Profile,
-		workDir: params.WorkDir,
-		logDir:  params.LogDir,
-		env:     params.Env,
-		prober:  params.Prober,
+		ctx:       ctx,
+		service:   params.Service,
+		sink:      params.Sink,
+		jobs:      params.Jobs,
+		profile:   params.Profile,
+		workDir:   params.WorkDir,
+		logDir:    params.LogDir,
+		env:       params.Env,
+		prober:    params.Prober,
+		project:   params.Project,
+		proxyPort: params.ProxyPort,
 	}
 	if r.sink == nil {
 		r.sink = noSink{}
@@ -105,6 +113,10 @@ type runner struct {
 	logDir  string
 	env     map[string]string
 	prober  Prober
+	// project and proxyPort together decide whether a job's URL is its name or
+	// its port; both come from the surface, which is the side that reads config.
+	project   string
+	proxyPort int
 
 	// probeTargets are the started services that declared ports, kept in start
 	// order so the check runs once, at the end, when everything is up.
@@ -127,11 +139,18 @@ func (r *runner) run() Outcome {
 		r.emit(Event{Phase: PhaseStarting, Job: job.Name, Step: i + 1})
 
 		r.captured = nil
+		host := rules.RouteHost(rules.RouteHostParams{
+			Job:      job,
+			Worktree: r.env[domain.EnvWorktree],
+			Project:  r.project,
+		})
+
 		result, err := r.service.Start(r.ctx, StartRequest{
-			Job:     job,
-			WorkDir: r.workDir,
-			LogDir:  r.logDir,
-			Env:     r.env,
+			Job:       job,
+			WorkDir:   r.workDir,
+			LogDir:    r.logDir,
+			Env:       r.env,
+			RouteHost: host,
 			OnOutput: func(chunk []byte) {
 				r.captured = append(r.captured, chunk...)
 				r.emit(Event{Phase: PhaseOutput, Job: job.Name, Kind: job.Kind, Step: i + 1, Chunk: chunk})
@@ -156,7 +175,7 @@ func (r *runner) run() Outcome {
 		if job.Kind == domain.JobKindTask {
 			r.completed = append(r.completed, job.Name)
 			r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionDone})
-			r.emit(Event{Phase: PhaseDone, Job: job.Name, Step: i + 1, Ports: result.Ports, URL: rules.JobURL(rules.JobURLParams{Job: job, Ports: result.Ports})})
+			r.emit(Event{Phase: PhaseDone, Job: job.Name, Step: i + 1, Ports: result.Ports, URL: r.jobURL(job, result.Ports, host)})
 			continue
 		}
 
@@ -165,7 +184,7 @@ func (r *runner) run() Outcome {
 		if rules.ShouldProbeJob(job.Kind, result.Ports) {
 			r.probeTargets = append(r.probeTargets, probeTarget{job: job.Name, resolved: result.Ports})
 		}
-		r.emit(Event{Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning, Ports: result.Ports, URL: rules.JobURL(rules.JobURLParams{Job: job, Ports: result.Ports})})
+		r.emit(Event{Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning, Ports: result.Ports, URL: r.jobURL(job, result.Ports, host)})
 	}
 
 	probes := r.probe()
@@ -174,6 +193,10 @@ func (r *runner) run() Outcome {
 	outcome.Probes = probes
 	r.emit(Event{Phase: PhaseReady, Outcome: outcome})
 	return outcome
+}
+
+func (r *runner) jobURL(job domain.JobConfig, ports map[string]int, host string) string {
+	return rules.JobURL(rules.JobURLParams{Job: job, Ports: ports, Host: host, ProxyPort: r.proxyPort})
 }
 
 type probeTarget struct {

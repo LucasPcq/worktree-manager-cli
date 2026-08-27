@@ -57,7 +57,9 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	if err := components.RunLoading(components.LoadingParams{
 		Message: domain.RunDaemonConnecting,
 		Animate: true,
-		Work:    func() error { return process.EnsureDaemon(socketPath) },
+		Work: func() error {
+			return process.EnsureDaemon(process.DaemonParams{SocketPath: socketPath, ProxyPort: rules.ProxyPort(result.Config.Global)})
+		},
 	}); err != nil {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
@@ -67,7 +69,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		job = args[0]
 	}
 
-	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs})
+	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
 	surface := rules.DecideRunSurface(rules.RunSurfaceParams{TTY: isTTY(), Format: domain.OutputText})
 	if surface == domain.RunSurfaceView {
 		return showRunView(viewParams{Cmd: cmd, Session: seam.session, Job: job})
