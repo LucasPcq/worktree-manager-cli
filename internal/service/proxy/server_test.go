@@ -2,11 +2,13 @@ package proxy
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -155,4 +157,42 @@ func mustHost(t *testing.T, raw string) string {
 		t.Fatal(err)
 	}
 	return u.Host
+}
+
+// A dev server that binds the IPv6 loopback only — Vite does — must still be
+// reachable, which is why a route names its target by host and not by 127.0.0.1.
+func TestServerReachesATargetBoundToIPv6Only(t *testing.T) {
+	listener, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("no IPv6 loopback on this machine: %v", err)
+	}
+	backend := &httptest.Server{
+		Listener: listener,
+		Config:   &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "v6") })},
+	}
+	backend.Start()
+	t.Cleanup(backend.Close)
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := fmt.Sprintf(domain.ProxyTargetFmt, mustAtoi(t, port))
+	addr := serve(t, domain.ProxyRoute{Host: "web.feat.myapp.localhost", Target: target, Job: "web"})
+
+	resp := get(t, addr, "web.feat.myapp.localhost")
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK || string(body) != "v6" {
+		t.Errorf("status %d, body %q — want the IPv6-only backend reached", resp.StatusCode, body)
+	}
+}
+
+func mustAtoi(t *testing.T, s string) int {
+	t.Helper()
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }

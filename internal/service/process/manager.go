@@ -916,7 +916,7 @@ func (m *Manager) publishRoute(job *ManagedJob) {
 	}
 	m.routes.Add(domain.ProxyRoute{
 		Host:     job.RouteHost,
-		Target:   fmt.Sprintf(domain.ProxyLoopbackFmt, port),
+		Target:   fmt.Sprintf(domain.ProxyTargetFmt, port),
 		Job:      job.Name,
 		Worktree: job.Env[domain.EnvWorktree],
 		Project:  job.Env[domain.EnvProject],

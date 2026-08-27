@@ -172,9 +172,14 @@ const (
 	ProxyDefaultPort = 4000
 	// ProxyURLFmt is a job's named URL.
 	ProxyURLFmt = "http://%s:%d"
-	// ProxyLoopbackFmt is an address on the loopback: what the server binds, and
-	// what a route targets. Never every interface.
+	// ProxyLoopbackFmt is what the proxy binds: the IPv4 loopback, never every
+	// interface.
 	ProxyLoopbackFmt = "127.0.0.1:%d"
+	// ProxyTargetFmt is how a route names the job behind it. It resolves to both
+	// loopback families on purpose, and is not ProxyLoopbackFmt: a dev server
+	// that binds ::1 only — Vite does — is unreachable over 127.0.0.1, which is
+	// the same asymmetry PortProbeHostV4/V6 exist for.
+	ProxyTargetFmt = "localhost:%d"
 	// ProxyScheme is what the proxy dials a job with: the job listens on plain
 	// HTTP on the loopback, whatever the browser used to reach the proxy.
 	ProxyScheme = "http"

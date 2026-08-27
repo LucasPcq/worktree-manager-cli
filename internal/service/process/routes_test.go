@@ -64,9 +64,10 @@ func TestManagerRoutesPublishesAStartedJob(t *testing.T) {
 		t.Fatalf("added = %v, want exactly one route", added)
 	}
 	// The target carries the worktree's offset: the route has to point at the
-	// port the job actually bound, not at the one it declared.
-	if added[0].Target != "127.0.0.1:3010" {
-		t.Errorf("Target = %q, want 127.0.0.1:3010", added[0].Target)
+	// port the job actually bound, not at the one it declared. It names the host
+	// rather than 127.0.0.1 so a job listening on ::1 only is still reachable.
+	if added[0].Target != "localhost:3010" {
+		t.Errorf("Target = %q, want localhost:3010", added[0].Target)
 	}
 	if added[0].Host != "web.feat.myapp.localhost" || added[0].Worktree != "feat" || added[0].Project != "myapp" {
 		t.Errorf("route = %+v, want the worktree it belongs to named", added[0])

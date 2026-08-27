@@ -81,3 +81,19 @@ func TestRegistryTakesConcurrentWriters(t *testing.T) {
 		t.Errorf("List holds %d routes, want 100", len(registry.List()))
 	}
 }
+
+// A route survives its job being restarted under the same name: the second Add
+// replaces the first rather than leaving a stale target behind.
+func TestRegistryAddReplacesAStaleTarget(t *testing.T) {
+	registry := NewRegistry()
+	registry.Add(route("web.feat.myapp.localhost", "localhost:3010"))
+	registry.Add(route("web.feat.myapp.localhost", "localhost:3020"))
+
+	found, _ := registry.Lookup("web.feat.myapp.localhost")
+	if found.Target != "localhost:3020" {
+		t.Errorf("Target = %q, want the port the job most recently bound", found.Target)
+	}
+	if len(registry.List()) != 1 {
+		t.Errorf("List = %v, want one entry per host", registry.List())
+	}
+}
