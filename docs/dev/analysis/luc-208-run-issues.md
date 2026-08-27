@@ -311,3 +311,28 @@ Restent ouverts, documentés mais non corrigés (mesurés sans conséquence sur 
 symptômes remontés) : les chunks jetés sur file pleine dans `outputHub.Write`,
 le drain de fin de task borné à 2 s, et la course du timer d'inactivité du
 daemon entre deux jobs.
+
+## Vérification sur le vrai binaire
+
+Les correctifs ont été rejoués sur `wtm` compilé, piloté dans un PTY réel (40×120),
+sur un profil `back` = deux tasks longues puis un service qui teste ce qu'elles
+produisent :
+
+- séquence `starting 1/3` → `2/3` → `3/3`, tasks d'abord ;
+- le service lit `READY` : il démarre bien après les migrations et les seeds ;
+- l'en-tête affiche `wtm run · back`, le récap `Profile: back` ;
+- la barre latérale ne liste que les trois jobs du profil ;
+- la sortie des tasks s'affiche à plat.
+
+Le même scénario sur un binaire construit sans la normalisation des fins de ligne
+reproduit l'escalier :
+
+```
+│  ✓ back-migration:run  ││ seeding entity 443 .......................
+│ ▸◌ back-seed        0s ││                                           seeding entity 444 ....
+│  ● back-dev        41s ││                                                                  seedin
+│                        ││ entity 445 .......................
+```
+
+**Le fichier `run.toml` n'est pas migré.** Un fichier écrit par l'ancien wizard
+garde ses profils sans tasks : le régénérer est ce qui applique la correction.
