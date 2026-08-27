@@ -235,7 +235,49 @@ func ValidateRunPorts(cfg domain.RunConfig) []string {
 			c.A.Name, c.A.Job, c.A.Base, c.B.Name, c.B.Job, c.B.Base, c.Worktrees, block, block))
 	}
 
+	errs = append(errs, validateJobURLs(cfg)...)
 	return append(errs, validateEnvPortLinks(cfg)...)
+}
+
+// validateJobURLs checks what run.toml can answer for on its own. The collision
+// case is the one that matters: without it the proxy arbitrates silently and
+// half the traffic goes to the wrong worktree.
+func validateJobURLs(cfg domain.RunConfig) []string {
+	var errs []string
+	claimed := map[string]string{}
+
+	for _, job := range cfg.Jobs {
+		if job.URL == nil {
+			continue
+		}
+		if _, declared := job.Ports[job.URL.Port]; !declared {
+			errs = append(errs, fmt.Sprintf("job %q: url.port names %s, which the job does not declare", job.Name, job.URL.Port))
+		}
+		if job.URL.Host != "" && !IsHostLabels(job.URL.Host) {
+			errs = append(errs, fmt.Sprintf("job %q: url.host %q is not a valid hostname — lowercase letters, digits and dashes, dot-separated", job.Name, job.URL.Host))
+			continue
+		}
+
+		host := JobHostLabel(job)
+		if owner, taken := claimed[host]; taken {
+			errs = append(errs, fmt.Sprintf("jobs %q and %q both publish host %q — give one an explicit url.host", owner, job.Name, host))
+			continue
+		}
+		claimed[host] = job.Name
+	}
+	return errs
+}
+
+// JobHostLabel is the host segment a job publishes under: what it declared, else
+// its own name made safe for DNS.
+func JobHostLabel(job domain.JobConfig) string {
+	if job.URL == nil {
+		return ""
+	}
+	if job.URL.Host != "" {
+		return job.URL.Host
+	}
+	return HostLabel(job.Name)
 }
 
 // validateEnvPortLinks checks what run.toml can answer for on its own: that each

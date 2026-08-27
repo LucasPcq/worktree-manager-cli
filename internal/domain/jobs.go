@@ -16,6 +16,15 @@ const (
 	JobKindTask JobKind = "task"
 )
 
+// JobURLConfig is a job's [[job]].url table: which of its declared ports speaks
+// HTTP, and the host label it is published under. Port names a key of Ports, not
+// a number — the number depends on the worktree, only the declaration is stable.
+// Host is optional and defaults to the job's name.
+type JobURLConfig struct {
+	Port string `toml:"port"           json:"port"`
+	Host string `toml:"host,omitempty" json:"host,omitempty"`
+}
+
 // JobConfig defines a managed job from .wtm/run.toml.
 type JobConfig struct {
 	Name string  `toml:"name"           json:"name"`
@@ -27,6 +36,9 @@ type JobConfig struct {
 	// checkout. Every other worktree gets that base plus its own offset, so the
 	// same job binds a free port in each one.
 	Ports map[string]int `toml:"ports,omitempty" json:"ports,omitempty"`
+	// URL publishes one of the ports above under a name. Absent means the job
+	// keeps no name and stays reachable by its port, as before.
+	URL *JobURLConfig `toml:"url,omitempty" json:"url,omitempty"`
 }
 
 // ProfileConfig defines a named, ordered group of jobs.

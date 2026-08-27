@@ -155,6 +155,11 @@ const (
 	PortMin = 1
 	PortMax = 65535
 
+	// HostLabelMaxLen is the DNS limit on a single label of a hostname.
+	HostLabelMaxLen = 63
+	// HostLabelFallback names a segment whose source slugified to nothing.
+	HostLabelFallback = "wtm"
+
 	// ComposePortVarSuffix ends every variable name wtm introduces in a compose
 	// file, and ComposeTemplatedPortFmt is the host side it writes: the default
 	// keeps `docker compose up` working on its own, without wtm.
