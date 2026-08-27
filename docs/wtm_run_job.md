@@ -16,7 +16,7 @@ Manage jobs declared in <git-common-dir>/wtm/run.toml.
 
 * [wtm run](wtm_run.md)	 - Manage dev jobs (services + tasks)
 * [wtm run job add](wtm_run_job_add.md)	 - Add a job to run.toml
-* [wtm run job edit](wtm_run_job_edit.md)	 - Edit an existing job via wizard
+* [wtm run job edit](wtm_run_job_edit.md)	 - Edit an existing job
 * [wtm run job list](wtm_run_job_list.md)	 - List jobs from run.toml
 * [wtm run job rm](wtm_run_job_rm.md)	 - Remove a job from run.toml
 

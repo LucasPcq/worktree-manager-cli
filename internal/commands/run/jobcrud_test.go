@@ -626,3 +626,215 @@ func TestRunJobAdd_KeepsPortVariableInCmd(t *testing.T) {
 		t.Errorf("got %+v, want cmd %q", cfg.Jobs, cmdLine)
 	}
 }
+
+// editableConfig is the fixture the `run job edit` tests patch: a fully
+// populated job, one before and one after it, and a profile referencing it.
+func editableConfig() domain.RunConfig {
+	return domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "db", Kind: domain.JobKindService, Cmd: "docker compose up db"},
+			{
+				Name:  "api",
+				Kind:  domain.JobKindService,
+				Cmd:   "pnpm dev",
+				Stop:  "docker compose down",
+				Cwd:   "apps/api",
+				Ports: map[string]int{"PORT": 3000, "DB_PORT": 5432},
+				URL:   &domain.JobURLConfig{Port: "PORT", Host: "api.app"},
+			},
+			{Name: "web", Kind: domain.JobKindService, Cmd: "pnpm dev:web"},
+		},
+		Profiles: []domain.ProfileConfig{
+			{Name: "dev", Jobs: []string{"db", "api", "web"}, Default: true},
+		},
+	}
+}
+
+func TestRunJobEdit_PatchesOneFieldAndLeavesTheRest(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableConfig())
+
+	if _, _, err := runCmd(t,
+		domain.CmdJob, domain.CmdEdit, "api",
+		"--"+domain.FlagCmd, "go run ./cmd/api",
+	); err != nil {
+		t.Fatalf("run job edit: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	job := cfg.Jobs[1]
+	if job.Cmd != "go run ./cmd/api" {
+		t.Errorf("cmd = %q, want the new one", job.Cmd)
+	}
+	if job.Kind != domain.JobKindService || job.Stop != "docker compose down" || job.Cwd != "apps/api" {
+		t.Errorf("job = %+v, want kind, stop and cwd untouched", job)
+	}
+	if job.Ports["PORT"] != 3000 || job.Ports["DB_PORT"] != 5432 {
+		t.Errorf("ports = %v, want them untouched", job.Ports)
+	}
+	if job.URL == nil || job.URL.Port != "PORT" || job.URL.Host != "api.app" {
+		t.Errorf("url = %+v, want it untouched", job.URL)
+	}
+}
+
+func TestRunJobEdit_PreservesPositionInTheFile(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableConfig())
+
+	if _, _, err := runCmd(t, domain.CmdJob, domain.CmdEdit, "api", "--"+domain.FlagCwd, ""); err != nil {
+		t.Fatalf("run job edit: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	names := []string{cfg.Jobs[0].Name, cfg.Jobs[1].Name, cfg.Jobs[2].Name}
+	if !slices.Equal(names, []string{"db", "api", "web"}) {
+		t.Errorf("jobs = %v, want the declared order preserved", names)
+	}
+	if cfg.Jobs[1].Cwd != "" {
+		t.Errorf("cwd = %q, want it cleared by an explicit empty value", cfg.Jobs[1].Cwd)
+	}
+}
+
+func TestRunJobEdit_MergesPorts(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableConfig())
+
+	if _, _, err := runCmd(t,
+		domain.CmdJob, domain.CmdEdit, "api",
+		"--"+domain.FlagPort, "DB_PORT=5433",
+		"--"+domain.FlagPort, "REDIS_PORT=6379",
+	); err != nil {
+		t.Fatalf("run job edit: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	ports := cfg.Jobs[1].Ports
+	if ports["PORT"] != 3000 || ports["DB_PORT"] != 5433 || ports["REDIS_PORT"] != 6379 {
+		t.Errorf("ports = %v, want PORT kept, DB_PORT changed, REDIS_PORT added", ports)
+	}
+}
+
+func TestRunJobEdit_PortClearEmptiesTheTable(t *testing.T) {
+	stateDir := setupTestProject(t)
+	cfgIn := editableConfig()
+	cfgIn.Jobs[1].URL = nil
+	writeRunTOML(t, stateDir, cfgIn)
+
+	if _, _, err := runCmd(t, domain.CmdJob, domain.CmdEdit, "api", "--"+domain.FlagPortClear); err != nil {
+		t.Fatalf("run job edit: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if len(cfg.Jobs[1].Ports) != 0 {
+		t.Errorf("ports = %v, want none", cfg.Jobs[1].Ports)
+	}
+}
+
+func TestRunJobEdit_RenameRewritesProfileReferences(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableConfig())
+
+	if _, _, err := runCmd(t, domain.CmdJob, domain.CmdEdit, "api", "--"+domain.FlagName, "backend"); err != nil {
+		t.Fatalf("run job edit: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if cfg.Jobs[1].Name != "backend" {
+		t.Errorf("job name = %q, want backend", cfg.Jobs[1].Name)
+	}
+	if !slices.Equal(cfg.Profiles[0].Jobs, []string{"db", "backend", "web"}) {
+		t.Errorf("profile jobs = %v, want the reference renamed in place", cfg.Profiles[0].Jobs)
+	}
+}
+
+func TestRunJobEdit_WithdrawsAndPublishesTheURL(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableConfig())
+
+	if _, _, err := runCmd(t, domain.CmdJob, domain.CmdEdit, "api", "--"+domain.FlagURLHost, "api-2.app"); err != nil {
+		t.Fatalf("run job edit --url-host: %v", err)
+	}
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if cfg.Jobs[1].URL == nil || cfg.Jobs[1].URL.Port != "PORT" || cfg.Jobs[1].URL.Host != "api-2.app" {
+		t.Fatalf("url = %+v, want the host changed and the port kept", cfg.Jobs[1].URL)
+	}
+
+	if _, _, err := runCmd(t, domain.CmdJob, domain.CmdEdit, "api", "--"+domain.FlagURLPort, ""); err != nil {
+		t.Fatalf("run job edit --url-port '': %v", err)
+	}
+	cfg, err = config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if cfg.Jobs[1].URL != nil {
+		t.Errorf("url = %+v, want it withdrawn", cfg.Jobs[1].URL)
+	}
+}
+
+func TestRunJobEdit_NoArgWithoutTTYNamesTheArgument(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableConfig())
+
+	_, _, err := runCmd(t, domain.CmdJob, domain.CmdEdit, "--"+domain.FlagCmd, "echo hi")
+	if err == nil || !strings.Contains(err.Error(), "argument") {
+		t.Errorf("err = %v, want one naming the missing argument", err)
+	}
+}
+
+func TestRunJobEdit_NoFlagWithoutTTYNamesTheFlags(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableConfig())
+
+	_, _, err := runCmd(t, domain.CmdJob, domain.CmdEdit, "api")
+	if err == nil || !strings.Contains(err.Error(), "--"+domain.FlagCmd) {
+		t.Errorf("err = %v, want one naming the flags that could change something", err)
+	}
+}
+
+func TestRunJobEdit_JSON(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableConfig())
+
+	stdout, _, err := runCmd(t,
+		domain.CmdJob, domain.CmdEdit, "api",
+		"--"+domain.FlagStop, "",
+		"--"+domain.FlagOutput, domain.OutputJSON,
+	)
+	if err != nil {
+		t.Fatalf("run job edit: %v", err)
+	}
+
+	var result domain.JobActionResult
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("parse JSON: %v\noutput: %s", err, stdout)
+	}
+	if result.Name != "api" || result.Status != domain.JobActionUpdated {
+		t.Errorf("unexpected result: %+v", result)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if cfg.Jobs[1].Stop != "" {
+		t.Errorf("stop = %q, want it cleared", cfg.Jobs[1].Stop)
+	}
+}

@@ -336,9 +336,20 @@ and **experimental**: the global `wtm init` does not configure it.
   5 MB x 3), which you can read with your own file tools; `run logs <job>` on a job that
   is **not** running prints that file back and returns.
 - `run export` / `run import` — share a layout as JSON.
-- `run job add|rm` and `run profile add|rm` are agent-drivable with flags; the `edit`
-  wizards are **interactive — never invoke them**. To change a job, `run export` to read
-  state, then `run job rm <name> --force` + `run job add` with new flags.
+- `run job add|rm|edit` and `run profile add|rm` are agent-drivable with flags; the
+  `run profile edit` wizard is **interactive — never invoke it**. To change a profile,
+  `run export` to read state, then `run profile rm <name>` + `run profile add` with new
+  flags.
+- `run job edit <name>` **patches**: a flag left out keeps that field, so
+  `run job edit api --cmd '…'` changes the command alone and leaves kind, stop, cwd,
+  ports and url intact (the job also keeps its position in the file). An explicit empty
+  string clears — `--stop ''` drops the stop command, `--cwd ''` falls back to the
+  project root, `--url-port ''` withdraws the published name. `--port NAME=PORT` merges
+  into the declared ports (repeatable, so one entry changes without rewriting the
+  others) and `--port-clear` empties the table. `--name` renames and rewrites the
+  references in every profile. With no such flag it opens the wizard, so **always pass
+  at least one flag**; without a TTY it errors instead, and a missing job argument
+  errors rather than opening a picker.
 - Every job — and every `on_create` / `on_clean` hook — runs with the worktree's identity
   in its environment, so parallel worktrees do not fight over the same resources:
   `WTM_BRANCH` (the branch verbatim), `WTM_WORKTREE` (its slug, safe as a Docker project
