@@ -1,6 +1,7 @@
 package rules_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -82,16 +83,19 @@ func TestProposeProfilesCollapsesInASinglePackageRepo(t *testing.T) {
 	}
 }
 
-func TestProposeProfilesIgnoresTasks(t *testing.T) {
+// Une task entre dans le profil, et avant les services : `run up` démarrait
+// sinon un serveur sur une base qu'aucune migration n'avait touchée (LUC-208).
+func TestProposeProfilesPutsTasksBeforeServices(t *testing.T) {
 	profiles := rules.ProposeProfiles(rules.ProposeProfilesParams{
 		Config: domain.RunConfig{Jobs: []domain.JobConfig{composeJob, apiJob, lintJob}},
 	})
 
 	all := findProfile(t, profiles, domain.ProfileAllName)
-	for _, job := range all.Jobs {
-		if job == "lint" {
-			t.Error("une task n'entre pas dans un profil proposé")
-		}
+	if len(all.Jobs) != 3 {
+		t.Fatalf("all = %v, want the three jobs", all.Jobs)
+	}
+	if all.Jobs[0] != "lint" {
+		t.Errorf("all = %v; la task doit précéder les services qui en dépendent", all.Jobs)
 	}
 }
 
@@ -147,5 +151,67 @@ func TestApplyInitAnswersWritesTheComposedSplit(t *testing.T) {
 
 	if len(cfg.Profiles) != 1 || cfg.Profiles[0].Name != "app1" {
 		t.Errorf("profiles = %+v", cfg.Profiles)
+	}
+}
+
+// filepath.Base fusionnait silencieusement apps/app-1/back et apps/app-2/back
+// dans un seul profil portant les jobs des deux applications (LUC-208).
+func TestProposeProfilesDisambiguatesCollidingBaseNames(t *testing.T) {
+	profiles := rules.ProposeProfiles(rules.ProposeProfilesParams{
+		Config: domain.RunConfig{Jobs: []domain.JobConfig{
+			{Name: "one-dev", Kind: domain.JobKindService, Cwd: "apps/app-1/back"},
+			{Name: "two-dev", Kind: domain.JobKindService, Cwd: "apps/app-2/back"},
+		}},
+	})
+
+	names := profileNames(profiles)
+	if len(profiles) != 3 {
+		t.Fatalf("expected one profile per package plus the global one, got %v", names)
+	}
+	seen := map[string]bool{}
+	for _, name := range names {
+		if seen[name] {
+			t.Fatalf("%q apparaît deux fois: %v", name, names)
+		}
+		seen[name] = true
+	}
+	for _, profile := range profiles {
+		if profile.Name != domain.ProfileAllName && len(profile.Jobs) != 1 {
+			t.Errorf("%s = %v; deux packages distincts ne partagent pas un profil", profile.Name, profile.Jobs)
+		}
+	}
+}
+
+// Au-delà du seuil, un profil par package n'est plus une proposition qu'on
+// relit, c'est une liste qu'on fait défiler.
+func TestProposeProfilesStopsSplittingPastTheThreshold(t *testing.T) {
+	var jobs []domain.JobConfig
+	for i := 0; i <= domain.ProfileProposalMaxPackages; i++ {
+		jobs = append(jobs, domain.JobConfig{
+			Name: fmt.Sprintf("pkg-%d-dev", i),
+			Kind: domain.JobKindService,
+			Cwd:  fmt.Sprintf("packages/pkg-%d", i),
+		})
+	}
+
+	profiles := rules.ProposeProfiles(rules.ProposeProfilesParams{Config: domain.RunConfig{Jobs: jobs}})
+	if len(profiles) != 1 || profiles[0].Name != domain.ProfileAllName {
+		t.Fatalf("expected only the global profile, got %v", profileNames(profiles))
+	}
+}
+
+// Le profil d'un package porte aussi les tasks partagées, avant ses services.
+func TestProposeProfilesCarriesSharedTasksIntoEachPackage(t *testing.T) {
+	profiles := rules.ProposeProfiles(rules.ProposeProfilesParams{
+		Config: domain.RunConfig{Jobs: []domain.JobConfig{
+			{Name: "api-dev", Kind: domain.JobKindService, Cwd: "apps/api"},
+			{Name: "web-dev", Kind: domain.JobKindService, Cwd: "apps/web"},
+			{Name: "migrate", Kind: domain.JobKindTask, Cwd: "."},
+		}},
+	})
+
+	api := findProfile(t, profiles, "api")
+	if len(api.Jobs) != 2 || api.Jobs[0] != "migrate" || api.Jobs[1] != "api-dev" {
+		t.Errorf("api = %v, want [migrate api-dev]", api.Jobs)
 	}
 }

@@ -362,8 +362,10 @@ out to would start each of them twice on the same ports. Nothing unchecked is wr
 It then walks you through the ports detection pre-filled, and the **profiles** `wtm run
 up` will offer: one per package, plus one gathering everything, which you rename, merge
 or drop. Jobs at the repository root — a compose stack — join every profile, so starting
-one package alone still brings its infrastructure up. In a single-package repo the split
-collapses to one profile.
+one package alone still brings its infrastructure up. Tasks are placed ahead of the
+services that depend on them, so a profile brings the database up to date before starting
+what reads it. In a single-package repo — or past a handful of packages, where a profile
+each stops being something you can read — the split collapses to one profile.
 
 A service detection found no port for is reported rather than asked about: inventing one
 would move the guess onto you, and `wtm run up` will say the port was never bound anyway.

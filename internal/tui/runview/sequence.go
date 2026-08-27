@@ -46,7 +46,12 @@ type sink struct {
 
 func (s sink) Emit(event runlogs.Event) {
 	if event.Phase == runlogs.PhaseOutput {
-		s.panes.write(writeChunkParams{Job: event.Job, Source: sourceSequence, Chunk: event.Chunk})
+		s.panes.write(writeChunkParams{
+			Job:          event.Job,
+			Source:       sourceSequence,
+			Chunk:        event.Chunk,
+			NormalizeEOL: rules.RunsOnPipe(event.Kind),
+		})
 		return
 	}
 	select {

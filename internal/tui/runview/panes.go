@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // paneSource is where a pane's bytes come from. A pane only ever has one: the
@@ -24,6 +25,9 @@ type jobPane struct {
 	pane   *Pane
 	source paneSource
 	stream runlogs.Stream
+	// pendingCR carries a chunk that ended on a CR across to the next one, so a
+	// CRLF split between two writes is not turned into two line breaks.
+	pendingCR bool
 }
 
 // paneStore holds the panes of the jobs on screen. The goroutine reading a
@@ -53,6 +57,11 @@ func (s *paneStore) open(params openPaneParams) *Pane {
 	return s.openLocked(params)
 }
 
+func (s *paneStore) entryLocked(params openPaneParams) *jobPane {
+	s.openLocked(params)
+	return s.panes[params.Job]
+}
+
 func (s *paneStore) openLocked(params openPaneParams) *Pane {
 	if entry, held := s.panes[params.Job]; held && entry.source == params.Source {
 		return entry.pane
@@ -70,10 +79,25 @@ type writeChunkParams struct {
 	Job    string
 	Source paneSource
 	Chunk  []byte
+	// NormalizeEOL terminates the chunk's bare LFs the way a PTY would. A job
+	// running on a pipe has no line discipline to do it, so the emulator moved
+	// down a row without returning to column zero and every line landed one step
+	// further right than the last (LUC-208).
+	NormalizeEOL bool
 }
 
 func (s *paneStore) write(params writeChunkParams) {
-	s.open(openPaneParams{Job: params.Job, Source: params.Source}).Write(params.Chunk)
+	s.mu.Lock()
+	entry := s.entryLocked(openPaneParams{Job: params.Job, Source: params.Source})
+	chunk := params.Chunk
+	if params.NormalizeEOL {
+		normalized := rules.NormalizeEOL(rules.NormalizeEOLParams{Chunk: chunk, PendingCR: entry.pendingCR})
+		chunk, entry.pendingCR = normalized.Chunk, normalized.PendingCR
+	}
+	pane := entry.pane
+	s.mu.Unlock()
+
+	pane.Write(chunk)
 }
 
 type writeLinesParams struct {

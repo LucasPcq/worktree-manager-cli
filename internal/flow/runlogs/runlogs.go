@@ -140,6 +140,10 @@ type Prober interface {
 type Event struct {
 	Phase Phase
 	Job   string
+	// Kind is the job's, carried on PhaseOutput so a surface knows what it is
+	// reading: a task's bytes come off a pipe, with none of the line discipline
+	// a PTY applies on the way out.
+	Kind domain.JobKind
 	// Step places the job in the sequence, from 1 to Steps.
 	Step  int
 	Steps int

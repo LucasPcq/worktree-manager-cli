@@ -112,6 +112,10 @@ func BuildInitRunConfig(answers domain.InitProjectAnswers, pm domain.PackageMana
 		})
 		runCfg, _ = MergeRunConfigs(runCfg, scriptsCfg)
 	}
+	// Scripts arrive alphabetically, which declares `dev` ahead of `migrate`.
+	// The written file is read back as an order, so it has to be the one a run
+	// can follow.
+	runCfg.Jobs = TasksFirst(runCfg.Jobs)
 	return runCfg
 }
 

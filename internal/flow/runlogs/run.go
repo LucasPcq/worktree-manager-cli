@@ -8,6 +8,10 @@ import (
 )
 
 type Outcome struct {
+	// Profile names the profile this run started, empty when the caller started
+	// a job list of its own. A surface that cannot say which profile it just
+	// brought up leaves the reader to guess between several (LUC-208).
+	Profile string
 	Results []domain.JobActionResult
 	// Started names the jobs left running when the sequence ended — after an
 	// abort, the ones nothing tore down.
@@ -46,6 +50,9 @@ type RunParams struct {
 	Service Service
 	Sink    Sink
 	Jobs    []domain.JobConfig
+	// Profile is what the surface resolved Jobs from, carried through to the
+	// Outcome so a recap can name it.
+	Profile string
 	WorkDir string
 	LogDir  string
 	// Env is what every job in this run learns about the worktree it belongs to,
@@ -76,6 +83,7 @@ func Run(ctx context.Context, params RunParams) (Outcome, error) {
 		service: params.Service,
 		sink:    params.Sink,
 		jobs:    params.Jobs,
+		profile: params.Profile,
 		workDir: params.WorkDir,
 		logDir:  params.LogDir,
 		env:     params.Env,
@@ -92,6 +100,7 @@ type runner struct {
 	service Service
 	sink    Sink
 	jobs    []domain.JobConfig
+	profile string
 	workDir string
 	logDir  string
 	env     map[string]string
@@ -125,7 +134,7 @@ func (r *runner) run() Outcome {
 			Env:     r.env,
 			OnOutput: func(chunk []byte) {
 				r.captured = append(r.captured, chunk...)
-				r.emit(Event{Phase: PhaseOutput, Job: job.Name, Step: i + 1, Chunk: chunk})
+				r.emit(Event{Phase: PhaseOutput, Job: job.Name, Kind: job.Kind, Step: i + 1, Chunk: chunk})
 			},
 		})
 		if err != nil {
@@ -274,6 +283,7 @@ func (r *runner) emit(event Event) {
 
 func (r *runner) outcome() Outcome {
 	return Outcome{
+		Profile:   r.profile,
 		Results:   r.results,
 		Started:   r.started,
 		Completed: r.completed,

@@ -84,7 +84,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 			Cmd:     cmd,
 			Session: seam.session,
 			Job:     job.Name,
-			Start:   seam.starter([]domain.JobConfig{job}),
+			Start:   seam.starter(resolvedProfile{Jobs: []domain.JobConfig{job}}),
 		})
 	}
 

@@ -780,7 +780,7 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (writte
 				Existing: params.Existing.Profiles,
 			})) == 0
 		},
-		SkipReason: func() string { return domain.SkipReasonNoService },
+		SkipReason: func() string { return domain.SkipReasonNoJob },
 		Summary:    profileListSummary,
 		Callout:    true,
 	})
