@@ -514,6 +514,7 @@ const (
 	FlagStop       = "stop"
 	FlagCwd        = "cwd"
 	FlagPort       = "port"
+	FlagName       = "name"
 	FlagJobs       = "jobs"
 	FlagDefault    = "default"
 	FlagTo         = "to"
@@ -525,6 +526,9 @@ const (
 	// FlagURLPort and FlagURLHost declare a job's [[job]].url without a wizard.
 	FlagURLPort = "url-port"
 	FlagURLHost = "url-host"
+	// FlagPortClear empties a job's whole port table on `run job edit`, the one
+	// thing --port cannot say: it merges, so it can never remove.
+	FlagPortClear = "port-clear"
 	// FlagRaw asks for a job's own port rather than the name the proxy serves it
 	// under: an address every OS resolves and no proxy has to be up for.
 	FlagRaw = "raw"
