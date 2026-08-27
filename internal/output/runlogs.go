@@ -82,17 +82,38 @@ type jobLineParams struct {
 }
 
 func (p *RunPrinter) jobLine(params jobLineParams) string {
-	line := rules.LabelWithPorts(rules.LabelWithPortsParams{
-		Label: fmt.Sprintf(params.Format, params.Event.Job),
-		Ports: params.Event.Ports,
+	return JobLine(JobLineParams{
+		Label:      fmt.Sprintf(params.Format, params.Event.Job),
+		Ports:      params.Event.Ports,
+		URL:        params.Event.URL,
+		Hyperlinks: p.hyperlinks,
 	})
-	if params.Event.URL == "" {
+}
+
+type JobLineParams struct {
+	Label string
+	Ports map[string]int
+	// URL is where the job answers, empty for one that publishes no name.
+	URL string
+	// Hyperlinks turns the URL into an OSC-8 link.
+	Hyperlinks bool
+}
+
+// JobLine is how every human surface announces a job: what it is, the ports it
+// bound, and where to reach it. Shared so `run up` and `run start` cannot drift
+// into saying the same thing two ways.
+func JobLine(params JobLineParams) string {
+	line := rules.LabelWithPorts(rules.LabelWithPortsParams{
+		Label: params.Label,
+		Ports: params.Ports,
+	})
+	if params.URL == "" {
 		return line
 	}
 	return line + domain.RunURLSuffixSep + Hyperlink(HyperlinkParams{
-		Text:    params.Event.URL,
-		URL:     params.Event.URL,
-		Enabled: p.hyperlinks,
+		Text:    params.URL,
+		URL:     params.URL,
+		Enabled: params.Hyperlinks,
 	})
 }
 

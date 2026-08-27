@@ -3,6 +3,7 @@ package run
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -98,6 +99,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 		LogDir: logDir,
 		Env:    env,
 		Format: format,
+		RouteHost: rules.RouteHost(rules.RouteHostParams{
+			Job:      job,
+			Worktree: env[domain.EnvWorktree],
+			Project:  filepath.Base(result.ProjectDir),
+		}),
+		ProxyPort: rules.ProxyPort(result.Config.Global),
 	}
 	if job.Kind == domain.JobKindTask {
 		return startTaskInline(params)
@@ -113,6 +120,27 @@ type startJobParams struct {
 	LogDir string
 	Env    map[string]string
 	Format string
+	// RouteHost is the name the proxy is to serve this job under, and ProxyPort
+	// where it serves it. This path talks to the daemon directly, so it carries
+	// what internal/flow/runlogs would otherwise have resolved.
+	RouteHost string
+	ProxyPort int
+}
+
+// startedLine is what a human surface prints once the daemon has answered: the
+// same composition `run up` uses, so one job reads the same either way.
+func (p startJobParams) startedLine(label string, ports map[string]int) string {
+	return output.JobLine(output.JobLineParams{
+		Label: label,
+		Ports: ports,
+		URL: rules.JobURL(rules.JobURLParams{
+			Job:       p.Job,
+			Ports:     ports,
+			Host:      p.RouteHost,
+			ProxyPort: p.ProxyPort,
+		}),
+		Hyperlinks: rules.IsHumanFormat(p.Format) && isTTY(),
+	})
 }
 
 // startTaskInline runs a task where the caller can read it: a task is a
@@ -130,11 +158,12 @@ func startTaskInline(params startJobParams) error {
 	}
 
 	resp, err := params.Client.SendStream(process.Request{
-		Action:  process.ActionStart,
-		Job:     &params.Job,
-		WorkDir: params.Dir,
-		LogDir:  params.LogDir,
-		Env:     params.Env,
+		Action:    process.ActionStart,
+		Job:       &params.Job,
+		WorkDir:   params.Dir,
+		LogDir:    params.LogDir,
+		Env:       params.Env,
+		RouteHost: params.RouteHost,
 	}, onOutput)
 	if err != nil {
 		return fmt.Errorf("task %s: %w", params.Job.Name, err)
@@ -149,10 +178,7 @@ func startTaskInline(params startJobParams) error {
 			Status: domain.JobActionDone,
 		})
 	}
-	output.Success(params.Cmd.OutOrStdout(), rules.LabelWithPorts(rules.LabelWithPortsParams{
-		Label: fmt.Sprintf(domain.RunStreamDoneFmt, params.Job.Name),
-		Ports: resp.Ports,
-	}))
+	output.Success(params.Cmd.OutOrStdout(), params.startedLine(fmt.Sprintf(domain.RunStreamDoneFmt, params.Job.Name), resp.Ports))
 	output.FrameEnd(params.Cmd.OutOrStdout())
 	return nil
 }
@@ -165,11 +191,12 @@ func startServiceDetached(params startJobParams) error {
 		Work: func() error {
 			var e error
 			resp, e = params.Client.Send(process.Request{
-				Action:  process.ActionStart,
-				Job:     &params.Job,
-				WorkDir: params.Dir,
-				LogDir:  params.LogDir,
-				Env:     params.Env,
+				Action:    process.ActionStart,
+				Job:       &params.Job,
+				WorkDir:   params.Dir,
+				LogDir:    params.LogDir,
+				Env:       params.Env,
+				RouteHost: params.RouteHost,
 			})
 			return e
 		},
@@ -189,10 +216,7 @@ func startServiceDetached(params startJobParams) error {
 
 	out := params.Cmd.OutOrStdout()
 	output.Frame(out, func() {
-		output.Success(out, rules.LabelWithPorts(rules.LabelWithPortsParams{
-			Label: fmt.Sprintf(domain.RunStreamStartedFmt, params.Job.Name),
-			Ports: resp.Ports,
-		}))
+		output.Success(out, params.startedLine(fmt.Sprintf(domain.RunStreamStartedFmt, params.Job.Name), resp.Ports))
 	})
 	return nil
 }
