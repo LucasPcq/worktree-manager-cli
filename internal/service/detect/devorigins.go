@@ -3,7 +3,6 @@ package detect
 import (
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -23,7 +22,7 @@ func NextConfig(params NextConfigParams) (path, source string) {
 		dir = filepath.Join(params.WorkDir, params.Cwd)
 	}
 
-	for _, name := range strings.Fields(domain.DevOriginsFiles) {
+	for _, name := range domain.DevOriginsFiles {
 		candidate := filepath.Join(dir, name)
 		content, err := os.ReadFile(candidate)
 		if err != nil {

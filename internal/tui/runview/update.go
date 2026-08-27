@@ -96,7 +96,9 @@ func (m Model) focus() (tea.Model, tea.Cmd) {
 }
 
 // openSelectedURL does nothing for a job that publishes none: a key pressed on
-// a job with nothing to open is not a mistake to report.
+// a job with nothing to open is not a mistake to report. A browser that refused
+// to open is one — the reader would otherwise wait for a window that is not
+// coming.
 func (m Model) openSelectedURL() tea.Cmd {
 	url := m.sequence.urls[m.selected]
 	if url == "" || m.open == nil {
@@ -104,7 +106,9 @@ func (m Model) openSelectedURL() tea.Cmd {
 	}
 	open := m.open
 	return func() tea.Msg {
-		_ = open(url)
+		if err := open(url); err != nil {
+			return openFailedMsg{err: err}
+		}
 		return nil
 	}
 }

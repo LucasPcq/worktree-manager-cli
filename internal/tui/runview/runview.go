@@ -261,6 +261,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runFinishedMsg:
 		return m.applyRunFinished(msg)
 
+	case openFailedMsg:
+		m.notice = fmt.Sprintf(domain.RunViewOpenFailedFmt, msg.err)
+		return m, nil
+
 	case streamErrMsg:
 		m.err = msg.err
 		return m, nil

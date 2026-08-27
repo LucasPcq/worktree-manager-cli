@@ -94,7 +94,7 @@ func (s *Server) writeUnknownHost(w http.ResponseWriter, host string) {
 		return
 	}
 	for _, route := range routes {
-		fmt.Fprintf(w, domain.ProxyRouteLineFmt, route.Host, route.Target, route.Job, route.Worktree)
+		fmt.Fprintf(w, domain.ProxyRouteLineFmt, route.Host, route.Target, route.Job, route.Worktree, route.Project)
 	}
 }
 

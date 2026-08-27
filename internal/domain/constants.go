@@ -200,7 +200,6 @@ const (
 	// DevOriginsKey is the Next option that lets a subdomain of .localhost reach
 	// the dev server's assets, and DevOriginsConfigNames the files it lives in.
 	DevOriginsKey   = "allowedDevOrigins"
-	DevOriginsFiles = "next.config.js next.config.mjs next.config.ts"
 	DevOriginsTitle = "Next dev origins"
 	// DevOriginsFixFmt names the one line a Next project needs before a
 	// subdomain of .localhost may reach its dev assets.

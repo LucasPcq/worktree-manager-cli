@@ -1,6 +1,10 @@
 package output
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+)
 
 type HyperlinkParams struct {
 	Text string
@@ -16,5 +20,5 @@ func Hyperlink(params HyperlinkParams) string {
 	if !params.Enabled || params.URL == "" {
 		return params.Text
 	}
-	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", params.URL, params.Text)
+	return fmt.Sprintf(domain.HyperlinkFmt, params.URL, params.Text)
 }

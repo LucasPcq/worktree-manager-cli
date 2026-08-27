@@ -1,5 +1,9 @@
 package domain
 
+// DevOriginsFiles are the names a Next project's config goes by, in the order
+// they are looked for. A var because a Go const cannot hold a slice.
+var DevOriginsFiles = []string{"next.config.js", "next.config.mjs", "next.config.ts"}
+
 // ProxyRoute is one entry of the run proxy's table: a hostname, and the loopback
 // address of the job answering under it. It is a projection of a running job,
 // never a second source of truth.
