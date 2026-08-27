@@ -344,8 +344,9 @@ and **experimental**: the global `wtm init` does not configure it.
   string clears — `--stop ''` drops the stop command, `--cwd ''` falls back to the
   project root, `--url-port ''` withdraws the published name. `--port NAME=PORT` merges
   into the declared ports (repeatable, so one entry changes without rewriting the
-  others) and `--port-clear` empties the table. `--name` renames and rewrites the
-  references in every profile. With no such flag it opens the wizard, so **always pass
+  others) and `--port-clear` empties the table. `--name` renames and rewrites what names the
+  job elsewhere in the file — the profiles that start it and the `[[env_port]]` links
+  that follow its ports. With no such flag it opens the wizard, so **always pass
   at least one flag**; without a TTY it errors instead, and a missing job argument
   errors rather than opening a picker.
 - `run profile edit <name>` patches the same way: `--name` renames, `--jobs` replaces

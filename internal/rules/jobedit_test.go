@@ -200,3 +200,28 @@ func TestRenameJobRefs(t *testing.T) {
 		t.Errorf("the input config was mutated: %v", cfg.Profiles[0].Jobs)
 	}
 }
+
+// A renamed job is also named by the env_port links that follow its ports —
+// leaving those behind makes the file unsavable.
+func TestRenameJobRefsRewritesEnvPortLinks(t *testing.T) {
+	cfg := domain.RunConfig{
+		Jobs: []domain.JobConfig{{Name: "api", Ports: map[string]int{"PORT": 4001}}},
+		EnvPorts: []domain.EnvPortLink{
+			{File: "apps/api/.env", Key: "PORT", Job: "api", Port: "PORT"},
+			{File: "apps/web/.env", Key: "VITE_API_URL", Job: "api", Port: "PORT"},
+			{File: "apps/api/.env", Key: "DATABASE_URL", Job: "db", Port: "POSTGRES_PORT"},
+		},
+	}
+
+	got := rules.RenameJobRefs(cfg, "api", "api-server")
+
+	if got.EnvPorts[0].Job != "api-server" || got.EnvPorts[1].Job != "api-server" {
+		t.Errorf("env_port jobs = %q/%q, want both renamed", got.EnvPorts[0].Job, got.EnvPorts[1].Job)
+	}
+	if got.EnvPorts[2].Job != "db" {
+		t.Errorf("env_port job = %q, want the other job left alone", got.EnvPorts[2].Job)
+	}
+	if cfg.EnvPorts[0].Job != "api" {
+		t.Errorf("the input config was mutated: %+v", cfg.EnvPorts[0])
+	}
+}

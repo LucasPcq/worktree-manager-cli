@@ -13,7 +13,8 @@ stop command, --url-port '' withdraws the published name).
 
 --port merges into the ports the job already declares, so one entry can be
 changed without rewriting the others; --port-clear empties the table.
---name also rewrites the references to this job in every profile.
+--name also rewrites what names this job elsewhere in the file: the profiles
+that start it and the env_port links that follow its ports.
 
 With no such flag, the wizard opens pre-filled with the current values, and
 without an argument it prompts to pick from the existing jobs.
@@ -29,7 +30,7 @@ wtm run job edit [name] [flags]
       --cwd string         Working directory relative to project root (pass '' to drop it)
   -h, --help               help for edit
       --kind string        Job kind: service or task
-      --name string        Rename the job, updating the profiles that reference it
+      --name string        Rename the job, updating the profiles and env_port links that name it
       --output string      Output format: text or json (default "text")
       --port stringArray   Base port as NAME=PORT, repeatable — merged into the declared ports
       --port-clear         Drop every port this job declares

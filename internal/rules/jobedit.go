@@ -125,13 +125,15 @@ func patchedURL(current *domain.JobURLConfig, patch JobPatch) (*domain.JobURLCon
 	return ParseJobURL(strings.TrimSpace(port + " " + host))
 }
 
-// RenameJobRefs rewrites every profile reference to a renamed job, so the
-// rename does not leave the profiles pointing at a name the file no longer
-// declares — which ValidateRun refuses to save.
+// RenameJobRefs rewrites everything that names a renamed job — the profiles
+// that start it and the env_port links that follow its ports — so the rename
+// does not leave a reference to a name the file no longer declares, which
+// ValidateRun refuses to save.
 func RenameJobRefs(cfg domain.RunConfig, from, to string) domain.RunConfig {
 	if from == to {
 		return cfg
 	}
+
 	out := cfg
 	out.Profiles = make([]domain.ProfileConfig, len(cfg.Profiles))
 	copy(out.Profiles, cfg.Profiles)
@@ -145,5 +147,14 @@ func RenameJobRefs(cfg domain.RunConfig, from, to string) domain.RunConfig {
 		}
 		out.Profiles[i].Jobs = jobs
 	}
+
+	out.EnvPorts = make([]domain.EnvPortLink, len(cfg.EnvPorts))
+	copy(out.EnvPorts, cfg.EnvPorts)
+	for i, link := range out.EnvPorts {
+		if link.Job == from {
+			out.EnvPorts[i].Job = to
+		}
+	}
+
 	return out
 }

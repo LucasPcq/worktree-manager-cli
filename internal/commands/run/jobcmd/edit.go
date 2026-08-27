@@ -28,13 +28,14 @@ func newEditCmd() *cobra.Command {
 			"stop command, --url-port '' withdraws the published name).\n\n" +
 			"--port merges into the ports the job already declares, so one entry can be\n" +
 			"changed without rewriting the others; --port-clear empties the table.\n" +
-			"--name also rewrites the references to this job in every profile.\n\n" +
+			"--name also rewrites what names this job elsewhere in the file: the profiles\n" +
+			"that start it and the env_port links that follow its ports.\n\n" +
 			"With no such flag, the wizard opens pre-filled with the current values, and\n" +
 			"without an argument it prompts to pick from the existing jobs.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: runEdit,
 	}
-	cmd.Flags().String(domain.FlagName, "", "Rename the job, updating the profiles that reference it")
+	cmd.Flags().String(domain.FlagName, "", "Rename the job, updating the profiles and env_port links that name it")
 	cmd.Flags().String(domain.FlagCmd, "", "Command to run, as a /bin/sh line")
 	cmd.Flags().String(domain.FlagKind, "", "Job kind: service or task")
 	cmd.Flags().String(domain.FlagStop, "", "Stop command, as a /bin/sh line (pass '' to drop it)")
