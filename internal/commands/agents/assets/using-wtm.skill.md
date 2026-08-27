@@ -87,6 +87,7 @@ self-documenting:
 | Declared jobs + profiles | `wtm run list --output json` |
 | Jobs running right now (+ `started_at`, `exit_code`, `url`) | `wtm run ps --output json` |
 | Where a job answers in this worktree | `wtm run url --output json` |
+| What a `run up` started, with each job's `url` | `wtm run up -d --output json` |
 | What a job printed | `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (read it as a file) |
 | Resolved project config | `wtm config show --output json` |
 | A branch's worktree path | `wtm resolve <branch> --output json` |
@@ -355,7 +356,8 @@ and **experimental**: the global `wtm init` does not configure it.
 - **Port isolation is declarative.** A job declares the ports it binds on the main
   checkout, and wtm injects `base + WTM_PORT_OFFSET` under that name — so the command
   needs no arithmetic of its own:
-  `wtm run job add web --cmd "pnpm dev" --port PORT=3000` (repeat `--port` per variable).
+  `wtm run job add web --cmd "pnpm dev" --port PORT=3000` (repeat `--port` per variable);
+  add `--url-port PORT` (and optionally `--url-host api.app-1`) to publish it under a name.
   The main checkout gets `PORT=3000`, the next worktree `PORT=3010`. For Docker, template
   the host side in `docker-compose.yml` (`"${DB_PORT}:5432"`) and declare
   `--port DB_PORT=5432`: the container port never moves, only the binding. `wtm run init
@@ -370,7 +372,10 @@ and **experimental**: the global `wtm init` does not configure it.
   `.localhost` already.
 - **`[proxy]` in `~/.config/wtm/config.toml`** tunes the proxy for the whole machine:
   `port` (default `4000`) and `enabled` (default on). Switching it off is not a failure —
-  every URL wtm prints falls back to the direct `http://localhost:<port>` form.
+  every URL wtm prints falls back to the direct `http://localhost:<port>` form. Same if
+  the port is already taken: the jobs still start, wtm prints the direct form and says
+  once why the names are off. **The URL wtm reports is always one that works** — it comes
+  from what the daemon is really serving, not from what the config asked for.
 - **A job can publish one of its ports under a name.** `url = { port = "PORT" }` on a
   `[[job]]` says which of its declared ports speaks HTTP; `host` overrides the segment it
   is published under (defaulting to the job's name), and must be lowercase letters, digits

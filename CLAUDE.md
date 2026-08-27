@@ -129,7 +129,9 @@ Write a comment only when the code cannot carry the information:
 
 Documenting a pattern or an architecture belongs in `docs/` or in this file, not in a
 header comment repeated across files. `internal/flow` is the reference for the density
-to aim for: 84 comment lines out of 2261, ~3.7%.
+to aim for: 413 comment lines out of 4055, ~10%. Small files sit higher — a 20-line
+type whose whole point is one non-obvious decision is mostly that decision — so read the
+figure as a ceiling for a package, never as a quota per file.
 
 **Migration:** the repo predates this rule, so it is applied as files are touched, not
 in one sweep. When you modify a file, bring the comments **in that file** into line —
@@ -161,7 +163,10 @@ internal/
     env/                      ←   .env provisioning (create) + drift reconciliation (`wtm env`, sync.go)
     hooks/                    ←   on_create hook execution
     shell/                    ←   shell integration generation (zsh, bash, fish)
-    integration/              ←   third-party adapters (VS Code, Cursor)
+    integration/              ←   third-party adapters: handing a URL to the desktop's
+                                  own opener (editor/agent detection lives in detect/)
+    proxy/                    ←   the run proxy: the host→job routing table and the
+                                  loopback server the daemon owns (`[proxy]`)
     detect/                   ←   auto-detection (base branch, env files, package manager)
   output/                     ← format and print results (zero decision logic)
   styles/                     ← all Lipgloss styles (only package allowed to instantiate lipgloss.Style)
