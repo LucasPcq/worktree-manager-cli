@@ -31,6 +31,9 @@ func (m Model) recap() string {
 
 	outcome := m.sequence.outcome
 	var lines []string
+	if m.profile != "" {
+		lines = append(lines, fmt.Sprintf(domain.RunViewRecapProfileFmt, m.profile))
+	}
 	if len(outcome.Started) > 0 {
 		lines = append(lines, fmt.Sprintf(domain.RunViewRecapRunningFmt, joinJobs(outcome.Started)))
 	}

@@ -212,21 +212,23 @@ func TestMergeRunConfigsKeepsThePortOffsetBlock(t *testing.T) {
 	}
 }
 
-func TestJobsWithoutProfileKeepsOnlyServices(t *testing.T) {
+// Sans profil, `run up` démarre tout ce qui est déclaré. Ne garder que les
+// services supprimait en silence les migrations dont un service dépend, et le
+// compteur d'étapes affichait [1/1] sans rien dire du job écarté (LUC-208).
+func TestJobsWithoutProfileKeepsEveryDeclaredJob(t *testing.T) {
 	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
 		{Name: "docker-compose", Kind: domain.JobKindService},
+		{Name: "migrate", Kind: domain.JobKindTask},
 		{Name: "dev", Kind: domain.JobKindService},
-		{Name: "lint", Kind: domain.JobKindTask},
-		{Name: "build", Kind: domain.JobKindTask},
 	}}
 
 	got := JobsWithoutProfile(cfg)
-	if len(got) != 2 {
-		t.Fatalf("expected the 2 services, got %d: %+v", len(got), got)
+	if len(got) != len(cfg.Jobs) {
+		t.Fatalf("expected the %d declared jobs, got %d: %+v", len(cfg.Jobs), len(got), got)
 	}
-	for _, job := range got {
-		if job.Kind != domain.JobKindService {
-			t.Errorf("%s is a task and must not run without a profile", job.Name)
+	for i, job := range got {
+		if job.Name != cfg.Jobs[i].Name {
+			t.Errorf("job %d = %s, want %s: l'ordre déclaré est l'ordre du run", i, job.Name, cfg.Jobs[i].Name)
 		}
 	}
 }

@@ -3,6 +3,7 @@ package rules
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -25,49 +26,113 @@ type ProposeProfilesParams struct {
 // ProposeProfiles suggests a split for the wizard to edit. It decides nothing
 // final — the grouping is an intention, and two repos with the same directory
 // shape can want opposite groupings.
+//
+// Every job enters a profile, tasks included: a profile holding only the
+// services would have `wtm run up` start them on a database no migration ever
+// touched (LUC-208).
 func ProposeProfiles(params ProposeProfilesParams) []domain.ProfileConfig {
 	if len(params.Existing) > 0 {
 		return params.Existing
 	}
-
-	var shared, all []string
-	byPackage := map[string][]string{}
-	for _, job := range params.Config.Jobs {
-		if job.Kind != domain.JobKindService {
-			continue
-		}
-		all = append(all, job.Name)
-		if IsSharedJob(job) {
-			shared = append(shared, job.Name)
-			continue
-		}
-		pkg := filepath.Base(job.Cwd)
-		byPackage[pkg] = append(byPackage[pkg], job.Name)
-	}
-
-	if len(all) == 0 {
+	if len(params.Config.Jobs) == 0 {
 		return nil
 	}
 
-	global := domain.ProfileConfig{Name: domain.ProfileAllName, Jobs: all, Default: true}
-	if len(byPackage) <= 1 {
+	var shared []domain.JobConfig
+	var dirs []string
+	byDir := map[string][]domain.JobConfig{}
+	for _, job := range params.Config.Jobs {
+		if IsSharedJob(job) {
+			shared = append(shared, job)
+			continue
+		}
+		if _, seen := byDir[job.Cwd]; !seen {
+			dirs = append(dirs, job.Cwd)
+		}
+		byDir[job.Cwd] = append(byDir[job.Cwd], job)
+	}
+
+	global := domain.ProfileConfig{
+		Name:    domain.ProfileAllName,
+		Jobs:    JobNames(TasksFirst(params.Config.Jobs)),
+		Default: true,
+	}
+	if len(dirs) <= 1 || len(dirs) > domain.ProfileProposalMaxPackages {
 		return []domain.ProfileConfig{global}
 	}
 
-	packages := make([]string, 0, len(byPackage))
-	for pkg := range byPackage {
-		packages = append(packages, pkg)
-	}
-	sort.Strings(packages)
-
-	profiles := make([]domain.ProfileConfig, 0, len(packages)+1)
-	for _, pkg := range packages {
+	sort.Strings(dirs)
+	names := ProfileNamesForDirs(dirs)
+	profiles := make([]domain.ProfileConfig, 0, len(dirs)+1)
+	for _, dir := range dirs {
+		combined := append(append([]domain.JobConfig{}, shared...), byDir[dir]...)
 		profiles = append(profiles, domain.ProfileConfig{
-			Name: pkg,
-			Jobs: append(append([]string{}, shared...), byPackage[pkg]...),
+			Name: names[dir],
+			Jobs: JobNames(TasksFirst(combined)),
 		})
 	}
 	return append(profiles, global)
+}
+
+// ProfileNamesForDirs names one profile per package directory, keyed by that
+// directory. The base name alone merges apps/app-1/back with apps/app-2/back
+// into a single profile carrying both applications' jobs, so a colliding name
+// is widened one path segment at a time until it stands apart.
+func ProfileNamesForDirs(dirs []string) map[string]string {
+	names := make(map[string]string, len(dirs))
+	for _, dir := range dirs {
+		names[dir] = profileNameForDir(dir, dirs)
+	}
+	return names
+}
+
+func profileNameForDir(dir string, dirs []string) string {
+	segments := dirSegments(dir)
+	for take := 1; take < len(segments); take++ {
+		suffix := segments[len(segments)-take:]
+		if uniqueSuffix(suffix, dir, dirs) {
+			return strings.Join(suffix, domain.ProfileNameSegmentSep)
+		}
+	}
+	return strings.Join(segments, domain.ProfileNameSegmentSep)
+}
+
+func uniqueSuffix(suffix []string, owner string, dirs []string) bool {
+	for _, other := range dirs {
+		if other == owner {
+			continue
+		}
+		if hasSuffixSegments(dirSegments(other), suffix) {
+			return false
+		}
+	}
+	return true
+}
+
+func hasSuffixSegments(segments, suffix []string) bool {
+	if len(suffix) > len(segments) {
+		return false
+	}
+	for i := range suffix {
+		if segments[len(segments)-len(suffix)+i] != suffix[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func dirSegments(dir string) []string {
+	cleaned := filepath.ToSlash(filepath.Clean(dir))
+	var segments []string
+	for _, segment := range strings.Split(cleaned, "/") {
+		if segment != "" && segment != "." {
+			segments = append(segments, segment)
+		}
+	}
+	if len(segments) == 0 {
+		return []string{domain.ProfileAllName}
+	}
+	return segments
 }
 
 type ApplyInitAnswersParams struct {

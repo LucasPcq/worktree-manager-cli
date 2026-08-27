@@ -8,11 +8,15 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/styles"
 )
 
 type RunPrinterParams struct {
 	Out io.Writer
 	Err io.Writer
+	// Profile names the run being reported. Empty prints no heading: a run.toml
+	// with no profile has nothing to name.
+	Profile string
 }
 
 // RunPrinter renders a profile's start sequence as lines on the terminal the
@@ -21,17 +25,22 @@ type RunPrinterParams struct {
 type RunPrinter struct {
 	out     io.Writer
 	err     io.Writer
+	profile string
 	printed bool
 }
 
 func NewRunPrinter(params RunPrinterParams) *RunPrinter {
-	return &RunPrinter{out: params.Out, err: params.Err}
+	return &RunPrinter{out: params.Out, err: params.Err, profile: params.Profile}
 }
 
 func (p *RunPrinter) Emit(event runlogs.Event) {
 	switch event.Phase {
 	case runlogs.PhaseStarting:
 		if p.printed {
+			Blank(p.out)
+		}
+		if !p.printed && p.profile != "" {
+			Message(p.out, styles.Bold.Render(fmt.Sprintf(domain.RunStreamProfileFmt, p.profile)))
 			Blank(p.out)
 		}
 		p.printed = true

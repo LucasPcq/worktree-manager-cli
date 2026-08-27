@@ -208,15 +208,14 @@ func MergeRunConfigs(dst, src domain.RunConfig) (domain.RunConfig, MergeResult) 
 }
 
 // JobsWithoutProfile is what `run up` starts when the config declares no
-// profile at all. Only the services: a run.toml written by hand has no reason
-// to want its linter and its build started by `run up`, and a task would block
-// the sequence on its way.
+// profile at all: every declared job, tasks included, in declared order.
+// Keeping only the services here silently dropped the migrations a service
+// needs and still reported the run complete — the step counter read [1/1] with
+// nothing to say a declared job had been skipped (LUC-208). A job the user does
+// not want in `run up` belongs outside the profile they start, not filtered out
+// of a run that claims to start everything.
 func JobsWithoutProfile(cfg domain.RunConfig) []domain.JobConfig {
-	jobs := make([]domain.JobConfig, 0, len(cfg.Jobs))
-	for _, job := range cfg.Jobs {
-		if job.Kind == domain.JobKindService {
-			jobs = append(jobs, job)
-		}
-	}
+	jobs := make([]domain.JobConfig, len(cfg.Jobs))
+	copy(jobs, cfg.Jobs)
 	return jobs
 }

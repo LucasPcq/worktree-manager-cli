@@ -592,6 +592,7 @@ const (
 	SkipReasonNoScriptChecked = "no script checked"
 	SkipReasonKindsSettled    = "every checked script is a dev server"
 	SkipReasonNoService       = "no long-running service to configure"
+	SkipReasonNoJob           = "no job to group into a profile"
 	SkipReasonNoPortDetected  = "no port detected for the jobs you kept"
 	SkipReasonCommandsRead    = "every command already reads the port it is given"
 	SkipReasonNoEnvKeyFollows = "no .env key holds a declared port"
@@ -609,17 +610,21 @@ const (
 	ScriptItemLabelFmt = "%s / %s — %s run %s"
 
 	// The profile editor: its keys, its rows and its help bar.
-	ProfileListStepName      = "Profiles"
-	ProfileListKeyRename     = "r"
-	ProfileListKeyMerge      = "f"
-	ProfileListKeyRemove     = "d"
-	ProfileListKeyNew        = "n"
-	ProfileListHelp          = "  ↑↓ navigate • r rename • f merge • d remove • n new • enter select"
-	ProfileListNamingHelp    = "  enter save • esc cancel"
-	ProfileListMergeHint     = "  f on another profile to merge it into %q • esc cancel"
-	ProfileListMarkPrefix    = "→ "
-	ProfileListDoneRow       = "✓ Done"
-	ProfileListEntryFmt      = "%s — %s"
+	ProfileListStepName   = "Profiles"
+	ProfileListKeyRename  = "r"
+	ProfileListKeyMerge   = "f"
+	ProfileListKeyRemove  = "d"
+	ProfileListKeyNew     = "n"
+	ProfileListHelp       = "  ↑↓ navigate • r rename • f merge • d remove • n new • enter select"
+	ProfileListNamingHelp = "  enter save • esc cancel"
+	ProfileListMergeHint  = "  f on another profile to merge it into %q • esc cancel"
+	ProfileListMarkPrefix = "→ "
+	ProfileListDoneRow    = "✓ Done"
+	// ProfileListJobsIndent aligns the wrapped job list of the row under the
+	// cursor: an unselected row is truncated, and moving onto it is how the
+	// whole list is read.
+	ProfileListJobsIndent    = "    "
+	ProfileListEllipsis      = "…"
 	ProfileListJobSep        = ", "
 	ProfileListDefaultSuffix = "  (default)"
 	ProfileListNameRequired  = "a profile needs a name"
@@ -688,6 +693,24 @@ const (
 	// ProfileRootCwd is the cwd of a job serving every profile — a compose
 	// stack, a root script. Sitting at the root is what makes a job shared.
 	ProfileRootCwd = "."
+	// ProfileProposalMaxPackages is how many package directories the init may
+	// split into one profile each. Past it the split stops being a proposal a
+	// reader can edit and becomes a list to scroll, so only ProfileAllName is
+	// offered and the user splits what they actually want.
+	ProfileProposalMaxPackages = 6
+	// ProfileNameSegmentSep joins the path segments a colliding profile name is
+	// widened with: apps/app-1/back and apps/app-2/back both end in "back".
+	ProfileNameSegmentSep = "-"
+
+	// PackageJSONName is the manifest whose presence makes a directory a package.
+	PackageJSONName = "package.json"
+	// PnpmWorkspaceName is pnpm's workspace declaration, read alongside the
+	// `workspaces` field npm, yarn and bun put in the root manifest.
+	PnpmWorkspaceName = "pnpm-workspace.yaml"
+	// WorkspaceScanMaxDepth bounds how deep below the project root a workspace
+	// package is looked for. A workspace pattern can say "**", so the walk needs
+	// a floor of its own rather than one the pattern happens to impose.
+	WorkspaceScanMaxDepth = 6
 
 	// Script classification keywords for package.json → run.toml mapping.
 	// A script is classified as a long-running service when its name matches
@@ -1144,7 +1167,11 @@ const (
 	// RunViewHeaderTitle names the view and RunViewRunningFmt counts what it is
 	// showing.
 	RunViewHeaderTitle = "wtm run"
-	RunViewRunningFmt  = "%d/%d running"
+	// RunViewHeaderProfileFmt names the profile the run brought up, next to the
+	// view's own title: several profiles share this screen and nothing else on
+	// it says which one was started.
+	RunViewHeaderProfileFmt = "wtm run · %s"
+	RunViewRunningFmt       = "%d/%d running"
 
 	// RunViewHelpBrowse and RunViewHelpFilter are the footer's key reminders,
 	// one per mode the keyboard can be in.
@@ -1191,6 +1218,7 @@ const (
 	// and RunViewRecap*Fmt are its lines: what is running, what ran, what did
 	// not, and the two commands that act on any of it.
 	RunViewRecapTitle         = "Jobs"
+	RunViewRecapProfileFmt    = "Profile:      %s"
 	RunViewRecapRunningFmt    = "Running:      %s"
 	RunViewRecapCompletedFmt  = "Completed:    %s"
 	RunViewRecapFailedFmt     = "Failed:       %s"
@@ -1205,6 +1233,7 @@ const (
 	// there is no screen to take over: one step announced, one line per job once
 	// the daemon has answered for it, then the two commands that act on what is
 	// left running.
+	RunStreamProfileFmt = "Profile %s"
 	RunStreamStepFmt    = "[%d/%d] %s"
 	RunStreamStartedFmt = "%s started"
 	// RunPortsSuffixFmt qualifies a name with the ports behind it — the line

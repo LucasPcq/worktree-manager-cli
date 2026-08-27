@@ -16,6 +16,9 @@ type Params struct {
 	Session runlogs.Session
 	// Job is selected when the view opens; empty takes the first one.
 	Job string
+	// Profile names what Start brings up, shown in the header and the recap.
+	// Empty for a view that starts nothing, or a run.toml declaring no profile.
+	Profile string
 	// Start runs a profile's start sequence while the view is open, reporting to
 	// the Sink it is given. Nil for a view that only reads what is already
 	// running. Cancelling the context ends the reporting, never the jobs.
@@ -63,6 +66,8 @@ type Model struct {
 	ticking bool
 
 	start StartFunc
+	// profile names the run the view is reporting on, for the header and the recap.
+	profile string
 	// started reports that a run was asked for, which is what makes a recap
 	// worth printing on the way out.
 	started  bool
@@ -82,6 +87,7 @@ func New(params Params) Model {
 	return Model{
 		session:  params.Session,
 		selected: params.Job,
+		profile:  params.Profile,
 		panes:    newPaneStore(PaneSize{}),
 		msgs:     make(chan tea.Msg, domain.RunViewMsgBuffer),
 		start:    params.Start,
@@ -352,6 +358,15 @@ func (m Model) fillSelectedPane() (Model, tea.Cmd) {
 	return m, m.historyCmd(view.Name)
 }
 
+func (m Model) kindOf(job string) domain.JobKind {
+	for _, view := range m.jobs {
+		if view.Name == job {
+			return view.Kind
+		}
+	}
+	return ""
+}
+
 // sequenceHolds reports that the run is writing into the job's pane itself.
 // Those bytes are nowhere else yet: no subscription carries them and the log
 // file is still being written, so the pane is the only copy.
@@ -379,7 +394,14 @@ func (m Model) applyAttached(msg attachedMsg) (Model, tea.Cmd) {
 
 	m.err = nil
 	pane := m.panes.attach(attachPaneParams{Job: msg.job, Stream: msg.stream})
-	go readStream(readParams{Job: msg.job, Stream: msg.stream, Pane: pane, Msgs: m.msgs, Done: m.runCtx.Done()})
+	go readStream(readParams{
+		Job:          msg.job,
+		Stream:       msg.stream,
+		Pane:         pane,
+		Msgs:         m.msgs,
+		Done:         m.runCtx.Done(),
+		NormalizeEOL: rules.RunsOnPipe(m.kindOf(msg.job)),
+	})
 
 	model, tick := m.startTicking()
 	// The window may have moved while the daemon was answering, and the size the
@@ -470,6 +492,9 @@ type readParams struct {
 	Stream runlogs.Stream
 	Pane   *Pane
 	Msgs   chan<- tea.Msg
+	// NormalizeEOL terminates the job's bare LFs the way a PTY would, for a job
+	// whose output reaches here off a pipe instead.
+	NormalizeEOL bool
 	// Done is the view being gone, which is the only thing that lets a reader
 	// stop waiting for its last message to be taken.
 	Done <-chan struct{}
@@ -479,7 +504,12 @@ type readParams struct {
 // nothing: the model's tick is what paces the screen, so a job printing
 // megabytes costs writes into the emulator rather than renders of it.
 func readStream(params readParams) {
+	pendingCR := false
 	for chunk := range params.Stream.Chunks() {
+		if params.NormalizeEOL {
+			normalized := rules.NormalizeEOL(rules.NormalizeEOLParams{Chunk: chunk, PendingCR: pendingCR})
+			chunk, pendingCR = normalized.Chunk, normalized.PendingCR
+		}
 		params.Pane.Write(chunk)
 	}
 	// Nothing else reports the end of a stream — the poll only re-reads the job
