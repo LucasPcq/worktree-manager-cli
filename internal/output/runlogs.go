@@ -17,20 +17,29 @@ type RunPrinterParams struct {
 	// Profile names the run being reported. Empty prints no heading: a run.toml
 	// with no profile has nothing to name.
 	Profile string
+	// Hyperlinks turns a job's URL into an OSC-8 link. Off for a pipe, a JSON
+	// run, or anything that would only show the escape sequence.
+	Hyperlinks bool
 }
 
 // RunPrinter renders a profile's start sequence as lines on the terminal the
 // command was launched from. It writes a raw body: the command's frame owns the
 // outer padding, and the blank line between two steps is this printer's.
 type RunPrinter struct {
-	out     io.Writer
-	err     io.Writer
-	profile string
-	printed bool
+	out        io.Writer
+	err        io.Writer
+	profile    string
+	hyperlinks bool
+	printed    bool
 }
 
 func NewRunPrinter(params RunPrinterParams) *RunPrinter {
-	return &RunPrinter{out: params.Out, err: params.Err, profile: params.Profile}
+	return &RunPrinter{
+		out:        params.Out,
+		err:        params.Err,
+		profile:    params.Profile,
+		hyperlinks: params.Hyperlinks,
+	}
 }
 
 func (p *RunPrinter) Emit(event runlogs.Event) {
@@ -52,17 +61,15 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 			Success(p.out, fmt.Sprintf(domain.RunStreamAlreadyFmt, event.Job))
 			return
 		}
-		Success(p.out, rules.LabelWithPorts(rules.LabelWithPortsParams{
-			Label: fmt.Sprintf(domain.RunStreamStartedFmt, event.Job),
-			Ports: event.Ports,
-		}))
+		Success(p.out, p.jobLine(jobLineParams{Format: domain.RunStreamStartedFmt, Event: event}))
+		p.devOrigins(event.DevOrigins)
 	case runlogs.PhaseDone:
-		Success(p.out, rules.LabelWithPorts(rules.LabelWithPortsParams{
-			Label: fmt.Sprintf(domain.RunStreamDoneFmt, event.Job),
-			Ports: event.Ports,
-		}))
+		Success(p.out, p.jobLine(jobLineParams{Format: domain.RunStreamDoneFmt, Event: event}))
 	case runlogs.PhaseFailed:
 		Error(p.err, event.Reason)
+	case runlogs.PhaseNotice:
+		Blank(p.err)
+		Callout(p.err, domain.ProxyUnavailableTitle, []string{event.Notice})
 	case runlogs.PhaseProbed:
 		p.probed(event.Probes)
 	case runlogs.PhaseAborted:
@@ -70,6 +77,62 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 	case runlogs.PhaseReady:
 		p.ready(event.Outcome)
 	}
+}
+
+type jobLineParams struct {
+	Format string
+	Event  runlogs.Event
+}
+
+func (p *RunPrinter) jobLine(params jobLineParams) string {
+	return JobLine(JobLineParams{
+		Label:      fmt.Sprintf(params.Format, params.Event.Job),
+		Ports:      params.Event.Ports,
+		URL:        params.Event.URL,
+		Hyperlinks: p.hyperlinks,
+	})
+}
+
+type JobLineParams struct {
+	Label string
+	Ports map[string]int
+	// URL is where the job answers, empty for one that publishes no name.
+	URL string
+	// Hyperlinks turns the URL into an OSC-8 link.
+	Hyperlinks bool
+}
+
+// JobLine is how every human surface announces a job: what it is, the ports it
+// bound, and where to reach it. Shared so `run up` and `run start` cannot drift
+// into saying the same thing two ways.
+func JobLine(params JobLineParams) string {
+	line := rules.LabelWithPorts(rules.LabelWithPortsParams{
+		Label: params.Label,
+		Ports: params.Ports,
+	})
+	if params.URL == "" {
+		return line
+	}
+	return line + domain.RunURLSuffixSep + Hyperlink(HyperlinkParams{
+		Text:    params.URL,
+		URL:     params.URL,
+		Enabled: params.Hyperlinks,
+	})
+}
+
+// devOrigins reports the one line a Next project is missing before its own name
+// reaches it. Rendered where the ports report is, for the same reason: it is a
+// finding about a job that started fine, not a failure.
+func (p *RunPrinter) devOrigins(fixes []domain.DevOriginFix) {
+	if len(fixes) == 0 {
+		return
+	}
+	lines := make([]string, 0, len(fixes))
+	for _, fix := range fixes {
+		lines = append(lines, fix.Line)
+	}
+	Blank(p.err)
+	Callout(p.err, domain.DevOriginsTitle, lines)
 }
 
 // probed reports only what the check could not confirm: a port that answered

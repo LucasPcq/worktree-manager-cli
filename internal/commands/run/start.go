@@ -3,6 +3,7 @@ package run
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -64,7 +65,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if err := components.RunLoading(components.LoadingParams{
 		Message: domain.RunDaemonConnecting,
 		Animate: rules.IsHumanFormat(format),
-		Work:    func() error { return process.EnsureDaemon(socketPath) },
+		Work: func() error {
+			return process.EnsureDaemon(process.DaemonParams{SocketPath: socketPath, ProxyPort: rules.ProxyPort(result.Config.Global)})
+		},
 	}); err != nil {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
@@ -79,7 +82,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		Format: format,
 	})
 	if surface == domain.RunSurfaceView {
-		seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs})
+		seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
 		return showRunView(viewParams{
 			Cmd:     cmd,
 			Session: seam.session,
@@ -96,6 +99,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 		LogDir: logDir,
 		Env:    env,
 		Format: format,
+		RouteHost: rules.RouteHost(rules.RouteHostParams{
+			Job:      job,
+			Worktree: env[domain.EnvWorktree],
+			Project:  filepath.Base(result.ProjectDir),
+		}),
+		ProxyPort: rules.ProxyPort(result.Config.Global),
 	}
 	if job.Kind == domain.JobKindTask {
 		return startTaskInline(params)
@@ -111,6 +120,45 @@ type startJobParams struct {
 	LogDir string
 	Env    map[string]string
 	Format string
+	// RouteHost is the name the proxy is to serve this job under, and ProxyPort
+	// where it serves it. This path talks to the daemon directly, so it carries
+	// what internal/flow/runlogs would otherwise have resolved.
+	RouteHost string
+	ProxyPort int
+}
+
+type startedLineParams struct {
+	Label string
+	Ports map[string]int
+	// ServedPort is what the daemon answered its proxy is really on, not what
+	// this command asked for: a name nothing serves is worse than a port.
+	ServedPort int
+}
+
+// startedLine is what a human surface prints once the daemon has answered: the
+// same composition `run up` uses, so one job reads the same either way.
+func (p startJobParams) startedLine(params startedLineParams) string {
+	return output.JobLine(output.JobLineParams{
+		Label: params.Label,
+		Ports: params.Ports,
+		URL: rules.JobURL(rules.JobURLParams{
+			Job:       p.Job,
+			Ports:     params.Ports,
+			Host:      p.RouteHost,
+			ProxyPort: params.ServedPort,
+		}),
+		Hyperlinks: rules.IsHumanFormat(p.Format) && isTTY(),
+	})
+}
+
+// proxyNotice is the refusal a forked daemon could not tell anyone about.
+func (p startJobParams) proxyNotice(servedPort int) {
+	if p.ProxyPort == 0 || servedPort != 0 || p.RouteHost == "" {
+		return
+	}
+	output.Callout(p.Cmd.ErrOrStderr(), domain.ProxyUnavailableTitle, []string{
+		fmt.Sprintf(domain.ProxyUnavailableFmt, p.ProxyPort),
+	})
 }
 
 // startTaskInline runs a task where the caller can read it: a task is a
@@ -128,11 +176,12 @@ func startTaskInline(params startJobParams) error {
 	}
 
 	resp, err := params.Client.SendStream(process.Request{
-		Action:  process.ActionStart,
-		Job:     &params.Job,
-		WorkDir: params.Dir,
-		LogDir:  params.LogDir,
-		Env:     params.Env,
+		Action:    process.ActionStart,
+		Job:       &params.Job,
+		WorkDir:   params.Dir,
+		LogDir:    params.LogDir,
+		Env:       params.Env,
+		RouteHost: params.RouteHost,
 	}, onOutput)
 	if err != nil {
 		return fmt.Errorf("task %s: %w", params.Job.Name, err)
@@ -147,9 +196,10 @@ func startTaskInline(params startJobParams) error {
 			Status: domain.JobActionDone,
 		})
 	}
-	output.Success(params.Cmd.OutOrStdout(), rules.LabelWithPorts(rules.LabelWithPortsParams{
-		Label: fmt.Sprintf(domain.RunStreamDoneFmt, params.Job.Name),
-		Ports: resp.Ports,
+	output.Success(params.Cmd.OutOrStdout(), params.startedLine(startedLineParams{
+		Label:      fmt.Sprintf(domain.RunStreamDoneFmt, params.Job.Name),
+		Ports:      resp.Ports,
+		ServedPort: resp.ProxyPort,
 	}))
 	output.FrameEnd(params.Cmd.OutOrStdout())
 	return nil
@@ -163,11 +213,12 @@ func startServiceDetached(params startJobParams) error {
 		Work: func() error {
 			var e error
 			resp, e = params.Client.Send(process.Request{
-				Action:  process.ActionStart,
-				Job:     &params.Job,
-				WorkDir: params.Dir,
-				LogDir:  params.LogDir,
-				Env:     params.Env,
+				Action:    process.ActionStart,
+				Job:       &params.Job,
+				WorkDir:   params.Dir,
+				LogDir:    params.LogDir,
+				Env:       params.Env,
+				RouteHost: params.RouteHost,
 			})
 			return e
 		},
@@ -187,10 +238,12 @@ func startServiceDetached(params startJobParams) error {
 
 	out := params.Cmd.OutOrStdout()
 	output.Frame(out, func() {
-		output.Success(out, rules.LabelWithPorts(rules.LabelWithPortsParams{
-			Label: fmt.Sprintf(domain.RunStreamStartedFmt, params.Job.Name),
-			Ports: resp.Ports,
+		output.Success(out, params.startedLine(startedLineParams{
+			Label:      fmt.Sprintf(domain.RunStreamStartedFmt, params.Job.Name),
+			Ports:      resp.Ports,
+			ServedPort: resp.ProxyPort,
 		}))
 	})
+	params.proxyNotice(resp.ProxyPort)
 	return nil
 }

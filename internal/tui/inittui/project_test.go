@@ -168,3 +168,38 @@ func TestServicesStepPreselectsOnlyDevScripts(t *testing.T) {
 		}
 	}
 }
+
+// L'étape propose tout coché : publier est additif — le job garde son port dans
+// tous les cas — donc une mauvaise proposition coûte une case à décocher, jamais
+// un run qui échoue.
+func TestURLItemsOfferEveryCandidateChecked(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "web", Kind: domain.JobKindService, Ports: map[string]int{domain.PortNameDefault: 3000}},
+		{Name: "api", Kind: domain.JobKindService, Ports: map[string]int{"API_PORT": 3100}},
+		{Name: "cache", Kind: domain.JobKindService, Ports: map[string]int{"REDIS_PORT": 6379}},
+	}}
+
+	items := urlItemsFor(cfg)
+	if len(items) != 2 {
+		t.Fatalf("items = %d (%v), want web et api seulement", len(items), items)
+	}
+	for _, item := range items {
+		if !item.Selected {
+			t.Errorf("item %q n'est pas coché", item.Value)
+		}
+	}
+	if items[0].Value != "web" || !strings.Contains(items[0].Label, domain.PortNameDefault) {
+		t.Errorf("item[0] = %+v, want la valeur web et le port dans le libellé", items[0])
+	}
+}
+
+// Sans service déclarant le port qu'il écoute, l'étape ne s'affiche pas du tout.
+func TestURLStepIsAbsentWithoutACandidate(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "migrate", Kind: domain.JobKindTask, Ports: map[string]int{domain.PortNameDefault: 3000}},
+	}}
+
+	if items := urlItemsFor(cfg); len(items) != 0 {
+		t.Errorf("items = %v, want aucun", items)
+	}
+}

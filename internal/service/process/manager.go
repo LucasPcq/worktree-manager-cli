@@ -73,6 +73,10 @@ type ManagedJob struct {
 	// `docker compose down` that lost COMPOSE_PROJECT_NAME tears down the wrong
 	// project, or nothing at all.
 	Env map[string]string
+	// RouteHost is the hostname the proxy serves this job under, empty for one
+	// that publishes none. Kept so the route is withdrawn by the same name it
+	// was published under, whatever the config has become since.
+	RouteHost string
 	// ExitCode, like Status, is written by the goroutine that reaps the process
 	// and read by List: both are only ever touched under the manager lock.
 	ExitCode *int
@@ -81,14 +85,27 @@ type ManagedJob struct {
 	exited   chan struct{} // closed when the underlying process has been reaped
 }
 
+// RouteSink is where a started job's route is published. The proxy implements
+// it; nil means no proxy, which changes nothing about the job.
+type RouteSink interface {
+	Add(route domain.ProxyRoute)
+	Remove(host string)
+}
+
 type Manager struct {
-	jobs map[string]*ManagedJob
-	mu   sync.Mutex
+	jobs   map[string]*ManagedJob
+	routes RouteSink
+	mu     sync.Mutex
 }
 
 func NewManager() *Manager {
+	return NewManagerWithRoutes(nil)
+}
+
+func NewManagerWithRoutes(routes RouteSink) *Manager {
 	return &Manager{
-		jobs: make(map[string]*ManagedJob),
+		jobs:   make(map[string]*ManagedJob),
+		routes: routes,
 	}
 }
 
@@ -101,9 +118,12 @@ type StartParams struct {
 	WorkDir string
 	// LogDir is the worktree's log directory, resolved by the client. Empty
 	// persists nothing.
-	LogDir   string
-	Env      map[string]string
-	Streamer io.Writer
+	LogDir string
+	Env    map[string]string
+	// RouteHost is the hostname the proxy serves this job under, resolved by the
+	// client for the same reason LogDir and Env are.
+	RouteHost string
+	Streamer  io.Writer
 }
 
 // Start blocks for two of the three kinds it serves, which its signature does
@@ -171,12 +191,15 @@ func (m *Manager) Start(params StartParams) error {
 		WorkDir:   params.WorkDir,
 		StartedAt: time.Now(),
 		Env:       env,
+		RouteHost: params.RouteHost,
 		output:    hub,
 		logs:      logs,
 		exited:    make(chan struct{}),
 	}
 	m.jobs[key] = managed
 	m.mu.Unlock()
+
+	m.publishRoute(managed)
 
 	switch {
 	case job.Kind == domain.JobKindTask:
@@ -665,6 +688,8 @@ func (m *Manager) stopByKey(key string) error {
 		return nil
 	}
 
+	m.withdrawRoute(job)
+
 	// Always run the stop command if configured — handles detached processes
 	// like "docker compose up -d" where the launcher exits but services keep
 	// running.
@@ -876,4 +901,31 @@ func (m *Manager) waitForExit(job *ManagedJob) {
 	}
 
 	job.Status = domain.JobStatusCrashed
+	m.withdrawRoute(job)
+}
+
+// publishRoute makes a started job reachable by name. A job declaring no url, or
+// one whose published port did not resolve, names nothing and is skipped.
+func (m *Manager) publishRoute(job *ManagedJob) {
+	if m.routes == nil || job.RouteHost == "" || job.Config.URL == nil {
+		return
+	}
+	port, resolved := jobPorts(job.Config, job.Env)[job.Config.URL.Port]
+	if !resolved {
+		return
+	}
+	m.routes.Add(domain.ProxyRoute{
+		Host:     job.RouteHost,
+		Target:   fmt.Sprintf(domain.ProxyTargetFmt, port),
+		Job:      job.Name,
+		Worktree: job.Env[domain.EnvWorktree],
+		Project:  job.Env[domain.EnvProject],
+	})
+}
+
+func (m *Manager) withdrawRoute(job *ManagedJob) {
+	if m.routes == nil || job.RouteHost == "" {
+		return
+	}
+	m.routes.Remove(job.RouteHost)
 }

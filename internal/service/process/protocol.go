@@ -29,6 +29,10 @@ type Request struct {
 	// daemon is global and long-lived, so the environment it inherited belongs
 	// to whichever worktree happened to fork it.
 	Env map[string]string `json:"env,omitempty"`
+	// RouteHost is the hostname the proxy serves this job under, resolved by the
+	// client for the same reason LogDir and Env are: the daemon is global, and
+	// only the client can ask git which worktree and which repository this is.
+	RouteHost string `json:"route_host,omitempty"`
 	// Cols and Rows size the job's PTY: once on ActionAttach, then on every
 	// ActionResize as the pane rendering the job changes size.
 	Cols int `json:"cols,omitempty"`
@@ -59,4 +63,8 @@ type Response struct {
 	// worktree's offset. Reported rather than recomputed by the caller, so the
 	// line it prints says what happened instead of what should have.
 	Ports map[string]int `json:"ports,omitempty"`
+	// ProxyPort is the port the run proxy is really serving on, zero when it is
+	// off or could not bind. The daemon is the only side that knows: a client
+	// only knows what it asked for, and a URL built on that would be a lie.
+	ProxyPort int `json:"proxy_port,omitempty"`
 }

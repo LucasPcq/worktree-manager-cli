@@ -70,3 +70,21 @@ func TestRecapLinesAlignOnTheLongestName(t *testing.T) {
 		}
 	}
 }
+
+// Le récap sert à juger la config avant qu'elle soit écrite : un job qui
+// répondra sous son propre nom doit le dire là, pas seulement dans run.toml.
+func TestRecapJobLinesMarksAPublishedJob(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "web", Kind: domain.JobKindService, Ports: map[string]int{domain.PortNameDefault: 3000},
+			URL: &domain.JobURLConfig{Port: domain.PortNameDefault}},
+		{Name: "mailhog", Kind: domain.JobKindService, Ports: map[string]int{domain.PortNameDefault: 8025}},
+	}}
+
+	lines := RecapJobLines(cfg)
+	if !strings.HasSuffix(lines[0], domain.RecapURLSuffix) {
+		t.Errorf("ligne web = %q, want le suffixe %q", lines[0], domain.RecapURLSuffix)
+	}
+	if strings.HasSuffix(lines[1], domain.RecapURLSuffix) {
+		t.Errorf("ligne mailhog = %q, want aucun suffixe", lines[1])
+	}
+}

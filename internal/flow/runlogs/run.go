@@ -2,9 +2,11 @@ package runlogs
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/detect"
 )
 
 type Outcome struct {
@@ -61,6 +63,15 @@ type RunParams struct {
 	// Prober checks that the ports the jobs declared were actually bound. Nil
 	// skips the check entirely, which is what --no-probe and a zero budget do.
 	Prober Prober
+	// Project names the repository, the last segment of every route. Empty
+	// leaves the jobs on their own ports.
+	Project string
+	// ProxyPort is where the proxy serves those routes. Zero means it is off,
+	// and a job's URL is then its own address.
+	ProxyPort int
+	// NextConfig reads a job's next.config.*, so the run can say what a Next
+	// project is missing before its own name reaches it. Nil skips the check.
+	NextConfig NextConfigLookup
 }
 
 // Run starts a profile's jobs in their declared order and reports each step to
@@ -79,15 +90,23 @@ func Run(ctx context.Context, params RunParams) (Outcome, error) {
 	}
 
 	r := &runner{
-		ctx:     ctx,
-		service: params.Service,
-		sink:    params.Sink,
-		jobs:    params.Jobs,
-		profile: params.Profile,
-		workDir: params.WorkDir,
-		logDir:  params.LogDir,
-		env:     params.Env,
-		prober:  params.Prober,
+		ctx:        ctx,
+		service:    params.Service,
+		sink:       params.Sink,
+		jobs:       params.Jobs,
+		profile:    params.Profile,
+		workDir:    params.WorkDir,
+		logDir:     params.LogDir,
+		env:        params.Env,
+		prober:     params.Prober,
+		project:    params.Project,
+		proxyPort:  params.ProxyPort,
+		nextConfig: params.NextConfig,
+	}
+	if r.nextConfig == nil {
+		r.nextConfig = func(job domain.JobConfig) (string, string) {
+			return detect.NextConfig(detect.NextConfigParams{WorkDir: params.WorkDir, Cwd: job.Cwd})
+		}
 	}
 	if r.sink == nil {
 		r.sink = noSink{}
@@ -105,6 +124,16 @@ type runner struct {
 	logDir  string
 	env     map[string]string
 	prober  Prober
+	// project and proxyPort together decide whether a job's URL is its name or
+	// its port; both come from the surface, which is the side that reads config.
+	project    string
+	proxyPort  int
+	nextConfig NextConfigLookup
+	// servedPort is what the daemon answered its proxy is really on, and
+	// noticedProxy records that the run has already explained a refusal — the
+	// fact belongs to the run, not to each job that would repeat it.
+	servedPort   int
+	noticedProxy bool
 
 	// probeTargets are the started services that declared ports, kept in start
 	// order so the check runs once, at the end, when everything is up.
@@ -127,11 +156,18 @@ func (r *runner) run() Outcome {
 		r.emit(Event{Phase: PhaseStarting, Job: job.Name, Step: i + 1})
 
 		r.captured = nil
+		host := rules.RouteHost(rules.RouteHostParams{
+			Job:      job,
+			Worktree: r.env[domain.EnvWorktree],
+			Project:  r.project,
+		})
+
 		result, err := r.service.Start(r.ctx, StartRequest{
-			Job:     job,
-			WorkDir: r.workDir,
-			LogDir:  r.logDir,
-			Env:     r.env,
+			Job:       job,
+			WorkDir:   r.workDir,
+			LogDir:    r.logDir,
+			Env:       r.env,
+			RouteHost: host,
 			OnOutput: func(chunk []byte) {
 				r.captured = append(r.captured, chunk...)
 				r.emit(Event{Phase: PhaseOutput, Job: job.Name, Kind: job.Kind, Step: i + 1, Chunk: chunk})
@@ -148,6 +184,11 @@ func (r *runner) run() Outcome {
 		// A repeat start of a service is what the caller asked for — the job is
 		// up — so it counts as started. A task is a step to run, not a state to
 		// reach: one the daemon refuses has not run.
+		if result.ProxyPort > 0 {
+			r.servedPort = result.ProxyPort
+		}
+		r.noticeProxyRefused(i + 1)
+
 		alreadyRunning := result.Refused && job.Kind != domain.JobKindTask && rules.IsAlreadyRunning(result.Message)
 		if result.Refused && !alreadyRunning {
 			return r.abort(abortParams{Index: i, Job: job, Reason: result.Message, ExitCode: result.ExitCode})
@@ -155,17 +196,17 @@ func (r *runner) run() Outcome {
 
 		if job.Kind == domain.JobKindTask {
 			r.completed = append(r.completed, job.Name)
-			r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionDone})
-			r.emit(Event{Phase: PhaseDone, Job: job.Name, Step: i + 1, Ports: result.Ports})
+			r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionDone, URL: r.jobURL(jobURLParams{Job: job, Ports: result.Ports, Host: host})})
+			r.emit(Event{Phase: PhaseDone, Job: job.Name, Step: i + 1, Ports: result.Ports, URL: r.jobURL(jobURLParams{Job: job, Ports: result.Ports, Host: host})})
 			continue
 		}
 
 		r.started = append(r.started, job.Name)
-		r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStarted})
+		r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStarted, URL: r.jobURL(jobURLParams{Job: job, Ports: result.Ports, Host: host})})
 		if rules.ShouldProbeJob(job.Kind, result.Ports) {
 			r.probeTargets = append(r.probeTargets, probeTarget{job: job.Name, resolved: result.Ports})
 		}
-		r.emit(Event{Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning, Ports: result.Ports})
+		r.emit(Event{Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning, Ports: result.Ports, URL: r.jobURL(jobURLParams{Job: job, Ports: result.Ports, Host: host}), DevOrigins: r.devOrigins(job, host)})
 	}
 
 	probes := r.probe()
@@ -174,6 +215,50 @@ func (r *runner) run() Outcome {
 	outcome.Probes = probes
 	r.emit(Event{Phase: PhaseReady, Outcome: outcome})
 	return outcome
+}
+
+// devOrigins is only ever asked when the proxy actually serves the job: under
+// its own port, Next has nothing to allow.
+func (r *runner) devOrigins(job domain.JobConfig, host string) []domain.DevOriginFix {
+	if r.nextConfig == nil || host == "" || r.servedPort == 0 {
+		return nil
+	}
+	path, source := r.nextConfig(job)
+	if !rules.NeedsDevOrigins(rules.NeedsDevOriginsParams{Job: job, ConfigSource: source}) {
+		return nil
+	}
+	return []domain.DevOriginFix{{
+		Job:    job.Name,
+		Config: path,
+		Line:   fmt.Sprintf(domain.DevOriginsFixFmt, job.Name, domain.ProxyTLD, r.servedPort, path),
+	}}
+}
+
+type jobURLParams struct {
+	Job   domain.JobConfig
+	Ports map[string]int
+	Host  string
+}
+
+// jobURL answers with the port the daemon says it is really serving, never the
+// one this run asked for: a name nothing serves is worse than a port.
+func (r *runner) jobURL(params jobURLParams) string {
+	return rules.JobURL(rules.JobURLParams{
+		Job:       params.Job,
+		Ports:     params.Ports,
+		Host:      params.Host,
+		ProxyPort: r.servedPort,
+	})
+}
+
+// noticeProxyRefused explains, once, why the names this run promised are not
+// being served. Emitting it per job would bury the one fact it carries.
+func (r *runner) noticeProxyRefused(step int) {
+	if r.noticedProxy || r.proxyPort == 0 || r.servedPort != 0 {
+		return
+	}
+	r.noticedProxy = true
+	r.emit(Event{Phase: PhaseNotice, Step: step, Notice: fmt.Sprintf(domain.ProxyUnavailableFmt, r.proxyPort)})
 }
 
 type probeTarget struct {

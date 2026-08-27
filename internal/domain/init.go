@@ -78,6 +78,11 @@ type InitProjectAnswers struct {
 	Profiles []ProfileConfig
 	// Cmds is the commands the wizard amended so they read the port wtm injects.
 	Cmds []JobCmdFix
+	// URLs names the jobs the wizard left checked in the URLs step, and
+	// URLsAsked says the step ran at all: unchecking every job withdraws every
+	// url, where a run that never asked leaves the proposal standing.
+	URLs      []string
+	URLsAsked bool
 	// LinkEnv is what the wizard settled for the .env keys holding a declared
 	// port; EnvLinksAsked says the question was put at all, so a run that asked
 	// and got "no" is not mistaken for one that never asked.

@@ -22,9 +22,11 @@ Run commands and profiles declared in <git-common-dir>/wtm/run.toml — long-run
 * [wtm run job](wtm_run_job.md)	 - Add, remove, or edit jobs in run.toml
 * [wtm run list](wtm_run_list.md)	 - List jobs and profiles declared in run.toml
 * [wtm run logs](wtm_run_logs.md)	 - Attach to a job's output
+* [wtm run open](wtm_run_open.md)	 - Open a job's URL in the browser
 * [wtm run profile](wtm_run_profile.md)	 - Add, remove, or edit profiles in run.toml
 * [wtm run ps](wtm_run_ps.md)	 - List currently running jobs
 * [wtm run start](wtm_run_start.md)	 - Start a single job
 * [wtm run stop](wtm_run_stop.md)	 - Stop a single job
 * [wtm run up](wtm_run_up.md)	 - Start a profile's jobs
+* [wtm run url](wtm_run_url.md)	 - Print where a job is reachable in this worktree
 

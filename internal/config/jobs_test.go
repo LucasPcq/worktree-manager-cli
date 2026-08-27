@@ -203,3 +203,45 @@ ports = { PORT = 3000 }
 		t.Errorf("got block %d, want the default %d", got, domain.PortOffsetBlock)
 	}
 }
+
+func TestLoadRunReadsJobURL(t *testing.T) {
+	dir := t.TempDir()
+	content := `
+[[job]]
+name  = "web"
+kind  = "service"
+cmd   = "pnpm dev --port ${PORT}"
+ports = { PORT = 3000 }
+url   = { port = "PORT" }
+
+[[job]]
+name  = "api"
+kind  = "service"
+cmd   = "pnpm dev --port ${PORT}"
+ports = { PORT = 4000 }
+url   = { port = "PORT", host = "api.app-1" }
+
+[[job]]
+name  = "db"
+kind  = "service"
+cmd   = "docker compose up"
+ports = { PG_PORT = 5432 }
+`
+	if err := os.WriteFile(filepath.Join(dir, domain.RunFileName), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadRun(dir)
+	if err != nil {
+		t.Fatalf("LoadRun: %v", err)
+	}
+	if cfg.Jobs[0].URL == nil || cfg.Jobs[0].URL.Port != "PORT" || cfg.Jobs[0].URL.Host != "" {
+		t.Errorf("web url = %+v, want port PORT and no host", cfg.Jobs[0].URL)
+	}
+	if cfg.Jobs[1].URL == nil || cfg.Jobs[1].URL.Host != "api.app-1" {
+		t.Errorf("api url = %+v, want host api.app-1", cfg.Jobs[1].URL)
+	}
+	if cfg.Jobs[2].URL != nil {
+		t.Errorf("db must carry no url, got %+v", cfg.Jobs[2].URL)
+	}
+}

@@ -216,3 +216,24 @@ func TestWriteRunningJobsJSON_ExposesStartAndExit(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteRunningJobsJSON_OmitsURLForAJobThatPublishesNone(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteRunningJobsJSON(&buf, []domain.JobInfo{
+		{Name: "web", Status: domain.JobStatusRunning, URL: "http://localhost:3010"},
+		{Name: "db", Status: domain.JobStatusRunning},
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var payloads []map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &payloads); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if payloads[0]["url"] != "http://localhost:3010" {
+		t.Errorf("url = %v, want the published address", payloads[0]["url"])
+	}
+	if value, present := payloads[1]["url"]; present {
+		t.Errorf("url = %v, want no key at all on a job that publishes none", value)
+	}
+}
