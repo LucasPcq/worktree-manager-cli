@@ -68,7 +68,7 @@ func runList(cmd *cobra.Command, _ []string) error {
 
 	switch pick.Action {
 	case runpicker.ActionEdit:
-		return runEditByName(editByNameParams{Cmd: cmd, Res: res, Config: cfg, Name: pick.Name})
+		return runEditByName(editByNameParams{Cmd: cmd, Res: res, Config: cfg, Name: pick.Name, Interactive: true})
 	case runpicker.ActionRm:
 		return runRmByName(rmByNameParams{Cmd: cmd, Res: res, Config: cfg, Name: pick.Name, Force: false})
 	}

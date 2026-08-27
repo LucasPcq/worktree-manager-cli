@@ -336,9 +336,24 @@ and **experimental**: the global `wtm init` does not configure it.
   5 MB x 3), which you can read with your own file tools; `run logs <job>` on a job that
   is **not** running prints that file back and returns.
 - `run export` / `run import` — share a layout as JSON.
-- `run job add|rm` and `run profile add|rm` are agent-drivable with flags; the `edit`
-  wizards are **interactive — never invoke them**. To change a job, `run export` to read
-  state, then `run job rm <name> --force` + `run job add` with new flags.
+- `run job` and `run profile` are fully agent-drivable with flags — `add`, `rm` and
+  `edit` alike. No wizard is ever needed, and none opens as long as a flag is passed.
+- `run job edit <name>` **patches**: a flag left out keeps that field, so
+  `run job edit api --cmd '…'` changes the command alone and leaves kind, stop, cwd,
+  ports and url intact (the job also keeps its position in the file). An explicit empty
+  string clears — `--stop ''` drops the stop command, `--cwd ''` falls back to the
+  project root, `--url-port ''` withdraws the published name. `--port NAME=PORT` merges
+  into the declared ports (repeatable, so one entry changes without rewriting the
+  others) and `--port-clear` empties the table. `--name` renames and rewrites what names the
+  job elsewhere in the file — the profiles that start it and the `[[env_port]]` links
+  that follow its ports. With no such flag it opens the wizard, so **always pass
+  at least one flag**; without a TTY it errors instead, and a missing job argument
+  errors rather than opening a picker.
+- `run profile edit <name>` patches the same way: `--name` renames, `--jobs` replaces
+  the list (its order is the start order, so give it in full), `--default` /
+  `--default=false` hands the default over or takes it away. Same rules as above: a flag
+  left out keeps the field, no flag opens the wizard, and no TTY means an error rather
+  than a picker.
 - Every job — and every `on_create` / `on_clean` hook — runs with the worktree's identity
   in its environment, so parallel worktrees do not fight over the same resources:
   `WTM_BRANCH` (the branch verbatim), `WTM_WORKTREE` (its slug, safe as a Docker project
