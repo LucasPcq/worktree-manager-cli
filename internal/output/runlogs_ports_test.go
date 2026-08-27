@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 )
 
@@ -46,5 +47,29 @@ func TestRunPrinterShowsURL(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "\x1b]8;;") {
 		t.Errorf("hyperlinks are off by default, got %q", out.String())
+	}
+}
+
+func TestRunPrinterReportsMissingDevOrigins(t *testing.T) {
+	var out, errOut bytes.Buffer
+	p := NewRunPrinter(RunPrinterParams{Out: &out, Err: &errOut})
+	p.Emit(runlogs.Event{
+		Phase: runlogs.PhaseStarted,
+		Job:   "web",
+		URL:   "http://web.feat.myapp.localhost:4000",
+		DevOrigins: []domain.DevOriginFix{{
+			Job:    "web",
+			Config: "apps/web/next.config.ts",
+			Line:   "web: add allowedDevOrigins to apps/web/next.config.ts",
+		}},
+	})
+
+	// A finding about a job that started fine goes where the ports report goes:
+	// on stderr, below the line that says it is up.
+	if !strings.Contains(errOut.String(), "allowedDevOrigins") {
+		t.Errorf("stderr = %q, want the missing line named", errOut.String())
+	}
+	if strings.Contains(out.String(), "allowedDevOrigins") {
+		t.Errorf("stdout = %q, want the finding kept off the machine-readable stream", out.String())
 	}
 }

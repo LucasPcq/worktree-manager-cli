@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/service/detect"
 	"github.com/LucasPcq/wtm/internal/service/integration"
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/tui/runview"
@@ -94,6 +95,9 @@ func (s runSeam) starter(profile resolvedProfile) runview.StartFunc {
 			Prober:    s.prober,
 			Project:   s.project,
 			ProxyPort: s.proxyPort,
+			NextConfig: func(job domain.JobConfig) (string, string) {
+				return detect.NextConfig(detect.NextConfigParams{WorkDir: s.workDir, Cwd: job.Cwd})
+			},
 		})
 	}
 }

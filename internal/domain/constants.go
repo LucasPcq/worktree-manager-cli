@@ -187,6 +187,15 @@ const (
 	ProxyNoRoutesLine    = "  (none — start a job that declares a url)\n"
 	ProxySilentTargetFmt = "wtm: job %s is published under %s but nothing answers on %s\n"
 
+	// DevOriginsKey is the Next option that lets a subdomain of .localhost reach
+	// the dev server's assets, and DevOriginsConfigNames the files it lives in.
+	DevOriginsKey   = "allowedDevOrigins"
+	DevOriginsFiles = "next.config.js next.config.mjs next.config.ts"
+	DevOriginsTitle = "Next dev origins"
+	// DevOriginsFixFmt names the one line a Next project needs before a
+	// subdomain of .localhost may reach its dev assets.
+	DevOriginsFixFmt = "%s: add allowedDevOrigins: [\"*.%s:%d\"] to %s — Next blocks dev requests from other hosts"
+
 	// GOOS* name the platforms whose URL opener differs; everything else uses
 	// the freedesktop one.
 	GOOSDarwin  = "darwin"

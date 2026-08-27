@@ -160,6 +160,14 @@ type JobKindChoice struct {
 	Kind      JobKind
 }
 
+// DevOriginFix is a published Next job that would refuse requests arriving under
+// its own name, and the line its config is missing.
+type DevOriginFix struct {
+	Job    string
+	Config string
+	Line   string
+}
+
 // JobCmdFix is a job whose command never mentions a port variable wtm injects
 // for it. The command will bind whatever it binds today, ignoring the offset.
 type JobCmdFix struct {

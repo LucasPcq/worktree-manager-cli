@@ -362,6 +362,12 @@ and **experimental**: the global `wtm init` does not configure it.
   --patch-compose` does both steps for you. A declaration
   **overrides** any inherited value for that variable, and the same ports are given to the
   job's `stop` command. `run up` / `run start` print what was bound (`web started · PORT=3010`).
+- **Next projects need one line before their own name reaches them.** When the proxy
+  serves a job whose directory holds a `next.config.*` without `allowedDevOrigins`,
+  `run up` prints the exact line to add under "Next dev origins". wtm never edits
+  third-party config — report the finding and let the user apply it. Like the port check,
+  it never fails the run and never changes the exit code. Vite needs nothing: it allows
+  `.localhost` already.
 - **`[proxy]` in `~/.config/wtm/config.toml`** tunes the proxy for the whole machine:
   `port` (default `4000`) and `enabled` (default on). Switching it off is not a failure —
   every URL wtm prints falls back to the direct `http://localhost:<port>` form.

@@ -169,7 +169,14 @@ type Event struct {
 	URL string
 	// Probes is what PhaseProbed observed on one job's declared ports.
 	Probes []domain.PortProbe
+	// DevOrigins are the config lines a PhaseStarted job needs before it will
+	// answer under the name the proxy serves it under.
+	DevOrigins []domain.DevOriginFix
 }
+
+// NextConfigLookup reads a job's next.config.*, for a flow that may not touch
+// the disk itself. Nil skips the check entirely.
+type NextConfigLookup func(job domain.JobConfig) (path, source string)
 
 // Sink is emitted to on the goroutine that called Run.
 type Sink interface {

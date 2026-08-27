@@ -62,6 +62,7 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 			return
 		}
 		Success(p.out, p.jobLine(jobLineParams{Format: domain.RunStreamStartedFmt, Event: event}))
+		p.devOrigins(event.DevOrigins)
 	case runlogs.PhaseDone:
 		Success(p.out, p.jobLine(jobLineParams{Format: domain.RunStreamDoneFmt, Event: event}))
 	case runlogs.PhaseFailed:
@@ -93,6 +94,21 @@ func (p *RunPrinter) jobLine(params jobLineParams) string {
 		URL:     params.Event.URL,
 		Enabled: p.hyperlinks,
 	})
+}
+
+// devOrigins reports the one line a Next project is missing before its own name
+// reaches it. Rendered where the ports report is, for the same reason: it is a
+// finding about a job that started fine, not a failure.
+func (p *RunPrinter) devOrigins(fixes []domain.DevOriginFix) {
+	if len(fixes) == 0 {
+		return
+	}
+	lines := make([]string, 0, len(fixes))
+	for _, fix := range fixes {
+		lines = append(lines, fix.Line)
+	}
+	Blank(p.err)
+	Callout(p.err, domain.DevOriginsTitle, lines)
 }
 
 // probed reports only what the check could not confirm: a port that answered

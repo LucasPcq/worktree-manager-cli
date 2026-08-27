@@ -26,6 +26,9 @@ type sequence struct {
 	// urls is where each job answers, kept for the same reason as ports: the run
 	// is the only moment it is reported.
 	urls map[string]string
+	// devOrigins are the config lines the started jobs are missing, collected as
+	// they are reported so the recap can name them all at once.
+	devOrigins []domain.DevOriginFix
 	// reason is what the daemon answered for the job that ended the sequence.
 	reason  string
 	outcome runlogs.Outcome
@@ -159,9 +162,23 @@ func (m Model) probeReport() []string {
 	}
 	lines := rules.PortProbeLines(m.sequence.outcome.Probes)
 	if len(lines) == 0 {
-		return nil
+		return m.devOriginsReport()
 	}
 	return append(append([]string{domain.PortProbeTitle}, lines...), domain.RunViewAbortDismiss)
+}
+
+// devOriginsReport names the Next projects that will refuse their own name. It
+// yields to the port report above for the same reason that one yields to an
+// abort: one notice area, the more urgent finding first.
+func (m Model) devOriginsReport() []string {
+	if len(m.sequence.devOrigins) == 0 {
+		return nil
+	}
+	lines := []string{domain.DevOriginsTitle}
+	for _, fix := range m.sequence.devOrigins {
+		lines = append(lines, fix.Line)
+	}
+	return append(lines, domain.RunViewAbortDismiss)
 }
 
 func joinJobs(jobs []string) string {
@@ -175,6 +192,8 @@ func (s *sequence) remember(event runlogs.Event) {
 		}
 		s.ports[event.Job] = event.Ports
 	}
+	s.devOrigins = append(s.devOrigins, event.DevOrigins...)
+
 	if event.URL == "" {
 		return
 	}
