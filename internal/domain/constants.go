@@ -480,6 +480,9 @@ const (
 	FlagKeep       = "keep"
 	FlagFiles      = "files"
 	FlagOnConflict = "on-conflict"
+	// FlagRaw asks for a job's own port rather than the name the proxy serves it
+	// under: an address every OS resolves and no proxy has to be up for.
+	FlagRaw = "raw"
 
 	// `wtm env` flags. FlagFrom (source override), FlagOnConflict (keep/overwrite),
 	// FlagYes and FlagOutput are shared with other commands. FlagMode selects
@@ -1006,6 +1009,8 @@ const (
 	CmdStop     = "stop"
 	CmdLogs     = "logs"
 	CmdPs       = "ps"
+	CmdURL      = "url"
+	CmdOpen     = "open"
 	CmdCheckout = "checkout"
 	CmdExport   = "export"
 	CmdImport   = "import"
@@ -1263,6 +1268,10 @@ const (
 	// RunPortEntryFmt is one of those ports.
 	RunPortsSuffixFmt = "%s · %s"
 	RunPortEntryFmt   = "%s=%d"
+	// RunURLPickerTitle heads the picker `run open` offers when several jobs
+	// publish and the run is interactive enough to ask.
+	RunURLPickerTitle = "Which job to open"
+
 	// RunURLSuffixSep sets a job's URL apart from the line announcing it, far
 	// enough that a terminal-detected link does not swallow the ports before it.
 	RunURLSuffixSep     = "   "

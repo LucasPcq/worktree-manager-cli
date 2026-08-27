@@ -250,6 +250,7 @@ func jobInfoOf(job ManagedJob) domain.JobInfo {
 		PID:       job.PID,
 		StartedAt: job.StartedAt,
 		ExitCode:  job.ExitCode,
+		URL:       rules.JobURL(rules.JobURLParams{Job: job.Config, Ports: jobPorts(job.Config, job.Env)}),
 	}
 }
 

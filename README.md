@@ -142,6 +142,7 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 | [`run start`](docs/wtm_run_start.md) / [`stop`](docs/wtm_run_stop.md) | Start / stop a single job (`start` attaches, `-d` detaches) |
 | [`run ps`](docs/wtm_run_ps.md) / [`list`](docs/wtm_run_list.md) | Running jobs / declared jobs + profiles |
 | [`run logs`](docs/wtm_run_logs.md) | Reopen the run view on this worktree's jobs |
+| [`run url`](docs/wtm_run_url.md) / [`open`](docs/wtm_run_open.md) | Print / open where a job answers in this worktree |
 | [`run export`](docs/wtm_run_export.md) / [`import`](docs/wtm_run_import.md) | Share a job layout between machines |
 | [`run job`](docs/wtm_run_job.md) / [`profile`](docs/wtm_run_profile.md) | Add / remove / edit jobs and profiles |
 

@@ -85,7 +85,8 @@ self-documenting:
 | Worktree **forest** (parent→child + which need sync) | `wtm tree --output json` |
 | Open PRs | `gh pr list --json number,title,headRefName,state,isDraft,url` |
 | Declared jobs + profiles | `wtm run list --output json` |
-| Jobs running right now (+ `started_at`, `exit_code`) | `wtm run ps --output json` |
+| Jobs running right now (+ `started_at`, `exit_code`, `url`) | `wtm run ps --output json` |
+| Where a job answers in this worktree | `wtm run url --output json` |
 | What a job printed | `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (read it as a file) |
 | Resolved project config | `wtm config show --output json` |
 | A branch's worktree path | `wtm resolve <branch> --output json` |
@@ -305,6 +306,14 @@ and **experimental**: the global `wtm init` does not configure it.
   `-d` starts the jobs and returns immediately, which is the behaviour you want. A `task`
   runs inline and blocks until it exits whatever you pass, so `run start <task>` needs no
   `-d`.
+- `run url [job]` writes a job's URL on stdout and nothing else, so it composes:
+  `curl "$(wtm run url web)/health"`. **A job only has a URL if `run.toml` declares one**
+  (`url = { port = "PORT" }` on that job, naming one of its own declared ports).
+  `--output json` lists every published job as `[{job, url}]` and never picks for you.
+  In text mode, one published job needs no argument; **several and no argument is an
+  error, never a picker** — name the job. `--raw` forces the direct
+  `http://localhost:<port>` form. `run open [job]` opens the same URL in a browser; it may
+  offer a picker, but only in a fully interactive run, so **always name the job**.
 - `run logs [job]` opens that same view on a terminal. Without one it writes every running
   job's output as `[job] line` on stdout and only ends when the jobs do — do not call it
   expecting it to return. Prefer reading the journal instead: every job's output is
@@ -344,6 +353,12 @@ and **experimental**: the global `wtm init` does not configure it.
   --patch-compose` does both steps for you. A declaration
   **overrides** any inherited value for that variable, and the same ports are given to the
   job's `stop` command. `run up` / `run start` print what was bound (`web started · PORT=3010`).
+- **A job can publish one of its ports under a name.** `url = { port = "PORT" }` on a
+  `[[job]]` says which of its declared ports speaks HTTP; `host` overrides the segment it
+  is published under (defaulting to the job's name), and must be lowercase letters, digits
+  and dashes, dot-separated. Two jobs claiming the same host makes `run.toml` refuse to
+  load, naming both. A job with no `url` keeps no name and stays reachable by its port —
+  that is the right answer for anything that does not speak HTTP (postgres, redis).
 - **A job's `cmd` and `stop` are `/bin/sh` lines**, not whitespace-split argv: quotes, `&&`,
   pipes, redirections and globs work, and `${VAR}` expands from the job's environment. So a
   server that ignores `PORT` and only takes a CLI flag (vite) still gets isolated — pass the

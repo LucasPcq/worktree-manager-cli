@@ -41,6 +41,13 @@ type JobConfig struct {
 	URL *JobURLConfig `toml:"url,omitempty" json:"url,omitempty"`
 }
 
+// JobURLEntry is one published job as a surface reports it: the job's name and
+// where it answers in this worktree.
+type JobURLEntry struct {
+	Job string `json:"job"`
+	URL string `json:"url"`
+}
+
 // ProfileConfig defines a named, ordered group of jobs.
 type ProfileConfig struct {
 	Name    string   `toml:"name"    json:"name"`
@@ -94,6 +101,8 @@ type JobInfo struct {
 	// StartedAt is when the daemon spawned the process. Zero for a job it never
 	// spawned — one named by a picker, or read back after a daemon restart.
 	StartedAt time.Time `json:"started_at,omitzero"`
+	// URL is where the job is reachable, absent for one that publishes no name.
+	URL string `json:"url,omitempty"`
 	// ExitCode stays nil until the job's own process is reaped, and -1 says a
 	// signal killed it. A detached launcher exiting does not end its job, so it
 	// keeps a nil code for as long as the service it started is registered.

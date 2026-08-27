@@ -182,6 +182,14 @@ var (
 	// terminal on both ends: a full-screen dashboard has no non-interactive form.
 	ErrDashboardNotInteractive = errors.New("`wtm ui` needs a terminal — the dashboard cannot be driven by an agent; use `wtm list --output json`")
 
+	// ErrJobAmbiguous is returned when several jobs publish a URL and the caller
+	// named none — a picker needs a fully interactive run, so the flag is the answer.
+	ErrJobAmbiguous = errors.New("several jobs publish a URL: name one")
+
+	// ErrJobNonePublished is returned when no job in run.toml declares a url,
+	// so there is no address to print.
+	ErrJobNonePublished = errors.New("no job declares a url in run.toml — add one with `url = { port = \"PORT\" }`")
+
 	// ErrDashboardJSON is returned when `wtm ui` is invoked with --output json.
 	ErrDashboardJSON = errors.New("`wtm ui` has no --output json form — the dashboard cannot be driven by an agent; use `wtm list --output json`")
 )
