@@ -838,3 +838,145 @@ func TestRunJobEdit_JSON(t *testing.T) {
 		t.Errorf("stop = %q, want it cleared", cfg.Jobs[1].Stop)
 	}
 }
+
+// editableProfileConfig is the fixture the `run profile edit` tests patch: two
+// profiles, one of them the default.
+func editableProfileConfig() domain.RunConfig {
+	return domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "db", Kind: domain.JobKindService, Cmd: "docker compose up db"},
+			{Name: "api", Kind: domain.JobKindService, Cmd: "pnpm dev"},
+			{Name: "web", Kind: domain.JobKindService, Cmd: "pnpm dev:web"},
+		},
+		Profiles: []domain.ProfileConfig{
+			{Name: "back", Jobs: []string{"db", "api"}},
+			{Name: "dev", Jobs: []string{"db", "api", "web"}, Default: true},
+		},
+	}
+}
+
+func TestRunProfileEdit_PatchesJobsAndLeavesTheRest(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableProfileConfig())
+
+	if _, _, err := runCmd(t,
+		domain.CmdProfile, domain.CmdEdit, "dev",
+		"--"+domain.FlagJobs, "api,web",
+	); err != nil {
+		t.Fatalf("run profile edit: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if !slices.Equal(cfg.Profiles[1].Jobs, []string{"api", "web"}) {
+		t.Errorf("jobs = %v, want the list replaced in the given order", cfg.Profiles[1].Jobs)
+	}
+	if !cfg.Profiles[1].Default {
+		t.Error("default was lost — only --jobs was passed")
+	}
+	names := []string{cfg.Profiles[0].Name, cfg.Profiles[1].Name}
+	if !slices.Equal(names, []string{"back", "dev"}) {
+		t.Errorf("profiles = %v, want the declared order preserved", names)
+	}
+}
+
+func TestRunProfileEdit_RenamesAndTakesTheDefault(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableProfileConfig())
+
+	if _, _, err := runCmd(t,
+		domain.CmdProfile, domain.CmdEdit, "back",
+		"--"+domain.FlagName, "backend",
+		"--"+domain.FlagDefault,
+	); err != nil {
+		t.Fatalf("run profile edit: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if cfg.Profiles[0].Name != "backend" || !cfg.Profiles[0].Default {
+		t.Errorf("profile = %+v, want it renamed and default", cfg.Profiles[0])
+	}
+	if cfg.Profiles[1].Default {
+		t.Error("dev is still default — only one profile can be")
+	}
+}
+
+func TestRunProfileEdit_UnsetsTheDefault(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableProfileConfig())
+
+	if _, _, err := runCmd(t,
+		domain.CmdProfile, domain.CmdEdit, "dev",
+		"--"+domain.FlagDefault+"=false",
+	); err != nil {
+		t.Fatalf("run profile edit: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if cfg.Profiles[1].Default {
+		t.Error("default = true, want it taken away without handing it to another profile")
+	}
+	if cfg.Profiles[0].Default {
+		t.Error("back became default on its own")
+	}
+}
+
+func TestRunProfileEdit_UnknownJobIsRefused(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableProfileConfig())
+
+	_, _, err := runCmd(t, domain.CmdProfile, domain.CmdEdit, "dev", "--"+domain.FlagJobs, "api,ghost")
+	if err == nil || !strings.Contains(err.Error(), "ghost") {
+		t.Errorf("err = %v, want one naming the unknown job", err)
+	}
+}
+
+func TestRunProfileEdit_NoArgWithoutTTYNamesTheArgument(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableProfileConfig())
+
+	_, _, err := runCmd(t, domain.CmdProfile, domain.CmdEdit, "--"+domain.FlagJobs, "api")
+	if err == nil || !strings.Contains(err.Error(), "argument") {
+		t.Errorf("err = %v, want one naming the missing argument", err)
+	}
+}
+
+func TestRunProfileEdit_NoFlagWithoutTTYNamesTheFlags(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableProfileConfig())
+
+	_, _, err := runCmd(t, domain.CmdProfile, domain.CmdEdit, "dev")
+	if err == nil || !strings.Contains(err.Error(), "--"+domain.FlagJobs) {
+		t.Errorf("err = %v, want one naming the flags that could change something", err)
+	}
+}
+
+func TestRunProfileEdit_JSON(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, editableProfileConfig())
+
+	stdout, _, err := runCmd(t,
+		domain.CmdProfile, domain.CmdEdit, "dev",
+		"--"+domain.FlagJobs, "api",
+		"--"+domain.FlagOutput, domain.OutputJSON,
+	)
+	if err != nil {
+		t.Fatalf("run profile edit: %v", err)
+	}
+
+	var result output.ProfileActionResult
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("parse JSON: %v\noutput: %s", err, stdout)
+	}
+	if result.Name != "dev" || result.Status != domain.JobActionUpdated {
+		t.Errorf("unexpected result: %+v", result)
+	}
+}
