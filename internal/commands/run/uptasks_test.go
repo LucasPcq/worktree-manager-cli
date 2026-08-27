@@ -17,8 +17,7 @@ import (
 // EnsureDaemon starts is the test binary here, which has no `daemon` command.
 func startRealDaemon(t *testing.T) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	shortHome(t)
 
 	sock := process.SocketPath()
 	go func() { _ = process.RunDaemon(process.DaemonParams{SocketPath: sock}) }()

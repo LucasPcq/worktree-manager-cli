@@ -354,6 +354,12 @@ job's `stop` command runs with the same ports its `cmd` did. For Docker, templat
 side of the mapping (`"${DB_PORT}:5432"`) and declare `DB_PORT = 5432`: the container port
 never moves, only the binding does.
 
+The `on_create` / `on_clean` hooks get those ports too, so the `docker compose down` of an
+`on_clean` reads the same `${DB_PORT}` its `up` bound. A hook is not a job, though, so it
+only gets the names a **single** job declares: if `web` and `api` both declare `PORT` on
+different bases, `PORT` has no answer outside a job and is left unset rather than resolved
+to one of the two.
+
 `wtm run init` composes a configuration you can start, not an inventory of the repo. It
 proposes everything it finds and **checks the fewest things**: only scripts whose name
 contains `dev`, and not a root `dev` a workspace package also declares — that one is an

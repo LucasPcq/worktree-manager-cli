@@ -31,10 +31,10 @@ type fakeDaemon struct {
 	requests []process.Request
 }
 
-// startFakeDaemon binds the daemon socket for the length of the test. It uses
-// /tmp rather than t.TempDir(), whose name overruns sun_path on macOS (104
+// shortHome points the config directory — and so the daemon socket under it —
+// at /tmp rather than t.TempDir(), whose name overruns sun_path on macOS (104
 // bytes) and fails the bind with EINVAL.
-func startFakeDaemon(t *testing.T, daemon *fakeDaemon) *fakeDaemon {
+func shortHome(t *testing.T) {
 	t.Helper()
 
 	home, err := os.MkdirTemp("/tmp", "wtmhome")
@@ -44,6 +44,13 @@ func startFakeDaemon(t *testing.T, daemon *fakeDaemon) *fakeDaemon {
 	t.Cleanup(func() { os.RemoveAll(home) })
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+}
+
+// startFakeDaemon binds the daemon socket for the length of the test.
+func startFakeDaemon(t *testing.T, daemon *fakeDaemon) *fakeDaemon {
+	t.Helper()
+
+	shortHome(t)
 
 	socket := process.SocketPath()
 	if err := os.MkdirAll(filepath.Dir(socket), 0o755); err != nil {
