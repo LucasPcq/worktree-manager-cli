@@ -77,68 +77,119 @@ ajouter un viewport vertical à `ProfileListModel`.
 
 ---
 
-## 3. Des tasks semblent coupées avant la fin — **partiellement confirmé**
+## 3. Des tasks semblent coupées avant la fin — **cause trouvée : elles ne tournent pas**
 
-Symptôme : des tasks longues (seeds, migrations Nest) paraissent ne pas aller au
-bout.
+Symptôme : une task longue (migrations + seeds, 10 à 15 s) doit passer pour que le
+service suivant démarre, et le service suivant démarre mal **à chaque fois**.
 
-**Aucun chemin de code ne tue une task en cours.** Vérifié : `StopAll` n'est
-appelé que sur arrêt du daemon (signal ou timer d'inactivité), et
-`stopOtherJobs` (`internal/commands/run/up.go`) ne cible que les *autres*
-worktrees. Une task est bien enregistrée `Running` dans la map du manager
-pendant toute son exécution, donc le timer d'inactivité ne la voit pas comme
-inactive.
+Le caractère déterministe écarte toute explication par une perte de logs. Deux
+mesures ont été faites.
 
-En revanche, quatre mécanismes réels peuvent produire ce symptôme :
+### L'ordonnancement, lui, est correct
 
-**a) Perte de chunks (probable, le plus proche du symptôme).**
-`outputHub.Write` (`internal/service/process/manager.go:529`) publie vers des
-canaux de 256 chunks (`outputSubscriberQueue`, `:35`) et **jette** le chunk
-quand la file est pleine :
+Un run réel — vrai daemon sur socket unix, vrai `runlogs.Run`, task de 8 s
+écrivant 2000 lignes puis créant un marqueur, suivie d'un service qui teste ce
+marqueur — donne :
+
+```
+elapsed=8.01s   completed=[seed]  started=[api]  failed=""
+streamed: 2001 lignes sur 2001 attendues ; fichier de log : 2001 lignes
+le service a vu le marqueur : "READY"
+```
+
+La task bloque bien la séquence, aucune ligne n'est perdue, et le service
+démarre après. Le débit du panneau n'est pas non plus en cause (~40 µs par
+ligne, 2000 lignes en 79 ms). **Quand la task est dans le profil, tout est
+correct.**
+
+### Le vrai défaut : les tasks sont filtrées hors du run
+
+Deux endroits indépendants retirent les tasks de ce que `run up` lance.
+
+**a) `rules.JobsWithoutProfile` (`internal/rules/jobs.go:214-222`)** — utilisé par
+`resolveProfileJobs` quand `run.toml` ne déclare **aucun profil** :
 
 ```go
-select {
-case sub <- data:
-default:            // abonné lent → chunk perdu
+for _, job := range cfg.Jobs {
+    if job.Kind == domain.JobKindService {   // toute task est écartée
+        jobs = append(jobs, job)
+    }
 }
 ```
 
-Une task bavarde (des seeds qui écrivent des centaines de lignes d'affilée)
-sature la file pendant que la TUI rend une frame : des morceaux disparaissent au
-milieu de la sortie. Le fichier de log, lui, est complet — le commentaire de
-`Subscribe` l'assume explicitement (« le stream est une vue live, pas un
-enregistrement »). Le rendu paraît donc coupé alors que la task est allée au
-bout. **Test discriminant : comparer l'affichage avec `wtm run logs <job>`.**
+**b) `rules.ProposeProfiles` (`internal/rules/profileplan.go:36`)** — le découpage
+que propose `run init` :
 
-**b) Environnement non interactif (probable).** `jobEnv`
-(`manager.go:288-302`) force pour les tasks `TERM=dumb`, `CI=true`, et
-`spawnJob` laisse `cmd.Stdin` à `nil` (donc `/dev/null`). Un script de seed qui
-demande une confirmation reçoit EOF et abandonne ; beaucoup d'outils changent de
-comportement sous `CI=true`. C'est un abandon réel du script, pas un affichage.
+```go
+if job.Kind != domain.JobKindService {
+    continue                                  // aucune task n'entre dans un profil
+}
+```
 
-**c) Fin de sortie tronquée (confirmé, ≤ 2 s).** `runTask` (`:366-372`) attend
-au plus `detachedDrainGracePeriod` (2 s, `:57`) que le drain du pipe atteigne
-EOF, puis ferme le descripteur. Si un processus descendant garde le pipe ouvert,
-les derniers octets sont perdus.
+Aucun profil produit par le wizard — `all` compris — ne contient donc de
+`migrate` ni de `seed`.
 
-**d) Course entre deux jobs (confirmé, très improbable).** `idleWatcher`
-(`internal/service/process/daemon.go:88`) arrête le daemon si
-`IsRunning()` est faux au tick des 30 s. Entre le `delete(m.jobs, key)` de fin
-de task (`manager.go:392`) et l'enregistrement du job suivant, il existe une
-fenêtre de quelques millisecondes où plus rien n'est enregistré. Un tick tombant
-exactement là arrête le daemon au milieu d'un profil. Fenêtre ≈ 0,01 % par tick,
-mais le défaut est réel.
+### Reproduction de bout en bout
 
-Pistes : (a) borner la file par octets et compter/signaler les chunks perdus
-plutôt que les jeter silencieusement, ou faire lire l'abonné TUI par une
-goroutine dédiée à file profonde ; (b) rendre `CI` et `TERM` configurables par
-job dans `run.toml` ; (c) allonger ou rendre configurable le délai de drain ;
-(d) faire porter au daemon un compteur de « runs en cours » plutôt que de
-déduire l'activité de la map des jobs.
+Sur `wtm run up -d`, avec les jobs `migrate` (task, crée un marqueur) puis `api`
+(service, teste ce marqueur) :
 
-Voir aussi : `ProposeProfiles` **exclut les tasks des profils** (voir §4), donc
-un profil proposé ne contient jamais `migrate`/`seed` — à vérifier dans le
-`run.toml` en cause.
+| `run.toml` | sortie de `run up` | le service voit le marqueur |
+|---|---|---|
+| jobs seuls, **aucun profil** | `[1/1] api` | `MISSING` — `migrate` n'a jamais tourné |
+| profil listant `migrate, api` | `[1/2] migrate` → `[2/2] api` | `READY` |
+
+La task est retirée **silencieusement** : le compteur d'étapes affiche `[1/1]`,
+donc rien à l'écran ne signale qu'un job déclaré a été ignoré.
+
+### Le diagnostic à faire sur le dépôt concerné
+
+Deux questions tranchent :
+
+1. **Le compteur d'étapes de `run up` inclut-il la task ?** `[1/2] migrate` →
+   elle est dans le run. Un compteur qui la saute → c'est (a) ou (b) ci-dessus.
+2. **Quel `kind` a le job dans `run.toml` ?** `ClassifyScriptKind`
+   (`internal/rules/scripts.go:73`) classe en **service** tout script dont le nom
+   vaut `dev`/`start`/`serve`/`watch`, ou les porte comme segment délimité par
+   `:` (`dev:api`, `api:watch`). Un script de seed nommé `dev:seed` ou
+   `seed:watch` devient un service — et un service n'est **pas** attendu par la
+   séquence : `run up` le lance en arrière-plan et passe immédiatement au job
+   suivant. C'est l'unique scénario qui explique à la fois de voir les lignes
+   défiler pendant 10 à 15 s **et** le service suivant démarrer trop tôt à chaque
+   fois.
+
+Pistes de correction :
+- faire porter les tasks par les profils proposés (§4) plutôt que de les exclure ;
+- que `JobsWithoutProfile` conserve les tasks dans l'ordre déclaré, ou qu'elle
+  refuse le run en nommant les jobs qu'elle ne sait pas ordonner ;
+- ne jamais retirer un job en silence : si `run up` ignore un job déclaré, le dire
+  dans la sortie plutôt que de réduire le compteur d'étapes ;
+- exposer une dépendance explicite entre jobs (`needs = [...]`) pour que l'ordre ne
+  dépende plus du seul `kind`.
+
+### Défauts secondaires trouvés en chemin (réels, non responsables du symptôme)
+
+- **Chunks jetés sous charge.** `outputHub.Write`
+  (`internal/service/process/manager.go:529`) publie vers des canaux de 256
+  chunks et jette le chunk quand la file est pleine (`select`/`default`). Le
+  fichier de log reste complet — c'est assumé — mais l'affichage peut perdre des
+  morceaux. Non reproduit à 2000 lignes.
+- **Environnement non interactif.** `jobEnv` (`manager.go:288-302`) force pour les
+  tasks `TERM=dumb` et `CI=true`, et `spawnJob` laisse `stdin` à `/dev/null`. Un
+  script attendant une confirmation reçoit EOF.
+- **Fin de sortie tronquée à 2 s.** `runTask` (`:366-372`) attend au plus
+  `detachedDrainGracePeriod` que le drain atteigne EOF avant de fermer le
+  descripteur.
+- **Course du timer d'inactivité.** `idleWatcher`
+  (`internal/service/process/daemon.go:88`) arrête le daemon si `IsRunning()` est
+  faux au tick des 30 s ; entre le `delete` de fin de task (`manager.go:392`) et
+  l'enregistrement du job suivant, la map est momentanément vide.
+- **Attache impossible sur une task.** `handleAttach`
+  (`internal/service/process/daemon.go:310`) fait `io.Copy(session.PTY, conn)`
+  alors que `session.PTY` est, pour une task, l'**extrémité de lecture** d'un
+  pipe : l'écriture échoue aussitôt, `<-done` se débloque et la session se
+  referme immédiatement. `Manager.Resize` refuse déjà explicitement les tasks
+  (`manager.go:759`), mais `attachableJob` les laisse passer.
 
 ---
 
@@ -158,7 +209,8 @@ Deux défauts secondaires dans la même fonction :
 - **Les tasks sont exclues** : `if job.Kind != domain.JobKindService { continue }`
   (`:36`). Aucun profil proposé — `all` compris — ne contient de `migrate` ou de
   `seed`. `wtm run up` ne lancera donc jamais les tasks d'un projet initialisé
-  par le wizard sans édition manuelle.
+  par le wizard sans édition manuelle. **C'est la cause du point 3** : voir
+  la reproduction là-bas.
 
 Pistes : ne proposer le découpage par package qu'au-dessus d'un seuil, ou
 proposer par défaut le seul profil `all` et laisser l'utilisateur scinder ;
@@ -241,15 +293,15 @@ Attention à ne pas doubler les `\r` sur la sortie des services (déjà en CRLF)
 
 | # | Problème | Certitude | Effort | Impact |
 |---|----------|-----------|--------|--------|
+| 3 | Tasks filtrées hors du run | reproduit | moyen | bloquant |
 | 6/7 | Escalier des tasks | confirmé | faible | fort — illisible à chaque run |
 | 5a | Profil non affiché | confirmé | faible | fort |
 | 2 | Ligne de profil non bornée | confirmé | faible | moyen |
 | 1 | Détection des packages profonds | confirmé | moyen | fort — bloque l'init |
 | 4 | Trop de profils proposés | confirmé | moyen | moyen |
 | 5b | Jobs hors run + anciens logs | confirmé | moyen | moyen |
-| 3a/3b | Sortie de task perdue / env CI | probable | moyen | à reproduire d'abord |
-| 3c/3d | Drain 2 s, course du timer d'inactivité | confirmé | faible | rare |
+| 3bis | Chunks jetés, drain 2 s, course du timer, attache sur task | confirmé | faible | rare |
 
-Pour le point 3, le test discriminant à faire en premier : lancer la task
-incriminée, puis comparer l'affichage de la vue avec `wtm run logs <job>`. Si le
-log est complet, c'est (a) ; s'il est tronqué au même endroit, c'est (b).
+Le point 3 est le plus grave : il est déterministe, silencieux, et casse le run.
+Il partage sa cause avec le point 4 (`ProposeProfiles` exclut les tasks), donc les
+deux se corrigent ensemble.
