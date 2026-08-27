@@ -175,6 +175,17 @@ const (
 	// ProxyLoopbackFmt is an address on the loopback: what the server binds, and
 	// what a route targets. Never every interface.
 	ProxyLoopbackFmt = "127.0.0.1:%d"
+	// ProxyScheme is what the proxy dials a job with: the job listens on plain
+	// HTTP on the loopback, whatever the browser used to reach the proxy.
+	ProxyScheme = "http"
+
+	// The two pages the proxy serves itself, in plain text: service/ may not
+	// import lipgloss, and a browser landing here needs the fact, not a style.
+	ProxyUnknownHostFmt  = "wtm: no job is published under %s\n\n"
+	ProxyKnownRoutesHead = "Routes wtm is currently serving:\n"
+	ProxyRouteLineFmt    = "  %s  ->  %s (job %s, worktree %s)\n"
+	ProxyNoRoutesLine    = "  (none — start a job that declares a url)\n"
+	ProxySilentTargetFmt = "wtm: job %s is published under %s but nothing answers on %s\n"
 
 	// GOOS* name the platforms whose URL opener differs; everything else uses
 	// the freedesktop one.
