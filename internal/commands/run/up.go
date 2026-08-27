@@ -110,7 +110,12 @@ func runUp(cmd *cobra.Command, args []string) error {
 	case domain.RunSurfaceMachine:
 		return runForMachine(streamParams{Cmd: cmd, Start: start})
 	default:
-		return runOnStream(streamParams{Cmd: cmd, Profile: profile.Name, Start: start})
+		return runOnStream(streamParams{
+			Cmd:        cmd,
+			Profile:    profile.Name,
+			Start:      start,
+			Hyperlinks: rules.IsHumanFormat(format) && isTTY(),
+		})
 	}
 }
 

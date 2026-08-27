@@ -23,7 +23,14 @@ type Params struct {
 	// the Sink it is given. Nil for a view that only reads what is already
 	// running. Cancelling the context ends the reporting, never the jobs.
 	Start StartFunc
+	// Open hands a job's URL to the desktop. Nil leaves the open key without an
+	// object, which is what a surface that cannot open a browser installs.
+	Open OpenFunc
 }
+
+// OpenFunc opens a URL outside the terminal. The view never dials anything
+// itself: it names what to open and lets the seam do it.
+type OpenFunc func(url string) error
 
 // StartFunc is a start sequence the view drives — runlogs.Run, wired by the
 // command that opened the view.
@@ -68,6 +75,7 @@ type Model struct {
 	start StartFunc
 	// profile names the run the view is reporting on, for the header and the recap.
 	profile string
+	open    OpenFunc
 	// started reports that a run was asked for, which is what makes a recap
 	// worth printing on the way out.
 	started  bool
@@ -91,6 +99,7 @@ func New(params Params) Model {
 		panes:    newPaneStore(PaneSize{}),
 		msgs:     make(chan tea.Msg, domain.RunViewMsgBuffer),
 		start:    params.Start,
+		open:     params.Open,
 		started:  params.Start != nil,
 		// A run feeds panes from its own goroutine, so the clock has to be
 		// running before the first chunk lands.

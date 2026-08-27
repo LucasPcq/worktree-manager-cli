@@ -17,20 +17,29 @@ type RunPrinterParams struct {
 	// Profile names the run being reported. Empty prints no heading: a run.toml
 	// with no profile has nothing to name.
 	Profile string
+	// Hyperlinks turns a job's URL into an OSC-8 link. Off for a pipe, a JSON
+	// run, or anything that would only show the escape sequence.
+	Hyperlinks bool
 }
 
 // RunPrinter renders a profile's start sequence as lines on the terminal the
 // command was launched from. It writes a raw body: the command's frame owns the
 // outer padding, and the blank line between two steps is this printer's.
 type RunPrinter struct {
-	out     io.Writer
-	err     io.Writer
-	profile string
-	printed bool
+	out        io.Writer
+	err        io.Writer
+	profile    string
+	hyperlinks bool
+	printed    bool
 }
 
 func NewRunPrinter(params RunPrinterParams) *RunPrinter {
-	return &RunPrinter{out: params.Out, err: params.Err, profile: params.Profile}
+	return &RunPrinter{
+		out:        params.Out,
+		err:        params.Err,
+		profile:    params.Profile,
+		hyperlinks: params.Hyperlinks,
+	}
 }
 
 func (p *RunPrinter) Emit(event runlogs.Event) {
@@ -52,15 +61,9 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 			Success(p.out, fmt.Sprintf(domain.RunStreamAlreadyFmt, event.Job))
 			return
 		}
-		Success(p.out, rules.LabelWithPorts(rules.LabelWithPortsParams{
-			Label: fmt.Sprintf(domain.RunStreamStartedFmt, event.Job),
-			Ports: event.Ports,
-		}))
+		Success(p.out, p.jobLine(jobLineParams{Format: domain.RunStreamStartedFmt, Event: event}))
 	case runlogs.PhaseDone:
-		Success(p.out, rules.LabelWithPorts(rules.LabelWithPortsParams{
-			Label: fmt.Sprintf(domain.RunStreamDoneFmt, event.Job),
-			Ports: event.Ports,
-		}))
+		Success(p.out, p.jobLine(jobLineParams{Format: domain.RunStreamDoneFmt, Event: event}))
 	case runlogs.PhaseFailed:
 		Error(p.err, event.Reason)
 	case runlogs.PhaseProbed:
@@ -70,6 +73,26 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 	case runlogs.PhaseReady:
 		p.ready(event.Outcome)
 	}
+}
+
+type jobLineParams struct {
+	Format string
+	Event  runlogs.Event
+}
+
+func (p *RunPrinter) jobLine(params jobLineParams) string {
+	line := rules.LabelWithPorts(rules.LabelWithPortsParams{
+		Label: fmt.Sprintf(params.Format, params.Event.Job),
+		Ports: params.Event.Ports,
+	})
+	if params.Event.URL == "" {
+		return line
+	}
+	return line + domain.RunURLSuffixSep + Hyperlink(HyperlinkParams{
+		Text:    params.Event.URL,
+		URL:     params.Event.URL,
+		Enabled: p.hyperlinks,
+	})
 }
 
 // probed reports only what the check could not confirm: a port that answered

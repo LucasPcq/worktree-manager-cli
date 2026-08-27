@@ -50,6 +50,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.scroll(-domain.RunViewScrollLines), nil
 	case keyLive:
 		return m.scrollToLive(), nil
+	case keyOpenURL:
+		return m, m.openSelectedURL()
 	}
 	return m, nil
 }
@@ -91,6 +93,20 @@ func (m Model) focus() (tea.Model, tea.Cmd) {
 	}
 	m.focused, m.notice, m.lastExitKey = true, "", time.Time{}
 	return m.scrollToLive(), nil
+}
+
+// openSelectedURL does nothing for a job that publishes none: a key pressed on
+// a job with nothing to open is not a mistake to report.
+func (m Model) openSelectedURL() tea.Cmd {
+	url := m.sequence.urls[m.selected]
+	if url == "" || m.open == nil {
+		return nil
+	}
+	open := m.open
+	return func() tea.Msg {
+		_ = open(url)
+		return nil
+	}
 }
 
 func strokeOf(msg tea.KeyMsg) domain.KeyStroke {

@@ -156,7 +156,7 @@ func (r *runner) run() Outcome {
 		if job.Kind == domain.JobKindTask {
 			r.completed = append(r.completed, job.Name)
 			r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionDone})
-			r.emit(Event{Phase: PhaseDone, Job: job.Name, Step: i + 1, Ports: result.Ports})
+			r.emit(Event{Phase: PhaseDone, Job: job.Name, Step: i + 1, Ports: result.Ports, URL: rules.JobURL(rules.JobURLParams{Job: job, Ports: result.Ports})})
 			continue
 		}
 
@@ -165,7 +165,7 @@ func (r *runner) run() Outcome {
 		if rules.ShouldProbeJob(job.Kind, result.Ports) {
 			r.probeTargets = append(r.probeTargets, probeTarget{job: job.Name, resolved: result.Ports})
 		}
-		r.emit(Event{Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning, Ports: result.Ports})
+		r.emit(Event{Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning, Ports: result.Ports, URL: rules.JobURL(rules.JobURLParams{Job: job, Ports: result.Ports})})
 	}
 
 	probes := r.probe()

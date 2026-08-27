@@ -43,6 +43,7 @@ func WorktreeJobEnv(params WorktreeJobEnvParams) map[string]string {
 		domain.EnvOrdinal:            strconv.Itoa(params.Ordinal),
 		domain.EnvPortOffset:         strconv.Itoa(params.Ordinal * block),
 		domain.EnvComposeProjectName: composeProject,
+		domain.EnvProject:            HostLabel(params.Project),
 	}
 }
 

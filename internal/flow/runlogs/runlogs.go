@@ -161,6 +161,9 @@ type Event struct {
 	// Ports are what a PhaseStarted or PhaseDone job bound, for a surface that
 	// tells the user where to reach it.
 	Ports map[string]int
+	// URL is where a PhaseStarted or PhaseDone job is reachable, empty for one
+	// that publishes no name.
+	URL string
 	// Probes is what PhaseProbed observed on one job's declared ports.
 	Probes []domain.PortProbe
 }

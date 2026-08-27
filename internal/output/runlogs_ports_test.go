@@ -35,3 +35,16 @@ func TestRunPrinterLeavesAPortlessJobAlone(t *testing.T) {
 		t.Errorf("nothing to say should say nothing, got %q", out.String())
 	}
 }
+
+func TestRunPrinterShowsURL(t *testing.T) {
+	var out, errOut bytes.Buffer
+	p := NewRunPrinter(RunPrinterParams{Out: &out, Err: &errOut})
+	p.Emit(runlogs.Event{Phase: runlogs.PhaseStarted, Job: "web", Ports: map[string]int{"PORT": 3010}, URL: "http://localhost:3010"})
+
+	if !strings.Contains(out.String(), "http://localhost:3010") {
+		t.Errorf("started line must carry the URL, got %q", out.String())
+	}
+	if strings.Contains(out.String(), "\x1b]8;;") {
+		t.Errorf("hyperlinks are off by default, got %q", out.String())
+	}
+}

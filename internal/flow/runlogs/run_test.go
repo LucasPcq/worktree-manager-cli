@@ -396,3 +396,30 @@ func TestRunWithoutASinkStillRuns(t *testing.T) {
 		t.Fatalf("started %v, want api", outcome.Started)
 	}
 }
+
+func TestRunEmitsJobURL(t *testing.T) {
+	job := domain.JobConfig{
+		Name:  "web",
+		Kind:  domain.JobKindService,
+		Cmd:   "pnpm dev",
+		Ports: map[string]int{"PORT": 3000},
+		URL:   &domain.JobURLConfig{Port: "PORT"},
+	}
+	service := &runlogstest.Service{Ports: map[string]map[string]int{"web": {"PORT": 3010}}}
+	sink := &runlogstest.Sink{}
+
+	if _, err := runlogs.Run(context.Background(), runlogs.RunParams{
+		Service: service,
+		Sink:    sink,
+		Jobs:    []domain.JobConfig{job},
+		WorkDir: "/w",
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, e := range sink.Events {
+		if e.Phase == runlogs.PhaseStarted && e.URL != "http://localhost:3010" {
+			t.Errorf("started URL = %q, want http://localhost:3010", e.URL)
+		}
+	}
+}

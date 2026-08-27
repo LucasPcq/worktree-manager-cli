@@ -223,6 +223,9 @@ func (m Model) renderPaneTitle(params paneTitleParams) string {
 		Label: string(params.View.Status),
 		Ports: m.sequence.ports[params.View.Name],
 	})
+	if url := m.sequence.urls[params.View.Name]; url != "" {
+		status += domain.RunViewSeparator + url
+	}
 	left := styles.Bold.Render(params.View.Name) + styles.Muted.Render(domain.RunViewSeparator+status)
 	return spread(spreadParams{Left: left, Right: styles.Muted.Render(m.paneOrigin(params.View)), Width: params.Width})
 }

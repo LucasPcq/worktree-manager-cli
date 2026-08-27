@@ -133,6 +133,9 @@ const (
 	EnvOrdinal            = "WTM_ORDINAL"
 	EnvPortOffset         = "WTM_PORT_OFFSET"
 	EnvComposeProjectName = "COMPOSE_PROJECT_NAME"
+	// EnvProject is the repository's slug, as the hostname and the compose
+	// project name both derive from it.
+	EnvProject = "WTM_PROJECT"
 
 	// MainWorktreeOrdinal is never persisted: the main worktree has no meta.json,
 	// so 0 in a linked worktree's metadata means "not allocated yet".
@@ -159,6 +162,20 @@ const (
 	HostLabelMaxLen = 63
 	// HostLabelFallback names a segment whose source slugified to nothing.
 	HostLabelFallback = "wtm"
+
+	// DirectURLFmt is a job's URL without the proxy: its own port on the loopback.
+	DirectURLFmt = "http://localhost:%d"
+
+	// GOOS* name the platforms whose URL opener differs; everything else uses
+	// the freedesktop one.
+	GOOSDarwin  = "darwin"
+	GOOSWindows = "windows"
+
+	// Opener* are the commands that hand a URL to the desktop.
+	OpenerDarwin     = "open"
+	OpenerWindows    = "rundll32"
+	OpenerWindowsArg = "url.dll,FileProtocolHandler"
+	OpenerUnix       = "xdg-open"
 
 	// ComposePortVarSuffix ends every variable name wtm introduces in a compose
 	// file, and ComposeTemplatedPortFmt is the host side it writes: the default
@@ -1180,7 +1197,7 @@ const (
 
 	// RunViewHelpBrowse and RunViewHelpFilter are the footer's key reminders,
 	// one per mode the keyboard can be in.
-	RunViewHelpBrowse = "↑↓ job · / filter · pgup/pgdn scroll · enter focus · r refresh · q detach"
+	RunViewHelpBrowse = "↑↓ job · / filter · pgup/pgdn scroll · enter focus · o open · r refresh · q detach"
 	RunViewHelpFilter = "type to filter · enter apply · esc clear"
 
 	// RunViewFocusKey passes every keystroke to the job. Taking them back needs
@@ -1244,8 +1261,11 @@ const (
 	// RunPortsSuffixFmt qualifies a name with the ports behind it — the line
 	// announcing a started job, and the recap of what a job gained.
 	// RunPortEntryFmt is one of those ports.
-	RunPortsSuffixFmt   = "%s · %s"
-	RunPortEntryFmt     = "%s=%d"
+	RunPortsSuffixFmt = "%s · %s"
+	RunPortEntryFmt   = "%s=%d"
+	// RunURLSuffixSep sets a job's URL apart from the line announcing it, far
+	// enough that a terminal-detected link does not swallow the ports before it.
+	RunURLSuffixSep     = "   "
 	RunStreamAlreadyFmt = "%s already running"
 	RunStreamDoneFmt    = "%s done"
 	RunStreamNextHint   = "wtm run logs to attach · wtm run down to stop"
@@ -2001,6 +2021,9 @@ const (
 	// detail panel's PR line is also clickable; the key is what makes the action
 	// reachable without a mouse and over a plain ssh terminal.
 	KeyOpenPR = "p"
+
+	// KeyOpenURL opens the selected job's URL in a browser.
+	KeyOpenURL = "o"
 
 	KeyHelp = "?"
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so

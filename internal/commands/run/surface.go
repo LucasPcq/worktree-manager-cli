@@ -11,6 +11,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/service/integration"
 	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/tui/runview"
 )
@@ -105,6 +106,7 @@ func openRunView(params viewParams) error {
 		Job:     params.Job,
 		Profile: params.Profile,
 		Start:   params.Start,
+		Open:    integration.OpenURL,
 	})
 	if err != nil {
 		return err
@@ -124,6 +126,8 @@ type streamParams struct {
 	Cmd     *cobra.Command
 	Profile string
 	Start   runview.StartFunc
+	// Hyperlinks says whether a job's URL may be wrapped in an OSC-8 sequence.
+	Hyperlinks bool
 }
 
 // runOnStream reports a start sequence as lines on the terminal it was launched
@@ -134,9 +138,10 @@ func runOnStream(params streamParams) error {
 
 	output.FrameStart(out)
 	outcome, err := params.Start(params.Cmd.Context(), output.NewRunPrinter(output.RunPrinterParams{
-		Out:     out,
-		Err:     errOut,
-		Profile: params.Profile,
+		Out:        out,
+		Err:        errOut,
+		Profile:    params.Profile,
+		Hyperlinks: params.Hyperlinks,
 	}))
 	if err != nil {
 		return err

@@ -23,6 +23,9 @@ type sequence struct {
 	// ports is what each job bound as it started, kept for the pane title: the
 	// run is the only moment the daemon reports them.
 	ports map[string]map[string]int
+	// urls is where each job answers, kept for the same reason as ports: the run
+	// is the only moment it is reported.
+	urls map[string]string
 	// reason is what the daemon answered for the job that ended the sequence.
 	reason  string
 	outcome runlogs.Outcome
@@ -72,10 +75,10 @@ func (m Model) applyEvent(msg eventMsg) (Model, tea.Cmd) {
 		m.sequence.states[event.Job] = domain.JobStepStarting
 	case runlogs.PhaseStarted:
 		m.sequence.states[event.Job], m.sequence.job = domain.JobStepStarted, ""
-		m.sequence.rememberPorts(event)
+		m.sequence.remember(event)
 	case runlogs.PhaseDone:
 		m.sequence.states[event.Job], m.sequence.job = domain.JobStepDone, ""
-		m.sequence.rememberPorts(event)
+		m.sequence.remember(event)
 	case runlogs.PhaseFailed:
 		m.sequence.states[event.Job], m.sequence.job = domain.JobStepFailed, ""
 		m.sequence.reason = event.Reason
@@ -165,12 +168,18 @@ func joinJobs(jobs []string) string {
 	return strings.Join(jobs, domain.RunViewRecapListSep)
 }
 
-func (s *sequence) rememberPorts(event runlogs.Event) {
-	if len(event.Ports) == 0 {
+func (s *sequence) remember(event runlogs.Event) {
+	if len(event.Ports) > 0 {
+		if s.ports == nil {
+			s.ports = map[string]map[string]int{}
+		}
+		s.ports[event.Job] = event.Ports
+	}
+	if event.URL == "" {
 		return
 	}
-	if s.ports == nil {
-		s.ports = map[string]map[string]int{}
+	if s.urls == nil {
+		s.urls = map[string]string{}
 	}
-	s.ports[event.Job] = event.Ports
+	s.urls[event.Job] = event.URL
 }
