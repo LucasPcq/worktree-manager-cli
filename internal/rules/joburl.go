@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -31,4 +32,40 @@ func JobURL(params JobURLParams) string {
 		return fmt.Sprintf(domain.ProxyURLFmt, params.Host, params.ProxyPort)
 	}
 	return fmt.Sprintf(domain.DirectURLFmt, port)
+}
+
+// ParseJobURL reads the `url` a wizard step or a flag pair expresses as one
+// line: the port name to publish, optionally followed by the host to publish it
+// under. Blank means the job publishes nothing.
+func ParseJobURL(s string) (*domain.JobURLConfig, error) {
+	fields := strings.Fields(s)
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	if len(fields) > 2 {
+		return nil, fmt.Errorf("url takes a port name and an optional host, got %d values", len(fields))
+	}
+	if !IsEnvVarName(fields[0]) {
+		return nil, fmt.Errorf("url port %q is not a valid environment variable name", fields[0])
+	}
+	cfg := &domain.JobURLConfig{Port: fields[0]}
+	if len(fields) == 2 {
+		if !IsHostLabels(fields[1]) {
+			return nil, fmt.Errorf("url host %q is not a valid hostname — lowercase letters, digits and dashes, dot-separated", fields[1])
+		}
+		cfg.Host = fields[1]
+	}
+	return cfg, nil
+}
+
+// FormatJobURL is ParseJobURL's inverse, for a wizard step pre-filled with what
+// the job already declares.
+func FormatJobURL(cfg *domain.JobURLConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	if cfg.Host == "" {
+		return cfg.Port
+	}
+	return cfg.Port + " " + cfg.Host
 }

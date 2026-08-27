@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -20,7 +21,7 @@ func newAddCmd() *cobra.Command {
 		Use:   domain.CmdAdd + " [name]",
 		Short: "Add a job to run.toml",
 		Long: "Append a job to <git-common-dir>/wtm/run.toml.\n\n" +
-			"Pass --cmd (and optionally --kind, --stop, --cwd, --port) for non-interactive use.\n" +
+			"Pass --cmd (and optionally --kind, --stop, --cwd, --port, --url-port) for non-interactive use.\n" +
 			"Without --cmd, prompts interactively for each field.\n\n" +
 			"--cmd and --stop are /bin/sh lines: quotes, && and ${VAR} behave as in a terminal,\n" +
 			"so a declared port can be passed as a flag — --cmd 'pnpm dev --port ${PORT}'.",
@@ -32,8 +33,21 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().String(domain.FlagStop, "", "Stop command, as a /bin/sh line (services only)")
 	cmd.Flags().String(domain.FlagCwd, "", "Working directory (relative to project root)")
 	cmd.Flags().StringArray(domain.FlagPort, nil, "Base port as NAME=PORT, repeatable (e.g. --port PORT=3000)")
+	cmd.Flags().String(domain.FlagURLPort, "", "Publish this declared port under a name (e.g. --url-port PORT)")
+	cmd.Flags().String(domain.FlagURLHost, "", "Host segment to publish under, defaulting to the job's name")
 	shared.AddOutputFlag(cmd)
 	return cmd
+}
+
+// urlFromFlags reads the --url-* pair as the one line rules.ParseJobURL takes,
+// so a flag and a wizard answer are validated by the same rule.
+func urlFromFlags(cmd *cobra.Command) (*domain.JobURLConfig, error) {
+	port, _ := cmd.Flags().GetString(domain.FlagURLPort)
+	host, _ := cmd.Flags().GetString(domain.FlagURLHost)
+	if port == "" && host != "" {
+		return nil, fmt.Errorf("--%s names the host but nothing is published — add --%s", domain.FlagURLHost, domain.FlagURLPort)
+	}
+	return rules.ParseJobURL(strings.TrimSpace(port + " " + host))
 }
 
 func runAdd(cmd *cobra.Command, args []string) error {
@@ -62,12 +76,17 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	jobURL, err := urlFromFlags(cmd)
+	if err != nil {
+		return err
+	}
+
 	var newJob domain.JobConfig
 
 	if name == "" || cmdFlag == "" {
 		result, wizErr := runwizard.RunJobWizard(runwizard.JobWizardParams{
 			Existing: cfg,
-			Initial:  domain.JobConfig{Name: name, Ports: ports},
+			Initial:  domain.JobConfig{Name: name, Ports: ports, URL: jobURL},
 		})
 		if errors.Is(wizErr, domain.ErrUserAborted) {
 			return nil
@@ -87,6 +106,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 			Stop:  stop,
 			Cwd:   cwd,
 			Ports: ports,
+			URL:   jobURL,
 		}
 	}
 

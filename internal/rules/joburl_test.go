@@ -47,3 +47,47 @@ func TestJobURL(t *testing.T) {
 		})
 	}
 }
+
+func TestParseJobURLRoundTrip(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      string
+		want    *domain.JobURLConfig
+		wantErr bool
+	}{
+		{name: "vide ne publie rien", in: "  "},
+		{name: "port seul", in: "PORT", want: &domain.JobURLConfig{Port: "PORT"}},
+		{name: "port et hôte", in: "PORT api.app-1", want: &domain.JobURLConfig{Port: "PORT", Host: "api.app-1"}},
+		{name: "port invalide", in: "not-a-var", wantErr: true},
+		{name: "hôte invalide", in: "PORT Web_1", wantErr: true},
+		{name: "trop de valeurs", in: "PORT a b", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseJobURL(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ParseJobURL(%q) = %+v, want an error", tt.in, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseJobURL(%q): %v", tt.in, err)
+			}
+			if (got == nil) != (tt.want == nil) {
+				t.Fatalf("got %+v, want %+v", got, tt.want)
+			}
+			if got == nil {
+				return
+			}
+			if *got != *tt.want {
+				t.Fatalf("got %+v, want %+v", *got, *tt.want)
+			}
+			// A wizard pre-fills from what the job already declares, so the line
+			// it shows has to parse back to the same thing.
+			if again, _ := ParseJobURL(FormatJobURL(got)); *again != *got {
+				t.Errorf("round trip gave %+v, want %+v", *again, *got)
+			}
+		})
+	}
+}
