@@ -128,6 +128,8 @@ type JobActionResult struct {
 	// this document never saw the live stream, and "started" alone does not say
 	// whether anything is listening.
 	Ports []PortProbe `json:"ports,omitempty"`
+	// URL is where the job is reachable, absent for one that publishes no name.
+	URL string `json:"url,omitempty"`
 }
 
 // LogRecord is one sanitized line of a job's output, as persisted in that job's

@@ -42,6 +42,11 @@ type Service struct {
 	// resolved for the worktree.
 	Ports map[string]map[string]int
 
+	// ProxyPort is what this daemon answers its proxy is serving on. Zero — the
+	// default — stands for a proxy that is off or could not bind, which is what
+	// makes a named URL degrade to a port.
+	ProxyPort int
+
 	// Starting runs before the daemon answers a job's start and Answered once it
 	// has, for a test that has to act mid-sequence: cancelling from the first is
 	// a detach the client gives up on mid-stream, from the second one that lands
@@ -81,7 +86,7 @@ func (s *Service) Start(ctx context.Context, req runlogs.StartRequest) (runlogs.
 		}
 		return result, nil
 	}
-	return runlogs.StartResult{Ports: s.Ports[req.Job.Name]}, nil
+	return runlogs.StartResult{Ports: s.Ports[req.Job.Name], ProxyPort: s.ProxyPort}, nil
 }
 
 func (s *Service) List(string) ([]domain.JobInfo, error) {

@@ -432,7 +432,7 @@ func TestRunEmitsTheNamedURLWhenTheProxyServes(t *testing.T) {
 		Ports: map[string]int{"PORT": 3000},
 		URL:   &domain.JobURLConfig{Port: "PORT"},
 	}
-	service := &runlogstest.Service{Ports: map[string]map[string]int{"web": {"PORT": 3010}}}
+	service := &runlogstest.Service{Ports: map[string]map[string]int{"web": {"PORT": 3010}}, ProxyPort: 4000}
 	sink := &runlogstest.Sink{}
 
 	if _, err := runlogs.Run(context.Background(), runlogs.RunParams{

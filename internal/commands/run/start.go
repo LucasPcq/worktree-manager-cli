@@ -127,19 +127,37 @@ type startJobParams struct {
 	ProxyPort int
 }
 
+type startedLineParams struct {
+	Label string
+	Ports map[string]int
+	// ServedPort is what the daemon answered its proxy is really on, not what
+	// this command asked for: a name nothing serves is worse than a port.
+	ServedPort int
+}
+
 // startedLine is what a human surface prints once the daemon has answered: the
 // same composition `run up` uses, so one job reads the same either way.
-func (p startJobParams) startedLine(label string, ports map[string]int) string {
+func (p startJobParams) startedLine(params startedLineParams) string {
 	return output.JobLine(output.JobLineParams{
-		Label: label,
-		Ports: ports,
+		Label: params.Label,
+		Ports: params.Ports,
 		URL: rules.JobURL(rules.JobURLParams{
 			Job:       p.Job,
-			Ports:     ports,
+			Ports:     params.Ports,
 			Host:      p.RouteHost,
-			ProxyPort: p.ProxyPort,
+			ProxyPort: params.ServedPort,
 		}),
 		Hyperlinks: rules.IsHumanFormat(p.Format) && isTTY(),
+	})
+}
+
+// proxyNotice is the refusal a forked daemon could not tell anyone about.
+func (p startJobParams) proxyNotice(servedPort int) {
+	if p.ProxyPort == 0 || servedPort != 0 || p.RouteHost == "" {
+		return
+	}
+	output.Callout(p.Cmd.ErrOrStderr(), domain.ProxyUnavailableTitle, []string{
+		fmt.Sprintf(domain.ProxyUnavailableFmt, p.ProxyPort),
 	})
 }
 
@@ -178,7 +196,11 @@ func startTaskInline(params startJobParams) error {
 			Status: domain.JobActionDone,
 		})
 	}
-	output.Success(params.Cmd.OutOrStdout(), params.startedLine(fmt.Sprintf(domain.RunStreamDoneFmt, params.Job.Name), resp.Ports))
+	output.Success(params.Cmd.OutOrStdout(), params.startedLine(startedLineParams{
+		Label:      fmt.Sprintf(domain.RunStreamDoneFmt, params.Job.Name),
+		Ports:      resp.Ports,
+		ServedPort: resp.ProxyPort,
+	}))
 	output.FrameEnd(params.Cmd.OutOrStdout())
 	return nil
 }
@@ -216,7 +238,12 @@ func startServiceDetached(params startJobParams) error {
 
 	out := params.Cmd.OutOrStdout()
 	output.Frame(out, func() {
-		output.Success(out, params.startedLine(fmt.Sprintf(domain.RunStreamStartedFmt, params.Job.Name), resp.Ports))
+		output.Success(out, params.startedLine(startedLineParams{
+			Label:      fmt.Sprintf(domain.RunStreamStartedFmt, params.Job.Name),
+			Ports:      resp.Ports,
+			ServedPort: resp.ProxyPort,
+		}))
 	})
+	params.proxyNotice(resp.ProxyPort)
 	return nil
 }

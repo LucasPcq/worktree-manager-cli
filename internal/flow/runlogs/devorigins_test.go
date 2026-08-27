@@ -14,7 +14,7 @@ func runNext(t *testing.T, params runlogs.RunParams) *runlogstest.Sink {
 	t.Helper()
 	sink := &runlogstest.Sink{}
 	params.Sink = sink
-	params.Service = &runlogstest.Service{Ports: map[string]map[string]int{"web": {"PORT": 3010}}}
+	params.Service = &runlogstest.Service{Ports: map[string]map[string]int{"web": {"PORT": 3010}}, ProxyPort: params.ProxyPort}
 	params.Jobs = []domain.JobConfig{{
 		Name:  "web",
 		Kind:  domain.JobKindService,
@@ -82,5 +82,44 @@ func TestRunSaysNothingWhenAllowedDevOriginsIsAlreadyThere(t *testing.T) {
 
 	if fixes := fixesFor(sink); len(fixes) != 0 {
 		t.Errorf("fixes = %v, want none", fixes)
+	}
+}
+
+// The daemon is the authority on whether the proxy is up. A run that asked for
+// one and did not get it must not announce a name nothing serves — and must say
+// why, once, because a forked daemon's stderr goes nowhere.
+func TestRunFallsBackAndExplainsWhenTheProxyCouldNotBind(t *testing.T) {
+	sink := &runlogstest.Sink{}
+	service := &runlogstest.Service{Ports: map[string]map[string]int{"web": {"PORT": 3010}}}
+
+	if _, err := runlogs.Run(context.Background(), runlogs.RunParams{
+		Service: service,
+		Sink:    sink,
+		Jobs: []domain.JobConfig{
+			{Name: "web", Kind: domain.JobKindService, Cmd: "pnpm dev", Ports: map[string]int{"PORT": 3000}, URL: &domain.JobURLConfig{Port: "PORT"}},
+			{Name: "api", Kind: domain.JobKindService, Cmd: "pnpm dev", Ports: map[string]int{"PORT": 4000}, URL: &domain.JobURLConfig{Port: "PORT"}},
+		},
+		Env:       map[string]string{domain.EnvWorktree: "feat"},
+		Project:   "myapp",
+		ProxyPort: 4000,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var notices int
+	for _, e := range sink.Events {
+		if e.Phase == runlogs.PhaseNotice {
+			notices++
+			if !strings.Contains(e.Notice, "4000") {
+				t.Errorf("notice = %q, want the port it could not take named", e.Notice)
+			}
+		}
+		if e.Phase == runlogs.PhaseStarted && strings.Contains(e.URL, ".localhost:") {
+			t.Errorf("URL = %q, want the direct form when nothing serves the name", e.URL)
+		}
+	}
+	// Two jobs would repeat one fact about the run.
+	if notices != 1 {
+		t.Errorf("notices = %d, want exactly one for the whole run", notices)
 	}
 }

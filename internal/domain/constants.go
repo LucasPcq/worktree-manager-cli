@@ -188,9 +188,14 @@ const (
 	// import lipgloss, and a browser landing here needs the fact, not a style.
 	ProxyUnknownHostFmt  = "wtm: no job is published under %s\n\n"
 	ProxyKnownRoutesHead = "Routes wtm is currently serving:\n"
-	ProxyRouteLineFmt    = "  %s  ->  %s (job %s, worktree %s)\n"
+	ProxyRouteLineFmt    = "  %s  ->  %s (job %s, worktree %s of %s)\n"
 	ProxyNoRoutesLine    = "  (none — start a job that declares a url)\n"
 	ProxySilentTargetFmt = "wtm: job %s is published under %s but nothing answers on %s\n"
+	// ProxyBindFailedFmt is what the daemon records when the port is taken, and
+	// ProxyUnavailableFmt what a client says instead of a name nothing serves.
+	ProxyBindFailedFmt    = "run proxy: port %d is taken (%v) — jobs keep their own ports"
+	ProxyUnavailableFmt   = "Port %d is taken, so jobs answer on their own ports — free it, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyUnavailableTitle = "Named URLs are off"
 
 	// DevOriginsKey is the Next option that lets a subdomain of .localhost reach
 	// the dev server's assets, and DevOriginsConfigNames the files it lives in.
@@ -517,6 +522,9 @@ const (
 	FlagOnConflict = "on-conflict"
 	// FlagProxyPort tells the forked daemon where to serve the named URLs.
 	FlagProxyPort = "proxy-port"
+	// FlagURLPort and FlagURLHost declare a job's [[job]].url without a wizard.
+	FlagURLPort = "url-port"
+	FlagURLHost = "url-host"
 	// FlagRaw asks for a job's own port rather than the name the proxy serves it
 	// under: an address every OS resolves and no proxy has to be up for.
 	FlagRaw = "raw"
@@ -1306,6 +1314,17 @@ const (
 	// RunPortEntryFmt is one of those ports.
 	RunPortsSuffixFmt = "%s · %s"
 	RunPortEntryFmt   = "%s=%d"
+	// HyperlinkFmt wraps text in an OSC-8 sequence, the escape a terminal turns
+	// into a clickable link: URL first, then the text it stands behind.
+	HyperlinkFmt = "\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\"
+
+	// RunViewOpenFailedFmt reports a browser that never opened, so `o` does not
+	// read as a key that does nothing.
+	RunViewOpenFailedFmt = "could not open the browser: %v"
+
+	// RunURLListSep joins the published jobs an error names.
+	RunURLListSep = ", "
+
 	// RunURLPickerTitle heads the picker `run open` offers when several jobs
 	// publish and the run is interactive enough to ask.
 	RunURLPickerTitle = "Which job to open"

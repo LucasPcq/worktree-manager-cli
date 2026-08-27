@@ -63,4 +63,8 @@ type Response struct {
 	// worktree's offset. Reported rather than recomputed by the caller, so the
 	// line it prints says what happened instead of what should have.
 	Ports map[string]int `json:"ports,omitempty"`
+	// ProxyPort is the port the run proxy is really serving on, zero when it is
+	// off or could not bind. The daemon is the only side that knows: a client
+	// only knows what it asked for, and a URL built on that would be a lie.
+	ProxyPort int `json:"proxy_port,omitempty"`
 }

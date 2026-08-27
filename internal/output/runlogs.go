@@ -67,6 +67,9 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 		Success(p.out, p.jobLine(jobLineParams{Format: domain.RunStreamDoneFmt, Event: event}))
 	case runlogs.PhaseFailed:
 		Error(p.err, event.Reason)
+	case runlogs.PhaseNotice:
+		Blank(p.err)
+		Callout(p.err, domain.ProxyUnavailableTitle, []string{event.Notice})
 	case runlogs.PhaseProbed:
 		p.probed(event.Probes)
 	case runlogs.PhaseAborted:

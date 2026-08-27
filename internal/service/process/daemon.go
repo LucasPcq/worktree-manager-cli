@@ -32,8 +32,12 @@ type daemonServer struct {
 	manager    *Manager
 	listener   net.Listener
 	socketPath string
-	clients    sync.WaitGroup
-	shutdown   chan struct{}
+	// proxyPort is what the proxy actually bound, zero when it is off or the
+	// port was taken. Every answer carries it so no client ever announces a
+	// name nothing serves.
+	proxyPort int
+	clients   sync.WaitGroup
+	shutdown  chan struct{}
 }
 
 // RunDaemon starts the daemon, listens on the Unix socket, and blocks until shutdown.
@@ -61,9 +65,12 @@ func RunDaemon(params DaemonParams) error {
 	if params.ProxyPort > 0 {
 		server := proxy.NewServer(proxy.ServerParams{Port: params.ProxyPort, Registry: registry})
 		if startErr := server.Start(); startErr != nil {
-			// A busy port costs the names, never the jobs.
-			log.Printf("run proxy: %v — jobs keep their own ports", startErr)
+			// A busy port costs the names, never the jobs. Nobody reads a
+			// forked daemon's stderr, so the refusal travels in every answer
+			// instead: d.proxyPort stays zero and the clients say why.
+			log.Printf(domain.ProxyBindFailedFmt, params.ProxyPort, startErr)
 		} else {
+			d.proxyPort = params.ProxyPort
 			defer server.Close()
 		}
 	}
@@ -180,7 +187,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 			return
 		}
 		zero := 0
-		encoder.Encode(Response{Status: StatusDone, Message: fmt.Sprintf("task %s done", req.Job.Name), ExitCode: &zero, Ports: ports})
+		encoder.Encode(Response{Status: StatusDone, Message: fmt.Sprintf("task %s done", req.Job.Name), ExitCode: &zero, Ports: ports, ProxyPort: d.proxyPort})
 		return
 	}
 
@@ -200,7 +207,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 			encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 			return
 		}
-		encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name), Ports: ports})
+		encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name), Ports: ports, ProxyPort: d.proxyPort})
 		return
 	}
 
@@ -209,7 +216,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		return
 	}
 
-	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name), Ports: ports})
+	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name), Ports: ports, ProxyPort: d.proxyPort})
 }
 
 func (d *daemonServer) handleStop(encoder *json.Encoder, req Request) {
@@ -232,7 +239,7 @@ func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
 		if req.WorkDir != "" && job.WorkDir != req.WorkDir {
 			continue
 		}
-		stopped = append(stopped, jobInfoOf(job))
+		stopped = append(stopped, d.jobInfoOf(job))
 	}
 
 	var err error
@@ -253,13 +260,13 @@ func (d *daemonServer) handleList(encoder *json.Encoder, req Request) {
 	jobs := d.manager.List()
 	infos := make([]domain.JobInfo, 0, len(jobs))
 	for _, job := range jobs {
-		infos = append(infos, jobInfoOf(job))
+		infos = append(infos, d.jobInfoOf(job))
 	}
 
-	encoder.Encode(Response{Status: StatusOK, Jobs: infos})
+	encoder.Encode(Response{Status: StatusOK, Jobs: infos, ProxyPort: d.proxyPort})
 }
 
-func jobInfoOf(job ManagedJob) domain.JobInfo {
+func (d *daemonServer) jobInfoOf(job ManagedJob) domain.JobInfo {
 	return domain.JobInfo{
 		Name:      job.Name,
 		Kind:      job.Config.Kind,
@@ -268,7 +275,12 @@ func jobInfoOf(job ManagedJob) domain.JobInfo {
 		PID:       job.PID,
 		StartedAt: job.StartedAt,
 		ExitCode:  job.ExitCode,
-		URL:       rules.JobURL(rules.JobURLParams{Job: job.Config, Ports: jobPorts(job.Config, job.Env)}),
+		URL: rules.JobURL(rules.JobURLParams{
+			Job:       job.Config,
+			Ports:     jobPorts(job.Config, job.Env),
+			Host:      job.RouteHost,
+			ProxyPort: d.proxyPort,
+		}),
 	}
 }
 

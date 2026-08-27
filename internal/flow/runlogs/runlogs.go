@@ -89,6 +89,9 @@ type StartResult struct {
 	// Ports are the ports the job bound, base plus this worktree's offset. Empty
 	// for a job that declares none.
 	Ports map[string]int
+	// ProxyPort is what the daemon's proxy is really serving on, zero when it is
+	// off or could not bind.
+	ProxyPort int
 }
 
 type AttachRequest struct {
@@ -126,6 +129,7 @@ const (
 	PhaseFailed
 	PhaseAborted
 	PhaseProbed
+	PhaseNotice
 	PhaseReady
 )
 
@@ -172,10 +176,14 @@ type Event struct {
 	// DevOrigins are the config lines a PhaseStarted job needs before it will
 	// answer under the name the proxy serves it under.
 	DevOrigins []domain.DevOriginFix
+	// Notice is what PhaseNotice has to say: a fact about the run that belongs
+	// to no single job. Empty on every other phase.
+	Notice string
 }
 
-// NextConfigLookup reads a job's next.config.*, for a flow that may not touch
-// the disk itself. Nil skips the check entirely.
+// NextConfigLookup reads a job's next.config.*. It is a seam only so a test can
+// answer without a disk; a nil one is filled in by the flow itself, because
+// which file to read is the flow's decision and not a surface's.
 type NextConfigLookup func(job domain.JobConfig) (path, source string)
 
 // Sink is emitted to on the goroutine that called Run.

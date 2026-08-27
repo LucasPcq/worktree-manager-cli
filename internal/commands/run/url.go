@@ -14,6 +14,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
 func newURLCmd() *cobra.Command {
@@ -73,7 +74,7 @@ func publishedJobs(cmd *cobra.Command) ([]domain.JobURLEntry, error) {
 	offset, _ := strconv.Atoi(env[domain.EnvPortOffset])
 
 	raw, _ := cmd.Flags().GetBool(domain.FlagRaw)
-	proxyPort := rules.ProxyPort(result.Config.Global)
+	proxyPort := servedProxyPort(rules.ProxyPort(result.Config.Global))
 	if raw {
 		proxyPort = 0
 	}
@@ -94,6 +95,21 @@ func publishedJobs(cmd *cobra.Command) ([]domain.JobURLEntry, error) {
 		entries = append(entries, domain.JobURLEntry{Job: job.Name, URL: url})
 	}
 	return entries, nil
+}
+
+// servedProxyPort prefers what a running daemon says it is really serving over
+// what the config asked for, and never starts one to find out: this command
+// answers with nothing running, which is most of its value.
+func servedProxyPort(configured int) int {
+	socketPath := process.SocketPath()
+	if configured == 0 || !process.IsDaemonRunning(socketPath) {
+		return configured
+	}
+	resp, err := process.NewClient(socketPath).Send(process.Request{Action: process.ActionList})
+	if err != nil || resp.Status == process.StatusError {
+		return configured
+	}
+	return resp.ProxyPort
 }
 
 // pickPublished resolves which job the caller meant without ever offering a
@@ -126,5 +142,5 @@ func publishedNames(entries []domain.JobURLEntry) string {
 	for _, entry := range entries {
 		names = append(names, entry.Job)
 	}
-	return strings.Join(names, domain.RunViewRecapListSep)
+	return strings.Join(names, domain.RunURLListSep)
 }
