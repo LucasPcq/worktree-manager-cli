@@ -3,6 +3,7 @@ package worktree
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -44,22 +45,36 @@ func BranchEnv(params WorktreeRef) (map[string]string, error) {
 		return nil, err
 	}
 
-	return rules.WorktreeJobEnv(rules.WorktreeJobEnvParams{
+	cfg := runConfig(params.StateDir)
+	env := rules.WorktreeJobEnv(rules.WorktreeJobEnvParams{
 		Branch:          params.Branch,
 		Project:         filepath.Base(params.ProjectDir),
 		Ordinal:         ordinal,
-		PortOffsetBlock: portOffsetBlock(params.StateDir),
+		PortOffsetBlock: rules.EffectivePortOffsetBlock(cfg),
 		ComposeProject:  os.Getenv(domain.EnvComposeProjectName),
-	}), nil
+	})
+
+	// The offset is read back from the environment just resolved rather than
+	// recomputed, so a hook and a job of the same worktree can never disagree
+	// on it.
+	offset, err := strconv.Atoi(env[domain.EnvPortOffset])
+	if err != nil {
+		offset = 0
+	}
+	return rules.WithPortEnv(env, rules.LifecyclePorts(rules.LifecyclePortsParams{
+		Config:     cfg,
+		PortOffset: offset,
+	})), nil
 }
 
-// portOffsetBlock reads the spacing run.toml asks for. A file that cannot be
-// read or is refused falls back to the default block instead of failing: the
+// runConfig reads what run.toml says about ports — the spacing between two
+// worktrees, and the declarations a hook can be given. A file that cannot be
+// read or is refused degrades to an empty config instead of failing: the
 // command that actually needs that run.toml will report the refusal itself, and
 // a lifecycle hook must not lose its worktree identity over it.
-func portOffsetBlock(stateDir string) int {
+func runConfig(stateDir string) domain.RunConfig {
 	cfg, _ := config.LoadRun(stateDir)
-	return rules.EffectivePortOffsetBlock(cfg)
+	return cfg
 }
 
 // hookEnv resolves the worktree variables a lifecycle hook runs with, degrading

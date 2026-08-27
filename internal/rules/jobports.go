@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"sort"
 	"strconv"
@@ -167,4 +168,51 @@ func ParsePorts(entries []string) (map[string]int, error) {
 		ports[name] = base
 	}
 	return ports, nil
+}
+
+type LifecyclePortsParams struct {
+	Config     domain.RunConfig
+	PortOffset int
+}
+
+// LifecyclePorts resolves the ports a lifecycle hook can be given: those whose
+// variable name a single job declares. A hook is not a job, so it has no
+// declaration of its own; two jobs naming PORT with different bases give the
+// name no answer, and it is left unresolved rather than guessed.
+func LifecyclePorts(params LifecyclePortsParams) map[string]int {
+	decls := PortDeclarations(params.Config)
+
+	jobs := make(map[string]int, len(decls))
+	for _, decl := range decls {
+		jobs[decl.Name]++
+	}
+
+	ports := map[string]int{}
+	for _, decl := range decls {
+		if jobs[decl.Name] > 1 {
+			continue
+		}
+		ports[decl.Name] = decl.Base + params.PortOffset
+	}
+	if len(ports) == 0 {
+		return nil
+	}
+	return ports
+}
+
+// WithPortEnv layers resolved ports onto an environment. A declaration in
+// run.toml is an explicit instruction, so it wins over whatever the caller
+// inherited for that name — without that, the isolation the ports exist for
+// would not happen.
+func WithPortEnv(env map[string]string, ports map[string]int) map[string]string {
+	if len(ports) == 0 {
+		return env
+	}
+
+	merged := make(map[string]string, len(env)+len(ports))
+	maps.Copy(merged, env)
+	for name, port := range ports {
+		merged[name] = strconv.Itoa(port)
+	}
+	return merged
 }

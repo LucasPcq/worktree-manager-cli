@@ -369,6 +369,10 @@ and **experimental**: the global `wtm init` does not configure it.
   --patch-compose` does both steps for you. A declaration
   **overrides** any inherited value for that variable, and the same ports are given to the
   job's `stop` command. `run up` / `run start` print what was bound (`web started · PORT=3010`).
+  The `on_create` / `on_clean` hooks receive them too — so an `on_clean = "docker compose
+  down"` reads the same `${DB_PORT}` the job bound — but only the names a **single** job
+  declares: a variable two jobs declare on different bases has no answer outside a job and
+  stays unset in a hook.
 - **Next projects need one line before their own name reaches them.** When the proxy
   serves a job whose directory holds a `next.config.*` without `allowedDevOrigins`,
   `run up` prints the exact line to add under "Next dev origins". wtm never edits
