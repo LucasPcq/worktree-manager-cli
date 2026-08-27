@@ -2156,9 +2156,8 @@ const (
 
 	// DetailSectionChrome is what one section spends beyond its body lines: a
 	// blank separator row before its title, the title row itself, and a blank
-	// row under it. Verified against the spec §6 mockup
-	// (docs/superpowers/specs/2026-08-19-wtm-ui-identity-design.md, lines
-	// 130-134): REVIEW spans 5 rows for 2 body lines, so chrome is 5-2=3, not 2.
+	// row under it. REVIEW spans 5 rows for 2 body lines, so chrome is 5-2=3,
+	// not 2.
 	// There is no DetailFixedRows: DetailSections reserves exactly what REVIEW
 	// and LINKS actually cost, computed via sectionsHeight, instead of a
 	// constant that had to secretly agree with every section builder.
