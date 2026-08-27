@@ -10,6 +10,10 @@ type JobURLParams struct {
 	Job domain.JobConfig
 	// Ports is what the job actually bound in this worktree, base plus offset.
 	Ports map[string]int
+	// Host is the route the proxy serves this job under. Empty means no proxy —
+	// the direct address is then the honest answer, not a degraded one.
+	Host      string
+	ProxyPort int
 }
 
 // JobURL is where a job is reachable, empty for one that publishes nothing. This
@@ -22,6 +26,9 @@ func JobURL(params JobURLParams) string {
 	port, bound := params.Ports[params.Job.URL.Port]
 	if !bound {
 		return ""
+	}
+	if params.Host != "" && params.ProxyPort > 0 {
+		return fmt.Sprintf(domain.ProxyURLFmt, params.Host, params.ProxyPort)
 	}
 	return fmt.Sprintf(domain.DirectURLFmt, port)
 }

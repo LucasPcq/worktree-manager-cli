@@ -166,6 +166,16 @@ const (
 	// DirectURLFmt is a job's URL without the proxy: its own port on the loopback.
 	DirectURLFmt = "http://localhost:%d"
 
+	// ProxyTLD is the special-use TLD every wtm route lives under (RFC 6761).
+	ProxyTLD = "localhost"
+	// ProxyDefaultPort is what the run proxy listens on when the config says nothing.
+	ProxyDefaultPort = 4000
+	// ProxyURLFmt is a job's named URL.
+	ProxyURLFmt = "http://%s:%d"
+	// ProxyLoopbackFmt is an address on the loopback: what the server binds, and
+	// what a route targets. Never every interface.
+	ProxyLoopbackFmt = "127.0.0.1:%d"
+
 	// GOOS* name the platforms whose URL opener differs; everything else uses
 	// the freedesktop one.
 	GOOSDarwin  = "darwin"
