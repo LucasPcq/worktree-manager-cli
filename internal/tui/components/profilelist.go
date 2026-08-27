@@ -14,6 +14,9 @@ import (
 const (
 	profileNameCharLimit = 40
 	profileNameWidth     = 32
+	// minProfileJobsWidth keeps the wrapped job list readable on a narrow
+	// terminal rather than folding it to one job per line.
+	minProfileJobsWidth = 20
 	// noMark is the cursor position no row is marked at.
 	noMark = -1
 )
@@ -268,15 +271,23 @@ func (m ProfileListModel) saveName() ProfileListModel {
 func (m ProfileListModel) View() string {
 	var b strings.Builder
 	for i, profile := range m.profiles {
-		label := profileLabel(profile)
-		if m.naming && !m.namingNew && i == m.cursor {
+		selected := i == m.cursor
+		label := profileHeadLabel(profile)
+		if m.naming && !m.namingNew && selected {
 			label = m.input.View()
 		}
 		if i == m.mark {
 			label = domain.ProfileListMarkPrefix + label
 		}
-		m.renderRow(&b, label, i == m.cursor)
+		m.renderRow(&b, label, selected)
 		b.WriteString("\n")
+		if !selected {
+			continue
+		}
+		for _, line := range m.jobLines(profile) {
+			b.WriteString(styles.Muted.Render(domain.ProfileListJobsIndent + line))
+			b.WriteString("\n")
+		}
 	}
 	if m.naming && m.namingNew {
 		m.renderRow(&b, m.input.View(), true)
@@ -304,22 +315,71 @@ func (m ProfileListModel) helpHint() string {
 	return domain.ProfileListHelp
 }
 
-func profileLabel(profile domain.ProfileConfig) string {
-	label := fmt.Sprintf(domain.ProfileListEntryFmt, profile.Name, strings.Join(profile.Jobs, domain.ProfileListJobSep))
+// profileHeadLabel is the row itself: the name and what marks it, never the
+// jobs. A profile can hold a dozen of them, and nothing here wrapped or
+// truncated, so the row ran past the terminal and took the highlight with it
+// (LUC-208). The jobs are shown under the cursor instead, by jobLines.
+func profileHeadLabel(profile domain.ProfileConfig) string {
 	if profile.Default {
-		label += domain.ProfileListDefaultSuffix
+		return profile.Name + domain.ProfileListDefaultSuffix
 	}
-	return label
+	return profile.Name
+}
+
+// jobLines wraps a profile's jobs under its row, so the whole list is readable
+// by moving onto it. Only the row under the cursor gets them: every profile
+// unfolded at once is the same wall of text the single line was.
+func (m ProfileListModel) jobLines(profile domain.ProfileConfig) []string {
+	if len(profile.Jobs) == 0 {
+		return nil
+	}
+
+	width := max(m.width-len(domain.ProfileListJobsIndent), minProfileJobsWidth)
+	var lines []string
+	current := ""
+	for _, job := range profile.Jobs {
+		candidate := job
+		if current != "" {
+			candidate = current + domain.ProfileListJobSep + job
+		}
+		if current != "" && len(candidate) > width {
+			lines = append(lines, current+domain.ProfileListJobSep)
+			current = job
+			continue
+		}
+		current = candidate
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
 }
 
 func (m ProfileListModel) renderRow(b *strings.Builder, label string, selected bool) {
 	if selected {
-		line := "▸ " + label
+		line := truncateLabel("▸ "+label, m.width)
 		if pad := m.width - PrintableWidth(line); pad > 0 {
 			line += strings.Repeat(" ", pad)
 		}
 		b.WriteString(styles.ListItemSelected.Render(line))
 		return
 	}
-	b.WriteString(styles.ListItemNormal.Render(styles.Indent + label))
+	b.WriteString(styles.ListItemNormal.Render(truncateLabel(styles.Indent+label, m.width)))
+}
+
+// truncateLabel keeps a row inside the terminal. A label longer than the screen
+// is wrapped by the terminal itself, which breaks the row highlight across two
+// lines and pushes the rest of the list down.
+func truncateLabel(label string, width int) string {
+	if width <= 0 || PrintableWidth(label) <= width {
+		return label
+	}
+	kept := make([]rune, 0, width)
+	for _, r := range label {
+		if len(kept)+len([]rune(domain.ProfileListEllipsis)) >= width {
+			break
+		}
+		kept = append(kept, r)
+	}
+	return string(kept) + domain.ProfileListEllipsis
 }

@@ -80,7 +80,7 @@ func (m Model) renderHeader(layout domain.RunViewLayout) string {
 		return ""
 	}
 
-	left := styles.Bold.Render(domain.RunViewHeaderTitle)
+	left := styles.Bold.Render(m.headerTitle())
 	right := styles.Muted.Render(fmt.Sprintf(domain.RunViewRunningFmt, m.runningCount(), len(m.jobs)))
 	if m.sequence.active {
 		right = styles.Primary.Render(fmt.Sprintf(domain.RunViewStepFmt,
@@ -93,6 +93,13 @@ func (m Model) renderHeader(layout domain.RunViewLayout) string {
 		right = styles.DangerText.Render(truncate(m.err.Error(), layout.Header.Width))
 	}
 	return spread(spreadParams{Left: left, Right: right, Width: layout.Header.Width})
+}
+
+func (m Model) headerTitle() string {
+	if m.profile == "" {
+		return domain.RunViewHeaderTitle
+	}
+	return fmt.Sprintf(domain.RunViewHeaderProfileFmt, m.profile)
 }
 
 func (m Model) runningCount() int {

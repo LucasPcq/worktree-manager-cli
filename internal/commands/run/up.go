@@ -73,7 +73,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid run config")
 	}
 
-	jobs, err := resolveProfileJobs(args, runCfg)
+	profile, err := resolveProfile(args, runCfg)
 	if err != nil {
 		return err
 	}
@@ -99,44 +99,58 @@ func runUp(cmd *cobra.Command, args []string) error {
 		ProjectDir: result.ProjectDir,
 		StateDir:   result.StateDir,
 		Dir:        dir,
-		Jobs:       runCfg.Jobs,
+		Jobs:       profile.Jobs,
 		Prober:     newProber(rules.PortProbeBudget(runCfg), noProbe),
 	})
-	start := seam.starter(jobs)
+	start := seam.starter(profile)
 
 	switch rules.DecideRunSurface(rules.RunSurfaceParams{Detach: detach, TTY: isTTY(), Format: format}) {
 	case domain.RunSurfaceView:
-		return showRunView(viewParams{Cmd: cmd, Session: seam.session, Start: start})
+		return showRunView(viewParams{Cmd: cmd, Session: seam.session, Profile: profile.Name, Start: start})
 	case domain.RunSurfaceMachine:
 		return runForMachine(streamParams{Cmd: cmd, Start: start})
 	default:
-		return runOnStream(streamParams{Cmd: cmd, Start: start})
+		return runOnStream(streamParams{Cmd: cmd, Profile: profile.Name, Start: start})
 	}
 }
 
-func resolveProfileJobs(args []string, cfg domain.RunConfig) ([]domain.JobConfig, error) {
+// resolveProfile answers both halves of "what is this run": the jobs to start
+// and the name to put on them. Dropping the name left `run up` unable to say
+// which of several profiles it had just brought up (LUC-208).
+func resolveProfile(args []string, cfg domain.RunConfig) (resolvedProfile, error) {
 	if len(args) > 0 {
 		profile, ok := rules.FindProfile(cfg, args[0])
 		if !ok {
-			return nil, fmt.Errorf("profile %q not found in config", args[0])
+			return resolvedProfile{}, fmt.Errorf("profile %q not found in config", args[0])
 		}
-		return rules.ProfileJobs(cfg, profile), nil
+		return profileRun(cfg, profile), nil
 	}
 
 	if len(cfg.Profiles) <= 1 {
 		profile, ok := rules.DefaultProfile(cfg)
 		if !ok {
-			return rules.JobsWithoutProfile(cfg), nil
+			return resolvedProfile{Jobs: rules.JobsWithoutProfile(cfg)}, nil
 		}
-		return rules.ProfileJobs(cfg, profile), nil
+		return profileRun(cfg, profile), nil
 	}
 
 	profile, err := pickProfile(cfg)
 	if err != nil {
-		return nil, err
+		return resolvedProfile{}, err
 	}
 
-	return rules.ProfileJobs(cfg, profile), nil
+	return profileRun(cfg, profile), nil
+}
+
+// resolvedProfile is what `run up` settled on: a name for the run and the jobs
+// it starts. The name is empty for a config declaring no profile at all.
+type resolvedProfile struct {
+	Name string
+	Jobs []domain.JobConfig
+}
+
+func profileRun(cfg domain.RunConfig, profile domain.ProfileConfig) resolvedProfile {
+	return resolvedProfile{Name: profile.Name, Jobs: rules.ProfileJobs(cfg, profile)}
 }
 
 func pickProfile(cfg domain.RunConfig) (domain.ProfileConfig, error) {

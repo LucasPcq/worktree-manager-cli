@@ -238,7 +238,11 @@ and **experimental**: the global `wtm init` does not configure it.
   double-start those packages. **Nothing unchecked becomes a job.** It then asks to review
   the detected ports, and to compose the **profiles** `run up` offers: one per package plus
   one gathering everything, editable (rename / merge / remove / new). Root-cwd jobs join
-  every profile. Non-interactively it takes the same answers without asking. A checked
+  every profile, tasks are ordered ahead of the services that depend on them, and past
+  six packages only the `all` profile is proposed rather than a list to scroll. Two
+  packages whose directories end in the same name (`apps/a/back`, `apps/b/back`) get
+  distinct profile names instead of being merged. Non-interactively it takes the same
+  answers without asking. A checked
   script outside the `dev` ones gets its `kind` asked, because a task blocks its profile
   until it exits. **A service with no detected port is asked about too** — declaring one is
   what keeps a second worktree from binding the same port — and a job whose command never
@@ -291,7 +295,11 @@ and **experimental**: the global `wtm init` does not configure it.
   a `run job edit --port` command).
 - `run up [profile]` / `run down` — start / stop a profile. `run start <job>` / `run stop
   <job>` — one job. A failing job aborts the rest and exits non-zero, leaving started
-  services up (fix and re-run).
+  services up (fix and re-run). `run up` starts **every job the profile lists**, tasks
+  included, in the listed order; with no profile declared at all it starts every declared
+  job in declared order. The step counter (`[2/5]`) covers exactly those jobs, so a count
+  smaller than the profile means the profile itself is short, never that wtm dropped
+  something.
 - `run up` and `run start <service>` **attach by default**: on a terminal they open the
   full-screen run view. Always pass **`-d`** (or `--output json`, which never opens it) —
   `-d` starts the jobs and returns immediately, which is the behaviour you want. A `task`

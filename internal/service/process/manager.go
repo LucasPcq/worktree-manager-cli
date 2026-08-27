@@ -693,6 +693,10 @@ type AttachSession struct {
 	History []byte
 	Stream  <-chan []byte
 	Release func()
+	// Writable says the subscriber may feed the job's stdin. A task's PTY field
+	// holds the read end of a pipe: writing to it fails at once, which ended the
+	// attach on the spot instead of streaming the task (LUC-208).
+	Writable bool
 }
 
 type jobRef struct {
@@ -732,10 +736,11 @@ func (m *Manager) Attach(name string, workDir string) (*AttachSession, error) {
 		return nil, err
 	}
 	return &AttachSession{
-		PTY:     job.PTY,
-		History: history,
-		Stream:  stream,
-		Release: unsub,
+		PTY:      job.PTY,
+		History:  history,
+		Stream:   stream,
+		Release:  unsub,
+		Writable: !rules.RunsOnPipe(job.Config.Kind),
 	}, nil
 }
 

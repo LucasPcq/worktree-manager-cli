@@ -1,9 +1,14 @@
 # LUC-208 — Analyse des sept problèmes remontés sur `run`
 
-Analyse de code uniquement : aucun correctif n'est appliqué ici. Chaque section
-donne le symptôme, la cause identifiée dans le code, et la piste de correction.
-Le niveau de certitude est indiqué : **confirmé** (démontré sur le code ou par un
-test), **probable** (mécanisme identifié, non reproduit), **hypothèse**.
+Chaque section donne le symptôme, la cause identifiée dans le code, et la
+correction. Le niveau de certitude porte sur le **diagnostic** : **confirmé**
+(démontré sur le code ou par un test), **reproduit** (rejoué de bout en bout),
+**probable** (mécanisme identifié, non reproduit).
+
+**État : les sept points sont corrigés.** Le tableau en fin de document renvoie
+chaque point à son correctif et à son test de non-régression. Ce document reste
+le compte rendu du diagnostic — il n'est pas la documentation du comportement,
+qui vit dans `README.md`, `docs/` et le skill agent.
 
 ---
 
@@ -289,19 +294,20 @@ Attention à ne pas doubler les `\r` sur la sortie des services (déjà en CRLF)
 
 ---
 
-## Ordre de traitement suggéré
+## Correctifs appliqués
 
-| # | Problème | Certitude | Effort | Impact |
-|---|----------|-----------|--------|--------|
-| 3 | Tasks filtrées hors du run | reproduit | moyen | bloquant |
-| 6/7 | Escalier des tasks | confirmé | faible | fort — illisible à chaque run |
-| 5a | Profil non affiché | confirmé | faible | fort |
-| 2 | Ligne de profil non bornée | confirmé | faible | moyen |
-| 1 | Détection des packages profonds | confirmé | moyen | fort — bloque l'init |
-| 4 | Trop de profils proposés | confirmé | moyen | moyen |
-| 5b | Jobs hors run + anciens logs | confirmé | moyen | moyen |
-| 3bis | Chunks jetés, drain 2 s, course du timer, attache sur task | confirmé | faible | rare |
+| # | Problème | Diagnostic | Correctif | Test |
+|---|----------|-----------|-----------|------|
+| 3 | Tasks filtrées hors du run | reproduit | `rules.JobsWithoutProfile` garde tous les jobs déclarés ; `rules.ProposeProfiles` fait entrer les tasks dans les profils ; `rules.TasksFirst` les place avant les services, à la construction du `run.toml` comme dans chaque profil | `TestRunUpStartsTasksWhenNoProfileIsDeclared`, `TestProposeProfilesPutsTasksBeforeServices`, `TestTasksFirst` |
+| 6/7 | Escalier des tasks | confirmé | `rules.NormalizeEOL` termine les LF nus d'un job sur pipe ; appliqué au flux de la séquence et à celui d'une attache, jamais à un service (déjà en CRLF) | `TestSequenceOutputOfATaskIsNotStaircased`, `TestNormalizeEOL*` |
+| 1 | Détection des packages profonds | confirmé | `rules.MatchWorkspacePattern` implémente le vrai globstar ; `detect.WorkspacePackages` marche l'arborescence et lit aussi le champ `workspaces` de npm/yarn/bun ; `PackageJSONScripts` n'abandonne plus sans manifeste racine | `TestWorkspacePackagesGlobstarReachesDeepPackages`, `TestWorkspacePackagesFromRootManifest`, `TestMatchWorkspacePattern` |
+| 5a | Profil non affiché | confirmé | `resolvedProfile` porte le nom jusqu'à `runlogs.RunParams`/`Outcome` ; affiché dans l'en-tête de la vue, son récap, et la sortie ligne | `TestRunUpNamesTheProfileItStarted` |
+| 5b | Jobs hors run + anciens logs | confirmé | `run up` ouvre la session sur les jobs du profil résolu ; `run logs` continue de tous les lister, ce qui est son rôle | — |
+| 2 | Ligne de profil non bornée | confirmé | la ligne ne porte plus que le nom, tronqué à la largeur ; les jobs sont repliés sous la ligne du curseur | — |
+| 4 | Trop de profils proposés | confirmé | découpage plafonné à `domain.ProfileProposalMaxPackages` ; `rules.ProfileNamesForDirs` élargit un nom en collision au lieu de fusionner deux packages | `TestProposeProfilesStopsSplittingPastTheThreshold`, `TestProposeProfilesDisambiguatesCollidingBaseNames` |
+| 3bis | Attache impossible sur une task | confirmé | `AttachSession.Writable` : le daemon ne copie plus le stdin du client vers un descripteur qui n'est pas un PTY | — |
 
-Le point 3 est le plus grave : il est déterministe, silencieux, et casse le run.
-Il partage sa cause avec le point 4 (`ProposeProfiles` exclut les tasks), donc les
-deux se corrigent ensemble.
+Restent ouverts, documentés mais non corrigés (mesurés sans conséquence sur les
+symptômes remontés) : les chunks jetés sur file pleine dans `outputHub.Write`,
+le drain de fin de task borné à 2 s, et la course du timer d'inactivité du
+daemon entre deux jobs.

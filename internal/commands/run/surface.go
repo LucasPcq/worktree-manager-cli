@@ -29,8 +29,10 @@ type runSeamParams struct {
 	ProjectDir string
 	StateDir   string
 	Dir        string
-	// Jobs are the worktree's declared jobs, which the view lists whether or not
-	// this run touches them.
+	// Jobs are what the surface lists. `run up` passes the profile it resolved,
+	// so the view shows the run rather than every job run.toml declares beside
+	// it, with the previous run's log behind each (LUC-208); `run logs` passes
+	// them all, which is what it is for.
 	Jobs []domain.JobConfig
 	// Prober checks the declared ports once the jobs are up. Nil skips the check.
 	Prober runlogs.Prober
@@ -70,12 +72,13 @@ func openRunSeam(params runSeamParams) runSeam {
 // it is called with ends the reporting, never the jobs: a view the reader
 // walked away from stops being written to while the daemon keeps running what
 // it started.
-func (s runSeam) starter(jobs []domain.JobConfig) runview.StartFunc {
+func (s runSeam) starter(profile resolvedProfile) runview.StartFunc {
 	return func(ctx context.Context, sink runlogs.Sink) (runlogs.Outcome, error) {
 		return runlogs.Run(ctx, runlogs.RunParams{
 			Service: s.service,
 			Sink:    sink,
-			Jobs:    jobs,
+			Jobs:    profile.Jobs,
+			Profile: profile.Name,
 			WorkDir: s.workDir,
 			LogDir:  s.logDir,
 			Env:     s.env,
@@ -88,6 +91,7 @@ type viewParams struct {
 	Cmd     *cobra.Command
 	Session runlogs.Session
 	Job     string
+	Profile string
 	Start   runview.StartFunc
 }
 
@@ -99,6 +103,7 @@ func openRunView(params viewParams) error {
 	result, err := runview.Run(runview.Params{
 		Session: params.Session,
 		Job:     params.Job,
+		Profile: params.Profile,
 		Start:   params.Start,
 	})
 	if err != nil {
@@ -116,8 +121,9 @@ func openRunView(params viewParams) error {
 }
 
 type streamParams struct {
-	Cmd   *cobra.Command
-	Start runview.StartFunc
+	Cmd     *cobra.Command
+	Profile string
+	Start   runview.StartFunc
 }
 
 // runOnStream reports a start sequence as lines on the terminal it was launched
@@ -127,7 +133,11 @@ func runOnStream(params streamParams) error {
 	out, errOut := params.Cmd.OutOrStdout(), params.Cmd.ErrOrStderr()
 
 	output.FrameStart(out)
-	outcome, err := params.Start(params.Cmd.Context(), output.NewRunPrinter(output.RunPrinterParams{Out: out, Err: errOut}))
+	outcome, err := params.Start(params.Cmd.Context(), output.NewRunPrinter(output.RunPrinterParams{
+		Out:     out,
+		Err:     errOut,
+		Profile: params.Profile,
+	}))
 	if err != nil {
 		return err
 	}

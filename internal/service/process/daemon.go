@@ -279,7 +279,7 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 	}
 	defer session.Release()
 
-	if req.Cols > 0 && req.Rows > 0 {
+	if session.Writable && req.Cols > 0 && req.Rows > 0 {
 		_ = setWinsize(winsizeParams{File: session.PTY, Cols: req.Cols, Rows: req.Rows})
 	}
 
@@ -294,7 +294,7 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 
 	done := make(chan struct{}, 2)
 
-	// Live PTY output → client. The PTY itself is drained by the hub goroutine
+	// Live job output → client. The PTY itself is drained by the hub goroutine
 	// elsewhere; we just relay what the hub delivers to this subscriber.
 	go func() {
 		for data := range session.Stream {
@@ -307,11 +307,14 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 	}()
 
 	// Client stdin → PTY, unarbitrated: see AttachSession on what two clients
-	// typing at the same time get.
-	go func() {
-		io.Copy(session.PTY, conn)
-		done <- struct{}{}
-	}()
+	// typing at the same time get. A job with no PTY has no stdin to feed, and
+	// the copy would fail at once and take the whole attach down with it.
+	if session.Writable {
+		go func() {
+			io.Copy(session.PTY, conn)
+			done <- struct{}{}
+		}()
+	}
 
 	<-done
 }
