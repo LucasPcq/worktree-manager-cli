@@ -733,13 +733,15 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (writte
 	// written is settled plus the answers the later steps add, which is what the
 	// recap has to show: the config as it will land on disk, not a stage of it.
 	written = func(prev []components.Step) domain.RunConfig {
+		outcome := resolved(prev)
 		return rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
-			Config:    resolved(prev).Config,
+			Config:    outcome.Config,
 			Ports:     portEntriesOf(prev, ports),
 			Cmds:      cmdFixesOf(prev, s.at(stepCmds)),
 			Profiles:  profilesOf(prev, s.at(stepProfiles)),
 			URLs:      urlAnswerOf(prev, s.at(stepURLs)),
 			URLsAsked: urlStepAnswered(prev, s.at(stepURLs)),
+			NewJobs:   outcome.Merge.Added,
 		})
 	}
 
@@ -773,11 +775,11 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (writte
 			return components.NewMultiSelect(components.NewMultiSelectParams{
 				Title:       domain.URLListStepTitle,
 				Description: domain.URLListStepDesc,
-				Items:       urlItemsFor(settled(prev)),
+				Items:       urlItemsFor(settled(prev), resolved(prev).Merge.Added),
 			})
 		},
 		AutoSkip: func(w components.WizardModel) bool {
-			return len(urlItemsFor(settled(w.Steps()))) == 0
+			return len(urlItemsFor(settled(w.Steps()), resolved(w.Steps()).Merge.Added)) == 0
 		},
 		SkipReason: func() string { return domain.SkipReasonNoListeningPort },
 		Summary:    urlListSummary,
@@ -885,14 +887,14 @@ func portEntriesOf(prev []components.Step, at int) []domain.PortEntry {
 // urlItemsFor offers every candidate pre-answered yes. Publishing is additive —
 // the job keeps its own port either way — so the cost of a wrong default falls
 // on the reader unchecking a line, not on a run that fails.
-func urlItemsFor(cfg domain.RunConfig) []components.MultiSelectItem {
-	candidates := rules.URLCandidatesFor(rules.URLCandidatesForParams{Config: cfg})
+func urlItemsFor(cfg domain.RunConfig, newJobs []string) []components.MultiSelectItem {
+	candidates := rules.URLCandidatesFor(rules.URLCandidatesForParams{Config: cfg, NewJobs: newJobs})
 	items := make([]components.MultiSelectItem, 0, len(candidates))
 	for _, candidate := range candidates {
 		items = append(items, components.MultiSelectItem{
 			Label:    fmt.Sprintf(domain.URLListEntryFmt, candidate.Job, candidate.Port),
 			Value:    candidate.Job,
-			Selected: true,
+			Selected: candidate.Publish,
 		})
 	}
 	return items

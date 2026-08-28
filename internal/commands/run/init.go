@@ -174,6 +174,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		Cmds:      answers.Cmds,
 		URLs:      answers.URLs,
 		URLsAsked: answers.URLsAsked,
+		NewJobs:   outcome.Merge.Added,
 	})
 
 	links := resolveEnvPortLinks(resolveEnvPortLinksParams{

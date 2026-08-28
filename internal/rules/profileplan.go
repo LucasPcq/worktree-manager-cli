@@ -145,6 +145,9 @@ type ApplyInitAnswersParams struct {
 	// which is what this function has just done.
 	URLs      []string
 	URLsAsked bool
+	// NewJobs are the jobs this pass just added, which the URLs step reads to
+	// tell a job never offered from one whose url was withdrawn.
+	NewJobs []string
 }
 
 // ApplyInitAnswers folds the wizard's two composition steps back into the
@@ -182,6 +185,7 @@ func ApplyInitAnswers(params ApplyInitAnswersParams) domain.RunConfig {
 		Config:    cfg,
 		Published: params.URLs,
 		Asked:     params.URLsAsked,
+		NewJobs:   params.NewJobs,
 	})
 	for _, choice := range urls {
 		for i, job := range cfg.Jobs {
