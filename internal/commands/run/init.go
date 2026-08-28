@@ -158,23 +158,25 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// The wizard's two composition steps outrank detection. Non-interactively
-	// nothing was asked, so the proposal stands as answered: a profile is what
-	// makes `run up` start something rather than everything.
-	if len(answers.Profiles) == 0 {
+	// The wizard's two composition steps outrank detection. A step that never
+	// ran leaves the proposal standing — a profile is what makes `run up` start
+	// something rather than everything — but one that ran and was emptied is an
+	// answer, and reinstating it would undo the user's own gesture.
+	if !answers.ProfilesAsked && len(answers.Profiles) == 0 {
 		answers.Profiles = rules.ProposeProfiles(rules.ProposeProfilesParams{
 			Config:   outcome.Config,
 			Existing: existing.Profiles,
 		})
 	}
 	outcome.Config = rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
-		Config:    outcome.Config,
-		Ports:     answers.Ports,
-		Profiles:  answers.Profiles,
-		Cmds:      answers.Cmds,
-		URLs:      answers.URLs,
-		URLsAsked: answers.URLsAsked,
-		NewJobs:   outcome.Merge.Added,
+		Config:        outcome.Config,
+		Ports:         answers.Ports,
+		Profiles:      answers.Profiles,
+		ProfilesAsked: answers.ProfilesAsked,
+		Cmds:          answers.Cmds,
+		URLs:          answers.URLs,
+		URLsAsked:     answers.URLsAsked,
+		NewJobs:       outcome.Merge.Added,
 	})
 
 	links := resolveEnvPortLinks(resolveEnvPortLinksParams{

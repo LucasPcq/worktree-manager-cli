@@ -735,13 +735,14 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (writte
 	written = func(prev []components.Step) domain.RunConfig {
 		outcome := resolved(prev)
 		return rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
-			Config:    outcome.Config,
-			Ports:     portEntriesOf(prev, ports),
-			Cmds:      cmdFixesOf(prev, s.at(stepCmds)),
-			Profiles:  profilesOf(prev, s.at(stepProfiles)),
-			URLs:      urlAnswerOf(prev, s.at(stepURLs)),
-			URLsAsked: urlStepAnswered(prev, s.at(stepURLs)),
-			NewJobs:   outcome.Merge.Added,
+			Config:        outcome.Config,
+			Ports:         portEntriesOf(prev, ports),
+			Cmds:          cmdFixesOf(prev, s.at(stepCmds)),
+			Profiles:      profilesOf(prev, s.at(stepProfiles)),
+			ProfilesAsked: profileStepAnswered(prev, s.at(stepProfiles)),
+			URLs:          urlAnswerOf(prev, s.at(stepURLs)),
+			URLsAsked:     urlStepAnswered(prev, s.at(stepURLs)),
+			NewJobs:       outcome.Merge.Added,
 		})
 	}
 
@@ -842,6 +843,14 @@ func cmdFixesOf(prev []components.Step, at int) []domain.JobCmdFix {
 		return nil
 	}
 	return cl.Fixes()
+}
+
+func profileStepAnswered(prev []components.Step, at int) bool {
+	if at < 0 || at >= len(prev) {
+		return false
+	}
+	_, ok := prev[at].Model.(components.ProfileListModel)
+	return ok
 }
 
 func profilesOf(prev []components.Step, at int) []domain.ProfileConfig {
@@ -1225,6 +1234,7 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 	if i := at(stepProfiles); i >= 0 && !final.Skipped(i) {
 		if m, ok := steps[i].Model.(components.ProfileListModel); ok {
 			answers.Profiles = m.Profiles()
+			answers.ProfilesAsked = true
 		}
 	}
 	if i := at(stepCmds); i >= 0 && !final.Skipped(i) {

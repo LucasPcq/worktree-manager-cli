@@ -71,11 +71,13 @@ type InitProjectAnswers struct {
 	PatchCompose           bool
 	SelectedPackageScripts []PackageScript
 	// Ports is what the wizard settled for the detected ports, and Profiles the
-	// split `run up` will offer. Empty Profiles means the run could not ask: the
-	// proposal is then taken as answered, since a profile is what makes `run up`
-	// start something rather than everything.
-	Ports    []PortEntry
-	Profiles []ProfileConfig
+	// split `run up` will offer. ProfilesAsked says the step ran at all:
+	// emptying the list withdraws every profile, where a run that never asked
+	// leaves the proposal standing — a profile is what makes `run up` start
+	// something rather than everything.
+	Ports         []PortEntry
+	Profiles      []ProfileConfig
+	ProfilesAsked bool
 	// Cmds is the commands the wizard amended so they read the port wtm injects.
 	Cmds []JobCmdFix
 	// URLs names the jobs the wizard left checked in the URLs step, and
