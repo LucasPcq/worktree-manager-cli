@@ -193,7 +193,7 @@ func PortEntriesFor(params PortEntriesForParams) []domain.PortEntry {
 		for _, name := range sortedPortNames(job.Ports) {
 			entries = append(entries, domain.PortEntry{Job: job.Name, Name: name, Base: job.Ports[name]})
 		}
-		if fromCompose[job.Name] || declaresAListeningPort(job) {
+		if fromCompose[job.Name] || ListeningPortName(job) != "" {
 			continue
 		}
 		name := freePortName(job.Name, taken)
@@ -201,19 +201,6 @@ func PortEntriesFor(params PortEntriesForParams) []domain.PortEntry {
 		entries = append(entries, domain.PortEntry{Job: job.Name, Name: name})
 	}
 	return entries
-}
-
-// declaresAListeningPort reads the one direction the .env convention carries: a
-// key named exactly PORT is the port a process binds, while a *_PORT is as
-// likely to be something it dials (DB_PORT, REDIS_PORT). A job holding only the
-// latter has not said what it listens on, and wtm must not conclude for it.
-func declaresAListeningPort(job domain.JobConfig) bool {
-	for name := range job.Ports {
-		if name == domain.PortNameDefault {
-			return true
-		}
-	}
-	return false
 }
 
 // freePortName proposes PORT, falling back to one derived from the job when
