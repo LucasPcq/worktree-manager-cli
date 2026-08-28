@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -86,26 +85,11 @@ func runRmByName(params rmByNameParams) error {
 		return fmt.Errorf("job %q not found", params.Name)
 	}
 
-	cfg := params.Config
-
-	var refProfiles []string
-	for _, p := range cfg.Profiles {
-		if slices.Contains(p.Jobs, params.Name) {
-			refProfiles = append(refProfiles, p.Name)
-		}
+	cfg, effect := rules.RemoveJob(params.Config, params.Name)
+	if len(effect.Profiles) > 0 && !params.Force {
+		return fmt.Errorf("job %q is referenced by profile(s): %s — pass --force to strip those references",
+			params.Name, strings.Join(effect.Profiles, ", "))
 	}
-
-	if len(refProfiles) > 0 && !params.Force {
-		return fmt.Errorf("job %q is referenced by profile(s): %s — pass --force to strip those references", params.Name, strings.Join(refProfiles, ", "))
-	}
-
-	if params.Force {
-		for i, p := range cfg.Profiles {
-			cfg.Profiles[i].Jobs = slices.DeleteFunc(p.Jobs, func(j string) bool { return j == params.Name })
-		}
-	}
-
-	cfg.Jobs = slices.DeleteFunc(cfg.Jobs, func(j domain.JobConfig) bool { return j.Name == params.Name })
 
 	if err := runconfig.Save(runconfig.SaveParams{StateDir: params.Res.StateDir, Config: cfg}); err != nil {
 		return err
@@ -121,8 +105,14 @@ func runRmByName(params rmByNameParams) error {
 
 	output.Frame(params.Cmd.OutOrStdout(), func() {
 		output.Success(params.Cmd.OutOrStdout(), fmt.Sprintf("Removed job %q", params.Name))
-		if len(refProfiles) > 0 {
-			output.Message(params.Cmd.OutOrStdout(), fmt.Sprintf("Stripped from profile(s): %s", strings.Join(refProfiles, ", ")))
+		if len(effect.Profiles) > 0 {
+			output.Message(params.Cmd.OutOrStdout(), fmt.Sprintf(domain.JobRemovedProfilesFmt, strings.Join(effect.Profiles, ", ")))
+		}
+		if len(effect.EmptiedProfiles) > 0 {
+			output.Message(params.Cmd.OutOrStdout(), fmt.Sprintf(domain.JobRemovedEmptiedFmt, strings.Join(effect.EmptiedProfiles, ", ")))
+		}
+		if len(effect.EnvPorts) > 0 {
+			output.Message(params.Cmd.OutOrStdout(), fmt.Sprintf(domain.JobRemovedEnvPortsFmt, strings.Join(effect.EnvPorts, ", ")))
 		}
 	})
 	return nil

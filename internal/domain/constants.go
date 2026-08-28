@@ -1033,6 +1033,11 @@ const (
 	JobActionError   = "error"
 	JobActionAdded   = "added"
 	JobActionRemoved = "removed"
+	// JobRemovedProfilesFmt and JobRemovedEnvPortsFmt report what a removal
+	// dragged along with the job, each named so the reader can put it back.
+	JobRemovedProfilesFmt = "Stripped from profile(s): %s"
+	JobRemovedEmptiedFmt  = "Removed profile(s) left with no job: %s"
+	JobRemovedEnvPortsFmt = "Unlinked .env key(s): %s"
 	JobActionUpdated = "updated"
 
 	// MetaFileName is the metadata file created per worktree inside
