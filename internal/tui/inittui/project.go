@@ -601,7 +601,8 @@ func addHooksCleanSteps(s *stepSet, autoSkip func(components.WizardModel) bool, 
 // addScriptKindStep only appears when a script was checked outside the dev ones.
 // The kind decides whether a job blocks its profile, and the name gets it wrong
 // in both directions: `preview` serves requests while `start` is production.
-func addScriptKindStep(s *stepSet, detection domain.InitDetectionResult) {
+func addScriptKindStep(s *stepSet, params addServicesStepsParams) {
+	detection := params.Detection
 	scripts := s.at(stepScripts)
 	if scripts < 0 {
 		return
@@ -614,11 +615,11 @@ func addScriptKindStep(s *stepSet, detection domain.InitDetectionResult) {
 			return components.NewKindList(components.NewKindListParams{
 				Title:       domain.ScriptKindStepTitle,
 				Description: domain.ScriptKindStepDesc,
-				Entries:     scriptKindChoices(prev, scripts, detection.PackageScripts),
+				Entries:     scriptKindChoices(scriptKindChoicesParams{Prev: prev, Scripts: scripts, Params: params}),
 			})
 		},
 		AutoSkip: func(w components.WizardModel) bool {
-			asked := len(scriptKindChoices(w.Steps(), scripts, detection.PackageScripts)) == 0
+			asked := len(scriptKindChoices(scriptKindChoicesParams{Prev: w.Steps(), Scripts: scripts, Params: params})) == 0
 			if asked {
 				skipReason = rules.ScriptKindsSkipReason(len(selectedScripts(w.Steps(), scripts, detection.PackageScripts)))
 			}
@@ -630,12 +631,20 @@ func addScriptKindStep(s *stepSet, detection domain.InitDetectionResult) {
 	})
 }
 
+type scriptKindChoicesParams struct {
+	Prev    []components.Step
+	Scripts int
+	Params  addServicesStepsParams
+}
+
 // scriptKindChoices are the checked scripts the name does not settle — the ones
 // the wizard pre-checked need no question. The label carries the package: two
 // workspaces both declaring "build" are two separate answers.
-func scriptKindChoices(prev []components.Step, scripts int, detected []domain.PackageScript) []domain.JobKindChoice {
+func scriptKindChoices(p scriptKindChoicesParams) []domain.JobKindChoice {
+	detected := p.Params.Detection.PackageScripts
+
 	var choices []domain.JobKindChoice
-	for _, script := range selectedScripts(prev, scripts, detected) {
+	for _, script := range selectedScripts(p.Prev, p.Scripts, detected) {
 		if rules.PreselectScript(rules.PreselectScriptParams{Script: script, All: detected}) {
 			continue
 		}
@@ -644,7 +653,11 @@ func scriptKindChoices(prev []components.Step, scripts int, detected []domain.Pa
 			Cmd:       script.Cmd,
 			Name:      script.Name,
 			Workspace: script.Workspace,
-			Kind:      rules.ClassifyScriptKind(script.Name),
+			Kind: rules.ProposedScriptKind(rules.ProposedScriptKindParams{
+				Script:         script,
+				Config:         p.Params.Existing,
+				PackageManager: p.Params.Detection.PackageManager,
+			}),
 		})
 	}
 	return choices
@@ -1081,7 +1094,7 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) (written func([
 		})
 	}
 
-	addScriptKindStep(s, detection)
+	addScriptKindStep(s, params)
 
 	// Declared last on purpose: the step resolves the ports of both selections,
 	// so it must be able to read them — a .env port can withdraw a compose
