@@ -151,13 +151,20 @@ func (p startJobParams) startedLine(params startedLineParams) string {
 	})
 }
 
-// proxyNotice is the refusal a forked daemon could not tell anyone about.
+// proxyNotice is what a forked daemon could not tell anyone about: it either
+// fell back to another port, or found the whole window taken.
 func (p startJobParams) proxyNotice(servedPort int) {
-	if p.ProxyPort == 0 || servedPort != 0 || p.RouteHost == "" {
+	if p.ProxyPort == 0 || p.RouteHost == "" || servedPort == p.ProxyPort {
 		return
 	}
-	output.Callout(p.Cmd.ErrOrStderr(), domain.ProxyUnavailableTitle, []string{
-		fmt.Sprintf(domain.ProxyUnavailableFmt, p.ProxyPort),
+	if servedPort == 0 {
+		output.Callout(p.Cmd.ErrOrStderr(), domain.ProxyUnavailableTitle, []string{
+			fmt.Sprintf(domain.ProxyUnavailableFmt, p.ProxyPort),
+		})
+		return
+	}
+	output.Callout(p.Cmd.ErrOrStderr(), domain.ProxyMovedTitle, []string{
+		fmt.Sprintf(domain.ProxyMovedFmt, p.ProxyPort, servedPort),
 	})
 }
 

@@ -170,6 +170,11 @@ const (
 	ProxyTLD = "localhost"
 	// ProxyDefaultPort is what the run proxy listens on when the config says nothing.
 	ProxyDefaultPort = 4000
+	// ProxyPortScanSpan is how many ports past the configured one the proxy
+	// tries before giving up. A name answering on an unexpected port beats a
+	// name answering nowhere, but a port far from the one asked for is no
+	// longer the port that was asked for.
+	ProxyPortScanSpan = 16
 	// ProxyURLFmt is a job's named URL.
 	ProxyURLFmt = "http://%s:%d"
 	// ProxyLoopbackFmt is what the proxy binds: the IPv4 loopback, never every
@@ -196,6 +201,11 @@ const (
 	ProxyBindFailedFmt    = "run proxy: port %d is taken (%v) — jobs keep their own ports"
 	ProxyUnavailableFmt   = "Port %d is taken, so jobs answer on their own ports — free it, or set [proxy] port in ~/.config/wtm/config.toml"
 	ProxyUnavailableTitle = "Named URLs are off"
+	// ProxyMovedFmt is what a client says when the proxy took a port other than
+	// the configured one, so the URLs it prints are not the ones the config
+	// alone would predict.
+	ProxyMovedFmt   = "Port %d is taken, so named URLs are served on %d — free it, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyMovedTitle = "Named URLs moved"
 
 	// DevOriginsKey is the Next option that lets a subdomain of .localhost reach
 	// the dev server's assets, and DevOriginsConfigNames the files it lives in.
