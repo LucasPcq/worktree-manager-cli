@@ -140,3 +140,54 @@ func TestDeselectedJobsNeRetireRienQuandRienNaEteDemande(t *testing.T) {
 		t.Errorf("jobs à retirer = %v, want aucun", got)
 	}
 }
+
+func TestJobsByCwdNommeLeJobDeChaqueRepertoire(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "web", Kind: domain.JobKindService, Cwd: "apps/web", Ports: map[string]int{domain.PortNameDefault: 3000}},
+		{Name: "api", Kind: domain.JobKindService, Cwd: "apps/api", Ports: map[string]int{"API_PORT": 4000}},
+	}}
+
+	got := rules.JobsByCwd(cfg)
+
+	if got["apps/web"] != "web" || got["apps/api"] != "api" {
+		t.Errorf("jobs par répertoire = %v", got)
+	}
+}
+
+// Deux jobs dans le même répertoire ne désignent rien : un lien déduit là
+// déplacerait le port de l'un ou de l'autre, sans que rien ne tranche.
+func TestJobsByCwdIgnoreUnRepertoirePartage(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "web", Kind: domain.JobKindService, Cwd: "apps/web", Ports: map[string]int{domain.PortNameDefault: 3000}},
+		{Name: "storybook", Kind: domain.JobKindService, Cwd: "apps/web", Ports: map[string]int{"STORYBOOK_PORT": 6006}},
+	}}
+
+	if got := rules.JobsByCwd(cfg); len(got) != 0 {
+		t.Errorf("jobs par répertoire = %v, want aucun", got)
+	}
+}
+
+// La racine est nommée "." comme partout ailleurs dans run.toml.
+func TestJobsByCwdNormaliseLaRacine(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "root", Kind: domain.JobKindService, Ports: map[string]int{domain.PortNameDefault: 3000}},
+	}}
+
+	if got := rules.JobsByCwd(cfg); got["."] != "root" {
+		t.Errorf("jobs par répertoire = %v, want la racine sous \".\"", got)
+	}
+}
+
+// Les tasks d'un package n'écoutent rien : elles ne rendent pas ambigu le
+// serveur qui vit à côté d'elles, ce qui est la forme normale d'un monorepo.
+func TestJobsByCwdIgnoreLesTasksVoisines(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "api-db:migrate", Kind: domain.JobKindTask, Cwd: "apps/api"},
+		{Name: "api-db:seed", Kind: domain.JobKindTask, Cwd: "apps/api"},
+		{Name: "api-dev", Kind: domain.JobKindService, Cwd: "apps/api", Ports: map[string]int{domain.PortNameDefault: 4001}},
+	}}
+
+	if got := rules.JobsByCwd(cfg); got["apps/api"] != "api-dev" {
+		t.Errorf("jobs par répertoire = %v, want apps/api -> api-dev", got)
+	}
+}

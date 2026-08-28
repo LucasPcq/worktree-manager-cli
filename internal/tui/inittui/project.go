@@ -989,9 +989,10 @@ func selectedComposeFiles(prev []components.Step, docker int) []string {
 
 func envLinkCandidates(cfg domain.RunConfig, lines map[string][]domain.EnvLine) []domain.EnvPortLink {
 	return rules.EnvPortCandidates(rules.EnvPortCandidatesParams{
-		Lines:    lines,
-		Bases:    rules.EnvPortBases(cfg),
-		Existing: cfg.EnvPorts,
+		Lines:     lines,
+		Bases:     rules.EnvPortBases(cfg),
+		Existing:  cfg.EnvPorts,
+		JobsByDir: rules.JobsByCwd(cfg),
 	})
 }
 

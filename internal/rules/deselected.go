@@ -69,3 +69,27 @@ func composeJobsFor(cfg domain.RunConfig, files []string) map[string]bool {
 	}
 	return jobs
 }
+
+// JobsByCwd is the job listening in each directory, which is what lets an env
+// file be attached to a job when its value anchors nothing. Only jobs declaring
+// the port they listen on count: a package typically holds one dev server
+// alongside several tasks (migrate, seed), and those tasks bind nothing, so
+// they are not a competing answer. Two listeners in one directory yield
+// neither — the link would move one of the two ports, and nothing says which.
+func JobsByCwd(cfg domain.RunConfig) map[string]string {
+	seen := map[string]int{}
+	for _, job := range cfg.Jobs {
+		if ListeningPortName(job) != "" {
+			seen[ScriptJobCwd(job.Cwd)]++
+		}
+	}
+
+	jobs := make(map[string]string, len(seen))
+	for _, job := range cfg.Jobs {
+		cwd := ScriptJobCwd(job.Cwd)
+		if ListeningPortName(job) != "" && seen[cwd] == 1 {
+			jobs[cwd] = job.Name
+		}
+	}
+	return jobs
+}

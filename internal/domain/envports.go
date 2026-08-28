@@ -13,6 +13,11 @@ type EnvPortLink struct {
 	// knowable and always required.
 	Job  string `toml:"job"  json:"job"`
 	Port string `toml:"port" json:"port"`
+	// ByDir says the link was attached from the directory holding the file
+	// rather than from a value carrying the declared base. It never reaches
+	// run.toml — it only marks the proposal, so the reader can tell a match
+	// from a deduction before confirming.
+	ByDir bool `toml:"-" json:"-"`
 }
 
 // PortRef identifies one declared port: the job that carries it and its name.

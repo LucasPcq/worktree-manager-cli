@@ -412,7 +412,11 @@ const (
 	// The [[env_port]] detection of `wtm run init`.
 	// EnvPortLinkFmt is one link as the prompt and the recap both show it:
 	// "<file> · <key>   follows POSTGRES_PORT (5432)".
-	EnvPortLinkFmt       = "%s   follows %s (%d)"
+	EnvPortLinkFmt = "%s   follows %s (%d)"
+	// EnvPortLinkByDirFmt marks a link the value did not anchor: the key was
+	// attached to the job running beside the file. The reader confirms these,
+	// so the deduction has to be visible as one.
+	EnvPortLinkByDirFmt  = "%s   follows %s (%d, matched by directory)"
 	EnvPortJobSeparator  = "."
 	EnvPortLinkSeparator = " · "
 	EnvPortsLinkedTitle  = "Env keys now following a port"

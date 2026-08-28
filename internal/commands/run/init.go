@@ -339,6 +339,7 @@ func resolveEnvPortLinks(params resolveEnvPortLinksParams) []domain.EnvPortLink 
 		Files:      params.EnvFiles,
 		Bases:      rules.EnvPortBases(params.Config),
 		Existing:   params.Config.EnvPorts,
+		JobsByDir:  rules.JobsByCwd(params.Config),
 	})
 	if len(candidates) == 0 || params.Declined {
 		return nil
