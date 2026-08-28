@@ -206,6 +206,10 @@ const (
 	// alone would predict.
 	ProxyMovedFmt   = "Port %d is taken, so named URLs are served on %d — free it, or set [proxy] port in ~/.config/wtm/config.toml"
 	ProxyMovedTitle = "Named URLs moved"
+	// ProxyPortCollisionFmt is the one collision a job cannot see coming: the
+	// daemon already holds the port by the time the job tries to bind it.
+	ProxyPortCollisionFmt   = "port %s (job %q, base %d) reaches the run proxy's port %d after %d worktree(s) — that job will fail to bind there; move the base, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyPortCollisionTitle = "Ports that will meet the run proxy"
 
 	// DevOriginsKey is the Next option that lets a subdomain of .localhost reach
 	// the dev server's assets, and DevOriginsConfigNames the files it lives in.

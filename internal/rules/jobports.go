@@ -100,6 +100,53 @@ func PortCollisions(cfg domain.RunConfig) []PortCollision {
 	return collisions
 }
 
+type ProxyPortCollisionsParams struct {
+	Config    domain.RunConfig
+	ProxyPort int
+}
+
+// ProxyPortCollision is a declaration whose resolved port reaches the proxy's,
+// and how many worktrees away that happens.
+type ProxyPortCollision struct {
+	Declaration PortDeclaration
+	Worktrees   int
+}
+
+// ProxyPortCollisions finds the bases that land on the proxy's port. The daemon
+// binds before any job does, so the job is the one that fails — with the
+// port's own error, which names nothing about wtm. Unlike PortCollisions the
+// gap is one-way: an offset is always positive, so a base above the proxy's
+// port never reaches it.
+func ProxyPortCollisions(params ProxyPortCollisionsParams) []ProxyPortCollision {
+	if params.ProxyPort <= 0 {
+		return nil
+	}
+
+	block := EffectivePortOffsetBlock(params.Config)
+	var collisions []ProxyPortCollision
+	for _, decl := range PortDeclarations(params.Config) {
+		gap := params.ProxyPort - decl.Base
+		if gap < 0 || gap%block != 0 {
+			continue
+		}
+		if apart := gap / block; apart <= domain.PortCollisionHorizon {
+			collisions = append(collisions, ProxyPortCollision{Declaration: decl, Worktrees: apart})
+		}
+	}
+	return collisions
+}
+
+// ProxyPortCollisionLines names each base that will meet the proxy, and the two
+// ways out: move the base, or move the proxy.
+func ProxyPortCollisionLines(collisions []ProxyPortCollision, proxyPort int) []string {
+	lines := make([]string, 0, len(collisions))
+	for _, c := range collisions {
+		lines = append(lines, fmt.Sprintf(domain.ProxyPortCollisionFmt,
+			c.Declaration.Name, c.Declaration.Job, c.Declaration.Base, proxyPort, c.Worktrees))
+	}
+	return lines
+}
+
 func sortedPortNames(ports map[string]int) []string {
 	names := make([]string, 0, len(ports))
 	for name := range ports {

@@ -256,6 +256,13 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 				Exempt: rules.ComposeJobsFor(rules.ComposeJobsParams{Config: outcome.Config, Files: answers.DockerComposeFiles}),
 			}),
 		})
+		proxyPort := rules.ProxyPort(res.Config.Global)
+		if lines := rules.ProxyPortCollisionLines(rules.ProxyPortCollisions(rules.ProxyPortCollisionsParams{
+			Config:    outcome.Config,
+			ProxyPort: proxyPort,
+		}), proxyPort); len(lines) > 0 {
+			output.Callout(cmd.ErrOrStderr(), domain.ProxyPortCollisionTitle, lines)
+		}
 		output.Blank(cmd.OutOrStdout())
 		output.Message(cmd.OutOrStdout(), "Next: `wtm run up` to start · `wtm run job add` to add more")
 		output.Blank(cmd.OutOrStdout())
