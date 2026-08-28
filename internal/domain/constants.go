@@ -412,22 +412,26 @@ const (
 	// The [[env_port]] detection of `wtm run init`.
 	// EnvPortLinkFmt is one link as the prompt and the recap both show it:
 	// "<file> · <key>   follows POSTGRES_PORT (5432)".
-	EnvPortLinkFmt          = "%s   follows %s (%d)"
-	EnvPortJobSeparator     = "."
-	EnvPortLinkSeparator    = " · "
-	EnvPortsLinkedTitle     = "Env keys now following a port"
-	EnvLinkStepName         = "Env keys"
-	RecapStepName           = "Review"
-	RecapNotAsked           = "not asked"
-	RecapJobLineFmt         = "%s   %s"
-	RecapRowIndent          = "  "
-	RecapPortFmt            = "%s %d"
-	RecapPortSep            = " · "
-	RecapNoPort             = "⚠ no port declared"
-	RecapTask               = "task"
-	RecapDefaultSuffix      = "   (default)"
-	RecapURLSuffix          = "   (url)"
-	RecapJobsTitle          = "Jobs"
+	EnvPortLinkFmt       = "%s   follows %s (%d)"
+	EnvPortJobSeparator  = "."
+	EnvPortLinkSeparator = " · "
+	EnvPortsLinkedTitle  = "Env keys now following a port"
+	EnvLinkStepName      = "Env keys"
+	RecapStepName        = "Review"
+	RecapNotAsked        = "not asked"
+	RecapJobLineFmt      = "%s   %s"
+	RecapRowIndent       = "  "
+	RecapPortFmt         = "%s %d"
+	RecapPortSep         = " · "
+	RecapNoPort          = "⚠ no port declared"
+	RecapTask            = "task"
+	RecapDefaultSuffix   = "   (default)"
+	RecapURLSuffix       = "   (url)"
+	RecapJobsTitle       = "Jobs"
+	// RecapRemovedTitle heads the jobs the unchecking drops. They are absent
+	// from every other section, so this is the only place they can be read
+	// before the write.
+	RecapRemovedTitle       = "Jobs removed (unchecked)"
 	RecapProfilesTitle      = "Profiles"
 	RecapAnswersTitle       = "Answers"
 	RecapStepIntro          = "This is what `wtm run init` is about to write."
@@ -1038,7 +1042,10 @@ const (
 	JobRemovedProfilesFmt = "Stripped from profile(s): %s"
 	JobRemovedEmptiedFmt  = "Removed profile(s) left with no job: %s"
 	JobRemovedEnvPortsFmt = "Unlinked .env key(s): %s"
-	JobActionUpdated = "updated"
+	// RunInitJobsRemovedFmt reports what the unchecking dropped, next to what
+	// the same run added.
+	RunInitJobsRemovedFmt = "Jobs removed (unchecked): %s"
+	JobActionUpdated      = "updated"
 
 	// MetaFileName is the metadata file created per worktree inside
 	// <state-dir>/worktrees/<branch>/.

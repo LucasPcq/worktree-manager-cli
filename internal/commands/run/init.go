@@ -31,8 +31,11 @@ func newInitCmd() *cobra.Command {
 		Long: "Set up run.toml by detecting docker-compose files and package.json scripts and turning\n" +
 			"the selected ones into jobs.\n\n" +
 			"In a TTY, opens a wizard to pick which ones to include; non-interactively (or piped),\n" +
-			"auto-generates from detection. Re-running merges new selections into the existing\n" +
-			"run.toml without overwriting what's already there.\n\n" +
+			"auto-generates from detection. Re-running pre-fills every step from the existing\n" +
+			"run.toml: what stays checked is kept, what you uncheck is removed along with the\n" +
+			"profile entries and .env links naming it. Only jobs this wizard proposed are ever\n" +
+			"removed — one added with `wtm run job add` is never listed, so never touched.\n" +
+			"A non-interactive run asks nothing and removes nothing.\n\n" +
 			"Ports declared in the selected compose files become per-worktree ports. A literal\n" +
 			"host port (\"5432:5432\") binds the same port everywhere, so wtm offers to rewrite it\n" +
 			"as \"${DB_PORT:-5432}:5432\" — the default keeps `docker compose up` working on its\n" +
@@ -143,9 +146,18 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		Answers:        answers,
 		PackageManager: detection.PackageManager,
 		Existing:       existing,
-		Plan:           plan,
-		Unverifiable:   unverifiable,
-		EnvScansByDir:  envScans,
+		Deselected: rules.DeselectedJobs(rules.DeselectedJobsParams{
+			Existing:             existing,
+			PackageManager:       detection.PackageManager,
+			DetectedScripts:      detection.PackageScripts,
+			SelectedScripts:      answers.SelectedPackageScripts,
+			DetectedComposeFiles: detection.DockerComposeFiles,
+			SelectedComposeFiles: answers.DockerComposeFiles,
+			Asked:                answers.SelectionAsked,
+		}),
+		Plan:          plan,
+		Unverifiable:  unverifiable,
+		EnvScansByDir: envScans,
 	})
 
 	if !rules.IsRunInitialized(outcome.Config) {
@@ -210,6 +222,9 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		output.Success(cmd.OutOrStdout(), fmt.Sprintf("Configured run module → %s", runPath))
 		if len(outcome.Merge.Added) > 0 {
 			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Jobs added: %s", strings.Join(outcome.Merge.Added, ", ")))
+		}
+		if len(outcome.Removed) > 0 {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf(domain.RunInitJobsRemovedFmt, strings.Join(outcome.Removed, ", ")))
 		}
 		if len(outcome.Merge.Skipped) > 0 {
 			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Already present (kept): %s", strings.Join(outcome.Merge.Skipped, ", ")))

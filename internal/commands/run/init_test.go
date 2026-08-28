@@ -107,6 +107,35 @@ const composeWithPorts = `services:
       - "3000-3005:3000-3005"
 `
 
+// `run init --non-interactive` ne coche que les scripts qu'il aurait
+// pré-cochés. Lire cette absence comme un décochage supprimerait les jobs
+// qu'un run précédent avait configurés — une perte silencieuse.
+func TestRunInit_NonInteractiveNeSupprimeAucunJob(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "build", Kind: domain.JobKindTask, Cmd: "pnpm run build", Cwd: "."},
+			{Name: "tunnel", Kind: domain.JobKindService, Cmd: "cloudflared tunnel run"},
+		},
+		Profiles: []domain.ProfileConfig{{Name: "dev", Jobs: []string{"build"}}},
+	})
+	writeProjectFile(t, "package.json", `{"scripts":{"dev":"vite","build":"vite build"}}`)
+
+	if _, _, err := runCmd(t, domain.CmdInit, "--"+domain.FlagNonInteractive); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	for _, name := range []string{"build", "tunnel"} {
+		if _, found := jobByName(cfg, name); !found {
+			t.Errorf("job %q a disparu — jobs restants %+v", name, cfg.Jobs)
+		}
+	}
+}
+
 func writeCompose(t *testing.T, name, content string) string {
 	t.Helper()
 	projectDir := os.Getenv("WTM_PROJECT_DIR")

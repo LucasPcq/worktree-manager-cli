@@ -113,11 +113,12 @@ func RunProjectWizard(projectDir string, detection domain.InitDetectionResult) (
 // there is no Configure/Skip gate: it goes straight to the docker-compose and
 // package-script multiselects. A nil prefill (fresh init) pre-selects the
 // detection defaults; a non-nil prefill (re-run) pre-selects what run.toml
-// already declares so the merge is additive. Returns empty answers with no
-// error when nothing is detected — the caller reports how to add jobs manually.
+// already declares, so what stays checked is kept and what is unchecked is
+// dropped. Returns empty answers with no error when nothing is detected — the
+// caller reports how to add jobs manually.
 func RunServicesWizard(params ServicesWizardParams) (domain.InitProjectAnswers, error) {
 	s := newStepSet()
-	written := addServicesSteps(s, addServicesStepsParams{
+	steps := addServicesSteps(s, addServicesStepsParams{
 		Detection:    params.Detection,
 		Existing:     params.Existing,
 		Prefill:      params.Prefill,
@@ -130,7 +131,7 @@ func RunServicesWizard(params ServicesWizardParams) (domain.InitProjectAnswers, 
 		return domain.InitProjectAnswers{}, nil
 	}
 	s.add(stepRecap, servicesRecapStep(servicesRecapParams{
-		Written: written,
+		Steps:   steps,
 		Cmds:    s.at(stepCmds),
 		Answers: []int{s.at(stepEnvLink), s.at(stepComposePatch)},
 	}))
@@ -264,10 +265,17 @@ func reinitConfirmStep(p components.NewConfirmParams) components.Step {
 // servicesRecapStep restates what the run is about to write and warns about what
 // will still collide. It is the point the flow was missing: every answer visible
 // at once, before anything is written, with a way back to the step that set it.
-type servicesRecapParams struct {
-	// Written resolves the config as it will land on disk.
+// servicesSteps are the two readings the recap needs: the config as it will
+// land on disk, and the jobs the unchecking is about to drop from it — the
+// second being invisible in the first, which is precisely why it is shown.
+type servicesSteps struct {
 	Written func([]components.Step) domain.RunConfig
-	Cmds    int
+	Removed func([]components.Step) []string
+}
+
+type servicesRecapParams struct {
+	Steps servicesSteps
+	Cmds  int
 	// Answers are the steps whose outcome no config field carries — the yes/no
 	// ones — listed under their own heading rather than mixed into the content.
 	Answers []int
@@ -277,10 +285,11 @@ func servicesRecapStep(params servicesRecapParams) components.Step {
 	return components.RecapStep(components.RecapStepParams{
 		Name: domain.RecapStepName,
 		Build: func(prev []components.Step) components.RecapContent {
-			cfg := params.Written(prev)
+			cfg := params.Steps.Written(prev)
 
 			lines := []string{"", domain.RecapStepIntro}
 			lines = appendSection(lines, domain.RecapJobsTitle, rules.RecapJobLines(cfg))
+			lines = appendSection(lines, domain.RecapRemovedTitle, params.Steps.Removed(prev))
 			lines = appendSection(lines, domain.RecapProfilesTitle, rules.RecapProfileLines(cfg))
 			lines = appendSection(lines, domain.RecapAnswersTitle, answerLines(prev, params.Answers))
 
@@ -692,7 +701,7 @@ func kindListSummary(model any) string {
 // addPortsAndProfilesSteps turns the selection into a configuration: the ports
 // detection pre-filled, then the split `run up` will offer. Both read the live
 // selections, so both are declared after the steps they read.
-func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (written func([]components.Step) domain.RunConfig) {
+func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (steps servicesSteps) {
 	docker, scripts := s.at(stepDocker), s.at(stepScripts)
 	detection := params.Detection
 
@@ -700,10 +709,20 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (writte
 		answers := answersFromSteps(answersFromStepsParams{
 			Prev: prev, Docker: docker, Scripts: scripts, Detection: detection,
 		})
+		answers.SelectionAsked = true
 		return rules.ResolveDetectedPorts(rules.ResolveDetectedPortsParams{
 			Answers:        answers,
 			PackageManager: detection.PackageManager,
 			Existing:       params.Existing,
+			Deselected: rules.DeselectedJobs(rules.DeselectedJobsParams{
+				Existing:             params.Existing,
+				PackageManager:       detection.PackageManager,
+				DetectedScripts:      detection.PackageScripts,
+				SelectedScripts:      answers.SelectedPackageScripts,
+				DetectedComposeFiles: detection.DockerComposeFiles,
+				SelectedComposeFiles: answers.DockerComposeFiles,
+				Asked:                answers.SelectionAsked,
+			}),
 			Plan: rules.PlanComposePorts(rules.PlanComposePortsParams{
 				Scans: detection.ComposeScans,
 				Files: answers.DockerComposeFiles,
@@ -745,7 +764,8 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (writte
 	}
 	// written is settled plus the answers the later steps add, which is what the
 	// recap has to show: the config as it will land on disk, not a stage of it.
-	written = func(prev []components.Step) domain.RunConfig {
+	steps.Removed = func(prev []components.Step) []string { return resolved(prev).Removed }
+	steps.Written = func(prev []components.Step) domain.RunConfig {
 		outcome := resolved(prev)
 		return rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
 			Config:        outcome.Config,
@@ -822,7 +842,7 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (writte
 		Summary:    profileListSummary,
 		Callout:    true,
 	})
-	defer func() { _ = written }()
+	defer func() { _ = steps }()
 
 	s.add(stepEnvLink, components.ConfirmStep(components.ConfirmStepParams{
 		Name:    domain.EnvLinkStepName,
@@ -842,7 +862,7 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (writte
 		},
 	}))
 
-	return written
+	return steps
 }
 
 // cmdFixesOf and profilesOf read a step back, tolerating one this wizard never
@@ -1057,7 +1077,7 @@ type addServicesStepsParams struct {
 	EnvLines     map[string][]domain.EnvLine
 }
 
-func addServicesSteps(s *stepSet, params addServicesStepsParams) (written func([]components.Step) domain.RunConfig) {
+func addServicesSteps(s *stepSet, params addServicesStepsParams) (steps servicesSteps) {
 	detection, prefill := params.Detection, params.Prefill
 	if len(detection.DockerComposeFiles) > 0 {
 		items := make([]components.MultiSelectItem, 0, len(detection.DockerComposeFiles))
@@ -1099,7 +1119,7 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) (written func([
 	// Declared last on purpose: the step resolves the ports of both selections,
 	// so it must be able to read them — a .env port can withdraw a compose
 	// declaration, and the step would otherwise offer a rewrite that never runs.
-	written = addPortsAndProfilesSteps(s, addServicesStepsParams{
+	steps = addPortsAndProfilesSteps(s, addServicesStepsParams{
 		Detection: detection,
 		Existing:  params.Existing,
 		EnvScans:  params.EnvScans,
@@ -1113,7 +1133,7 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) (written func([
 		EnvScans:   params.EnvScans,
 	})
 
-	return written
+	return steps
 }
 
 // composePatchDescription lays out only the halves that have something to show:
@@ -1217,6 +1237,7 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 	// Services section.
 	if i := at(stepDocker); i >= 0 && !final.Skipped(i) {
 		if m, ok := steps[i].Model.(components.MultiSelectModel); ok {
+			answers.SelectionAsked = true
 			answers.DockerComposeFiles = m.Values()
 			if len(answers.DockerComposeFiles) > 0 {
 				answers.DockerComposeCmd = detection.DockerComposeCmd
@@ -1230,6 +1251,7 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 	}
 	if i := at(stepScripts); i >= 0 && !final.Skipped(i) {
 		if m, ok := steps[i].Model.(components.MultiSelectModel); ok {
+			answers.SelectionAsked = true
 			for _, idxStr := range m.Values() {
 				n, err := strconv.Atoi(idxStr)
 				if err != nil || n < 0 || n >= len(detection.PackageScripts) {
