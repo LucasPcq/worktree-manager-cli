@@ -9,20 +9,23 @@ import (
 )
 
 var planFiles = []domain.ProxyPlannedFile{
-	{Path: "/etc/pf.anchors/wtm", Content: "rdr pass on lo0 …\n", Change: "new file — redirects :80 to :4000"},
-	{Path: "/etc/pf.conf", Content: "# Default PF configuration file.\nrdr-anchor \"wtm\"\n", Change: "2 lines added, inside a marked block"},
+	{
+		Path:    "/Users/dev/Library/LaunchAgents/dev.wtm.proxy.plist",
+		Content: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<plist version=\"1.0\"><dict></dict></plist>\n",
+		Change:  "new file — launchd binds :80 and hands it to wtm",
+	},
 }
 
 func TestProxyPlanReportShowsChangesNotContents(t *testing.T) {
 	var buf bytes.Buffer
 
-	ProxyPlanReport(&buf, ProxyPlanReportParams{Files: planFiles, Script: "set -e\npfctl -E", Reversible: true})
+	ProxyPlanReport(&buf, ProxyPlanReportParams{Files: planFiles, Script: "launchctl load /Users/dev/Library/LaunchAgents/dev.wtm.proxy.plist", Reversible: true})
 
 	out := buf.String()
-	if strings.Contains(out, "# Default PF configuration file.") {
+	if strings.Contains(out, "<?xml") {
 		t.Errorf("le récap par défaut ne déverse pas les contenus:\n%s", out)
 	}
-	for _, want := range []string{"/etc/pf.conf", "2 lines added", "pfctl -E", "uninstall", "--dry-run"} {
+	for _, want := range []string{"dev.wtm.proxy.plist", "launchd binds :80", "launchctl load", "uninstall", "--dry-run"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("le récap doit contenir %q:\n%s", want, out)
 		}
@@ -35,7 +38,7 @@ func TestProxyPlanReportFullShowsContents(t *testing.T) {
 	ProxyPlanReport(&buf, ProxyPlanReportParams{Files: planFiles, Full: true, Reversible: true})
 
 	out := buf.String()
-	if !strings.Contains(out, "# Default PF configuration file.") {
+	if !strings.Contains(out, "<?xml") {
 		t.Errorf("--dry-run montre les contenus:\n%s", out)
 	}
 	if strings.Contains(out, "--dry-run") {
