@@ -202,6 +202,17 @@ const (
 	// so this only ever pays for a host that accepts and then stalls.
 	ProxyProbeTimeoutMs = 150
 
+	// The pieces an origin is cut into. The proxy speaks plain HTTP, so a value
+	// on any other scheme is either refused or left to the port substitution.
+	OriginSchemeHTTP      = "http"
+	OriginSchemeHTTPS     = "https"
+	OriginSchemeSeparator = "://"
+	// OriginListSeparator is what an app splits a multi-origin setting on.
+	OriginListSeparator = ","
+	// The loopback spellings a .env value reaches a local job by, beside the TLD.
+	LoopbackIPv4 = "127.0.0.1"
+	LoopbackIPv6 = "[::1]"
+
 	// ProxyScheme is what the proxy dials a job with: the job listens on plain
 	// HTTP on the loopback, whatever the browser used to reach the proxy.
 	ProxyScheme = "http"

@@ -169,6 +169,10 @@ type ReduceEnvPortParams struct {
 	Value string
 	Base  int
 	Block int
+	// JobLabel and Project name the route this key may already hold. Empty for a
+	// key no published job backs, where only the port reduction below applies.
+	JobLabel string
+	Project  string
 }
 
 // ReduceEnvPortValue rewinds whichever worktree's port a value holds back to the
@@ -183,6 +187,15 @@ type ReduceEnvPortParams struct {
 // A value holding no such number, or more than one, is returned untouched:
 // reducing on a guess would hide a real conflict.
 func ReduceEnvPortValue(params ReduceEnvPortParams) string {
+	value := ReduceOriginValue(ReduceOriginParams{
+		Value: params.Value, JobLabel: params.JobLabel, Project: params.Project, Base: params.Base,
+	})
+	if value != params.Value {
+		// A route just rewound onto the base is already canonical: applying the
+		// port reduction to it would look for a ladder step that is not there.
+		return value
+	}
+
 	block := params.Block
 	if block <= 0 {
 		block = domain.PortOffsetBlock
