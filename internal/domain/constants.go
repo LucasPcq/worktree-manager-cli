@@ -491,7 +491,9 @@ const (
 	EnvOriginPortedTitle   = "Addresses carry the proxy's port"
 	EnvOriginPortedFmt     = "Written with :%d — `wtm run proxy install` serves them on port 80, then `wtm env` drops it"
 	EnvOriginProxyOffTitle = "This project asks for named addresses"
-	EnvOriginProxyOffLine  = "The run proxy is off on this machine, so ports were written instead — see [proxy] in ~/.config/wtm/config.toml"
+	// No path in the text: os.UserConfigDir is not ~/.config everywhere, and a
+	// command the reader can run is a better address than one they must locate.
+	EnvOriginProxyOffLine = "The run proxy is off on this machine, so ports were written instead — `wtm run proxy status` reports what serves names"
 
 	// EnvPortAnomaliesTitle heads the links wtm reports instead of applying.
 	EnvPortAnomaliesTitle = "Env ports left alone"
