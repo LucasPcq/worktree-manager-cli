@@ -226,8 +226,8 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool)
 	return nil
 }
 
-// dumpGlobalSchema writes the global config schema next to ~/.config/wtm/
-// config.toml so editors can resolve its `#:schema` directive.
+// dumpGlobalSchema writes the global config schema beside that config so
+// editors can resolve its `#:schema` directive.
 func dumpGlobalSchema() error {
 	configDir, err := os.UserConfigDir()
 	if err != nil {

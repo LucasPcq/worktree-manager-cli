@@ -542,9 +542,11 @@ itself as lines, which is what a script or an agent gets. Each job's output is a
 journaled to `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (5 MB x 3), and
 `run logs` reads that back for a job that is no longer running.
 
-### Global config — `~/.config/wtm/config.toml`
+### Global config
 
-Created by `wtm init`, personal to each developer.
+Created by `wtm init`, personal to each developer. It lives under the OS config
+directory — `~/.config/wtm/config.toml` on Linux, `~/Library/Application Support/wtm/config.toml`
+on macOS — and `wtm run proxy status` prints the resolved path.
 
 ```toml
 shell = "zsh"          # zsh | bash | fish
@@ -577,7 +579,7 @@ internet required. Re-extract them after upgrading:
 
 ```bash
 wtm schema dump            # <git-common-dir>/wtm/schemas/{run,project}.schema.json
-wtm schema dump --global   # ~/.config/wtm/schemas/global.schema.json
+wtm schema dump --global   # global.schema.json, beside the global config
 ```
 
 ## Contributing to the docs

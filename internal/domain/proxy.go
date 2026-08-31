@@ -15,7 +15,7 @@ type ProxyRoute struct {
 	Project  string `json:"project"`
 }
 
-// ProxyConfig is the [proxy] table of ~/.config/wtm/config.toml. The port is a
+// ProxyConfig is the [proxy] table of the global wtm config. The port is a
 // property of the machine, not of a repository: the daemon is global and serves
 // every repo at once.
 type ProxyConfig struct {
@@ -36,8 +36,12 @@ type ProxyStatus struct {
 	PublicPort     int    `json:"public_port"`
 	Probed         int    `json:"probed_bind_port,omitempty"`
 	DaemonUp       bool   `json:"daemon_up"`
-	Diverged       bool   `json:"diverged"`
-	ExampleURL     string `json:"example_url,omitempty"`
+	// ConfigPath is where [proxy] is read from, resolved rather than spelled: it
+	// is the one place a reader can learn the path, since os.UserConfigDir()
+	// differs per platform and no message may hard-code it.
+	ConfigPath string `json:"config_path,omitempty"`
+	Diverged   bool   `json:"diverged"`
+	ExampleURL string `json:"example_url,omitempty"`
 }
 
 // ProxyPlannedFile is one file a privileged install would write, rendered

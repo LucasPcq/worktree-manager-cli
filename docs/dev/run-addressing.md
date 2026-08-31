@@ -10,7 +10,7 @@ constants and CLI copy use these and no synonyms.
 
 | Term | What it is | Where it lives |
 | -- | -- | -- |
-| **the proxy** | The reverse proxy the daemon runs. It listens on one port and routes by `Host` header to the job answering under that name. **This is what makes names exist at all.** On by default; `[proxy] enabled = false` in `~/.config/wtm/config.toml` switches it off | `internal/service/proxy` |
+| **the proxy** | The reverse proxy the daemon runs. It listens on one port and routes by `Host` header to the job answering under that name. **This is what makes names exist at all.** On by default; `[proxy] enabled = false` in the global config switches it off | `internal/service/proxy` |
 | **bind port** | What the proxy actually listens on: `10080`, or the next free port when that one is taken (the R7 fallback) | `rules.ProxyPort`, then the daemon's own fallback |
 | **privileged redirection** | The OS rule `wtm run proxy install` installs — on macOS a launchd agent binding `:80` and relaying to the bind port. **It only removes the port suffix from a URL.** It unlocks nothing | `internal/service/proxy/redirect*.go` |
 | **public port** | What a URL *announces*, as opposed to what anything binds: nothing (i.e. `:80`) when the redirection is live, the bind port otherwise | `rules.PublicPort` |
@@ -37,7 +37,7 @@ isolation, the reason named URLs exist, keys on the **host** and ignores the por
 entirely: `feat-x` and `feat-y` are separate jars whether or not `:10080` is there.
 
 **Addressing is a project setting, the proxy is a machine setting.** `run.toml` says
-what the project wants; `~/.config/wtm/config.toml` says what this machine can do. When
+what the project wants; the global config says what this machine can do. When
 the machine cannot honour it — proxy off, no public port — ports are written and a
 notice says so. Writing a name nothing serves would produce a syntactically perfect,
 dead value.

@@ -411,7 +411,9 @@ and **experimental**: the global `wtm init` does not configure it.
   third-party config — report the finding and let the user apply it. Like the port check,
   it never fails the run and never changes the exit code. Vite needs nothing: it allows
   `.localhost` already.
-- **`[proxy]` in `~/.config/wtm/config.toml`** tunes the proxy for the whole machine:
+- **`[proxy]` in the global config** tunes the proxy for the whole machine. That file sits
+  under the OS config directory — `~/.config/wtm/` on Linux, `~/Library/Application Support/wtm/`
+  on macOS — and `wtm run proxy status` prints its resolved path, so never spell it yourself:
   `port` (default `10080`) and `enabled` (default on). Switching it off is not a failure —
   every URL wtm prints falls back to the direct `http://localhost:<port>` form. Same if
   the port is already taken: the jobs still start, wtm prints the direct form and says

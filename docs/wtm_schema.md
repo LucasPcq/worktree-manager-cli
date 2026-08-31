@@ -16,5 +16,5 @@ Use `wtm schema dump` to write them to <git-common-dir>/wtm/schemas/ so editors 
 ### SEE ALSO
 
 * [wtm](wtm.md)	 - Orchestrate git worktrees and team dev workflows from the terminal
-* [wtm schema dump](wtm_schema_dump.md)	 - Write embedded schemas to <state-dir>/schemas/ (or ~/.config/wtm/schemas with --global)
+* [wtm schema dump](wtm_schema_dump.md)	 - Write embedded schemas to <state-dir>/schemas/ (or the global config's schemas/ with --global)
 

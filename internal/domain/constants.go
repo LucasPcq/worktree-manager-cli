@@ -38,8 +38,14 @@ const (
 	// ConfigFileName is the project-level config file name (inside <state-dir>/).
 	ConfigFileName = "config.toml"
 
-	// GlobalConfigDir is the subdirectory under ~/.config for wtm.
+	// GlobalConfigDir is wtm's subdirectory under os.UserConfigDir().
 	GlobalConfigDir = "wtm"
+
+	// GlobalConfigLabel names the machine-level config in anything a user reads.
+	// The path is deliberately absent: os.UserConfigDir() is ~/.config on Linux
+	// and ~/Library/Application Support on macOS, so any literal is wrong on one
+	// of the two. `wtm run proxy status` prints the real one.
+	GlobalConfigLabel = "the global wtm config"
 
 	// GlobalConfigFile is the user-level config file name.
 	GlobalConfigFile = "config.toml"
@@ -227,12 +233,12 @@ const (
 	// ProxyBindFailedFmt is what the daemon records when the port is taken, and
 	// ProxyUnavailableFmt what a client says instead of a name nothing serves.
 	ProxyBindFailedFmt    = "run proxy: port %d is taken (%v) — jobs keep their own ports"
-	ProxyUnavailableFmt   = "Port %d is taken, so jobs answer on their own ports — free it, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyUnavailableFmt   = "Port %d is taken, so jobs answer on their own ports — free it, or set [proxy] port in " + GlobalConfigLabel
 	ProxyUnavailableTitle = "Named URLs are off"
 	// ProxyMovedFmt is what a client says when the proxy took a port other than
 	// the configured one, so the URLs it prints are not the ones the config
 	// alone would predict.
-	ProxyMovedFmt   = "Port %d is taken, so named URLs are served on %d — free it, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyMovedFmt   = "Port %d is taken, so named URLs are served on %d — free it, or set [proxy] port in " + GlobalConfigLabel
 	ProxyMovedTitle = "Named URLs moved"
 	// The redirection is a per-user LaunchAgent: launchd binds the privileged
 	// socket and hands it to an ordinary process, so nothing here needs root.
@@ -278,6 +284,7 @@ const (
 	ProxyStatusBindFmt      = "Bind port: %d"
 	ProxyStatusPublicFmt    = "Public port: %s"
 	ProxyStatusRedirectFmt  = "Redirection: %s"
+	ProxyStatusConfigFmt    = "Config: %s"
 	ProxyStatusExampleFmt   = "Example: %s"
 	ProxyStatusUnsupported  = "not implemented on this platform — named URLs keep their port"
 	ProxyStatusNotInstalled = "not installed — `wtm run proxy install` serves named URLs on port 80"
@@ -313,7 +320,7 @@ const (
 
 	// ProxyPortCollisionFmt is the one collision a job cannot see coming: the
 	// daemon already holds the port by the time the job tries to bind it.
-	ProxyPortCollisionFmt   = "port %s (job %q, base %d) reaches the run proxy's port %d after %d worktree(s) — that job will fail to bind there; move the base, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyPortCollisionFmt   = "port %s (job %q, base %d) reaches the run proxy's port %d after %d worktree(s) — that job will fail to bind there; move the base, or set [proxy] port in " + GlobalConfigLabel
 	ProxyPortCollisionTitle = "Ports that will meet the run proxy"
 
 	// DevOriginsKey is the Next option that lets a subdomain of .localhost reach
