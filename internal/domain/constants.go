@@ -220,35 +220,36 @@ const (
 	// alone would predict.
 	ProxyMovedFmt   = "Port %d is taken, so named URLs are served on %d — free it, or set [proxy] port in ~/.config/wtm/config.toml"
 	ProxyMovedTitle = "Named URLs moved"
-	// The pf.conf blocks. Two, because pf orders rule types — a rdr-anchor after
-	// the filter rules is a pfctl error — while load statements go last.
-	ProxyPfRdrMarkStart  = "# >>> wtm rdr >>>"
-	ProxyPfRdrMarkEnd    = "# <<< wtm rdr <<<"
-	ProxyPfLoadMarkStart = "# >>> wtm load >>>"
-	ProxyPfLoadMarkEnd   = "# <<< wtm load <<<"
-	ProxyAnchorName      = "wtm"
-	ProxyAnchorPath      = "/etc/pf.anchors/wtm"
-	ProxyPfConfPath      = "/etc/pf.conf"
-	ProxyPfRdrAnchorLine = `rdr-anchor "wtm"`
-	ProxyPfLoadLine      = `load anchor "wtm" from "/etc/pf.anchors/wtm"`
-	// ProxyPfRdrAnchorPrefix and ProxyPfNatAnchorPrefix locate the translation
-	// section of a pf.conf we did not write.
-	ProxyPfRdrAnchorPrefix = "rdr-anchor"
-	ProxyPfNatAnchorPrefix = "nat-anchor"
-
-	ProxyPlistPath  = "/Library/LaunchDaemons/dev.wtm.proxy.plist"
+	// The redirection is a per-user LaunchAgent: launchd binds the privileged
+	// socket and hands it to an ordinary process, so nothing here needs root.
+	// Loopback only — never 0.0.0.0, which would publish every worktree.
+	ProxyAgentDir   = "Library/LaunchAgents"
+	ProxyPlistName  = "dev.wtm.proxy.plist"
 	ProxyPlistLabel = "dev.wtm.proxy"
-	// ProxyAnchorRuleFmt takes the privileged port then the bind port.
-	ProxyAnchorRuleFmt = "rdr pass on lo0 inet proto tcp from any to 127.0.0.1 port %d -> 127.0.0.1 port %d\n"
-	ProxyMechanismPf   = "pf + launchd"
-	ProxyPlistFmt      = `<?xml version="1.0" encoding="UTF-8"?>
+	// ProxySocketKey names the entry of the job's Sockets dictionary, and is the
+	// string launch_activate_socket is called with — the two must agree.
+	ProxySocketKey        = "Listeners"
+	ProxyMechanismLaunchd = "launchd socket activation"
+	ProxyAgentChangeFmt   = "new file — launchd binds :%d and hands it to wtm, which relays to :%d"
+	ProxyLoadCmdFmt       = "launchctl load %s"
+	LaunchctlBin          = "launchctl"
+	LaunchctlLoad         = "load"
+	LaunchctlUnload       = "unload"
+	ProxyPlistFmt         = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>Label</key><string>%s</string>
 	<key>ProgramArguments</key>
-	<array><string>/sbin/pfctl</string><string>-E</string><string>-f</string><string>%s</string></array>
-	<key>RunAtLoad</key><true/>
+	<array><string>%s</string><string>%s</string><string>--%s</string><string>%d</string></array>
+	<key>Sockets</key>
+	<dict>
+		<key>%s</key>
+		<array>
+			<dict><key>SockNodeName</key><string>127.0.0.1</string><key>SockServiceName</key><string>%d</string></dict>
+			<dict><key>SockNodeName</key><string>::1</string><key>SockServiceName</key><string>%d</string></dict>
+		</array>
+	</dict>
 </dict>
 </plist>
 `
@@ -267,26 +268,21 @@ const (
 	ProxyDivergedLine       = "Port 80 is redirected, but what answers there is not the proxy now running"
 	ProxyDivergedFix        = "Re-run `wtm run proxy install` to point it at the port the proxy actually bound"
 
-	// The install and uninstall recaps name the paths and the privileged commands;
-	// the contents are a --dry-run away. Dumping a 30-line /etc/pf.conf by
-	// default is how a confirmation becomes mechanical.
-	ProxyInstallRecapTitleFmt  = "wtm will change %d files as root"
-	ProxyInstallRecapScript    = "and run, as root"
+	// The install and uninstall recaps name the file and the command; the
+	// contents are a --dry-run away.
+	ProxyInstallRecapTitleFmt  = "wtm will change %d file(s) in your home directory"
+	ProxyInstallRecapScript    = "and run"
 	ProxyPlanFileFmt           = "%s\n    %s"
 	ProxyInstallRecapReverse   = "`wtm run proxy uninstall` reverses every change"
-	ProxyInstallRecapFull      = "`wtm run proxy install --dry-run` prints every file in full and writes nothing"
+	ProxyInstallRecapFull      = "`wtm run proxy install --dry-run` prints the file in full and writes nothing"
 	ProxyInstallConfirmTitle   = "Install the redirection?"
-	ProxyInstallConfirmDesc    = "sudo will ask for your password. `wtm run proxy uninstall` reverses every change."
+	ProxyInstallConfirmDesc    = "No sudo, no system file: launchd binds port 80 for you. `wtm run proxy uninstall` reverses it."
 	ProxyInstallDone           = "Port 80 now reaches the run proxy — named URLs drop their port"
+	ProxyUninstallRecapTitle   = "wtm will remove this LaunchAgent"
 	ProxyUninstallConfirmTitle = "Remove the redirection?"
-	ProxyUninstallConfirmDesc  = "sudo will ask for your password. Named URLs go back to carrying the proxy's port."
+	ProxyUninstallConfirmDesc  = "Named URLs go back to carrying the proxy's port."
 	ProxyUninstallDone         = "Redirection removed — named URLs carry the proxy's port again"
-	// What each planned file does, shown instead of its contents.
-	ProxyAnchorChangeFmt       = "new file — redirects :%d to :%d on the loopback"
-	ProxyPfConfChange          = "2 lines added, inside a marked block"
-	ProxyPlistChange           = "new file — reloads pf at boot"
-	ProxyUninstallChange       = "removed"
-	ProxyUninstallPfConfChange = "the wtm blocks are removed, the rest of the file is left untouched"
+	ProxyUninstallChange       = "unloaded from launchd and deleted"
 
 	// The one place wtm mentions the redirection outside its own commands.
 	// ProxyHostShape names the shape rather than one job: run init speaks about
@@ -294,7 +290,7 @@ const (
 	ProxyHostShape         = "<job>.<worktree>.<repo>.localhost"
 	ProxyInstallHintTitle  = "Named URLs carry a port"
 	ProxyInstallHintFmt    = "Jobs publishing a url answer on %s"
-	ProxyInstallHintCmd    = "`wtm run proxy install` redirects port 80 so the port disappears from the URL"
+	ProxyInstallHintCmd    = "`wtm run proxy install` serves them on port 80 so the port disappears from the URL"
 	ProxyInstallHintNoPlat = "Dropping that port is not implemented on this platform yet"
 
 	// ProxyPortCollisionFmt is the one collision a job cannot see coming: the
@@ -1183,41 +1179,45 @@ const (
 
 	// CLI command names — used in Use: declarations and exec.Command(bin, …) call sites.
 	// Centralised here so a rename is a single-file change with no silent breakage.
-	CmdRun       = "run"
-	CmdInit      = "init"
-	CmdGo        = "go"
-	CmdCreate    = "create"
-	CmdClean     = "clean"
-	CmdList      = "list"
-	CmdSwitch    = "switch"
-	CmdUp        = "up"
-	CmdDown      = "down"
-	CmdStart     = "start"
-	CmdStop      = "stop"
-	CmdLogs      = "logs"
-	CmdPs        = "ps"
-	CmdDaemon    = "daemon"
-	CmdURL       = "url"
-	CmdProxy     = "proxy"
-	CmdStatus    = "status"
-	CmdInstall   = "install"
-	CmdUninstall = "uninstall"
-	CmdOpen      = "open"
-	CmdCheckout  = "checkout"
-	CmdExport    = "export"
-	CmdImport    = "import"
-	CmdJob       = "job"
-	CmdProfile   = "profile"
-	CmdAdd       = "add"
-	CmdRm        = "rm"
-	CmdEdit      = "edit"
-	CmdExtract   = "extract"
-	CmdSync      = "sync"
-	CmdRelocate  = "relocate"
-	CmdReparent  = "reparent"
-	CmdTree      = "tree"
-	CmdPrune     = "prune"
-	CmdEnv       = "env"
+	CmdRun    = "run"
+	CmdInit   = "init"
+	CmdGo     = "go"
+	CmdCreate = "create"
+	CmdClean  = "clean"
+	CmdList   = "list"
+	CmdSwitch = "switch"
+	CmdUp     = "up"
+	CmdDown   = "down"
+	CmdStart  = "start"
+	CmdStop   = "stop"
+	CmdLogs   = "logs"
+	CmdPs     = "ps"
+	CmdDaemon = "daemon"
+	CmdURL    = "url"
+	CmdProxy  = "proxy"
+	// CmdProxyForward is what launchd runs, never a user: it serves the socket
+	// launchd bound on the privileged port.
+	CmdProxyForward = "proxy-forward"
+	FlagTarget      = "target"
+	CmdStatus       = "status"
+	CmdInstall      = "install"
+	CmdUninstall    = "uninstall"
+	CmdOpen         = "open"
+	CmdCheckout     = "checkout"
+	CmdExport       = "export"
+	CmdImport       = "import"
+	CmdJob          = "job"
+	CmdProfile      = "profile"
+	CmdAdd          = "add"
+	CmdRm           = "rm"
+	CmdEdit         = "edit"
+	CmdExtract      = "extract"
+	CmdSync         = "sync"
+	CmdRelocate     = "relocate"
+	CmdReparent     = "reparent"
+	CmdTree         = "tree"
+	CmdPrune        = "prune"
+	CmdEnv          = "env"
 
 	// MinWizardListHeight is the minimum number of rows reserved for a wizard
 	// step's scrollable list. Completed-step summaries are bounded so they never

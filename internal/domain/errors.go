@@ -188,17 +188,17 @@ var (
 
 	// ErrJobNonePublished is returned when no job in run.toml declares a url,
 	// so there is no address to print.
-	// ErrProxyInstallNeedsTTY refuses a privileged write nobody is watching:
-	// sudo reads a password from the terminal, so --yes cannot stand in for one.
-	ErrProxyInstallNeedsTTY = errors.New("`wtm run proxy install` writes system files through sudo and needs a terminal — run it interactively")
+	// ErrProxyNoListeners means launchd started the forwarder without handing it
+	// the sockets it exists to serve.
+	ErrProxyNoListeners = errors.New("launchd started the port-80 forwarder with no listening socket")
+
+	// ErrProxyInstallNeedsYes is the ordinary confirmation axis: the write itself
+	// needs no privilege, so a run nobody can answer only needs --yes.
+	ErrProxyInstallNeedsYes = errors.New("`wtm run proxy install` installs a LaunchAgent — pass --yes to run it without a terminal")
 
 	// ErrProxyRedirectUnsupported is what every platform but darwin answers: the
 	// named URLs keep their port there, which is a state, not a failure.
 	ErrProxyRedirectUnsupported = errors.New("serving the proxy on port 80 is not implemented on this platform yet — named URLs keep their port")
-
-	// ErrPfConfUnrecognised is returned when /etc/pf.conf has no translation
-	// section to anchor into: guessing a position there would break pfctl.
-	ErrPfConfUnrecognised = errors.New("/etc/pf.conf has no nat-anchor or rdr-anchor line — wtm will not guess where its rule belongs")
 
 	ErrJobNonePublished = errors.New("no job declares a url in run.toml — add one with `url = { port = \"PORT\" }`")
 

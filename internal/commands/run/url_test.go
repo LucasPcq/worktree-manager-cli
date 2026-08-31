@@ -131,6 +131,8 @@ func TestRunURLUnknownJobNamesTheOnesThatPublish(t *testing.T) {
 }
 
 func TestPublicProxyPortWithoutDaemon(t *testing.T) {
+	shortHome(t)
+
 	if got := publicProxyPort(4000); got != 4000 {
 		t.Errorf("sans daemon ni redirection déclarée, le port de bind est la réponse : got %d", got)
 	}

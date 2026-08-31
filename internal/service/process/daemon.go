@@ -35,10 +35,9 @@ type daemonServer struct {
 	// proxyPort is what the proxy actually bound, zero when it is off or the
 	// port was taken. Every answer carries it so no client ever announces a
 	// name nothing serves.
-	proxyPort       int
-	proxyPublicPort int
-	clients         sync.WaitGroup
-	shutdown        chan struct{}
+	proxyPort int
+	clients   sync.WaitGroup
+	shutdown  chan struct{}
 }
 
 // RunDaemon starts the daemon, listens on the Unix socket, and blocks until shutdown.
@@ -73,11 +72,6 @@ func RunDaemon(params DaemonParams) error {
 			log.Printf(domain.ProxyBindFailedFmt, params.ProxyPort, startErr)
 		} else {
 			d.proxyPort = server.Port()
-			d.proxyPublicPort = rules.PublicPort(rules.PublicPortParams{
-				BindPort: server.Port(),
-				Probed:   proxy.Probe(proxy.ProbeParams{Port: domain.ProxyPrivilegedPort}),
-				DaemonUp: true,
-			})
 			defer server.Close()
 		}
 	}
@@ -110,6 +104,20 @@ func RunDaemon(params DaemonParams) error {
 			d.handleConnection(conn)
 		}()
 	}
+}
+
+// publicPort is probed per answer, never cached: an install or an uninstall
+// happens while the daemon is alive, and a value frozen at startup would keep
+// announcing a name nothing serves — or hide one that works.
+func (d *daemonServer) publicPort() int {
+	if d.proxyPort == 0 {
+		return 0
+	}
+	return rules.PublicPort(rules.PublicPortParams{
+		BindPort: d.proxyPort,
+		Probed:   proxy.Probe(proxy.ProbeParams{Port: domain.ProxyPrivilegedPort}),
+		DaemonUp: true,
+	})
 }
 
 func (d *daemonServer) stop() {
@@ -194,7 +202,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 			return
 		}
 		zero := 0
-		encoder.Encode(Response{Status: StatusDone, Message: fmt.Sprintf("task %s done", req.Job.Name), ExitCode: &zero, Ports: ports, ProxyPort: d.proxyPort, ProxyPublicPort: d.proxyPublicPort})
+		encoder.Encode(Response{Status: StatusDone, Message: fmt.Sprintf("task %s done", req.Job.Name), ExitCode: &zero, Ports: ports, ProxyPort: d.proxyPort, ProxyPublicPort: d.publicPort()})
 		return
 	}
 
@@ -214,7 +222,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 			encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 			return
 		}
-		encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name), Ports: ports, ProxyPort: d.proxyPort, ProxyPublicPort: d.proxyPublicPort})
+		encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name), Ports: ports, ProxyPort: d.proxyPort, ProxyPublicPort: d.publicPort()})
 		return
 	}
 
@@ -223,7 +231,7 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 		return
 	}
 
-	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name), Ports: ports, ProxyPort: d.proxyPort, ProxyPublicPort: d.proxyPublicPort})
+	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name), Ports: ports, ProxyPort: d.proxyPort, ProxyPublicPort: d.publicPort()})
 }
 
 func (d *daemonServer) handleStop(encoder *json.Encoder, req Request) {
@@ -270,7 +278,7 @@ func (d *daemonServer) handleList(encoder *json.Encoder, req Request) {
 		infos = append(infos, d.jobInfoOf(job))
 	}
 
-	encoder.Encode(Response{Status: StatusOK, Jobs: infos, ProxyPort: d.proxyPort, ProxyPublicPort: d.proxyPublicPort})
+	encoder.Encode(Response{Status: StatusOK, Jobs: infos, ProxyPort: d.proxyPort, ProxyPublicPort: d.publicPort()})
 }
 
 func (d *daemonServer) jobInfoOf(job ManagedJob) domain.JobInfo {
@@ -286,7 +294,7 @@ func (d *daemonServer) jobInfoOf(job ManagedJob) domain.JobInfo {
 			Job:        job.Config,
 			Ports:      jobPorts(job.Config, job.Env),
 			Host:       job.RouteHost,
-			PublicPort: d.proxyPublicPort,
+			PublicPort: d.publicPort(),
 		}),
 	}
 }

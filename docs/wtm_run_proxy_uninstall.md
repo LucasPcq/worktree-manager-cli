@@ -11,7 +11,7 @@ wtm run proxy uninstall [flags]
 ```
   -h, --help            help for uninstall
       --output string   Output format: text or json (default "text")
-  -y, --yes             Skip the confirmation (sudo still asks for a password)
+  -y, --yes             Skip the confirmation
 ```
 
 ### SEE ALSO

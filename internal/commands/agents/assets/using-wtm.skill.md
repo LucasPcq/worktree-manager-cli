@@ -348,9 +348,10 @@ and **experimental**: the global `wtm init` does not configure it.
   is **not** running prints that file back and returns.
 - `run proxy status` reports what actually serves those names: the proxy's bind port, the
   public port announced in URLs, and whether the port-80 redirection is installed.
-  `--output json` gives the whole thing as one object. **`run proxy install` and
-  `run proxy uninstall` are not for you**: they write system files through `sudo` and
-  refuse outright without a terminal (and in `--output json`). Tell the user to run them.
+  `--output json` gives the whole thing as one object. `run proxy install` needs no
+  privilege — launchd binds port 80 and hands the socket to wtm — but it installs a
+  LaunchAgent in the user's home, so **do not run it on your own initiative**: propose it,
+  and let the user decide. Without a terminal it refuses unless you pass `--yes`.
 - `run export` / `run import` — share a layout as JSON.
 - `run job` and `run profile` are fully agent-drivable with flags — `add`, `rm` and
   `edit` alike. No wizard is ever needed, and none opens as long as a flag is passed.

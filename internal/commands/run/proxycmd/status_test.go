@@ -39,18 +39,18 @@ func TestStatusJSONCarriesBothPorts(t *testing.T) {
 	}
 }
 
-func TestInstallRefusesJSON(t *testing.T) {
-	_, err := runCmd(t, domain.CmdInstall, "--"+domain.FlagOutput, domain.OutputJSON, "--"+domain.FlagYes)
+func TestInstallRefusesAnUnanswerableRun(t *testing.T) {
+	_, err := runCmd(t, domain.CmdInstall)
 
-	if !errors.Is(err, domain.ErrProxyInstallNeedsTTY) {
-		t.Errorf("got %v, want ErrProxyInstallNeedsTTY", err)
+	if !errors.Is(err, domain.ErrProxyInstallNeedsYes) {
+		t.Errorf("got %v, want ErrProxyInstallNeedsYes", err)
 	}
 }
 
-func TestUninstallRefusesWithoutATerminal(t *testing.T) {
-	_, err := runCmd(t, domain.CmdUninstall, "--"+domain.FlagYes)
+func TestUninstallRefusesAnUnanswerableRun(t *testing.T) {
+	_, err := runCmd(t, domain.CmdUninstall)
 
-	if !errors.Is(err, domain.ErrProxyInstallNeedsTTY) {
-		t.Errorf("got %v, want ErrProxyInstallNeedsTTY", err)
+	if !errors.Is(err, domain.ErrProxyInstallNeedsYes) {
+		t.Errorf("got %v, want ErrProxyInstallNeedsYes", err)
 	}
 }

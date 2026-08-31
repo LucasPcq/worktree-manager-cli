@@ -1,10 +1,10 @@
 ## wtm run proxy install
 
-Redirect port 80 to the run proxy so named URLs drop their port
+Serve named URLs on port 80 so they drop their port
 
 ### Synopsis
 
-Write the OS files that redirect port 80 to the run proxy. The recap shows every file before sudo is asked for, and `wtm run proxy uninstall` reverses all of it.
+Install a per-user LaunchAgent: launchd binds port 80 on the loopback and hands the socket to wtm, which relays it to the run proxy. No sudo, no system file — everything lives in ~/Library/LaunchAgents and `wtm run proxy uninstall` removes it.
 
 ```
 wtm run proxy install [flags]
@@ -16,7 +16,7 @@ wtm run proxy install [flags]
       --dry-run         Print every file in full and write nothing
   -h, --help            help for install
       --output string   Output format: text or json (default "text")
-  -y, --yes             Skip the confirmation (sudo still asks for a password)
+  -y, --yes             Skip the confirmation
 ```
 
 ### SEE ALSO

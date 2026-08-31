@@ -16,11 +16,11 @@ import (
 func newInstallCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdInstall,
-		Short: "Redirect port 80 to the run proxy so named URLs drop their port",
-		Long:  "Write the OS files that redirect port 80 to the run proxy. The recap shows every file before sudo is asked for, and `wtm run proxy uninstall` reverses all of it.",
+		Short: "Serve named URLs on port 80 so they drop their port",
+		Long:  "Install a per-user LaunchAgent: launchd binds port 80 on the loopback and hands the socket to wtm, which relays it to the run proxy. No sudo, no system file — everything lives in ~/Library/LaunchAgents and `wtm run proxy uninstall` removes it.",
 		RunE:  runInstall,
 	}
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation (sudo still asks for a password)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation")
 	cmd.Flags().Bool(domain.FlagDryRun, false, "Print every file in full and write nothing")
 	shared.AddOutputFlag(cmd)
 	return cmd
@@ -32,7 +32,7 @@ func newUninstallCmd() *cobra.Command {
 		Short: "Remove the redirection and give named URLs their port back",
 		RunE:  runUninstall,
 	}
-	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation (sudo still asks for a password)")
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -86,18 +86,21 @@ func runUninstall(cmd *cobra.Command, _ []string) error {
 	}
 
 	redirector := proxy.NewRedirector(proxy.RedirectorParams{})
-	if status := redirector.Inspect(); !status.Supported {
+	status := redirector.Inspect()
+	if !status.Supported {
 		return domain.ErrProxyRedirectUnsupported
 	}
 
+	plan, err := redirector.Plan(proxy.PlanParams{BindPort: status.BindPort})
+	if err != nil {
+		return err
+	}
+	for i := range plan.Files {
+		plan.Files[i].Change = domain.ProxyUninstallChange
+	}
+
 	output.Frame(cmd.OutOrStdout(), func() {
-		output.ProxyPlanReport(cmd.OutOrStdout(), output.ProxyPlanReportParams{
-			Files: []domain.ProxyPlannedFile{
-				{Path: domain.ProxyAnchorPath, Change: domain.ProxyUninstallChange},
-				{Path: domain.ProxyPlistPath, Change: domain.ProxyUninstallChange},
-				{Path: domain.ProxyPfConfPath, Change: domain.ProxyUninstallPfConfChange},
-			},
-		})
+		output.ProxyPlanReport(cmd.OutOrStdout(), output.ProxyPlanReportParams{Files: plan.Files})
 	})
 
 	confirmed, err := confirm(cmd, components.NewConfirmParams{
@@ -125,12 +128,20 @@ func confirm(cmd *cobra.Command, params components.NewConfirmParams) (bool, erro
 	return confirmed, err
 }
 
-// resolveBindPort refuses a privileged write nobody is watching, and returns the
-// bind port to redirect to.
+// resolveBindPort returns the port to redirect to, refusing only what cannot be
+// confirmed: launchd needs no privilege, so the terminal is only about the
+// prompt, and --yes stands in for it.
 func resolveBindPort(cmd *cobra.Command, preview bool) (int, error) {
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	if !preview && (format == domain.OutputJSON || !term.IsTerminal(int(os.Stdin.Fd()))) {
-		return 0, domain.ErrProxyInstallNeedsTTY
+	if !preview && !canConfirm(cmd) {
+		return 0, domain.ErrProxyInstallNeedsYes
 	}
 	return configuredBindPort(cmd)
+}
+
+func canConfirm(cmd *cobra.Command) bool {
+	if yes, _ := cmd.Flags().GetBool(domain.FlagYes); yes {
+		return true
+	}
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	return format != domain.OutputJSON && term.IsTerminal(int(os.Stdin.Fd()))
 }
