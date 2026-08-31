@@ -464,7 +464,9 @@ const (
 	EnvPortOffsetPrefix = "offset +"
 	// EnvPortOffsetNoteFmt orients the reader of the confirmation, whose title
 	// already says what is being asked.
-	EnvPortOffsetNoteFmt = "This worktree's offset is +%d — the ports below move with it."
+	// Neutral on purpose: the same table carries values that take a port and
+	// values that take an address, and both follow this worktree.
+	EnvPortOffsetNoteFmt = "This worktree's offset is +%d — the values below follow it."
 	// EnvPortTableRowFmt aligns key, port name, the port move, and the value the
 	// key lands on — the only column that can be long, and the only one elided.
 	EnvPortTableRowFmt = "%s  %s  %s  %s"
@@ -541,12 +543,12 @@ const (
 	EnvApplyActionLabel       = "Yes, apply"
 	EnvApplyWithoutPortsLabel = "Apply, but leave the port values alone"
 	// EnvPortsLeftAloneFmt replaces the table when the pass was declined.
-	EnvPortsLeftAloneFmt       = "Env ports left alone — %d value(s) still on the base ports"
+	EnvPortsLeftAloneFmt       = "Env ports left alone — %d linked value(s) left as they were"
 	EnvCheckCleanMessage       = "No drift."
 	EnvNothingWrittenMessage   = "No changes written."
 	EnvReconciledFmt           = "Reconciled %d file(s)."
-	EnvPortsShiftedFmt         = "Shifted %d port value(s)."
-	EnvReconciledAndShiftedFmt = "Reconciled %d file(s) and shifted %d port value(s)."
+	EnvPortsShiftedFmt         = "Settled %d linked .env value(s)."
+	EnvReconciledAndShiftedFmt = "Reconciled %d file(s) and settled %d linked value(s)."
 
 	// The [[env_port]] detection of `wtm run init`.
 	// EnvPortLinkFmt is one link as the prompt and the recap both show it:
