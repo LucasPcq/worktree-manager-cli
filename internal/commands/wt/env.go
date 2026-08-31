@@ -266,6 +266,7 @@ func resolveEnvPorts(cfg shared.ConfigResult, branch string, worktreePath string
 		Branch:       branch,
 		WorktreePath: worktreePath,
 		EnvFiles:     cfg.Config.Project.Env.Files,
+		Global:       cfg.Config.Global,
 	})
 }
 

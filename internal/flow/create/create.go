@@ -162,6 +162,7 @@ func (f *createFlow) settleEnvPorts(worktreePath, branchName string) error {
 		Branch:       branchName,
 		WorktreePath: worktreePath,
 		EnvFiles:     f.ctx.Config.Project.Env.Files,
+		Global:       f.ctx.Config.Global,
 	})
 	if err != nil || params.Empty() {
 		return err
