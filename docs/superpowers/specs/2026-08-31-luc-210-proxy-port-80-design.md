@@ -1,16 +1,16 @@
 # LUC-210 — [F2] Des URLs nommées sans port : servir le proxy sur le 80
 
-Statut : design validé, non commité (relecture locale avant plan d'implémentation).
+Statut : livré. Le §3 a été réécrit après implémentation — le mécanisme `pf` du design initial ne fonctionne pas sur macOS actuel, et a été remplacé par l'activation de socket launchd.
 
 ## Objectif
 
-`http://web.feat-x.monorepo.localhost/` au lieu de `http://web.feat-x.monorepo.localhost:4000/`. Le port du proxy est un détail de transport ; tant qu'il figure dans l'URL, celle-ci n'est ni mémorisable ni collable dans un `.env` sans que le port fuite dans le projet.
+`http://web.feat-x.monorepo.localhost/` au lieu de `http://web.feat-x.monorepo.localhost:10080/`. Le port du proxy est un détail de transport ; tant qu'il figure dans l'URL, celle-ci n'est ni mémorisable ni collable dans un `.env` sans que le port fuite dans le projet.
 
 Le ticket s'arrête à HTTP. HTTPS (et donc la CA locale) est explicitement hors périmètre.
 
 ## Périmètre
 
-* **macOS** : implémentation complète (ancre `pf` + `LaunchDaemon`, modèle Pow/Valet).
+* **macOS** : implémentation complète (LaunchAgent + activation de socket launchd, modèle puma-dev v0.3+).
 * **Linux et le reste** : l'interface de service existe, l'implémentation renvoie « non supporté sur cette plateforme » et les URLs gardent leur port. Ticket successeur.
 * **Le cas « pas installé » est le chemin par défaut**, pas un cas dégradé : c'est l'état de toute nouvelle installation et de tout CI, et c'est exactement le comportement actuel, non modifié.
 
@@ -25,7 +25,7 @@ Le ticket s'arrête à HTTP. HTTPS (et donc la CA locale) est explicitement hors
 
 Aujourd'hui un seul nombre joue les deux rôles. Ce ticket les sépare.
 
-* **Port de bind** — ce que `proxy.Server` écoute réellement : 4000, ou 4001…4015 après le scan de LUC-209. Non privilégié. C'est ce que `[proxy] port` désigne, sens inchangé.
+* **Port de bind** — ce que `proxy.Server` écoute réellement : 10080, ou 10081…10095 après le scan de LUC-209. Non privilégié. C'est ce que `[proxy] port` désigne, sens inchangé.
 * **Port public** — ce qui apparaît dans l'URL. Vaut `80` si et seulement si la redirection est réellement en place ; sinon, le port de bind.
 
 **Aucune nouvelle clé de configuration.** Le port public n'est pas une préférence mais un fait machine : il découle de l'installation, jamais d'une valeur écrite dans `config.toml`. Deux clés qui peuvent se contredire seraient une incohérence à arbitrer ; il n'y en a qu'une.
@@ -59,23 +59,23 @@ Elle fait un `GET http://127.0.0.1:<Port>/` avec `Host: probe.wtm.localhost` (`d
 La sonde ne dit donc pas « quelque chose écoute sur 80 » mais « **c'est notre proxy, celui qui tourne actuellement**, qui répond sur 80 ». Deux cas que ça règle sans code spécifique :
 
 * un autre serveur occupe le 80 → pas d'en-tête → port public = port de bind ;
-* la règle `pf` pointe sur 4000 mais le daemon s'est replié sur 4001 (scan de LUC-209) → l'en-tête ne correspond pas au port réellement bindé → port public = port de bind.
+* un forwarder qui viserait un port que le daemon a quitté → l'en-tête ne correspond pas au port réellement bindé → port public = port de bind. (Le forwarder livré résout le port auprès du daemon, donc ce cas ne survient plus dans le fonctionnement nominal.)
 
 Quand rien n'écoute sur 80, la connexion est refusée immédiatement : coût nul dans le cas courant.
 
 ### L'ordre de résolution
 
-La sonde est la vérité terrain mais elle exige qu'un daemon tourne. Or LUC-212 écrira des `.env` **à la création d'un worktree**, moment où il n'y a souvent rien à sonder : une sonde seule figerait `:4000` dans les `.env` alors que la redirection est installée. D'où trois étages, dans cet ordre :
+La sonde est la vérité terrain mais elle exige qu'un daemon tourne. Or LUC-212 écrira des `.env` **à la création d'un worktree**, moment où il n'y a souvent rien à sonder : une sonde seule figerait `:10080` dans les `.env` alors que la redirection est installée. D'où trois étages, dans cet ordre :
 
-1. **Un daemon tourne** → son `Response.ProxyPublicPort`, issu de la sonde faite au démarrage du daemon. Vérité terrain.
-2. **Pas de daemon** → **état déclaré** par l'installation, lu sans `sudo` (présence de l'ancre, du bloc balisé dans `/etc/pf.conf`, du plist — tous lisibles par tous) → 80.
+1. **Un daemon tourne** → son `Response.ProxyPublicPort`, sondé **à chaque réponse** et jamais mis en cache : une install ou une désinstallation a lieu pendant la vie du daemon, et une valeur figée au démarrage annoncerait un nom que plus rien ne sert.
+2. **Pas de daemon** → **état déclaré** par l'installation : la présence de `~/Library/LaunchAgents/dev.wtm.proxy.plist` → 80.
 3. **Sinon** → port de bind.
 
-L'étage 2 peut mentir (un `pfctl -F` manuel, une mise à jour macOS qui réécrit `/etc/pf.conf`). La sonde le corrige dès qu'un daemon tourne, et `wtm run proxy status` affiche les deux côte à côte en signalant explicitement une divergence.
+L'étage 2 peut mentir (un agent présent mais déchargé à la main). La sonde le corrige dès qu'un daemon tourne, et `wtm run proxy status` affiche les deux côte à côte en signalant explicitement une divergence.
 
 ### Où ça se branche
 
-* `internal/service/process/daemon.go` : après `server.Start()`, une seule sonde ; `daemonServer` porte désormais `proxyPort` (bind) **et** `proxyPublicPort`.
+* `internal/service/process/daemon.go` : `daemonServer.publicPort()` sonde à chaque réponse ; `proxyPort` reste le port réellement bindé.
 * `internal/service/process/protocol.go` : `Response` gagne `ProxyPublicPort int` (`json:"proxy_public_port,omitempty"`). `ProxyPort` garde son sens de port de bind.
 * `internal/commands/run/url.go` : `servedProxyPort` devient `publicProxyPort`, implémentant les trois étages. Les autres appelants de `rules.JobURL` (`run open`, `run ps`, la TUI, `flow/runlogs`) passent par cette même résolution.
 
