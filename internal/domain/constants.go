@@ -253,6 +253,43 @@ const (
 </plist>
 `
 
+	// What `wtm run proxy status` prints, and the callout it raises when the
+	// redirection is declared but does not reach the proxy that is running.
+	ProxyStatusTitle        = "Run proxy"
+	ProxyStatusBindFmt      = "Bind port: %d"
+	ProxyStatusPublicFmt    = "Public port: %s"
+	ProxyStatusRedirectFmt  = "Redirection: %s"
+	ProxyStatusExampleFmt   = "Example: %s"
+	ProxyStatusUnsupported  = "not implemented on this platform — named URLs keep their port"
+	ProxyStatusNotInstalled = "not installed — `wtm run proxy install` serves named URLs on port 80"
+	ProxyStatusInstalledFmt = "installed (%s) → port %d"
+	ProxyDivergedTitle      = "The redirection does not reach this proxy"
+	ProxyDivergedLine       = "Port 80 is redirected, but what answers there is not the proxy now running"
+	ProxyDivergedFix        = "Re-run `wtm run proxy install` to point it at the port the proxy actually bound"
+
+	// The install and uninstall recaps: a privileged write is shown in full
+	// before it is asked for.
+	ProxyInstallRecapTitle     = "wtm will write these files as root"
+	ProxyInstallRecapScript    = "and run"
+	ProxyInstallConfirmTitle   = "Install the redirection?"
+	ProxyInstallConfirmDesc    = "sudo will ask for your password. `wtm run proxy uninstall` reverses every change."
+	ProxyInstallDone           = "Port 80 now reaches the run proxy — named URLs drop their port"
+	ProxyUninstallRecapTitle   = "wtm will undo these as root"
+	ProxyUninstallConfirmTitle = "Remove the redirection?"
+	ProxyUninstallConfirmDesc  = "sudo will ask for your password. Named URLs go back to carrying the proxy's port."
+	ProxyUninstallDone         = "Redirection removed — named URLs carry the proxy's port again"
+	ProxyUninstallRemoved      = "removed"
+	ProxyUninstallPfConfLine   = "the wtm blocks are removed, the rest of the file is left untouched"
+
+	// The one place wtm mentions the redirection outside its own commands.
+	// ProxyHostShape names the shape rather than one job: run init speaks about
+	// every published job at once.
+	ProxyHostShape         = "<job>.<worktree>.<repo>.localhost"
+	ProxyInstallHintTitle  = "Named URLs carry a port"
+	ProxyInstallHintFmt    = "Jobs publishing a url answer on %s"
+	ProxyInstallHintCmd    = "`wtm run proxy install` redirects port 80 so the port disappears from the URL"
+	ProxyInstallHintNoPlat = "Dropping that port is not implemented on this platform yet"
+
 	// ProxyPortCollisionFmt is the one collision a job cannot see coming: the
 	// daemon already holds the port by the time the job tries to bind it.
 	ProxyPortCollisionFmt   = "port %s (job %q, base %d) reaches the run proxy's port %d after %d worktree(s) — that job will fail to bind there; move the base, or set [proxy] port in ~/.config/wtm/config.toml"
@@ -1139,37 +1176,41 @@ const (
 
 	// CLI command names — used in Use: declarations and exec.Command(bin, …) call sites.
 	// Centralised here so a rename is a single-file change with no silent breakage.
-	CmdRun      = "run"
-	CmdInit     = "init"
-	CmdGo       = "go"
-	CmdCreate   = "create"
-	CmdClean    = "clean"
-	CmdList     = "list"
-	CmdSwitch   = "switch"
-	CmdUp       = "up"
-	CmdDown     = "down"
-	CmdStart    = "start"
-	CmdStop     = "stop"
-	CmdLogs     = "logs"
-	CmdPs       = "ps"
-	CmdDaemon   = "daemon"
-	CmdURL      = "url"
-	CmdOpen     = "open"
-	CmdCheckout = "checkout"
-	CmdExport   = "export"
-	CmdImport   = "import"
-	CmdJob      = "job"
-	CmdProfile  = "profile"
-	CmdAdd      = "add"
-	CmdRm       = "rm"
-	CmdEdit     = "edit"
-	CmdExtract  = "extract"
-	CmdSync     = "sync"
-	CmdRelocate = "relocate"
-	CmdReparent = "reparent"
-	CmdTree     = "tree"
-	CmdPrune    = "prune"
-	CmdEnv      = "env"
+	CmdRun       = "run"
+	CmdInit      = "init"
+	CmdGo        = "go"
+	CmdCreate    = "create"
+	CmdClean     = "clean"
+	CmdList      = "list"
+	CmdSwitch    = "switch"
+	CmdUp        = "up"
+	CmdDown      = "down"
+	CmdStart     = "start"
+	CmdStop      = "stop"
+	CmdLogs      = "logs"
+	CmdPs        = "ps"
+	CmdDaemon    = "daemon"
+	CmdURL       = "url"
+	CmdProxy     = "proxy"
+	CmdStatus    = "status"
+	CmdInstall   = "install"
+	CmdUninstall = "uninstall"
+	CmdOpen      = "open"
+	CmdCheckout  = "checkout"
+	CmdExport    = "export"
+	CmdImport    = "import"
+	CmdJob       = "job"
+	CmdProfile   = "profile"
+	CmdAdd       = "add"
+	CmdRm        = "rm"
+	CmdEdit      = "edit"
+	CmdExtract   = "extract"
+	CmdSync      = "sync"
+	CmdRelocate  = "relocate"
+	CmdReparent  = "reparent"
+	CmdTree      = "tree"
+	CmdPrune     = "prune"
+	CmdEnv       = "env"
 
 	// MinWizardListHeight is the minimum number of rows reserved for a wizard
 	// step's scrollable list. Completed-step summaries are bounded so they never

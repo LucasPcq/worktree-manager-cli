@@ -16,6 +16,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/compose"
 	"github.com/LucasPcq/wtm/internal/service/detect"
+	"github.com/LucasPcq/wtm/internal/service/proxy"
 	"github.com/LucasPcq/wtm/internal/service/runconfig"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	initwizard "github.com/LucasPcq/wtm/internal/tui/inittui"
@@ -262,6 +263,13 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			ProxyPort: proxyPort,
 		}), proxyPort); len(lines) > 0 {
 			output.Callout(cmd.ErrOrStderr(), domain.ProxyPortCollisionTitle, lines)
+		}
+		if lines := rules.ProxyInstallHintLines(rules.ProxyInstallHintParams{
+			Config:     outcome.Config,
+			Status:     proxy.NewRedirector(proxy.RedirectorParams{}).Inspect(),
+			ExampleURL: fmt.Sprintf(domain.ProxyURLFmt, domain.ProxyHostShape, proxyPort),
+		}); len(lines) > 0 {
+			output.Callout(cmd.ErrOrStderr(), domain.ProxyInstallHintTitle, lines)
 		}
 		output.Blank(cmd.OutOrStdout())
 		output.Message(cmd.OutOrStdout(), "Next: `wtm run up` to start · `wtm run job add` to add more")

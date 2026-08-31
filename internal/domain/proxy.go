@@ -39,3 +39,10 @@ type ProxyStatus struct {
 	Diverged       bool   `json:"diverged"`
 	ExampleURL     string `json:"example_url,omitempty"`
 }
+
+// ProxyPlannedFile is one file a privileged install would write, rendered
+// before anything is written so the recap and the write share one source.
+type ProxyPlannedFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}

@@ -12,15 +12,10 @@ type PlanParams struct {
 	BindPort int
 }
 
-type PlannedFile struct {
-	Path    string
-	Content string
-}
-
 // Plan is what Apply would write and run, rendered without writing anything —
 // the recap the user confirms is this value.
 type Plan struct {
-	Files  []PlannedFile
+	Files  []domain.ProxyPlannedFile
 	Script string
 }
 

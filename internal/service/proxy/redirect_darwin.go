@@ -37,7 +37,7 @@ func (r pfRedirector) Plan(params PlanParams) (Plan, error) {
 		return Plan{}, err
 	}
 
-	plan := Plan{Files: []PlannedFile{
+	plan := Plan{Files: []domain.ProxyPlannedFile{
 		{Path: domain.ProxyAnchorPath, Content: fmt.Sprintf(domain.ProxyAnchorRuleFmt, domain.ProxyPrivilegedPort, params.BindPort)},
 		{Path: domain.ProxyPfConfPath, Content: conf},
 		{Path: domain.ProxyPlistPath, Content: fmt.Sprintf(domain.ProxyPlistFmt, domain.ProxyPlistLabel, domain.ProxyPfConfPath)},
@@ -67,7 +67,7 @@ func (r pfRedirector) Remove() error {
 		return fmt.Errorf("read %s: %w", domain.ProxyPfConfPath, err)
 	}
 
-	staged, err := stage(Plan{Files: []PlannedFile{
+	staged, err := stage(Plan{Files: []domain.ProxyPlannedFile{
 		{Path: domain.ProxyPfConfPath, Content: rules.PfConfWithoutWTM(string(conf))},
 	}})
 	if err != nil {
