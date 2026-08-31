@@ -20,7 +20,8 @@ import (
 func EnvPortsReport(w io.Writer, plan domain.EnvPortPlan, check bool) {
 	rows := rules.EnvPortTableLines(plan)
 	anomalies := rules.EnvPortAnomalyLines(plan)
-	if len(rows) == 0 && len(anomalies) == 0 {
+	notices := rules.EnvPortNotices(plan)
+	if len(rows) == 0 && len(anomalies) == 0 && len(notices) == 0 {
 		return
 	}
 
@@ -33,6 +34,7 @@ func EnvPortsReport(w io.Writer, plan domain.EnvPortPlan, check bool) {
 	if declined {
 		Unchanged(w, fmt.Sprintf(domain.EnvPortsLeftAloneFmt, len(plan.Rewrites())))
 		printEnvPortAnomalies(w, anomalies)
+		printEnvPortNotices(w, notices)
 		return
 	}
 
@@ -47,6 +49,17 @@ func EnvPortsReport(w io.Writer, plan domain.EnvPortPlan, check bool) {
 		Blank(w)
 	}
 	printEnvPortAnomalies(w, anomalies)
+	printEnvPortNotices(w, notices)
+}
+
+// printEnvPortNotices closes the section with what the machine, rather than any
+// one value, made of the pass.
+func printEnvPortNotices(w io.Writer, notices []rules.EnvPortNotice) {
+	for _, notice := range notices {
+		Blank(w)
+		Warning(w, notice.Title)
+		Message(w, notice.Line)
+	}
 }
 
 // printEnvPortAnomalies lists the links wtm refused to act on. They survive a

@@ -175,6 +175,9 @@ func (f *createFlow) settleEnvPorts(worktreePath, branchName string) error {
 	if anomalies := rules.EnvPortAnomalyLines(plan); len(anomalies) > 0 {
 		f.presenter.Status(flow.Notice{Kind: flow.NoticeWarning, Text: domain.EnvPortAnomaliesTitle, Lines: anomalies})
 	}
+	for _, notice := range rules.EnvPortNotices(plan) {
+		f.presenter.Status(flow.Notice{Kind: flow.NoticeWarning, Text: notice.Title, Lines: []string{notice.Line}})
+	}
 	if len(plan.Rewrites()) == 0 {
 		return nil
 	}
@@ -183,7 +186,7 @@ func (f *createFlow) settleEnvPorts(worktreePath, branchName string) error {
 	// report of what just happened. Same lines, two different acts.
 	if f.prompter.Interactive() {
 		proceed, confirmErr := f.prompter.Confirm(flow.ConfirmParams{
-			Title:       domain.EnvPortsConfirmPrompt,
+			Title:       rules.EnvPortsConfirmTitle(plan),
 			Description: rules.EnvPortPromptDescription(plan),
 			DefaultYes:  true,
 		})

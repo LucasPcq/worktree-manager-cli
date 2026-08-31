@@ -218,3 +218,67 @@ func TestEnvPortsConfirmTitle(t *testing.T) {
 		t.Fatal("a plan writing only ports keeps the port question")
 	}
 }
+
+func TestEnvPortNotices(t *testing.T) {
+	cases := []struct {
+		name  string
+		plan  domain.EnvPortPlan
+		title string
+	}{
+		{
+			name:  "an address written with a port says how to drop it",
+			plan:  planFixture(domain.AddressingNames, 10080, portedValues),
+			title: domain.EnvOriginPortedTitle,
+		},
+		{
+			name:  "the redirection installed leaves nothing to say",
+			plan:  planFixture(domain.AddressingNames, domain.ProxyPrivilegedPort, portedValues),
+			title: "",
+		},
+		{
+			name:  "a machine with no proxy says why it wrote ports",
+			plan:  planFixture(domain.AddressingNames, 0, portedValues),
+			title: domain.EnvOriginProxyOffTitle,
+		},
+		{
+			name:  "a project on ports is told nothing about the proxy",
+			plan:  planFixture(domain.AddressingPorts, 10080, portedValues),
+			title: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			notices := rules.EnvPortNotices(tc.plan)
+			if tc.title == "" {
+				if len(notices) != 0 {
+					t.Fatalf("expected silence, got %+v", notices)
+				}
+				return
+			}
+			if len(notices) != 1 || notices[0].Title != tc.title {
+				t.Fatalf("got %+v, want one notice titled %q", notices, tc.title)
+			}
+		})
+	}
+}
+
+// A project whose every link is a bare port has nothing to hear about the
+// proxy's port, even on a machine serving names.
+func TestEnvPortNoticesStaySilentWithoutAnyAddress(t *testing.T) {
+	plan := rules.PlanEnvPorts(rules.PlanEnvPortsParams{
+		Links: []domain.EnvPortLink{{File: ".env", Key: "PORT", Job: "db", Port: "POSTGRES_PORT"}},
+		Bases: map[domain.PortRef]int{{Job: "db", Name: "POSTGRES_PORT"}: 5432},
+		Lines: map[string][]domain.EnvLine{
+			".env": {{Kind: domain.EnvLinePair, Key: "PORT", Value: "5432"}},
+		},
+		Origins: rules.OriginContext{
+			Addressing: domain.AddressingNames,
+			Jobs:       map[string]domain.JobConfig{"db": {Name: "db"}},
+			Worktree:   "feat-x", Project: "monorepo", PublicPort: 10080,
+		},
+	})
+	if notices := rules.EnvPortNotices(plan); len(notices) != 0 {
+		t.Fatalf("got %+v", notices)
+	}
+}

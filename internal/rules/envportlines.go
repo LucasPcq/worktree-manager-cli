@@ -234,6 +234,48 @@ func EnvPortsConfirmTitle(plan domain.EnvPortPlan) string {
 	return domain.EnvPortsConfirmPrompt
 }
 
+// EnvPortNotice is one thing a surface says beside the table: a title and the
+// single line explaining it. Two of them exist, and neither repeats per key —
+// they are properties of the machine, not of a value.
+type EnvPortNotice struct {
+	Title string
+	Line  string
+}
+
+// EnvPortNotices is what the pass could not do silently. A .env freezes an
+// address, so the moment a perishable one enters a file is the moment to say so.
+func EnvPortNotices(plan domain.EnvPortPlan) []EnvPortNotice {
+	if plan.Addressing != domain.AddressingNames || len(plan.Entries) == 0 {
+		return nil
+	}
+
+	if plan.PublicPort == 0 {
+		return []EnvPortNotice{{
+			Title: domain.EnvOriginProxyOffTitle,
+			Line:  domain.EnvOriginProxyOffLine,
+		}}
+	}
+	if plan.PublicPort == domain.ProxyPrivilegedPort || !writesAddresses(plan) {
+		return nil
+	}
+	return []EnvPortNotice{{
+		Title: domain.EnvOriginPortedTitle,
+		Line:  fmt.Sprintf(domain.EnvOriginPortedFmt, plan.PublicPort),
+	}}
+}
+
+// writesAddresses reports whether any entry of the plan holds an address at all,
+// settled or about to be written. A project whose every link is a bare port has
+// nothing to be told about the proxy's port.
+func writesAddresses(plan domain.EnvPortPlan) bool {
+	for _, e := range plan.Entries {
+		if e.Addressing == domain.AddressingNames {
+			return true
+		}
+	}
+	return false
+}
+
 // EnvPortOffsetLabel titles the table with the offset the whole worktree runs on,
 // so a reader who wonders why every port moved by the same amount has the answer.
 func EnvPortOffsetLabel(offset int) string {

@@ -81,6 +81,12 @@ type EnvPortEntry struct {
 type EnvPortPlan struct {
 	Offset  int            `json:"offset"`
 	Entries []EnvPortEntry `json:"entries"`
+	// Addressing is what the project asked for, which is not always what the
+	// entries got: a machine with no proxy writes ports whatever run.toml says.
+	Addressing Addressing `json:"addressing"`
+	// PublicPort is what an address announces here, zero when nothing serves
+	// names. Both are what the notices are derived from.
+	PublicPort int `json:"public_port,omitempty"`
 	// Applied says the rewrites were written. A plan that was only computed — a
 	// --check run, or one the user declined — carries them all the same, and
 	// counting those as written would be a false report.

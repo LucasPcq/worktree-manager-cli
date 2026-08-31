@@ -76,7 +76,11 @@ type PlanEnvPortsParams struct {
 // it exactly once: two occurrences, or none, are reported instead — picking one
 // number out of a URL by guesswork can corrupt it.
 func PlanEnvPorts(params PlanEnvPortsParams) domain.EnvPortPlan {
-	plan := domain.EnvPortPlan{Offset: params.Offset}
+	plan := domain.EnvPortPlan{
+		Offset:     params.Offset,
+		Addressing: params.Origins.Addressing,
+		PublicPort: params.Origins.PublicPort,
+	}
 
 	for _, link := range params.Links {
 		base, declared := EnvPortBaseFor(params.Bases, link)
