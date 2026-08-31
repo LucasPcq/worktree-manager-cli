@@ -87,6 +87,7 @@ self-documenting:
 | Declared jobs + profiles | `wtm run list --output json` |
 | Jobs running right now (+ `started_at`, `exit_code`, `url`) | `wtm run ps --output json` |
 | Where a job answers in this worktree | `wtm run url --output json` |
+| What serves the named URLs (bind port, public port, redirection) | `wtm run proxy status --output json` |
 | What a `run up` started, with each job's `url` | `wtm run up -d --output json` |
 | What a job printed | `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (read it as a file) |
 | Resolved project config | `wtm config show --output json` |
@@ -329,7 +330,10 @@ and **experimental**: the global `wtm init` does not configure it.
   the job**.
 - **The URL is a name, not a port.** With the proxy on (the default), a published job
   answers at `http://<job>.<worktree>.<repo>.localhost:4000` — that order on purpose, so a
-  cookie set on `.<worktree>.<repo>.localhost` stays inside that worktree. The proxy runs
+  cookie set on `.<worktree>.<repo>.localhost` stays inside that worktree. **That URL may
+  carry no port at all**: `wtm run proxy install` redirects port 80 to the proxy, after
+  which `run url` prints `http://<job>.<worktree>.<repo>.localhost`. Never assume a `:port`
+  suffix is present — read the whole line `run url` gives you. The proxy runs
   inside the background daemon and dies with it. **`--raw` prints `http://localhost:<port>`
   instead** — no proxy has to be up, and every OS resolves it, so **prefer `--raw` for
   anything you dial yourself** (curl, a health check, a test runner). Two limits worth
@@ -342,6 +346,11 @@ and **experimental**: the global `wtm init` does not configure it.
   persisted to `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (rotated
   5 MB x 3), which you can read with your own file tools; `run logs <job>` on a job that
   is **not** running prints that file back and returns.
+- `run proxy status` reports what actually serves those names: the proxy's bind port, the
+  public port announced in URLs, and whether the port-80 redirection is installed.
+  `--output json` gives the whole thing as one object. **`run proxy install` and
+  `run proxy uninstall` are not for you**: they write system files through `sudo` and
+  refuse outright without a terminal (and in `--output json`). Tell the user to run them.
 - `run export` / `run import` — share a layout as JSON.
 - `run job` and `run profile` are fully agent-drivable with flags — `add`, `rm` and
   `edit` alike. No wizard is ever needed, and none opens as long as a flag is passed.
