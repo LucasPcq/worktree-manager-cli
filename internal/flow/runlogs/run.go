@@ -184,8 +184,8 @@ func (r *runner) run() Outcome {
 		// A repeat start of a service is what the caller asked for — the job is
 		// up — so it counts as started. A task is a step to run, not a state to
 		// reach: one the daemon refuses has not run.
-		if result.ProxyPort > 0 {
-			r.servedPort = result.ProxyPort
+		if result.PublicPort > 0 {
+			r.servedPort = result.PublicPort
 		}
 		r.noticeProxyRefused(i + 1)
 
@@ -230,7 +230,7 @@ func (r *runner) devOrigins(job domain.JobConfig, host string) []domain.DevOrigi
 	return []domain.DevOriginFix{{
 		Job:    job.Name,
 		Config: path,
-		Line:   fmt.Sprintf(domain.DevOriginsFixFmt, job.Name, domain.ProxyTLD, r.servedPort, path),
+		Line:   fmt.Sprintf(domain.DevOriginsFixFmt, job.Name, rules.DevOriginsPattern(r.servedPort), path),
 	}}
 }
 
@@ -244,10 +244,10 @@ type jobURLParams struct {
 // one this run asked for: a name nothing serves is worse than a port.
 func (r *runner) jobURL(params jobURLParams) string {
 	return rules.JobURL(rules.JobURLParams{
-		Job:       params.Job,
-		Ports:     params.Ports,
-		Host:      params.Host,
-		ProxyPort: r.servedPort,
+		Job:        params.Job,
+		Ports:      params.Ports,
+		Host:       params.Host,
+		PublicPort: r.servedPort,
 	})
 }
 

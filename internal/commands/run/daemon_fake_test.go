@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -36,6 +37,13 @@ type fakeDaemon struct {
 // bytes) and fails the bind with EINVAL.
 func shortHome(t *testing.T) {
 	t.Helper()
+
+	// Idempotent: a test that both starts a daemon and sets up a project calls
+	// this twice, and a second home would move the socket out from under the
+	// daemon already listening on the first.
+	if strings.HasPrefix(os.Getenv("HOME"), "/tmp/wtmhome") {
+		return
+	}
 
 	home, err := os.MkdirTemp("/tmp", "wtmhome")
 	if err != nil {

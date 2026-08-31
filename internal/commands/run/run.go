@@ -5,6 +5,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/commands/run/jobcmd"
 	"github.com/LucasPcq/wtm/internal/commands/run/profilecmd"
+	"github.com/LucasPcq/wtm/internal/commands/run/proxycmd"
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
@@ -32,6 +33,7 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(newImportCmd())
 	cmd.AddCommand(jobcmd.NewCmd())
 	cmd.AddCommand(profilecmd.NewCmd())
+	cmd.AddCommand(proxycmd.NewCmd())
 
 	return cmd
 }

@@ -72,6 +72,7 @@ func init() {
 	rootCmd.AddCommand(schemaCmd)
 
 	rootCmd.AddCommand(daemon.NewCmd())
+	rootCmd.AddCommand(daemon.NewProxyForwardCmd())
 }
 
 var version = domain.Version

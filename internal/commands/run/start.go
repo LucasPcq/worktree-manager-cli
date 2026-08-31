@@ -130,8 +130,8 @@ type startJobParams struct {
 type startedLineParams struct {
 	Label string
 	Ports map[string]int
-	// ServedPort is what the daemon answered its proxy is really on, not what
-	// this command asked for: a name nothing serves is worse than a port.
+	// ServedPort is the public port the daemon answered, not what this command
+	// asked for: a name nothing serves is worse than a port.
 	ServedPort int
 }
 
@@ -142,10 +142,10 @@ func (p startJobParams) startedLine(params startedLineParams) string {
 		Label: params.Label,
 		Ports: params.Ports,
 		URL: rules.JobURL(rules.JobURLParams{
-			Job:       p.Job,
-			Ports:     params.Ports,
-			Host:      p.RouteHost,
-			ProxyPort: params.ServedPort,
+			Job:        p.Job,
+			Ports:      params.Ports,
+			Host:       p.RouteHost,
+			PublicPort: params.ServedPort,
 		}),
 		Hyperlinks: rules.IsHumanFormat(p.Format) && isTTY(),
 	})
@@ -206,7 +206,7 @@ func startTaskInline(params startJobParams) error {
 	output.Success(params.Cmd.OutOrStdout(), params.startedLine(startedLineParams{
 		Label:      fmt.Sprintf(domain.RunStreamDoneFmt, params.Job.Name),
 		Ports:      resp.Ports,
-		ServedPort: resp.ProxyPort,
+		ServedPort: resp.ProxyPublicPort,
 	}))
 	output.FrameEnd(params.Cmd.OutOrStdout())
 	return nil
@@ -248,7 +248,7 @@ func startServiceDetached(params startJobParams) error {
 		output.Success(out, params.startedLine(startedLineParams{
 			Label:      fmt.Sprintf(domain.RunStreamStartedFmt, params.Job.Name),
 			Ports:      resp.Ports,
-			ServedPort: resp.ProxyPort,
+			ServedPort: resp.ProxyPublicPort,
 		}))
 	})
 	params.proxyNotice(resp.ProxyPort)

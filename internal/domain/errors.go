@@ -188,6 +188,21 @@ var (
 
 	// ErrJobNonePublished is returned when no job in run.toml declares a url,
 	// so there is no address to print.
+	// ErrProxyNoListeners means launchd started the forwarder without handing it
+	// the sockets it exists to serve.
+	ErrProxyNoListeners = errors.New("launchd started the port-80 forwarder with no listening socket")
+
+	// ErrProxyNoTarget is a forwarder built without a way to find the proxy.
+	ErrProxyNoTarget = errors.New("the port-80 forwarder was given no way to resolve the run proxy's port")
+
+	// ErrProxyInstallNeedsYes is the ordinary confirmation axis: the write itself
+	// needs no privilege, so a run nobody can answer only needs --yes.
+	ErrProxyInstallNeedsYes = errors.New("`wtm run proxy install` installs a LaunchAgent — pass --yes to run it without a terminal")
+
+	// ErrProxyRedirectUnsupported is what every platform but darwin answers: the
+	// named URLs keep their port there, which is a state, not a failure.
+	ErrProxyRedirectUnsupported = errors.New("serving the proxy on port 80 is not implemented on this platform yet — named URLs keep their port")
+
 	ErrJobNonePublished = errors.New("no job declares a url in run.toml — add one with `url = { port = \"PORT\" }`")
 
 	// ErrDashboardJSON is returned when `wtm ui` is invoked with --output json.
