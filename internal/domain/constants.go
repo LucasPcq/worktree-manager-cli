@@ -220,6 +220,39 @@ const (
 	// alone would predict.
 	ProxyMovedFmt   = "Port %d is taken, so named URLs are served on %d — free it, or set [proxy] port in ~/.config/wtm/config.toml"
 	ProxyMovedTitle = "Named URLs moved"
+	// The pf.conf blocks. Two, because pf orders rule types — a rdr-anchor after
+	// the filter rules is a pfctl error — while load statements go last.
+	ProxyPfRdrMarkStart  = "# >>> wtm rdr >>>"
+	ProxyPfRdrMarkEnd    = "# <<< wtm rdr <<<"
+	ProxyPfLoadMarkStart = "# >>> wtm load >>>"
+	ProxyPfLoadMarkEnd   = "# <<< wtm load <<<"
+	ProxyAnchorName      = "wtm"
+	ProxyAnchorPath      = "/etc/pf.anchors/wtm"
+	ProxyPfConfPath      = "/etc/pf.conf"
+	ProxyPfRdrAnchorLine = `rdr-anchor "wtm"`
+	ProxyPfLoadLine      = `load anchor "wtm" from "/etc/pf.anchors/wtm"`
+	// ProxyPfRdrAnchorPrefix and ProxyPfNatAnchorPrefix locate the translation
+	// section of a pf.conf we did not write.
+	ProxyPfRdrAnchorPrefix = "rdr-anchor"
+	ProxyPfNatAnchorPrefix = "nat-anchor"
+
+	ProxyPlistPath  = "/Library/LaunchDaemons/dev.wtm.proxy.plist"
+	ProxyPlistLabel = "dev.wtm.proxy"
+	// ProxyAnchorRuleFmt takes the privileged port then the bind port.
+	ProxyAnchorRuleFmt = "rdr pass on lo0 inet proto tcp from any to 127.0.0.1 port %d -> 127.0.0.1 port %d\n"
+	ProxyMechanismPf   = "pf + launchd"
+	ProxyPlistFmt      = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key><string>%s</string>
+	<key>ProgramArguments</key>
+	<array><string>/sbin/pfctl</string><string>-E</string><string>-f</string><string>%s</string></array>
+	<key>RunAtLoad</key><true/>
+</dict>
+</plist>
+`
+
 	// ProxyPortCollisionFmt is the one collision a job cannot see coming: the
 	// daemon already holds the port by the time the job tries to bind it.
 	ProxyPortCollisionFmt   = "port %s (job %q, base %d) reaches the run proxy's port %d after %d worktree(s) — that job will fail to bind there; move the base, or set [proxy] port in ~/.config/wtm/config.toml"

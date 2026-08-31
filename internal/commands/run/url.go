@@ -15,6 +15,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
+	"github.com/LucasPcq/wtm/internal/service/proxy"
 )
 
 func newURLCmd() *cobra.Command {
@@ -114,7 +115,7 @@ func publicProxyPort(configured int) int {
 	}
 	return rules.PublicPort(rules.PublicPortParams{
 		BindPort: configured,
-		Declared: false,
+		Declared: proxy.NewRedirector(proxy.RedirectorParams{}).Inspect().Installed,
 	})
 }
 

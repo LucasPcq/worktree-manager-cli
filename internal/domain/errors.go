@@ -188,6 +188,14 @@ var (
 
 	// ErrJobNonePublished is returned when no job in run.toml declares a url,
 	// so there is no address to print.
+	// ErrProxyRedirectUnsupported is what every platform but darwin answers: the
+	// named URLs keep their port there, which is a state, not a failure.
+	ErrProxyRedirectUnsupported = errors.New("serving the proxy on port 80 is not implemented on this platform yet — named URLs keep their port")
+
+	// ErrPfConfUnrecognised is returned when /etc/pf.conf has no translation
+	// section to anchor into: guessing a position there would break pfctl.
+	ErrPfConfUnrecognised = errors.New("/etc/pf.conf has no nat-anchor or rdr-anchor line — wtm will not guess where its rule belongs")
+
 	ErrJobNonePublished = errors.New("no job declares a url in run.toml — add one with `url = { port = \"PORT\" }`")
 
 	// ErrDashboardJSON is returned when `wtm ui` is invoked with --output json.

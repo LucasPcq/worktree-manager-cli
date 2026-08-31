@@ -24,3 +24,18 @@ type ProxyConfig struct {
 	// and explicitly false are different answers.
 	Enabled *bool `toml:"enabled,omitempty" json:"enabled,omitempty"`
 }
+
+// ProxyStatus is what `wtm run proxy status` reports: the configured and real
+// bind ports, the declared redirection, and what the probe actually saw.
+type ProxyStatus struct {
+	Supported      bool   `json:"supported"`
+	Mechanism      string `json:"mechanism,omitempty"`
+	Installed      bool   `json:"installed"`
+	ConfiguredPort int    `json:"configured_port"`
+	BindPort       int    `json:"bind_port,omitempty"`
+	PublicPort     int    `json:"public_port"`
+	Probed         int    `json:"probed_bind_port,omitempty"`
+	DaemonUp       bool   `json:"daemon_up"`
+	Diverged       bool   `json:"diverged"`
+	ExampleURL     string `json:"example_url,omitempty"`
+}
