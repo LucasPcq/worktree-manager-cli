@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -11,6 +12,13 @@ import (
 
 func runCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+
+	// `run proxy` reads the machine, not a project: an isolated home is what
+	// keeps these tests from depending on the developer's own config, daemon
+	// and LaunchAgents — and on the CI having neither.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 
 	var buf bytes.Buffer
 	cmd := NewCmd()
@@ -52,5 +60,22 @@ func TestUninstallRefusesAnUnanswerableRun(t *testing.T) {
 
 	if !errors.Is(err, domain.ErrProxyInstallNeedsYes) {
 		t.Errorf("got %v, want ErrProxyInstallNeedsYes", err)
+	}
+}
+
+// The proxy's port and its redirection belong to the machine, so this command
+// must answer from anywhere — a repo with no wtm config included.
+func TestStatusAnswersOutsideAWtmProject(t *testing.T) {
+	out, err := runCmd(t, domain.CmdStatus, "--"+domain.FlagOutput, domain.OutputJSON)
+	if err != nil {
+		t.Fatalf("run proxy status hors projet: %v\n%s", err, out)
+	}
+
+	var status domain.ProxyStatus
+	if unmarshalErr := json.Unmarshal([]byte(out), &status); unmarshalErr != nil {
+		t.Fatalf("sortie non-JSON: %v\n%s", unmarshalErr, out)
+	}
+	if status.Installed {
+		t.Error("home isolé : aucune redirection installée")
 	}
 }

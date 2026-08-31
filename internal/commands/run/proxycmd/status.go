@@ -1,11 +1,10 @@
 package proxycmd
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
+	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
@@ -24,7 +23,7 @@ func newStatusCmd() *cobra.Command {
 }
 
 func runStatus(cmd *cobra.Command, _ []string) error {
-	configured, err := configuredBindPort(cmd)
+	configured, err := configuredBindPort()
 	if err != nil {
 		return err
 	}
@@ -40,16 +39,14 @@ func runStatus(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func configuredBindPort(cmd *cobra.Command) (int, error) {
-	dir, err := os.Getwd()
+// configuredBindPort reads the global config alone: the proxy's port and its
+// redirection belong to the machine, so `run proxy` answers outside a project.
+func configuredBindPort() (int, error) {
+	global, err := config.LoadGlobal()
 	if err != nil {
 		return 0, err
 	}
-	res, err := shared.LoadConfig(cmd, dir)
-	if err != nil {
-		return 0, err
-	}
-	return rules.ProxyPort(res.Config.Global), nil
+	return rules.ProxyPort(global), nil
 }
 
 func collectStatus(configured int) domain.ProxyStatus {
