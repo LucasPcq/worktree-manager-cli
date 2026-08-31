@@ -168,8 +168,11 @@ const (
 
 	// ProxyTLD is the special-use TLD every wtm route lives under (RFC 6761).
 	ProxyTLD = "localhost"
-	// ProxyDefaultPort is what the run proxy listens on when the config says nothing.
-	ProxyDefaultPort = 4000
+	// ProxyDefaultPort is what the run proxy listens on when the config says
+	// nothing. It reads as "100 then 80" — the privileged port with a prefix,
+	// which is what it serves. Above every common dev default (3000, 4000, 4200,
+	// 5173, 8000, 8080, 9000) and below 49152, where the ephemeral range starts.
+	ProxyDefaultPort = 10080
 	// ProxyPortScanSpan is how many ports past the configured one the proxy
 	// tries before giving up. A name answering on an unexpected port beats a
 	// name answering nowhere, but a port far from the one asked for is no
@@ -177,6 +180,11 @@ const (
 	ProxyPortScanSpan = 16
 	// ProxyURLFmt is a job's named URL.
 	ProxyURLFmt = "http://%s:%d"
+	// ProxyPrivilegedPort is the port a named URL loses: reached through an OS
+	// redirection the daemon never binds itself.
+	ProxyPrivilegedPort = 80
+	// ProxyOriginFmt is a named URL served on the privileged port.
+	ProxyOriginFmt = "http://%s"
 	// ProxyLoopbackFmt is what the proxy binds: the IPv4 loopback, never every
 	// interface.
 	ProxyLoopbackFmt = "127.0.0.1:%d"
@@ -185,6 +193,15 @@ const (
 	// that binds ::1 only — Vite does — is unreachable over 127.0.0.1, which is
 	// the same asymmetry PortProbeHostV4/V6 exist for.
 	ProxyTargetFmt = "localhost:%d"
+	// ProxyProbeHost and ProxyProbeHeader are how a caller proves the proxy
+	// answering behind the privileged port is this one: the header carries the
+	// bind port, so a stale redirection is a mismatch rather than a false yes.
+	ProxyProbeHost   = "probe.wtm.localhost"
+	ProxyProbeHeader = "X-Wtm-Proxy"
+	// ProxyProbeTimeoutMs bounds the probe: nothing listening refuses at once,
+	// so this only ever pays for a host that accepts and then stalls.
+	ProxyProbeTimeoutMs = 150
+
 	// ProxyScheme is what the proxy dials a job with: the job listens on plain
 	// HTTP on the loopback, whatever the browser used to reach the proxy.
 	ProxyScheme = "http"
@@ -206,6 +223,83 @@ const (
 	// alone would predict.
 	ProxyMovedFmt   = "Port %d is taken, so named URLs are served on %d — free it, or set [proxy] port in ~/.config/wtm/config.toml"
 	ProxyMovedTitle = "Named URLs moved"
+	// The redirection is a per-user LaunchAgent: launchd binds the privileged
+	// socket and hands it to an ordinary process, so nothing here needs root.
+	// Loopback only — never 0.0.0.0, which would publish every worktree.
+	ProxyAgentDir   = "Library/LaunchAgents"
+	ProxyPlistName  = "dev.wtm.proxy.plist"
+	ProxyPlistLabel = "dev.wtm.proxy"
+	// ProxySocketKey names the entry of the job's Sockets dictionary, and is the
+	// string launch_activate_socket is called with — the two must agree.
+	ProxySocketKey        = "Listeners"
+	ProxyMechanismLaunchd = "launchd socket activation"
+	ProxyAgentChangeFmt   = "new file — launchd binds :%d and hands it to wtm, which relays to the run proxy"
+	ProxyLoadCmdFmt       = "launchctl load %s"
+	LaunchctlBin          = "launchctl"
+	LaunchctlLoad         = "load"
+	LaunchctlUnload       = "unload"
+	// ProxyTargetCacheMs is how long the forwarder trusts the port the daemon
+	// last named. Long enough that a page load asks once, short enough that a
+	// daemon restart on another port is followed within a keystroke.
+	ProxyTargetCacheMs = 1000
+	ProxyPlistFmt      = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key><string>%s</string>
+	<key>ProgramArguments</key>
+	<array><string>%s</string><string>%s</string></array>
+	<key>Sockets</key>
+	<dict>
+		<key>%s</key>
+		<array>
+			<dict><key>SockNodeName</key><string>127.0.0.1</string><key>SockServiceName</key><string>%d</string></dict>
+			<dict><key>SockNodeName</key><string>::1</string><key>SockServiceName</key><string>%d</string></dict>
+		</array>
+	</dict>
+</dict>
+</plist>
+`
+
+	// What `wtm run proxy status` prints, and the callout it raises when the
+	// redirection is declared but does not reach the proxy that is running.
+	ProxyStatusTitle        = "Run proxy"
+	ProxyStatusBindFmt      = "Bind port: %d"
+	ProxyStatusPublicFmt    = "Public port: %s"
+	ProxyStatusRedirectFmt  = "Redirection: %s"
+	ProxyStatusExampleFmt   = "Example: %s"
+	ProxyStatusUnsupported  = "not implemented on this platform — named URLs keep their port"
+	ProxyStatusNotInstalled = "not installed — `wtm run proxy install` serves named URLs on port 80"
+	ProxyStatusInstalledFmt = "installed (%s) → port %d"
+	ProxyDivergedTitle      = "The redirection does not reach this proxy"
+	ProxyDivergedLine       = "Port 80 is redirected, but what answers there is not the proxy now running"
+	ProxyDivergedFix        = "Re-run `wtm run proxy install` to point it at the port the proxy actually bound"
+
+	// The install and uninstall recaps name the file and the command; the
+	// contents are a --dry-run away.
+	ProxyInstallRecapTitleFmt  = "wtm will change %d file(s) in your home directory"
+	ProxyInstallRecapScript    = "and run"
+	ProxyPlanFileFmt           = "%s\n    %s"
+	ProxyInstallRecapReverse   = "`wtm run proxy uninstall` reverses every change"
+	ProxyInstallRecapFull      = "`wtm run proxy install --dry-run` prints the file in full and writes nothing"
+	ProxyInstallConfirmTitle   = "Install the redirection?"
+	ProxyInstallConfirmDesc    = "No sudo, no system file: launchd binds port 80 for you. `wtm run proxy uninstall` reverses it."
+	ProxyInstallDone           = "Port 80 now reaches the run proxy — named URLs drop their port"
+	ProxyUninstallRecapTitle   = "wtm will remove this LaunchAgent"
+	ProxyUninstallConfirmTitle = "Remove the redirection?"
+	ProxyUninstallConfirmDesc  = "Named URLs go back to carrying the proxy's port."
+	ProxyUninstallDone         = "Redirection removed — named URLs carry the proxy's port again"
+	ProxyUninstallChange       = "unloaded from launchd and deleted"
+
+	// The one place wtm mentions the redirection outside its own commands.
+	// ProxyHostShape names the shape rather than one job: run init speaks about
+	// every published job at once.
+	ProxyHostShape         = "<job>.<worktree>.<repo>.localhost"
+	ProxyInstallHintTitle  = "Named URLs carry a port"
+	ProxyInstallHintFmt    = "Jobs publishing a url answer on %s"
+	ProxyInstallHintCmd    = "`wtm run proxy install` serves them on port 80 so the port disappears from the URL"
+	ProxyInstallHintNoPlat = "Dropping that port is not implemented on this platform yet"
+
 	// ProxyPortCollisionFmt is the one collision a job cannot see coming: the
 	// daemon already holds the port by the time the job tries to bind it.
 	ProxyPortCollisionFmt   = "port %s (job %q, base %d) reaches the run proxy's port %d after %d worktree(s) — that job will fail to bind there; move the base, or set [proxy] port in ~/.config/wtm/config.toml"
@@ -217,7 +311,11 @@ const (
 	DevOriginsTitle = "Next dev origins"
 	// DevOriginsFixFmt names the one line a Next project needs before a
 	// subdomain of .localhost may reach its dev assets.
-	DevOriginsFixFmt = "%s: add allowedDevOrigins: [\"*.%s:%d\"] to %s — Next blocks dev requests from other hosts"
+	DevOriginsFixFmt = "%s: add allowedDevOrigins: [\"%s\"] to %s — Next blocks dev requests from other hosts"
+	// DevOriginsPatternFmt and DevOriginsPatternNoPortFmt are that value: the
+	// port belongs in it only while the proxy still carries one.
+	DevOriginsPatternFmt       = "*.%s:%d"
+	DevOriginsPatternNoPortFmt = "*.%s"
 
 	// GOOS* name the platforms whose URL opener differs; everything else uses
 	// the freedesktop one.
@@ -1088,37 +1186,45 @@ const (
 
 	// CLI command names — used in Use: declarations and exec.Command(bin, …) call sites.
 	// Centralised here so a rename is a single-file change with no silent breakage.
-	CmdRun      = "run"
-	CmdInit     = "init"
-	CmdGo       = "go"
-	CmdCreate   = "create"
-	CmdClean    = "clean"
-	CmdList     = "list"
-	CmdSwitch   = "switch"
-	CmdUp       = "up"
-	CmdDown     = "down"
-	CmdStart    = "start"
-	CmdStop     = "stop"
-	CmdLogs     = "logs"
-	CmdPs       = "ps"
-	CmdDaemon   = "daemon"
-	CmdURL      = "url"
-	CmdOpen     = "open"
-	CmdCheckout = "checkout"
-	CmdExport   = "export"
-	CmdImport   = "import"
-	CmdJob      = "job"
-	CmdProfile  = "profile"
-	CmdAdd      = "add"
-	CmdRm       = "rm"
-	CmdEdit     = "edit"
-	CmdExtract  = "extract"
-	CmdSync     = "sync"
-	CmdRelocate = "relocate"
-	CmdReparent = "reparent"
-	CmdTree     = "tree"
-	CmdPrune    = "prune"
-	CmdEnv      = "env"
+	CmdRun    = "run"
+	CmdInit   = "init"
+	CmdGo     = "go"
+	CmdCreate = "create"
+	CmdClean  = "clean"
+	CmdList   = "list"
+	CmdSwitch = "switch"
+	CmdUp     = "up"
+	CmdDown   = "down"
+	CmdStart  = "start"
+	CmdStop   = "stop"
+	CmdLogs   = "logs"
+	CmdPs     = "ps"
+	CmdDaemon = "daemon"
+	CmdURL    = "url"
+	CmdProxy  = "proxy"
+	// CmdProxyForward is what launchd runs, never a user: it serves the socket
+	// launchd bound on the privileged port.
+	CmdProxyForward = "proxy-forward"
+	FlagTarget      = "target"
+	CmdStatus       = "status"
+	CmdInstall      = "install"
+	CmdUninstall    = "uninstall"
+	CmdOpen         = "open"
+	CmdCheckout     = "checkout"
+	CmdExport       = "export"
+	CmdImport       = "import"
+	CmdJob          = "job"
+	CmdProfile      = "profile"
+	CmdAdd          = "add"
+	CmdRm           = "rm"
+	CmdEdit         = "edit"
+	CmdExtract      = "extract"
+	CmdSync         = "sync"
+	CmdRelocate     = "relocate"
+	CmdReparent     = "reparent"
+	CmdTree         = "tree"
+	CmdPrune        = "prune"
+	CmdEnv          = "env"
 
 	// MinWizardListHeight is the minimum number of rows reserved for a wizard
 	// step's scrollable list. Completed-step summaries are bounded so they never

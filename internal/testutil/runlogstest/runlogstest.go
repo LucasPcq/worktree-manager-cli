@@ -86,7 +86,7 @@ func (s *Service) Start(ctx context.Context, req runlogs.StartRequest) (runlogs.
 		}
 		return result, nil
 	}
-	return runlogs.StartResult{Ports: s.Ports[req.Job.Name], ProxyPort: s.ProxyPort}, nil
+	return runlogs.StartResult{Ports: s.Ports[req.Job.Name], ProxyPort: s.ProxyPort, PublicPort: s.ProxyPort}, nil
 }
 
 func (s *Service) List(string) ([]domain.JobInfo, error) {

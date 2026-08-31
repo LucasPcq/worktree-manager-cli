@@ -92,6 +92,9 @@ type StartResult struct {
 	// ProxyPort is what the daemon's proxy is really serving on, zero when it is
 	// off or could not bind.
 	ProxyPort int
+	// PublicPort is what a named URL announces, which the redirection may have
+	// stripped of its port.
+	PublicPort int
 }
 
 type AttachRequest struct {

@@ -13,8 +13,30 @@ type JobURLParams struct {
 	Ports map[string]int
 	// Host is the route the proxy serves this job under. Empty means no proxy —
 	// the direct address is then the honest answer, not a degraded one.
-	Host      string
-	ProxyPort int
+	Host string
+	// PublicPort is what the URL announces, not what the proxy binds.
+	PublicPort int
+}
+
+type JobOriginParams struct {
+	Host string
+	// PublicPort of ProxyPrivilegedPort means the redirection is live and the
+	// port vanishes from the origin.
+	PublicPort int
+	DirectPort int
+}
+
+func JobOrigin(params JobOriginParams) string {
+	if params.Host != "" && params.PublicPort == domain.ProxyPrivilegedPort {
+		return fmt.Sprintf(domain.ProxyOriginFmt, params.Host)
+	}
+	if params.Host != "" && params.PublicPort > 0 {
+		return fmt.Sprintf(domain.ProxyURLFmt, params.Host, params.PublicPort)
+	}
+	if params.DirectPort > 0 {
+		return fmt.Sprintf(domain.DirectURLFmt, params.DirectPort)
+	}
+	return ""
 }
 
 // JobURL is where a job is reachable, empty for one that publishes nothing. This
@@ -28,10 +50,7 @@ func JobURL(params JobURLParams) string {
 	if !bound {
 		return ""
 	}
-	if params.Host != "" && params.ProxyPort > 0 {
-		return fmt.Sprintf(domain.ProxyURLFmt, params.Host, params.ProxyPort)
-	}
-	return fmt.Sprintf(domain.DirectURLFmt, port)
+	return JobOrigin(JobOriginParams{Host: params.Host, PublicPort: params.PublicPort, DirectPort: port})
 }
 
 // ParseJobURL reads the `url` a wizard step or a flag pair expresses as one

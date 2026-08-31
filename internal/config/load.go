@@ -117,6 +117,13 @@ type rawEnvFile struct {
 	Local    bool   `toml:"local"`
 }
 
+// LoadGlobal reads ~/.config/wtm/config.toml on its own, for the settings that
+// belong to the machine rather than to a repository — a command about them must
+// answer outside any wtm project.
+func LoadGlobal() (domain.GlobalConfig, error) {
+	return loadGlobalConfig()
+}
+
 // loadGlobalConfig reads ~/.config/wtm/config.toml. Returns zero-value GlobalConfig
 // if the file does not exist (global config is optional).
 func loadGlobalConfig() (domain.GlobalConfig, error) {

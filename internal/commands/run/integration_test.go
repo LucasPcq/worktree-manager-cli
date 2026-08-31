@@ -16,6 +16,10 @@ import (
 
 func setupTestProject(t *testing.T) string {
 	t.Helper()
+	// Without this the tests read the developer's own daemon and LaunchAgents,
+	// so what `run url` prints depends on whether they happen to have `run up`
+	// running — which is how a green suite hid a real bug once.
+	shortHome(t)
 	dir := gittest.InitRepo(t)
 	stateDir := filepath.Join(dir, ".git", "wtm")
 	t.Setenv("WTM_PROJECT_DIR", dir)
