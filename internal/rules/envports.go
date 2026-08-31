@@ -266,7 +266,7 @@ func EnvValueRefsByKey(links []domain.EnvPortLink, bases map[domain.PortRef]int,
 		// written while the proxy was up still holds a route once it is down,
 		// and the diff has to recognize it either way.
 		ref := EnvValueRef{Base: base, Project: origins.Project}
-		if PublishesPort(origins.Jobs[link.Job], link.Port) {
+		if PublishesPort(PublishesPortParams{Job: origins.Jobs[link.Job], PortName: link.Port}) {
 			ref.JobLabel = origins.JobLabel(link.Job)
 		}
 		byKey[link.Key] = ref

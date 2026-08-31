@@ -27,7 +27,7 @@ type LinkOriginParams struct {
 // a link following a port the published url does not carry, and a machine with
 // no proxy to answer the name.
 func LinkOrigin(params LinkOriginParams) string {
-	if !PublishesPort(params.Job, params.PortName) || params.PublicPort == 0 {
+	if !PublishesPort(PublishesPortParams{Job: params.Job, PortName: params.PortName}) || params.PublicPort == 0 {
 		return ""
 	}
 	host := RouteHost(RouteHostParams{
@@ -39,11 +39,17 @@ func LinkOrigin(params LinkOriginParams) string {
 	return JobOrigin(JobOriginParams{Host: host, PublicPort: params.PublicPort})
 }
 
-// PublishesPort reports whether the job publishes a name for this very port. A
-// job may declare a metrics port beside its HTTP one, and only the published one
-// has an address.
-func PublishesPort(job domain.JobConfig, portName string) bool {
-	return job.URL != nil && job.URL.Port == portName
+type PublishesPortParams struct {
+	Job domain.JobConfig
+	// PortName is the port the caller is asking about, which is not always the
+	// one the job publishes: a job may declare a metrics port beside its HTTP
+	// one, and only the published one has an address.
+	PortName string
+}
+
+// PublishesPort reports whether the job publishes a name for this very port.
+func PublishesPort(params PublishesPortParams) bool {
+	return params.Job.URL != nil && params.Job.URL.Port == params.PortName
 }
 
 type RewriteOriginParams struct {
@@ -147,7 +153,9 @@ func ReduceOriginValue(params ReduceOriginParams) string {
 	changed := false
 	for i, element := range elements {
 		_, authority, ok := splitOrigin(element.value)
-		if !ok || !isRouteAuthority(authority, params.JobLabel, params.Project) {
+		if !ok || !isRouteAuthority(routeAuthorityParams{
+			Authority: authority, JobLabel: params.JobLabel, Project: params.Project,
+		}) {
 			continue
 		}
 		elements[i].value = replaceAuthority(element.value,
@@ -160,6 +168,12 @@ func ReduceOriginValue(params ReduceOriginParams) string {
 	return joinList(elements)
 }
 
+type routeAuthorityParams struct {
+	Authority string
+	JobLabel  string
+	Project   string
+}
+
 type ownedAuthorityParams struct {
 	Authority string
 	JobLabel  string
@@ -168,11 +182,15 @@ type ownedAuthorityParams struct {
 	Resolved  int
 }
 
+func (p ownedAuthorityParams) route() routeAuthorityParams {
+	return routeAuthorityParams{Authority: p.Authority, JobLabel: p.JobLabel, Project: p.Project}
+}
+
 // ownedAuthority reports whether an authority addresses this job — either as a
 // route wtm already wrote, whatever worktree segment and port it carries, or as
 // a loopback address on one of the two ports the link can legitimately hold.
 func ownedAuthority(params ownedAuthorityParams) bool {
-	if isRouteAuthority(params.Authority, params.JobLabel, params.Project) {
+	if isRouteAuthority(params.route()) {
 		return true
 	}
 	host, port := splitHostPort(params.Authority)
@@ -185,14 +203,14 @@ func ownedAuthority(params ownedAuthorityParams) bool {
 // isRouteAuthority matches <job label>.<worktree>.<project label>.localhost
 // without splitting on dots: a hand-written url.host may carry its own, and the
 // worktree segment is the only part that varies between two copies of a value.
-func isRouteAuthority(authority, jobLabel, project string) bool {
-	if jobLabel == "" || project == "" {
+func isRouteAuthority(params routeAuthorityParams) bool {
+	if params.JobLabel == "" || params.Project == "" {
 		return false
 	}
-	host, _ := splitHostPort(authority)
+	host, _ := splitHostPort(params.Authority)
 
-	prefix := jobLabel + "."
-	suffix := "." + HostLabel(project) + "." + domain.ProxyTLD
+	prefix := params.JobLabel + "."
+	suffix := "." + HostLabel(params.Project) + "." + domain.ProxyTLD
 	if !strings.HasPrefix(host, prefix) || !strings.HasSuffix(host, suffix) {
 		return false
 	}
