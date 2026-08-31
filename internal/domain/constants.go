@@ -170,6 +170,11 @@ const (
 	ProxyTLD = "localhost"
 	// ProxyDefaultPort is what the run proxy listens on when the config says nothing.
 	ProxyDefaultPort = 4000
+	// ProxyPortScanSpan is how many ports past the configured one the proxy
+	// tries before giving up. A name answering on an unexpected port beats a
+	// name answering nowhere, but a port far from the one asked for is no
+	// longer the port that was asked for.
+	ProxyPortScanSpan = 16
 	// ProxyURLFmt is a job's named URL.
 	ProxyURLFmt = "http://%s:%d"
 	// ProxyLoopbackFmt is what the proxy binds: the IPv4 loopback, never every
@@ -196,6 +201,15 @@ const (
 	ProxyBindFailedFmt    = "run proxy: port %d is taken (%v) — jobs keep their own ports"
 	ProxyUnavailableFmt   = "Port %d is taken, so jobs answer on their own ports — free it, or set [proxy] port in ~/.config/wtm/config.toml"
 	ProxyUnavailableTitle = "Named URLs are off"
+	// ProxyMovedFmt is what a client says when the proxy took a port other than
+	// the configured one, so the URLs it prints are not the ones the config
+	// alone would predict.
+	ProxyMovedFmt   = "Port %d is taken, so named URLs are served on %d — free it, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyMovedTitle = "Named URLs moved"
+	// ProxyPortCollisionFmt is the one collision a job cannot see coming: the
+	// daemon already holds the port by the time the job tries to bind it.
+	ProxyPortCollisionFmt   = "port %s (job %q, base %d) reaches the run proxy's port %d after %d worktree(s) — that job will fail to bind there; move the base, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyPortCollisionTitle = "Ports that will meet the run proxy"
 
 	// DevOriginsKey is the Next option that lets a subdomain of .localhost reach
 	// the dev server's assets, and DevOriginsConfigNames the files it lives in.
@@ -412,22 +426,30 @@ const (
 	// The [[env_port]] detection of `wtm run init`.
 	// EnvPortLinkFmt is one link as the prompt and the recap both show it:
 	// "<file> · <key>   follows POSTGRES_PORT (5432)".
-	EnvPortLinkFmt          = "%s   follows %s (%d)"
-	EnvPortJobSeparator     = "."
-	EnvPortLinkSeparator    = " · "
-	EnvPortsLinkedTitle     = "Env keys now following a port"
-	EnvLinkStepName         = "Env keys"
-	RecapStepName           = "Review"
-	RecapNotAsked           = "not asked"
-	RecapJobLineFmt         = "%s   %s"
-	RecapRowIndent          = "  "
-	RecapPortFmt            = "%s %d"
-	RecapPortSep            = " · "
-	RecapNoPort             = "⚠ no port declared"
-	RecapTask               = "task"
-	RecapDefaultSuffix      = "   (default)"
-	RecapURLSuffix          = "   (url)"
-	RecapJobsTitle          = "Jobs"
+	EnvPortLinkFmt = "%s   follows %s (%d)"
+	// EnvPortLinkByDirFmt marks a link the value did not anchor: the key was
+	// attached to the job running beside the file. The reader confirms these,
+	// so the deduction has to be visible as one.
+	EnvPortLinkByDirFmt  = "%s   follows %s (%d, matched by directory)"
+	EnvPortJobSeparator  = "."
+	EnvPortLinkSeparator = " · "
+	EnvPortsLinkedTitle  = "Env keys now following a port"
+	EnvLinkStepName      = "Env keys"
+	RecapStepName        = "Review"
+	RecapNotAsked        = "not asked"
+	RecapJobLineFmt      = "%s   %s"
+	RecapRowIndent       = "  "
+	RecapPortFmt         = "%s %d"
+	RecapPortSep         = " · "
+	RecapNoPort          = "⚠ no port declared"
+	RecapTask            = "task"
+	RecapDefaultSuffix   = "   (default)"
+	RecapURLSuffix       = "   (url)"
+	RecapJobsTitle       = "Jobs"
+	// RecapRemovedTitle heads the jobs the unchecking drops. They are absent
+	// from every other section, so this is the only place they can be read
+	// before the write.
+	RecapRemovedTitle       = "Jobs removed (unchecked)"
 	RecapProfilesTitle      = "Profiles"
 	RecapAnswersTitle       = "Answers"
 	RecapStepIntro          = "This is what `wtm run init` is about to write."
@@ -1033,7 +1055,15 @@ const (
 	JobActionError   = "error"
 	JobActionAdded   = "added"
 	JobActionRemoved = "removed"
-	JobActionUpdated = "updated"
+	// JobRemovedProfilesFmt and JobRemovedEnvPortsFmt report what a removal
+	// dragged along with the job, each named so the reader can put it back.
+	JobRemovedProfilesFmt = "Stripped from profile(s): %s"
+	JobRemovedEmptiedFmt  = "Removed profile(s) left with no job: %s"
+	JobRemovedEnvPortsFmt = "Unlinked .env key(s): %s"
+	// RunInitJobsRemovedFmt reports what the unchecking dropped, next to what
+	// the same run added.
+	RunInitJobsRemovedFmt = "Jobs removed (unchecked): %s"
+	JobActionUpdated      = "updated"
 
 	// MetaFileName is the metadata file created per worktree inside
 	// <state-dir>/worktrees/<branch>/.

@@ -361,3 +361,28 @@ func TestResolveDetectedPortsKeepsAHandWrittenBaseOverAnEnvOne(t *testing.T) {
 		t.Errorf("the detected base gives way, got %v", got.EnvWritten)
 	}
 }
+
+// Le retrait doit avoir lieu avant que les steps suivantes lisent la config :
+// elles la recalculent à chaque affichage, et proposeraient sinon un port puis
+// une url pour un job sur le point de disparaître.
+func TestResolveDetectedPortsRetireLesJobsDecoches(t *testing.T) {
+	existing := domain.RunConfig{
+		Jobs:     []domain.JobConfig{{Name: "web", Kind: domain.JobKindService}},
+		Profiles: []domain.ProfileConfig{{Name: "dev", Jobs: []string{"web"}}},
+	}
+
+	got := ResolveDetectedPorts(ResolveDetectedPortsParams{
+		Existing:   existing,
+		Deselected: []string{"web"},
+	})
+
+	if len(got.Config.Jobs) != 0 {
+		t.Errorf("jobs = %+v, want aucun", got.Config.Jobs)
+	}
+	if len(got.Config.Profiles) != 0 {
+		t.Errorf("profils = %+v, want aucun", got.Config.Profiles)
+	}
+	if len(got.Removed) != 1 || got.Removed[0] != "web" {
+		t.Errorf("Removed = %v, want [web]", got.Removed)
+	}
+}

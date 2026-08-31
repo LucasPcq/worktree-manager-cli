@@ -187,7 +187,11 @@ func EnvPortLinkLines(links []domain.EnvPortLink, bases map[domain.PortRef]int) 
 	lines := make([]string, 0, len(links))
 	for _, l := range links {
 		base, _ := EnvPortBaseFor(bases, l)
-		lines = append(lines, fmt.Sprintf(domain.EnvPortLinkFmt,
+		format := domain.EnvPortLinkFmt
+		if l.ByDir {
+			format = domain.EnvPortLinkByDirFmt
+		}
+		lines = append(lines, fmt.Sprintf(format,
 			pad(l.File+domain.EnvPortLinkSeparator+l.Key, width), portLabel(l), base))
 	}
 	return lines

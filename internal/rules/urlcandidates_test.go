@@ -19,7 +19,7 @@ func TestURLCandidatesForReadsBothListeningPortNames(t *testing.T) {
 		service("api", map[string]int{"API_PORT": 3100}),
 	}}
 
-	got := URLCandidatesFor(URLCandidatesForParams{Config: cfg})
+	got := URLCandidatesFor(URLCandidatesForParams{Config: cfg, NewJobs: []string{"web", "api"}})
 	want := []domain.JobURLChoice{
 		{Job: "web", Port: domain.PortNameDefault, Publish: true},
 		{Job: "api", Port: "API_PORT", Publish: true},
@@ -46,7 +46,7 @@ func TestURLCandidatesForPrefersPortOverTheDerivedName(t *testing.T) {
 		service("api", map[string]int{"API_PORT": 3100, domain.PortNameDefault: 3000}),
 	}}
 
-	got := URLCandidatesFor(URLCandidatesForParams{Config: cfg})
+	got := URLCandidatesFor(URLCandidatesForParams{Config: cfg, NewJobs: []string{"api"}})
 	assertChoices(t, got, []domain.JobURLChoice{{Job: "api", Port: domain.PortNameDefault, Publish: true}})
 }
 
@@ -159,7 +159,7 @@ func TestResolveURLChoicesPublishesEveryCandidateWhenNothingWasAsked(t *testing.
 		service("api", map[string]int{"API_PORT": 3100}),
 	}}
 
-	got := ResolveURLChoices(ResolveURLChoicesParams{Config: cfg})
+	got := ResolveURLChoices(ResolveURLChoicesParams{Config: cfg, NewJobs: []string{"web", "api"}})
 	assertChoices(t, got, []domain.JobURLChoice{
 		{Job: "web", Port: domain.PortNameDefault, Publish: true},
 		{Job: "api", Port: "API_PORT", Publish: true},
@@ -207,4 +207,32 @@ func TestApplyInitAnswersPublishesAJobPortedInTheSameCall(t *testing.T) {
 	if got.Jobs[0].URL.Port != domain.PortNameDefault {
 		t.Errorf("url.port = %q, want %q", got.Jobs[0].URL.Port, domain.PortNameDefault)
 	}
+}
+
+// Un job déjà dans run.toml sans url a vu la question et y a répondu non.
+// Le recocher recréerait l'url que l'utilisateur venait de retirer.
+func TestURLCandidatesForLaisseDecocheUnJobDepublie(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		service("web", map[string]int{domain.PortNameDefault: 3000}),
+	}}
+
+	got := URLCandidatesFor(URLCandidatesForParams{Config: cfg})
+
+	assertChoices(t, got, []domain.JobURLChoice{
+		{Job: "web", Port: domain.PortNameDefault, Publish: false},
+	})
+}
+
+// Un job que cette passe vient d'ajouter n'a jamais vu la question : la
+// proposition tient, comme au premier init.
+func TestURLCandidatesForCocheUnJobNeuf(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		service("web", map[string]int{domain.PortNameDefault: 3000}),
+	}}
+
+	got := URLCandidatesFor(URLCandidatesForParams{Config: cfg, NewJobs: []string{"web"}})
+
+	assertChoices(t, got, []domain.JobURLChoice{
+		{Job: "web", Port: domain.PortNameDefault, Publish: true},
+	})
 }

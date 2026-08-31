@@ -232,8 +232,15 @@ and **experimental**: the global `wtm init` does not configure it.
 - `run init` sets up `run.toml` from detection (docker-compose + package scripts). It is
   the only entry point that works before the module exists; every other run command exits
   `16` (run module not initialized) until at least one job/profile is declared. Non-TTY it
-  auto-generates; re-running merges without overwriting. `run job add` / `run profile add`
-  also work before init (they create the first job).
+  auto-generates and **removes nothing**. `run job add` / `run profile add` also work before
+  init (they create the first job).
+- **Re-running `run init` is symmetric.** Every step is pre-filled from the existing
+  `run.toml`: what stays checked is kept, and what you uncheck is **removed** along with the
+  profile entries and `[[env_port]]` links naming it — a profile left with no job goes too.
+  Only jobs the wizard itself proposed can be removed: one added with `run job add` appears
+  in no detected list, so it is never touched. The same symmetry holds for the URLs step (a
+  job you unpublish stays unpublished) and the profiles step (deleting them all keeps them
+  deleted). This only applies to interactive runs — `--non-interactive` never removes.
 - **`run init` composes a startable configuration.** It proposes every compose file and
   package script but checks only scripts whose name contains `dev` — and not a root `dev`
   a workspace package also declares, which is an orchestrator (`turbo run dev`) that would

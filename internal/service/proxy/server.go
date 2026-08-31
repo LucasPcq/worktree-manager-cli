@@ -11,7 +11,9 @@ import (
 )
 
 type ServerParams struct {
-	Port     int
+	Port int
+	// Span is how many ports from Port are tried. Zero takes the default.
+	Span     int
 	Registry *Registry
 }
 
@@ -20,24 +22,46 @@ type Server struct {
 	listener net.Listener
 	http     *http.Server
 	port     int
+	span     int
 }
 
 func NewServer(params ServerParams) *Server {
-	return &Server{registry: params.Registry, port: params.Port}
+	span := params.Span
+	if span <= 0 {
+		span = domain.ProxyPortScanSpan
+	}
+	return &Server{registry: params.Registry, port: params.Port, span: span}
 }
 
-// Start binds the loopback and serves until Close. The bind error is returned
-// rather than fatal: a busy port costs the names, never the jobs.
+// Start binds the first free port from the one asked for and serves until
+// Close. The port is not stable across restarts when the preferred one is
+// taken, and that is the trade this makes: a caller reaches a job by name, so
+// the number is a transport detail `run url` resolves for them — where a job's
+// own port is one they memorise, which is why those never move.
 func (s *Server) Start() error {
-	listener, err := net.Listen("tcp", fmt.Sprintf(domain.ProxyLoopbackFmt, s.port))
-	if err != nil {
-		return err
-	}
-	s.listener = listener
-	s.http = &http.Server{Handler: http.HandlerFunc(s.route)}
+	var err error
+	for port := s.port; port < s.port+s.span; port++ {
+		var listener net.Listener
+		listener, err = net.Listen("tcp", fmt.Sprintf(domain.ProxyLoopbackFmt, port))
+		if err != nil {
+			continue
+		}
+		s.listener = listener
+		s.port = port
+		s.http = &http.Server{Handler: http.HandlerFunc(s.route)}
 
-	go func() { _ = s.http.Serve(listener) }()
-	return nil
+		go func() { _ = s.http.Serve(listener) }()
+		return nil
+	}
+	return err
+}
+
+// Port is the port the listener actually took, zero before Start.
+func (s *Server) Port() int {
+	if s.listener == nil {
+		return 0
+	}
+	return s.port
 }
 
 // Addr is the address the listener actually took, which a port of 0 only knows

@@ -4,20 +4,33 @@ import "github.com/LucasPcq/wtm/internal/domain"
 
 type URLCandidatesForParams struct {
 	Config domain.RunConfig
+	// NewJobs are the jobs this pass just added. They alone have never been
+	// through the URLs step, so a nil URL on them is a question never asked
+	// rather than an answer of no.
+	NewJobs []string
 }
 
 // URLCandidatesFor is the jobs `run init` offers to publish under their own
-// name, every one of them pre-answered yes. A job qualifies by declaring the
-// port it listens on, or by already carrying a url — the latter so the step can
-// withdraw one, which it could not do if the job were left off the list.
+// name. A job qualifies by declaring the port it listens on, or by already
+// carrying a url — the latter so the step can withdraw one, which it could not
+// do if the job were left off the list.
 func URLCandidatesFor(params URLCandidatesForParams) []domain.JobURLChoice {
+	fresh := make(map[string]bool, len(params.NewJobs))
+	for _, name := range params.NewJobs {
+		fresh[name] = true
+	}
+
 	var choices []domain.JobURLChoice
 	for _, job := range params.Config.Jobs {
 		port := publishablePortOf(job)
 		if port == "" {
 			continue
 		}
-		choices = append(choices, domain.JobURLChoice{Job: job.Name, Port: port, Publish: true})
+		choices = append(choices, domain.JobURLChoice{
+			Job:     job.Name,
+			Port:    port,
+			Publish: job.URL != nil || fresh[job.Name],
+		})
 	}
 	return choices
 }
@@ -58,13 +71,14 @@ type ResolveURLChoicesParams struct {
 	// every url, where one that was never asked leaves the proposal standing.
 	Published []string
 	Asked     bool
+	NewJobs   []string
 }
 
 // ResolveURLChoices is the one reading of the URLs step, shared by the wizard's
 // recap and by the run that never showed it. Computing it twice let a
 // non-interactive init write what the wizard would not have.
 func ResolveURLChoices(params ResolveURLChoicesParams) []domain.JobURLChoice {
-	choices := URLCandidatesFor(URLCandidatesForParams{Config: params.Config})
+	choices := URLCandidatesFor(URLCandidatesForParams{Config: params.Config, NewJobs: params.NewJobs})
 	if !params.Asked {
 		return choices
 	}

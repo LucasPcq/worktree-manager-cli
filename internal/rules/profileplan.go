@@ -139,12 +139,18 @@ type ApplyInitAnswersParams struct {
 	Config   domain.RunConfig
 	Ports    []domain.PortEntry
 	Profiles []domain.ProfileConfig
-	Cmds     []domain.JobCmdFix
+	// ProfilesAsked says the profiles step ran, so an empty list withdraws every
+	// profile instead of leaving the proposal standing.
+	ProfilesAsked bool
+	Cmds          []domain.JobCmdFix
 	// URLs and URLsAsked are the URLs step's answer, resolved here rather than
 	// by the caller: a job only becomes publishable once its port is applied,
 	// which is what this function has just done.
 	URLs      []string
 	URLsAsked bool
+	// NewJobs are the jobs this pass just added, which the URLs step reads to
+	// tell a job never offered from one whose url was withdrawn.
+	NewJobs []string
 }
 
 // ApplyInitAnswers folds the wizard's two composition steps back into the
@@ -182,6 +188,7 @@ func ApplyInitAnswers(params ApplyInitAnswersParams) domain.RunConfig {
 		Config:    cfg,
 		Published: params.URLs,
 		Asked:     params.URLsAsked,
+		NewJobs:   params.NewJobs,
 	})
 	for _, choice := range urls {
 		for i, job := range cfg.Jobs {
@@ -192,7 +199,7 @@ func ApplyInitAnswers(params ApplyInitAnswersParams) domain.RunConfig {
 		}
 	}
 
-	if len(params.Profiles) > 0 {
+	if params.ProfilesAsked || len(params.Profiles) > 0 {
 		cfg.Profiles = params.Profiles
 	}
 	return cfg

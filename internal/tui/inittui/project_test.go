@@ -169,9 +169,9 @@ func TestServicesStepPreselectsOnlyDevScripts(t *testing.T) {
 	}
 }
 
-// L'étape propose tout coché : publier est additif — le job garde son port dans
-// tous les cas — donc une mauvaise proposition coûte une case à décocher, jamais
-// un run qui échoue.
+// Au premier init, l'étape propose tout coché : publier est additif — le job
+// garde son port dans tous les cas — donc une mauvaise proposition coûte une
+// case à décocher, jamais un run qui échoue.
 func TestURLItemsOfferEveryCandidateChecked(t *testing.T) {
 	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
 		{Name: "web", Kind: domain.JobKindService, Ports: map[string]int{domain.PortNameDefault: 3000}},
@@ -179,7 +179,7 @@ func TestURLItemsOfferEveryCandidateChecked(t *testing.T) {
 		{Name: "cache", Kind: domain.JobKindService, Ports: map[string]int{"REDIS_PORT": 6379}},
 	}}
 
-	items := urlItemsFor(cfg)
+	items := urlItemsFor(cfg, []string{"web", "api", "cache"})
 	if len(items) != 2 {
 		t.Fatalf("items = %d (%v), want web et api seulement", len(items), items)
 	}
@@ -199,7 +199,33 @@ func TestURLStepIsAbsentWithoutACandidate(t *testing.T) {
 		{Name: "migrate", Kind: domain.JobKindTask, Ports: map[string]int{domain.PortNameDefault: 3000}},
 	}}
 
-	if items := urlItemsFor(cfg); len(items) != 0 {
+	if items := urlItemsFor(cfg, nil); len(items) != 0 {
 		t.Errorf("items = %v, want aucun", items)
+	}
+}
+
+// Au re-init, un job dépublié au passage précédent revient décoché : le
+// recocher recréerait l'url que l'utilisateur venait de retirer.
+func TestURLItemsLaissentDecocheUnJobDepublie(t *testing.T) {
+	published := domain.JobConfig{
+		Name: "api", Kind: domain.JobKindService,
+		Ports: map[string]int{"API_PORT": 3100},
+		URL:   &domain.JobURLConfig{Port: "API_PORT"},
+	}
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "web", Kind: domain.JobKindService, Ports: map[string]int{domain.PortNameDefault: 3000}},
+		published,
+	}}
+
+	items := urlItemsFor(cfg, nil)
+
+	if len(items) != 2 {
+		t.Fatalf("items = %v, want web et api", items)
+	}
+	if items[0].Value != "web" || items[0].Selected {
+		t.Errorf("item[0] = %+v, want web décoché", items[0])
+	}
+	if items[1].Value != "api" || !items[1].Selected {
+		t.Errorf("item[1] = %+v, want api coché", items[1])
 	}
 }
