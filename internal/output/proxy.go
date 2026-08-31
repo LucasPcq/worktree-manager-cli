@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -39,18 +40,43 @@ func redirectState(status domain.ProxyStatus) string {
 }
 
 type ProxyPlanReportParams struct {
-	Title  string
 	Files  []domain.ProxyPlannedFile
 	Script string
+	// Full prints each file's contents rather than what changes in it.
+	Full bool
+	// Reversible adds the two lines only an install has to offer.
+	Reversible bool
 }
 
-// ProxyPlanReport shows a privileged write in full before it is asked for.
+// ProxyPlanReport shows what a privileged write touches before it is asked for.
 func ProxyPlanReport(w io.Writer, params ProxyPlanReportParams) {
-	SectionTitle(w, params.Title)
-	for _, file := range params.Files {
-		Section(w, file.Path, []string{file.Content})
+	SectionTitle(w, fmt.Sprintf(domain.ProxyInstallRecapTitleFmt, len(params.Files)))
+	Blank(w)
+
+	if params.Full {
+		for _, file := range params.Files {
+			Section(w, file.Path, strings.Split(strings.TrimRight(file.Content, "\n"), "\n"))
+		}
 	}
+	if !params.Full {
+		lines := make([]string, 0, len(params.Files))
+		for _, file := range params.Files {
+			lines = append(lines, fmt.Sprintf(domain.ProxyPlanFileFmt, file.Path, file.Change))
+		}
+		for _, line := range lines {
+			Message(w, line)
+		}
+		Blank(w)
+	}
+
 	if params.Script != "" {
-		Section(w, domain.ProxyInstallRecapScript, []string{params.Script})
+		Section(w, domain.ProxyInstallRecapScript, strings.Split(params.Script, "\n"))
+		Blank(w)
+	}
+	if params.Reversible {
+		Message(w, domain.ProxyInstallRecapReverse)
+		if !params.Full {
+			Message(w, domain.ProxyInstallRecapFull)
+		}
 	}
 }

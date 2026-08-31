@@ -45,4 +45,7 @@ type ProxyStatus struct {
 type ProxyPlannedFile struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
+	// Change is the one-line description the recap shows instead of Content: a
+	// reader decides on the three paths, not on Apple's pf.conf boilerplate.
+	Change string `json:"change"`
 }

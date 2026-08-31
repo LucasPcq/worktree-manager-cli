@@ -21,6 +21,7 @@ func newInstallCmd() *cobra.Command {
 		RunE:  runInstall,
 	}
 	cmd.Flags().BoolP(domain.FlagYes, "y", false, "Skip the confirmation (sudo still asks for a password)")
+	cmd.Flags().Bool(domain.FlagDryRun, false, "Print every file in full and write nothing")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -37,7 +38,9 @@ func newUninstallCmd() *cobra.Command {
 }
 
 func runInstall(cmd *cobra.Command, _ []string) error {
-	bindPort, err := requireTerminal(cmd)
+	// --dry-run writes nothing, so it is the one path that needs no terminal.
+	full, _ := cmd.Flags().GetBool(domain.FlagDryRun)
+	bindPort, err := resolveBindPort(cmd, full)
 	if err != nil {
 		return err
 	}
@@ -50,11 +53,15 @@ func runInstall(cmd *cobra.Command, _ []string) error {
 
 	output.Frame(cmd.OutOrStdout(), func() {
 		output.ProxyPlanReport(cmd.OutOrStdout(), output.ProxyPlanReportParams{
-			Title:  domain.ProxyInstallRecapTitle,
-			Files:  plan.Files,
-			Script: plan.Script,
+			Files:      plan.Files,
+			Script:     plan.Script,
+			Full:       full,
+			Reversible: true,
 		})
 	})
+	if full {
+		return nil
+	}
 
 	confirmed, err := confirm(cmd, components.NewConfirmParams{
 		Title:       domain.ProxyInstallConfirmTitle,
@@ -74,7 +81,7 @@ func runInstall(cmd *cobra.Command, _ []string) error {
 }
 
 func runUninstall(cmd *cobra.Command, _ []string) error {
-	if _, err := requireTerminal(cmd); err != nil {
+	if _, err := resolveBindPort(cmd, false); err != nil {
 		return err
 	}
 
@@ -85,11 +92,10 @@ func runUninstall(cmd *cobra.Command, _ []string) error {
 
 	output.Frame(cmd.OutOrStdout(), func() {
 		output.ProxyPlanReport(cmd.OutOrStdout(), output.ProxyPlanReportParams{
-			Title: domain.ProxyUninstallRecapTitle,
 			Files: []domain.ProxyPlannedFile{
-				{Path: domain.ProxyAnchorPath, Content: domain.ProxyUninstallRemoved},
-				{Path: domain.ProxyPlistPath, Content: domain.ProxyUninstallRemoved},
-				{Path: domain.ProxyPfConfPath, Content: domain.ProxyUninstallPfConfLine},
+				{Path: domain.ProxyAnchorPath, Change: domain.ProxyUninstallChange},
+				{Path: domain.ProxyPlistPath, Change: domain.ProxyUninstallChange},
+				{Path: domain.ProxyPfConfPath, Change: domain.ProxyUninstallPfConfChange},
 			},
 		})
 	})
@@ -119,11 +125,11 @@ func confirm(cmd *cobra.Command, params components.NewConfirmParams) (bool, erro
 	return confirmed, err
 }
 
-// requireTerminal refuses a privileged write nobody is watching and returns the
+// resolveBindPort refuses a privileged write nobody is watching, and returns the
 // bind port to redirect to.
-func requireTerminal(cmd *cobra.Command) (int, error) {
+func resolveBindPort(cmd *cobra.Command, preview bool) (int, error) {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	if format == domain.OutputJSON || !term.IsTerminal(int(os.Stdin.Fd())) {
+	if !preview && (format == domain.OutputJSON || !term.IsTerminal(int(os.Stdin.Fd()))) {
 		return 0, domain.ErrProxyInstallNeedsTTY
 	}
 	return configuredBindPort(cmd)

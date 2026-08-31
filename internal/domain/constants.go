@@ -267,19 +267,26 @@ const (
 	ProxyDivergedLine       = "Port 80 is redirected, but what answers there is not the proxy now running"
 	ProxyDivergedFix        = "Re-run `wtm run proxy install` to point it at the port the proxy actually bound"
 
-	// The install and uninstall recaps: a privileged write is shown in full
-	// before it is asked for.
-	ProxyInstallRecapTitle     = "wtm will write these files as root"
-	ProxyInstallRecapScript    = "and run"
+	// The install and uninstall recaps name the paths and the privileged commands;
+	// the contents are a --dry-run away. Dumping a 30-line /etc/pf.conf by
+	// default is how a confirmation becomes mechanical.
+	ProxyInstallRecapTitleFmt  = "wtm will change %d files as root"
+	ProxyInstallRecapScript    = "and run, as root"
+	ProxyPlanFileFmt           = "%s\n    %s"
+	ProxyInstallRecapReverse   = "`wtm run proxy uninstall` reverses every change"
+	ProxyInstallRecapFull      = "`wtm run proxy install --dry-run` prints every file in full and writes nothing"
 	ProxyInstallConfirmTitle   = "Install the redirection?"
 	ProxyInstallConfirmDesc    = "sudo will ask for your password. `wtm run proxy uninstall` reverses every change."
 	ProxyInstallDone           = "Port 80 now reaches the run proxy — named URLs drop their port"
-	ProxyUninstallRecapTitle   = "wtm will undo these as root"
 	ProxyUninstallConfirmTitle = "Remove the redirection?"
 	ProxyUninstallConfirmDesc  = "sudo will ask for your password. Named URLs go back to carrying the proxy's port."
 	ProxyUninstallDone         = "Redirection removed — named URLs carry the proxy's port again"
-	ProxyUninstallRemoved      = "removed"
-	ProxyUninstallPfConfLine   = "the wtm blocks are removed, the rest of the file is left untouched"
+	// What each planned file does, shown instead of its contents.
+	ProxyAnchorChangeFmt       = "new file — redirects :%d to :%d on the loopback"
+	ProxyPfConfChange          = "2 lines added, inside a marked block"
+	ProxyPlistChange           = "new file — reloads pf at boot"
+	ProxyUninstallChange       = "removed"
+	ProxyUninstallPfConfChange = "the wtm blocks are removed, the rest of the file is left untouched"
 
 	// The one place wtm mentions the redirection outside its own commands.
 	// ProxyHostShape names the shape rather than one job: run init speaks about

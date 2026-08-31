@@ -13,6 +13,7 @@ wtm run proxy install [flags]
 ### Options
 
 ```
+      --dry-run         Print every file in full and write nothing
   -h, --help            help for install
       --output string   Output format: text or json (default "text")
   -y, --yes             Skip the confirmation (sudo still asks for a password)

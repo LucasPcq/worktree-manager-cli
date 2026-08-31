@@ -38,9 +38,17 @@ func (r pfRedirector) Plan(params PlanParams) (Plan, error) {
 	}
 
 	plan := Plan{Files: []domain.ProxyPlannedFile{
-		{Path: domain.ProxyAnchorPath, Content: fmt.Sprintf(domain.ProxyAnchorRuleFmt, domain.ProxyPrivilegedPort, params.BindPort)},
-		{Path: domain.ProxyPfConfPath, Content: conf},
-		{Path: domain.ProxyPlistPath, Content: fmt.Sprintf(domain.ProxyPlistFmt, domain.ProxyPlistLabel, domain.ProxyPfConfPath)},
+		{
+			Path:    domain.ProxyAnchorPath,
+			Content: fmt.Sprintf(domain.ProxyAnchorRuleFmt, domain.ProxyPrivilegedPort, params.BindPort),
+			Change:  fmt.Sprintf(domain.ProxyAnchorChangeFmt, domain.ProxyPrivilegedPort, params.BindPort),
+		},
+		{Path: domain.ProxyPfConfPath, Content: conf, Change: domain.ProxyPfConfChange},
+		{
+			Path:    domain.ProxyPlistPath,
+			Content: fmt.Sprintf(domain.ProxyPlistFmt, domain.ProxyPlistLabel, domain.ProxyPfConfPath),
+			Change:  domain.ProxyPlistChange,
+		},
 	}}
 	plan.Script = installScript(plan)
 	return plan, nil
