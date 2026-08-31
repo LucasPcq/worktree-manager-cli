@@ -231,7 +231,11 @@ const (
 	DevOriginsTitle = "Next dev origins"
 	// DevOriginsFixFmt names the one line a Next project needs before a
 	// subdomain of .localhost may reach its dev assets.
-	DevOriginsFixFmt = "%s: add allowedDevOrigins: [\"*.%s:%d\"] to %s — Next blocks dev requests from other hosts"
+	DevOriginsFixFmt = "%s: add allowedDevOrigins: [\"%s\"] to %s — Next blocks dev requests from other hosts"
+	// DevOriginsPatternFmt and DevOriginsPatternNoPortFmt are that value: the
+	// port belongs in it only while the proxy still carries one.
+	DevOriginsPatternFmt       = "*.%s:%d"
+	DevOriginsPatternNoPortFmt = "*.%s"
 
 	// GOOS* name the platforms whose URL opener differs; everything else uses
 	// the freedesktop one.

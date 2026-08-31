@@ -67,4 +67,7 @@ type Response struct {
 	// off or could not bind. The daemon is the only side that knows: a client
 	// only knows what it asked for, and a URL built on that would be a lie.
 	ProxyPort int `json:"proxy_port,omitempty"`
+	// ProxyPublicPort is what a named URL announces: ProxyPrivilegedPort when
+	// the probe reached us behind it, ProxyPort otherwise.
+	ProxyPublicPort int `json:"proxy_public_port,omitempty"`
 }

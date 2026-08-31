@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -21,4 +22,13 @@ func NeedsDevOrigins(params NeedsDevOriginsParams) bool {
 		return false
 	}
 	return !strings.Contains(params.ConfigSource, domain.DevOriginsKey)
+}
+
+// DevOriginsPattern is the allowedDevOrigins value a Next project needs, which
+// loses its port for the same reason a named URL does.
+func DevOriginsPattern(publicPort int) string {
+	if publicPort == domain.ProxyPrivilegedPort {
+		return fmt.Sprintf(domain.DevOriginsPatternNoPortFmt, domain.ProxyTLD)
+	}
+	return fmt.Sprintf(domain.DevOriginsPatternFmt, domain.ProxyTLD, publicPort)
 }
