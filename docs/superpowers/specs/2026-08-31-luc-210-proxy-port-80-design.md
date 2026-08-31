@@ -79,45 +79,49 @@ L'étage 2 peut mentir (un `pfctl -F` manuel, une mise à jour macOS qui réécr
 * `internal/service/process/protocol.go` : `Response` gagne `ProxyPublicPort int` (`json:"proxy_public_port,omitempty"`). `ProxyPort` garde son sens de port de bind.
 * `internal/commands/run/url.go` : `servedProxyPort` devient `publicProxyPort`, implémentant les trois étages. Les autres appelants de `rules.JobURL` (`run open`, `run ps`, la TUI, `flow/runlogs`) passent par cette même résolution.
 
-## 3. Le service privilégié
+## 3. Le service de redirection
+
+> **Révisé après implémentation.** Le design initial reposait sur une ancre `pf` et un `rdr` sur `lo0`, le modèle Pow. Vérifié sur une machine réelle : `pf` activé, ancre enregistrée, règle chargée — et zéro interception, sur deux formes de règle. macOS n'évalue pas un `rdr` sur `lo0` pour du trafic que la machine s'adresse à elle-même. puma-dev a fait la même découverte et a migré vers launchd en v0.3 ; on reprend son mécanisme.
 
 Une interface unique dans `internal/service/proxy`, une implémentation par plateforme derrière un build tag.
 
 ```go
 type Redirector interface {
-    Plan(PlanParams) Plan   // ce qui sera écrit — aucun effet de bord
-    Apply(PlanParams) error // le sudo unique
-    Remove() error          // l'inverse exact, idempotent
-    Inspect() Status        // l'état déclaré, sans sudo et sans daemon
+    Plan() (Plan, error)  // ce qui sera écrit — aucun effet de bord
+    Apply() error
+    Remove() error        // l'inverse exact, idempotent
+    Inspect() domain.ProxyStatus
 }
 ```
 
-`Plan` porte la liste des fichiers avec leur contenu rendu, ce qui donne à la fois le récap affiché à l'utilisateur et la matière des tests. `Status` porte `Installed bool`, `Mechanism string`, `BindPort int`, `Supported bool`.
+### `redirect_darwin.go` — un LaunchAgent, aucun privilège
 
-### `redirect_darwin.go`
+Un seul artefact : `~/Library/LaunchAgents/dev.wtm.proxy.plist`, déclarant une clé `Sockets` sur `127.0.0.1:80` et `[::1]:80`. **launchd bind la socket privilégiée pour le compte de l'agent**, et la passe à un process utilisateur ordinaire. `Apply` écrit le plist et lance `launchctl load` ; `Remove` fait `launchctl unload` et supprime le fichier. **Aucun `sudo`, aucun fichier système, aucune règle de pare-feu.**
 
-Trois artefacts, le modèle Pow puis Valet :
+La socket reste sur la loopback — jamais `0.0.0.0`, que puma-dev utilise et qui publierait chaque worktree sur le réseau.
 
-1. `/etc/pf.anchors/wtm` — `rdr pass on lo0 inet proto tcp from any to 127.0.0.1 port 80 -> 127.0.0.1 port <bind>`
-2. `/etc/pf.conf` — un `rdr-anchor "wtm"` inséré dans un **bloc balisé** (`# >>> wtm >>>` … `# <<< wtm <<<`), à sa place dans l'ordre imposé par `pf` : les `rdr-anchor` précèdent les règles de filtre.
-3. `/Library/LaunchDaemons/dev.wtm.proxy.plist` — `RunAtLoad`, recharge `pfctl -E -f /etc/pf.conf` au démarrage de la machine.
+Le process lancé est `wtm proxy-forward`, une sous-commande cachée qui récupère les descripteurs via `launch_activate_socket` et relaie les octets vers le proxy. Le relais est volontairement aveugle au HTTP : l'en-tête `Host` est l'affaire du proxy, et un relais d'octets fait fonctionner websockets et streaming sans effort.
 
-`Apply` écrit les trois fichiers dans un répertoire temporaire non privilégié, puis lance **un seul** `sudo /bin/sh -c …` : `install` des fichiers, `launchctl bootstrap system`, `pfctl -f /etc/pf.conf`. `Remove` retire le bloc de `/etc/pf.conf`, supprime l'ancre et le plist, `launchctl bootout`, recharge `pf` — et ne fait rien sans erreur si l'installation est absente.
+**Le plist ne contient aucun port.** Le forwarder demande au daemon, par la socket Unix qu'il a déjà, sur quel port le proxy sert réellement, et mémorise la réponse une seconde. Un repli sur port libre (LUC-209) ou un redémarrage sur un autre port est donc suivi sans réinstallation.
 
-La règle `pf` fige le port de bind. Si `[proxy] port` change après coup, la redirection pointe à côté : la sonde le détecte (l'en-tête ne correspond plus), `status` le dit en toutes lettres, et un `install` rejoué réécrit l'ancre. Aucune réparation automatique — une écriture privilégiée ne se déclenche jamais toute seule.
+### `launch_activate_socket` sans cgo
 
-La manipulation du bloc balisé dans `/etc/pf.conf` (insertion au bon endroit, retrait exact, idempotence sur double install, retrait sur fichier vierge) est **une fonction pure** et vit donc dans `internal/rules/pfconf.go`, testable sans root ni fichier système.
+`.goreleaser.yaml` impose `CGO_ENABLED=0` et compile darwin en cross ; puma-dev appelle cette fonction en cgo, ce qui nous coûterait le pipeline. On la joint donc comme la stdlib joint libc sur darwin : `//go:cgo_import_dynamic` plus un trampoline assembleur, adapté de `bored-engineer/go-launchd` (MIT). Le symbole et `libxpc.dylib` restent visibles dans les load commands — ce n'est pas de la résolution `dlopen`/`dlsym`, ce qui compte pour ne pas ressembler à la dissimulation d'API que traquent les EDR.
 
 ### `redirect_other.go` (`//go:build !darwin`)
 
-Renvoie `domain.ErrProxyRedirectUnsupported` sur `Apply`/`Remove`, et un `Status{Supported: false}` sur `Inspect`. `wtm run proxy status` y dit ce qui est vrai — les URLs portent leur port, et cette plateforme n'a pas encore d'implémentation — sans faire croire à une panne.
+Renvoie `domain.ErrProxyRedirectUnsupported`, et un `Status{Supported: false}` sur `Inspect()`.
+
+### Surface EDR
+
+Écrire dans `~/Library/LaunchAgents/` est MITRE ATT&CK T1543.001, surveillé par SentinelOne, CrowdStrike et Jamf Protect. C'est inhérent à la fonctionnalité — servir le 80 après un reboot, c'est être persistant — et nettement plus discret que le chemin `pf` écarté, qui combinait un LaunchDaemon root, une modification de `/etc/pf.conf` et une règle de pare-feu. Contrepoids : loopback seulement, nommage transparent, opt-in strict, désinstallation complète, et la signature/notarisation des releases suivie par LUC-213.
 
 ## 4. La surface CLI
 
 Nouveau groupe `wtm run proxy`, dans `internal/commands/run/proxycmd/` (même forme que `jobcmd/` et `profilecmd/`). Sans sous-commande, il affiche `status`.
 
 * **`wtm run proxy status`** — port de bind configuré et réellement bindé, redirection déclarée et son mécanisme, résultat de la sonde, une URL d'exemple, et le signalement d'une divergence entre déclaré et sondé. `--output json`. C'est le point de découverte principal.
-* **`wtm run proxy install`** — affiche le récap exact (chaque chemin et son contenu), demande confirmation, puis lance `sudo`. `--yes` saute la confirmation mais **pas** le `sudo`. Hors TTY ou en `--output json`, refus explicite nommant la contrainte : un `sudo` ne peut pas être non-attendu.
+* **`wtm run proxy install`** — affiche le récap (le chemin du plist, ce qu'il change, la commande `launchctl`), demande confirmation, puis installe. `--dry-run` imprime le fichier en entier sans rien écrire, et n'exige aucun terminal puisqu'il n'écrit rien. Hors TTY ou en `--output json`, `--yes` est requis — la confirmation est le seul axe, il n'y a plus de privilège à protéger.
 * **`wtm run proxy uninstall`** — même récap, même confirmation, réversible à l'identique.
 
 Ces commandes **ne passent pas par `internal/flow/`** : la règle vise les commandes qui mutent un worktree, or celle-ci mute la machine et n'en touche aucun. Elles respectent en revanche l'axe `--yes` de la convention des commandes mutantes. Pas de `--force` : il n'y a aucun refus de sécurité à lever, seulement une confirmation.
