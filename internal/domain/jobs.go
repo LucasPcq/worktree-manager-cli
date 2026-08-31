@@ -25,6 +25,19 @@ type JobURLConfig struct {
 	Host string `toml:"host,omitempty" json:"host,omitempty"`
 }
 
+// Addressing is what an [[env_port]] link writes into a .env value: the job's
+// port number, or the full origin it is published under. See
+// docs/dev/run-addressing.md for the vocabulary this rests on.
+type Addressing string
+
+const (
+	// AddressingPorts substitutes the port number, wherever it sits in the value.
+	AddressingPorts Addressing = "ports"
+	// AddressingNames substitutes the whole origin, for the links whose job
+	// publishes a name and whose value has the shape of a URL.
+	AddressingNames Addressing = "names"
+)
+
 // JobConfig defines a managed job from .wtm/run.toml.
 type JobConfig struct {
 	Name string  `toml:"name"           json:"name"`
@@ -81,6 +94,10 @@ type RunConfig struct {
 	// EnvPorts links a .env key to one of the ports declared above, so a value
 	// holding a hard-coded host port follows the worktree's offset.
 	EnvPorts []EnvPortLink `toml:"env_port,omitempty" json:"env_port,omitempty"`
+	// Addressing is what those links write. Empty means AddressingNames: a
+	// project that publishes names wants its .env values to reach them, and one
+	// that publishes none is unaffected either way.
+	Addressing Addressing `toml:"addressing,omitempty" json:"addressing,omitempty"`
 }
 
 // ExecSpec is a command ready for exec: the binary and the arguments it takes,

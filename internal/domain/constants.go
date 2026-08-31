@@ -468,6 +468,17 @@ const (
 	EnvPortHeaderPort    = "PORT"
 	EnvPortHeaderBecomes = "BECOMES"
 	EnvPortMoveFmt       = "%d → %d"
+	// EnvPortMoveOrigin replaces the port move on a row that writes a whole
+	// origin: there is no before-and-after number to show, the value column
+	// carries the change on its own.
+	EnvPortMoveOrigin = "→ address"
+
+	// The two notices an origin pass may raise, one line each however many keys
+	// were written. Both say what happened and what would change it.
+	EnvOriginPortedTitle   = "Addresses carry the proxy's port"
+	EnvOriginPortedFmt     = "Written with :%d — `wtm run proxy install` serves them on port 80, then `wtm env` drops it"
+	EnvOriginProxyOffTitle = "This project asks for named addresses"
+	EnvOriginProxyOffLine  = "The run proxy is off on this machine, so ports were written instead — see [proxy] in ~/.config/wtm/config.toml"
 
 	// EnvPortAnomaliesTitle heads the links wtm reports instead of applying.
 	EnvPortAnomaliesTitle = "Env ports left alone"
@@ -478,7 +489,12 @@ const (
 	EnvPortReasonMissingKey   = "no such key in this file"
 	EnvPortReasonAmbiguousFmt = "%d appears more than once"
 	EnvPortReasonNotFoundFmt  = "no %d to shift in the value"
-	EnvPortsConfirmPrompt     = "Update these .env values to this worktree's ports?"
+	// The two refusals an origin rewrite adds. Both name what wtm saw rather
+	// than what it wanted, since the value is the thing the reader must fix.
+	EnvPortReasonForeignHostFmt = "points at %s, which no job here serves"
+	EnvPortReasonSecureScheme   = "https — the run proxy serves plain HTTP"
+	EnvPortsConfirmPrompt       = "Update these .env values to this worktree's ports?"
+	EnvPortsOriginConfirmPrompt = "Update these .env values to this worktree's addresses?"
 
 	// The trailing verdict of `wtm env`.
 	EnvCheckDriftMessage = "Read-only check — run `wtm env` to reconcile."
