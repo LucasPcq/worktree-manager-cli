@@ -84,10 +84,10 @@ func publishedJobs(cmd *cobra.Command) ([]domain.JobURLEntry, error) {
 	for _, job := range runCfg.Jobs {
 		ports := rules.JobPorts(rules.JobPortsParams{Ports: job.Ports, PortOffset: offset})
 		url := rules.JobURL(rules.JobURLParams{
-			Job:       job,
-			Ports:     ports,
-			Host:      rules.RouteHost(rules.RouteHostParams{Job: job, Worktree: env[domain.EnvWorktree], Project: project}),
-			ProxyPort: proxyPort,
+			Job:        job,
+			Ports:      ports,
+			Host:       rules.RouteHost(rules.RouteHostParams{Job: job, Worktree: env[domain.EnvWorktree], Project: project}),
+			PublicPort: proxyPort,
 		})
 		if url == "" {
 			continue

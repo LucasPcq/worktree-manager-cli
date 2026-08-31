@@ -277,10 +277,10 @@ func (d *daemonServer) jobInfoOf(job ManagedJob) domain.JobInfo {
 		StartedAt: job.StartedAt,
 		ExitCode:  job.ExitCode,
 		URL: rules.JobURL(rules.JobURLParams{
-			Job:       job.Config,
-			Ports:     jobPorts(job.Config, job.Env),
-			Host:      job.RouteHost,
-			ProxyPort: d.proxyPort,
+			Job:        job.Config,
+			Ports:      jobPorts(job.Config, job.Env),
+			Host:       job.RouteHost,
+			PublicPort: d.proxyPort,
 		}),
 	}
 }

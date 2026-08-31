@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -47,7 +48,12 @@ func (s *Server) Start() error {
 			continue
 		}
 		s.listener = listener
+		// Not `port`: a zero asks for an ephemeral one, and the listener is the
+		// only thing that knows which.
 		s.port = port
+		if addr, ok := listener.Addr().(*net.TCPAddr); ok {
+			s.port = addr.Port
+		}
 		s.http = &http.Server{Handler: http.HandlerFunc(s.route)}
 
 		go func() { _ = s.http.Serve(listener) }()
@@ -84,6 +90,12 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	host := r.Host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
+	}
+
+	if host == domain.ProxyProbeHost {
+		w.Header().Set(domain.ProxyProbeHeader, strconv.Itoa(s.port))
+		w.WriteHeader(http.StatusNoContent)
+		return
 	}
 
 	route, found := s.registry.Lookup(host)

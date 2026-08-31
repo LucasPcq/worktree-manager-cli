@@ -244,10 +244,10 @@ type jobURLParams struct {
 // one this run asked for: a name nothing serves is worse than a port.
 func (r *runner) jobURL(params jobURLParams) string {
 	return rules.JobURL(rules.JobURLParams{
-		Job:       params.Job,
-		Ports:     params.Ports,
-		Host:      params.Host,
-		ProxyPort: r.servedPort,
+		Job:        params.Job,
+		Ports:      params.Ports,
+		Host:       params.Host,
+		PublicPort: r.servedPort,
 	})
 }
 

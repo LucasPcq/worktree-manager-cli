@@ -177,6 +177,11 @@ const (
 	ProxyPortScanSpan = 16
 	// ProxyURLFmt is a job's named URL.
 	ProxyURLFmt = "http://%s:%d"
+	// ProxyPrivilegedPort is the port a named URL loses: reached through an OS
+	// redirection the daemon never binds itself.
+	ProxyPrivilegedPort = 80
+	// ProxyOriginFmt is a named URL served on the privileged port.
+	ProxyOriginFmt = "http://%s"
 	// ProxyLoopbackFmt is what the proxy binds: the IPv4 loopback, never every
 	// interface.
 	ProxyLoopbackFmt = "127.0.0.1:%d"
@@ -185,6 +190,15 @@ const (
 	// that binds ::1 only — Vite does — is unreachable over 127.0.0.1, which is
 	// the same asymmetry PortProbeHostV4/V6 exist for.
 	ProxyTargetFmt = "localhost:%d"
+	// ProxyProbeHost and ProxyProbeHeader are how a caller proves the proxy
+	// answering behind the privileged port is this one: the header carries the
+	// bind port, so a stale redirection is a mismatch rather than a false yes.
+	ProxyProbeHost   = "probe.wtm.localhost"
+	ProxyProbeHeader = "X-Wtm-Proxy"
+	// ProxyProbeTimeoutMs bounds the probe: nothing listening refuses at once,
+	// so this only ever pays for a host that accepts and then stalls.
+	ProxyProbeTimeoutMs = 150
+
 	// ProxyScheme is what the proxy dials a job with: the job listens on plain
 	// HTTP on the loopback, whatever the browser used to reach the proxy.
 	ProxyScheme = "http"

@@ -241,3 +241,30 @@ func TestServerStartAbandonneApresLaFenetre(t *testing.T) {
 		t.Error("Start = nil, want une erreur quand la fenêtre est épuisée")
 	}
 }
+
+func TestServerAnswersTheProbeWithItsBindPort(t *testing.T) {
+	addr := serve(t)
+
+	resp := get(t, addr, domain.ProxyProbeHost)
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("status: got %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.Header.Get(domain.ProxyProbeHeader); got != port {
+		t.Errorf("header: got %q, want %q", got, port)
+	}
+}
+
+func TestServerProbeIgnoresTheRegistry(t *testing.T) {
+	addr := serve(t, domain.ProxyRoute{Host: domain.ProxyProbeHost, Target: "127.0.0.1:1", Job: "web"})
+
+	resp := get(t, addr, domain.ProxyProbeHost)
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("une route enregistrée sous l'hôte sentinelle ne doit pas être servie : got %d", resp.StatusCode)
+	}
+}

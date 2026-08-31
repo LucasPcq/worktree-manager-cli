@@ -142,10 +142,10 @@ func (p startJobParams) startedLine(params startedLineParams) string {
 		Label: params.Label,
 		Ports: params.Ports,
 		URL: rules.JobURL(rules.JobURLParams{
-			Job:       p.Job,
-			Ports:     params.Ports,
-			Host:      p.RouteHost,
-			ProxyPort: params.ServedPort,
+			Job:        p.Job,
+			Ports:      params.Ports,
+			Host:       p.RouteHost,
+			PublicPort: params.ServedPort,
 		}),
 		Hyperlinks: rules.IsHumanFormat(p.Format) && isTTY(),
 	})
