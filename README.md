@@ -485,6 +485,38 @@ wtm reports rather than guesses when it cannot be sure: the key is missing, the 
 more than once in the value, or neither the base nor any offset of it is there. Rewriting on
 a guess could corrupt a URL, so those lines are named and left alone.
 
+#### Values that carry an address, not a port
+
+A port in a `.env` is enough for one app talking to itself. It is not enough the moment a
+front end calls a separate API: the browser is on the worktree's **name**, so the `Origin`
+it sends is a name, and a `CORS_ORIGIN` holding `http://localhost:5183` blocks it. Ports and
+named URLs cannot both be half-true in the same file.
+
+So a link writes the job's **whole origin** rather than its port number, whenever two things
+hold at once — the job it names **publishes a url** for that very port, and the value **has
+the shape of a URL**:
+
+```diff
+-VITE_API_URL=http://localhost:4001
++VITE_API_URL=http://api-dev.feat-x.monorepo.localhost
+-CORS_ORIGIN=http://localhost:5173
++CORS_ORIGIN=http://web-dev.feat-x.monorepo.localhost
+ PORT=4011                                    # a bare number stays a number
+ DATABASE_URL=postgres://u:pw@localhost:5442/app   # Postgres has no name, and never will
+```
+
+Both conditions matter. The first leaves Postgres alone — the proxy only speaks HTTP. The
+second leaves the binding keys alone: `PORT` belongs to a job that *does* publish a name, and
+must still be a number. Without the redirection installed the address carries the proxy's
+port (`…localhost:10080`), which changes nothing for CORS and nothing for cookie isolation —
+a port is part of an origin, but never part of a *cookie's* origin.
+
+Set `addressing = "ports"` at the top of `run.toml` to keep port numbers everywhere; it is a
+real inverse, and a later `wtm env` puts the ports back. On a machine where the proxy is off,
+ports are written whatever the project asked for, and a notice says so. Under `names` the
+named URL becomes the only working entrance: opening `localhost:5183` directly sends an
+`Origin` the API no longer knows. `wtm run url` and `wtm run open` hand out the right link.
+
 Two base ports must not differ by a **multiple of the block**, or two worktrees end up on
 the same one — `3000` and `3010` are refused when `run.toml` is read, naming both sides,
 which is the last moment the problem is still explainable. Neighbouring ports are fine:
