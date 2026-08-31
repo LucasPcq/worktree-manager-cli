@@ -205,3 +205,37 @@ func TestPortEntriesForSkipsATask(t *testing.T) {
 		t.Errorf("PortEntriesFor = %+v, want empty", got)
 	}
 }
+
+// Un job dont le port porte la forme dérivée <JOB>_PORT a déjà dit ce qu'il
+// écoute : lui proposer une entrée vide en plus le fait apparaître deux fois
+// dans la step, une fois pré-rempli et une fois à saisir.
+func TestPortEntriesForNeProposePasUnDoublonSurLaFormeDerivee(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "web", Kind: domain.JobKindService, Ports: map[string]int{"WEB_PORT": 3000}},
+	}}
+
+	got := rules.PortEntriesFor(rules.PortEntriesForParams{Config: cfg})
+
+	want := []domain.PortEntry{{Job: "web", Name: "WEB_PORT", Base: 3000}}
+	if len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("entrées = %+v, want %+v", got, want)
+	}
+}
+
+// Un job qui ne déclare qu'un port qu'il compose n'a rien dit de ce qu'il
+// écoute : l'entrée vide reste sa seule façon de le déclarer.
+func TestPortEntriesForProposeEncoreUneEntreeAUnJobQuiNecouteRien(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "api", Kind: domain.JobKindService, Ports: map[string]int{"DB_PORT": 5432}},
+	}}
+
+	got := rules.PortEntriesFor(rules.PortEntriesForParams{Config: cfg})
+
+	want := []domain.PortEntry{
+		{Job: "api", Name: "DB_PORT", Base: 5432},
+		{Job: "api", Name: domain.PortNameDefault},
+	}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("entrées = %+v, want %+v", got, want)
+	}
+}

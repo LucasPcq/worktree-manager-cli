@@ -213,3 +213,84 @@ func TestEnvPortBases(t *testing.T) {
 		}
 	}
 }
+
+// Un .env déjà décalé ne contient plus la base déclarée : sans seconde passe,
+// aucun lien n'est proposé et `wtm create` ne réalignera jamais ce fichier.
+func TestEnvPortCandidatesOffreUneCleQuiNancreAucuneBase(t *testing.T) {
+	got := EnvPortCandidates(EnvPortCandidatesParams{
+		Lines: map[string][]domain.EnvLine{
+			"apps/web/.env": {{Kind: domain.EnvLinePair, Key: domain.PortNameDefault, Value: "3010"}},
+		},
+		Bases:     map[domain.PortRef]int{{Job: "web", Name: domain.PortNameDefault}: 3000},
+		JobsByDir: map[string]string{"apps/web": "web"},
+	})
+
+	if len(got) != 1 {
+		t.Fatalf("candidats = %+v, want un seul", got)
+	}
+	if got[0].Job != "web" || got[0].Key != domain.PortNameDefault || !got[0].ByDir {
+		t.Errorf("candidat = %+v, want web/PORT rattaché par répertoire", got[0])
+	}
+}
+
+// L'ancrage strict reste prioritaire : une valeur qui contient la base est
+// rattachée par elle, pas par le répertoire, et ne se dédouble pas.
+func TestEnvPortCandidatesPrefereLancrageStrict(t *testing.T) {
+	got := EnvPortCandidates(EnvPortCandidatesParams{
+		Lines: map[string][]domain.EnvLine{
+			"apps/web/.env": {{Kind: domain.EnvLinePair, Key: domain.PortNameDefault, Value: "3000"}},
+		},
+		Bases:     map[domain.PortRef]int{{Job: "web", Name: domain.PortNameDefault}: 3000},
+		JobsByDir: map[string]string{"apps/web": "web"},
+	})
+
+	if len(got) != 1 || got[0].ByDir {
+		t.Errorf("candidats = %+v, want un seul, ancré sur la valeur", got)
+	}
+}
+
+// Sans job connu pour le répertoire, rien à rattacher : wtm ne devine pas.
+func TestEnvPortCandidatesNoffreRienSansJobPourLeRepertoire(t *testing.T) {
+	got := EnvPortCandidates(EnvPortCandidatesParams{
+		Lines: map[string][]domain.EnvLine{
+			"apps/web/.env": {{Kind: domain.EnvLinePair, Key: domain.PortNameDefault, Value: "3010"}},
+		},
+		Bases: map[domain.PortRef]int{{Job: "web", Name: domain.PortNameDefault}: 3000},
+	})
+
+	if len(got) != 0 {
+		t.Errorf("candidats = %+v, want aucun", got)
+	}
+}
+
+// Une valeur qui n'est pas un port nu — une URL, un placeholder — n'est jamais
+// devinée : la seconde passe n'a aucun ancrage pour situer le port dedans.
+func TestEnvPortCandidatesNeDevinePasDansUneValeurComposite(t *testing.T) {
+	got := EnvPortCandidates(EnvPortCandidatesParams{
+		Lines: map[string][]domain.EnvLine{
+			"apps/web/.env": {{Kind: domain.EnvLinePair, Key: "API_PORT", Value: "http://localhost:9999"}},
+		},
+		Bases:     map[domain.PortRef]int{{Job: "web", Name: "API_PORT"}: 3000},
+		JobsByDir: map[string]string{"apps/web": "web"},
+	})
+
+	if len(got) != 0 {
+		t.Errorf("candidats = %+v, want aucun", got)
+	}
+}
+
+// La clé doit nommer le port d'un job donné : un PORT rattaché au répertoire
+// d'un autre job serait un lien qui déplace le mauvais numéro.
+func TestEnvPortCandidatesNeRattachePasAUnAutreJob(t *testing.T) {
+	got := EnvPortCandidates(EnvPortCandidatesParams{
+		Lines: map[string][]domain.EnvLine{
+			"apps/web/.env": {{Kind: domain.EnvLinePair, Key: domain.PortNameDefault, Value: "3010"}},
+		},
+		Bases:     map[domain.PortRef]int{{Job: "api", Name: domain.PortNameDefault}: 3000},
+		JobsByDir: map[string]string{"apps/web": "web"},
+	})
+
+	if len(got) != 0 {
+		t.Errorf("candidats = %+v, want aucun", got)
+	}
+}

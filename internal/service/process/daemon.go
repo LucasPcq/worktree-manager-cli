@@ -65,12 +65,13 @@ func RunDaemon(params DaemonParams) error {
 	if params.ProxyPort > 0 {
 		server := proxy.NewServer(proxy.ServerParams{Port: params.ProxyPort, Registry: registry})
 		if startErr := server.Start(); startErr != nil {
-			// A busy port costs the names, never the jobs. Nobody reads a
-			// forked daemon's stderr, so the refusal travels in every answer
-			// instead: d.proxyPort stays zero and the clients say why.
+			// The whole window was taken, which costs the names but never the
+			// jobs. Nobody reads a forked daemon's stderr, so the refusal
+			// travels in every answer instead: d.proxyPort stays zero and the
+			// clients say why.
 			log.Printf(domain.ProxyBindFailedFmt, params.ProxyPort, startErr)
 		} else {
-			d.proxyPort = params.ProxyPort
+			d.proxyPort = server.Port()
 			defer server.Close()
 		}
 	}

@@ -150,6 +150,62 @@ func TestRunJobRm_ReferencedForce(t *testing.T) {
 	}
 }
 
+// Un [[env_port]] qui nomme un job supprimé pointait dans le vide : le
+// chargeur le refuse, donc la fuite rendait le fichier illisible.
+func TestRunJobRm_DelieSesEnvPorts(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "api", Kind: domain.JobKindService, Cmd: "echo hi", Ports: map[string]int{domain.PortNameDefault: 4001}},
+			{Name: "web", Kind: domain.JobKindService, Cmd: "echo web", Ports: map[string]int{"WEB_PORT": 5173}},
+		},
+		EnvPorts: []domain.EnvPortLink{
+			{File: ".env", Key: "PORT", Job: "api", Port: domain.PortNameDefault},
+			{File: ".env", Key: "WEB_PORT", Job: "web", Port: "WEB_PORT"},
+		},
+	})
+
+	if _, _, err := runCmd(t, domain.CmdJob, domain.CmdRm, "api"); err != nil {
+		t.Fatalf("run job rm: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if len(cfg.EnvPorts) != 1 || cfg.EnvPorts[0].Job != "web" {
+		t.Errorf("env_port = %+v, want seulement celui de web", cfg.EnvPorts)
+	}
+}
+
+// Un profil qui ne garde aucun job ne démarre plus rien : le laisser en
+// ferait une entrée morte dans le picker de `run up`.
+func TestRunJobRm_RetireUnProfilDevenuVide(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "api", Kind: domain.JobKindService, Cmd: "echo hi"},
+			{Name: "build", Kind: domain.JobKindTask, Cmd: "echo build"},
+		},
+		Profiles: []domain.ProfileConfig{
+			{Name: "dev", Jobs: []string{"api", "build"}},
+			{Name: "api-only", Jobs: []string{"api"}},
+		},
+	})
+
+	if _, _, err := runCmd(t, domain.CmdJob, domain.CmdRm, "api", "--"+domain.FlagForce); err != nil {
+		t.Fatalf("run job rm --force: %v", err)
+	}
+
+	cfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if len(cfg.Profiles) != 1 || cfg.Profiles[0].Name != "dev" {
+		t.Errorf("profils = %+v, want seulement dev", cfg.Profiles)
+	}
+}
+
 func TestRunProfileAdd_OK(t *testing.T) {
 	stateDir := setupTestProject(t)
 	writeRunTOML(t, stateDir, domain.RunConfig{

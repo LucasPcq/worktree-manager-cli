@@ -196,3 +196,48 @@ func mustAtoi(t *testing.T, s string) int {
 	}
 	return n
 }
+
+// Un port occupé par un tiers coûtait toute la fonctionnalité. Le repli la
+// garde : l'utilisateur tape un nom, pas un numéro, donc le port n'a pas à
+// être stable pour que l'URL réponde.
+func TestServerStartSeReplieSurLePortSuivant(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("occuper un port: %v", err)
+	}
+	defer busy.Close()
+	taken := busy.Addr().(*net.TCPAddr).Port
+
+	server := NewServer(ServerParams{Port: taken, Registry: NewRegistry()})
+	if err := server.Start(); err != nil {
+		t.Fatalf("Start = %v, want un repli réussi", err)
+	}
+	defer server.Close()
+
+	if server.Port() == taken {
+		t.Errorf("port = %d, want un port différent de celui occupé", server.Port())
+	}
+	if server.Port() == 0 {
+		t.Error("port = 0, want le port réellement pris")
+	}
+}
+
+// Passé la fenêtre, l'échec reste un échec : mieux vaut le dire que servir sur
+// un port arbitraire très loin de celui qui a été configuré.
+//
+// Span vaut 1, donc la seule tentative possible est le port occupé — le test
+// ne dépend pas de ce qui est libre autour de lui.
+func TestServerStartAbandonneApresLaFenetre(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("occuper un port: %v", err)
+	}
+	defer busy.Close()
+	taken := busy.Addr().(*net.TCPAddr).Port
+
+	server := NewServer(ServerParams{Port: taken, Span: 1, Registry: NewRegistry()})
+	if err := server.Start(); err == nil {
+		server.Close()
+		t.Error("Start = nil, want une erreur quand la fenêtre est épuisée")
+	}
+}

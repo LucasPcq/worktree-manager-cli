@@ -215,3 +215,33 @@ func TestProposeProfilesCarriesSharedTasksIntoEachPackage(t *testing.T) {
 		t.Errorf("api = %v, want [migrate api-dev]", api.Jobs)
 	}
 }
+
+// Tout supprimer dans la step est une réponse : la réinstaller effacerait le
+// geste de l'utilisateur au moment même de l'écriture.
+func TestApplyInitAnswersEcritUneListeDeProfilsVideQuiAEteDemandee(t *testing.T) {
+	cfg := domain.RunConfig{
+		Jobs:     []domain.JobConfig{{Name: "web", Kind: domain.JobKindService}},
+		Profiles: []domain.ProfileConfig{{Name: "dev", Jobs: []string{"web"}}},
+	}
+
+	got := rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{Config: cfg, ProfilesAsked: true})
+
+	if len(got.Profiles) != 0 {
+		t.Errorf("profils = %v, want aucun", got.Profiles)
+	}
+}
+
+// Une step jamais affichée ne retire rien : un init non interactif garde la
+// proposition, sans quoi `run up` n'aurait plus rien à démarrer.
+func TestApplyInitAnswersGardeLesProfilsQuandLaStepNaPasTourne(t *testing.T) {
+	cfg := domain.RunConfig{
+		Jobs:     []domain.JobConfig{{Name: "web", Kind: domain.JobKindService}},
+		Profiles: []domain.ProfileConfig{{Name: "dev", Jobs: []string{"web"}}},
+	}
+
+	got := rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{Config: cfg})
+
+	if len(got.Profiles) != 1 {
+		t.Errorf("profils = %v, want la proposition conservée", got.Profiles)
+	}
+}

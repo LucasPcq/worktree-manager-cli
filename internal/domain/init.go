@@ -70,12 +70,19 @@ type InitProjectAnswers struct {
 	// --patch-compose flag.
 	PatchCompose           bool
 	SelectedPackageScripts []PackageScript
+	// SelectionAsked says the docker/scripts steps were displayed, so what they
+	// leave unchecked is a refusal. A run that never asked selects only what it
+	// would have pre-checked, and reading that as a refusal would delete the
+	// jobs an earlier run configured.
+	SelectionAsked bool
 	// Ports is what the wizard settled for the detected ports, and Profiles the
-	// split `run up` will offer. Empty Profiles means the run could not ask: the
-	// proposal is then taken as answered, since a profile is what makes `run up`
-	// start something rather than everything.
-	Ports    []PortEntry
-	Profiles []ProfileConfig
+	// split `run up` will offer. ProfilesAsked says the step ran at all:
+	// emptying the list withdraws every profile, where a run that never asked
+	// leaves the proposal standing — a profile is what makes `run up` start
+	// something rather than everything.
+	Ports         []PortEntry
+	Profiles      []ProfileConfig
+	ProfilesAsked bool
 	// Cmds is the commands the wizard amended so they read the port wtm injects.
 	Cmds []JobCmdFix
 	// URLs names the jobs the wizard left checked in the URLs step, and

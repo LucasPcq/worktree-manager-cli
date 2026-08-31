@@ -249,3 +249,80 @@ func TestPortEntriesRoundTrip(t *testing.T) {
 		t.Errorf("got %v, want %v", back, ports)
 	}
 }
+
+// Le daemon démarre avant les jobs et tient déjà son port : un job dont la
+// base l'atteint échouera à binder, sans que rien ne l'ait annoncé.
+func TestProxyPortCollisionsSignaleUneBaseQuiAtteintLeProxy(t *testing.T) {
+	cfg := domain.RunConfig{
+		PortOffsetBlock: 10,
+		Jobs: []domain.JobConfig{
+			{Name: "web", Ports: map[string]int{domain.PortNameDefault: 3990}},
+		},
+	}
+
+	got := ProxyPortCollisions(ProxyPortCollisionsParams{Config: cfg, ProxyPort: 4000})
+
+	if len(got) != 1 {
+		t.Fatalf("collisions = %+v, want une seule", got)
+	}
+	if got[0].Declaration.Job != "web" || got[0].Worktrees != 1 {
+		t.Errorf("collision = %+v, want web au premier worktree suivant", got[0])
+	}
+}
+
+// Une base au-dessus du port du proxy ne l'atteint jamais : un offset est
+// toujours positif, il éloigne.
+func TestProxyPortCollisionsIgnoreUneBaseAuDessus(t *testing.T) {
+	cfg := domain.RunConfig{
+		PortOffsetBlock: 10,
+		Jobs: []domain.JobConfig{
+			{Name: "web", Ports: map[string]int{domain.PortNameDefault: 4010}},
+		},
+	}
+
+	if got := ProxyPortCollisions(ProxyPortCollisionsParams{Config: cfg, ProxyPort: 4000}); len(got) != 0 {
+		t.Errorf("collisions = %+v, want aucune", got)
+	}
+}
+
+// Une base qui n'atteint le proxy qu'au-delà de l'horizon est de
+// l'arithmétique, pas un conflit — même règle que PortCollisions.
+func TestProxyPortCollisionsIgnoreAuDelaDeLhorizon(t *testing.T) {
+	cfg := domain.RunConfig{
+		PortOffsetBlock: 1,
+		Jobs: []domain.JobConfig{
+			{Name: "web", Ports: map[string]int{domain.PortNameDefault: 1000}},
+		},
+	}
+
+	if got := ProxyPortCollisions(ProxyPortCollisionsParams{Config: cfg, ProxyPort: 4000}); len(got) != 0 {
+		t.Errorf("collisions = %+v, want aucune", got)
+	}
+}
+
+// Sans proxy configuré, il n'y a personne à heurter.
+func TestProxyPortCollisionsSansProxy(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "web", Ports: map[string]int{domain.PortNameDefault: 4000}},
+	}}
+
+	if got := ProxyPortCollisions(ProxyPortCollisionsParams{Config: cfg}); len(got) != 0 {
+		t.Errorf("collisions = %+v, want aucune", got)
+	}
+}
+
+// Le message doit porter la base et le port du proxy aux bonnes places : une
+// inversion se lirait bien et dirait le contraire.
+func TestProxyPortCollisionLinesNommeLesDeuxPorts(t *testing.T) {
+	lines := ProxyPortCollisionLines([]ProxyPortCollision{{
+		Declaration: PortDeclaration{Job: "web", Name: domain.PortNameDefault, Base: 3990},
+		Worktrees:   1,
+	}}, 4000)
+
+	if len(lines) != 1 {
+		t.Fatalf("lignes = %v, want une seule", lines)
+	}
+	if !strings.Contains(lines[0], "base 3990") || !strings.Contains(lines[0], "port 4000") {
+		t.Errorf("ligne = %q, want la base 3990 et le port 4000 nommés", lines[0])
+	}
+}

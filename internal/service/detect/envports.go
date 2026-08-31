@@ -15,6 +15,7 @@ type EnvPortCandidatesParams struct {
 	Files      []domain.EnvFile
 	Bases      map[domain.PortRef]int
 	Existing   []domain.EnvPortLink
+	JobsByDir  map[string]string
 }
 
 // EnvLines reads the project's configured env value files once, so a surface
@@ -44,8 +45,9 @@ func EnvPortCandidates(params EnvPortCandidatesParams) []domain.EnvPortLink {
 	}
 
 	return rules.EnvPortCandidates(rules.EnvPortCandidatesParams{
-		Lines:    EnvLines(params),
-		Bases:    params.Bases,
-		Existing: params.Existing,
+		Lines:     EnvLines(params),
+		Bases:     params.Bases,
+		Existing:  params.Existing,
+		JobsByDir: params.JobsByDir,
 	})
 }

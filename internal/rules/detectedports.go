@@ -18,6 +18,9 @@ type ResolveDetectedPortsParams struct {
 	// EnvScansByDir holds the ports each directory's env files declare, keyed by
 	// the directory a job's cwd names.
 	EnvScansByDir map[string]domain.EnvPortScan
+	// Deselected are the jobs the reader unchecked. They are dropped right after
+	// the merge, because every later step reads the config this returns.
+	Deselected []string
 }
 
 // DetectedPortsOutcome is the whole decision of a `run init`. Nothing here
@@ -34,6 +37,9 @@ type DetectedPortsOutcome struct {
 	// Changed and Orphaned name the files that contributed nothing, and why.
 	Changed  map[string]string
 	Orphaned []string
+	// Removed are the jobs the unchecking dropped, so a surface can name them
+	// before the config is written.
+	Removed []string
 
 	// EnvWritten is what the .env detection gave each job, and EnvSources the
 	// file each of those ports was read from. Kept apart from Written: the two
@@ -69,6 +75,15 @@ func ResolveDetectedPorts(params ResolveDetectedPortsParams) DetectedPortsOutcom
 	built := BuildInitRunConfig(forJobs, params.PackageManager)
 	merged, mergeResult := MergeRunConfigs(params.Existing, built)
 	outcome.Merge = mergeResult
+
+	for _, name := range params.Deselected {
+		next, effect := RemoveJob(merged, name)
+		if !effect.Removed {
+			continue
+		}
+		merged = next
+		outcome.Removed = append(outcome.Removed, name)
+	}
 
 	// A file whose job was skipped — its name already taken by another file —
 	// has nowhere to put its ports. Declaring them elsewhere would be a guess.

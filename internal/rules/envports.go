@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -295,6 +296,9 @@ type EnvPortCandidatesParams struct {
 	// Existing are the links run.toml already declares, which are never offered
 	// again — a re-run of the detection is additive, like the compose one.
 	Existing []domain.EnvPortLink
+	// JobsByDir is the job running in each directory. It answers the case an
+	// already-shifted .env creates, where no value anchors a declared base.
+	JobsByDir map[string]string
 }
 
 // EnvPortCandidates finds the .env keys whose value holds exactly one declared
@@ -316,10 +320,51 @@ func EnvPortCandidates(params EnvPortCandidatesParams) []domain.EnvPortLink {
 				candidates = append(candidates, domain.EnvPortLink{
 					File: file, Key: line.Key, Job: ref.Job, Port: ref.Name,
 				})
+				continue
+			}
+			if link, found := linkByDir(linkByDirParams{
+				File: file, Line: line, Bases: params.Bases, JobsByDir: params.JobsByDir,
+			}); found {
+				candidates = append(candidates, link)
 			}
 		}
 	}
 	return candidates
+}
+
+type linkByDirParams struct {
+	File      string
+	Line      domain.EnvLine
+	Bases     map[domain.PortRef]int
+	JobsByDir map[string]string
+}
+
+// linkByDir attaches a port key to the job running in the directory holding the
+// file. It is the second rank on purpose: a value carrying a declared base says
+// which port it follows, and only when none does is the directory the next best
+// evidence. The key must name a port and hold one, so a URL or a placeholder is
+// never guessed at.
+func linkByDir(params linkByDirParams) (domain.EnvPortLink, bool) {
+	if !IsPortKey(params.Line.Key) {
+		return domain.EnvPortLink{}, false
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(params.Line.Value))
+	if err != nil || value < domain.PortMin || value > domain.PortMax {
+		return domain.EnvPortLink{}, false
+	}
+
+	job, found := params.JobsByDir[filepath.Dir(params.File)]
+	if !found {
+		return domain.EnvPortLink{}, false
+	}
+	for _, ref := range sortedPortRefs(params.Bases) {
+		if ref.Job == job && ref.Name == params.Line.Key {
+			return domain.EnvPortLink{
+				File: params.File, Key: params.Line.Key, Job: job, Port: ref.Name, ByDir: true,
+			}, true
+		}
+	}
+	return domain.EnvPortLink{}, false
 }
 
 // solePortIn names the one declared port whose base sits exactly once in value.

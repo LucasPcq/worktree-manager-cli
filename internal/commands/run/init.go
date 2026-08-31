@@ -31,8 +31,11 @@ func newInitCmd() *cobra.Command {
 		Long: "Set up run.toml by detecting docker-compose files and package.json scripts and turning\n" +
 			"the selected ones into jobs.\n\n" +
 			"In a TTY, opens a wizard to pick which ones to include; non-interactively (or piped),\n" +
-			"auto-generates from detection. Re-running merges new selections into the existing\n" +
-			"run.toml without overwriting what's already there.\n\n" +
+			"auto-generates from detection. Re-running pre-fills every step from the existing\n" +
+			"run.toml: what stays checked is kept, what you uncheck is removed along with the\n" +
+			"profile entries and .env links naming it. Only jobs this wizard proposed are ever\n" +
+			"removed — one added with `wtm run job add` is never listed, so never touched.\n" +
+			"A non-interactive run asks nothing and removes nothing.\n\n" +
 			"Ports declared in the selected compose files become per-worktree ports. A literal\n" +
 			"host port (\"5432:5432\") binds the same port everywhere, so wtm offers to rewrite it\n" +
 			"as \"${DB_PORT:-5432}:5432\" — the default keeps `docker compose up` working on its\n" +
@@ -143,9 +146,18 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		Answers:        answers,
 		PackageManager: detection.PackageManager,
 		Existing:       existing,
-		Plan:           plan,
-		Unverifiable:   unverifiable,
-		EnvScansByDir:  envScans,
+		Deselected: rules.DeselectedJobs(rules.DeselectedJobsParams{
+			Existing:             existing,
+			PackageManager:       detection.PackageManager,
+			DetectedScripts:      detection.PackageScripts,
+			SelectedScripts:      answers.SelectedPackageScripts,
+			DetectedComposeFiles: detection.DockerComposeFiles,
+			SelectedComposeFiles: answers.DockerComposeFiles,
+			Asked:                answers.SelectionAsked,
+		}),
+		Plan:          plan,
+		Unverifiable:  unverifiable,
+		EnvScansByDir: envScans,
 	})
 
 	if !rules.IsRunInitialized(outcome.Config) {
@@ -158,22 +170,25 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// The wizard's two composition steps outrank detection. Non-interactively
-	// nothing was asked, so the proposal stands as answered: a profile is what
-	// makes `run up` start something rather than everything.
-	if len(answers.Profiles) == 0 {
+	// The wizard's two composition steps outrank detection. A step that never
+	// ran leaves the proposal standing — a profile is what makes `run up` start
+	// something rather than everything — but one that ran and was emptied is an
+	// answer, and reinstating it would undo the user's own gesture.
+	if !answers.ProfilesAsked && len(answers.Profiles) == 0 {
 		answers.Profiles = rules.ProposeProfiles(rules.ProposeProfilesParams{
 			Config:   outcome.Config,
 			Existing: existing.Profiles,
 		})
 	}
 	outcome.Config = rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
-		Config:    outcome.Config,
-		Ports:     answers.Ports,
-		Profiles:  answers.Profiles,
-		Cmds:      answers.Cmds,
-		URLs:      answers.URLs,
-		URLsAsked: answers.URLsAsked,
+		Config:        outcome.Config,
+		Ports:         answers.Ports,
+		Profiles:      answers.Profiles,
+		ProfilesAsked: answers.ProfilesAsked,
+		Cmds:          answers.Cmds,
+		URLs:          answers.URLs,
+		URLsAsked:     answers.URLsAsked,
+		NewJobs:       outcome.Merge.Added,
 	})
 
 	links := resolveEnvPortLinks(resolveEnvPortLinksParams{
@@ -208,6 +223,9 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		if len(outcome.Merge.Added) > 0 {
 			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Jobs added: %s", strings.Join(outcome.Merge.Added, ", ")))
 		}
+		if len(outcome.Removed) > 0 {
+			output.Message(cmd.OutOrStdout(), fmt.Sprintf(domain.RunInitJobsRemovedFmt, strings.Join(outcome.Removed, ", ")))
+		}
 		if len(outcome.Merge.Skipped) > 0 {
 			output.Message(cmd.OutOrStdout(), fmt.Sprintf("Already present (kept): %s", strings.Join(outcome.Merge.Skipped, ", ")))
 		}
@@ -238,6 +256,13 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 				Exempt: rules.ComposeJobsFor(rules.ComposeJobsParams{Config: outcome.Config, Files: answers.DockerComposeFiles}),
 			}),
 		})
+		proxyPort := rules.ProxyPort(res.Config.Global)
+		if lines := rules.ProxyPortCollisionLines(rules.ProxyPortCollisions(rules.ProxyPortCollisionsParams{
+			Config:    outcome.Config,
+			ProxyPort: proxyPort,
+		}), proxyPort); len(lines) > 0 {
+			output.Callout(cmd.ErrOrStderr(), domain.ProxyPortCollisionTitle, lines)
+		}
 		output.Blank(cmd.OutOrStdout())
 		output.Message(cmd.OutOrStdout(), "Next: `wtm run up` to start · `wtm run job add` to add more")
 		output.Blank(cmd.OutOrStdout())
@@ -321,6 +346,7 @@ func resolveEnvPortLinks(params resolveEnvPortLinksParams) []domain.EnvPortLink 
 		Files:      params.EnvFiles,
 		Bases:      rules.EnvPortBases(params.Config),
 		Existing:   params.Config.EnvPorts,
+		JobsByDir:  rules.JobsByCwd(params.Config),
 	})
 	if len(candidates) == 0 || params.Declined {
 		return nil
