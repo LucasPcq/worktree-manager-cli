@@ -521,7 +521,7 @@ shell = "zsh"          # zsh | bash | fish
 animations = true      # false disables every wtm ui animation (tab rule, new-row flash)
 
 [proxy]
-port = 4000            # where named job URLs are served, on the loopback only
+port = 10080           # where named job URLs are served, on the loopback only
 enabled = true         # false sends every URL back to http://localhost:<port>
 ```
 
@@ -529,7 +529,7 @@ enabled = true         # false sends every URL back to http://localhost:<port>
 `wtm ui` animation at once, useful over a slow or laggy connection.
 
 `[proxy]` serves each worktree's HTTP jobs under their own hostname
-(`http://<job>.<worktree>.<repo>.localhost:4000`), so two worktrees stop sharing one
+(`http://<job>.<worktree>.<repo>.localhost:10080`), so two worktrees stop sharing one
 cookie jar — a job opts in with `url = { port = "PORT" }` in `run.toml`, which `wtm run
 init` writes for the services it detects. Both keys default
 to the values above; the proxy lives in the background daemon and dies with it, and a port

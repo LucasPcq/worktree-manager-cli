@@ -192,6 +192,9 @@ var (
 	// the sockets it exists to serve.
 	ErrProxyNoListeners = errors.New("launchd started the port-80 forwarder with no listening socket")
 
+	// ErrProxyNoTarget is a forwarder built without a way to find the proxy.
+	ErrProxyNoTarget = errors.New("the port-80 forwarder was given no way to resolve the run proxy's port")
+
 	// ErrProxyInstallNeedsYes is the ordinary confirmation axis: the write itself
 	// needs no privilege, so a run nobody can answer only needs --yes.
 	ErrProxyInstallNeedsYes = errors.New("`wtm run proxy install` installs a LaunchAgent — pass --yes to run it without a terminal")

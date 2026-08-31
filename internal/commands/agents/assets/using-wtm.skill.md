@@ -329,7 +329,7 @@ and **experimental**: the global `wtm init` does not configure it.
   browser; it may offer a picker, but only in a fully interactive run, so **always name
   the job**.
 - **The URL is a name, not a port.** With the proxy on (the default), a published job
-  answers at `http://<job>.<worktree>.<repo>.localhost:4000` — that order on purpose, so a
+  answers at `http://<job>.<worktree>.<repo>.localhost:10080` — that order on purpose, so a
   cookie set on `.<worktree>.<repo>.localhost` stays inside that worktree. **That URL may
   carry no port at all**: `wtm run proxy install` redirects port 80 to the proxy, after
   which `run url` prints `http://<job>.<worktree>.<repo>.localhost`. Never assume a `:port`
@@ -412,7 +412,7 @@ and **experimental**: the global `wtm init` does not configure it.
   it never fails the run and never changes the exit code. Vite needs nothing: it allows
   `.localhost` already.
 - **`[proxy]` in `~/.config/wtm/config.toml`** tunes the proxy for the whole machine:
-  `port` (default `4000`) and `enabled` (default on). Switching it off is not a failure —
+  `port` (default `10080`) and `enabled` (default on). Switching it off is not a failure —
   every URL wtm prints falls back to the direct `http://localhost:<port>` form. Same if
   the port is already taken: the jobs still start, wtm prints the direct form and says
   once why the names are off. **The URL wtm reports is always one that works** — it comes

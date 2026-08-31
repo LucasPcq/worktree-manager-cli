@@ -168,8 +168,11 @@ const (
 
 	// ProxyTLD is the special-use TLD every wtm route lives under (RFC 6761).
 	ProxyTLD = "localhost"
-	// ProxyDefaultPort is what the run proxy listens on when the config says nothing.
-	ProxyDefaultPort = 4000
+	// ProxyDefaultPort is what the run proxy listens on when the config says
+	// nothing. It reads as "100 then 80" — the privileged port with a prefix,
+	// which is what it serves. Above every common dev default (3000, 4000, 4200,
+	// 5173, 8000, 8080, 9000) and below 49152, where the ephemeral range starts.
+	ProxyDefaultPort = 10080
 	// ProxyPortScanSpan is how many ports past the configured one the proxy
 	// tries before giving up. A name answering on an unexpected port beats a
 	// name answering nowhere, but a port far from the one asked for is no
@@ -230,18 +233,22 @@ const (
 	// string launch_activate_socket is called with — the two must agree.
 	ProxySocketKey        = "Listeners"
 	ProxyMechanismLaunchd = "launchd socket activation"
-	ProxyAgentChangeFmt   = "new file — launchd binds :%d and hands it to wtm, which relays to :%d"
+	ProxyAgentChangeFmt   = "new file — launchd binds :%d and hands it to wtm, which relays to the run proxy"
 	ProxyLoadCmdFmt       = "launchctl load %s"
 	LaunchctlBin          = "launchctl"
 	LaunchctlLoad         = "load"
 	LaunchctlUnload       = "unload"
-	ProxyPlistFmt         = `<?xml version="1.0" encoding="UTF-8"?>
+	// ProxyTargetCacheMs is how long the forwarder trusts the port the daemon
+	// last named. Long enough that a page load asks once, short enough that a
+	// daemon restart on another port is followed within a keystroke.
+	ProxyTargetCacheMs = 1000
+	ProxyPlistFmt      = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>Label</key><string>%s</string>
 	<key>ProgramArguments</key>
-	<array><string>%s</string><string>%s</string><string>--%s</string><string>%d</string></array>
+	<array><string>%s</string><string>%s</string></array>
 	<key>Sockets</key>
 	<dict>
 		<key>%s</key>

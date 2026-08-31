@@ -7,8 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"strconv"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -27,7 +25,7 @@ func (r launchdRedirector) plistPath() string {
 	return filepath.Join(r.home, domain.ProxyAgentDir, domain.ProxyPlistName)
 }
 
-func (r launchdRedirector) Plan(params PlanParams) (Plan, error) {
+func (r launchdRedirector) Plan() (Plan, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return Plan{}, fmt.Errorf("locate the wtm binary: %w", err)
@@ -38,16 +36,16 @@ func (r launchdRedirector) Plan(params PlanParams) (Plan, error) {
 		Files: []domain.ProxyPlannedFile{{
 			Path: path,
 			Content: fmt.Sprintf(domain.ProxyPlistFmt,
-				domain.ProxyPlistLabel, exe, domain.CmdProxyForward, domain.FlagTarget, params.BindPort,
+				domain.ProxyPlistLabel, exe, domain.CmdProxyForward,
 				domain.ProxySocketKey, domain.ProxyPrivilegedPort, domain.ProxyPrivilegedPort),
-			Change: fmt.Sprintf(domain.ProxyAgentChangeFmt, domain.ProxyPrivilegedPort, params.BindPort),
+			Change: fmt.Sprintf(domain.ProxyAgentChangeFmt, domain.ProxyPrivilegedPort),
 		}},
 		Script: fmt.Sprintf(domain.ProxyLoadCmdFmt, path),
 	}, nil
 }
 
-func (r launchdRedirector) Apply(params PlanParams) error {
-	plan, err := r.Plan(params)
+func (r launchdRedirector) Apply() error {
+	plan, err := r.Plan()
 	if err != nil {
 		return err
 	}
@@ -79,19 +77,15 @@ func (r launchdRedirector) Remove() error {
 	return os.Remove(path)
 }
 
-var agentTargetPort = regexp.MustCompile(`--target</string>\s*<string>(\d+)</string>`)
-
 func (r launchdRedirector) Inspect() domain.ProxyStatus {
 	status := domain.ProxyStatus{Supported: true, Mechanism: domain.ProxyMechanismLaunchd}
 
-	plist, err := os.ReadFile(r.plistPath())
-	if err != nil {
+	// The plist names no port: the forwarder asks the daemon, so being installed
+	// is the whole of what this file says.
+	if _, err := os.Stat(r.plistPath()); err != nil {
 		return status
 	}
 
 	status.Installed = true
-	if match := agentTargetPort.FindStringSubmatch(string(plist)); len(match) == 2 {
-		status.BindPort, _ = strconv.Atoi(match[1])
-	}
 	return status
 }

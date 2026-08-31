@@ -8,10 +8,6 @@ type RedirectorParams struct {
 	Root string
 }
 
-type PlanParams struct {
-	BindPort int
-}
-
 // Plan is what Apply would write and run, rendered without writing anything —
 // the recap the user confirms is this value.
 type Plan struct {
@@ -20,8 +16,8 @@ type Plan struct {
 }
 
 type Redirector interface {
-	Plan(PlanParams) (Plan, error)
-	Apply(PlanParams) error
+	Plan() (Plan, error)
+	Apply() error
 	Remove() error
 	Inspect() domain.ProxyStatus
 }

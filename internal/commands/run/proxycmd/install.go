@@ -40,13 +40,12 @@ func newUninstallCmd() *cobra.Command {
 func runInstall(cmd *cobra.Command, _ []string) error {
 	// --dry-run writes nothing, so it is the one path that needs no terminal.
 	full, _ := cmd.Flags().GetBool(domain.FlagDryRun)
-	bindPort, err := resolveBindPort(cmd, full)
-	if err != nil {
-		return err
+	if !full && !canConfirm(cmd) {
+		return domain.ErrProxyInstallNeedsYes
 	}
 
 	redirector := proxy.NewRedirector(proxy.RedirectorParams{})
-	plan, err := redirector.Plan(proxy.PlanParams{BindPort: bindPort})
+	plan, err := redirector.Plan()
 	if err != nil {
 		return err
 	}
@@ -71,7 +70,7 @@ func runInstall(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if applyErr := redirector.Apply(proxy.PlanParams{BindPort: bindPort}); applyErr != nil {
+	if applyErr := redirector.Apply(); applyErr != nil {
 		return applyErr
 	}
 	output.Frame(cmd.OutOrStdout(), func() {
@@ -81,8 +80,8 @@ func runInstall(cmd *cobra.Command, _ []string) error {
 }
 
 func runUninstall(cmd *cobra.Command, _ []string) error {
-	if _, err := resolveBindPort(cmd, false); err != nil {
-		return err
+	if !canConfirm(cmd) {
+		return domain.ErrProxyInstallNeedsYes
 	}
 
 	redirector := proxy.NewRedirector(proxy.RedirectorParams{})
@@ -91,7 +90,7 @@ func runUninstall(cmd *cobra.Command, _ []string) error {
 		return domain.ErrProxyRedirectUnsupported
 	}
 
-	plan, err := redirector.Plan(proxy.PlanParams{BindPort: status.BindPort})
+	plan, err := redirector.Plan()
 	if err != nil {
 		return err
 	}
@@ -126,16 +125,6 @@ func confirm(cmd *cobra.Command, params components.NewConfirmParams) (bool, erro
 	}
 	confirmed, err := components.RunStandaloneConfirm(components.NewConfirm(params))
 	return confirmed, err
-}
-
-// resolveBindPort returns the port to redirect to, refusing only what cannot be
-// confirmed: launchd needs no privilege, so the terminal is only about the
-// prompt, and --yes stands in for it.
-func resolveBindPort(cmd *cobra.Command, preview bool) (int, error) {
-	if !preview && !canConfirm(cmd) {
-		return 0, domain.ErrProxyInstallNeedsYes
-	}
-	return configuredBindPort(cmd)
 }
 
 func canConfirm(cmd *cobra.Command) bool {

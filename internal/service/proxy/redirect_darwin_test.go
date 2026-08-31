@@ -5,6 +5,7 @@ package proxy
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -12,7 +13,7 @@ import (
 )
 
 func TestPlanRendersTheAgentWithBothLoopbacks(t *testing.T) {
-	plan, err := NewRedirector(RedirectorParams{Root: t.TempDir()}).Plan(PlanParams{BindPort: 4000})
+	plan, err := NewRedirector(RedirectorParams{Root: t.TempDir()}).Plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +28,6 @@ func TestPlanRendersTheAgentWithBothLoopbacks(t *testing.T) {
 		"<string>127.0.0.1</string>",
 		"<string>::1</string>",
 		"<string>80</string>",
-		"--target</string><string>4000</string>",
 	} {
 		if !strings.Contains(plist, want) {
 			t.Errorf("le plist doit contenir %q:\n%s", want, plist)
@@ -41,7 +41,7 @@ func TestPlanRendersTheAgentWithBothLoopbacks(t *testing.T) {
 func TestPlanWritesInsideTheHomeDirectory(t *testing.T) {
 	home := t.TempDir()
 
-	plan, err := NewRedirector(RedirectorParams{Root: home}).Plan(PlanParams{BindPort: 4000})
+	plan, err := NewRedirector(RedirectorParams{Root: home}).Plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,6 +55,18 @@ func TestPlanWritesInsideTheHomeDirectory(t *testing.T) {
 	}
 }
 
+// The plist carries no port on purpose: the forwarder asks the daemon, so a
+// fallback or a restart on another port never breaks the privileged one.
+func TestPlanBakesNoPortIntoTheAgent(t *testing.T) {
+	plan, err := NewRedirector(RedirectorParams{Root: t.TempDir()}).Plan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(plan.Files[0].Content, strconv.Itoa(domain.ProxyDefaultPort)) {
+		t.Errorf("le plist ne doit nommer aucun port de bind:\n%s", plan.Files[0].Content)
+	}
+}
+
 func TestInspectReadsTheDeclaredStateWithoutLaunchctl(t *testing.T) {
 	home := t.TempDir()
 	r := NewRedirector(RedirectorParams{Root: home})
@@ -63,7 +75,7 @@ func TestInspectReadsTheDeclaredStateWithoutLaunchctl(t *testing.T) {
 		t.Error("home vierge : rien n'est installé")
 	}
 
-	plan, err := r.Plan(PlanParams{BindPort: 4321})
+	plan, err := r.Plan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,9 +89,6 @@ func TestInspectReadsTheDeclaredStateWithoutLaunchctl(t *testing.T) {
 	status := r.Inspect()
 	if !status.Installed {
 		t.Error("le plist posé : installé")
-	}
-	if status.BindPort != 4321 {
-		t.Errorf("le port cible se relit dans le plist : got %d", status.BindPort)
 	}
 	if !status.Supported {
 		t.Error("darwin est supporté")
