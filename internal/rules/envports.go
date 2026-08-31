@@ -232,14 +232,32 @@ func ApplyEnvPorts(lines []domain.EnvLine, entries []domain.EnvPortEntry) []doma
 	return out
 }
 
-// EnvPortBasesByKey is the base each linked .env key follows, keyed by the key
-// itself — what the reconciliation diff needs to compare two worktrees' values.
-func EnvPortBasesByKey(links []domain.EnvPortLink, bases map[domain.PortRef]int) map[string]int {
-	byKey := map[string]int{}
+// EnvValueRef is what the reconciliation diff needs to recognize any worktree's
+// spelling of one linked key: the declared base, and the route the value may
+// carry instead of a port.
+type EnvValueRef struct {
+	Base     int
+	JobLabel string
+	Project  string
+}
+
+// EnvValueRefsByKey indexes those by key. A key whose job publishes no name gets
+// an empty label, and only the port reduction ever applies to it.
+func EnvValueRefsByKey(links []domain.EnvPortLink, bases map[domain.PortRef]int, origins OriginContext) map[string]EnvValueRef {
+	byKey := map[string]EnvValueRef{}
 	for _, link := range links {
-		if base, declared := EnvPortBaseFor(bases, link); declared {
-			byKey[link.Key] = base
+		base, declared := EnvPortBaseFor(bases, link)
+		if !declared {
+			continue
 		}
+		// The label comes from the declaration, never from LinkOrigin: a .env
+		// written while the proxy was up still holds a route once it is down,
+		// and the diff has to recognize it either way.
+		ref := EnvValueRef{Base: base, Project: origins.Project}
+		if PublishesPort(origins.Jobs[link.Job], link.Port) {
+			ref.JobLabel = origins.JobLabel(link.Job)
+		}
+		byKey[link.Key] = ref
 	}
 	return byKey
 }

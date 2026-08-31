@@ -97,9 +97,9 @@ func TestComputeEnvPortsWritesNothing(t *testing.T) {
 	}
 }
 
-func TestEnvPortBasesForNarrowsToOneTarget(t *testing.T) {
-	got := EnvPortBasesFor(portsParams(t.TempDir()), "apps/web/.env")
-	if len(got) != 1 || got["VITE_API_URL"] != 3000 {
-		t.Errorf("EnvPortBasesFor() = %v, want only the web target's key", got)
+func TestEnvValueRefsForNarrowsToOneTarget(t *testing.T) {
+	got := EnvValueRefsFor(portsParams(t.TempDir()), "apps/web/.env")
+	if len(got) != 1 || got["VITE_API_URL"].Base != 3000 {
+		t.Errorf("EnvValueRefsFor() = %v, want only the web target's key", got)
 	}
 }

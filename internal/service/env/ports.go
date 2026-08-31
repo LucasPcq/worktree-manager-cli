@@ -73,10 +73,10 @@ func ApplyEnvPorts(params EnvPortsParams) (domain.EnvPortPlan, error) {
 	return plan, nil
 }
 
-// EnvPortBasesFor is the base each linked key of one env target follows, which
+// EnvValueRefsFor is how each linked key of one env target may be spelled, which
 // the reconciliation diff needs to compare two worktrees' values.
-func EnvPortBasesFor(params EnvPortsParams, target string) map[string]int {
-	return rules.EnvPortBasesByKey(linksForFile(params.Links, target), params.Bases)
+func EnvValueRefsFor(params EnvPortsParams, target string) map[string]rules.EnvValueRef {
+	return rules.EnvValueRefsByKey(linksForFile(params.Links, target), params.Bases, params.Origins)
 }
 
 func readLinkedFiles(params EnvPortsParams) (map[string][]domain.EnvLine, error) {
