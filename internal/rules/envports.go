@@ -62,6 +62,9 @@ type PlanEnvPortsParams struct {
 	Links   []domain.EnvPortLink
 	Bases   map[domain.PortRef]int
 	Origins OriginContext
+	// Block is the spacing between two worktrees' ports, needed to recognize
+	// another worktree's spelling of a value copied from it.
+	Block int
 	// Offset is the worktree's port offset — zero for the main checkout, where
 	// every substitution is the identity.
 	Offset int
@@ -91,6 +94,7 @@ func PlanEnvPorts(params PlanEnvPortsParams) domain.EnvPortPlan {
 			Link:    link,
 			Base:    base,
 			Offset:  params.Offset,
+			Block:   params.Block,
 			Lines:   params.Lines[link.File],
 			Origins: params.Origins,
 		}))
@@ -103,6 +107,7 @@ type planEnvPortEntryParams struct {
 	Link    domain.EnvPortLink
 	Base    int
 	Offset  int
+	Block   int
 	Lines   []domain.EnvLine
 	Origins OriginContext
 }
@@ -128,13 +133,16 @@ func planEnvPortEntry(params planEnvPortEntryParams) domain.EnvPortEntry {
 		return origin
 	}
 
-	// The value may still hold an address a previous pass wrote, which is what
-	// makes the switch back to ports an inverse rather than a one-way door.
-	value := ReduceOriginValue(ReduceOriginParams{
+	// Rewound to the base before anything is shifted, because the value may not
+	// be spelled on the base at all: a .env provisioned from a parent worktree
+	// carries that worktree's port, and one a previous pass addressed carries a
+	// route. Both are this setting, written by another worktree.
+	value := ReduceEnvPortValue(ReduceEnvPortParams{
 		Value:    line.Value,
+		Base:     entry.Base,
+		Block:    params.Block,
 		JobLabel: params.Origins.JobLabel(params.Link.Job),
 		Project:  params.Origins.Project,
-		Base:     entry.Base,
 	})
 
 	switch at := portOffsets(value, entry.Base); {

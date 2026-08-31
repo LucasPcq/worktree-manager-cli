@@ -34,13 +34,18 @@ func EnvPortsReport(w io.Writer, plan domain.EnvPortPlan, check bool) {
 	if declined {
 		Unchanged(w, fmt.Sprintf(domain.EnvPortsLeftAloneFmt, len(plan.Rewrites())))
 		printEnvPortAnomalies(w, anomalies)
-		printEnvPortNotices(w, notices)
+		printEnvPortNotices(w, notices, false)
 		return
 	}
 
-	SectionTitle(w, fmt.Sprintf(domain.EnvFileHeaderFmt,
-		domain.EnvPortsTitle,
-		styles.Muted.Render(domain.EnvPortOffsetPrefix+strconv.Itoa(plan.Offset))))
+	// The title names the table, so it comes with one. A pass that only has a
+	// notice to give — every value already settled — would otherwise print a
+	// heading over nothing.
+	if len(rows) > 0 {
+		SectionTitle(w, fmt.Sprintf(domain.EnvFileHeaderFmt,
+			domain.EnvPortsTitle,
+			styles.Muted.Render(domain.EnvPortOffsetPrefix+strconv.Itoa(plan.Offset))))
+	}
 
 	for _, line := range rows {
 		Message(w, line)
@@ -49,14 +54,16 @@ func EnvPortsReport(w io.Writer, plan domain.EnvPortPlan, check bool) {
 		Blank(w)
 	}
 	printEnvPortAnomalies(w, anomalies)
-	printEnvPortNotices(w, notices)
+	printEnvPortNotices(w, notices, len(rows) == 0 && len(anomalies) == 0)
 }
 
 // printEnvPortNotices closes the section with what the machine, rather than any
 // one value, made of the pass.
-func printEnvPortNotices(w io.Writer, notices []rules.EnvPortNotice) {
-	for _, notice := range notices {
-		Blank(w)
+func printEnvPortNotices(w io.Writer, notices []rules.EnvPortNotice, alone bool) {
+	for i, notice := range notices {
+		if i > 0 || !alone {
+			Blank(w)
+		}
 		Warning(w, notice.Title)
 		Message(w, notice.Line)
 	}

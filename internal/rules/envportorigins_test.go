@@ -282,3 +282,46 @@ func TestEnvPortNoticesStaySilentWithoutAnyAddress(t *testing.T) {
 		t.Fatalf("got %+v", notices)
 	}
 }
+
+// A .env provisioned from a parent worktree carries that worktree's ports, not
+// the declared base — so nothing anchored the shift and the file kept the
+// parent's numbers. F3 made the gap visible rather than causing it: the address
+// keys healed to this worktree while the port keys stayed on the parent's.
+func TestPlanEnvPortsRewindsAParentWorktreesPorts(t *testing.T) {
+	plan := rules.PlanEnvPorts(rules.PlanEnvPortsParams{
+		Links: []domain.EnvPortLink{
+			{File: ".env", Key: "PORT", Job: "api-dev", Port: "PORT"},
+			{File: ".env", Key: "DATABASE_URL", Job: "db", Port: "POSTGRES_PORT"},
+		},
+		Bases: map[domain.PortRef]int{
+			{Job: "api-dev", Name: "PORT"}:     4001,
+			{Job: "db", Name: "POSTGRES_PORT"}: 5432,
+		},
+		Offset: 40,
+		Block:  10,
+		Lines: map[string][]domain.EnvLine{
+			".env": {
+				{Kind: domain.EnvLinePair, Key: "PORT", Value: "4021"},
+				{Kind: domain.EnvLinePair, Key: "DATABASE_URL", Value: "postgres://u:pw@localhost:5452/app"},
+			},
+		},
+		Origins: rules.OriginContext{
+			Addressing: domain.AddressingNames,
+			Jobs: map[string]domain.JobConfig{
+				"api-dev": {Name: "api-dev", URL: &domain.JobURLConfig{Port: "PORT"}},
+				"db":      {Name: "db"},
+			},
+			Worktree: "f3-child", Project: "monorepo", PublicPort: 10080,
+		},
+	})
+
+	for _, tc := range []struct{ key, want string }{
+		{"PORT", "4041"},
+		{"DATABASE_URL", "postgres://u:pw@localhost:5472/app"},
+	} {
+		e := entryFor(t, plan, tc.key)
+		if e.Status != domain.EnvPortStatusRewrite || e.NewValue != tc.want {
+			t.Fatalf("%s: got %q (%q), want %q", tc.key, e.NewValue, e.Status, tc.want)
+		}
+	}
+}

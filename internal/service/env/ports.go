@@ -40,6 +40,7 @@ func ComputeEnvPorts(params EnvPortsParams) (domain.EnvPortPlan, error) {
 		Links:   params.Links,
 		Bases:   params.Bases,
 		Offset:  params.Offset,
+		Block:   params.Block,
 		Lines:   lines,
 		Origins: params.Origins,
 	}), nil
