@@ -71,6 +71,9 @@ type EnvPortEntry struct {
 	Status       EnvPortStatus `json:"status"`
 	CurrentValue string        `json:"current_value,omitempty"`
 	NewValue     string        `json:"new_value,omitempty"`
+	// ForeignHost is what the value pointed at when it pointed somewhere the
+	// proxy does not serve. Only EnvPortStatusForeignHost carries it.
+	ForeignHost string `json:"foreign_host,omitempty"`
 }
 
 // EnvPortPlan is every link of a worktree resolved at once, entries ordered as

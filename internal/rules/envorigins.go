@@ -27,7 +27,7 @@ type LinkOriginParams struct {
 // a link following a port the published url does not carry, and a machine with
 // no proxy to answer the name.
 func LinkOrigin(params LinkOriginParams) string {
-	if params.Job.URL == nil || params.Job.URL.Port != params.PortName || params.PublicPort == 0 {
+	if !PublishesPort(params.Job, params.PortName) || params.PublicPort == 0 {
 		return ""
 	}
 	host := RouteHost(RouteHostParams{
@@ -37,6 +37,13 @@ func LinkOrigin(params LinkOriginParams) string {
 		return ""
 	}
 	return JobOrigin(JobOriginParams{Host: host, PublicPort: params.PublicPort})
+}
+
+// PublishesPort reports whether the job publishes a name for this very port. A
+// job may declare a metrics port beside its HTTP one, and only the published one
+// has an address.
+func PublishesPort(job domain.JobConfig, portName string) bool {
+	return job.URL != nil && job.URL.Port == portName
 }
 
 type RewriteOriginParams struct {

@@ -34,9 +34,34 @@ func EnvPortBaseFor(bases map[domain.PortRef]int, link domain.EnvPortLink) (base
 	return base, found
 }
 
+// OriginContext is everything a plan needs to write an address rather than a
+// port: which addressing the project asked for, the jobs a link may name, and
+// where this worktree is published. A zero value plans ports, which is what a
+// caller that knows nothing about the proxy gets.
+type OriginContext struct {
+	Addressing domain.Addressing
+	Jobs       map[string]domain.JobConfig
+	Worktree   string
+	Project    string
+	// PublicPort is what a named URL announces, zero when nothing serves names.
+	PublicPort int
+}
+
+// Names reports whether this context can write an address at all.
+func (c OriginContext) Names() bool {
+	return c.Addressing == domain.AddressingNames && c.PublicPort > 0
+}
+
+// JobLabel is the host segment the job a link names publishes under, empty for
+// a job that publishes nothing.
+func (c OriginContext) JobLabel(job string) string {
+	return JobHostLabel(c.Jobs[job])
+}
+
 type PlanEnvPortsParams struct {
-	Links []domain.EnvPortLink
-	Bases map[domain.PortRef]int
+	Links   []domain.EnvPortLink
+	Bases   map[domain.PortRef]int
+	Origins OriginContext
 	// Offset is the worktree's port offset — zero for the main checkout, where
 	// every substitution is the identity.
 	Offset int
@@ -59,10 +84,11 @@ func PlanEnvPorts(params PlanEnvPortsParams) domain.EnvPortPlan {
 			continue
 		}
 		plan.Entries = append(plan.Entries, planEnvPortEntry(planEnvPortEntryParams{
-			Link:   link,
-			Base:   base,
-			Offset: params.Offset,
-			Lines:  params.Lines[link.File],
+			Link:    link,
+			Base:    base,
+			Offset:  params.Offset,
+			Lines:   params.Lines[link.File],
+			Origins: params.Origins,
 		}))
 	}
 
@@ -70,19 +96,21 @@ func PlanEnvPorts(params PlanEnvPortsParams) domain.EnvPortPlan {
 }
 
 type planEnvPortEntryParams struct {
-	Link   domain.EnvPortLink
-	Base   int
-	Offset int
-	Lines  []domain.EnvLine
+	Link    domain.EnvPortLink
+	Base    int
+	Offset  int
+	Lines   []domain.EnvLine
+	Origins OriginContext
 }
 
 func planEnvPortEntry(params planEnvPortEntryParams) domain.EnvPortEntry {
 	entry := domain.EnvPortEntry{
-		File:     params.Link.File,
-		Key:      params.Link.Key,
-		Port:     params.Link.Port,
-		Base:     params.Base,
-		Resolved: params.Base + params.Offset,
+		File:       params.Link.File,
+		Key:        params.Link.Key,
+		Port:       params.Link.Port,
+		Base:       params.Base,
+		Resolved:   params.Base + params.Offset,
+		Addressing: domain.AddressingPorts,
 	}
 
 	line, found := envPairByKey(params.Lines, params.Link.Key)
@@ -92,21 +120,72 @@ func planEnvPortEntry(params planEnvPortEntryParams) domain.EnvPortEntry {
 	}
 	entry.CurrentValue = line.Value
 
-	switch at := portOffsets(line.Value, entry.Base); {
+	if origin, planned := planOriginEntry(entry, line.Value, params); planned {
+		return origin
+	}
+
+	// The value may still hold an address a previous pass wrote, which is what
+	// makes the switch back to ports an inverse rather than a one-way door.
+	value := ReduceOriginValue(ReduceOriginParams{
+		Value:    line.Value,
+		JobLabel: params.Origins.JobLabel(params.Link.Job),
+		Project:  params.Origins.Project,
+		Base:     entry.Base,
+	})
+
+	switch at := portOffsets(value, entry.Base); {
 	case len(at) > 1:
 		entry.Status = domain.EnvPortStatusAmbiguous
 	case len(at) == 1:
-		entry.NewValue = replaceAt(line.Value, at[0], len(strconv.Itoa(entry.Base)), entry.Resolved)
+		entry.NewValue = replaceAt(value, at[0], len(strconv.Itoa(entry.Base)), entry.Resolved)
 		entry.Status = domain.EnvPortStatusRewrite
 		if entry.NewValue == entry.CurrentValue {
 			entry.Status = domain.EnvPortStatusUnchanged
 			entry.NewValue = ""
 		}
 	default:
-		entry.Status = alreadyResolvedStatus(line.Value, entry)
+		entry.Status = alreadyResolvedStatus(value, entry)
 	}
 
 	return entry
+}
+
+// planOriginEntry resolves one link as an address, reporting false when it must
+// stay a port — the project asked for ports, the job publishes no name, or the
+// value holds no URL for an authority to be swapped in.
+func planOriginEntry(entry domain.EnvPortEntry, value string, params planEnvPortEntryParams) (domain.EnvPortEntry, bool) {
+	if !params.Origins.Names() {
+		return entry, false
+	}
+
+	origin := LinkOrigin(LinkOriginParams{
+		Job:        params.Origins.Jobs[params.Link.Job],
+		PortName:   params.Link.Port,
+		Worktree:   params.Origins.Worktree,
+		Project:    params.Origins.Project,
+		PublicPort: params.Origins.PublicPort,
+	})
+	if origin == "" {
+		return entry, false
+	}
+
+	rewrite := RewriteOrigin(RewriteOriginParams{
+		Value:    value,
+		Origin:   origin,
+		JobLabel: params.Origins.JobLabel(params.Link.Job),
+		Project:  params.Origins.Project,
+		Base:     entry.Base,
+		Resolved: entry.Resolved,
+	})
+	if rewrite.Fallback {
+		return entry, false
+	}
+
+	entry.Addressing = domain.AddressingNames
+	entry.Status = rewrite.Status
+	entry.NewValue = rewrite.Value
+	entry.ForeignHost = rewrite.ForeignHost
+	return entry, true
 }
 
 // alreadyResolvedStatus classifies a value the base does not appear in. Finding

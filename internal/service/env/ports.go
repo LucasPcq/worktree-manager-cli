@@ -18,6 +18,9 @@ type EnvPortsParams struct {
 	// Block is the spacing between two worktrees' ports, which the reconciliation
 	// diff needs to recognize another worktree's spelling of the same port.
 	Block int
+	// Origins is what turns a port substitution into an address one. A zero
+	// value plans ports, which is every caller that knows nothing of the proxy.
+	Origins rules.OriginContext
 }
 
 // Empty reports whether the project declares no link at all, which is the common
@@ -34,10 +37,11 @@ func ComputeEnvPorts(params EnvPortsParams) (domain.EnvPortPlan, error) {
 	}
 
 	return rules.PlanEnvPorts(rules.PlanEnvPortsParams{
-		Links:  params.Links,
-		Bases:  params.Bases,
-		Offset: params.Offset,
-		Lines:  lines,
+		Links:   params.Links,
+		Bases:   params.Bases,
+		Offset:  params.Offset,
+		Lines:   lines,
+		Origins: params.Origins,
 	}), nil
 }
 

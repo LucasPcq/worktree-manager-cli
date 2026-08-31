@@ -131,12 +131,22 @@ func envPortAnomalyReason(e domain.EnvPortEntry) string {
 		return domain.EnvPortReasonMissingKey
 	case domain.EnvPortStatusAmbiguous:
 		return fmt.Sprintf(domain.EnvPortReasonAmbiguousFmt, e.Base)
+	case domain.EnvPortStatusForeignHost:
+		return fmt.Sprintf(domain.EnvPortReasonForeignHostFmt, e.ForeignHost)
+	case domain.EnvPortStatusSecureScheme:
+		return domain.EnvPortReasonSecureScheme
 	default:
 		return fmt.Sprintf(domain.EnvPortReasonNotFoundFmt, e.Base)
 	}
 }
 
+// envPortMove is the third column: the port move for a value that keeps a port,
+// and a marker for one that takes an address, whose change the value column
+// already carries whole.
 func envPortMove(e domain.EnvPortEntry) string {
+	if e.Addressing == domain.AddressingNames {
+		return domain.EnvPortMoveOrigin
+	}
 	return fmt.Sprintf(domain.EnvPortMoveFmt, e.Base, e.Resolved)
 }
 
@@ -210,6 +220,18 @@ func portLabel(link domain.EnvPortLink) string {
 func EnvPortPromptDescription(plan domain.EnvPortPlan) string {
 	lines := append([]string{fmt.Sprintf(domain.EnvPortOffsetNoteFmt, plan.Offset), ""}, EnvPortTableLines(plan)...)
 	return strings.Join(lines, "\n")
+}
+
+// EnvPortsConfirmTitle asks about what the pass will actually write. A value
+// taking an address is not "moved to this worktree's ports", and a mixed plan
+// is named by the thing the reader would not expect.
+func EnvPortsConfirmTitle(plan domain.EnvPortPlan) string {
+	for _, e := range plan.Rewrites() {
+		if e.Addressing == domain.AddressingNames {
+			return domain.EnvPortsOriginConfirmPrompt
+		}
+	}
+	return domain.EnvPortsConfirmPrompt
 }
 
 // EnvPortOffsetLabel titles the table with the offset the whole worktree runs on,
