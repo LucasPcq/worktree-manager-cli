@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
@@ -117,16 +118,14 @@ type rawEnvFile struct {
 	Local    bool   `toml:"local"`
 }
 
-// GlobalPath is where the machine-level config lives. It is resolved, never
-// spelled: os.UserConfigDir() is ~/.config on Linux and ~/Library/Application
-// Support on macOS, so any literal path is wrong on one of the two. Empty when
-// the OS gives no config directory at all.
+// GlobalPath is where the machine-level config lives, empty when the OS gives
+// no config directory at all.
 func GlobalPath() string {
-	configDir, err := os.UserConfigDir()
+	dir, err := infra.GlobalDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(configDir, domain.GlobalConfigDir, domain.GlobalConfigFile)
+	return filepath.Join(dir, domain.GlobalConfigFile)
 }
 
 // LoadGlobal reads the global config on its own, for the settings that belong to

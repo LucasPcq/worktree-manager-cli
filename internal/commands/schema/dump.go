@@ -9,6 +9,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/schemas"
 )
@@ -28,11 +29,11 @@ func runDump(cmd *cobra.Command, _ []string) error {
 	global, _ := cmd.Flags().GetBool(domain.FlagGlobal)
 
 	if global {
-		dir, err := os.UserConfigDir()
+		dir, err := infra.GlobalDir()
 		if err != nil {
-			return fmt.Errorf("locate user config dir: %w", err)
+			return err
 		}
-		schemaDir := filepath.Join(dir, domain.GlobalConfigDir, domain.SchemasDirName)
+		schemaDir := filepath.Join(dir, domain.SchemasDirName)
 		written, err := writeSchemas(schemaDir, []schemas.Schema{schemas.Global})
 		if err != nil {
 			return err

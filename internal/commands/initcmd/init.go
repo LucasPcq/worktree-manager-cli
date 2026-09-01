@@ -11,6 +11,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/schemas"
@@ -229,11 +230,11 @@ func createProjectConfig(cmd *cobra.Command, dir, stateDir string, flagged bool)
 // dumpGlobalSchema writes the global config schema beside that config so
 // editors can resolve its `#:schema` directive.
 func dumpGlobalSchema() error {
-	configDir, err := os.UserConfigDir()
+	globalDir, err := infra.GlobalDir()
 	if err != nil {
 		return nil // best effort — global schema dump isn't critical
 	}
-	dir := filepath.Join(configDir, domain.GlobalConfigDir, domain.SchemasDirName)
+	dir := filepath.Join(globalDir, domain.SchemasDirName)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
