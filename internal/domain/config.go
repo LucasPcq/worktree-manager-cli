@@ -46,7 +46,7 @@ type HooksConfig struct {
 	OnClean  []HookCommand `toml:"on_clean" json:"on_clean"`
 }
 
-// GlobalConfig maps to ~/.config/wtm/config.toml (user-level configuration).
+// GlobalConfig maps to the global wtm config (user-level configuration).
 type GlobalConfig struct {
 	Shell ShellType   `toml:"shell"`
 	UI    UIConfig    `toml:"ui"`

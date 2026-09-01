@@ -146,7 +146,7 @@ internal/
     ui/                       ←   `wtm ui`: refuses JSON and a missing TTY, then hands off to tui/dashboard
   domain/                     ← types, errors, constants only (no methods, no functions)
   rules/                      ← pure functions (stdlib + domain only, no I/O)
-  config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/, plus ~/.config/wtm/config.toml
+  config/                     ← load & validate config.toml + run.toml from <git-common-dir>/wtm/, plus the global config (config.GlobalPath)
   flow/                       ← the flow of each command, surface-independent (see below):
                                 the vocabulary (Step, Session, Prompter, Presenter)
     decide/                   ←   branch/env decisions shared by the create-like flows

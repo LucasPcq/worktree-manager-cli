@@ -268,11 +268,11 @@ func TestApplyEnvDiffRoundTripPreservesUnrelatedLines(t *testing.T) {
 // --on-conflict overwrite would otherwise undo the isolation on every run.
 func TestDiffEnvIgnoresThePortOffsetBetweenWorktrees(t *testing.T) {
 	diff := DiffEnv(EnvDiffParams{
-		Main:      ParseEnv("DATABASE_URL=postgres://u:pw@localhost:5432/app\n"),
-		Child:     ParseEnv("DATABASE_URL=postgres://u:pw@localhost:5442/app\n"),
-		Mode:      domain.EnvModeRefresh,
-		PortBases: map[string]int{"DATABASE_URL": 5432},
-		PortBlock: 10,
+		Main:       ParseEnv("DATABASE_URL=postgres://u:pw@localhost:5432/app\n"),
+		Child:      ParseEnv("DATABASE_URL=postgres://u:pw@localhost:5442/app\n"),
+		Mode:       domain.EnvModeRefresh,
+		PortValues: map[string]EnvValueRef{"DATABASE_URL": {Base: 5432}},
+		PortBlock:  10,
 	})
 
 	if diff.HasStatus(domain.EnvKeyConflict) {
@@ -282,11 +282,11 @@ func TestDiffEnvIgnoresThePortOffsetBetweenWorktrees(t *testing.T) {
 
 func TestDiffEnvStillReportsARealConflictOnALinkedKey(t *testing.T) {
 	diff := DiffEnv(EnvDiffParams{
-		Main:      ParseEnv("DATABASE_URL=postgres://u:old@localhost:5432/app\n"),
-		Child:     ParseEnv("DATABASE_URL=postgres://u:new@localhost:5442/app\n"),
-		Mode:      domain.EnvModeRefresh,
-		PortBases: map[string]int{"DATABASE_URL": 5432},
-		PortBlock: 10,
+		Main:       ParseEnv("DATABASE_URL=postgres://u:old@localhost:5432/app\n"),
+		Child:      ParseEnv("DATABASE_URL=postgres://u:new@localhost:5442/app\n"),
+		Mode:       domain.EnvModeRefresh,
+		PortValues: map[string]EnvValueRef{"DATABASE_URL": {Base: 5432}},
+		PortBlock:  10,
 	})
 
 	if !diff.HasStatus(domain.EnvKeyConflict) {
@@ -296,14 +296,72 @@ func TestDiffEnvStillReportsARealConflictOnALinkedKey(t *testing.T) {
 
 func TestDiffEnvComparesUnlinkedKeysVerbatim(t *testing.T) {
 	diff := DiffEnv(EnvDiffParams{
-		Main:      ParseEnv("PORT=5432\n"),
-		Child:     ParseEnv("PORT=5442\n"),
-		Mode:      domain.EnvModeRefresh,
-		PortBases: map[string]int{"OTHER": 5432},
-		PortBlock: 10,
+		Main:       ParseEnv("PORT=5432\n"),
+		Child:      ParseEnv("PORT=5442\n"),
+		Mode:       domain.EnvModeRefresh,
+		PortValues: map[string]EnvValueRef{"OTHER": {Base: 5432}},
+		PortBlock:  10,
 	})
 
 	if !diff.HasStatus(domain.EnvKeyConflict) {
 		t.Errorf("DiffEnv() reduced a key no link follows: %+v", diff.Entries)
+	}
+}
+
+// The drift the addressing switch would otherwise create: main keeps a port
+// because it is the one checkout that exists without wtm, while a worktree holds
+// the name. Both spell one setting, and every `wtm env` would report every URL
+// key as a conflict if the reduction did not canonicalize them together.
+func TestDiffEnvIgnoresTheAddressingBetweenMainAndAWorktree(t *testing.T) {
+	refs := map[string]EnvValueRef{
+		"VITE_API_URL": {Base: 4001, JobLabel: "api-dev", Project: "monorepo"},
+	}
+
+	diff := DiffEnv(EnvDiffParams{
+		Main:       ParseEnv("VITE_API_URL=http://localhost:4001\n"),
+		Child:      ParseEnv("VITE_API_URL=http://api-dev.feat-x.monorepo.localhost:10080\n"),
+		Mode:       domain.EnvModeRefresh,
+		PortValues: refs,
+		PortBlock:  10,
+	})
+
+	if diff.HasStatus(domain.EnvKeyConflict) {
+		t.Errorf("DiffEnv() reported a conflict between a port and its own address: %+v", diff.Entries)
+	}
+}
+
+// Two worktrees differ by their route's worktree segment alone, which is the
+// same setting seen twice — not a difference to reconcile.
+func TestDiffEnvIgnoresTheWorktreeSegmentBetweenTwoWorktrees(t *testing.T) {
+	diff := DiffEnv(EnvDiffParams{
+		Main:  ParseEnv("VITE_API_URL=http://api-dev.feat-y.monorepo.localhost:10080\n"),
+		Child: ParseEnv("VITE_API_URL=http://api-dev.feat-x.monorepo.localhost\n"),
+		Mode:  domain.EnvModeRefresh,
+		PortValues: map[string]EnvValueRef{
+			"VITE_API_URL": {Base: 4001, JobLabel: "api-dev", Project: "monorepo"},
+		},
+		PortBlock: 10,
+	})
+
+	if diff.HasStatus(domain.EnvKeyConflict) {
+		t.Errorf("DiffEnv() reported a conflict between two worktrees' routes: %+v", diff.Entries)
+	}
+}
+
+// The reduction must not become a blanket amnesty: a route pointing at another
+// job is a real difference, and hiding it would let one app call another.
+func TestDiffEnvStillReportsAConflictBetweenTwoJobsRoutes(t *testing.T) {
+	diff := DiffEnv(EnvDiffParams{
+		Main:  ParseEnv("VITE_API_URL=http://api-dev.feat-x.monorepo.localhost:10080\n"),
+		Child: ParseEnv("VITE_API_URL=http://web-dev.feat-x.monorepo.localhost:10080\n"),
+		Mode:  domain.EnvModeRefresh,
+		PortValues: map[string]EnvValueRef{
+			"VITE_API_URL": {Base: 4001, JobLabel: "api-dev", Project: "monorepo"},
+		},
+		PortBlock: 10,
+	})
+
+	if !diff.HasStatus(domain.EnvKeyConflict) {
+		t.Errorf("DiffEnv() hid a route pointing at another job: %+v", diff.Entries)
 	}
 }

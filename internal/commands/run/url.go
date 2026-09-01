@@ -15,7 +15,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
-	"github.com/LucasPcq/wtm/internal/service/proxy"
 )
 
 func newURLCmd() *cobra.Command {
@@ -75,7 +74,7 @@ func publishedJobs(cmd *cobra.Command) ([]domain.JobURLEntry, error) {
 	offset, _ := strconv.Atoi(env[domain.EnvPortOffset])
 
 	raw, _ := cmd.Flags().GetBool(domain.FlagRaw)
-	proxyPort := publicProxyPort(rules.ProxyPort(result.Config.Global))
+	proxyPort := process.PublicProxyPort(rules.ProxyPort(result.Config.Global))
 	if raw {
 		proxyPort = 0
 	}
@@ -96,27 +95,6 @@ func publishedJobs(cmd *cobra.Command) ([]domain.JobURLEntry, error) {
 		entries = append(entries, domain.JobURLEntry{Job: job.Name, URL: url})
 	}
 	return entries, nil
-}
-
-// publicProxyPort is what a named URL announces here. A running daemon has
-// already probed, so its answer is taken whole; without one — which is most of
-// this command's value — the installation's declared state is all there is.
-func publicProxyPort(configured int) int {
-	if configured == 0 {
-		return 0
-	}
-
-	socketPath := process.SocketPath()
-	if process.IsDaemonRunning(socketPath) {
-		resp, err := process.NewClient(socketPath).Send(process.Request{Action: process.ActionList})
-		if err == nil && resp.Status != process.StatusError {
-			return resp.ProxyPublicPort
-		}
-	}
-	return rules.PublicPort(rules.PublicPortParams{
-		BindPort: configured,
-		Declared: proxy.NewRedirector(proxy.RedirectorParams{}).Inspect().Installed,
-	})
 }
 
 // pickPublished resolves which job the caller meant without ever offering a

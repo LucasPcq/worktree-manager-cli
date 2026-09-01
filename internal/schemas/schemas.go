@@ -18,7 +18,7 @@ const (
 	// Project is the schema for .wtm/config.toml (per-project settings).
 	Project Schema = "project.schema.json"
 
-	// Global is the schema for ~/.config/wtm/config.toml (per-user defaults).
+	// Global is the schema for the global wtm config (per-user defaults).
 	Global Schema = "global.schema.json"
 )
 

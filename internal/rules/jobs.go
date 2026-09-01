@@ -133,10 +133,12 @@ func FindExistingDefaultProfile(cfg domain.RunConfig, exclude string) string {
 // run when the user (re)confirmed a new default to prevent ValidateRun from
 // rejecting two defaults.
 func ApplyDefaultOverride(cfg domain.RunConfig, keepName string) domain.RunConfig {
-	out := domain.RunConfig{
-		Jobs:     cfg.Jobs,
-		Profiles: make([]domain.ProfileConfig, len(cfg.Profiles)),
-	}
+	// The copy is of the whole config, never a hand-listed subset: this result is
+	// written straight back to run.toml, and rebuilding it field by field silently
+	// dropped every setting the function does not care about — the [[env_port]]
+	// links included.
+	out := cfg
+	out.Profiles = make([]domain.ProfileConfig, len(cfg.Profiles))
 	copy(out.Profiles, cfg.Profiles)
 	for i, p := range out.Profiles {
 		if p.Default && p.Name != keepName {
@@ -156,16 +158,14 @@ type MergeResult struct {
 // name with an existing entry in dst are skipped (names go into Skipped); new
 // entries are appended (names go into Added). dst is never mutated.
 func MergeRunConfigs(dst, src domain.RunConfig) (domain.RunConfig, MergeResult) {
-	out := domain.RunConfig{
-		// Carried over explicitly: dropping it would silently reset the spacing a
-		// project chose precisely to keep its ports from colliding.
-		PortOffsetBlock: dst.PortOffsetBlock,
-		// Same reason: a re-run of `run init` is additive, and the links the user
-		// already confirmed are not the detection's to discard.
-		EnvPorts: make([]domain.EnvPortLink, len(dst.EnvPorts)),
-		Jobs:     make([]domain.JobConfig, len(dst.Jobs)),
-		Profiles: make([]domain.ProfileConfig, len(dst.Profiles)),
-	}
+	// Everything dst settled is kept by copying it whole — the offset block a
+	// project chose to keep its ports apart, its addressing, its probe timeout.
+	// A re-run of `run init` is additive, and none of it is the detection's to
+	// discard.
+	out := dst
+	out.EnvPorts = make([]domain.EnvPortLink, len(dst.EnvPorts))
+	out.Jobs = make([]domain.JobConfig, len(dst.Jobs))
+	out.Profiles = make([]domain.ProfileConfig, len(dst.Profiles))
 	copy(out.EnvPorts, dst.EnvPorts)
 	if out.PortOffsetBlock == 0 {
 		out.PortOffsetBlock = src.PortOffsetBlock

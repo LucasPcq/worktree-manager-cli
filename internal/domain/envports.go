@@ -43,20 +43,37 @@ const (
 	// the value; nothing anchors the substitution.
 	EnvPortStatusNotFound EnvPortStatus = "base_not_found"
 	// EnvPortStatusAmbiguous means the port appears more than once in the value.
+	// It cannot arise on an origin rewrite: replacing an authority is structural,
+	// so a port sitting in a path or a query is never a candidate.
 	EnvPortStatusAmbiguous EnvPortStatus = "ambiguous"
+	// EnvPortStatusForeignHost means the value is a URL pointing somewhere the
+	// proxy does not serve — a staging host, say. The link names a local job, so
+	// the two disagree and wtm reports rather than picks.
+	EnvPortStatusForeignHost EnvPortStatus = "foreign_host"
+	// EnvPortStatusSecureScheme means the value is https and the proxy speaks
+	// plain HTTP. Downgrading a scheme the user wrote on purpose is not wtm's
+	// call, and an app serving https locally already has its own CA.
+	EnvPortStatusSecureScheme EnvPortStatus = "secure_scheme"
 )
 
 // EnvPortEntry is one link resolved against the worktree's offset and the value
 // currently in the file. NewValue is meaningful only for EnvPortStatusRewrite.
 type EnvPortEntry struct {
-	File         string        `json:"file"`
-	Key          string        `json:"key"`
-	Port         string        `json:"port"`
-	Base         int           `json:"base"`
-	Resolved     int           `json:"resolved"`
+	File     string `json:"file"`
+	Key      string `json:"key"`
+	Port     string `json:"port"`
+	Base     int    `json:"base"`
+	Resolved int    `json:"resolved"`
+	// Addressing is how this one entry was resolved, not what the project asked
+	// for: a project on AddressingNames still resolves its bare-port links by
+	// port, and the table has to render the two differently.
+	Addressing   Addressing    `json:"addressing"`
 	Status       EnvPortStatus `json:"status"`
 	CurrentValue string        `json:"current_value,omitempty"`
 	NewValue     string        `json:"new_value,omitempty"`
+	// ForeignHost is what the value pointed at when it pointed somewhere the
+	// proxy does not serve. Only EnvPortStatusForeignHost carries it.
+	ForeignHost string `json:"foreign_host,omitempty"`
 }
 
 // EnvPortPlan is every link of a worktree resolved at once, entries ordered as
@@ -64,6 +81,12 @@ type EnvPortEntry struct {
 type EnvPortPlan struct {
 	Offset  int            `json:"offset"`
 	Entries []EnvPortEntry `json:"entries"`
+	// Addressing is what the project asked for, which is not always what the
+	// entries got: a machine with no proxy writes ports whatever run.toml says.
+	Addressing Addressing `json:"addressing"`
+	// PublicPort is what an address announces here, zero when nothing serves
+	// names. Both are what the notices are derived from.
+	PublicPort int `json:"public_port,omitempty"`
 	// Applied says the rewrites were written. A plan that was only computed — a
 	// --check run, or one the user declined — carries them all the same, and
 	// counting those as written would be a false report.
@@ -86,7 +109,8 @@ func (p EnvPortPlan) Anomalies() []EnvPortEntry {
 	out := make([]EnvPortEntry, 0, len(p.Entries))
 	for _, e := range p.Entries {
 		switch e.Status {
-		case EnvPortStatusMissingKey, EnvPortStatusNotFound, EnvPortStatusAmbiguous:
+		case EnvPortStatusMissingKey, EnvPortStatusNotFound, EnvPortStatusAmbiguous,
+			EnvPortStatusForeignHost, EnvPortStatusSecureScheme:
 			out = append(out, e)
 		}
 	}

@@ -38,8 +38,14 @@ const (
 	// ConfigFileName is the project-level config file name (inside <state-dir>/).
 	ConfigFileName = "config.toml"
 
-	// GlobalConfigDir is the subdirectory under ~/.config for wtm.
+	// GlobalConfigDir is wtm's subdirectory under os.UserConfigDir().
 	GlobalConfigDir = "wtm"
+
+	// GlobalConfigLabel names the machine-level config in anything a user reads.
+	// The path is deliberately absent: os.UserConfigDir() is ~/.config on Linux
+	// and ~/Library/Application Support on macOS, so any literal is wrong on one
+	// of the two. `wtm run proxy status` prints the real one.
+	GlobalConfigLabel = "the global wtm config"
 
 	// GlobalConfigFile is the user-level config file name.
 	GlobalConfigFile = "config.toml"
@@ -202,6 +208,17 @@ const (
 	// so this only ever pays for a host that accepts and then stalls.
 	ProxyProbeTimeoutMs = 150
 
+	// The pieces an origin is cut into. The proxy speaks plain HTTP, so a value
+	// on any other scheme is either refused or left to the port substitution.
+	OriginSchemeHTTP      = "http"
+	OriginSchemeHTTPS     = "https"
+	OriginSchemeSeparator = "://"
+	// OriginListSeparator is what an app splits a multi-origin setting on.
+	OriginListSeparator = ","
+	// The loopback spellings a .env value reaches a local job by, beside the TLD.
+	LoopbackIPv4 = "127.0.0.1"
+	LoopbackIPv6 = "[::1]"
+
 	// ProxyScheme is what the proxy dials a job with: the job listens on plain
 	// HTTP on the loopback, whatever the browser used to reach the proxy.
 	ProxyScheme = "http"
@@ -216,12 +233,12 @@ const (
 	// ProxyBindFailedFmt is what the daemon records when the port is taken, and
 	// ProxyUnavailableFmt what a client says instead of a name nothing serves.
 	ProxyBindFailedFmt    = "run proxy: port %d is taken (%v) — jobs keep their own ports"
-	ProxyUnavailableFmt   = "Port %d is taken, so jobs answer on their own ports — free it, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyUnavailableFmt   = "Port %d is taken, so jobs answer on their own ports — free it, or set [proxy] port in " + GlobalConfigLabel
 	ProxyUnavailableTitle = "Named URLs are off"
 	// ProxyMovedFmt is what a client says when the proxy took a port other than
 	// the configured one, so the URLs it prints are not the ones the config
 	// alone would predict.
-	ProxyMovedFmt   = "Port %d is taken, so named URLs are served on %d — free it, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyMovedFmt   = "Port %d is taken, so named URLs are served on %d — free it, or set [proxy] port in " + GlobalConfigLabel
 	ProxyMovedTitle = "Named URLs moved"
 	// The redirection is a per-user LaunchAgent: launchd binds the privileged
 	// socket and hands it to an ordinary process, so nothing here needs root.
@@ -267,6 +284,7 @@ const (
 	ProxyStatusBindFmt      = "Bind port: %d"
 	ProxyStatusPublicFmt    = "Public port: %s"
 	ProxyStatusRedirectFmt  = "Redirection: %s"
+	ProxyStatusConfigFmt    = "Config: %s"
 	ProxyStatusExampleFmt   = "Example: %s"
 	ProxyStatusUnsupported  = "not implemented on this platform — named URLs keep their port"
 	ProxyStatusNotInstalled = "not installed — `wtm run proxy install` serves named URLs on port 80"
@@ -302,7 +320,7 @@ const (
 
 	// ProxyPortCollisionFmt is the one collision a job cannot see coming: the
 	// daemon already holds the port by the time the job tries to bind it.
-	ProxyPortCollisionFmt   = "port %s (job %q, base %d) reaches the run proxy's port %d after %d worktree(s) — that job will fail to bind there; move the base, or set [proxy] port in ~/.config/wtm/config.toml"
+	ProxyPortCollisionFmt   = "port %s (job %q, base %d) reaches the run proxy's port %d after %d worktree(s) — that job will fail to bind there; move the base, or set [proxy] port in " + GlobalConfigLabel
 	ProxyPortCollisionTitle = "Ports that will meet the run proxy"
 
 	// DevOriginsKey is the Next option that lets a subdomain of .localhost reach
@@ -453,7 +471,9 @@ const (
 	EnvPortOffsetPrefix = "offset +"
 	// EnvPortOffsetNoteFmt orients the reader of the confirmation, whose title
 	// already says what is being asked.
-	EnvPortOffsetNoteFmt = "This worktree's offset is +%d — the ports below move with it."
+	// Neutral on purpose: the same table carries values that take a port and
+	// values that take an address, and both follow this worktree.
+	EnvPortOffsetNoteFmt = "This worktree's offset is +%d — the values below follow it."
 	// EnvPortTableRowFmt aligns key, port name, the port move, and the value the
 	// key lands on — the only column that can be long, and the only one elided.
 	EnvPortTableRowFmt = "%s  %s  %s  %s"
@@ -468,6 +488,19 @@ const (
 	EnvPortHeaderPort    = "PORT"
 	EnvPortHeaderBecomes = "BECOMES"
 	EnvPortMoveFmt       = "%d → %d"
+	// EnvPortMoveOrigin replaces the port move on a row that writes a whole
+	// origin: there is no before-and-after number to show, the value column
+	// carries the change on its own.
+	EnvPortMoveOrigin = "→ address"
+
+	// The two notices an origin pass may raise, one line each however many keys
+	// were written. Both say what happened and what would change it.
+	EnvOriginPortedTitle   = "Addresses carry the proxy's port"
+	EnvOriginPortedFmt     = "Written with :%d — `wtm run proxy install` serves them on port 80, then `wtm env` drops it"
+	EnvOriginProxyOffTitle = "This project asks for named addresses"
+	// No path in the text: os.UserConfigDir is not ~/.config everywhere, and a
+	// command the reader can run is a better address than one they must locate.
+	EnvOriginProxyOffLine = "The run proxy is off on this machine, so ports were written instead — `wtm run proxy status` reports what serves names"
 
 	// EnvPortAnomaliesTitle heads the links wtm reports instead of applying.
 	EnvPortAnomaliesTitle = "Env ports left alone"
@@ -478,7 +511,12 @@ const (
 	EnvPortReasonMissingKey   = "no such key in this file"
 	EnvPortReasonAmbiguousFmt = "%d appears more than once"
 	EnvPortReasonNotFoundFmt  = "no %d to shift in the value"
-	EnvPortsConfirmPrompt     = "Update these .env values to this worktree's ports?"
+	// The two refusals an origin rewrite adds. Both name what wtm saw rather
+	// than what it wanted, since the value is the thing the reader must fix.
+	EnvPortReasonForeignHostFmt = "points at %s, which no job here serves"
+	EnvPortReasonSecureScheme   = "https — the run proxy serves plain HTTP"
+	EnvPortsConfirmPrompt       = "Update these .env values to this worktree's ports?"
+	EnvPortsOriginConfirmPrompt = "Update these .env values to this worktree's addresses?"
 
 	// The trailing verdict of `wtm env`.
 	EnvCheckDriftMessage = "Read-only check — run `wtm env` to reconcile."
@@ -514,12 +552,12 @@ const (
 	EnvApplyActionLabel       = "Yes, apply"
 	EnvApplyWithoutPortsLabel = "Apply, but leave the port values alone"
 	// EnvPortsLeftAloneFmt replaces the table when the pass was declined.
-	EnvPortsLeftAloneFmt       = "Env ports left alone — %d value(s) still on the base ports"
+	EnvPortsLeftAloneFmt       = "Env ports left alone — %d linked value(s) left as they were"
 	EnvCheckCleanMessage       = "No drift."
 	EnvNothingWrittenMessage   = "No changes written."
 	EnvReconciledFmt           = "Reconciled %d file(s)."
-	EnvPortsShiftedFmt         = "Shifted %d port value(s)."
-	EnvReconciledAndShiftedFmt = "Reconciled %d file(s) and shifted %d port value(s)."
+	EnvPortsShiftedFmt         = "Settled %d linked .env value(s)."
+	EnvReconciledAndShiftedFmt = "Reconciled %d file(s) and settled %d linked value(s)."
 
 	// The [[env_port]] detection of `wtm run init`.
 	// EnvPortLinkFmt is one link as the prompt and the recap both show it:
