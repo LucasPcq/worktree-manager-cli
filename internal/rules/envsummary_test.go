@@ -58,7 +58,7 @@ func TestEnvOutcomeSummaryCountsThePortPass(t *testing.T) {
 		{
 			"ports only",
 			domain.EnvSyncResult{Files: []domain.EnvFileResult{untouched}, Ports: planWithRewrites(t, 2)},
-			"Shifted 2 port value(s).", true,
+			"Settled 2 linked .env value(s).", true,
 		},
 		{
 			"files only",
@@ -68,7 +68,7 @@ func TestEnvOutcomeSummaryCountsThePortPass(t *testing.T) {
 		{
 			"both",
 			domain.EnvSyncResult{Files: []domain.EnvFileResult{applied}, Ports: planWithRewrites(t, 2)},
-			"Reconciled 1 file(s) and shifted 2 port value(s).", true,
+			"Reconciled 1 file(s) and settled 2 linked value(s).", true,
 		},
 		{
 			"neither",

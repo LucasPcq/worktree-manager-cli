@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/proxy"
 )
@@ -381,11 +382,13 @@ func (w responseStreamWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// SocketPath returns the default daemon socket path.
+// SocketPath returns the default daemon socket path, empty on a machine that
+// has no user-config directory at all — there is nowhere to put a socket, and
+// every caller reads that as "no daemon".
 func SocketPath() string {
-	configDir, err := os.UserConfigDir()
+	dir, err := infra.GlobalDir()
 	if err != nil {
-		configDir = filepath.Join(os.Getenv("HOME"), ".config")
+		return ""
 	}
-	return filepath.Join(configDir, domain.GlobalConfigDir, domain.DaemonSocketName)
+	return filepath.Join(dir, domain.DaemonSocketName)
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 )
 
 // ErrRunFileExists is returned by WriteRun when the target file already
@@ -217,12 +218,11 @@ func WriteRunTemplate(params WriteRunParams) error {
 
 // WriteGlobal creates the global config directory and writes config.toml.
 func WriteGlobal(answers domain.InitGlobalAnswers) error {
-	configDir, err := os.UserConfigDir()
+	dir, err := infra.GlobalDir()
 	if err != nil {
-		return fmt.Errorf("user config dir: %w", err)
+		return err
 	}
 
-	dir := filepath.Join(configDir, domain.GlobalConfigDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}

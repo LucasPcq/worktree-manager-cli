@@ -9,6 +9,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/schemas"
 )
@@ -16,8 +17,8 @@ import (
 func newDumpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dump",
-		Short: "Write embedded schemas to <state-dir>/schemas/ (or ~/.config/wtm/schemas with --global)",
-		Long:  "Extract every JSON Schema bundled with this wtm binary so editors can resolve the `#:schema` directives in your TOML files.\nProject schemas land in <git-common-dir>/wtm/schemas/. Use --global to write the global schema next to ~/.config/wtm/config.toml.",
+		Short: "Write embedded schemas to <state-dir>/schemas/ (or the global config's schemas/ with --global)",
+		Long:  "Extract every JSON Schema bundled with this wtm binary so editors can resolve the `#:schema` directives in your TOML files.\nProject schemas land in <git-common-dir>/wtm/schemas/. Use --global to write the global schema next to the global wtm config, whose path `wtm run proxy status` prints.",
 		RunE:  runDump,
 	}
 	cmd.Flags().Bool(domain.FlagGlobal, false, "Write the global config schema instead of the project ones")
@@ -28,11 +29,11 @@ func runDump(cmd *cobra.Command, _ []string) error {
 	global, _ := cmd.Flags().GetBool(domain.FlagGlobal)
 
 	if global {
-		dir, err := os.UserConfigDir()
+		dir, err := infra.GlobalDir()
 		if err != nil {
-			return fmt.Errorf("locate user config dir: %w", err)
+			return err
 		}
-		schemaDir := filepath.Join(dir, domain.GlobalConfigDir, domain.SchemasDirName)
+		schemaDir := filepath.Join(dir, domain.SchemasDirName)
 		written, err := writeSchemas(schemaDir, []schemas.Schema{schemas.Global})
 		if err != nil {
 			return err

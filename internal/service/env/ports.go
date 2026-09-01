@@ -18,6 +18,9 @@ type EnvPortsParams struct {
 	// Block is the spacing between two worktrees' ports, which the reconciliation
 	// diff needs to recognize another worktree's spelling of the same port.
 	Block int
+	// Origins is what turns a port substitution into an address one. A zero
+	// value plans ports, which is every caller that knows nothing of the proxy.
+	Origins rules.OriginContext
 }
 
 // Empty reports whether the project declares no link at all, which is the common
@@ -34,10 +37,12 @@ func ComputeEnvPorts(params EnvPortsParams) (domain.EnvPortPlan, error) {
 	}
 
 	return rules.PlanEnvPorts(rules.PlanEnvPortsParams{
-		Links:  params.Links,
-		Bases:  params.Bases,
-		Offset: params.Offset,
-		Lines:  lines,
+		Links:   params.Links,
+		Bases:   params.Bases,
+		Offset:  params.Offset,
+		Block:   params.Block,
+		Lines:   lines,
+		Origins: params.Origins,
 	}), nil
 }
 
@@ -69,10 +74,10 @@ func ApplyEnvPorts(params EnvPortsParams) (domain.EnvPortPlan, error) {
 	return plan, nil
 }
 
-// EnvPortBasesFor is the base each linked key of one env target follows, which
+// EnvValueRefsFor is how each linked key of one env target may be spelled, which
 // the reconciliation diff needs to compare two worktrees' values.
-func EnvPortBasesFor(params EnvPortsParams, target string) map[string]int {
-	return rules.EnvPortBasesByKey(linksForFile(params.Links, target), params.Bases)
+func EnvValueRefsFor(params EnvPortsParams, target string) map[string]rules.EnvValueRef {
+	return rules.EnvValueRefsByKey(linksForFile(params.Links, target), params.Bases, params.Origins)
 }
 
 func readLinkedFiles(params EnvPortsParams) (map[string][]domain.EnvLine, error) {

@@ -278,13 +278,13 @@ func computeFile(paths envPaths, f domain.EnvFile) (computedFile, error) {
 	}
 
 	diff := rules.DiffEnv(rules.EnvDiffParams{
-		Template:  template,
-		Parent:    parent,
-		Main:      main,
-		Child:     child,
-		Mode:      paths.Mode,
-		PortBases: EnvPortBasesFor(paths.Ports, f.Target),
-		PortBlock: paths.Ports.Block,
+		Template:   template,
+		Parent:     parent,
+		Main:       main,
+		Child:      child,
+		Mode:       paths.Mode,
+		PortValues: EnvValueRefsFor(paths.Ports, f.Target),
+		PortBlock:  paths.Ports.Block,
 	})
 
 	return computedFile{

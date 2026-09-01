@@ -53,6 +53,7 @@ func collectStatus(configured int) domain.ProxyStatus {
 	status := proxy.NewRedirector(proxy.RedirectorParams{}).Inspect()
 	status.ConfiguredPort = configured
 	status.BindPort = configured
+	status.ConfigPath = config.GlobalPath()
 
 	socketPath := process.SocketPath()
 	if process.IsDaemonRunning(socketPath) {

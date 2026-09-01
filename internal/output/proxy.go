@@ -19,6 +19,9 @@ func ProxyStatusReport(w io.Writer, status domain.ProxyStatus) {
 		fmt.Sprintf(domain.ProxyStatusPublicFmt, strconv.Itoa(status.PublicPort)),
 		fmt.Sprintf(domain.ProxyStatusRedirectFmt, redirectState(status)),
 	}
+	if status.ConfigPath != "" {
+		lines = append(lines, fmt.Sprintf(domain.ProxyStatusConfigFmt, status.ConfigPath))
+	}
 	if status.ExampleURL != "" {
 		lines = append(lines, fmt.Sprintf(domain.ProxyStatusExampleFmt, status.ExampleURL))
 	}

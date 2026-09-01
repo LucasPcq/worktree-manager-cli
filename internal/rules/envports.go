@@ -34,9 +34,37 @@ func EnvPortBaseFor(bases map[domain.PortRef]int, link domain.EnvPortLink) (base
 	return base, found
 }
 
+// OriginContext is everything a plan needs to write an address rather than a
+// port: which addressing the project asked for, the jobs a link may name, and
+// where this worktree is published. A zero value plans ports, which is what a
+// caller that knows nothing about the proxy gets.
+type OriginContext struct {
+	Addressing domain.Addressing
+	Jobs       map[string]domain.JobConfig
+	Worktree   string
+	Project    string
+	// PublicPort is what a named URL announces, zero when nothing serves names.
+	PublicPort int
+}
+
+// Names reports whether this context can write an address at all.
+func (c OriginContext) Names() bool {
+	return c.Addressing == domain.AddressingNames && c.PublicPort > 0
+}
+
+// JobLabel is the host segment the job a link names publishes under, empty for
+// a job that publishes nothing.
+func (c OriginContext) JobLabel(job string) string {
+	return JobHostLabel(c.Jobs[job])
+}
+
 type PlanEnvPortsParams struct {
-	Links []domain.EnvPortLink
-	Bases map[domain.PortRef]int
+	Links   []domain.EnvPortLink
+	Bases   map[domain.PortRef]int
+	Origins OriginContext
+	// Block is the spacing between two worktrees' ports, needed to recognize
+	// another worktree's spelling of a value copied from it.
+	Block int
 	// Offset is the worktree's port offset — zero for the main checkout, where
 	// every substitution is the identity.
 	Offset int
@@ -51,7 +79,11 @@ type PlanEnvPortsParams struct {
 // it exactly once: two occurrences, or none, are reported instead — picking one
 // number out of a URL by guesswork can corrupt it.
 func PlanEnvPorts(params PlanEnvPortsParams) domain.EnvPortPlan {
-	plan := domain.EnvPortPlan{Offset: params.Offset}
+	plan := domain.EnvPortPlan{
+		Offset:     params.Offset,
+		Addressing: params.Origins.Addressing,
+		PublicPort: params.Origins.PublicPort,
+	}
 
 	for _, link := range params.Links {
 		base, declared := EnvPortBaseFor(params.Bases, link)
@@ -59,10 +91,12 @@ func PlanEnvPorts(params PlanEnvPortsParams) domain.EnvPortPlan {
 			continue
 		}
 		plan.Entries = append(plan.Entries, planEnvPortEntry(planEnvPortEntryParams{
-			Link:   link,
-			Base:   base,
-			Offset: params.Offset,
-			Lines:  params.Lines[link.File],
+			Link:    link,
+			Base:    base,
+			Offset:  params.Offset,
+			Block:   params.Block,
+			Lines:   params.Lines[link.File],
+			Origins: params.Origins,
 		}))
 	}
 
@@ -70,19 +104,22 @@ func PlanEnvPorts(params PlanEnvPortsParams) domain.EnvPortPlan {
 }
 
 type planEnvPortEntryParams struct {
-	Link   domain.EnvPortLink
-	Base   int
-	Offset int
-	Lines  []domain.EnvLine
+	Link    domain.EnvPortLink
+	Base    int
+	Offset  int
+	Block   int
+	Lines   []domain.EnvLine
+	Origins OriginContext
 }
 
 func planEnvPortEntry(params planEnvPortEntryParams) domain.EnvPortEntry {
 	entry := domain.EnvPortEntry{
-		File:     params.Link.File,
-		Key:      params.Link.Key,
-		Port:     params.Link.Port,
-		Base:     params.Base,
-		Resolved: params.Base + params.Offset,
+		File:       params.Link.File,
+		Key:        params.Link.Key,
+		Port:       params.Link.Port,
+		Base:       params.Base,
+		Resolved:   params.Base + params.Offset,
+		Addressing: domain.AddressingPorts,
 	}
 
 	line, found := envPairByKey(params.Lines, params.Link.Key)
@@ -92,21 +129,75 @@ func planEnvPortEntry(params planEnvPortEntryParams) domain.EnvPortEntry {
 	}
 	entry.CurrentValue = line.Value
 
-	switch at := portOffsets(line.Value, entry.Base); {
+	if origin, planned := planOriginEntry(entry, line.Value, params); planned {
+		return origin
+	}
+
+	// Rewound to the base before anything is shifted, because the value may not
+	// be spelled on the base at all: a .env provisioned from a parent worktree
+	// carries that worktree's port, and one a previous pass addressed carries a
+	// route. Both are this setting, written by another worktree.
+	value := ReduceEnvPortValue(ReduceEnvPortParams{
+		Value:    line.Value,
+		Base:     entry.Base,
+		Block:    params.Block,
+		JobLabel: params.Origins.JobLabel(params.Link.Job),
+		Project:  params.Origins.Project,
+	})
+
+	switch at := portOffsets(value, entry.Base); {
 	case len(at) > 1:
 		entry.Status = domain.EnvPortStatusAmbiguous
 	case len(at) == 1:
-		entry.NewValue = replaceAt(line.Value, at[0], len(strconv.Itoa(entry.Base)), entry.Resolved)
+		entry.NewValue = replaceAt(value, at[0], len(strconv.Itoa(entry.Base)), entry.Resolved)
 		entry.Status = domain.EnvPortStatusRewrite
 		if entry.NewValue == entry.CurrentValue {
 			entry.Status = domain.EnvPortStatusUnchanged
 			entry.NewValue = ""
 		}
 	default:
-		entry.Status = alreadyResolvedStatus(line.Value, entry)
+		entry.Status = alreadyResolvedStatus(value, entry)
 	}
 
 	return entry
+}
+
+// planOriginEntry resolves one link as an address, reporting false when it must
+// stay a port — the project asked for ports, the job publishes no name, or the
+// value holds no URL for an authority to be swapped in.
+func planOriginEntry(entry domain.EnvPortEntry, value string, params planEnvPortEntryParams) (domain.EnvPortEntry, bool) {
+	if !params.Origins.Names() {
+		return entry, false
+	}
+
+	origin := LinkOrigin(LinkOriginParams{
+		Job:        params.Origins.Jobs[params.Link.Job],
+		PortName:   params.Link.Port,
+		Worktree:   params.Origins.Worktree,
+		Project:    params.Origins.Project,
+		PublicPort: params.Origins.PublicPort,
+	})
+	if origin == "" {
+		return entry, false
+	}
+
+	rewrite := RewriteOrigin(RewriteOriginParams{
+		Value:    value,
+		Origin:   origin,
+		JobLabel: params.Origins.JobLabel(params.Link.Job),
+		Project:  params.Origins.Project,
+		Base:     entry.Base,
+		Resolved: entry.Resolved,
+	})
+	if rewrite.Fallback {
+		return entry, false
+	}
+
+	entry.Addressing = domain.AddressingNames
+	entry.Status = rewrite.Status
+	entry.NewValue = rewrite.Value
+	entry.ForeignHost = rewrite.ForeignHost
+	return entry, true
 }
 
 // alreadyResolvedStatus classifies a value the base does not appear in. Finding
@@ -153,14 +244,32 @@ func ApplyEnvPorts(lines []domain.EnvLine, entries []domain.EnvPortEntry) []doma
 	return out
 }
 
-// EnvPortBasesByKey is the base each linked .env key follows, keyed by the key
-// itself — what the reconciliation diff needs to compare two worktrees' values.
-func EnvPortBasesByKey(links []domain.EnvPortLink, bases map[domain.PortRef]int) map[string]int {
-	byKey := map[string]int{}
+// EnvValueRef is what the reconciliation diff needs to recognize any worktree's
+// spelling of one linked key: the declared base, and the route the value may
+// carry instead of a port.
+type EnvValueRef struct {
+	Base     int
+	JobLabel string
+	Project  string
+}
+
+// EnvValueRefsByKey indexes those by key. A key whose job publishes no name gets
+// an empty label, and only the port reduction ever applies to it.
+func EnvValueRefsByKey(links []domain.EnvPortLink, bases map[domain.PortRef]int, origins OriginContext) map[string]EnvValueRef {
+	byKey := map[string]EnvValueRef{}
 	for _, link := range links {
-		if base, declared := EnvPortBaseFor(bases, link); declared {
-			byKey[link.Key] = base
+		base, declared := EnvPortBaseFor(bases, link)
+		if !declared {
+			continue
 		}
+		// The label comes from the declaration, never from LinkOrigin: a .env
+		// written while the proxy was up still holds a route once it is down,
+		// and the diff has to recognize it either way.
+		ref := EnvValueRef{Base: base, Project: origins.Project}
+		if PublishesPort(PublishesPortParams{Job: origins.Jobs[link.Job], PortName: link.Port}) {
+			ref.JobLabel = origins.JobLabel(link.Job)
+		}
+		byKey[link.Key] = ref
 	}
 	return byKey
 }
@@ -169,6 +278,10 @@ type ReduceEnvPortParams struct {
 	Value string
 	Base  int
 	Block int
+	// JobLabel and Project name the route this key may already hold. Empty for a
+	// key no published job backs, where only the port reduction below applies.
+	JobLabel string
+	Project  string
 }
 
 // ReduceEnvPortValue rewinds whichever worktree's port a value holds back to the
@@ -183,6 +296,15 @@ type ReduceEnvPortParams struct {
 // A value holding no such number, or more than one, is returned untouched:
 // reducing on a guess would hide a real conflict.
 func ReduceEnvPortValue(params ReduceEnvPortParams) string {
+	value := ReduceOriginValue(ReduceOriginParams{
+		Value: params.Value, JobLabel: params.JobLabel, Project: params.Project, Base: params.Base,
+	})
+	if value != params.Value {
+		// A route just rewound onto the base is already canonical: applying the
+		// port reduction to it would look for a ladder step that is not there.
+		return value
+	}
+
 	block := params.Block
 	if block <= 0 {
 		block = domain.PortOffsetBlock

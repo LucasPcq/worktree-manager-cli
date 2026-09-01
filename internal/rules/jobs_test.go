@@ -232,3 +232,41 @@ func TestJobsWithoutProfileKeepsEveryDeclaredJob(t *testing.T) {
 		}
 	}
 }
+
+// `wtm run profile add --default` writes the result of this straight back to
+// run.toml. Rebuilding the config field by field silently dropped every setting
+// the override does not care about — the [[env_port]] links first of all.
+func TestApplyDefaultOverrideKeepsEverythingElse(t *testing.T) {
+	cfg := domain.RunConfig{
+		PortOffsetBlock:  20,
+		PortProbeTimeout: 7,
+		Addressing:       domain.AddressingPorts,
+		EnvPorts:         []domain.EnvPortLink{{File: ".env", Key: "PORT", Job: "api", Port: "PORT"}},
+		Jobs:             []domain.JobConfig{{Name: "api"}},
+		Profiles: []domain.ProfileConfig{
+			{Name: "dev", Default: true},
+			{Name: "full", Default: true},
+		},
+	}
+
+	out := ApplyDefaultOverride(cfg, "full")
+
+	if out.PortOffsetBlock != 20 || out.PortProbeTimeout != 7 || out.Addressing != domain.AddressingPorts {
+		t.Errorf("settings dropped: %+v", out)
+	}
+	if len(out.EnvPorts) != 1 {
+		t.Errorf("env_port links dropped: %+v", out.EnvPorts)
+	}
+	if out.Profiles[0].Default || !out.Profiles[1].Default {
+		t.Errorf("the override itself broke: %+v", out.Profiles)
+	}
+}
+
+func TestMergeRunConfigsKeepsTheAddressing(t *testing.T) {
+	dst := domain.RunConfig{Addressing: domain.AddressingPorts, PortProbeTimeout: 7}
+	out, _ := MergeRunConfigs(dst, domain.RunConfig{Jobs: []domain.JobConfig{{Name: "new"}}})
+
+	if out.Addressing != domain.AddressingPorts || out.PortProbeTimeout != 7 {
+		t.Errorf("a re-init reset what the project settled: %+v", out)
+	}
+}

@@ -411,7 +411,9 @@ and **experimental**: the global `wtm init` does not configure it.
   third-party config — report the finding and let the user apply it. Like the port check,
   it never fails the run and never changes the exit code. Vite needs nothing: it allows
   `.localhost` already.
-- **`[proxy]` in `~/.config/wtm/config.toml`** tunes the proxy for the whole machine:
+- **`[proxy]` in the global config** tunes the proxy for the whole machine. That file sits
+  under the OS config directory — `~/.config/wtm/` on Linux, `~/Library/Application Support/wtm/`
+  on macOS — and `wtm run proxy status` prints its resolved path, so never spell it yourself:
   `port` (default `10080`) and `enabled` (default on). Switching it off is not a failure —
   every URL wtm prints falls back to the direct `http://localhost:<port>` form. Same if
   the port is already taken: the jobs still start, wtm prints the direct form and says
@@ -456,6 +458,23 @@ and **experimental**: the global `wtm init` does not configure it.
   `[env]` target of `.wtm.toml` is refused too. `wtm env --mode refresh` compares linked
   values **modulo the offset**, so a worktree holding `5442` against a source holding `5432`
   is not a conflict — but a genuine difference in the same value still is.
+- **A linked value that is a URL gets the job's whole address, not its port**, when the job
+  it names publishes a `url` for that very port. `VITE_API_URL=http://localhost:4001` becomes
+  `http://api-dev.feat-x.monorepo.localhost` (or `…localhost:10080` when the redirection is
+  not installed). This is what makes named URLs usable at all: the browser sends a name as its
+  `Origin`, so a `CORS_ORIGIN` holding a port blocks every cross-origin call. Both conditions
+  are load-bearing — a bare `PORT=4011` stays a number even though its job publishes a name,
+  and a `DATABASE_URL` stays on a port because Postgres has no name and never will. The same
+  comparison rule applies: `wtm env --mode refresh` reads a port, another worktree's address
+  and this worktree's address as **one setting**, so none of the three is a conflict against
+  the others. Two refusals are reported and never guessed: an `https` value (the proxy serves
+  plain HTTP) and a URL pointing at a host no job here serves.
+- **`addressing` at the top of `run.toml`** picks between the two: `names` (the default) and
+  `ports`. Setting `ports` is a real inverse — a later `wtm env` puts port numbers back into
+  values wtm wrote as addresses. On a machine where the proxy is off (`[proxy] enabled = false`),
+  ports are written whatever the project asked for, and the pass says so in one notice.
+  **Under `names`, the named URL is the only working entrance** — the raw `localhost:<port>`
+  sends an `Origin` the API no longer accepts, so always read the address from `run url`.
 - Two base ports must not differ by a multiple of the block, or two worktrees land on the
   same port: `3000` and `3010` are refused **when run.toml is read** (with both sides named),
   while `5434`/`5435`/`5436` are fine — a uniform offset preserves the gaps. Raise

@@ -17,8 +17,8 @@ type EnvDiffParams struct {
 	// and PortBlock the spacing between two worktrees. They exist so a value that
 	// differs from its source only by the worktree's port offset is not reported
 	// as a conflict between two spellings of the same setting.
-	PortBases map[string]int
-	PortBlock int
+	PortValues map[string]EnvValueRef
+	PortBlock  int
 }
 
 // DiffEnv classifies every key of the child .env against its schema and value
@@ -42,14 +42,14 @@ func DiffEnv(params EnvDiffParams) domain.EnvDiff {
 			}
 			seen[l.Key] = true
 			entries = append(entries, classifyKey(classifyKeyParams{
-				Key:       l.Key,
-				Mode:      params.Mode,
-				Child:     child,
-				Template:  template,
-				Parent:    parent,
-				Main:      main,
-				PortBases: params.PortBases,
-				PortBlock: params.PortBlock,
+				Key:        l.Key,
+				Mode:       params.Mode,
+				Child:      child,
+				Template:   template,
+				Parent:     parent,
+				Main:       main,
+				PortValues: params.PortValues,
+				PortBlock:  params.PortBlock,
 			}))
 		}
 	}
@@ -63,26 +63,32 @@ func DiffEnv(params EnvDiffParams) domain.EnvDiff {
 
 // classifyKeyParams holds one key and the indexed sources needed to classify it.
 type classifyKeyParams struct {
-	Key       string
-	Mode      domain.EnvMode
-	Child     map[string]domain.EnvLine
-	Template  map[string]domain.EnvLine
-	Parent    map[string]domain.EnvLine
-	Main      map[string]domain.EnvLine
-	PortBases map[string]int
-	PortBlock int
+	Key        string
+	Mode       domain.EnvMode
+	Child      map[string]domain.EnvLine
+	Template   map[string]domain.EnvLine
+	Parent     map[string]domain.EnvLine
+	Main       map[string]domain.EnvLine
+	PortValues map[string]EnvValueRef
+	PortBlock  int
 }
 
 // differ compares a source value with the child's, ignoring the port offset that
 // separates two worktrees' copies of the same setting. A key no link follows is
 // compared verbatim.
 func (p classifyKeyParams) differ(source, child string) bool {
-	base, linked := p.PortBases[p.Key]
+	ref, linked := p.PortValues[p.Key]
 	if !linked {
 		return source != child
 	}
 	reduce := func(value string) string {
-		return ReduceEnvPortValue(ReduceEnvPortParams{Value: value, Base: base, Block: p.PortBlock})
+		return ReduceEnvPortValue(ReduceEnvPortParams{
+			Value:    value,
+			Base:     ref.Base,
+			Block:    p.PortBlock,
+			JobLabel: ref.JobLabel,
+			Project:  ref.Project,
+		})
 	}
 	return reduce(source) != reduce(child)
 }

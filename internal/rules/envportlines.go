@@ -131,12 +131,22 @@ func envPortAnomalyReason(e domain.EnvPortEntry) string {
 		return domain.EnvPortReasonMissingKey
 	case domain.EnvPortStatusAmbiguous:
 		return fmt.Sprintf(domain.EnvPortReasonAmbiguousFmt, e.Base)
+	case domain.EnvPortStatusForeignHost:
+		return fmt.Sprintf(domain.EnvPortReasonForeignHostFmt, e.ForeignHost)
+	case domain.EnvPortStatusSecureScheme:
+		return domain.EnvPortReasonSecureScheme
 	default:
 		return fmt.Sprintf(domain.EnvPortReasonNotFoundFmt, e.Base)
 	}
 }
 
+// envPortMove is the third column: the port move for a value that keeps a port,
+// and a marker for one that takes an address, whose change the value column
+// already carries whole.
 func envPortMove(e domain.EnvPortEntry) string {
+	if e.Addressing == domain.AddressingNames {
+		return domain.EnvPortMoveOrigin
+	}
 	return fmt.Sprintf(domain.EnvPortMoveFmt, e.Base, e.Resolved)
 }
 
@@ -210,6 +220,60 @@ func portLabel(link domain.EnvPortLink) string {
 func EnvPortPromptDescription(plan domain.EnvPortPlan) string {
 	lines := append([]string{fmt.Sprintf(domain.EnvPortOffsetNoteFmt, plan.Offset), ""}, EnvPortTableLines(plan)...)
 	return strings.Join(lines, "\n")
+}
+
+// EnvPortsConfirmTitle asks about what the pass will actually write. A value
+// taking an address is not "moved to this worktree's ports", and a mixed plan
+// is named by the thing the reader would not expect.
+func EnvPortsConfirmTitle(plan domain.EnvPortPlan) string {
+	for _, e := range plan.Rewrites() {
+		if e.Addressing == domain.AddressingNames {
+			return domain.EnvPortsOriginConfirmPrompt
+		}
+	}
+	return domain.EnvPortsConfirmPrompt
+}
+
+// EnvPortNotice is one thing a surface says beside the table: a title and the
+// single line explaining it. Two of them exist, and neither repeats per key —
+// they are properties of the machine, not of a value.
+type EnvPortNotice struct {
+	Title string
+	Line  string
+}
+
+// EnvPortNotices is what the pass could not do silently. A .env freezes an
+// address, so the moment a perishable one enters a file is the moment to say so.
+func EnvPortNotices(plan domain.EnvPortPlan) []EnvPortNotice {
+	if plan.Addressing != domain.AddressingNames || len(plan.Entries) == 0 {
+		return nil
+	}
+
+	if plan.PublicPort == 0 {
+		return []EnvPortNotice{{
+			Title: domain.EnvOriginProxyOffTitle,
+			Line:  domain.EnvOriginProxyOffLine,
+		}}
+	}
+	if plan.PublicPort == domain.ProxyPrivilegedPort || !writesAddresses(plan) {
+		return nil
+	}
+	return []EnvPortNotice{{
+		Title: domain.EnvOriginPortedTitle,
+		Line:  fmt.Sprintf(domain.EnvOriginPortedFmt, plan.PublicPort),
+	}}
+}
+
+// writesAddresses reports whether any entry of the plan holds an address at all,
+// settled or about to be written. A project whose every link is a bare port has
+// nothing to be told about the proxy's port.
+func writesAddresses(plan domain.EnvPortPlan) bool {
+	for _, e := range plan.Entries {
+		if e.Addressing == domain.AddressingNames {
+			return true
+		}
+	}
+	return false
 }
 
 // EnvPortOffsetLabel titles the table with the offset the whole worktree runs on,
