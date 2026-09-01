@@ -87,6 +87,22 @@ their own mechanism:
 A state file would be more precise on paper and worse in practice: it diverges the
 moment somebody edits a `.env` by hand.
 
+## Dev servers and the `Host` header
+
+A named URL reaches the job with a `Host` the dev server has never seen, and some
+servers refuse one they do not recognise. Two of them matter here, and they do not
+need the same thing:
+
+- **Next** refuses it unless the host is listed in `allowedDevOrigins`. `wtm run up`
+  reports the missing entry when it serves a job whose directory holds a
+  `next.config.*` without one (`rules.NeedsDevOrigins`, `rules.DevOriginsPattern`).
+- **Vite** needs nothing. Its host check allows `localhost` and **every** `.localhost`
+  subdomain outright, before `server.allowedHosts` is even consulted — verified in
+  Vite 8.2.2, `isHostAllowedInternal`. There is nothing for wtm to detect or report.
+
+Anything else is a report from a user, not a guess from us: the presence of a config
+file is the signal, never a framework inferred from a command line.
+
 ## The trade the mode makes
 
 Under `names`, **the named URL becomes the only working entrance.** Opening
