@@ -202,6 +202,38 @@ func TestManagerStartTask_PersistsLog(t *testing.T) {
 	waitForLogLine(t, filepath.Join(logDir, "greet.log"), "hello")
 }
 
+// A start the manager refuses must leave the running job's log exactly as it
+// was: opening a log clears it, and `run up` on a partly-started profile asks
+// the daemon to start jobs that are already up (LUC-198).
+func TestManagerStartRefused_LeavesTheRunningJobsLogIntact(t *testing.T) {
+	m := NewManager()
+	dir := t.TempDir()
+	logDir := logDirFor(t)
+	path := filepath.Join(logDir, "server.log")
+
+	job := domain.JobConfig{Name: "server", Kind: domain.JobKindService, Cmd: "echo listening; sleep 30"}
+	if err := m.Start(StartParams{Job: job, WorkDir: dir, LogDir: logDir}); err != nil {
+		t.Fatalf("first start: %v", err)
+	}
+	t.Cleanup(func() { _ = m.StopAll() })
+	waitForLogLine(t, path, "listening")
+
+	if err := m.Start(StartParams{Job: job, WorkDir: dir, LogDir: logDir}); err == nil {
+		t.Fatal("the second start was not refused")
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	if !strings.Contains(string(content), "listening") {
+		t.Errorf("the refused start cleared the running job's log:\n%q", content)
+	}
+	if bytes.ContainsRune(content, 0) {
+		t.Errorf("the refused start left a hole in the running job's log:\n%q", content)
+	}
+}
+
 // TestManagerStartService_PersistsLog verifies that a foreground service — the
 // only kind whose output is drained in the background — persists it too.
 func TestManagerStartService_PersistsLog(t *testing.T) {

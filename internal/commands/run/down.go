@@ -140,9 +140,18 @@ func runDown(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if format == domain.OutputJSON {
-			return output.WriteJobResultsJSON(cmd.OutOrStdout(), results)
+			if err := output.WriteJobResultsJSON(cmd.OutOrStdout(), results); err != nil {
+				return err
+			}
+		} else {
+			output.FrameEnd(cmd.OutOrStdout())
 		}
-		output.FrameEnd(cmd.OutOrStdout())
+		// A job left standing is a failure, whichever surface reported it: every
+		// run command exits non-zero on what it could not do (LUC-198). Both
+		// surfaces have already named the jobs, so the error carries nothing more.
+		if failedToStop(results) {
+			return domain.ErrAborted
+		}
 		return nil
 	}
 
@@ -225,4 +234,13 @@ func ensureDaemonForDown(cmd *cobra.Command, params ensureDownParams) error {
 		SocketPath: params.SocketPath,
 		ProxyPort:  rules.ProxyPort(result.Config.Global),
 	})
+}
+
+func failedToStop(results []domain.JobActionResult) bool {
+	for _, result := range results {
+		if result.Status == domain.JobActionError {
+			return true
+		}
+	}
+	return false
 }

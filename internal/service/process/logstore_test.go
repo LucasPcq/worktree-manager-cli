@@ -20,11 +20,50 @@ func readLog(t *testing.T, path string) string {
 	return string(content)
 }
 
-func TestJobLogPathSanitizesTheJobName(t *testing.T) {
+func TestJobLogPathEscapesTheJobName(t *testing.T) {
 	got := JobLogPath(JobLogPathParams{LogDir: "/state/logs/feat", Job: "web/api dev"})
-	want := filepath.Join("/state/logs/feat", "web_api_dev.log")
+	want := filepath.Join("/state/logs/feat", "web%2Fapi%20dev.log")
 	if got != want {
 		t.Errorf("JobLogPath = %q, want %q", got, want)
+	}
+}
+
+// A job with no file of its own persists nothing rather than sharing another's.
+func TestJobLogPathIsEmptyForAnUnnameableJob(t *testing.T) {
+	if got := JobLogPath(JobLogPathParams{LogDir: "/state/logs/feat", Job: ""}); got != "" {
+		t.Errorf("JobLogPath = %q, want none", got)
+	}
+
+	if _, err := OpenLogSink(LogSinkParams{LogDir: t.TempDir(), Job: ""}); err == nil {
+		t.Error("OpenLogSink opened a log for a job it cannot name")
+	}
+}
+
+// Two jobs whose names differ keep two files, and starting one leaves the
+// other's alone (LUC-198).
+func TestLogSinkKeepsCollidingJobNamesApart(t *testing.T) {
+	dir := t.TempDir()
+
+	spaced, err := OpenLogSink(LogSinkParams{LogDir: dir, Job: "web api"})
+	if err != nil {
+		t.Fatalf("open \"web api\": %v", err)
+	}
+	spaced.Write([]byte("spaced line\n"))
+	spaced.Close()
+
+	colon, err := OpenLogSink(LogSinkParams{LogDir: dir, Job: "web:api"})
+	if err != nil {
+		t.Fatalf("open \"web:api\": %v", err)
+	}
+	colon.Write([]byte("colon line\n"))
+	colon.Close()
+
+	lines, err := TailJobLog(TailParams{LogDir: dir, Job: "web api", Lines: 10})
+	if err != nil {
+		t.Fatalf("tail: %v", err)
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "spaced line") {
+		t.Errorf("\"web api\" reads back %v, want only its own line", lines)
 	}
 }
 
@@ -60,7 +99,7 @@ func TestLogSinkWritesSanitizedTimestampedLines(t *testing.T) {
 	}
 }
 
-func TestLogSinkAppendsToAnExistingLog(t *testing.T) {
+func TestLogSinkStartsAnEmptyLogOnEveryRun(t *testing.T) {
 	dir := t.TempDir()
 
 	first, err := OpenLogSink(LogSinkParams{LogDir: dir, Job: "web"})
@@ -78,8 +117,72 @@ func TestLogSinkAppendsToAnExistingLog(t *testing.T) {
 	second.Close()
 
 	content := readLog(t, filepath.Join(dir, "web.log"))
-	if !strings.Contains(content, "run one") || !strings.Contains(content, "run two") {
-		t.Errorf("a restarted job should extend its log, got:\n%s", content)
+	if strings.Contains(content, "run one") {
+		t.Errorf("a restarted job should not read back the previous run, got:\n%s", content)
+	}
+	if !strings.Contains(content, "run two") {
+		t.Errorf("the current run is missing from its own log, got:\n%s", content)
+	}
+}
+
+// The backups matter as much as the active file: TailJobLog reaches into them
+// whenever the current run is shorter than the tail it was asked for, which is
+// how a job that just restarted read back a days-old run (LUC-198).
+func TestLogSinkDropsTheBackupsOfThePreviousRun(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := OpenLogSink(LogSinkParams{LogDir: dir, Job: "web", MaxBytes: 200})
+	if err != nil {
+		t.Fatalf("open first sink: %v", err)
+	}
+	for i := 0; i < 60; i++ {
+		first.Write([]byte("run one\n"))
+	}
+	first.Close()
+
+	if _, err := os.Stat(filepath.Join(dir, "web.log.1")); err != nil {
+		t.Fatalf("the first run should have rotated at least once: %v", err)
+	}
+
+	second, err := OpenLogSink(LogSinkParams{LogDir: dir, Job: "web"})
+	if err != nil {
+		t.Fatalf("open second sink: %v", err)
+	}
+	second.Write([]byte("run two\n"))
+	second.Close()
+
+	lines, err := TailJobLog(TailParams{LogDir: dir, Job: "web", Lines: 1000})
+	if err != nil {
+		t.Fatalf("tail: %v", err)
+	}
+	for _, line := range lines {
+		if strings.Contains(line, "run one") {
+			t.Fatalf("tail reached into the previous run's backups: %v", lines)
+		}
+	}
+}
+
+// Only this job's files go: two jobs share one directory, and a restart of one
+// must not blank the other.
+func TestLogSinkLeavesOtherJobsAlone(t *testing.T) {
+	dir := t.TempDir()
+
+	other, err := OpenLogSink(LogSinkParams{LogDir: dir, Job: "api"})
+	if err != nil {
+		t.Fatalf("open api sink: %v", err)
+	}
+	other.Write([]byte("api line\n"))
+	other.Close()
+
+	web, err := OpenLogSink(LogSinkParams{LogDir: dir, Job: "web"})
+	if err != nil {
+		t.Fatalf("open web sink: %v", err)
+	}
+	web.Write([]byte("web line\n"))
+	web.Close()
+
+	if content := readLog(t, filepath.Join(dir, "api.log")); !strings.Contains(content, "api line") {
+		t.Errorf("api's log was cleared by web starting, got:\n%s", content)
 	}
 }
 
