@@ -88,7 +88,10 @@ func runLogs(cmd *cobra.Command, args []string) error {
 
 	switch rules.DecideRunSurface(rules.RunSurfaceParams{TTY: isTTY(), Format: format}) {
 	case domain.RunSurfaceView:
-		return showRunView(viewParams{Cmd: cmd, Board: runSeam.Board(), Job: job})
+		// `run logs` starts nothing, so the view has no outcome to conclude from:
+		// it only ever reports what was already running.
+		_, viewErr := showRunView(viewParams{Cmd: cmd, Board: runSeam.Board(), Job: job})
+		return viewErr
 	case domain.RunSurfaceMachine:
 		return writeJobLogsJSON(params)
 	default:

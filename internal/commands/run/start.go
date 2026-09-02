@@ -106,12 +106,19 @@ func runStart(cmd *cobra.Command, args []string) error {
 			Jobs:       runCfg.Jobs,
 			ProxyPort:  rules.ProxyPort(result.Config.Global),
 		})
-		return showRunView(viewParams{
+		outcome, viewErr := showRunView(viewParams{
 			Cmd:   cmd,
 			Board: runSeam.Board(),
 			Job:   job.Name,
 			Start: runSeam.Starter(seam.StartParams{Jobs: []domain.JobConfig{job}}),
 		})
+		if viewErr != nil {
+			return viewErr
+		}
+		if outcome.Aborted() {
+			return domain.ErrAborted
+		}
+		return nil
 	}
 
 	params := startJobParams{

@@ -75,7 +75,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	interactive := rules.IsHumanFormat(format) && !yes && term.IsTerminal(int(os.Stdin.Fd()))
 
 	_, err = createflow.Run(createflow.Params{
-		Context: flowContext(config),
+		Context: shared.FlowContext(config),
 		Request: createflow.Request{
 			Branch:      branchName,
 			From:        fromFlag,
@@ -83,8 +83,8 @@ func runCreate(cmd *cobra.Command, args []string) error {
 			FastForward: ffFlag,
 			IfNotExists: ifNotExists,
 		},
-		Prompter:  flowPrompter(flowPrompterParams{Interactive: interactive}),
-		Presenter: createPresenter{cliPresenter: newPresenter(cmd, format), config: config},
+		Prompter:  shared.FlowPrompter(shared.FlowPrompterParams{Interactive: interactive}),
+		Presenter: createPresenter{CLIPresenter: shared.NewPresenter(cmd, format), config: config},
 	})
 	return err
 }

@@ -96,7 +96,7 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 	}
 
 	_, err = pruneflow.Run(pruneflow.Params{
-		Context: flowContext(config),
+		Context: shared.FlowContext(config),
 		Request: pruneflow.Request{
 			Merged:           merged,
 			Closed:           closed,
@@ -108,8 +108,8 @@ func runPrune(cmd *cobra.Command, _ []string) error {
 			BaseBranch:       resolveBase("", config),
 		},
 		// The picker may be reached through the shell wrapper, which consumes stdout.
-		Prompter:  flowPrompter(flowPrompterParams{Interactive: interactive, Stderr: true}),
-		Presenter: prunePresenter{cliPresenter: newPresenter(cmd, format)},
+		Prompter:  shared.FlowPrompter(shared.FlowPrompterParams{Interactive: interactive, Stderr: true}),
+		Presenter: prunePresenter{CLIPresenter: shared.NewPresenter(cmd, format)},
 	})
 	return err
 }

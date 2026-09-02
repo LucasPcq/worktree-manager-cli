@@ -1603,7 +1603,26 @@ const (
 	// Run*Skip reasons say why a target step was never asked. A step that cannot
 	// list the worktrees is skipped rather than failed: acting where you stand is
 	// the answer it would have resolved to anyway.
-	RunWorktreeOnlyOne    = "single worktree"
+	RunWorktreeOnlyOne = "single worktree"
+
+	// RunConcurrency* is the question `run up` asks once when another worktree
+	// already has jobs up, and the wording of the two answers it remembers.
+	RunConcurrencyStepName    = "Other worktrees"
+	RunConcurrencyTitle       = "Other worktrees are running jobs"
+	RunConcurrencyDescFmt     = "%s. Each worktree has its own ports and resource names, so they can run side by side."
+	RunConcurrencyParallel    = "Run in parallel"
+	RunConcurrencyExclusive   = "Stop the other worktrees' jobs first"
+	RunConcurrencyAlwaysFmt   = "%s — always for this project"
+	RunConcurrencySkipSettled = "already answered for this project"
+	RunConcurrencySkipAlone   = "no other worktree is running jobs"
+	// RunConcurrencyRememberedFmt confirms what was written to run.toml, so a
+	// remembered answer is never a silent one.
+	RunConcurrencyRememberedFmt = "Remembered: concurrency = %q in run.toml"
+	// RunStoppingOthers and RunStoppedOtherFmt report the worktrees an exclusive
+	// run cleared before starting.
+	RunStoppingOthers     = "Stopping the other worktrees' jobs…"
+	RunStoppedOtherFmt    = "Stopped jobs in %s"
+	RunStopOtherFailFmt   = "stop jobs in %s: %s"
 	RunWorktreeUnreadable = "worktrees could not be listed"
 	RunProfileNoChoice    = "no other profile to choose from"
 
@@ -2054,6 +2073,10 @@ const (
 	OpKindReparent = "reparent"
 	OpKindPrune    = "prune"
 	OpKindSync     = "sync"
+	OpKindRunUp    = "run-up"
+	OpKindRunDown  = "run-down"
+	OpKindRunStart = "run-start"
+	OpKindRunStop  = "run-stop"
 
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"

@@ -61,7 +61,7 @@ func runClean(cmd *cobra.Command, args []string) error {
 	interactive := rules.IsHumanFormat(format) && term.IsTerminal(int(os.Stdin.Fd())) && !yes
 
 	_, err = cleanflow.Run(cleanflow.Params{
-		Context: flowContext(config),
+		Context: shared.FlowContext(config),
 		Request: cleanflow.Request{
 			Branch:           branchName,
 			Force:            force,
@@ -71,8 +71,8 @@ func runClean(cmd *cobra.Command, args []string) error {
 			AllowPrivileged: true,
 		},
 		// The picker may be reached through the shell wrapper, which consumes stdout.
-		Prompter:  flowPrompter(flowPrompterParams{Interactive: interactive, Stderr: true}),
-		Presenter: cleanPresenter{cliPresenter: newPresenter(cmd, format)},
+		Prompter:  shared.FlowPrompter(shared.FlowPrompterParams{Interactive: interactive, Stderr: true}),
+		Presenter: cleanPresenter{CLIPresenter: shared.NewPresenter(cmd, format)},
 	})
 	return err
 }

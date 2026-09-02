@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/testutil/runlogstest"
 )
@@ -35,21 +34,17 @@ func captureRunView(t *testing.T) *viewRecorder {
 	return recorder
 }
 
-func (r *viewRecorder) show(params viewParams) error {
+func (r *viewRecorder) show(params viewParams) (runlogs.Outcome, error) {
 	call := viewCall{Job: params.Job, Attached: params.Start != nil}
 	if params.Start != nil {
 		outcome, err := params.Start(context.Background(), &r.sink)
 		if err != nil {
-			return err
+			return runlogs.Outcome{}, err
 		}
 		call.Outcome = outcome
 	}
 	r.calls = append(r.calls, call)
-
-	if call.Outcome.Aborted() {
-		return domain.ErrAborted
-	}
-	return nil
+	return call.Outcome, nil
 }
 
 func (r *viewRecorder) only(t *testing.T) viewCall {

@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/integration"
@@ -35,8 +34,9 @@ type viewParams struct {
 // openRunView hands the terminal to the full-screen view and frames what it
 // leaves behind. The view returns its recap rather than printing it: the
 // alternate screen has to be given back before anything is written to the
-// scrollback underneath it.
-func openRunView(params viewParams) error {
+// scrollback underneath it. What the run concluded goes back to the flow, which
+// is what turns it into an exit code.
+func openRunView(params viewParams) (runlogs.Outcome, error) {
 	result, err := runview.Run(runview.Params{
 		Board:   params.Board,
 		Job:     params.Job,
@@ -45,17 +45,14 @@ func openRunView(params viewParams) error {
 		Open:    integration.OpenURL,
 	})
 	if err != nil {
-		return err
+		return runlogs.Outcome{}, err
 	}
 
 	if result.Recap != "" {
 		out := params.Cmd.OutOrStdout()
 		output.Frame(out, func() { fmt.Fprintln(out, result.Recap) })
 	}
-	if result.Outcome.Aborted() {
-		return domain.ErrAborted
-	}
-	return nil
+	return result.Outcome, nil
 }
 
 type streamParams struct {
@@ -69,7 +66,7 @@ type streamParams struct {
 // runOnStream reports a start sequence as lines on the terminal it was launched
 // from — `-d`, a pipe, a CI job. An aborted run ends on stderr, which is where
 // its frame closes.
-func runOnStream(params streamParams) error {
+func runOnStream(params streamParams) (runlogs.Outcome, error) {
 	out, errOut := params.Cmd.OutOrStdout(), params.Cmd.ErrOrStderr()
 
 	output.FrameStart(out)
@@ -80,31 +77,28 @@ func runOnStream(params streamParams) error {
 		Hyperlinks: params.Hyperlinks,
 	}))
 	if err != nil {
-		return err
+		return runlogs.Outcome{}, err
 	}
 
 	if outcome.Aborted() {
 		output.FrameEnd(errOut)
-		return domain.ErrAborted
+		return outcome, nil
 	}
 	output.FrameEnd(out)
-	return nil
+	return outcome, nil
 }
 
 // runForMachine emits the run's outcome as a JSON document, then fails when the
 // profile aborted. The document is complete either way: the module's rule is
 // that the shape follows the arity and the exit code follows the success, and
 // an exit code has never made a document unreadable (LUC-198).
-func runForMachine(params streamParams) error {
+func runForMachine(params streamParams) (runlogs.Outcome, error) {
 	outcome, err := params.Start(params.Cmd.Context(), nil)
 	if err != nil {
-		return err
+		return runlogs.Outcome{}, err
 	}
 	if err := output.WriteRunOutcomeJSON(params.Cmd.OutOrStdout(), outcome); err != nil {
-		return err
+		return runlogs.Outcome{}, err
 	}
-	if outcome.Aborted() {
-		return domain.ErrAborted
-	}
-	return nil
+	return outcome, nil
 }
