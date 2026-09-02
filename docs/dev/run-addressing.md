@@ -11,7 +11,7 @@ constants and CLI copy use these and no synonyms.
 | Term | What it is | Where it lives |
 | -- | -- | -- |
 | **the proxy** | The reverse proxy the daemon runs. It listens on one port and routes by `Host` header to the job answering under that name. **This is what makes names exist at all.** On by default; `[proxy] enabled = false` in the global config switches it off | `internal/service/proxy` |
-| **bind port** | What the proxy actually listens on: `10080`, or the next free port when that one is taken (the R7 fallback) | `rules.ProxyPort`, then the daemon's own fallback |
+| **bind port** | What the proxy actually listens on: `11080`, or the next free port when that one is taken (the R7 fallback) | `rules.ProxyPort`, then the daemon's own fallback |
 | **privileged redirection** | The OS rule `wtm run proxy install` installs — on macOS a launchd agent binding `:80` and relaying to the bind port. **It only removes the port suffix from a URL.** It unlocks nothing | `internal/service/proxy/redirect*.go` |
 | **public port** | What a URL *announces*, as opposed to what anything binds: nothing (i.e. `:80`) when the redirection is live, the bind port otherwise | `rules.PublicPort` |
 | **route host** | `<job>.<worktree>.<project>.localhost` — the name a published job answers under | `rules.RouteHost` |
@@ -23,18 +23,18 @@ constants and CLI copy use these and no synonyms.
 **The proxy makes names work. The redirection makes them pretty.** `*.localhost`
 resolves to `127.0.0.1` natively (RFC 6761), but resolving is not answering — without
 the proxy listening, a name gives `connection refused`. Without the redirection, the
-same name works perfectly, carrying `:10080`.
+same name works perfectly, carrying `:11080`.
 
 | State | What a `.env` holds | Works? |
 | -- | -- | -- |
-| proxy on, redirection **not** installed | `http://api-dev.feat-x.monorepo.localhost:10080` | yes |
+| proxy on, redirection **not** installed | `http://api-dev.feat-x.monorepo.localhost:11080` | yes |
 | proxy on, redirection installed | `http://api-dev.feat-x.monorepo.localhost` | yes |
 | proxy off (`enabled = false`) | `http://localhost:4011` | yes, without names |
 
 **A port in the URL costs nothing that matters.** CORS compares whole origin strings,
 so as long as both sides carry the same one — port included — it passes. And cookie
 isolation, the reason named URLs exist, keys on the **host** and ignores the port
-entirely: `feat-x` and `feat-y` are separate jars whether or not `:10080` is there.
+entirely: `feat-x` and `feat-y` are separate jars whether or not `:11080` is there.
 
 **Addressing is a project setting, the proxy is a machine setting.** `run.toml` says
 what the project wants; the global config says what this machine can do. When
@@ -62,8 +62,8 @@ a bare number. Neither condition alone is enough.
 
 ```
 apps/api/.env   PORT=4001         → 4011                                         (bare number)
-apps/web/.env   VITE_API_URL      → http://api-dev.feat-x.monorepo.localhost:10080
-                CORS_ORIGIN       → http://web-dev.feat-x.monorepo.localhost:10080
+apps/web/.env   VITE_API_URL      → http://api-dev.feat-x.monorepo.localhost:11080
+                CORS_ORIGIN       → http://web-dev.feat-x.monorepo.localhost:11080
                 DATABASE_URL      → …@localhost:5442/db                           (no name)
 ```
 
@@ -81,7 +81,7 @@ their own mechanism:
 - a `.env` copied from main or a parent carries that worktree's segment, which is
   corrected to this one;
 - installing the redirection after the fact changes the public port, and the next pass
-  drops the `:10080`;
+  drops the `:11080`;
 - switching to `addressing = "ports"` knows which values were wtm's to undo.
 
 A state file would be more precise on paper and worse in practice: it diverges the

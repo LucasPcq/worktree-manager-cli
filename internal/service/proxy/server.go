@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 type ServerParams struct {
@@ -34,14 +35,19 @@ func NewServer(params ServerParams) *Server {
 	return &Server{registry: params.Registry, port: params.Port, span: span}
 }
 
-// Start binds the first free port from the one asked for and serves until
-// Close. The port is not stable across restarts when the preferred one is
+// Start binds the first usable port from the one asked for and serves until
+// Close. Usable means free *and* one a browser will open: a port on the
+// browsers' blocked list serves nothing however well it binds, so it is stepped
+// over exactly like an occupied one. The port is not stable across restarts when the preferred one is
 // taken, and that is the trade this makes: a caller reaches a job by name, so
 // the number is a transport detail `run url` resolves for them — where a job's
 // own port is one they memorise, which is why those never move.
 func (s *Server) Start() error {
 	var err error
 	for port := s.port; port < s.port+s.span; port++ {
+		if rules.IsBrowserBlockedPort(port) {
+			continue
+		}
 		var listener net.Listener
 		listener, err = net.Listen("tcp", fmt.Sprintf(domain.ProxyLoopbackFmt, port))
 		if err != nil {

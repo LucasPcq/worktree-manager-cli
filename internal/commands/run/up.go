@@ -20,10 +20,10 @@ import (
 // newUpCmd creates the wtm run up subcommand.
 func newUpCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdUp + " [profile]",
+		Use:   domain.CmdUp + " [worktree]",
 		Short: "Start a profile's jobs",
-		Long: "Start every job in a profile, in declared order.\n" +
-			"Without arguments, uses the default profile (or shows a picker if multiple exist).\n" +
+		Long: "Start every job in a profile, in declared order, in [worktree] — the current one when omitted, picked interactively when there is a terminal.\n" +
+			"Without --profile, uses the default profile (or shows a picker if multiple exist).\n" +
 			"Once the jobs are up, each declared port is checked: a port nothing answers on is\n" +
 			"reported rather than announced as bound. It never fails the run — see --no-probe\n" +
 			"and run.toml's port_probe_timeout.\n" +
@@ -33,6 +33,7 @@ func newUpCmd() *cobra.Command {
 		RunE: runUp,
 	}
 
+	shared.AddProfileFlag(cmd, "Profile to start (defaults to the default profile, or a picker when several exist)")
 	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop jobs on other worktrees before starting")
 	cmd.Flags().Bool(domain.FlagParallel, false, "Start without stopping other worktrees")
 	cmd.Flags().BoolP(domain.FlagDetach, "d", false, "Start the jobs and return immediately instead of opening their output")
@@ -73,13 +74,32 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid run config")
 	}
 
-	profile, err := resolveProfile(args, runCfg)
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
+
+	profileName, _ := cmd.Flags().GetString(domain.FlagProfile)
+	defaultProfile, _ := rules.DefaultProfile(runCfg)
+
+	resolved, err := resolveInputs(inputsParams{
+		Args:        args,
+		Cwd:         dir,
+		ProjectDir:  result.ProjectDir,
+		Interactive: isTTY() && rules.IsHumanFormat(format),
+		Pick:        true,
+		Second: secondAxis{
+			Given:    profileName,
+			Profiles: askableProfiles(runCfg),
+			Start:    defaultProfile.Name,
+		},
+	})
 	if err != nil {
 		return err
 	}
 
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
+	profile, err := resolveProfile(resolved.Second, runCfg)
+	if err != nil {
+		return err
+	}
 
 	socketPath := process.SocketPath()
 	if err := components.RunLoading(components.LoadingParams{
@@ -92,7 +112,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
 
-	if err := handleConcurrentJobs(cmd, process.NewClient(socketPath), dir); err != nil {
+	if err := handleConcurrentJobs(cmd, process.NewClient(socketPath), resolved.Dir); err != nil {
 		return err
 	}
 
@@ -100,7 +120,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	seam := openRunSeam(runSeamParams{
 		ProjectDir: result.ProjectDir,
 		StateDir:   result.StateDir,
-		Dir:        dir,
+		Dir:        resolved.Dir,
 		Jobs:       profile.Jobs,
 		Prober:     newProber(rules.PortProbeBudget(runCfg), noProbe),
 		ProxyPort:  rules.ProxyPort(result.Config.Global),
@@ -125,29 +145,29 @@ func runUp(cmd *cobra.Command, args []string) error {
 // resolveProfile answers both halves of "what is this run": the jobs to start
 // and the name to put on them. Dropping the name left `run up` unable to say
 // which of several profiles it had just brought up (LUC-208).
-func resolveProfile(args []string, cfg domain.RunConfig) (resolvedProfile, error) {
-	if len(args) > 0 {
-		profile, ok := rules.FindProfile(cfg, args[0])
+func resolveProfile(name string, cfg domain.RunConfig) (resolvedProfile, error) {
+	if name != "" {
+		profile, ok := rules.FindProfile(cfg, name)
 		if !ok {
-			return resolvedProfile{}, fmt.Errorf("profile %q not found in config", args[0])
+			return resolvedProfile{}, fmt.Errorf("profile %q not found in config", name)
 		}
 		return profileRun(cfg, profile), nil
 	}
 
-	if len(cfg.Profiles) <= 1 {
-		profile, ok := rules.DefaultProfile(cfg)
-		if !ok {
-			return resolvedProfile{Jobs: rules.JobsWithoutProfile(cfg)}, nil
-		}
-		return profileRun(cfg, profile), nil
+	profile, ok := rules.DefaultProfile(cfg)
+	if !ok {
+		return resolvedProfile{Jobs: rules.JobsWithoutProfile(cfg)}, nil
 	}
-
-	profile, err := pickProfile(cfg)
-	if err != nil {
-		return resolvedProfile{}, err
-	}
-
 	return profileRun(cfg, profile), nil
+}
+
+// askableProfiles is the profile question, or nothing when there is no question:
+// a config with one profile — or none — has a safe default and is never asked.
+func askableProfiles(cfg domain.RunConfig) []domain.ProfileConfig {
+	if len(cfg.Profiles) <= 1 {
+		return nil
+	}
+	return cfg.Profiles
 }
 
 // resolvedProfile is what `run up` settled on: a name for the run and the jobs
@@ -161,57 +181,14 @@ func profileRun(cfg domain.RunConfig, profile domain.ProfileConfig) resolvedProf
 	return resolvedProfile{Name: profile.Name, Jobs: rules.ProfileJobs(cfg, profile)}
 }
 
-func pickProfile(cfg domain.RunConfig) (domain.ProfileConfig, error) {
-	defaultProfile, _ := rules.DefaultProfile(cfg)
-
-	items := make([]components.SelectItem, 0, len(cfg.Profiles))
-	for _, p := range cfg.Profiles {
-		label := p.Name
-		if len(p.Jobs) > 0 {
-			label += fmt.Sprintf(" (%s)", joinJobNames(p.Jobs))
-		}
-		items = append(items, components.SelectItem{Label: label, Value: p.Name})
-	}
-
-	sl := components.NewSelectList(components.NewSelectListParams{
-		Title:       "Select profile",
-		Description: "Which profile to start?",
-		Items:       items,
-		// The one thing `default` still does now the picker always opens: it
-		// says which entry the run lands on.
-		Start: defaultProfile.Name,
-	})
-
-	selected, err := components.RunStandaloneSelect(sl)
-	if err != nil {
-		return domain.ProfileConfig{}, domain.ErrUserAborted
-	}
-
-	profile, ok := rules.FindProfile(cfg, selected)
-	if !ok {
-		return domain.ProfileConfig{}, fmt.Errorf("profile %q not found", selected)
-	}
-
-	return profile, nil
-}
-
-func joinJobNames(names []string) string {
-	result := ""
-	for i, n := range names {
-		if i > 0 {
-			result += ", "
-		}
-		result += n
-	}
-	return result
-}
-
 // handleConcurrentJobs asks about the jobs another worktree is running before
-// this one takes their ports. It is deliberately left outside flow/runlogs: it
-// is the only question `run up` asks, its --exclusive/--parallel axis is not
-// part of the bypass model yet, and worktree isolation (LUC-99/100) is meant to
-// remove the conflict rather than move the prompt.
-func handleConcurrentJobs(cmd *cobra.Command, client *process.Client, currentDir string) error {
+// the target takes their ports. "Another" is measured against the target, never
+// against the current directory: `run up X` must not offer to stop X's own jobs.
+// It is deliberately left outside flow/runlogs: it is the only question `run up`
+// asks, its --exclusive/--parallel axis is not part of the bypass model yet, and
+// worktree isolation (LUC-99/100) is meant to remove the conflict rather than
+// move the prompt.
+func handleConcurrentJobs(cmd *cobra.Command, client *process.Client, targetDir string) error {
 	exclusiveFlag, _ := cmd.Flags().GetBool(domain.FlagExclusive)
 	parallelFlag, _ := cmd.Flags().GetBool(domain.FlagParallel)
 
@@ -219,7 +196,7 @@ func handleConcurrentJobs(cmd *cobra.Command, client *process.Client, currentDir
 		return nil
 	}
 
-	otherWorktrees, otherNames := findOtherRunningJobs(client, currentDir)
+	otherWorktrees, otherNames := findOtherRunningJobs(client, targetDir)
 	if len(otherWorktrees) == 0 {
 		return nil
 	}
@@ -231,7 +208,7 @@ func handleConcurrentJobs(cmd *cobra.Command, client *process.Client, currentDir
 	return promptConcurrentJobs(cmd, client, otherWorktrees, otherNames)
 }
 
-func findOtherRunningJobs(client *process.Client, currentDir string) (map[string]bool, map[string][]string) {
+func findOtherRunningJobs(client *process.Client, targetDir string) (map[string]bool, map[string][]string) {
 	resp, err := client.Send(process.Request{Action: process.ActionList})
 	if err != nil {
 		return nil, nil
@@ -244,7 +221,7 @@ func findOtherRunningJobs(client *process.Client, currentDir string) (map[string
 		if !rules.IsJobUp(job.Status) {
 			continue
 		}
-		if job.WorkDir == currentDir {
+		if job.WorkDir == targetDir {
 			continue
 		}
 		otherWorktrees[job.WorkDir] = true

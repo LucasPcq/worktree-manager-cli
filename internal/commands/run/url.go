@@ -19,28 +19,45 @@ import (
 
 func newURLCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdURL + " [job]",
-		Short: "Print where a job is reachable in this worktree",
-		Long:  "Write a job's URL on stdout and nothing else, for $(…). --raw prints the job's own port instead of its name, which every OS resolves and no proxy has to serve.",
+		Use:   domain.CmdURL + " [worktree]",
+		Short: "Print where a job is reachable in a worktree",
+		Long:  "Write a job's URL on stdout and nothing else, for $(…). [worktree] defaults to the current one, and no picker ever opens here — an ambiguity is an error naming --job. --raw prints the job's own port instead of its name, which every OS resolves and no proxy has to serve.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE:  runURL,
 	}
+	shared.AddJobFlag(cmd, "Job whose URL to print (required when several jobs publish one)")
 	cmd.Flags().Bool(domain.FlagRaw, false, "Print the direct http://localhost:<port> address")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
 
 func runURL(cmd *cobra.Command, args []string) error {
-	entries, err := publishedJobs(cmd)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	ctx, err := loadURLContext(cmd, cwd)
 	if err != nil {
 		return err
 	}
+
+	// No wizard on any axis: `run url` answers from its flags or errors. Inside
+	// curl $(wtm run url --job api) the substitution captures stdout but stdin is
+	// still the terminal, so a form would open mid-substitution and hang the shell.
+	resolved, err := resolveInputs(inputsParams{Args: args, Cwd: cwd, ProjectDir: ctx.config.ProjectDir})
+	if err != nil {
+		return err
+	}
+	entries := ctx.publishedIn(resolved.Dir)
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
 		return output.WriteJobURLsJSON(cmd.OutOrStdout(), entries)
 	}
 
-	entry, err := pickPublished(entries, args)
+	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
+	entry, err := pickPublished(entries, jobName)
 	if err != nil {
 		return err
 	}
@@ -48,64 +65,71 @@ func runURL(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// publishedJobs resolves this worktree's ports, then keeps the jobs that declare
-// a url. It never contacts the daemon: a job's address is a property of the
-// worktree's offset, known whether or not anything is running.
-func publishedJobs(cmd *cobra.Command) ([]domain.JobURLEntry, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("get working directory: %w", err)
-	}
+// urlContext is what every address in this repository is computed from. It never
+// contacts the daemon: a job's address is a property of its worktree's offset,
+// known whether or not anything is running.
+type urlContext struct {
+	config shared.ConfigResult
+	run    domain.RunConfig
+	// proxyPort is zero under --raw, which asks for the job's own port instead of
+	// the name the proxy serves it under.
+	proxyPort int
+}
 
-	result, err := shared.LoadConfig(cmd, dir)
+func loadURLContext(cmd *cobra.Command, cwd string) (urlContext, error) {
+	result, err := shared.LoadConfig(cmd, cwd)
 	if err != nil {
-		return nil, err
+		return urlContext{}, err
 	}
 
 	runCfg, err := config.LoadRun(result.StateDir)
 	if err != nil {
-		return nil, fmt.Errorf("load run config: %w", err)
+		return urlContext{}, fmt.Errorf("load run config: %w", err)
 	}
 	if err := shared.RequireRunInitialized(runCfg); err != nil {
-		return nil, err
+		return urlContext{}, err
 	}
 
-	env := jobEnv(jobEnvParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir})
-	offset, _ := strconv.Atoi(env[domain.EnvPortOffset])
-
-	raw, _ := cmd.Flags().GetBool(domain.FlagRaw)
 	proxyPort := process.PublicProxyPort(rules.ProxyPort(result.Config.Global))
-	if raw {
+	if raw, _ := cmd.Flags().GetBool(domain.FlagRaw); raw {
 		proxyPort = 0
 	}
-	project := filepath.Base(result.ProjectDir)
+	return urlContext{config: result, run: runCfg, proxyPort: proxyPort}, nil
+}
+
+// publishedIn lists the jobs reachable in one worktree. The worktree is what
+// makes the addresses differ: its ordinal decides every port.
+func (c urlContext) publishedIn(dir string) []domain.JobURLEntry {
+	env := jobEnv(jobEnvParams{ProjectDir: c.config.ProjectDir, StateDir: c.config.StateDir, Dir: dir})
+	offset, _ := strconv.Atoi(env[domain.EnvPortOffset])
+	project := filepath.Base(c.config.ProjectDir)
 
 	var entries []domain.JobURLEntry
-	for _, job := range runCfg.Jobs {
+	for _, job := range c.run.Jobs {
 		ports := rules.JobPorts(rules.JobPortsParams{Ports: job.Ports, PortOffset: offset})
 		url := rules.JobURL(rules.JobURLParams{
 			Job:        job,
 			Ports:      ports,
 			Host:       rules.RouteHost(rules.RouteHostParams{Job: job, Worktree: env[domain.EnvWorktree], Project: project}),
-			PublicPort: proxyPort,
+			PublicPort: c.proxyPort,
 		})
 		if url == "" {
 			continue
 		}
 		entries = append(entries, domain.JobURLEntry{Job: job.Name, URL: url})
 	}
-	return entries, nil
+	return entries
 }
 
 // pickPublished resolves which job the caller meant without ever offering a
 // picker: `run url` is a machine surface, so an ambiguity is an error naming the
 // flag, not a prompt.
-func pickPublished(entries []domain.JobURLEntry, args []string) (domain.JobURLEntry, error) {
+func pickPublished(entries []domain.JobURLEntry, jobName string) (domain.JobURLEntry, error) {
 	if len(entries) == 0 {
 		return domain.JobURLEntry{}, domain.ErrJobNonePublished
 	}
-	if len(args) > 0 {
-		return findPublished(entries, args[0])
+	if jobName != "" {
+		return findPublished(entries, jobName)
 	}
 	if len(entries) > 1 {
 		return domain.JobURLEntry{}, fmt.Errorf("%w — %s", domain.ErrJobAmbiguous, publishedNames(entries))

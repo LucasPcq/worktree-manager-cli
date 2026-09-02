@@ -13,6 +13,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
+	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	runpicker "github.com/LucasPcq/wtm/internal/tui/runpicker"
 )
@@ -93,23 +94,56 @@ func execPsAction(cmd *cobra.Command, pick runpicker.PsPickerResult) error {
 		return err
 	}
 
-	var args []string
-	switch pick.Action {
-	case runpicker.ActionPsStop:
-		args = []string{domain.CmdRun, domain.CmdStop, pick.Name}
-	case runpicker.ActionPsLogs:
-		args = []string{domain.CmdRun, domain.CmdLogs, pick.Name}
-	case runpicker.ActionPsRestart:
-		args = []string{domain.CmdRun, domain.CmdStart, pick.Name}
-	case runpicker.ActionPsStopAll:
-		args = []string{domain.CmdRun, domain.CmdDown, "--all"}
-	default:
+	args, dir, ok := psInvocation(pick)
+	if !ok {
 		return nil
 	}
 
 	c := exec.Command(bin, args...)
+	// The job's own directory, not this one: ps lists every repository the daemon
+	// knows, and a worktree argument only ever resolves inside the current one.
+	c.Dir = dir
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 	return c.Run()
+}
+
+// psInvocation is the picked action as a command line: which subcommand to
+// re-enter, and where to run it.
+//
+// The worktree is named as well as entered. The re-exec inherits this terminal,
+// so a sub-command left with no positional would open its own worktree picker
+// and let the reader undo the job they just chose. Naming the branch resolves it
+// against the repository of dir, which is why this works for a job of another
+// repository too — a branch git cannot name falls back to the picker, opened on
+// the right worktree.
+func psInvocation(pick runpicker.PsPickerResult) (args []string, dir string, ok bool) {
+	jobFlag, allFlag := "--"+domain.FlagJob, "--"+domain.FlagAll
+	where := worktreeArg(pick.WorkDir)
+
+	switch pick.Action {
+	case runpicker.ActionPsStop:
+		args = append([]string{domain.CmdRun, domain.CmdStop}, append(where, jobFlag, pick.Name)...)
+	case runpicker.ActionPsLogs:
+		args = append([]string{domain.CmdRun, domain.CmdLogs}, append(where, jobFlag, pick.Name)...)
+	case runpicker.ActionPsRestart:
+		args = append([]string{domain.CmdRun, domain.CmdStart}, append(where, jobFlag, pick.Name)...)
+	case runpicker.ActionPsStopAll:
+		args = []string{domain.CmdRun, domain.CmdDown, allFlag}
+	default:
+		return nil, "", false
+	}
+	return args, pick.WorkDir, true
+}
+
+func worktreeArg(workDir string) []string {
+	if workDir == "" {
+		return nil
+	}
+	branch, err := worktree.CurrentBranch(worktree.CurrentBranchParams{Dir: workDir})
+	if err != nil || branch == "" {
+		return nil
+	}
+	return []string{branch}
 }
