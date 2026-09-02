@@ -194,6 +194,9 @@ func scriptedDaemon(t *testing.T, responses ...process.Response) string {
 		}
 		encoder := json.NewEncoder(conn)
 		for _, resp := range responses {
+			// Stamped like the real daemon's: a client refuses to talk to one
+			// whose build it cannot match.
+			resp.Version = domain.Version
 			if err := encoder.Encode(resp); err != nil {
 				return
 			}

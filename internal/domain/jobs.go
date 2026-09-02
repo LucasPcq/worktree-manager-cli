@@ -233,3 +233,21 @@ type JobCmdFix struct {
 	Cmd  string
 	Vars []string
 }
+
+// DaemonStatus is what `wtm run daemon status` reports: whether a daemon holds
+// the socket, which build it is, and what it is holding. Counted by nature
+// rather than totalled, because the two answer different questions — foreground
+// services die with the daemon, detached ones outlive it.
+type DaemonStatus struct {
+	Running bool `json:"running"`
+	// Version is this binary's, DaemonVersion the one answering. They differ
+	// exactly when the daemon is serving behavior this build has moved past.
+	Version       string `json:"version"`
+	DaemonVersion string `json:"daemon_version,omitempty"`
+	PID           int    `json:"pid,omitempty"`
+	SocketPath    string `json:"socket_path"`
+	StatePath     string `json:"state_path"`
+	ProxyPort     int    `json:"proxy_port,omitempty"`
+	Foreground    int    `json:"foreground_jobs"`
+	Detached      int    `json:"detached_jobs"`
+}

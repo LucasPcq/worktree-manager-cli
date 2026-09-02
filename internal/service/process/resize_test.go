@@ -171,13 +171,13 @@ func TestDaemonHandleResize_ReportsTheManagerVerdict(t *testing.T) {
 	dir := startService(t, d.manager, domain.JobConfig{Name: "dev", Kind: domain.JobKindService, Cmd: "sleep 30"})
 
 	var ok bytes.Buffer
-	d.handleResize(json.NewEncoder(&ok), Request{Action: ActionResize, Name: "dev", WorkDir: dir, Cols: 90, Rows: 24})
+	d.handleResize(replyEncoder{enc: json.NewEncoder(&ok)}, Request{Action: ActionResize, Name: "dev", WorkDir: dir, Cols: 90, Rows: 24})
 	if got := decodeResponse(t, ok.Bytes()); got.Status != StatusOK {
 		t.Errorf("status = %s (%s), want ok", got.Status, got.Message)
 	}
 
 	var ko bytes.Buffer
-	d.handleResize(json.NewEncoder(&ko), Request{Action: ActionResize, Name: "ghost", WorkDir: dir, Cols: 90, Rows: 24})
+	d.handleResize(replyEncoder{enc: json.NewEncoder(&ko)}, Request{Action: ActionResize, Name: "ghost", WorkDir: dir, Cols: 90, Rows: 24})
 	got := decodeResponse(t, ko.Bytes())
 	if got.Status != StatusError {
 		t.Fatalf("status = %s, want error", got.Status)
@@ -210,7 +210,7 @@ func TestClientResize_TravelsOnItsOwnConnection(t *testing.T) {
 			return
 		}
 		requests <- req
-		_ = json.NewEncoder(conn).Encode(Response{Status: StatusOK})
+		_ = json.NewEncoder(conn).Encode(Response{Status: StatusOK, Version: domain.Version})
 	}()
 
 	client := NewClient(socket)
@@ -249,7 +249,7 @@ func TestClientResize_SurfacesTheDaemonError(t *testing.T) {
 		if decodeErr := json.NewDecoder(conn).Decode(&req); decodeErr != nil {
 			return
 		}
-		_ = json.NewEncoder(conn).Encode(Response{Status: StatusError, Message: "job dev not found"})
+		_ = json.NewEncoder(conn).Encode(Response{Status: StatusError, Version: domain.Version, Message: "job dev not found"})
 	}()
 
 	err = NewClient(socket).Resize(ResizeParams{Name: "dev", Cols: 80, Rows: 20})

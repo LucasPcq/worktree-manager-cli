@@ -105,3 +105,22 @@ func (s *StateStore) Save(records []domain.JobRecord) error {
 	}
 	return nil
 }
+
+// HasIndexedJobs reports whether the index still holds a job for this worktree.
+// It is what tells a stop path whether waking a daemon is worth it: the daemon
+// exits on its own once no foreground job is left, so "nobody is listening" says
+// nothing about whether a detached stack is still up.
+func HasIndexedJobs(workDir string) bool {
+	for _, record := range NewStateStore(StatePath()).Load() {
+		if record.WorkDir == workDir {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAnyIndexedJob is HasIndexedJobs across every worktree, for the callers that
+// act on all of them (`run down --all`).
+func HasAnyIndexedJob() bool {
+	return len(NewStateStore(StatePath()).Load()) > 0
+}

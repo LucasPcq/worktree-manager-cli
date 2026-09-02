@@ -152,11 +152,24 @@ func (d *daemonServer) idleWatcher() {
 	}
 }
 
+// replyEncoder stamps every answer with this daemon's build and PID. It is the
+// only way out of a handler, so a client never receives an unstamped response
+// and can read a missing version as "older than the field itself".
+type replyEncoder struct {
+	enc *json.Encoder
+}
+
+func (e replyEncoder) Encode(resp Response) error {
+	resp.Version = domain.Version
+	resp.DaemonPID = os.Getpid()
+	return e.enc.Encode(resp)
+}
+
 func (d *daemonServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	decoder := json.NewDecoder(conn)
-	encoder := json.NewEncoder(conn)
+	encoder := replyEncoder{enc: json.NewEncoder(conn)}
 
 	var req Request
 	if err := decoder.Decode(&req); err != nil {
@@ -177,12 +190,14 @@ func (d *daemonServer) handleConnection(conn net.Conn) {
 		d.handleAttach(conn, encoder, req)
 	case ActionResize:
 		d.handleResize(encoder, req)
+	case ActionShutdown:
+		d.handleShutdown(encoder)
 	default:
 		encoder.Encode(Response{Status: StatusError, Message: fmt.Sprintf("unknown action: %s", req.Action)})
 	}
 }
 
-func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
+func (d *daemonServer) handleStart(encoder replyEncoder, req Request) {
 	if req.Job == nil {
 		encoder.Encode(Response{Status: StatusError, Message: "job config required"})
 		return
@@ -241,7 +256,16 @@ func (d *daemonServer) handleStart(encoder *json.Encoder, req Request) {
 	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s started", req.Job.Name), Ports: ports, ProxyPort: d.proxyPort, ProxyPublicPort: d.publicPort()})
 }
 
-func (d *daemonServer) handleStop(encoder *json.Encoder, req Request) {
+// handleShutdown answers before it stops, since stopping closes the socket the
+// answer travels on. It leaves detached jobs running: they are what the index
+// hands to the next daemon, and tearing them down here would make every version
+// mismatch cost the user their stack.
+func (d *daemonServer) handleShutdown(encoder replyEncoder) {
+	encoder.Encode(Response{Status: StatusOK, Message: "daemon stopping"})
+	go d.stop()
+}
+
+func (d *daemonServer) handleStop(encoder replyEncoder, req Request) {
 	if err := d.manager.Stop(req.Name, req.WorkDir); err != nil {
 		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
 		return
@@ -250,7 +274,7 @@ func (d *daemonServer) handleStop(encoder *json.Encoder, req Request) {
 	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s stopped", req.Name)})
 }
 
-func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
+func (d *daemonServer) handleStopAll(encoder replyEncoder, req Request) {
 	// Snapshot the jobs that are about to be stopped so the client can report
 	// which ones (or say "none running" when the list is empty).
 	var stopped []domain.JobInfo
@@ -278,7 +302,7 @@ func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
 	encoder.Encode(Response{Status: StatusOK, Jobs: stopped})
 }
 
-func (d *daemonServer) handleList(encoder *json.Encoder, req Request) {
+func (d *daemonServer) handleList(encoder replyEncoder, req Request) {
 	jobs := d.manager.List()
 	infos := make([]domain.JobInfo, 0, len(jobs))
 	for _, job := range jobs {
@@ -309,7 +333,7 @@ func (d *daemonServer) jobInfoOf(job ManagedJob) domain.JobInfo {
 // handleResize answers on its own connection by design: an attach connection
 // carries raw PTY bytes as soon as it is accepted, so a size sent there would
 // be typed into the job instead of resizing it.
-func (d *daemonServer) handleResize(encoder *json.Encoder, req Request) {
+func (d *daemonServer) handleResize(encoder replyEncoder, req Request) {
 	err := d.manager.Resize(ResizeParams{
 		Name:    req.Name,
 		WorkDir: req.WorkDir,
@@ -324,7 +348,7 @@ func (d *daemonServer) handleResize(encoder *json.Encoder, req Request) {
 	encoder.Encode(Response{Status: StatusOK, Message: fmt.Sprintf("job %s resized", req.Name)})
 }
 
-func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Request) {
+func (d *daemonServer) handleAttach(conn net.Conn, encoder replyEncoder, req Request) {
 	session, err := d.manager.Attach(req.Name, req.WorkDir)
 	if err != nil {
 		encoder.Encode(Response{Status: StatusError, Message: err.Error()})
@@ -378,7 +402,7 @@ func (d *daemonServer) handleAttach(conn net.Conn, encoder *json.Encoder, req Re
 // by the task's single streaming goroutine, so the encoder sees no concurrent
 // use while the task runs.
 type responseStreamWriter struct {
-	encoder *json.Encoder
+	encoder replyEncoder
 }
 
 func (w responseStreamWriter) Write(p []byte) (int, error) {

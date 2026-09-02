@@ -1244,6 +1244,7 @@ const (
 	// launchd bound on the privileged port.
 	CmdProxyForward = "proxy-forward"
 	FlagTarget      = "target"
+	CmdRestart      = "restart"
 	CmdStatus       = "status"
 	CmdInstall      = "install"
 	CmdUninstall    = "uninstall"
@@ -1283,6 +1284,36 @@ const (
 	// the global dir: the daemon is global, and an index it could only read from
 	// one repository would be an index of nothing.
 	DaemonStateFileName = "jobs.json"
+
+	// DaemonVersionUnknown stands in for a daemon too old to stamp its answers:
+	// the field was added with the handshake itself, so its absence dates the
+	// daemon rather than leaving the message blank.
+	DaemonVersionUnknown = "an older build"
+
+	// DaemonVersionMismatchFmt takes the daemon's version then the client's. It
+	// names the way out, because there is nothing the user can do from the
+	// command they just ran.
+	DaemonVersionMismatchFmt = "the run daemon holding the socket is %s, this is wtm %s — it is the daemon that runs your jobs, so its behavior is what applies. Run 'wtm run daemon restart' to hand them over (detached services keep running; foreground ones are stopped)"
+
+	// The `run daemon` surface's wording.
+	DaemonStatusTitle      = "Run daemon"
+	DaemonStatusStateFmt   = "State      %s"
+	DaemonStatusStopped    = "not running"
+	DaemonStatusUpFmt      = "running (pid %d)"
+	DaemonStatusVersFmt    = "Version    %s"
+	DaemonStatusJobsFmt    = "Jobs       %d foreground · %d detached"
+	DaemonStatusSocketFmt  = "Socket     %s"
+	DaemonStatusIndexFmt   = "Index      %s"
+	DaemonStatusProxyFmt   = "Proxy      port %d"
+	DaemonStopped          = "Daemon stopped."
+	DaemonAlreadyStopped   = "No daemon running."
+	DaemonStopConfirmTitle = "Stop the run daemon?"
+	DaemonStopConfirmFmt   = "%d foreground service(s) are drained through it and will be stopped. Detached services keep running."
+	// DaemonMismatchTitle heads the status callout naming a daemon this binary
+	// did not build, so `status` reports the divergence the other commands
+	// refuse on.
+	DaemonMismatchTitle = "Version mismatch"
+	DaemonMismatchFix   = "wtm run daemon restart"
 
 	// DaemonStateVersion is the index format. A file carrying anything else is
 	// read as empty and never written back, so an older binary cannot destroy

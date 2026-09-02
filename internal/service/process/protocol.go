@@ -6,12 +6,13 @@ import "github.com/LucasPcq/wtm/internal/domain"
 type RequestAction string
 
 const (
-	ActionStart   RequestAction = "start"
-	ActionStop    RequestAction = "stop"
-	ActionStopAll RequestAction = "stop_all"
-	ActionList    RequestAction = "list"
-	ActionAttach  RequestAction = "attach"
-	ActionResize  RequestAction = "resize"
+	ActionStart    RequestAction = "start"
+	ActionShutdown RequestAction = "shutdown"
+	ActionStop     RequestAction = "stop"
+	ActionStopAll  RequestAction = "stop_all"
+	ActionList     RequestAction = "list"
+	ActionAttach   RequestAction = "attach"
+	ActionResize   RequestAction = "resize"
 )
 
 // Request is a JSON message sent from client to daemon.
@@ -54,11 +55,19 @@ const (
 
 // Response is a JSON message sent from daemon to client.
 type Response struct {
-	Status   ResponseStatus   `json:"status"`
-	Message  string           `json:"message,omitempty"`
-	Jobs     []domain.JobInfo `json:"jobs,omitempty"`
-	Data     []byte           `json:"data,omitempty"`      // task output chunk
-	ExitCode *int             `json:"exit_code,omitempty"` // final task exit code
+	Status ResponseStatus `json:"status"`
+	// Version is the daemon's own build, stamped on every answer. The client
+	// compares rather than asking: a daemon too old to know the field answers
+	// with an empty one, which is exactly the divergence worth catching, and it
+	// costs no round-trip on the nominal path.
+	Version string `json:"version,omitempty"`
+	// DaemonPID is what `run daemon status` reports, so a user always has a way
+	// out even when the socket stops answering.
+	DaemonPID int              `json:"daemon_pid,omitempty"`
+	Message   string           `json:"message,omitempty"`
+	Jobs      []domain.JobInfo `json:"jobs,omitempty"`
+	Data      []byte           `json:"data,omitempty"`      // task output chunk
+	ExitCode  *int             `json:"exit_code,omitempty"` // final task exit code
 	// Ports are the ports the job just started actually bound, base plus this
 	// worktree's offset. Reported rather than recomputed by the caller, so the
 	// line it prints says what happened instead of what should have.
