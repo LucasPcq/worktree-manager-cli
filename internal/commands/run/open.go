@@ -1,18 +1,27 @@
 package run
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/integration"
-	"github.com/LucasPcq/wtm/internal/tui/runpicker"
 )
 
 // openInBrowser is a variable so a test can watch what a run would have opened
 // without a browser window appearing.
 var openInBrowser = integration.OpenURL
+
+func askableURLs(entries []domain.JobURLEntry) []domain.JobURLEntry {
+	if len(entries) < 2 {
+		return nil
+	}
+	return entries
+}
 
 func newOpenCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -29,37 +38,42 @@ func newOpenCmd() *cobra.Command {
 }
 
 func runOpen(cmd *cobra.Command, args []string) error {
-	entries, err := publishedJobs(cmd, args, true)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("get working directory: %w", err)
+	}
+
+	ctx, err := loadURLContext(cmd, cwd)
 	if err != nil {
 		return err
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	interactive := isTTY() && rules.IsHumanFormat(format)
 	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
 
-	entry, err := pickPublishedInteractive(pickInteractiveParams{
-		Entries:     entries,
-		JobName:     jobName,
-		Interactive: interactive,
+	resolved, err := resolveInputs(inputsParams{
+		Args:        args,
+		Cwd:         cwd,
+		ProjectDir:  ctx.config.ProjectDir,
+		Interactive: isTTY() && rules.IsHumanFormat(format),
+		Pick:        true,
+		Second: secondAxis{
+			Given: jobName,
+			// A single published job is the answer, not a question.
+			URLs: askableURLs(ctx.publishedIn(worktreeRoot(cwd))),
+			// The addresses depend on the worktree picked one step earlier, so the
+			// list is rebuilt rather than shown with the ports of wherever the
+			// command was launched.
+			ResolveURLs: ctx.publishedIn,
+		},
 	})
 	if err != nil {
 		return err
 	}
-	return openInBrowser(entry.URL)
-}
 
-type pickInteractiveParams struct {
-	Entries     []domain.JobURLEntry
-	JobName     string
-	Interactive bool
-}
-
-// pickPublishedInteractive adds the one thing `run url` refuses: a picker, and
-// only when the run is fully interactive.
-func pickPublishedInteractive(params pickInteractiveParams) (domain.JobURLEntry, error) {
-	if !params.Interactive || params.JobName != "" || len(params.Entries) < 2 {
-		return pickPublished(params.Entries, params.JobName)
+	entry, err := pickPublished(ctx.publishedIn(resolved.Dir), resolved.Second)
+	if err != nil {
+		return err
 	}
-	return runpicker.RunURLPicker(params.Entries)
+	return openInBrowser(entry.URL)
 }

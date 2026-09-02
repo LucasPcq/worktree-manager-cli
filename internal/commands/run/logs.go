@@ -56,7 +56,8 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	tgt, err := resolveTarget(targetParams{
+	job, _ := cmd.Flags().GetString(domain.FlagJob)
+	resolved, err := resolveInputs(inputsParams{
 		Args:        args,
 		Cwd:         dir,
 		ProjectDir:  result.ProjectDir,
@@ -78,9 +79,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
 
-	job, _ := cmd.Flags().GetString(domain.FlagJob)
-
-	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: tgt.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
+	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: resolved.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
 	surface := rules.DecideRunSurface(rules.RunSurfaceParams{TTY: isTTY(), Format: domain.OutputText})
 	if surface == domain.RunSurfaceView {
 		return showRunView(viewParams{Cmd: cmd, Session: seam.session, Job: job})

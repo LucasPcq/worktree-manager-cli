@@ -82,7 +82,7 @@ func TestNamedAndCurrentWorktreeAgreeOnTheKey(t *testing.T) {
 	worktreePath := addWorktree(t, os.Getenv("WTM_PROJECT_DIR"), "feat/same")
 	projectDir := os.Getenv("WTM_PROJECT_DIR")
 
-	named, err := resolveTarget(targetParams{
+	named, err := resolveInputs(inputsParams{
 		Args:       []string{"feat/same"},
 		Cwd:        projectDir,
 		ProjectDir: projectDir,
@@ -92,7 +92,7 @@ func TestNamedAndCurrentWorktreeAgreeOnTheKey(t *testing.T) {
 	}
 
 	enterWorktree(t, worktreePath)
-	current, err := resolveTarget(targetParams{
+	current, err := resolveInputs(inputsParams{
 		Cwd:        worktreePath,
 		ProjectDir: projectDir,
 	})

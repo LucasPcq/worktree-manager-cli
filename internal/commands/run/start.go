@@ -59,19 +59,20 @@ func runStart(cmd *cobra.Command, args []string) error {
 	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
 	interactive := isTTY() && rules.IsHumanFormat(format)
 
-	tgt, err := resolveTarget(targetParams{
+	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
+	resolved, err := resolveInputs(inputsParams{
 		Args:        args,
 		Cwd:         dir,
 		ProjectDir:  result.ProjectDir,
 		Interactive: interactive,
 		Pick:        true,
+		Second:      secondAxis{Given: jobName, Jobs: runCfg.Jobs, Required: true},
 	})
 	if err != nil {
 		return err
 	}
 
-	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
-	job, err := resolveJob(jobParams{Name: jobName, Config: runCfg, Interactive: interactive})
+	job, err := declaredJob(runCfg, resolved.Second)
 	if err != nil {
 		return err
 	}
@@ -87,8 +88,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
 
-	logDir := jobLogDir(jobLogDirParams{StateDir: result.StateDir, Dir: tgt.Dir})
-	env := jobEnv(jobEnvParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: tgt.Dir})
+	logDir := jobLogDir(jobLogDirParams{StateDir: result.StateDir, Dir: resolved.Dir})
+	env := jobEnv(jobEnvParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: resolved.Dir})
 
 	surface := rules.DecideRunSurface(rules.RunSurfaceParams{
 		Inline: job.Kind == domain.JobKindTask,
@@ -97,7 +98,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		Format: format,
 	})
 	if surface == domain.RunSurfaceView {
-		seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: tgt.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
+		seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: resolved.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
 		return showRunView(viewParams{
 			Cmd:     cmd,
 			Session: seam.session,
@@ -110,7 +111,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		Cmd:    cmd,
 		Client: process.NewClient(socketPath),
 		Job:    job,
-		Dir:    tgt.Dir,
+		Dir:    resolved.Dir,
 		LogDir: logDir,
 		Env:    env,
 		Format: format,

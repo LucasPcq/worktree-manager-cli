@@ -52,20 +52,34 @@ func runDown(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	tgt, err := resolveTarget(targetParams{
+	stateDir, err := shared.StateDir(dir)
+	if err != nil {
+		return err
+	}
+	runCfg, err := config.LoadRun(stateDir)
+	if err != nil {
+		return fmt.Errorf("load run config: %w", err)
+	}
+
+	resolved, err := resolveInputs(inputsParams{
 		Args:        args,
 		Cwd:         dir,
 		ProjectDir:  projectDir,
 		Interactive: !all && isTTY() && rules.IsHumanFormat(format),
 		Pick:        true,
+		// No profile step: `run down` with no --profile means "stop everything in
+		// this worktree", which is a safe default. Asking would force a choice the
+		// command does not need and offers no "all" answer for.
+		Second: secondAxis{Given: profileName},
 	})
 	if err != nil {
 		return err
 	}
+	profileName = resolved.Second
 
 	socketPath := process.SocketPath()
 
-	if err := ensureDaemonForDown(cmd, ensureDownParams{SocketPath: socketPath, Dir: tgt.Dir, All: all}); err != nil {
+	if err := ensureDaemonForDown(cmd, ensureDownParams{SocketPath: socketPath, Dir: resolved.Dir, All: all}); err != nil {
 		return err
 	}
 	if !process.IsDaemonRunning(socketPath) {
@@ -81,16 +95,6 @@ func runDown(cmd *cobra.Command, args []string) error {
 	client := process.NewClient(socketPath)
 
 	if profileName != "" {
-		stateDir, err := shared.StateDir(dir)
-		if err != nil {
-			return err
-		}
-
-		runCfg, err := config.LoadRun(stateDir)
-		if err != nil {
-			return fmt.Errorf("load run config: %w", err)
-		}
-
 		profile, ok := rules.FindProfile(runCfg, profileName)
 		if !ok {
 			return fmt.Errorf("profile %q not found in config", profileName)
@@ -111,7 +115,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 					resp, e = client.Send(process.Request{
 						Action:  process.ActionStop,
 						Name:    job.Name,
-						WorkDir: tgt.Dir,
+						WorkDir: resolved.Dir,
 					})
 					return e
 				},
@@ -144,7 +148,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	req := process.Request{Action: process.ActionStopAll}
 	if !all {
-		req.WorkDir = tgt.Dir
+		req.WorkDir = resolved.Dir
 	}
 
 	var resp process.Response

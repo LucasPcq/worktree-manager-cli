@@ -77,19 +77,26 @@ func runUp(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
 
-	tgt, err := resolveTarget(targetParams{
+	profileName, _ := cmd.Flags().GetString(domain.FlagProfile)
+	defaultProfile, _ := rules.DefaultProfile(runCfg)
+
+	resolved, err := resolveInputs(inputsParams{
 		Args:        args,
 		Cwd:         dir,
 		ProjectDir:  result.ProjectDir,
 		Interactive: isTTY() && rules.IsHumanFormat(format),
 		Pick:        true,
+		Second: secondAxis{
+			Given:    profileName,
+			Profiles: askableProfiles(runCfg),
+			Start:    defaultProfile.Name,
+		},
 	})
 	if err != nil {
 		return err
 	}
 
-	profileName, _ := cmd.Flags().GetString(domain.FlagProfile)
-	profile, err := resolveProfile(profileName, runCfg)
+	profile, err := resolveProfile(resolved.Second, runCfg)
 	if err != nil {
 		return err
 	}
@@ -105,7 +112,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
 
-	if err := handleConcurrentJobs(cmd, process.NewClient(socketPath), tgt.Dir); err != nil {
+	if err := handleConcurrentJobs(cmd, process.NewClient(socketPath), resolved.Dir); err != nil {
 		return err
 	}
 
@@ -113,7 +120,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	seam := openRunSeam(runSeamParams{
 		ProjectDir: result.ProjectDir,
 		StateDir:   result.StateDir,
-		Dir:        tgt.Dir,
+		Dir:        resolved.Dir,
 		Jobs:       profile.Jobs,
 		Prober:     newProber(rules.PortProbeBudget(runCfg), noProbe),
 		ProxyPort:  rules.ProxyPort(result.Config.Global),
@@ -147,20 +154,20 @@ func resolveProfile(name string, cfg domain.RunConfig) (resolvedProfile, error) 
 		return profileRun(cfg, profile), nil
 	}
 
-	if len(cfg.Profiles) <= 1 {
-		profile, ok := rules.DefaultProfile(cfg)
-		if !ok {
-			return resolvedProfile{Jobs: rules.JobsWithoutProfile(cfg)}, nil
-		}
-		return profileRun(cfg, profile), nil
+	profile, ok := rules.DefaultProfile(cfg)
+	if !ok {
+		return resolvedProfile{Jobs: rules.JobsWithoutProfile(cfg)}, nil
 	}
-
-	profile, err := pickProfile(cfg)
-	if err != nil {
-		return resolvedProfile{}, err
-	}
-
 	return profileRun(cfg, profile), nil
+}
+
+// askableProfiles is the profile question, or nothing when there is no question:
+// a config with one profile — or none — has a safe default and is never asked.
+func askableProfiles(cfg domain.RunConfig) []domain.ProfileConfig {
+	if len(cfg.Profiles) <= 1 {
+		return nil
+	}
+	return cfg.Profiles
 }
 
 // resolvedProfile is what `run up` settled on: a name for the run and the jobs
@@ -172,51 +179,6 @@ type resolvedProfile struct {
 
 func profileRun(cfg domain.RunConfig, profile domain.ProfileConfig) resolvedProfile {
 	return resolvedProfile{Name: profile.Name, Jobs: rules.ProfileJobs(cfg, profile)}
-}
-
-func pickProfile(cfg domain.RunConfig) (domain.ProfileConfig, error) {
-	defaultProfile, _ := rules.DefaultProfile(cfg)
-
-	items := make([]components.SelectItem, 0, len(cfg.Profiles))
-	for _, p := range cfg.Profiles {
-		label := p.Name
-		if len(p.Jobs) > 0 {
-			label += fmt.Sprintf(" (%s)", joinJobNames(p.Jobs))
-		}
-		items = append(items, components.SelectItem{Label: label, Value: p.Name})
-	}
-
-	sl := components.NewSelectList(components.NewSelectListParams{
-		Title:       "Select profile",
-		Description: "Which profile to start?",
-		Items:       items,
-		// The one thing `default` still does now the picker always opens: it
-		// says which entry the run lands on.
-		Start: defaultProfile.Name,
-	})
-
-	selected, err := components.RunStandaloneSelect(sl)
-	if err != nil {
-		return domain.ProfileConfig{}, domain.ErrUserAborted
-	}
-
-	profile, ok := rules.FindProfile(cfg, selected)
-	if !ok {
-		return domain.ProfileConfig{}, fmt.Errorf("profile %q not found", selected)
-	}
-
-	return profile, nil
-}
-
-func joinJobNames(names []string) string {
-	result := ""
-	for i, n := range names {
-		if i > 0 {
-			result += ", "
-		}
-		result += n
-	}
-	return result
 }
 
 // handleConcurrentJobs asks about the jobs another worktree is running before

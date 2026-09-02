@@ -27,7 +27,7 @@ func setupWorktrees(t *testing.T) (projectDir string) {
 func TestResolveTargetExactBranchWins(t *testing.T) {
 	projectDir := setupWorktrees(t)
 
-	tgt, err := resolveTarget(targetParams{
+	tgt, err := resolveInputs(inputsParams{
 		Args:       []string{"feature/web"},
 		Cwd:        projectDir,
 		ProjectDir: projectDir,
@@ -46,7 +46,7 @@ func TestResolveTargetExactBranchWins(t *testing.T) {
 func TestResolveTargetAcceptsAUniqueSubstring(t *testing.T) {
 	projectDir := setupWorktrees(t)
 
-	tgt, err := resolveTarget(targetParams{
+	tgt, err := resolveInputs(inputsParams{
 		Args:       []string{"rewrite"},
 		Cwd:        projectDir,
 		ProjectDir: projectDir,
@@ -64,7 +64,7 @@ func TestResolveTargetAcceptsAUniqueSubstring(t *testing.T) {
 func TestResolveTargetAmbiguousQueryNamesTheCandidates(t *testing.T) {
 	projectDir := setupWorktrees(t)
 
-	_, err := resolveTarget(targetParams{
+	_, err := resolveInputs(inputsParams{
 		Args:       []string{"feature"},
 		Cwd:        projectDir,
 		ProjectDir: projectDir,
@@ -82,7 +82,7 @@ func TestResolveTargetAmbiguousQueryNamesTheCandidates(t *testing.T) {
 func TestResolveTargetUnknownQueryFails(t *testing.T) {
 	projectDir := setupWorktrees(t)
 
-	if _, err := resolveTarget(targetParams{
+	if _, err := resolveInputs(inputsParams{
 		Args:       []string{"nope"},
 		Cwd:        projectDir,
 		ProjectDir: projectDir,
@@ -97,7 +97,7 @@ func TestResolveTargetFallsBackToTheCwdWithoutATerminal(t *testing.T) {
 	projectDir := setupWorktrees(t)
 	refusePicker(t)
 
-	tgt, err := resolveTarget(targetParams{
+	tgt, err := resolveInputs(inputsParams{
 		Cwd:         projectDir,
 		ProjectDir:  projectDir,
 		Interactive: false,
@@ -117,7 +117,7 @@ func TestResolveTargetKeepsTheCwdWhenPickingIsRefused(t *testing.T) {
 	projectDir := setupWorktrees(t)
 	refusePicker(t)
 
-	tgt, err := resolveTarget(targetParams{
+	tgt, err := resolveInputs(inputsParams{
 		Cwd:         projectDir,
 		ProjectDir:  projectDir,
 		Interactive: true,
@@ -134,13 +134,14 @@ func TestResolveTargetKeepsTheCwdWhenPickingIsRefused(t *testing.T) {
 func TestResolveTargetOpensThePickerOnTheCurrentWorktree(t *testing.T) {
 	projectDir := setupWorktrees(t)
 
-	var got runpicker.WorktreePickerParams
-	stubPicker(t, func(params runpicker.WorktreePickerParams) (domain.GitWorktree, error) {
+	var got runpicker.TargetWizardParams
+	stubWizard(t, func(params runpicker.TargetWizardParams) (runpicker.TargetWizardResult, error) {
 		got = params
-		return params.Worktrees[len(params.Worktrees)-1], nil
+		last := params.Worktree.Worktrees[len(params.Worktree.Worktrees)-1]
+		return runpicker.TargetWizardResult{WorktreePath: last.Path}, nil
 	})
 
-	tgt, err := resolveTarget(targetParams{
+	tgt, err := resolveInputs(inputsParams{
 		Cwd:         projectDir,
 		ProjectDir:  projectDir,
 		Interactive: true,
@@ -151,69 +152,113 @@ func TestResolveTargetOpensThePickerOnTheCurrentWorktree(t *testing.T) {
 	}
 	// The picker starts on an item's Value, which is the path as git spells it —
 	// /private/var where the cwd says /var on macOS.
-	if got.Current != infra.ResolvePath(projectDir) {
-		t.Errorf("the picker opened on %q, want the current worktree %q", got.Current, projectDir)
+	if got.Worktree.Current != infra.ResolvePath(projectDir) {
+		t.Errorf("the form opened on %q, want the current worktree %q", got.Worktree.Current, projectDir)
 	}
-	if len(got.Worktrees) != 3 {
-		t.Errorf("the picker was offered %d worktrees, want all 3", len(got.Worktrees))
+	if len(got.Worktree.Worktrees) != 3 {
+		t.Errorf("the form was offered %d worktrees, want all 3", len(got.Worktree.Worktrees))
 	}
-	if tgt.Dir != got.Worktrees[len(got.Worktrees)-1].Path {
+	if tgt.Dir != got.Worktree.Worktrees[len(got.Worktree.Worktrees)-1].Path {
 		t.Error("the picked worktree is not what the command acts on")
 	}
 }
 
 // The job has no safe default: without --job, a run that cannot ask names the
-// flag rather than falling back to a picker.
-func TestResolveJobRequiresTheFlagWithoutATerminal(t *testing.T) {
-	cfg := domain.RunConfig{Jobs: []domain.JobConfig{apiJob, migrateJob}}
+// flag rather than falling back to a form.
+func TestSecondAxisRequiresTheFlagWithoutATerminal(t *testing.T) {
+	projectDir := setupWorktrees(t)
+	refusePicker(t)
 
-	_, err := resolveJob(jobParams{Config: cfg, Interactive: false})
+	_, err := resolveInputs(inputsParams{
+		Cwd:        projectDir,
+		ProjectDir: projectDir,
+		Second:     secondAxis{Jobs: []domain.JobConfig{apiJob, migrateJob}, Required: true},
+	})
 	if !errors.Is(err, domain.ErrJobRequired) {
 		t.Fatalf("err = %v, want ErrJobRequired", err)
 	}
 }
 
-func TestResolveJobRejectsAnUndeclaredName(t *testing.T) {
+func TestDeclaredJobRejectsAnUndeclaredName(t *testing.T) {
 	cfg := domain.RunConfig{Jobs: []domain.JobConfig{apiJob}}
 
-	_, err := resolveJob(jobParams{Name: "ghost", Config: cfg, Interactive: true})
-	if !errors.Is(err, domain.ErrJobNotFound) {
+	if _, err := declaredJob(cfg, "ghost"); !errors.Is(err, domain.ErrJobNotFound) {
 		t.Fatalf("err = %v, want ErrJobNotFound", err)
 	}
 }
 
-func TestResolveJobPicksInteractively(t *testing.T) {
-	cfg := domain.RunConfig{Jobs: []domain.JobConfig{apiJob, migrateJob}}
+// Both questions go into one form, which is what lets the reader step back from
+// the second to the first instead of losing the run.
+func TestBothQuestionsAreAskedInOneForm(t *testing.T) {
+	projectDir := setupWorktrees(t)
 
-	previous := pickJob
-	t.Cleanup(func() { pickJob = previous })
-	pickJob = func(jobs []domain.JobConfig) (domain.JobConfig, error) {
-		if len(jobs) != 2 {
-			t.Errorf("the picker was offered %d jobs, want both", len(jobs))
-		}
-		return jobs[1], nil
-	}
+	var got runpicker.TargetWizardParams
+	stubWizard(t, func(params runpicker.TargetWizardParams) (runpicker.TargetWizardResult, error) {
+		got = params
+		return runpicker.TargetWizardResult{
+			WorktreePath: params.Worktree.Worktrees[0].Path,
+			Second:       migrateJob.Name,
+		}, nil
+	})
 
-	job, err := resolveJob(jobParams{Config: cfg, Interactive: true})
+	resolved, err := resolveInputs(inputsParams{
+		Cwd:         projectDir,
+		ProjectDir:  projectDir,
+		Interactive: true,
+		Pick:        true,
+		Second:      secondAxis{Jobs: []domain.JobConfig{apiJob, migrateJob}, Required: true},
+	})
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if job.Name != migrateJob.Name {
-		t.Errorf("resolved %q, want %q", job.Name, migrateJob.Name)
+	if got.Worktree == nil || got.Second == nil {
+		t.Fatal("the two questions were not asked in the same form")
+	}
+	if resolved.Second != migrateJob.Name {
+		t.Errorf("resolved %q, want %q", resolved.Second, migrateJob.Name)
 	}
 }
 
-func stubPicker(t *testing.T, fn func(runpicker.WorktreePickerParams) (domain.GitWorktree, error)) {
+// A question the flags already answered is not a step: it costs no keystroke and
+// does not appear in the breadcrumb.
+func TestAnAnsweredQuestionIsNotAStep(t *testing.T) {
+	projectDir := setupWorktrees(t)
+
+	var got runpicker.TargetWizardParams
+	stubWizard(t, func(params runpicker.TargetWizardParams) (runpicker.TargetWizardResult, error) {
+		got = params
+		return runpicker.TargetWizardResult{WorktreePath: params.Worktree.Worktrees[0].Path}, nil
+	})
+
+	resolved, err := resolveInputs(inputsParams{
+		Cwd:         projectDir,
+		ProjectDir:  projectDir,
+		Interactive: true,
+		Pick:        true,
+		Second:      secondAxis{Given: apiJob.Name, Jobs: []domain.JobConfig{apiJob, migrateJob}, Required: true},
+	})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if got.Second != nil {
+		t.Error("a question answered by a flag was asked again")
+	}
+	if resolved.Second != apiJob.Name {
+		t.Errorf("the flag's value was lost: got %q", resolved.Second)
+	}
+}
+
+func stubWizard(t *testing.T, fn func(runpicker.TargetWizardParams) (runpicker.TargetWizardResult, error)) {
 	t.Helper()
-	previous := pickWorktree
-	t.Cleanup(func() { pickWorktree = previous })
-	pickWorktree = fn
+	previous := askWizard
+	t.Cleanup(func() { askWizard = previous })
+	askWizard = fn
 }
 
 func refusePicker(t *testing.T) {
 	t.Helper()
-	stubPicker(t, func(runpicker.WorktreePickerParams) (domain.GitWorktree, error) {
-		t.Error("a picker was opened on a path that must never reach one")
-		return domain.GitWorktree{}, nil
+	stubWizard(t, func(runpicker.TargetWizardParams) (runpicker.TargetWizardResult, error) {
+		t.Error("a form was opened on a path that must never reach one")
+		return runpicker.TargetWizardResult{}, nil
 	})
 }

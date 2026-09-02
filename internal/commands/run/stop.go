@@ -56,19 +56,20 @@ func runStop(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	tgt, err := resolveTarget(targetParams{
+	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
+	resolved, err := resolveInputs(inputsParams{
 		Args:        args,
 		Cwd:         dir,
 		ProjectDir:  projectDir,
 		Interactive: interactive,
 		Pick:        true,
+		Second:      secondAxis{Given: jobName, Jobs: runCfg.Jobs, Required: true},
 	})
 	if err != nil {
 		return err
 	}
 
-	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
-	job, err := resolveJob(jobParams{Name: jobName, Config: runCfg, Interactive: interactive})
+	job, err := declaredJob(runCfg, resolved.Second)
 	if err != nil {
 		return err
 	}
@@ -94,7 +95,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 			resp, e = client.Send(process.Request{
 				Action:  process.ActionStop,
 				Name:    job.Name,
-				WorkDir: tgt.Dir,
+				WorkDir: resolved.Dir,
 			})
 			return e
 		},

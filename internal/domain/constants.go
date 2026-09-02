@@ -1589,6 +1589,14 @@ const (
 	// naming the job is required on every other path.
 	RunJobPickerTitle = "Select job"
 
+	// RunProfilePicker* head the profile step, and the Run*StepName label each
+	// question in the wizard's breadcrumb.
+	RunProfilePickerTitle = "Select profile"
+	RunProfilePickerDesc  = "Which profile to start?"
+	RunWorktreeStepName   = "Worktree"
+	RunJobStepName        = "Job"
+	RunProfileStepName    = "Profile"
+
 	// RunURLSuffixSep sets a job's URL apart from the line announcing it, far
 	// enough that a terminal-detected link does not swallow the ports before it.
 	RunURLSuffixSep     = "   "
