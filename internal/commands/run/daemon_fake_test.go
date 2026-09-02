@@ -24,6 +24,8 @@ type fakeDaemon struct {
 	Answers map[string][]process.Response
 	// Jobs is what ActionList reports.
 	Jobs []domain.JobInfo
+	// StopErrors maps a job name to the message ActionStop refuses it with.
+	StopErrors map[string]string
 	// Streams maps a job name to the raw bytes ActionAttach writes on the
 	// accepted connection before hanging up.
 	Streams map[string][]byte
@@ -128,6 +130,14 @@ func (d *fakeDaemon) serve(conn net.Conn) {
 	encoder := stampedEncoder{enc: json.NewEncoder(conn), version: d.version()}
 	if req.Action == process.ActionList {
 		_ = encoder.Encode(process.Response{Status: process.StatusOK, Jobs: d.Jobs})
+		return
+	}
+	if req.Action == process.ActionStop {
+		if message, refused := d.StopErrors[req.Name]; refused {
+			_ = encoder.Encode(process.Response{Status: process.StatusError, Message: message})
+			return
+		}
+		_ = encoder.Encode(process.Response{Status: process.StatusOK})
 		return
 	}
 	if req.Action == process.ActionAttach {

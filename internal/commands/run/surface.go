@@ -165,13 +165,20 @@ func runOnStream(params streamParams) error {
 	return nil
 }
 
-// runForMachine emits the run's outcome as a JSON document and exits zero even
-// when the profile aborted: the failure is a result entry, and a half-written
-// document would be worse than an exit code for whoever is parsing it.
+// runForMachine emits the run's outcome as a JSON document, then fails when the
+// profile aborted. The document is complete either way: the module's rule is
+// that the shape follows the arity and the exit code follows the success, and
+// an exit code has never made a document unreadable (LUC-198).
 func runForMachine(params streamParams) error {
 	outcome, err := params.Start(params.Cmd.Context(), nil)
 	if err != nil {
 		return err
 	}
-	return output.WriteRunOutcomeJSON(params.Cmd.OutOrStdout(), outcome)
+	if err := output.WriteRunOutcomeJSON(params.Cmd.OutOrStdout(), outcome); err != nil {
+		return err
+	}
+	if outcome.Aborted() {
+		return domain.ErrAborted
+	}
+	return nil
 }

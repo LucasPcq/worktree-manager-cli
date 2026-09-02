@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -40,18 +41,18 @@ func isSinglePathSegment(segment string) bool {
 	return !strings.ContainsAny(segment, `/\`)
 }
 
+// JobLogFileName names a job's log file, percent-escaping rather than filtering
+// the job name — the same encoding the directory above uses. Mapping every
+// unusual rune onto '_' made `web api` and `web:api` share one file, which
+// merely interleaved their lines until a start began emptying it (LUC-198).
+// Escaping also keeps a readable name: only a rune that cannot sit in a path
+// segment grows a %XX.
 func JobLogFileName(job string) string {
-	safe := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-			return r
-		case r == '.' || r == '-' || r == '_':
-			return r
-		default:
-			return '_'
-		}
-	}, job)
-	return safe + domain.JobLogFileExt
+	escaped := url.PathEscape(job)
+	if escaped == "" {
+		return ""
+	}
+	return escaped + domain.JobLogFileExt
 }
 
 // terminalEscape matches what a PTY-backed job writes to drive the terminal:
@@ -128,6 +129,25 @@ func appendRecord(records []domain.LogRecord, at time.Time, text string) []domai
 
 func FormatLogRecord(record domain.LogRecord) string {
 	return record.At.UTC().Format(domain.JobLogTimestampLayout) + domain.JobLogSeparator + record.Text
+}
+
+type ParseLogLineParams struct {
+	Job  string
+	Line string
+}
+
+// ParseLogLine reads back what FormatLogRecord wrote. A line it cannot date is
+// carried whole as text rather than dropped: a log file predating this format,
+// or a line a sink wrote unstamped, still says something.
+func ParseLogLine(params ParseLogLineParams) domain.JobLogEntry {
+	stamp, text, found := strings.Cut(params.Line, domain.JobLogSeparator)
+	if !found {
+		return domain.JobLogEntry{Job: params.Job, Text: params.Line}
+	}
+	if _, err := time.Parse(domain.JobLogTimestampLayout, stamp); err != nil {
+		return domain.JobLogEntry{Job: params.Job, Text: params.Line}
+	}
+	return domain.JobLogEntry{Job: params.Job, At: stamp, Text: text}
 }
 
 func stripControlRunes(s string) string {

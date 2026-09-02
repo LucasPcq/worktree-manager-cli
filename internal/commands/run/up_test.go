@@ -108,8 +108,8 @@ func TestRunUpJSONCarriesTheFailingJobsOutput(t *testing.T) {
 	fakeTTY(t, false)
 
 	stdout, _, err := runCmd(t, domain.CmdUp, "--output", domain.OutputJSON)
-	if err != nil {
-		t.Fatalf("run up --output json: %v", err)
+	if !errors.Is(err, domain.ErrAborted) {
+		t.Fatalf("err = %v, want ErrAborted", err)
 	}
 
 	var results []domain.JobActionResult
@@ -139,14 +139,24 @@ func TestRunUpJSONCarriesTheFailingJobsOutput(t *testing.T) {
 	}
 }
 
-// The JSON document stays parseable and the command exits zero: the failure is
-// an entry in the array, not a half-written document plus an exit code.
-func TestRunUpJSONExitsZeroOnAnAbort(t *testing.T) {
+// An aborted run exits non-zero like every other run command, and still writes
+// its whole document: the two were never in tension — an exit code has never
+// made a document unreadable (LUC-198).
+func TestRunUpJSONExitsNonZeroOnAnAbortWithACompleteDocument(t *testing.T) {
 	setupUpProject(t, failingMigration())
 	fakeTTY(t, false)
 
-	if _, _, err := runCmd(t, domain.CmdUp, "--output", domain.OutputJSON); err != nil {
-		t.Fatalf("run up --output json aborted with %v, want a parseable document", err)
+	stdout, _, err := runCmd(t, domain.CmdUp, "--output", domain.OutputJSON)
+	if !errors.Is(err, domain.ErrAborted) {
+		t.Fatalf("err = %v, want ErrAborted", err)
+	}
+
+	var results []domain.JobActionResult
+	if err := json.Unmarshal([]byte(stdout), &results); err != nil {
+		t.Fatalf("parse JSON: %v\noutput: %s", err, stdout)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want the whole run:\n%s", len(results), stdout)
 	}
 }
 

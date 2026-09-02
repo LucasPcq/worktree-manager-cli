@@ -19,8 +19,15 @@ type JobLogPathParams struct {
 	Job    string
 }
 
+// JobLogPath is empty for a job that cannot be given a file of its own, which
+// every reader and writer below treats as "this job persists nothing" rather
+// than falling back on a path shared with another job.
 func JobLogPath(params JobLogPathParams) string {
-	return filepath.Join(params.LogDir, rules.JobLogFileName(params.Job))
+	name := rules.JobLogFileName(params.Job)
+	if params.LogDir == "" || name == "" {
+		return ""
+	}
+	return filepath.Join(params.LogDir, name)
 }
 
 type LogSinkParams struct {
@@ -44,8 +51,11 @@ type LogSink struct {
 	pending string
 }
 
-// OpenLogSink creates the log directory if needed and opens the job's log file
-// in append mode, so a restarted job extends its history instead of erasing it.
+// OpenLogSink creates the log directory if needed and opens the job's log on an
+// empty file, its backups dropped: one file is one run. The boundary is
+// structural rather than a rule the reader has to know, which is what stops a
+// tail from crossing back into a run that ended days ago (LUC-198). Only this
+// job's files go — a directory holds every job of the worktree.
 func OpenLogSink(params LogSinkParams) (*LogSink, error) {
 	if params.LogDir == "" {
 		return nil, fmt.Errorf("log dir is required")
@@ -55,17 +65,16 @@ func OpenLogSink(params LogSinkParams) (*LogSink, error) {
 	}
 
 	path := JobLogPath(JobLogPathParams{LogDir: params.LogDir, Job: params.Job})
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if path == "" {
+		return nil, fmt.Errorf("job %q cannot be named as a log file", params.Job)
+	}
+	removeBackups(path)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("open job log: %w", err)
 	}
-	info, err := file.Stat()
-	if err != nil {
-		file.Close()
-		return nil, fmt.Errorf("stat job log: %w", err)
-	}
 
-	return &LogSink{path: path, maxBytes: resolveMaxBytes(params.MaxBytes), file: file, size: info.Size()}, nil
+	return &LogSink{path: path, maxBytes: resolveMaxBytes(params.MaxBytes), file: file}, nil
 }
 
 func resolveMaxBytes(configured int64) int64 {
@@ -180,6 +189,12 @@ func (s *LogSink) disable() {
 	}
 }
 
+func removeBackups(path string) {
+	for rank := 1; rank < domain.JobLogMaxFiles; rank++ {
+		os.Remove(backupPath(path, rank))
+	}
+}
+
 func backupPath(path string, rank int) string {
 	return path + "." + strconv.Itoa(rank)
 }
@@ -199,6 +214,9 @@ func TailJobLog(params TailParams) ([]string, error) {
 	}
 
 	path := JobLogPath(JobLogPathParams{LogDir: params.LogDir, Job: params.Job})
+	if path == "" {
+		return nil, nil
+	}
 	var lines []string
 	for rank := 0; rank < domain.JobLogMaxFiles && len(lines) < params.Lines; rank++ {
 		file := path

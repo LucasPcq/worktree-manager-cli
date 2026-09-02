@@ -8,6 +8,7 @@ Open the run view on [worktree]'s jobs — the current worktree when omitted, pi
 --job focuses one of them; without it, every job is shown.
 Leaving the view detaches; the jobs keep running.
 Without a terminal, every job's output is written as prefixed lines instead.
+--output json replays each job's last 1000 lines as [{job, at, text}], grouped by job, and never attaches.
 
 ```
 wtm run logs [worktree] [flags]
@@ -16,8 +17,9 @@ wtm run logs [worktree] [flags]
 ### Options
 
 ```
-  -h, --help         help for logs
-      --job string   Focus a single job instead of showing them all
+  -h, --help            help for logs
+      --job string      Focus a single job instead of showing them all
+      --output string   Output format: text or json (default "text")
 ```
 
 ### SEE ALSO

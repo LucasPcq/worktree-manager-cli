@@ -2,7 +2,10 @@ package run
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -11,6 +14,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/infra"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/testutil/runlogstest"
 )
 
@@ -203,5 +207,161 @@ func TestRunLogsWithoutATerminalWritesPrefixedLines(t *testing.T) {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout is missing %q\n--- stdout ---\n%s", want, stdout)
 		}
+	}
+}
+
+func TestWriteJobLogsJSONReplaysEveryJobsHistory(t *testing.T) {
+	session := runlogstest.NewSession(runlogstest.SessionParams{
+		Views: []runlogs.JobView{
+			{Name: "api", Kind: domain.JobKindService, Status: domain.JobStatusRunning, Attachable: true},
+			{Name: "migrate", Kind: domain.JobKindTask, Status: domain.JobStatusStopped},
+		},
+		Lines: map[string][]string{
+			"api":     {"2026-09-02T10:04:11Z  listening on 3000"},
+			"migrate": {"2026-09-02T10:03:58Z  applying 001"},
+		},
+	})
+
+	cmd, out, _ := linesCmd()
+	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Session: session}); err != nil {
+		t.Fatalf("writeJobLogsJSON: %v", err)
+	}
+
+	var entries []domain.JobLogEntry
+	if err := json.Unmarshal(out.Bytes(), &entries); err != nil {
+		t.Fatalf("parse JSON: %v\noutput: %s", err, out.String())
+	}
+	want := []domain.JobLogEntry{
+		{Job: "api", At: "2026-09-02T10:04:11Z", Text: "listening on 3000"},
+		{Job: "migrate", At: "2026-09-02T10:03:58Z", Text: "applying 001"},
+	}
+	if !reflect.DeepEqual(entries, want) {
+		t.Errorf("entries = %+v, want %+v", entries, want)
+	}
+}
+
+func TestWriteJobLogsJSONNeverAttaches(t *testing.T) {
+	service := &runlogstest.Service{
+		Infos: []domain.JobInfo{{Name: "api", Status: domain.JobStatusRunning}},
+		Lines: map[string][]string{"api": {"2026-09-02T10:04:11Z  listening on 3000"}},
+	}
+	session := runlogs.NewSession(runlogs.SessionParams{
+		Service: service,
+		Jobs:    []domain.JobConfig{{Name: "api", Kind: domain.JobKindService}},
+		WorkDir: "/wt",
+		LogDir:  "/state/logs/wt",
+	})
+
+	cmd, out, _ := linesCmd()
+	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Session: session}); err != nil {
+		t.Fatalf("writeJobLogsJSON: %v", err)
+	}
+
+	if len(service.Attached) != 0 {
+		t.Errorf("the JSON surface attached to %+v", service.Attached)
+	}
+	if !strings.Contains(out.String(), "listening on 3000") {
+		t.Errorf("the running job was not replayed:\n%s", out.String())
+	}
+}
+
+// What makes this a list is the stream, not the arity of the target.
+func TestWriteJobLogsJSONStaysAnArrayForOneJob(t *testing.T) {
+	session := runlogstest.NewSession(runlogstest.SessionParams{
+		Views: []runlogs.JobView{
+			{Name: "api", Status: domain.JobStatusRunning, Attachable: true},
+			{Name: "web", Status: domain.JobStatusRunning, Attachable: true},
+		},
+		Lines: map[string][]string{
+			"api": {"2026-09-02T10:04:11Z  listening on 3000"},
+			"web": {"2026-09-02T10:04:12Z  ready in 412ms"},
+		},
+	})
+
+	cmd, out, _ := linesCmd()
+	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Session: session, Job: "api"}); err != nil {
+		t.Fatalf("writeJobLogsJSON: %v", err)
+	}
+
+	var entries []domain.JobLogEntry
+	if err := json.Unmarshal(out.Bytes(), &entries); err != nil {
+		t.Fatalf("parse JSON: %v\noutput: %s", err, out.String())
+	}
+	if len(entries) != 1 || entries[0].Job != "api" {
+		t.Errorf("entries = %+v, want api's single line", entries)
+	}
+}
+
+func TestWriteJobLogsJSONOnAWorktreeWithNothingRecordedIsAnEmptyArray(t *testing.T) {
+	session := runlogstest.NewSession(runlogstest.SessionParams{
+		Views: []runlogs.JobView{{Name: "api", Status: domain.JobStatusStopped}},
+	})
+
+	cmd, out, _ := linesCmd()
+	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Session: session}); err != nil {
+		t.Fatalf("writeJobLogsJSON: %v", err)
+	}
+
+	if got := strings.TrimSpace(out.String()); got != "[]" {
+		t.Errorf("stdout = %q, want an empty array", got)
+	}
+}
+
+func TestRunLogsJSONNeverOpensTheView(t *testing.T) {
+	stateDir := setupTestProject(t)
+	// The command resolves its worktree from the working directory, and this one
+	// needs a branch to name a log directory with. Standing in the repo the setup
+	// just built keeps that off the ambient checkout, which on CI is a detached
+	// HEAD with no branch to read.
+	t.Chdir(filepath.Dir(filepath.Dir(stateDir)))
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	root, err := infra.Toplevel(cwd)
+	if err != nil {
+		t.Fatalf("toplevel: %v", err)
+	}
+
+	writeRunTOML(t, stateDir, domain.RunConfig{Jobs: []domain.JobConfig{apiJob}})
+	startFakeDaemon(t, &fakeDaemon{
+		Jobs: []domain.JobInfo{
+			{Name: "api", Kind: domain.JobKindService, Status: domain.JobStatusRunning, WorkDir: root},
+		},
+	})
+
+	// Tail reads the file itself rather than asking the daemon, so the history
+	// this replays has to be on disk where the command will look for it.
+	logDir := jobLogDir(jobLogDirParams{StateDir: stateDir, Dir: root})
+	if logDir == "" {
+		t.Fatal("the test worktree resolved to no log dir")
+	}
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		t.Fatalf("create log dir: %v", err)
+	}
+	logPath := filepath.Join(logDir, rules.JobLogFileName("api"))
+	if err := os.WriteFile(logPath, []byte("2026-09-02T10:04:11Z  listening on 3000\n"), 0o644); err != nil {
+		t.Fatalf("write job log: %v", err)
+	}
+
+	view := captureRunView(t)
+	fakeTTY(t, true)
+
+	stdout, _, err := runCmd(t, domain.CmdLogs, "--output", domain.OutputJSON)
+	if err != nil {
+		t.Fatalf("run logs --output json: %v", err)
+	}
+
+	if len(view.calls) != 0 {
+		t.Fatalf("--output json opened the view: %+v", view.calls)
+	}
+	var entries []domain.JobLogEntry
+	if err := json.Unmarshal([]byte(stdout), &entries); err != nil {
+		t.Fatalf("parse JSON: %v\noutput: %s", err, stdout)
+	}
+	want := []domain.JobLogEntry{{Job: "api", At: "2026-09-02T10:04:11Z", Text: "listening on 3000"}}
+	if !reflect.DeepEqual(entries, want) {
+		t.Errorf("entries = %+v, want %+v", entries, want)
 	}
 }

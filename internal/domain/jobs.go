@@ -195,6 +195,15 @@ type LogRecord struct {
 	Text string
 }
 
+// JobLogEntry is one persisted line as `run logs --output json` reports it. At
+// is absent on a line written before this format, or by a sink that could not
+// stamp it: the text is still worth handing over.
+type JobLogEntry struct {
+	Job  string `json:"job"`
+	At   string `json:"at,omitempty"`
+	Text string `json:"text"`
+}
+
 // RunSurface names who shows a run's jobs: the full-screen view, a stream of
 // lines on the terminal the command was launched from, or a machine-readable
 // document.

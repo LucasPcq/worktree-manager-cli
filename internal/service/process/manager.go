@@ -249,18 +249,18 @@ func (m *Manager) Start(params StartParams) error {
 		return fmt.Errorf("job %s has empty cmd", job.Name)
 	}
 
-	// Opened before the lock: creating the directory and the file is disk I/O,
-	// and a slow state dir (NFS, a saturated disk) would otherwise hold every
-	// List, Attach and Stop the daemon serves behind it.
-	logs := openJobLog(params)
 	hub := newJobHub(job)
 
 	m.mu.Lock()
 	if existing, ok := m.jobs[key]; ok && existing.Status == domain.JobStatusRunning {
 		m.mu.Unlock()
-		closeSink(logs)
 		return fmt.Errorf("job %s %s", job.Name, domain.JobAlreadyRunningSuffix)
 	}
+
+	// Opened only past the refusal, and under the lock that decides it: opening
+	// a log empties it, so doing it any earlier would let a start the manager is
+	// about to refuse wipe the log of the job already running under that name.
+	logs := openJobLog(params)
 
 	spec := rules.ShellCommand(job.Cmd)
 	cmd := exec.Command(spec.Name, spec.Args...)
