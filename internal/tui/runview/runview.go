@@ -3,6 +3,7 @@ package runview
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,6 +27,12 @@ type Params struct {
 	// Open hands a job's URL to the desktop. Nil leaves the open key without an
 	// object, which is what a surface that cannot open a browser installs.
 	Open OpenFunc
+	// In and Out are the terminal the view takes over. Nil means os.Stdin and
+	// os.Stdout, which is every case but one: a dashboard handing the terminal
+	// over is given the streams by bubbletea and has to pass them on, or the two
+	// programs read the same keyboard at once.
+	In  io.Reader
+	Out io.Writer
 }
 
 // OpenFunc opens a URL outside the terminal. The view never dials anything
@@ -112,7 +119,14 @@ func New(params Params) Model {
 // start sequence it was reporting on carries on without a reader.
 func Run(params Params) (Result, error) {
 	model := New(params)
-	final, err := tea.NewProgram(model, tea.WithAltScreen()).Run()
+	options := []tea.ProgramOption{tea.WithAltScreen()}
+	if params.In != nil {
+		options = append(options, tea.WithInput(params.In))
+	}
+	if params.Out != nil {
+		options = append(options, tea.WithOutput(params.Out))
+	}
+	final, err := tea.NewProgram(model, options...).Run()
 	if err != nil {
 		model.cancel()
 		model.panes.closeAll()

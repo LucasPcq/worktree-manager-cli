@@ -343,15 +343,16 @@ func lineIndex(lines []string, needle string) int {
 	return -1
 }
 
-// The base has no parent to be moved to and cannot be deleted, so the only thing
-// its row offers is catching up with its own remote.
+// The base has no parent to be moved to and cannot be deleted, so the only graph
+// action its row offers is catching up with its own remote — the run entries
+// apply to it like to any other worktree.
 func TestTheParentWorktreeIsOfferedOnlyItsOwnRefresh(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "main", "feature/x")
 	model.statuses[0] = domain.WorktreeStatus{Branch: "main", Path: "/tmp/main", IsParent: true}
 
 	items := model.menuItems()
-	if len(items) != 1 || items[0].action != menuRefreshBase {
-		t.Fatalf("items = %+v, want the base refresh alone: nothing else could ever apply", items)
+	if items[0].action != menuRefreshBase {
+		t.Fatalf("items = %+v, want the base refresh first: no other graph action could apply", items)
 	}
 
 	model = update(model, key(domain.KeyMenu))

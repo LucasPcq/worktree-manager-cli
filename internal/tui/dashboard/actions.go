@@ -366,6 +366,8 @@ func (m Model) applyFlow(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case promptMsg:
 		return m.openModal(msg)
+	case handoffMsg:
+		return m, handoffCmd(msg)
 	case OutputLineMsg:
 		return m.appendOutput(msg), nil
 	case opTargetMsg:

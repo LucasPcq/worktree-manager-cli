@@ -22,6 +22,9 @@ const (
 	menuSync
 	menuSyncAll
 	menuRefreshBase
+	menuRunUp
+	menuRunDown
+	menuRunLogs
 )
 
 // menuKind is which menu is open: the one hanging off a worktree row, or the
@@ -76,12 +79,22 @@ func (m Model) worktreeMenuItems() []menuItem {
 // catch up with its own remote.
 func worktreeActions(selected domain.WorktreeStatus) []menuItem {
 	if selected.IsParent {
-		return []menuItem{{label: domain.DashboardMenuRefreshBase, action: menuRefreshBase}}
+		return append([]menuItem{{label: domain.DashboardMenuRefreshBase, action: menuRefreshBase}}, runActions()...)
 	}
-	return []menuItem{
+	return append([]menuItem{
 		{label: domain.DashboardMenuSync, action: menuSync},
 		{label: domain.DashboardMenuReparent, action: menuReparent},
 		{label: domain.DashboardMenuDelete, action: menuDelete, danger: true},
+	}, runActions()...)
+}
+
+// runActions are the run module's, offered on every row including the base one:
+// the main checkout runs jobs like any other worktree.
+func runActions() []menuItem {
+	return []menuItem{
+		{label: domain.DashboardMenuRunUp, action: menuRunUp},
+		{label: domain.DashboardMenuRunDown, action: menuRunDown},
+		{label: domain.DashboardMenuRunLogs, action: menuRunLogs},
 	}
 }
 
@@ -213,6 +226,12 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 		return m.startSync(selected.Branch)
 	case menuRefreshBase:
 		return m.startRefreshBase(selected.Branch)
+	case menuRunUp:
+		return m.startRunUp(selected)
+	case menuRunDown:
+		return m.startRunDown(selected)
+	case menuRunLogs:
+		return m.startRunLogs(selected)
 	}
 	return m, nil
 }

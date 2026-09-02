@@ -11,6 +11,9 @@ import (
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
 	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
+	downflow "github.com/LucasPcq/wtm/internal/flow/run/down"
+	logsflow "github.com/LucasPcq/wtm/internal/flow/run/logs"
+	"github.com/LucasPcq/wtm/internal/flow/run/seam"
 	syncflow "github.com/LucasPcq/wtm/internal/flow/sync"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
@@ -169,4 +172,43 @@ func (p syncPresenter) Synced(outcome syncflow.Outcome) error {
 	}
 	p.send(syncedMsg{})
 	return nil
+}
+
+// runPresenter reports a `run up` the dashboard started: the phases in the
+// output panel like any flow, and the start sequence through the run view,
+// which takes the terminal while it is open.
+type runPresenter struct {
+	presenter
+	watcher
+}
+
+// downPresenter reports a stop. It has no view to open — nothing is attached to
+// — so the jobs it stopped are named in the output panel.
+type downPresenter struct{ presenter }
+
+func (p downPresenter) Downed(outcome downflow.Outcome) error {
+	if outcome.NoDaemon || len(outcome.Results) == 0 {
+		p.line(domain.RunNoJobsHere)
+		return nil
+	}
+	for _, result := range outcome.Results {
+		if result.Status == domain.JobActionError {
+			p.line(fmt.Sprintf("%s: %s", result.Name, result.Message))
+			continue
+		}
+		p.line(fmt.Sprintf(domain.RunStoppedFmt, result.Name))
+	}
+	return nil
+}
+
+// logsPresenter opens the run view on what a worktree already has, starting
+// nothing: the same hand-over as a run up, with no start sequence to drive.
+type logsPresenter struct {
+	presenter
+	watcher
+}
+
+func (p logsPresenter) Show(show logsflow.ShowParams) error {
+	_, err := p.Sequence(seam.SequenceParams{Board: show.Board, Job: show.Job})
+	return err
 }

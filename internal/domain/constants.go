@@ -2083,6 +2083,7 @@ const (
 	OpKindPrune    = "prune"
 	OpKindSync     = "sync"
 	OpKindRunUp    = "run-up"
+	OpKindRunLogs  = "run-logs"
 	OpKindRunDown  = "run-down"
 	OpKindRunStart = "run-start"
 	OpKindRunStop  = "run-stop"
@@ -2300,6 +2301,16 @@ const (
 	// a cascade would skip left unchecked — they stay listed, with the tag saying
 	// why.
 	DashboardMenuSyncAll = "Sync worktrees"
+	// DashboardMenuRun* drive the run module from a row. They are offered on the
+	// base row too: the main checkout runs jobs like any other worktree. Starting
+	// jobs and reading them both hand the terminal to the run view, which is the
+	// same view `wtm run up` and `wtm run logs` open.
+	DashboardMenuRunUp   = "Start jobs"
+	DashboardMenuRunDown = "Stop jobs"
+	DashboardMenuRunLogs = "View job logs"
+	// DashboardRunNotConfigured is what a row offers when the project has no run
+	// module: the answer is `wtm run init`, not a picker with nothing in it.
+	DashboardRunNotConfigured = "No run jobs are configured for this project"
 	// DashboardMenuEmpty stands in for the actions of a worktree that has none.
 	DashboardMenuEmpty = "No actions available"
 	// DashboardMenuChrome is what the menu box spends on its borders and padding.

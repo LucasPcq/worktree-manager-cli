@@ -1,6 +1,8 @@
 package dashboard
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -402,11 +404,17 @@ func TestTheBaseRowOffersTheBaseRefreshAlone(t *testing.T) {
 
 	items := model.worktreeMenuItems()
 
-	if len(items) != 1 || items[0].action != menuRefreshBase {
-		t.Fatalf("items = %+v, want exactly the base refresh", items)
+	// The base has no parent to move to and cannot be deleted, so the only graph
+	// action it offers is catching up with its own remote. The run module does
+	// apply to it: the main checkout runs jobs like any other worktree.
+	if items[0].action != menuRefreshBase {
+		t.Fatalf("items = %+v, want the base refresh first", items)
 	}
 	if items[0].label != domain.DashboardMenuRefreshBase {
 		t.Errorf("label = %q, want the refresh named", items[0].label)
+	}
+	if got := actionsOf(items); got != "6,7,8,9" {
+		t.Errorf("actions = %s, want the refresh followed by the run entries", got)
 	}
 }
 
@@ -468,4 +476,12 @@ func TestTheBaseRowStartsTheBaseRefresh(t *testing.T) {
 	if len(started.ops.running) != 1 || started.ops.running[0].kind != domain.OpKindSync {
 		t.Fatalf("running = %+v, want the sync run recorded", started.ops.running)
 	}
+}
+
+func actionsOf(items []menuItem) string {
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		parts = append(parts, strconv.Itoa(int(item.action)))
+	}
+	return strings.Join(parts, ",")
 }

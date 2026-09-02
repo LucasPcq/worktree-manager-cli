@@ -369,6 +369,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model, cmd := m.applyFlow(msg.inner)
 		return model, tea.Batch(cmd, listenCmd(m.msgs))
 
+	case handoffDoneMsg:
+		return m.finishHandoff(msg)
+
 	case opDoneMsg:
 		return m.finishOp(msg)
 
