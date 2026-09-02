@@ -1,6 +1,6 @@
 ---
 name: using-wtm
-description: Use this skill whenever the user wants to create, list, switch, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or check out a GitHub pull request into a worktree — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker, and never launch the `wtm ui` dashboard.
+description: Use this skill whenever the user wants to create, list, or clean git worktrees; extract/move uncommitted changes from one worktree to another (e.g. to split an oversized PR); start, stop, or inspect per-worktree dev jobs (services + tasks); or check out a GitHub pull request into a worktree — even when they don't explicitly say "wtm". Always pass --output json on wtm data commands so you can parse results; never invoke wtm through an interactive picker, and never launch the `wtm ui` dashboard.
 ---
 
 # Using wtm
@@ -25,7 +25,7 @@ self-documenting:
    you can't navigate. Get the branch / PR number / profile / job name from a prior
    discovery call (below) first.
 2. **Never launch a full-screen surface.** Two exist: `wtm ui` (the worktree dashboard) and
-   the **run view** that `wtm run up`, `wtm run start <service>` and `wtm run logs` open on a
+   the **run view** that `wtm run up`, `wtm run start --job <service>` and `wtm run logs` open on a
    terminal. Both take the terminal over until someone presses `q`, and there is no way for
    you to read one or get out of it. Treat them exactly like an interactive picker — do not
    run `wtm ui` to "look at" the worktrees; run `wtm list --output json` (or `wtm tree`)
@@ -86,7 +86,7 @@ self-documenting:
 | Open PRs | `gh pr list --json number,title,headRefName,state,isDraft,url` |
 | Declared jobs + profiles | `wtm run list --output json` |
 | Jobs running right now (+ `started_at`, `exit_code`, `url`) | `wtm run ps --output json` |
-| Where a job answers in this worktree | `wtm run url --output json` |
+| Where a job answers in a worktree | `wtm run url [worktree] --output json` |
 | What serves the named URLs (bind port, public port, redirection) | `wtm run proxy status --output json` |
 | What a `run up` started, with each job's `url` | `wtm run up -d --output json` |
 | What a job printed | `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (read it as a file) |
@@ -223,8 +223,9 @@ flagged; everything else is what the name implies.
   JSON: `{"reparented":[{branch,old_parent,new_parent},…]}`.
 
 **Navigate**
-- `wtm go` / `wtm switch` need the user's **shell integration** to `cd`, so you can't drive
-  them. To get a path yourself, use `wtm resolve <branch> --output json` → `{path, branch}`.
+- `wtm go` needs the user's **shell integration** to `cd`, so you can't drive it. To get a
+  path yourself, use `wtm resolve <branch> --output json` → `{path, branch}`. You rarely
+  need to move at all: every `run` command takes the worktree as its first argument.
 
 **Dev jobs (`wtm run`)** — jobs live in a per-clone `run.toml` (wtm-managed; never edit it
 directly). Each is a `service` (long-running) or `task` (one-shot, blocks the profile,
@@ -307,25 +308,34 @@ and **experimental**: the global `wtm init` does not configure it.
   outranks a detected one. So a "Ports withdrawn" or "Ports left alone" section in the
   output is expected behavior, not a failure: read the fix it prints (a compose line, then
   a `run job edit --port` command).
-- `run up [profile]` / `run down` — start / stop a profile. `run start <job>` / `run stop
-  <job>` — one job. A failing job aborts the rest and exits non-zero, leaving started
+- **Every `run` command takes the worktree as its first argument**, like the rest of the
+  CLI: `run up [worktree]`, `run logs [worktree]`, `run start [worktree]`. Omit it and the
+  current directory is used — which is what you want when you are working inside one
+  worktree, and it never opens a picker on your paths (no TTY, or `--output json`). Name it
+  to act on another worktree of the same repo without moving. The job or profile is a
+  **flag**: `--job <name>`, `--profile <name>`.
+- `run up [worktree] --profile <name>` / `run down [worktree]` — start / stop a profile.
+  `run start [worktree] --job <name>` / `run stop [worktree] --job <name>` — one job.
+  `--job` is **required** on `start`/`stop` on your paths: without a terminal there is no
+  picker to fall back on, and the command errors naming the flag. A failing job aborts the rest and exits non-zero, leaving started
   services up (fix and re-run). `run up` starts **every job the profile lists**, tasks
   included, in the listed order; with no profile declared at all it starts every declared
   job in declared order. The step counter (`[2/5]`) covers exactly those jobs, so a count
   smaller than the profile means the profile itself is short, never that wtm dropped
   something.
-- `run up` and `run start <service>` **attach by default**: on a terminal they open the
+- `run up` and `run start --job <service>` **attach by default**: on a terminal they open the
   full-screen run view. Always pass **`-d`** (or `--output json`, which never opens it) —
   `-d` starts the jobs and returns immediately, which is the behaviour you want. A `task`
-  runs inline and blocks until it exits whatever you pass, so `run start <task>` needs no
+  runs inline and blocks until it exits whatever you pass, so `run start --job <task>` needs no
   `-d`.
-- `run url [job]` writes a job's URL on stdout and nothing else, so it composes:
-  `curl "$(wtm run url web)/health"`. **A job only has a URL if `run.toml` declares one**
+- `run url [worktree] --job <name>` writes a job's URL on stdout and nothing else, so it
+  composes: `curl "$(wtm run url --job web)/health"`. **A job only has a URL if `run.toml` declares one**
   (`url = { port = "PORT" }` on that job, naming one of its own declared ports) — `wtm run
   init` declares it for the services it detects, and `run job add --url-port` for the rest.
   `--output json` lists every published job as `[{job, url}]` and never picks for you.
-  In text mode, one published job needs no argument; **several and no argument is an
-  error, never a picker** — name the job. `run open [job]` opens the same URL in a
+  In text mode, one published job needs no `--job`; **several and no `--job` is an error,
+  never a picker** — name the job. `run url` never opens a picker on either axis, so it is
+  always safe inside `$(…)`. `run open [worktree] --job <name>` opens the same URL in a
   browser; it may offer a picker, but only in a fully interactive run, so **always name
   the job**.
 - **The URL is a name, not a port.** With the proxy on (the default), a published job
@@ -340,11 +350,11 @@ and **experimental**: the global `wtm init` does not configure it.
   knowing: only HTTP jobs get a name (postgres and redis stay on their ports, by design),
   and outside a browser `*.localhost` is not guaranteed to resolve on Linux — one more
   reason `--raw` is the agent's form.
-- `run logs [job]` opens that same view on a terminal. Without one it writes every running
+- `run logs [worktree] --job <name>` opens that same view on a terminal. Without one it writes every running
   job's output as `[job] line` on stdout and only ends when the jobs do — do not call it
   expecting it to return. Prefer reading the journal instead: every job's output is
   persisted to `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (rotated
-  5 MB x 3), which you can read with your own file tools; `run logs <job>` on a job that
+  5 MB x 3), which you can read with your own file tools; `run logs --job <name>` on a job that
   is **not** running prints that file back and returns.
 - **`status` has four values, and `detached` is not a weaker `running`.** A service with
   a `stop` command (a `docker compose up -d`) is reported `detached` from the moment its
@@ -555,7 +565,7 @@ On non-zero exit, read stderr, then:
 
 ## Escalate to the user when
 
-- A command needs shell integration (`go`/`switch` with no wrapper installed).
+- A command needs shell integration (`go` with no wrapper installed).
 - The user wants to *browse* their worktrees rather than get an answer from you — tell them
   to run `wtm ui` themselves; never run it for them.
 - A destructive action (`clean`/`prune --force`) wasn't explicitly authorized — don't add

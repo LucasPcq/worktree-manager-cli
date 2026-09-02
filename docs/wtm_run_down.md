@@ -1,23 +1,24 @@
 ## wtm run down
 
-Stop jobs running in the current worktree
+Stop a worktree's running jobs
 
 ### Synopsis
 
-Stop jobs running in the current worktree.
-With a profile argument, stops only that profile's jobs.
+Stop the jobs running in [worktree] — the current one when omitted, picked interactively when there is a terminal.
+With --profile, stops only that profile's jobs.
 Jobs running in other worktrees are never touched.
 
 ```
-wtm run down [profile] [flags]
+wtm run down [worktree] [flags]
 ```
 
 ### Options
 
 ```
-      --all             Stop jobs across every worktree (bypasses per-worktree scoping)
-  -h, --help            help for down
-      --output string   Output format: text or json (default "text")
+      --all              Stop jobs across every worktree (bypasses per-worktree scoping)
+  -h, --help             help for down
+      --output string    Output format: text or json (default "text")
+      --profile string   Stop only this profile's jobs
 ```
 
 ### SEE ALSO

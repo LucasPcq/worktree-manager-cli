@@ -32,7 +32,7 @@ func TestRunStartAttachesAServiceByDefault(t *testing.T) {
 	view := captureRunView(t)
 	fakeTTY(t, true)
 
-	if _, _, err := runCmd(t, domain.CmdStart, "api"); err != nil {
+	if _, _, err := runCmd(t, domain.CmdStart, "--"+domain.FlagJob, "api"); err != nil {
 		t.Fatalf("run start api: %v", err)
 	}
 
@@ -53,7 +53,7 @@ func TestRunStartDetachedNeverOpensTheView(t *testing.T) {
 	view := captureRunView(t)
 	fakeTTY(t, true)
 
-	stdout, _, err := runCmd(t, domain.CmdStart, "api", "-d")
+	stdout, _, err := runCmd(t, domain.CmdStart, "--"+domain.FlagJob, "api", "-d")
 	if err != nil {
 		t.Fatalf("run start api -d: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestRunStartTaskStaysInline(t *testing.T) {
 	view := captureRunView(t)
 	fakeTTY(t, true)
 
-	stdout, _, err := runCmd(t, domain.CmdStart, "migrate")
+	stdout, _, err := runCmd(t, domain.CmdStart, "--"+domain.FlagJob, "migrate")
 	if err != nil {
 		t.Fatalf("run start migrate: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestRunStartJSONNeverOpensTheView(t *testing.T) {
 	view := captureRunView(t)
 	fakeTTY(t, true)
 
-	stdout, _, err := runCmd(t, domain.CmdStart, "api", "--output", domain.OutputJSON)
+	stdout, _, err := runCmd(t, domain.CmdStart, "--"+domain.FlagJob, "api", "--output", domain.OutputJSON)
 	if err != nil {
 		t.Fatalf("run start api --output json: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestRunStartWithoutATerminalNeverOpensTheView(t *testing.T) {
 	view := captureRunView(t)
 	fakeTTY(t, false)
 
-	stdout, _, err := runCmd(t, domain.CmdStart, "api")
+	stdout, _, err := runCmd(t, domain.CmdStart, "--"+domain.FlagJob, "api")
 	if err != nil {
 		t.Fatalf("run start api: %v", err)
 	}

@@ -90,7 +90,7 @@ func TestRunUpNamesTheProfileItStarted(t *testing.T) {
 		Profiles: []domain.ProfileConfig{{Name: "backend", Jobs: []string{"migrate", "api"}, Default: true}},
 	})
 
-	out, _, err := runCmd(t, domain.CmdUp, "backend", "-d")
+	out, _, err := runCmd(t, domain.CmdUp, "--"+domain.FlagProfile, "backend", "-d")
 	if err != nil {
 		t.Fatalf("run up: %v", err)
 	}

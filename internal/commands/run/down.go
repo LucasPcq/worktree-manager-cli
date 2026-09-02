@@ -18,12 +18,13 @@ import (
 // newDownCmd creates the wtm run down subcommand.
 func newDownCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdDown + " [profile]",
-		Short: "Stop jobs running in the current worktree",
-		Long:  "Stop jobs running in the current worktree.\nWith a profile argument, stops only that profile's jobs.\nJobs running in other worktrees are never touched.",
+		Use:   domain.CmdDown + " [worktree]",
+		Short: "Stop a worktree's running jobs",
+		Long:  "Stop the jobs running in [worktree] — the current one when omitted, picked interactively when there is a terminal.\nWith --profile, stops only that profile's jobs.\nJobs running in other worktrees are never touched.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  runDown,
 	}
+	shared.AddProfileFlag(cmd, "Stop only this profile's jobs")
 	shared.AddOutputFlag(cmd)
 	cmd.Flags().Bool(domain.FlagAll, false, "Stop jobs across every worktree (bypasses per-worktree scoping)")
 	return cmd
@@ -33,8 +34,10 @@ func runDown(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	all, _ := cmd.Flags().GetBool(domain.FlagAll)
 
-	if all && len(args) > 0 {
-		return fmt.Errorf("--%s cannot be combined with a profile argument", domain.FlagAll)
+	profileName, _ := cmd.Flags().GetString(domain.FlagProfile)
+
+	if all && (len(args) > 0 || profileName != "") {
+		return fmt.Errorf("--%s cannot be combined with a worktree or --%s", domain.FlagAll, domain.FlagProfile)
 	}
 
 	dir, err := os.Getwd()
@@ -45,9 +48,24 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	projectDir, err := shared.ProjectRoot(dir)
+	if err != nil {
+		return err
+	}
+	tgt, err := resolveTarget(targetParams{
+		Args:        args,
+		Cwd:         dir,
+		ProjectDir:  projectDir,
+		Interactive: !all && isTTY() && rules.IsHumanFormat(format),
+		Pick:        true,
+	})
+	if err != nil {
+		return err
+	}
+
 	socketPath := process.SocketPath()
 
-	if err := ensureDaemonForDown(cmd, ensureDownParams{SocketPath: socketPath, Dir: dir, All: all}); err != nil {
+	if err := ensureDaemonForDown(cmd, ensureDownParams{SocketPath: socketPath, Dir: tgt.Dir, All: all}); err != nil {
 		return err
 	}
 	if !process.IsDaemonRunning(socketPath) {
@@ -62,7 +80,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	client := process.NewClient(socketPath)
 
-	if len(args) > 0 {
+	if profileName != "" {
 		stateDir, err := shared.StateDir(dir)
 		if err != nil {
 			return err
@@ -73,9 +91,9 @@ func runDown(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("load run config: %w", err)
 		}
 
-		profile, ok := rules.FindProfile(runCfg, args[0])
+		profile, ok := rules.FindProfile(runCfg, profileName)
 		if !ok {
-			return fmt.Errorf("profile %q not found in config", args[0])
+			return fmt.Errorf("profile %q not found in config", profileName)
 		}
 
 		jobs := rules.ProfileJobs(runCfg, profile)
@@ -93,7 +111,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 					resp, e = client.Send(process.Request{
 						Action:  process.ActionStop,
 						Name:    job.Name,
-						WorkDir: dir,
+						WorkDir: tgt.Dir,
 					})
 					return e
 				},
@@ -126,7 +144,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	req := process.Request{Action: process.ActionStopAll}
 	if !all {
-		req.WorkDir = dir
+		req.WorkDir = tgt.Dir
 	}
 
 	var resp process.Response

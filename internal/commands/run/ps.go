@@ -93,23 +93,37 @@ func execPsAction(cmd *cobra.Command, pick runpicker.PsPickerResult) error {
 		return err
 	}
 
-	var args []string
-	switch pick.Action {
-	case runpicker.ActionPsStop:
-		args = []string{domain.CmdRun, domain.CmdStop, pick.Name}
-	case runpicker.ActionPsLogs:
-		args = []string{domain.CmdRun, domain.CmdLogs, pick.Name}
-	case runpicker.ActionPsRestart:
-		args = []string{domain.CmdRun, domain.CmdStart, pick.Name}
-	case runpicker.ActionPsStopAll:
-		args = []string{domain.CmdRun, domain.CmdDown, "--all"}
-	default:
+	args, dir, ok := psInvocation(pick)
+	if !ok {
 		return nil
 	}
 
 	c := exec.Command(bin, args...)
+	// The job's own directory, not this one: ps lists every repository the daemon
+	// knows, and a worktree argument only ever resolves inside the current one.
+	c.Dir = dir
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
 	return c.Run()
+}
+
+// psInvocation is the picked action as a command line: which subcommand to
+// re-enter, and where to run it.
+func psInvocation(pick runpicker.PsPickerResult) (args []string, dir string, ok bool) {
+	jobFlag := "--" + domain.FlagJob
+
+	switch pick.Action {
+	case runpicker.ActionPsStop:
+		args = []string{domain.CmdRun, domain.CmdStop, jobFlag, pick.Name}
+	case runpicker.ActionPsLogs:
+		args = []string{domain.CmdRun, domain.CmdLogs, jobFlag, pick.Name}
+	case runpicker.ActionPsRestart:
+		args = []string{domain.CmdRun, domain.CmdStart, jobFlag, pick.Name}
+	case runpicker.ActionPsStopAll:
+		args = []string{domain.CmdRun, domain.CmdDown, "--" + domain.FlagAll}
+	default:
+		return nil, "", false
+	}
+	return args, pick.WorkDir, true
 }

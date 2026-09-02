@@ -44,7 +44,7 @@ go install github.com/LucasPcq/wtm@latest
 ## Quick Start
 
 ```bash
-# 1. Shell integration — required so `go`/`switch` can cd for you
+# 1. Shell integration — required so `go` can cd for you
 echo 'eval "$(wtm shell-init)"' >> ~/.zshrc && source ~/.zshrc
 
 # 2. Initialize wtm in your repo
@@ -119,7 +119,6 @@ Full flags live in `wtm <command> --help` and [`docs/`](docs/wtm.md). Overview:
 | Command | Purpose |
 |---|---|
 | [`go`](docs/wtm_go.md) | cd into a worktree |
-| [`switch`](docs/wtm_switch.md) | cd into a worktree and start its dev services *(experimental)* |
 | [`resolve`](docs/wtm_resolve.md) | Print a branch's worktree path (for scripts / agents) |
 
 ### Stacked branches

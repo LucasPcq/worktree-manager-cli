@@ -9,21 +9,6 @@ const bashZshTemplate = `wtm() {
     if [ -n "$dir" ]; then
       cd "$dir" || return 1
     fi
-  elif [ "$1" = "switch" ]; then
-    local dir flags=() branch_args=()
-    shift 1
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        --exclusive|--parallel|--profile|--profile=*) flags+=("$1"); [ "$1" = "--profile" ] && { shift; flags+=("$1"); } ;;
-        *) branch_args+=("$1") ;;
-      esac
-      shift
-    done
-    dir="$(command wtm resolve "${branch_args[@]}")"
-    if [ -n "$dir" ]; then
-      cd "$dir" || return 1
-      command wtm run up "${flags[@]}"
-    fi
   elif [ $# -eq 0 ]; then
     local tmpfile
     tmpfile="$(mktemp /tmp/wtm-go.XXXXXX)"
@@ -57,22 +42,6 @@ const fishTemplate = `function wtm
     set dir (command wtm resolve $argv[2..])
     if test -n "$dir"
       cd "$dir"
-    end
-  else if test "$argv[1]" = "switch"
-    set -l branch_args
-    set -l flags
-    for arg in $argv[2..]
-      switch $arg
-        case '--exclusive' '--parallel' '--profile' '--profile=*'
-          set flags $flags $arg
-        case '*'
-          set branch_args $branch_args $arg
-      end
-    end
-    set dir (command wtm resolve $branch_args)
-    if test -n "$dir"
-      cd "$dir"
-      command wtm run up $flags
     end
   else if test (count $argv) -eq 0
     set tmpfile (mktemp /tmp/wtm-go.XXXXXX)

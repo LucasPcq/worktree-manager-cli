@@ -129,7 +129,7 @@ func TestRunStartInjectsWorktreeEnv(t *testing.T) {
 	fakeTTY(t, false)
 	enterWorktree(t, addWorktree(t, os.Getenv("WTM_PROJECT_DIR"), "feat/y"))
 
-	if _, _, err := runCmd(t, domain.CmdStart, "api", "--"+domain.FlagDetach); err != nil {
+	if _, _, err := runCmd(t, domain.CmdStart, "--"+domain.FlagJob, "api", "--"+domain.FlagDetach); err != nil {
 		t.Fatalf("run start: %v", err)
 	}
 

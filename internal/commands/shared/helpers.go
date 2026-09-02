@@ -69,6 +69,17 @@ func AddOutputFlag(cmd *cobra.Command) {
 	cmd.Flags().String(domain.FlagOutput, domain.OutputText, "Output format: text or json")
 }
 
+// AddJobFlag and AddProfileFlag register the run module's second axis. The
+// worktree is the positional subject there, as everywhere else in the CLI, so
+// the job or profile is named by a flag the way --to and --from are.
+func AddJobFlag(cmd *cobra.Command, usage string) {
+	cmd.Flags().String(domain.FlagJob, "", usage)
+}
+
+func AddProfileFlag(cmd *cobra.Command, usage string) {
+	cmd.Flags().String(domain.FlagProfile, "", usage)
+}
+
 // RequireRunInitialized enforces the run-module opt-in guard: the module counts
 // as initialized once run.toml declares at least one job or profile. Blocked run
 // commands call this after loading run.toml; the creation paths (run init,

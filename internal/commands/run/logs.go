@@ -22,15 +22,18 @@ import (
 
 // newLogsCmd creates the wtm run logs subcommand.
 func newLogsCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   domain.CmdLogs + " [job]",
+	cmd := &cobra.Command{
+		Use:   domain.CmdLogs + " [worktree]",
 		Short: "Attach to a job's output",
-		Long: "Open the run view on this worktree's jobs, focused on [job] when one is named.\n" +
+		Long: "Open the run view on [worktree]'s jobs — the current worktree when omitted, picked interactively when there is a terminal.\n" +
+			"--job focuses one of them; without it, every job is shown.\n" +
 			"Leaving the view detaches; the jobs keep running.\n" +
 			"Without a terminal, every job's output is written as prefixed lines instead.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: runLogs,
 	}
+	shared.AddJobFlag(cmd, "Focus a single job instead of showing them all")
+	return cmd
 }
 
 func runLogs(cmd *cobra.Command, args []string) error {
@@ -53,6 +56,17 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	tgt, err := resolveTarget(targetParams{
+		Args:        args,
+		Cwd:         dir,
+		ProjectDir:  result.ProjectDir,
+		Interactive: isTTY(),
+		Pick:        true,
+	})
+	if err != nil {
+		return err
+	}
+
 	socketPath := process.SocketPath()
 	if err := components.RunLoading(components.LoadingParams{
 		Message: domain.RunDaemonConnecting,
@@ -64,12 +78,9 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
 
-	job := ""
-	if len(args) > 0 {
-		job = args[0]
-	}
+	job, _ := cmd.Flags().GetString(domain.FlagJob)
 
-	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
+	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: tgt.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
 	surface := rules.DecideRunSurface(rules.RunSurfaceParams{TTY: isTTY(), Format: domain.OutputText})
 	if surface == domain.RunSurfaceView {
 		return showRunView(viewParams{Cmd: cmd, Session: seam.session, Job: job})

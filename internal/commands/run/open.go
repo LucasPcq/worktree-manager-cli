@@ -16,28 +16,31 @@ var openInBrowser = integration.OpenURL
 
 func newOpenCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdOpen + " [job]",
+		Use:   domain.CmdOpen + " [worktree]",
 		Short: "Open a job's URL in the browser",
-		Long:  "Hand a job's URL to the desktop's own opener. Naming the job is required outside a fully interactive run — a picker never runs under a pipe or --output json.",
+		Long:  "Hand a job's URL to the desktop's own opener. [worktree] defaults to the current one, and is picked interactively when there is a terminal. Naming the job with --job is required outside a fully interactive run — a picker never runs under a pipe or --output json.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE:  runOpen,
 	}
+	shared.AddJobFlag(cmd, "Job whose URL to open (required outside a fully interactive run)")
 	cmd.Flags().Bool(domain.FlagRaw, false, "Open the direct http://localhost:<port> address")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
 
 func runOpen(cmd *cobra.Command, args []string) error {
-	entries, err := publishedJobs(cmd)
+	entries, err := publishedJobs(cmd, args, true)
 	if err != nil {
 		return err
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	interactive := isTTY() && rules.IsHumanFormat(format)
+	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
 
 	entry, err := pickPublishedInteractive(pickInteractiveParams{
 		Entries:     entries,
-		Args:        args,
+		JobName:     jobName,
 		Interactive: interactive,
 	})
 	if err != nil {
@@ -48,15 +51,15 @@ func runOpen(cmd *cobra.Command, args []string) error {
 
 type pickInteractiveParams struct {
 	Entries     []domain.JobURLEntry
-	Args        []string
+	JobName     string
 	Interactive bool
 }
 
 // pickPublishedInteractive adds the one thing `run url` refuses: a picker, and
 // only when the run is fully interactive.
 func pickPublishedInteractive(params pickInteractiveParams) (domain.JobURLEntry, error) {
-	if !params.Interactive || len(params.Args) > 0 || len(params.Entries) < 2 {
-		return pickPublished(params.Entries, params.Args)
+	if !params.Interactive || params.JobName != "" || len(params.Entries) < 2 {
+		return pickPublished(params.Entries, params.JobName)
 	}
 	return runpicker.RunURLPicker(params.Entries)
 }

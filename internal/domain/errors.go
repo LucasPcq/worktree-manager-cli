@@ -186,6 +186,11 @@ var (
 	// named none — a picker needs a fully interactive run, so the flag is the answer.
 	ErrJobAmbiguous = errors.New("several jobs publish a URL: name one")
 
+	// ErrJobRequired is returned when `run start` / `run stop` cannot resolve
+	// which job to act on: a required selection with no safe default, so it names
+	// the flag rather than falling back to a picker.
+	ErrJobRequired = errors.New("specify --job (no interactive picker without a terminal or in --output json mode)")
+
 	// ErrJobNonePublished is returned when no job in run.toml declares a url,
 	// so there is no address to print.
 	// ErrProxyNoListeners means launchd started the forwarder without handing it

@@ -153,7 +153,7 @@ func TestRunLogsOpensTheViewOnATerminal(t *testing.T) {
 	view := captureRunView(t)
 	fakeTTY(t, true)
 
-	if _, _, err := runCmd(t, domain.CmdLogs, "api"); err != nil {
+	if _, _, err := runCmd(t, domain.CmdLogs, "--"+domain.FlagJob, "api"); err != nil {
 		t.Fatalf("run logs api: %v", err)
 	}
 

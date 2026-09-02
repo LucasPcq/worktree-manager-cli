@@ -19,18 +19,20 @@ import (
 
 func newURLCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdURL + " [job]",
-		Short: "Print where a job is reachable in this worktree",
-		Long:  "Write a job's URL on stdout and nothing else, for $(…). --raw prints the job's own port instead of its name, which every OS resolves and no proxy has to serve.",
+		Use:   domain.CmdURL + " [worktree]",
+		Short: "Print where a job is reachable in a worktree",
+		Long:  "Write a job's URL on stdout and nothing else, for $(…). [worktree] defaults to the current one, and no picker ever opens here — an ambiguity is an error naming --job. --raw prints the job's own port instead of its name, which every OS resolves and no proxy has to serve.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE:  runURL,
 	}
+	shared.AddJobFlag(cmd, "Job whose URL to print (required when several jobs publish one)")
 	cmd.Flags().Bool(domain.FlagRaw, false, "Print the direct http://localhost:<port> address")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
 
 func runURL(cmd *cobra.Command, args []string) error {
-	entries, err := publishedJobs(cmd)
+	entries, err := publishedJobs(cmd, args, false)
 	if err != nil {
 		return err
 	}
@@ -40,7 +42,8 @@ func runURL(cmd *cobra.Command, args []string) error {
 		return output.WriteJobURLsJSON(cmd.OutOrStdout(), entries)
 	}
 
-	entry, err := pickPublished(entries, args)
+	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
+	entry, err := pickPublished(entries, jobName)
 	if err != nil {
 		return err
 	}
@@ -48,16 +51,16 @@ func runURL(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// publishedJobs resolves this worktree's ports, then keeps the jobs that declare
-// a url. It never contacts the daemon: a job's address is a property of the
-// worktree's offset, known whether or not anything is running.
-func publishedJobs(cmd *cobra.Command) ([]domain.JobURLEntry, error) {
-	dir, err := os.Getwd()
+// publishedJobs resolves the target worktree's ports, then keeps the jobs that
+// declare a url. It never contacts the daemon: a job's address is a property of
+// the worktree's offset, known whether or not anything is running.
+func publishedJobs(cmd *cobra.Command, args []string, pick bool) ([]domain.JobURLEntry, error) {
+	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("get working directory: %w", err)
 	}
 
-	result, err := shared.LoadConfig(cmd, dir)
+	result, err := shared.LoadConfig(cmd, cwd)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +73,19 @@ func publishedJobs(cmd *cobra.Command) ([]domain.JobURLEntry, error) {
 		return nil, err
 	}
 
-	env := jobEnv(jobEnvParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir})
+	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	tgt, err := resolveTarget(targetParams{
+		Args:        args,
+		Cwd:         cwd,
+		ProjectDir:  result.ProjectDir,
+		Interactive: isTTY() && rules.IsHumanFormat(format),
+		Pick:        pick,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	env := jobEnv(jobEnvParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: tgt.Dir})
 	offset, _ := strconv.Atoi(env[domain.EnvPortOffset])
 
 	raw, _ := cmd.Flags().GetBool(domain.FlagRaw)
@@ -100,12 +115,12 @@ func publishedJobs(cmd *cobra.Command) ([]domain.JobURLEntry, error) {
 // pickPublished resolves which job the caller meant without ever offering a
 // picker: `run url` is a machine surface, so an ambiguity is an error naming the
 // flag, not a prompt.
-func pickPublished(entries []domain.JobURLEntry, args []string) (domain.JobURLEntry, error) {
+func pickPublished(entries []domain.JobURLEntry, jobName string) (domain.JobURLEntry, error) {
 	if len(entries) == 0 {
 		return domain.JobURLEntry{}, domain.ErrJobNonePublished
 	}
-	if len(args) > 0 {
-		return findPublished(entries, args[0])
+	if jobName != "" {
+		return findPublished(entries, jobName)
 	}
 	if len(entries) > 1 {
 		return domain.JobURLEntry{}, fmt.Errorf("%w — %s", domain.ErrJobAmbiguous, publishedNames(entries))

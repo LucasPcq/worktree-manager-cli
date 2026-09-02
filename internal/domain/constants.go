@@ -677,6 +677,7 @@ const (
 	FlagCwd        = "cwd"
 	FlagPort       = "port"
 	FlagName       = "name"
+	FlagJob        = "job"
 	FlagJobs       = "jobs"
 	FlagDefault    = "default"
 	FlagTo         = "to"
@@ -1234,7 +1235,6 @@ const (
 	CmdCreate = "create"
 	CmdClean  = "clean"
 	CmdList   = "list"
-	CmdSwitch = "switch"
 	CmdUp     = "up"
 	CmdDown   = "down"
 	CmdStart  = "start"
@@ -1574,6 +1574,20 @@ const (
 	// RunURLPickerTitle heads the picker `run open` offers when several jobs
 	// publish and the run is interactive enough to ask.
 	RunURLPickerTitle = "Which job to open"
+
+	// RunWorktreePicker* head the worktree picker every run command opens when
+	// its positional is absent and the run is interactive, and label the entry
+	// the cursor starts on.
+	RunWorktreePickerTitle = "Select worktree"
+	RunWorktreePickerDesc  = "Which worktree to act on?"
+	RunWorktreeCurrent     = "current"
+	// RunWorktreeJobsFmt annotates a worktree with what the daemon's index says
+	// is up in it, which is what makes the picker a view rather than a toll.
+	RunWorktreeJobsFmt = "%d running"
+
+	// RunJobPickerTitle heads the job picker `run start` and `run stop` open;
+	// naming the job is required on every other path.
+	RunJobPickerTitle = "Select job"
 
 	// RunURLSuffixSep sets a job's URL apart from the line announcing it, far
 	// enough that a terminal-detected link does not swallow the ports before it.
