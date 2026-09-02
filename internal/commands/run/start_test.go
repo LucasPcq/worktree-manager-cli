@@ -170,3 +170,34 @@ func TestRunStartYesWithAJobRunsUnattended(t *testing.T) {
 		t.Errorf("the daemon was asked to start %v, want [api]", got)
 	}
 }
+
+// A run that failed still owes a machine reader a document: an exit code with
+// no cause is what `run up`'s `output` field exists to avoid, and `run start`
+// was writing nothing at all.
+func TestRunStartJSONReportsAFailingJob(t *testing.T) {
+	setupStartProject(t, failingMigration())
+	captureRunView(t)
+	fakeTTY(t, false)
+
+	stdout, _, err := runCmd(t, domain.CmdStart, "--"+domain.FlagJob, "migrate", "--"+domain.FlagOutput, domain.OutputJSON)
+	if err == nil {
+		t.Fatal("a failing job exited zero")
+	}
+
+	var result domain.JobActionResult
+	if decodeErr := json.Unmarshal([]byte(stdout), &result); decodeErr != nil {
+		t.Fatalf("stdout is not a single object: %v\n%s", decodeErr, stdout)
+	}
+	if result.Name != "migrate" || result.Status != domain.JobActionError {
+		t.Errorf("result = %+v, want the job named and marked in error", result)
+	}
+	if result.Message != "task migrate failed: exit status 1" {
+		t.Errorf("message = %q, want the daemon's reason", result.Message)
+	}
+	if !strings.Contains(result.Output, "does not exist") {
+		t.Errorf("output = %q, want what the task wrote before it died", result.Output)
+	}
+	if result.ExitCode == nil || *result.ExitCode != 1 {
+		t.Errorf("exit_code = %v, want the code the daemon reported", result.ExitCode)
+	}
+}

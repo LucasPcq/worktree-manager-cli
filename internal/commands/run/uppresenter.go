@@ -78,22 +78,43 @@ func (p startPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcome, e
 	}
 }
 
-// machine answers with the one job's result. A run that aborted writes nothing:
-// the runner turns it into a non-zero exit, and half a document is worse than
-// none for a command whose whole answer is a single object.
+// machine answers with the one job's result, whether or not it worked: the
+// module's rule is that the shape follows the arity and the exit code follows
+// the success (LUC-198). A failed job writing nothing at all left a machine
+// reader with an exit code and no cause, which is exactly what the `output`
+// field of `run up`'s array exists to avoid.
 func (p startPresenter) machine(params seam.SequenceParams) (runlogs.Outcome, error) {
 	outcome, err := params.Start(p.Cmd.Context(), nil)
-	if err != nil || outcome.Aborted() {
+	if err != nil {
 		return outcome, err
 	}
-	status := domain.JobActionStarted
-	if params.Inline {
-		status = domain.JobActionDone
+	return outcome, output.WriteJobResultJSON(p.Cmd.OutOrStdout(), jobResult(jobResultParams{
+		Job:     params.Job,
+		Inline:  params.Inline,
+		Outcome: outcome,
+	}))
+}
+
+type jobResultParams struct {
+	Job     string
+	Inline  bool
+	Outcome runlogs.Outcome
+}
+
+// jobResult is the entry the sequence already recorded for this job — the very
+// one `run up` would publish for it — so the two commands say the same thing
+// about the same job rather than agreeing by coincidence. Nothing recorded means
+// the run never reached it, which only a start that failed outright can produce.
+func jobResult(params jobResultParams) domain.JobActionResult {
+	for _, result := range output.RunOutcomeResults(params.Outcome) {
+		if result.Name == params.Job {
+			return result
+		}
 	}
-	return outcome, output.WriteJobResultJSON(p.Cmd.OutOrStdout(), domain.JobActionResult{
-		Name:   params.Job,
-		Status: status,
-	})
+	if params.Inline {
+		return domain.JobActionResult{Name: params.Job, Status: domain.JobActionDone}
+	}
+	return domain.JobActionResult{Name: params.Job, Status: domain.JobActionStarted}
 }
 
 // stopPresenter reports the one job `run stop` acted on.
