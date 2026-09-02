@@ -420,3 +420,44 @@ func TestALoadedStepLoadsEvenWhenItComesFirst(t *testing.T) {
 		t.Errorf("the first step must show its loaded content, not the placeholder:\n%s", view)
 	}
 }
+
+func TestSelectOpensOnTheStepsStartingValue(t *testing.T) {
+	content := flow.StepContent{
+		Options: []flow.Option{
+			{Label: "feature-a", Value: "/wt/a"},
+			{Label: "feature-b", Value: "/wt/b"},
+			{Label: "feature-c", Value: "/wt/c"},
+		},
+		Start: "/wt/c",
+	}
+
+	if got := selectList(content).Value(); got != "/wt/c" {
+		t.Errorf("cursor = %q, want the starting value", got)
+	}
+}
+
+func TestSelectWithoutAStartOpensOnTheFirstOption(t *testing.T) {
+	content := flow.StepContent{Options: []flow.Option{
+		{Label: "feature-a", Value: "/wt/a"},
+		{Label: "feature-b", Value: "/wt/b"},
+	}}
+
+	if got := selectList(content).Value(); got != "/wt/a" {
+		t.Errorf("cursor = %q, want the first option", got)
+	}
+}
+
+func TestSelectRendersTheBadgesAStepDeclares(t *testing.T) {
+	content := flow.StepContent{Options: []flow.Option{{
+		Label:  "feature-a",
+		Value:  "/wt/a",
+		Badges: []flow.Badge{{Text: "3 jobs", Tone: domain.ToneSuccess}, {Text: "current"}},
+	}}}
+
+	view := selectList(content).View()
+	for _, want := range []string{"3 jobs", "current"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view is missing %q:\n%s", want, view)
+		}
+	}
+}
