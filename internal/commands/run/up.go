@@ -241,7 +241,7 @@ func findOtherRunningJobs(client *process.Client, currentDir string) (map[string
 	otherNames := make(map[string][]string)
 
 	for _, job := range resp.Jobs {
-		if job.Status != domain.JobStatusRunning {
+		if !rules.IsJobUp(job.Status) {
 			continue
 		}
 		if job.WorkDir == currentDir {

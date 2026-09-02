@@ -76,8 +76,8 @@ func TestManagerStartDetached_StreamsOutput(t *testing.T) {
 		t.Errorf("expected streamed launcher output to contain %q, got %q", "creating-container", buf.String())
 	}
 	jobs := m.List()
-	if len(jobs) != 1 || jobs[0].Status != domain.JobStatusRunning {
-		t.Errorf("expected detached job to stay registered as running, got %+v", jobs)
+	if len(jobs) != 1 || jobs[0].Status != domain.JobStatusDetached {
+		t.Errorf("expected the launcher's exit to leave the job registered as detached, got %+v", jobs)
 	}
 }
 
@@ -357,8 +357,8 @@ func TestManagerStartDetached_KeepsNoExitCode(t *testing.T) {
 	t.Cleanup(func() { _ = m.StopAll() })
 
 	launcher := m.List()[0]
-	if launcher.Status != domain.JobStatusRunning {
-		t.Fatalf("Status = %s, want running", launcher.Status)
+	if launcher.Status != domain.JobStatusDetached {
+		t.Fatalf("Status = %s, want detached", launcher.Status)
 	}
 	if launcher.ExitCode != nil {
 		t.Errorf("ExitCode = %d, want nil for a detached launcher", *launcher.ExitCode)

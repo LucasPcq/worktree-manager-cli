@@ -1,6 +1,6 @@
 package process
 
-import "github.com/LucasPcq/wtm/internal/domain"
+import "github.com/LucasPcq/wtm/internal/rules"
 
 // StopWorktreeJobs stops all running jobs attached to workDir via the daemon.
 // Returns true if a stop request was sent, false if the daemon was not running
@@ -12,7 +12,7 @@ func StopWorktreeJobs(client *Client, workDir string) bool {
 	}
 
 	for _, svc := range resp.Jobs {
-		if svc.WorkDir == workDir && svc.Status == domain.JobStatusRunning {
+		if svc.WorkDir == workDir && rules.IsJobUp(svc.Status) {
 			_, _ = client.Send(Request{Action: ActionStopAll, WorkDir: workDir})
 			return true
 		}

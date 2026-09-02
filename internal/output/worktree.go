@@ -77,7 +77,7 @@ func formatPRTag(branch string, prs []domain.PRInfo) string {
 
 func formatServicesTag(worktreePath string, svcs []domain.JobInfo) string {
 	for _, svc := range svcs {
-		if svc.WorkDir == worktreePath && svc.Status == domain.JobStatusRunning {
+		if svc.WorkDir == worktreePath && rules.IsJobUp(svc.Status) {
 			return styles.Success.Render("services")
 		}
 	}
@@ -239,7 +239,7 @@ func matchPR(branch string, prs []domain.PRInfo) *domain.WorktreeListPR {
 func matchRunningServices(worktreePath string, services []domain.JobInfo) []string {
 	names := make([]string, 0)
 	for _, svc := range services {
-		if svc.WorkDir == worktreePath && svc.Status == domain.JobStatusRunning {
+		if svc.WorkDir == worktreePath && rules.IsJobUp(svc.Status) {
 			names = append(names, svc.Name)
 		}
 	}

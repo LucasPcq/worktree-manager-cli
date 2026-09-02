@@ -56,8 +56,10 @@ func RunDaemon(params DaemonParams) error {
 	}
 
 	registry := proxy.NewRegistry()
+	store := NewStateStore(StatePath())
+	manager := NewManagerWith(ManagerParams{Routes: registry, Index: store})
 	d := &daemonServer{
-		manager:    NewManagerWithRoutes(registry),
+		manager:    manager,
 		listener:   listener,
 		socketPath: params.SocketPath,
 		shutdown:   make(chan struct{}),
@@ -76,6 +78,10 @@ func RunDaemon(params DaemonParams) error {
 			defer server.Close()
 		}
 	}
+
+	// Adopted after the proxy is up, so a detached job's name is served again
+	// from the moment it is known rather than from the next request.
+	manager.Adopt(store.Load())
 
 	// Handle signals
 	sigCh := make(chan os.Signal, 1)
@@ -124,7 +130,7 @@ func (d *daemonServer) publicPort() int {
 func (d *daemonServer) stop() {
 	close(d.shutdown)
 	d.listener.Close()
-	d.manager.StopAll()
+	d.manager.StopForeground()
 	os.Remove(d.socketPath)
 	d.clients.Wait()
 }
@@ -249,7 +255,7 @@ func (d *daemonServer) handleStopAll(encoder *json.Encoder, req Request) {
 	// which ones (or say "none running" when the list is empty).
 	var stopped []domain.JobInfo
 	for _, job := range d.manager.List() {
-		if job.Status != domain.JobStatusRunning {
+		if !rules.IsJobUp(job.Status) {
 			continue
 		}
 		if req.WorkDir != "" && job.WorkDir != req.WorkDir {

@@ -78,7 +78,7 @@ func TestReconcileJobDropsTask(t *testing.T) {
 	}
 }
 
-func TestPersistedJobStatusKeepsOnlyLiveEntries(t *testing.T) {
+func TestIsJobUpKeepsOnlyLiveEntries(t *testing.T) {
 	cases := []struct {
 		status domain.JobStatus
 		want   bool
@@ -90,8 +90,8 @@ func TestPersistedJobStatusKeepsOnlyLiveEntries(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		if got := rules.IsIndexedJobStatus(tc.status); got != tc.want {
-			t.Errorf("IsIndexedJobStatus(%q) = %v, want %v", tc.status, got, tc.want)
+		if got := rules.IsJobUp(tc.status); got != tc.want {
+			t.Errorf("IsJobUp(%q) = %v, want %v", tc.status, got, tc.want)
 		}
 	}
 }

@@ -38,9 +38,10 @@ func ReconcileJob(params ReconcileJobParams) ReconcileDecision {
 	return ReconcileDecision{Status: domain.JobStatusCrashed, Adopt: true}
 }
 
-// IsIndexedJobStatus reports whether a job in this state belongs in the durable
-// index. The index holds what is live, not what has been — which is also why a
-// stop needs no explicit purge: the entry leaves with the state.
-func IsIndexedJobStatus(status domain.JobStatus) bool {
+// IsJobUp reports whether a job in this state is still up — running in the
+// daemon, or detached and left to whoever owns it. It is also exactly what the
+// durable index keeps, which is why a stop needs no explicit purge: the entry
+// leaves with the state.
+func IsJobUp(status domain.JobStatus) bool {
 	return status == domain.JobStatusRunning || status == domain.JobStatusDetached
 }

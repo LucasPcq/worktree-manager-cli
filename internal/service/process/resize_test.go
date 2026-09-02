@@ -101,7 +101,7 @@ func TestManagerResize_RefusesWhatHasNoPTY(t *testing.T) {
 	}{
 		{"job inconnu", ResizeParams{Name: "ghost", WorkDir: serviceDir, Cols: 80, Rows: 20}, "job ghost not found"},
 		{"job arrêté", ResizeParams{Name: "old", WorkDir: stoppedDir, Cols: 80, Rows: 20}, "job old is not running"},
-		{"launcher détaché", ResizeParams{Name: "compose", WorkDir: launcherDir, Cols: 80, Rows: 20}, "job compose has no attachable output"},
+		{"launcher détaché", ResizeParams{Name: "compose", WorkDir: launcherDir, Cols: 80, Rows: 20}, "job compose is detached"},
 		{"task sur un pipe", ResizeParams{Name: "migrate", WorkDir: taskDir, Cols: 80, Rows: 20}, "job migrate runs on a pipe"},
 	}
 	for _, c := range cases {

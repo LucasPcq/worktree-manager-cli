@@ -1,0 +1,107 @@
+package process
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/infra"
+)
+
+// JobIndex is where a Manager records what is up. The daemon backs it with a
+// file; a Manager given none keeps everything in memory, which is what every
+// test and every embedded use wants.
+type JobIndex interface {
+	Save(records []domain.JobRecord) error
+}
+
+// StateStore is the durable index on disk. It is read once at daemon start-up
+// and rewritten whenever a job goes up or comes down — a handful of entries, so
+// the whole file is rewritten rather than amended.
+type StateStore struct {
+	path string
+	// frozen is set when the file on disk carries a format this binary does not
+	// know. Reading it gives nothing, and writing over it would destroy a newer
+	// binary's index, so the store goes read-only for the rest of its life.
+	frozen bool
+}
+
+// StatePath is where the index lives: beside the socket, under the global dir.
+// Empty on a machine with no user-config directory at all, which every caller
+// reads the way it reads an absent socket.
+func StatePath() string {
+	dir, err := infra.GlobalDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, domain.DaemonStateFileName)
+}
+
+func NewStateStore(path string) *StateStore {
+	return &StateStore{path: path}
+}
+
+// Load reads the index. Anything unreadable — absent, truncated, half-written by
+// a killed daemon — is an empty index rather than an error: a daemon that
+// refuses to start because of its own bookkeeping is worse than one that forgot.
+func (s *StateStore) Load() []domain.JobRecord {
+	if s.path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		return nil
+	}
+
+	var state domain.DaemonState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil
+	}
+	if state.Version != domain.DaemonStateVersion {
+		s.frozen = true
+		return nil
+	}
+	return state.Jobs
+}
+
+func (s *StateStore) Save(records []domain.JobRecord) error {
+	if s.path == "" || s.frozen {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return fmt.Errorf("create state dir: %w", err)
+	}
+
+	data, err := json.Marshal(domain.DaemonState{Version: domain.DaemonStateVersion, Jobs: records})
+	if err != nil {
+		return fmt.Errorf("encode job index: %w", err)
+	}
+
+	// Written aside then renamed: a daemon killed mid-write must leave the
+	// previous index intact rather than a truncated file naming half the stacks
+	// it started.
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), domain.DaemonStateFileName+".*")
+	if err != nil {
+		return fmt.Errorf("create temp index: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return fmt.Errorf("write job index: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return fmt.Errorf("write job index: %w", err)
+	}
+	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
+		os.Remove(tmp.Name())
+		return fmt.Errorf("write job index: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), s.path); err != nil {
+		os.Remove(tmp.Name())
+		return fmt.Errorf("write job index: %w", err)
+	}
+	return nil
+}
