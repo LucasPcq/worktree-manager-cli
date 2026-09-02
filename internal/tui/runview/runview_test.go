@@ -61,7 +61,7 @@ func exec(t *testing.T, cmd tea.Cmd) tea.Msg {
 
 type testHarness struct {
 	model   Model
-	session *runlogstest.Session
+	board   *runlogstest.Board
 	streams map[string]*runlogstest.Stream
 }
 
@@ -72,7 +72,7 @@ type harnessParams struct {
 	Streams []string
 }
 
-// newHarness opens a view over a scripted session and hands it the job list,
+// newHarness opens a view over a scripted board and hands it the job list,
 // including the attach that selecting the first job triggers.
 func newHarness(t *testing.T, params harnessParams) *testHarness {
 	t.Helper()
@@ -84,17 +84,17 @@ func newHarness(t *testing.T, params harnessParams) *testHarness {
 		streams[name] = stream
 		scripted[name] = stream
 	}
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views:   params.Views,
 		Streams: scripted,
 		Lines:   params.Lines,
 	})
 
-	model := New(Params{Session: session, Job: params.Job})
+	model := New(Params{Board: board, Job: params.Job})
 	t.Cleanup(func() { model.panes.closeAll() })
 	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
 
-	harness := &testHarness{model: model, session: session, streams: streams}
+	harness := &testHarness{model: model, board: board, streams: streams}
 	harness.load(t, params.Views)
 	return harness
 }
@@ -103,7 +103,7 @@ func newHarness(t *testing.T, params harnessParams) *testHarness {
 // attach or the history read that fills the selected job's pane.
 func (h *testHarness) load(t *testing.T, views []runlogs.JobView) {
 	t.Helper()
-	h.session.SetViews(views)
+	h.board.SetViews(views)
 	model, cmd := updateCmd(h.model, jobsMsg{jobs: views})
 	h.model = h.follow(t, model, cmd)
 }
@@ -147,7 +147,7 @@ func TestSelectionStartsOnTheRequestedJob(t *testing.T) {
 	if h.model.selected != "web" {
 		t.Fatalf("selected = %q, want the job the view was opened on", h.model.selected)
 	}
-	if got := h.session.AttachedJobs(); len(got) != 1 || got[0] != "web" {
+	if got := h.board.AttachedJobs(); len(got) != 1 || got[0] != "web" {
 		t.Fatalf("attached %v, want only the selected job", got)
 	}
 }
@@ -213,7 +213,7 @@ func TestStoppedJobShowsItsHistoryAndIsNeverAttached(t *testing.T) {
 			t.Fatalf("frame = %q, want %q from the log file", frame, want)
 		}
 	}
-	if got := h.session.AttachedJobs(); len(got) != 0 {
+	if got := h.board.AttachedJobs(); len(got) != 0 {
 		t.Fatalf("attached %v, want nothing for a job with no live stream", got)
 	}
 }
@@ -286,7 +286,7 @@ func TestLeavingAStoppedJobDropsItsHistoryPane(t *testing.T) {
 
 	h.press(t, namedKey(tea.KeyUp))
 
-	if got := len(h.session.HistoryParams()); got != 2 {
+	if got := len(h.board.HistoryParams()); got != 2 {
 		t.Fatalf("History was called %d times, want the pane rebuilt from the file", got)
 	}
 	if !strings.Contains(ansi.Strip(h.model.View()), "ERROR relation does not exist") {
@@ -322,7 +322,7 @@ func TestAttachCarriesThePaneSizeItOpensAt(t *testing.T) {
 		Streams: []string{"api"},
 	})
 
-	attached := h.session.AttachParams()
+	attached := h.board.AttachParams()
 	if len(attached) != 1 {
 		t.Fatalf("Attach was called %d times, want once", len(attached))
 	}
@@ -342,12 +342,12 @@ func TestAttachCarriesThePaneSizeItOpensAt(t *testing.T) {
 func TestAJobListArrivingMidAttachDoesNotAttachTwice(t *testing.T) {
 	stream := runlogstest.NewStream()
 	views := []runlogs.JobView{running("api")}
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views:   views,
 		Streams: map[string]runlogs.Stream{"api": stream},
 	})
 
-	model := New(Params{Session: session})
+	model := New(Params{Board: board})
 	t.Cleanup(func() {
 		model.cancel()
 		model.panes.closeAll()
@@ -365,12 +365,12 @@ func TestAJobListArrivingMidAttachDoesNotAttachTwice(t *testing.T) {
 	if _, cmd := updateCmd(model, jobsMsg{jobs: views}); cmd != nil {
 		t.Fatal("the poll started a second attach behind the one in flight")
 	}
-	if attached := session.AttachedJobs(); len(attached) != 0 {
+	if attached := board.AttachedJobs(); len(attached) != 0 {
 		t.Fatalf("Attach ran for %v before the first one answered", attached)
 	}
 
 	update(model, exec(t, attach))
-	if attached := session.AttachedJobs(); len(attached) != 1 {
+	if attached := board.AttachedJobs(); len(attached) != 1 {
 		t.Fatalf("Attach ran for %v, want api once", attached)
 	}
 }
@@ -611,22 +611,22 @@ func TestStreamReaderGivesUpOnceTheViewIsGone(t *testing.T) {
 	}
 }
 
-func TestRefreshCommandReadsTheSessionAgain(t *testing.T) {
+func TestRefreshCommandReadsTheBoardAgain(t *testing.T) {
 	h := newHarness(t, harnessParams{
 		Views:   []runlogs.JobView{running("api")},
 		Streams: []string{"api"},
 	})
-	before := h.session.Refreshes()
+	before := h.board.Refreshes()
 
 	msg, ok := exec(t, h.model.refreshCmd()).(jobsMsg)
 	if !ok {
 		t.Fatal("the refresh command did not answer with a job list")
 	}
-	if h.session.Refreshes() != before+1 {
+	if h.board.Refreshes() != before+1 {
 		t.Fatal("the refresh command did not re-read the daemon's view")
 	}
 	if len(msg.jobs) != 1 || msg.jobs[0].Name != "api" {
-		t.Fatalf("jobs = %v, want what the session lists", msg.jobs)
+		t.Fatalf("jobs = %v, want what the board lists", msg.jobs)
 	}
 }
 

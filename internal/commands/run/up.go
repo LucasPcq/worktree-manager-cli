@@ -129,7 +129,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 
 	switch rules.DecideRunSurface(rules.RunSurfaceParams{Detach: detach, TTY: isTTY(), Format: format}) {
 	case domain.RunSurfaceView:
-		return showRunView(viewParams{Cmd: cmd, Session: seam.session, Profile: profile.Name, Start: start})
+		return showRunView(viewParams{Cmd: cmd, Board: seam.board, Profile: profile.Name, Start: start})
 	case domain.RunSurfaceMachine:
 		return runForMachine(streamParams{Cmd: cmd, Start: start})
 	default:

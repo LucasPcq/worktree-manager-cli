@@ -124,7 +124,7 @@ func TestTheModelKeepsHearingFromARunPastTheMailbox(t *testing.T) {
 
 	finished := make(chan struct{})
 	model := New(Params{
-		Session: runlogstest.NewSession(runlogstest.SessionParams{
+		Board: runlogstest.NewBoard(runlogstest.BoardParams{
 			Views: []runlogs.JobView{stopped("migrate")},
 		}),
 		Start: func(_ context.Context, emitter runlogs.Sink) (runlogs.Outcome, error) {
@@ -156,12 +156,12 @@ func TestTheModelKeepsHearingFromARunPastTheMailbox(t *testing.T) {
 func TestTheModelKeepsHearingFromTheReadersPastAStreamEnding(t *testing.T) {
 	first, second := runlogstest.NewStream(), runlogstest.NewStream()
 	views := []runlogs.JobView{running("api"), running("web")}
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views:   views,
 		Streams: map[string]runlogs.Stream{"api": first, "web": second},
 	})
 
-	p := newProgram(t, New(Params{Session: session}))
+	p := newProgram(t, New(Params{Board: board}))
 	p.send(tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
 	p.waitFor("api to be attached", func(m Model) bool { return m.panes.stream("api") != nil })
 

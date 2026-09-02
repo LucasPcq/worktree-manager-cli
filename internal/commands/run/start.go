@@ -100,10 +100,10 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if surface == domain.RunSurfaceView {
 		seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: resolved.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
 		return showRunView(viewParams{
-			Cmd:     cmd,
-			Session: seam.session,
-			Job:     job.Name,
-			Start:   seam.starter(resolvedProfile{Jobs: []domain.JobConfig{job}}),
+			Cmd:   cmd,
+			Board: seam.board,
+			Job:   job.Name,
+			Start: seam.starter(resolvedProfile{Jobs: []domain.JobConfig{job}}),
 		})
 	}
 

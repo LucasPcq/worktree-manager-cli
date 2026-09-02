@@ -338,7 +338,7 @@ func TestPaneScrollAnchorStopsAtTheOldestLineLeft(t *testing.T) {
 }
 
 // The room a reader gets is lent, not kept: a pane that never returned it would
-// cost twice its budget for the rest of the session.
+// cost twice its budget for the rest of the board.
 func TestPaneReleasesTheHistoryRoomAtTheLiveTail(t *testing.T) {
 	p := newTestPane(t)
 	write(t, p, strings.Repeat("line\r\n", 12))

@@ -40,7 +40,7 @@ func fedStream(t *testing.T, chunks ...string) *runlogstest.Stream {
 }
 
 func TestWriteJobLinesPrefixesEveryJob(t *testing.T) {
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views: []runlogs.JobView{
 			{Name: "api", Kind: domain.JobKindService, Status: domain.JobStatusRunning, Attachable: true},
 			{Name: "web", Kind: domain.JobKindService, Status: domain.JobStatusRunning, Attachable: true},
@@ -52,7 +52,7 @@ func TestWriteJobLinesPrefixesEveryJob(t *testing.T) {
 	})
 
 	cmd, out, _ := linesCmd()
-	if err := writeJobLines(jobLinesParams{Cmd: cmd, Session: session}); err != nil {
+	if err := writeJobLines(jobLinesParams{Cmd: cmd, Board: board}); err != nil {
 		t.Fatalf("writeJobLines: %v", err)
 	}
 
@@ -66,13 +66,13 @@ func TestWriteJobLinesPrefixesEveryJob(t *testing.T) {
 // Every line carries its prefix, not just the first one of a chunk: without it
 // a job printing a page is indistinguishable from the job beside it.
 func TestWriteJobLinesPrefixesEveryLineOfAChunk(t *testing.T) {
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views:   []runlogs.JobView{{Name: "api", Status: domain.JobStatusRunning, Attachable: true}},
 		Streams: map[string]runlogs.Stream{"api": fedStream(t, "first\nsecond\n", "third\n")},
 	})
 
 	cmd, out, _ := linesCmd()
-	if err := writeJobLines(jobLinesParams{Cmd: cmd, Session: session}); err != nil {
+	if err := writeJobLines(jobLinesParams{Cmd: cmd, Board: board}); err != nil {
 		t.Fatalf("writeJobLines: %v", err)
 	}
 
@@ -84,13 +84,13 @@ func TestWriteJobLinesPrefixesEveryLineOfAChunk(t *testing.T) {
 // A job that is not running has no stream to attach to, and its log file is the
 // only place its output is left.
 func TestWriteJobLinesReadsAStoppedJobBackFromItsLogFile(t *testing.T) {
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views: []runlogs.JobView{{Name: "migrate", Kind: domain.JobKindTask, Status: domain.JobStatusStopped}},
 		Lines: map[string][]string{"migrate": {"applying 001", "done"}},
 	})
 
 	cmd, out, _ := linesCmd()
-	if err := writeJobLines(jobLinesParams{Cmd: cmd, Session: session, Job: "migrate"}); err != nil {
+	if err := writeJobLines(jobLinesParams{Cmd: cmd, Board: board, Job: "migrate"}); err != nil {
 		t.Fatalf("writeJobLines: %v", err)
 	}
 
@@ -102,7 +102,7 @@ func TestWriteJobLinesReadsAStoppedJobBackFromItsLogFile(t *testing.T) {
 }
 
 func TestWriteJobLinesNarrowsToTheNamedJob(t *testing.T) {
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views: []runlogs.JobView{
 			{Name: "api", Status: domain.JobStatusRunning, Attachable: true},
 			{Name: "web", Status: domain.JobStatusRunning, Attachable: true},
@@ -114,7 +114,7 @@ func TestWriteJobLinesNarrowsToTheNamedJob(t *testing.T) {
 	})
 
 	cmd, out, _ := linesCmd()
-	if err := writeJobLines(jobLinesParams{Cmd: cmd, Session: session, Job: "api"}); err != nil {
+	if err := writeJobLines(jobLinesParams{Cmd: cmd, Board: board, Job: "api"}); err != nil {
 		t.Fatalf("writeJobLines: %v", err)
 	}
 
@@ -127,24 +127,24 @@ func TestWriteJobLinesNarrowsToTheNamedJob(t *testing.T) {
 }
 
 func TestWriteJobLinesRefusesAJobTheWorktreeDoesNotHave(t *testing.T) {
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views: []runlogs.JobView{{Name: "api", Status: domain.JobStatusRunning, Attachable: true}},
 	})
 
 	cmd, _, _ := linesCmd()
-	err := writeJobLines(jobLinesParams{Cmd: cmd, Session: session, Job: "ghost"})
+	err := writeJobLines(jobLinesParams{Cmd: cmd, Board: board, Job: "ghost"})
 	if err == nil || !strings.Contains(err.Error(), "ghost") {
 		t.Fatalf("err = %v, want one naming the unknown job", err)
 	}
 }
 
 func TestWriteJobLinesSaysSoWhenNothingIsRunning(t *testing.T) {
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views: []runlogs.JobView{{Name: "api", Status: domain.JobStatusStopped}},
 	})
 
 	cmd, out, _ := linesCmd()
-	if err := writeJobLines(jobLinesParams{Cmd: cmd, Session: session}); err != nil {
+	if err := writeJobLines(jobLinesParams{Cmd: cmd, Board: board}); err != nil {
 		t.Fatalf("writeJobLines: %v", err)
 	}
 
@@ -211,7 +211,7 @@ func TestRunLogsWithoutATerminalWritesPrefixedLines(t *testing.T) {
 }
 
 func TestWriteJobLogsJSONReplaysEveryJobsHistory(t *testing.T) {
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views: []runlogs.JobView{
 			{Name: "api", Kind: domain.JobKindService, Status: domain.JobStatusRunning, Attachable: true},
 			{Name: "migrate", Kind: domain.JobKindTask, Status: domain.JobStatusStopped},
@@ -223,7 +223,7 @@ func TestWriteJobLogsJSONReplaysEveryJobsHistory(t *testing.T) {
 	})
 
 	cmd, out, _ := linesCmd()
-	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Session: session}); err != nil {
+	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Board: board}); err != nil {
 		t.Fatalf("writeJobLogsJSON: %v", err)
 	}
 
@@ -245,7 +245,7 @@ func TestWriteJobLogsJSONNeverAttaches(t *testing.T) {
 		Infos: []domain.JobInfo{{Name: "api", Status: domain.JobStatusRunning}},
 		Lines: map[string][]string{"api": {"2026-09-02T10:04:11Z  listening on 3000"}},
 	}
-	session := runlogs.NewSession(runlogs.SessionParams{
+	board := runlogs.NewBoard(runlogs.BoardParams{
 		Service: service,
 		Jobs:    []domain.JobConfig{{Name: "api", Kind: domain.JobKindService}},
 		WorkDir: "/wt",
@@ -253,7 +253,7 @@ func TestWriteJobLogsJSONNeverAttaches(t *testing.T) {
 	})
 
 	cmd, out, _ := linesCmd()
-	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Session: session}); err != nil {
+	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Board: board}); err != nil {
 		t.Fatalf("writeJobLogsJSON: %v", err)
 	}
 
@@ -267,7 +267,7 @@ func TestWriteJobLogsJSONNeverAttaches(t *testing.T) {
 
 // What makes this a list is the stream, not the arity of the target.
 func TestWriteJobLogsJSONStaysAnArrayForOneJob(t *testing.T) {
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views: []runlogs.JobView{
 			{Name: "api", Status: domain.JobStatusRunning, Attachable: true},
 			{Name: "web", Status: domain.JobStatusRunning, Attachable: true},
@@ -279,7 +279,7 @@ func TestWriteJobLogsJSONStaysAnArrayForOneJob(t *testing.T) {
 	})
 
 	cmd, out, _ := linesCmd()
-	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Session: session, Job: "api"}); err != nil {
+	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Board: board, Job: "api"}); err != nil {
 		t.Fatalf("writeJobLogsJSON: %v", err)
 	}
 
@@ -293,12 +293,12 @@ func TestWriteJobLogsJSONStaysAnArrayForOneJob(t *testing.T) {
 }
 
 func TestWriteJobLogsJSONOnAWorktreeWithNothingRecordedIsAnEmptyArray(t *testing.T) {
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views: []runlogs.JobView{{Name: "api", Status: domain.JobStatusStopped}},
 	})
 
 	cmd, out, _ := linesCmd()
-	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Session: session}); err != nil {
+	if err := writeJobLogsJSON(jobLinesParams{Cmd: cmd, Board: board}); err != nil {
 		t.Fatalf("writeJobLogsJSON: %v", err)
 	}
 

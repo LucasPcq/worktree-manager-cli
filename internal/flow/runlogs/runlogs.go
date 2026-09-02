@@ -55,7 +55,7 @@ type HistoryParams struct {
 	Lines int
 }
 
-type Session interface {
+type Board interface {
 	Jobs() []JobView
 	// Refresh re-reads the daemon's view of the jobs.
 	Refresh() error

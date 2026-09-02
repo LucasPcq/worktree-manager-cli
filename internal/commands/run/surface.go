@@ -48,7 +48,7 @@ type runSeamParams struct {
 // assumes the daemon is already up — the caller is what made sure of that.
 type runSeam struct {
 	service   runlogs.Service
-	session   runlogs.Session
+	board     runlogs.Board
 	workDir   string
 	logDir    string
 	env       map[string]string
@@ -63,7 +63,7 @@ func openRunSeam(params runSeamParams) runSeam {
 	return runSeam{
 		env:     jobEnv(jobEnvParams{ProjectDir: params.ProjectDir, StateDir: params.StateDir, Dir: params.Dir}),
 		service: service,
-		session: runlogs.NewSession(runlogs.SessionParams{
+		board: runlogs.NewBoard(runlogs.BoardParams{
 			Service: service,
 			Jobs:    params.Jobs,
 			WorkDir: params.Dir,
@@ -100,7 +100,7 @@ func (s runSeam) starter(profile resolvedProfile) runview.StartFunc {
 
 type viewParams struct {
 	Cmd     *cobra.Command
-	Session runlogs.Session
+	Board   runlogs.Board
 	Job     string
 	Profile string
 	Start   runview.StartFunc
@@ -112,7 +112,7 @@ type viewParams struct {
 // scrollback underneath it.
 func openRunView(params viewParams) error {
 	result, err := runview.Run(runview.Params{
-		Session: params.Session,
+		Board:   params.Board,
 		Job:     params.Job,
 		Profile: params.Profile,
 		Start:   params.Start,

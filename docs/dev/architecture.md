@@ -110,7 +110,7 @@ create's Bubbletea wizard as a sub-flow. They go with its migration (LUC-182).
 questions and need a `Prompter`; a run has none to ask — it *reports*. So the seam is
 made of three types instead:
 
-- **`runlogs.Session`** — the worktree's jobs as a surface reads them: `Jobs()` (a
+- **`runlogs.Board`** — the worktree's jobs as a surface reads them: `Jobs()` (a
   `JobView` per declared or running job), `Refresh()`, `Attach()` for a live `Stream`, and
   `History()` for what a job left in its log file. A surface never speaks to
   `service/process`.

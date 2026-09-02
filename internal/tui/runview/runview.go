@@ -13,7 +13,7 @@ import (
 )
 
 type Params struct {
-	Session runlogs.Session
+	Board runlogs.Board
 	// Job is selected when the view opens; empty takes the first one.
 	Job string
 	// Profile names what Start brings up, shown in the header and the recap.
@@ -40,8 +40,8 @@ type StartFunc func(context.Context, runlogs.Sink) (runlogs.Outcome, error)
 // terminal emulator, and nothing else. What a job is, whether it can be
 // attached to and what it has printed are runlogs' answers, never its own.
 type Model struct {
-	session runlogs.Session
-	panes   *paneStore
+	board runlogs.Board
+	panes *paneStore
 	// msgs carries what the stream readers post; listenCmd is its only reader.
 	msgs chan tea.Msg
 
@@ -93,7 +93,7 @@ type Model struct {
 func New(params Params) Model {
 	ctx, cancel := context.WithCancel(context.Background())
 	return Model{
-		session:  params.Session,
+		board:    params.Board,
 		selected: params.Job,
 		profile:  params.Profile,
 		panes:    newPaneStore(PaneSize{}),
@@ -181,12 +181,12 @@ type frameMsg struct{}
 type pollMsg struct{}
 
 func (m Model) refreshCmd() tea.Cmd {
-	session := m.session
+	board := m.board
 	return func() tea.Msg {
-		if err := session.Refresh(); err != nil {
-			return jobsMsg{jobs: session.Jobs(), err: err}
+		if err := board.Refresh(); err != nil {
+			return jobsMsg{jobs: board.Jobs(), err: err}
 		}
-		return jobsMsg{jobs: session.Jobs()}
+		return jobsMsg{jobs: board.Jobs()}
 	}
 }
 
@@ -196,9 +196,9 @@ type attachParams struct {
 }
 
 func (m Model) attachCmd(params attachParams) tea.Cmd {
-	session := m.session
+	board := m.board
 	return func() tea.Msg {
-		stream, err := session.Attach(runlogs.AttachParams{
+		stream, err := board.Attach(runlogs.AttachParams{
 			Job:  params.Job,
 			Size: runlogs.Size{Cols: params.Size.Cols, Rows: params.Size.Rows},
 		})
@@ -207,9 +207,9 @@ func (m Model) attachCmd(params attachParams) tea.Cmd {
 }
 
 func (m Model) historyCmd(job string) tea.Cmd {
-	session := m.session
+	board := m.board
 	return func() tea.Msg {
-		lines, err := session.History(runlogs.HistoryParams{Job: job})
+		lines, err := board.History(runlogs.HistoryParams{Job: job})
 		return historyMsg{job: job, lines: lines, err: err}
 	}
 }

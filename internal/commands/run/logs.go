@@ -83,11 +83,11 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	}
 
 	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: resolved.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
-	params := jobLinesParams{Cmd: cmd, Session: seam.session, Job: job}
+	params := jobLinesParams{Cmd: cmd, Board: seam.board, Job: job}
 
 	switch rules.DecideRunSurface(rules.RunSurfaceParams{TTY: isTTY(), Format: format}) {
 	case domain.RunSurfaceView:
-		return showRunView(viewParams{Cmd: cmd, Session: seam.session, Job: job})
+		return showRunView(viewParams{Cmd: cmd, Board: seam.board, Job: job})
 	case domain.RunSurfaceMachine:
 		return writeJobLogsJSON(params)
 	default:
@@ -104,8 +104,8 @@ var jobColors = []func(string) string{
 }
 
 type jobLinesParams struct {
-	Cmd     *cobra.Command
-	Session runlogs.Session
+	Cmd   *cobra.Command
+	Board runlogs.Board
 	// Job narrows the output to one job; empty takes every job the worktree has.
 	Job string
 }
@@ -114,18 +114,18 @@ type jobLinesParams struct {
 // document. It never attaches, not even to a running job — an endless stream is
 // not a document, and `run ps` is what reports on a job that is still going.
 func writeJobLogsJSON(params jobLinesParams) error {
-	if err := params.Session.Refresh(); err != nil {
+	if err := params.Board.Refresh(); err != nil {
 		return fmt.Errorf("list jobs: %w", err)
 	}
 
-	views, err := logJobViews(logViewsParams{Session: params.Session, Job: params.Job, Persisted: true})
+	views, err := logJobViews(logViewsParams{Board: params.Board, Job: params.Job, Persisted: true})
 	if err != nil {
 		return err
 	}
 
 	entries := []domain.JobLogEntry{}
 	for _, view := range views {
-		lines, historyErr := params.Session.History(runlogs.HistoryParams{Job: view.Name})
+		lines, historyErr := params.Board.History(runlogs.HistoryParams{Job: view.Name})
 		if historyErr != nil {
 			// One unreadable file is not the whole document: the other jobs still
 			// have something to hand over, and stdout stays a clean document
@@ -145,11 +145,11 @@ func writeJobLogsJSON(params jobLinesParams) error {
 // file when it does not. Nothing here touches the terminal's mode — the process
 // is left to die on SIGINT like any other pipe.
 func writeJobLines(params jobLinesParams) error {
-	if err := params.Session.Refresh(); err != nil {
+	if err := params.Board.Refresh(); err != nil {
 		return fmt.Errorf("list jobs: %w", err)
 	}
 
-	views, err := logJobViews(logViewsParams{Session: params.Session, Job: params.Job})
+	views, err := logJobViews(logViewsParams{Board: params.Board, Job: params.Job})
 	if err != nil {
 		return err
 	}
@@ -167,7 +167,7 @@ func writeJobLines(params jobLinesParams) error {
 		prefix := jobColors[i%len(jobColors)](fmt.Sprintf(domain.RunLogsPrefixFmt, view.Name))
 
 		if !view.Attachable {
-			lines, historyErr := params.Session.History(runlogs.HistoryParams{Job: view.Name})
+			lines, historyErr := params.Board.History(runlogs.HistoryParams{Job: view.Name})
 			if historyErr != nil {
 				output.Error(params.Cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", view.Name, historyErr))
 				continue
@@ -178,7 +178,7 @@ func writeJobLines(params jobLinesParams) error {
 			continue
 		}
 
-		stream, attachErr := params.Session.Attach(runlogs.AttachParams{Job: view.Name})
+		stream, attachErr := params.Board.Attach(runlogs.AttachParams{Job: view.Name})
 		if attachErr != nil {
 			output.Error(params.Cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", view.Name, attachErr))
 			continue
@@ -201,8 +201,8 @@ func writeJobLines(params jobLinesParams) error {
 }
 
 type logViewsParams struct {
-	Session runlogs.Session
-	Job     string
+	Board runlogs.Board
+	Job   string
 	// Persisted takes every job the worktree declares rather than only the ones
 	// a stream can be opened on: reading log files back, a stopped job has as
 	// much to show as a running one.
@@ -212,7 +212,7 @@ type logViewsParams struct {
 // logJobViews is what this run of `run logs` reports on: the named job, or every
 // job the worktree has anything to show for.
 func logJobViews(params logViewsParams) ([]runlogs.JobView, error) {
-	jobs := params.Session.Jobs()
+	jobs := params.Board.Jobs()
 	if params.Job != "" {
 		for _, view := range jobs {
 			if view.Name == params.Job {
