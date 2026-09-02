@@ -172,6 +172,23 @@
       "type": "integer",
       "description": "Seconds `wtm run up` waits for a declared port to answer before reporting it silent. Omit for the default (15); a negative value disables the check.",
       "default": 15
+    },
+    "addressing": {
+      "type": "string",
+      "enum": [
+        "ports",
+        "names"
+      ],
+      "default": "names",
+      "description": "What an [[env_port]] link writes into a .env value: \"ports\" substitutes the port number wherever it sits in the value, \"names\" substitutes the whole origin for the links whose job publishes a name. Defaults to \"names\"."
+    },
+    "concurrency": {
+      "type": "string",
+      "enum": [
+        "parallel",
+        "exclusive"
+      ],
+      "description": "What `wtm run up` does when another worktree already has jobs running: \"parallel\" leaves them alone, \"exclusive\" stops them first. Absent means the question has not been answered yet, and `run up` asks it once."
     }
   }
 }

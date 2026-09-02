@@ -170,6 +170,7 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 
 	errs = append(errs, ValidateRunPorts(cfg)...)
 	errs = append(errs, ValidateAddressing(cfg)...)
+	errs = append(errs, ValidateConcurrency(cfg)...)
 
 	seenProfiles := map[string]bool{}
 	defaultCount := 0
