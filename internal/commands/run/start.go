@@ -10,6 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/run/seam"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
@@ -88,8 +89,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
 
-	logDir := jobLogDir(jobLogDirParams{StateDir: result.StateDir, Dir: resolved.Dir})
-	env := jobEnv(jobEnvParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: resolved.Dir})
+	logDir := seam.LogDir(seam.LogDirParams{StateDir: result.StateDir, WorkDir: resolved.Dir})
+	env := seam.JobEnv(seam.JobEnvParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, WorkDir: resolved.Dir})
 
 	surface := rules.DecideRunSurface(rules.RunSurfaceParams{
 		Inline: job.Kind == domain.JobKindTask,
@@ -98,12 +99,18 @@ func runStart(cmd *cobra.Command, args []string) error {
 		Format: format,
 	})
 	if surface == domain.RunSurfaceView {
-		seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: resolved.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
+		runSeam := seam.Open(seam.Params{
+			ProjectDir: result.ProjectDir,
+			StateDir:   result.StateDir,
+			WorkDir:    resolved.Dir,
+			Jobs:       runCfg.Jobs,
+			ProxyPort:  rules.ProxyPort(result.Config.Global),
+		})
 		return showRunView(viewParams{
 			Cmd:   cmd,
-			Board: seam.board,
+			Board: runSeam.Board(),
 			Job:   job.Name,
-			Start: seam.starter(resolvedProfile{Jobs: []domain.JobConfig{job}}),
+			Start: runSeam.Starter(seam.StartParams{Jobs: []domain.JobConfig{job}}),
 		})
 	}
 

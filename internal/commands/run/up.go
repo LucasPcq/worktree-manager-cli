@@ -11,6 +11,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/run/seam"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
@@ -117,19 +118,20 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	noProbe, _ := cmd.Flags().GetBool(domain.FlagNoProbe)
-	seam := openRunSeam(runSeamParams{
-		ProjectDir: result.ProjectDir,
-		StateDir:   result.StateDir,
-		Dir:        resolved.Dir,
-		Jobs:       profile.Jobs,
-		Prober:     newProber(rules.PortProbeBudget(runCfg), noProbe),
-		ProxyPort:  rules.ProxyPort(result.Config.Global),
+	runSeam := seam.Open(seam.Params{
+		ProjectDir:  result.ProjectDir,
+		StateDir:    result.StateDir,
+		WorkDir:     resolved.Dir,
+		Jobs:        profile.Jobs,
+		ProbeBudget: rules.PortProbeBudget(runCfg),
+		NoProbe:     noProbe,
+		ProxyPort:   rules.ProxyPort(result.Config.Global),
 	})
-	start := seam.starter(profile)
+	start := runSeam.Starter(seam.StartParams{Profile: profile.Name, Jobs: profile.Jobs})
 
 	switch rules.DecideRunSurface(rules.RunSurfaceParams{Detach: detach, TTY: isTTY(), Format: format}) {
 	case domain.RunSurfaceView:
-		return showRunView(viewParams{Cmd: cmd, Board: seam.board, Profile: profile.Name, Start: start})
+		return showRunView(viewParams{Cmd: cmd, Board: runSeam.Board(), Profile: profile.Name, Start: start})
 	case domain.RunSurfaceMachine:
 		return runForMachine(streamParams{Cmd: cmd, Start: start})
 	default:

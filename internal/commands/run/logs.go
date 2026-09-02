@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/run/seam"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
@@ -82,12 +83,12 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
 
-	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: resolved.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
-	params := jobLinesParams{Cmd: cmd, Board: seam.board, Job: job}
+	runSeam := seam.Open(seam.Params{ProjectDir: result.ProjectDir, StateDir: result.StateDir, WorkDir: resolved.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
+	params := jobLinesParams{Cmd: cmd, Board: runSeam.Board(), Job: job}
 
 	switch rules.DecideRunSurface(rules.RunSurfaceParams{TTY: isTTY(), Format: format}) {
 	case domain.RunSurfaceView:
-		return showRunView(viewParams{Cmd: cmd, Board: seam.board, Job: job})
+		return showRunView(viewParams{Cmd: cmd, Board: runSeam.Board(), Job: job})
 	case domain.RunSurfaceMachine:
 		return writeJobLogsJSON(params)
 	default:

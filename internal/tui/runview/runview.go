@@ -22,7 +22,7 @@ type Params struct {
 	// Start runs a profile's start sequence while the view is open, reporting to
 	// the Sink it is given. Nil for a view that only reads what is already
 	// running. Cancelling the context ends the reporting, never the jobs.
-	Start StartFunc
+	Start runlogs.StartFunc
 	// Open hands a job's URL to the desktop. Nil leaves the open key without an
 	// object, which is what a surface that cannot open a browser installs.
 	Open OpenFunc
@@ -31,10 +31,6 @@ type Params struct {
 // OpenFunc opens a URL outside the terminal. The view never dials anything
 // itself: it names what to open and lets the seam do it.
 type OpenFunc func(url string) error
-
-// StartFunc is a start sequence the view drives — runlogs.Run, wired by the
-// command that opened the view.
-type StartFunc func(context.Context, runlogs.Sink) (runlogs.Outcome, error)
 
 // Model is the run view's root Bubbletea model: a job list, the selected job's
 // terminal emulator, and nothing else. What a job is, whether it can be
@@ -72,7 +68,7 @@ type Model struct {
 	// written to is redrawn on a clock, never once per chunk.
 	ticking bool
 
-	start StartFunc
+	start runlogs.StartFunc
 	// profile names the run the view is reporting on, for the header and the recap.
 	profile string
 	open    OpenFunc

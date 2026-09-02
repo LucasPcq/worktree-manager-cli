@@ -1,10 +1,8 @@
 package run
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -13,7 +11,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/integration"
-	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/tui/runview"
 )
 
@@ -27,83 +24,12 @@ var isTTY = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 // terminal the test does not have.
 var showRunView = openRunView
 
-type runSeamParams struct {
-	ProjectDir string
-	StateDir   string
-	Dir        string
-	// Jobs are what the surface lists. `run up` passes the profile it resolved,
-	// so the view shows the run rather than every job run.toml declares beside
-	// it, with the previous run's log behind each (LUC-208); `run logs` passes
-	// them all, which is what it is for.
-	Jobs []domain.JobConfig
-	// Prober checks the declared ports once the jobs are up. Nil skips the check.
-	Prober runlogs.Prober
-	// ProxyPort is where the run proxy serves the jobs' names. Zero leaves them
-	// on their own ports.
-	ProxyPort int
-}
-
-// runSeam is this command's end of internal/flow/runlogs: the daemon's view of
-// the worktree's jobs and the start sequence a surface drives. Opening it
-// assumes the daemon is already up — the caller is what made sure of that.
-type runSeam struct {
-	service   runlogs.Service
-	board     runlogs.Board
-	workDir   string
-	logDir    string
-	env       map[string]string
-	prober    runlogs.Prober
-	project   string
-	proxyPort int
-}
-
-func openRunSeam(params runSeamParams) runSeam {
-	logDir := jobLogDir(jobLogDirParams{StateDir: params.StateDir, Dir: params.Dir})
-	service := runlogs.NewService(runlogs.ServiceParams{SocketPath: process.SocketPath()})
-	return runSeam{
-		env:     jobEnv(jobEnvParams{ProjectDir: params.ProjectDir, StateDir: params.StateDir, Dir: params.Dir}),
-		service: service,
-		board: runlogs.NewBoard(runlogs.BoardParams{
-			Service: service,
-			Jobs:    params.Jobs,
-			WorkDir: params.Dir,
-			LogDir:  logDir,
-		}),
-		workDir:   params.Dir,
-		logDir:    logDir,
-		prober:    params.Prober,
-		project:   filepath.Base(params.ProjectDir),
-		proxyPort: params.ProxyPort,
-	}
-}
-
-// starter is the start sequence as a surface drives it. Cancelling the context
-// it is called with ends the reporting, never the jobs: a view the reader
-// walked away from stops being written to while the daemon keeps running what
-// it started.
-func (s runSeam) starter(profile resolvedProfile) runview.StartFunc {
-	return func(ctx context.Context, sink runlogs.Sink) (runlogs.Outcome, error) {
-		return runlogs.Run(ctx, runlogs.RunParams{
-			Service:   s.service,
-			Sink:      sink,
-			Jobs:      profile.Jobs,
-			Profile:   profile.Name,
-			WorkDir:   s.workDir,
-			LogDir:    s.logDir,
-			Env:       s.env,
-			Prober:    s.prober,
-			Project:   s.project,
-			ProxyPort: s.proxyPort,
-		})
-	}
-}
-
 type viewParams struct {
 	Cmd     *cobra.Command
 	Board   runlogs.Board
 	Job     string
 	Profile string
-	Start   runview.StartFunc
+	Start   runlogs.StartFunc
 }
 
 // openRunView hands the terminal to the full-screen view and frames what it
@@ -135,7 +61,7 @@ func openRunView(params viewParams) error {
 type streamParams struct {
 	Cmd     *cobra.Command
 	Profile string
-	Start   runview.StartFunc
+	Start   runlogs.StartFunc
 	// Hyperlinks says whether a job's URL may be wrapped in an OSC-8 sequence.
 	Hyperlinks bool
 }

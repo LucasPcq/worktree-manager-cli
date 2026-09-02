@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/run/seam"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
@@ -333,7 +334,7 @@ func TestRunLogsJSONNeverOpensTheView(t *testing.T) {
 
 	// Tail reads the file itself rather than asking the daemon, so the history
 	// this replays has to be on disk where the command will look for it.
-	logDir := jobLogDir(jobLogDirParams{StateDir: stateDir, Dir: root})
+	logDir := seam.LogDir(seam.LogDirParams{StateDir: stateDir, WorkDir: root})
 	if logDir == "" {
 		t.Fatal("the test worktree resolved to no log dir")
 	}

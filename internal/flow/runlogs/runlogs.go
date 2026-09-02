@@ -197,3 +197,9 @@ type Sink interface {
 type noSink struct{}
 
 func (noSink) Emit(Event) {}
+
+// StartFunc is a start sequence as a surface drives it: it draws first, then
+// calls this when it is ready to report. Cancelling the context ends the
+// reporting, never the jobs — a view the reader walked away from stops being
+// written to while the daemon keeps running what it started.
+type StartFunc func(context.Context, Sink) (Outcome, error)
