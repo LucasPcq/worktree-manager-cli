@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -75,34 +74,31 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	return execListAction(cmd, pick)
+	return execListAction(cmd, pick, dir)
 }
 
-func execListAction(cmd *cobra.Command, pick runpicker.ListPickerResult) error {
-	bin, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	var args []string
+// execListAction runs the picked action in this process, on the worktree the
+// command was launched from: `run list` shows what run.toml declares here, not
+// what is running anywhere.
+func execListAction(cmd *cobra.Command, pick runpicker.ListPickerResult, workDir string) error {
+	params := dispatchParams{Cmd: cmd, WorkDir: workDir, Format: domain.OutputText}
 	switch {
 	case pick.Kind == runpicker.KindProfile && pick.Action == runpicker.ActionUp:
-		args = []string{domain.CmdRun, domain.CmdUp, pick.Name}
+		params.Profile = pick.Name
+		return params.dispatchUp()
 	case pick.Kind == runpicker.KindProfile && pick.Action == runpicker.ActionDown:
-		args = []string{domain.CmdRun, domain.CmdDown, pick.Name}
+		params.Profile = pick.Name
+		return params.dispatchDown(false)
 	case pick.Kind == runpicker.KindJob && pick.Action == runpicker.ActionStart:
-		args = []string{domain.CmdRun, domain.CmdStart, pick.Name}
+		params.Job = pick.Name
+		return params.dispatchStart()
 	case pick.Kind == runpicker.KindJob && pick.Action == runpicker.ActionStop:
-		args = []string{domain.CmdRun, domain.CmdStop, pick.Name}
+		params.Job = pick.Name
+		return params.dispatchStop()
 	case pick.Kind == runpicker.KindJob && pick.Action == runpicker.ActionLogs:
-		args = []string{domain.CmdRun, domain.CmdLogs, pick.Name}
+		params.Job = pick.Name
+		return params.dispatchLogs()
 	default:
 		return nil
 	}
-
-	c := exec.Command(bin, args...)
-	c.Stdin = os.Stdin
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	return c.Run()
 }
