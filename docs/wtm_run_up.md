@@ -10,6 +10,9 @@ Once the jobs are up, each declared port is checked: a port nothing answers on i
 reported rather than announced as bound. It never fails the run — see --no-probe
 and run.toml's port_probe_timeout.
 Tasks block the profile and abort it on failure; services launch in the background.
+When another worktree is already running jobs, wtm asks once what to do about it and can
+remember the answer as run.toml's `concurrency`; --exclusive and --parallel override it
+for one run.
 The run view opens on the jobs as they start; leaving it detaches without stopping them, and -d skips it.
 
 ```
@@ -26,6 +29,7 @@ wtm run up [worktree] [flags]
       --output string    Output format: text or json (default "text")
       --parallel         Start without stopping other worktrees
       --profile string   Profile to start (defaults to the default profile, or a picker when several exist)
+  -y, --yes              Skip all prompts; leaves the other worktrees' jobs running unless --exclusive
 ```
 
 ### SEE ALSO

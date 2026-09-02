@@ -21,6 +21,7 @@ wtm run start [worktree] [flags]
   -h, --help            help for start
       --job string      Job to start (required without a terminal or in --output json mode)
       --output string   Output format: text or json (default "text")
+  -y, --yes             Skip all prompts; --job is then required
 ```
 
 ### SEE ALSO

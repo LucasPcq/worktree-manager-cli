@@ -155,9 +155,14 @@ internal/
     reparent/                 ←   `wtm reparent`: the run (reparent.go) + its questions (steps.go)
     prune/                    ←   `wtm prune`: the run (prune.go) + its questions (steps.go)
     sync/                     ←   `wtm sync`: the run (sync.go) + its questions (steps.go)
-    runlogs/                  ←   `wtm run up`/`run logs`: the jobs a surface shows,
-                                  their live streams, and the profile start sequence
-                                  (asks nothing — it reports events instead of steps)
+    runlogs/                  ←   the jobs a surface shows (`Board`), their live streams,
+                                  and the profile start sequence (reports events, not steps)
+    run/                      ←   the `run` module's flows, mirroring its command tree:
+      target/                 ←     the questions they share (worktree, job, profile)
+      seam/                   ←     the daemon as a flow uses it: board, env, log dir,
+                                    port prober, and the start sequence a surface drives
+      up/ down/ start/        ←     one package per command, as everywhere else
+      stop/ logs/
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
     env/                      ←   .env provisioning (create) + drift reconciliation (`wtm env`, sync.go)
@@ -220,6 +225,11 @@ each splitting the run from the questions it asks. Three seams let a second surf
   installed Prompter, the format is the surface. `--force` *does* belong there — it is
   the safety axis, a business input.
 
+A run reports through a **`seam.Watcher`** rather than a `Presenter` alone: the surface has
+to be drawing before the first job is asked for, so it is the surface that calls the start
+sequence and hands back its `Outcome`. That is the one thing `Stage` cannot express, and the
+only reason the run flows' `Presenter` is wider than `flow.Presenter`.
+
 Steps are declared as `flow.Step` values (`Kind`, `Key`, `Label`, `Options`, `Skip`,
 `Build`, `Load`, `Resolve`, `Summarize`). `Resolve` is the entire bypass taxonomy in
 one place: returning an `Answer` is a decision with a safe default, returning an error
@@ -242,9 +252,10 @@ rather than at every action site.
 
 Adding a kind means teaching every surface to render it: `flowui` refuses an unknown
 kind rather than guessing. Test doubles for the two seams live in
-`internal/testutil/flowtest`. `create`, `clean`, `reparent`, `prune` and `sync` are
-migrated; `extract` and the other commands still drive their wizard packages
-directly, and `tui/newwt` stays until `extract` (which embeds it) migrates.
+`internal/testutil/flowtest`. `create`, `clean`, `reparent`, `prune`, `sync` and the
+`run` module's seven commands (`up`, `down`, `start`, `stop`, `logs`, `ps`, `list`) are
+migrated; `extract`, `run open`, `run url` and `run job`/`run profile` still drive their
+wizard packages directly, so `tui/newwt` and `tui/runpicker` stay until they follow.
 
 A **non-mutating mode** (`prune --dry-run`) belongs in the `Request`, not in the runner:
 it changes what the run does, not how it reads. The flow returns its `Outcome` before

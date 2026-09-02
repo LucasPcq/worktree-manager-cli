@@ -29,12 +29,17 @@ is implemented yet.
 | `wtm reparent` | migrated — `internal/flow/reparent` |
 | `wtm prune` | migrated — `internal/flow/prune` |
 | `wtm sync` | migrated — `internal/flow/sync` |
+| `wtm run up\|down\|start\|stop\|logs` | migrated — `internal/flow/run/<cmd>`, over the questions in `internal/flow/run/target` and the daemon binding in `internal/flow/run/seam` (LUC-193) |
+| `wtm run ps\|list` | migrated in the sense that matters: their pickers now call those flows in this process instead of re-executing the binary. The pickers themselves stay in `internal/tui/runpicker`, which `run job` and `run profile` also use |
 | CLI wizard surface | `internal/tui/flowui` |
 | Unattended surface | `flow.Unattended` (in `internal/flow`) |
 | Dashboard surface | `internal/tui/dashboard` (`prompter.go`, `presenter.go`, `ops.go`) |
 | Test doubles | `internal/testutil/flowtest` |
+| `run open`, `run url` | **not migrated** — still resolve their target through `internal/commands/run/target.go` and `internal/tui/runpicker`'s wizard. `run open` needs a URL step whose options depend on the worktree answered one step earlier, which `Step.Build(answers)` supports but nothing declares yet. |
 | `extract` | **not migrated** — still driven by `internal/commands/wt` plus its wizard package (`internal/tui/extract`). The model was validated on paper against it; that is not the same as delivered. Tracked as LUC-182. |
 | `StepMultiSelect` | exists since `reparent`, which needed it to keep its no-argument picker. Rendered by both surfaces: `flowui`, and the dashboard's modal since its Actions menu runs the batch reparent. Since `prune`, an `Option` can also arrive pre-checked and tagged (`Selected`, `Tag`, `Tone`). `Tone` is a `domain` enum, not a `flow` one, so `components.TagVariantOf` can hold the one mapping onto the palette without the widget library learning about `flow`. |
+| `StepContent.Start` and `Option.Badges` | exist since the run module's worktree step (LUC-193), which opens its cursor on the worktree you are standing in and marks each row with what it is running. Both surfaces render them; `Badges` are the trailing words of a `StepSelect` row, where `Tag` is the leading one of a `StepMultiSelect` row. |
+| `seam.Watcher` | the run flows' extra Presenter half. A start sequence cannot be reported through `Stage`: the surface has to be drawing before the first job is asked for, so the surface calls the sequence and hands back its `Outcome`. |
 
 ## The shape of a flow
 
