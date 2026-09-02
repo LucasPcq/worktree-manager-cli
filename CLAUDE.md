@@ -180,7 +180,8 @@ internal/
                                   between flow.Step and components.Step)
     dashboard/                ←   `wtm ui`: the full-screen worktree dashboard, the second
                                   surface over flow/ (its own Prompter/Presenter, mouse
-                                  zones via bubblezone)
+                                  zones via bubblezone). It also hands the terminal to
+                                  runview (`handoff.go`) for the run flows that draw
     runview/                  ←   a job's raw PTY output replayed through a terminal
                                   emulator (`github.com/charmbracelet/x/vt`)
   infra/                      ← I/O, git exec, filesystem wrappers
@@ -241,6 +242,13 @@ builds also carries `Blockers` — the safety refusals standing in the way of it
 dangerous option, named one by one instead of folded into the prose, so a surface can
 have each of them lifted separately (`rules.CleanBlockers` feeds
 `internal/flow/clean/steps.go`).
+
+**Handing the terminal over.** A flow whose surface is a second full-screen program —
+`run up` and `run logs` in the dashboard — goes through `tea.Exec` with a `tea.ExecCommand`
+that runs `runview` **in this process**, so its result comes back typed rather than as an
+exit code. Bubbletea releases and restores the terminal around it, but restores neither the
+mouse tracking it turned off nor anything else a surface enabled after startup: a
+mouse-driven surface has to ask for it again (`dashboard/handoff.go`).
 
 **`flow.Operation`** (`Kind`, `Mode`, `TargetKey`) is what a flow declares about *how it
 is scheduled*, for a surface that runs several at once. `Mode` says how long it holds
