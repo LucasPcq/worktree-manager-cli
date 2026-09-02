@@ -2,6 +2,8 @@ package process
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -397,5 +399,26 @@ func TestManagerStartDetached_KeepsNoExitCode(t *testing.T) {
 	}
 	if launcher.StartedAt.IsZero() {
 		t.Error("StartedAt is zero, want the launcher's spawn instant")
+	}
+}
+
+// The exit code has to survive the sentence it is quoted in: the messages are
+// read by people and carry no %w, so before `failure` carried it separately
+// everything downstream read the 1 exitCodeOf invents for an unattributed
+// failure — the JSON document's exit_code among it.
+func TestExitCodeOfReadsTheCodeAFailureCarries(t *testing.T) {
+	err := failure{message: "task migrate failed (exit 3)", code: 3}
+
+	if got := exitCodeOf(err); got != 3 {
+		t.Errorf("exitCodeOf = %d, want the code the failure carries", got)
+	}
+	if got := exitCodeOf(fmt.Errorf("wrapped: %w", err)); got != 3 {
+		t.Errorf("exitCodeOf through a wrap = %d, want 3", got)
+	}
+	if got := exitCodeOf(errors.New("something else")); got != 1 {
+		t.Errorf("exitCodeOf of an unattributed failure = %d, want 1", got)
+	}
+	if got := exitCodeOf(nil); got != 0 {
+		t.Errorf("exitCodeOf(nil) = %d, want 0", got)
 	}
 }
