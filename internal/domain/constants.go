@@ -1615,6 +1615,7 @@ const (
 	RunConcurrencyExclusive   = "Stop the other worktrees' jobs first"
 	RunConcurrencyAlwaysFmt   = "%s — always for this project"
 	RunConcurrencySkipSettled = "already answered for this project"
+	RunConcurrencySkipFlag    = "set by --exclusive or --parallel"
 	RunConcurrencySkipAlone   = "no other worktree is running jobs"
 	// RunConcurrencyRememberedFmt confirms what was written to run.toml, so a
 	// remembered answer is never a silent one.

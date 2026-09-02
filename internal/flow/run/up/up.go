@@ -167,7 +167,7 @@ func (f *upFlow) remember(answers flow.Answers) error {
 // A worktree that refuses to stop is reported and the run carries on: the
 // answer was about this machine's load, not about a dependency.
 func (f *upFlow) clearOthers(answers flow.Answers) error {
-	if concurrencyOf(answers.Value(KeyConcurrency)) != domain.ConcurrencyExclusive {
+	if f.concurrency(answers) != domain.ConcurrencyExclusive {
 		return nil
 	}
 	others := f.otherWorktrees(answers)

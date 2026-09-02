@@ -184,3 +184,51 @@ type presenterOnly struct{ *flowtest.Recorder }
 func (presenterOnly) Sequence(seam.SequenceParams) (runlogs.Outcome, error) {
 	return runlogs.Outcome{}, nil
 }
+
+// The regression that shipped: Skip short-circuits Resolve, so a settled step
+// carries no value at all. Reading the answer alone turned every
+// non-interactive --exclusive — and every project that had written
+// concurrency = "exclusive" — into a parallel run that stopped nothing.
+func TestASettledConcurrencyIsStillActedOn(t *testing.T) {
+	cases := []struct {
+		name    string
+		request Request
+		want    domain.Concurrency
+	}{
+		{"--exclusive", Request{Exclusive: true}, domain.ConcurrencyExclusive},
+		{"--parallel", Request{Parallel: true}, domain.ConcurrencyParallel},
+		{"config says exclusive", Request{Config: domain.RunConfig{Concurrency: domain.ConcurrencyExclusive}}, domain.ConcurrencyExclusive},
+		{"config says parallel", Request{Config: domain.RunConfig{Concurrency: domain.ConcurrencyParallel}}, domain.ConcurrencyParallel},
+		{"nobody answered", Request{}, domain.ConcurrencyParallel},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := flowWith(tc.request, running(here, "/wt/other"))
+
+			// What an unattended run produces: Skip wins, and the step is recorded
+			// as skipped with no value.
+			answers, err := flow.Unattended{}.Ask(f.session())
+			if err != nil {
+				t.Fatalf("Ask: %v", err)
+			}
+			if answers.Answered(KeyConcurrency) {
+				t.Fatal("the step was answered, so this test no longer covers the skipped path")
+			}
+
+			if got := f.concurrency(answers); got != tc.want {
+				t.Errorf("concurrency = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A picker's answer outranks what the flags and the config would have resolved.
+func TestAnAnsweredConcurrencyOutranksTheFallback(t *testing.T) {
+	f := flowWith(Request{Parallel: true}, running(here, "/wt/other"))
+	answers := flow.Answers{}.With(KeyConcurrency, flow.Answer{Value: answerExclusiveAlways, Asked: true})
+
+	if got := f.concurrency(answers); got != domain.ConcurrencyExclusive {
+		t.Errorf("concurrency = %q, want the answer that was actually given", got)
+	}
+}

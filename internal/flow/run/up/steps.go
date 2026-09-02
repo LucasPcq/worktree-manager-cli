@@ -55,14 +55,10 @@ func (f *upFlow) concurrencyStep() flow.Step {
 		Key:   KeyConcurrency,
 		Label: domain.RunConcurrencyStepName,
 		Skip: func(answers flow.Answers) (bool, string) {
-			decision := f.decideConcurrency(answers)
-			if decision.Ask {
+			if f.decideConcurrency(answers).Ask {
 				return false, ""
 			}
-			if !f.othersRunning(answers) {
-				return true, domain.RunConcurrencySkipAlone
-			}
-			return true, domain.RunConcurrencySkipSettled
+			return true, f.skipReason(answers)
 		},
 		Build: func(answers flow.Answers) (flow.StepContent, error) {
 			return flow.StepContent{
@@ -84,6 +80,32 @@ func (f *upFlow) concurrencyStep() flow.Step {
 		},
 		Summarize: func(answer flow.Answer) string { return string(concurrencyOf(answer.Value)) },
 	}
+}
+
+// skipReason says why the question was not put to anyone, which is not the same
+// thing three times over: nothing to stop, a flag that already answered, or an
+// answer this project settled for good.
+func (f *upFlow) skipReason(answers flow.Answers) string {
+	switch {
+	case !f.othersRunning(answers):
+		return domain.RunConcurrencySkipAlone
+	case f.request.Exclusive || f.request.Parallel:
+		return domain.RunConcurrencySkipFlag
+	default:
+		return domain.RunConcurrencySkipSettled
+	}
+}
+
+// concurrency is what this run does about the other worktrees: the step's answer
+// when it was actually put to someone, else whatever resolved it in its place.
+// A skipped step carries no value — Skip short-circuits Resolve — so reading the
+// answer alone would silently turn every non-interactive --exclusive into a
+// parallel run.
+func (f *upFlow) concurrency(answers flow.Answers) domain.Concurrency {
+	if answers.Answered(KeyConcurrency) {
+		return concurrencyOf(answers.Value(KeyConcurrency))
+	}
+	return f.decideConcurrency(answers).Value
 }
 
 func alwaysLabel(label string) string {
