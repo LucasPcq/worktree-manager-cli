@@ -1623,6 +1623,8 @@ const (
 	RunStoppingFmt   = "Stopping %s…"
 	RunStoppedFmt    = "%s stopped"
 	RunNoJobsRunning = "No jobs running."
+	RunNoJobsHere    = "No jobs running in this worktree."
+	RunStoppingJobs  = "Stopping jobs…"
 
 	// RunStoppingOthers and RunStoppedOtherFmt report the worktrees an exclusive
 	// run cleared before starting.
