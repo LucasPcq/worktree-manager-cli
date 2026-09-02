@@ -508,7 +508,7 @@ the shape of a URL**:
 Both conditions matter. The first leaves Postgres alone — the proxy only speaks HTTP. The
 second leaves the binding keys alone: `PORT` belongs to a job that *does* publish a name, and
 must still be a number. Without the redirection installed the address carries the proxy's
-port (`…localhost:10080`), which changes nothing for CORS and nothing for cookie isolation —
+port (`…localhost:11080`), which changes nothing for CORS and nothing for cookie isolation —
 a port is part of an origin, but never part of a *cookie's* origin.
 
 Set `addressing = "ports"` at the top of `run.toml` to keep port numbers everywhere; it is a
@@ -566,7 +566,7 @@ shell = "zsh"          # zsh | bash | fish
 animations = true      # false disables every wtm ui animation (tab rule, new-row flash)
 
 [proxy]
-port = 10080           # where named job URLs are served, on the loopback only
+port = 11080           # where named job URLs are served, on the loopback only
 enabled = true         # false sends every URL back to http://localhost:<port>
 ```
 
@@ -574,7 +574,7 @@ enabled = true         # false sends every URL back to http://localhost:<port>
 `wtm ui` animation at once, useful over a slow or laggy connection.
 
 `[proxy]` serves each worktree's HTTP jobs under their own hostname
-(`http://<job>.<worktree>.<repo>.localhost:10080`), so two worktrees stop sharing one
+(`http://<job>.<worktree>.<repo>.localhost:11080`), so two worktrees stop sharing one
 cookie jar — a job opts in with `url = { port = "PORT" }` in `run.toml`, which `wtm run
 init` writes for the services it detects. Both keys default
 to the values above; the proxy lives in the background daemon and dies with it, and a port

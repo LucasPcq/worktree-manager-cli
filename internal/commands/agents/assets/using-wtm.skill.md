@@ -339,7 +339,7 @@ and **experimental**: the global `wtm init` does not configure it.
   browser; it may offer a picker, but only in a fully interactive run, so **always name
   the job**.
 - **The URL is a name, not a port.** With the proxy on (the default), a published job
-  answers at `http://<job>.<worktree>.<repo>.localhost:10080` — that order on purpose, so a
+  answers at `http://<job>.<worktree>.<repo>.localhost:11080` — that order on purpose, so a
   cookie set on `.<worktree>.<repo>.localhost` stays inside that worktree. **That URL may
   carry no port at all**: `wtm run proxy install` redirects port 80 to the proxy, after
   which `run url` prints `http://<job>.<worktree>.<repo>.localhost`. Never assume a `:port`
@@ -447,7 +447,7 @@ and **experimental**: the global `wtm init` does not configure it.
 - **`[proxy]` in the global config** tunes the proxy for the whole machine. That file sits
   under the OS config directory — `~/.config/wtm/` on Linux, `~/Library/Application Support/wtm/`
   on macOS — and `wtm run proxy status` prints its resolved path, so never spell it yourself:
-  `port` (default `10080`) and `enabled` (default on). Switching it off is not a failure —
+  `port` (default `11080`) and `enabled` (default on). Switching it off is not a failure —
   every URL wtm prints falls back to the direct `http://localhost:<port>` form. Same if
   the port is already taken: the jobs still start, wtm prints the direct form and says
   once why the names are off. **The URL wtm reports is always one that works** — it comes
@@ -493,7 +493,7 @@ and **experimental**: the global `wtm init` does not configure it.
   is not a conflict — but a genuine difference in the same value still is.
 - **A linked value that is a URL gets the job's whole address, not its port**, when the job
   it names publishes a `url` for that very port. `VITE_API_URL=http://localhost:4001` becomes
-  `http://api-dev.feat-x.monorepo.localhost` (or `…localhost:10080` when the redirection is
+  `http://api-dev.feat-x.monorepo.localhost` (or `…localhost:11080` when the redirection is
   not installed). This is what makes named URLs usable at all: the browser sends a name as its
   `Origin`, so a `CORS_ORIGIN` holding a port blocks every cross-origin call. Both conditions
   are load-bearing — a bare `PORT=4011` stays a number even though its job publishes a name,

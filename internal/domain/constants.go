@@ -179,10 +179,13 @@ const (
 	// ProxyTLD is the special-use TLD every wtm route lives under (RFC 6761).
 	ProxyTLD = "localhost"
 	// ProxyDefaultPort is what the run proxy listens on when the config says
-	// nothing. It reads as "100 then 80" — the privileged port with a prefix,
-	// which is what it serves. Above every common dev default (3000, 4000, 4200,
-	// 5173, 8000, 8080, 9000) and below 49152, where the ephemeral range starts.
-	ProxyDefaultPort = 10080
+	// nothing: above every common dev default (3000, 4000, 4200, 5173, 8000,
+	// 8080, 9000), below 49152 where the ephemeral range starts, and — the
+	// constraint that decides it — absent from the browsers' blocked-port lists.
+	// It was 10080, which reads better as "100 then 80" but is Chromium's and
+	// Gecko's `amanda` port: every named URL answered ERR_UNSAFE_PORT while the
+	// proxy itself was serving perfectly. See rules.IsBrowserBlockedPort.
+	ProxyDefaultPort = 11080
 	// ProxyPortScanSpan is how many ports past the configured one the proxy
 	// tries before giving up. A name answering on an unexpected port beats a
 	// name answering nowhere, but a port far from the one asked for is no
