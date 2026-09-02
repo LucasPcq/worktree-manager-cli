@@ -26,6 +26,10 @@ type Client struct {
 	// is a per-command value dialing one connection at a time, never a shared
 	// pool, so the flag has no other conversation to leak into.
 	skipVersionCheck bool
+	// versionChecked keeps the preflight to once per client: a `run up` sends a
+	// request per job, and asking again between two of them would answer the
+	// same thing at the cost of a round-trip each.
+	versionChecked bool
 }
 
 // NewClient creates a client for the given socket path.
@@ -63,6 +67,44 @@ func (c *Client) SendStream(req Request, onOutput func([]byte)) (Response, error
 // The daemon is not told anything — the job it is running is untouched, and only
 // this conversation about it ends.
 func (c *Client) SendStreamContext(ctx context.Context, req Request, onOutput func([]byte)) (Response, error) {
+	if err := c.preflight(req); err != nil {
+		return Response{}, err
+	}
+	return c.send(ctx, req, onOutput)
+}
+
+// preflight settles the version question before a request that changes
+// something is sent. Reading the version off the answer is too late: the daemon
+// acts on a request as it decodes it, so a `run down` served by a daemon of
+// another build has already torn the stack down by the time the client refuses
+// to believe its answer. A listing costs one round-trip on a unix socket and
+// changes nothing, which is what makes it safe to ask first.
+func (c *Client) preflight(req Request) error {
+	if c.skipVersionCheck || c.versionChecked || !mutates(req.Action) {
+		return nil
+	}
+	c.versionChecked = true
+
+	resp, err := c.send(context.Background(), Request{Action: ActionList}, nil)
+	if err != nil {
+		return err
+	}
+	return checkVersion(resp)
+}
+
+// mutates says whether the daemon does something irreversible on decoding this
+// request. A listing does not, and neither does an attach — it subscribes to
+// output a job is producing either way.
+func mutates(action RequestAction) bool {
+	switch action {
+	case ActionStart, ActionStop, ActionStopAll, ActionResize, ActionShutdown:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Client) send(ctx context.Context, req Request, onOutput func([]byte)) (Response, error) {
 	conn, err := net.Dial("unix", c.socketPath)
 	if err != nil {
 		return Response{}, fmt.Errorf("connect to daemon: %w", err)

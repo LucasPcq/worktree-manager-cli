@@ -19,6 +19,16 @@ func DaemonVersionMismatch(params DaemonVersionMismatchParams) string {
 	return fmt.Sprintf(domain.DaemonVersionMismatchFmt, DaemonVersionLabel(params.Daemon), params.Client)
 }
 
+// DaemonVersionMismatchLines is the same refusal for a callout, which boxes what
+// it is given and so needs its own line breaks rather than a paragraph.
+func DaemonVersionMismatchLines(params DaemonVersionMismatchParams) []string {
+	return []string{
+		fmt.Sprintf(domain.DaemonMismatchWhyFmt, DaemonVersionLabel(params.Daemon), params.Client),
+		domain.DaemonMismatchReason,
+		domain.DaemonMismatchFixLine,
+	}
+}
+
 // DaemonVersionDiverged reports a daemon this binary did not build. `status` is
 // the one command that says so instead of refusing: it exists to be run when
 // something else already refused.

@@ -30,12 +30,10 @@ func DaemonStatusReport(w io.Writer, status domain.DaemonStatus) {
 	Section(w, domain.DaemonStatusTitle, lines)
 
 	if rules.DaemonVersionDiverged(status) {
-		Callout(w, domain.DaemonMismatchTitle, []string{
-			rules.DaemonVersionMismatch(rules.DaemonVersionMismatchParams{
-				Client: status.Version,
-				Daemon: status.DaemonVersion,
-			}),
-		})
+		Callout(w, domain.DaemonMismatchTitle, rules.DaemonVersionMismatchLines(rules.DaemonVersionMismatchParams{
+			Client: status.Version,
+			Daemon: status.DaemonVersion,
+		}))
 	}
 }
 

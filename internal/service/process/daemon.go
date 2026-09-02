@@ -314,11 +314,14 @@ func (d *daemonServer) handleList(encoder replyEncoder, req Request) {
 
 func (d *daemonServer) jobInfoOf(job ManagedJob) domain.JobInfo {
 	return domain.JobInfo{
-		Name:      job.Name,
-		Kind:      job.Config.Kind,
-		WorkDir:   job.WorkDir,
-		Status:    job.Status,
-		PID:       job.PID,
+		Name:    job.Name,
+		Kind:    job.Config.Kind,
+		WorkDir: job.WorkDir,
+		Status:  job.Status,
+		// A detached job reports no PID: the one it was spawned with belongs to
+		// a launcher that has exited, and printing it points at nothing — or, in
+		// time, at a stranger.
+		PID:       detachedAwarePID(job),
 		StartedAt: job.StartedAt,
 		ExitCode:  job.ExitCode,
 		URL: rules.JobURL(rules.JobURLParams{
@@ -328,6 +331,13 @@ func (d *daemonServer) jobInfoOf(job ManagedJob) domain.JobInfo {
 			PublicPort: d.publicPort(),
 		}),
 	}
+}
+
+func detachedAwarePID(job ManagedJob) int {
+	if job.Status == domain.JobStatusDetached {
+		return 0
+	}
+	return job.PID
 }
 
 // handleResize answers on its own connection by design: an attach connection

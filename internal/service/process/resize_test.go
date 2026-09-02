@@ -199,19 +199,7 @@ func TestClientResize_TravelsOnItsOwnConnection(t *testing.T) {
 	defer listener.Close()
 
 	requests := make(chan Request, 1)
-	go func() {
-		conn, acceptErr := listener.Accept()
-		if acceptErr != nil {
-			return
-		}
-		defer conn.Close()
-		var req Request
-		if decodeErr := json.NewDecoder(conn).Decode(&req); decodeErr != nil {
-			return
-		}
-		requests <- req
-		_ = json.NewEncoder(conn).Encode(Response{Status: StatusOK, Version: domain.Version})
-	}()
+	go serveVersionedOK(listener, requests, Response{Status: StatusOK, Version: domain.Version})
 
 	client := NewClient(socket)
 	if err := client.Resize(ResizeParams{Name: "dev", WorkDir: "/work/feat", Cols: 80, Rows: 20}); err != nil {
@@ -239,18 +227,7 @@ func TestClientResize_SurfacesTheDaemonError(t *testing.T) {
 	}
 	defer listener.Close()
 
-	go func() {
-		conn, acceptErr := listener.Accept()
-		if acceptErr != nil {
-			return
-		}
-		defer conn.Close()
-		var req Request
-		if decodeErr := json.NewDecoder(conn).Decode(&req); decodeErr != nil {
-			return
-		}
-		_ = json.NewEncoder(conn).Encode(Response{Status: StatusError, Version: domain.Version, Message: "job dev not found"})
-	}()
+	go serveVersionedOK(listener, nil, Response{Status: StatusError, Version: domain.Version, Message: "job dev not found"})
 
 	err = NewClient(socket).Resize(ResizeParams{Name: "dev", Cols: 80, Rows: 20})
 	if err == nil {
@@ -258,6 +235,33 @@ func TestClientResize_SurfacesTheDaemonError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "job dev not found") {
 		t.Errorf("error = %q, want the daemon message", err)
+	}
+}
+
+// serveVersionedOK stands in for the daemon across as many connections as the
+// client opens: a mutating request is preceded by a listing, which is how the
+// client settles the version question before the daemon acts on anything.
+func serveVersionedOK(listener net.Listener, requests chan<- Request, answer Response) {
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		var req Request
+		if decodeErr := json.NewDecoder(conn).Decode(&req); decodeErr != nil {
+			conn.Close()
+			return
+		}
+		if req.Action == ActionList {
+			_ = json.NewEncoder(conn).Encode(Response{Status: StatusOK, Version: domain.Version})
+			conn.Close()
+			continue
+		}
+		if requests != nil {
+			requests <- req
+		}
+		_ = json.NewEncoder(conn).Encode(answer)
+		conn.Close()
 	}
 }
 

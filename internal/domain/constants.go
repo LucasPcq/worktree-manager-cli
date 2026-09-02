@@ -3,12 +3,16 @@ package domain
 
 import "time"
 
+// Version is the build this binary was cut from, stamped at link time by
+// .goreleaser.yaml. It is a var rather than a const precisely so ldflags can
+// reach it, and it must stay the single stamped symbol: the run daemon compares
+// it across the socket, so a second one stamped elsewhere would let a client and
+// its daemon disagree about which build each is.
+var Version = "dev"
+
 const (
 	// AppName is the canonical name of the CLI binary.
 	AppName = "wtm"
-
-	// Version is the current release version, overridden at build time via ldflags.
-	Version = "dev"
 
 	// ExitCodeOK indicates successful execution.
 	ExitCodeOK = 0
@@ -1293,7 +1297,15 @@ const (
 	// DaemonVersionMismatchFmt takes the daemon's version then the client's. It
 	// names the way out, because there is nothing the user can do from the
 	// command they just ran.
-	DaemonVersionMismatchFmt = "the run daemon holding the socket is %s, this is wtm %s — it is the daemon that runs your jobs, so its behavior is what applies. Run 'wtm run daemon restart' to hand them over (detached services keep running; foreground ones are stopped)"
+	DaemonVersionMismatchFmt = "the daemon holding the socket is %s, this is wtm %s — run 'wtm run daemon restart' to hand your jobs over"
+
+	// DaemonMismatchWhyFmt and DaemonMismatchFixLine are the same refusal with
+	// room to explain, for the callout `run daemon status` renders. One line per
+	// entry: a callout draws its own box around whatever it is given, and a
+	// paragraph would draw one as wide as itself.
+	DaemonMismatchWhyFmt  = "The daemon holding the socket is %s, this is wtm %s."
+	DaemonMismatchReason  = "It runs your jobs, so its behavior is the one that applies — not this build's."
+	DaemonMismatchFixLine = "Run `wtm run daemon restart`: detached services survive it, foreground ones stop."
 
 	// The `run daemon` surface's wording.
 	DaemonStatusTitle      = "Run daemon"
@@ -1313,7 +1325,6 @@ const (
 	// did not build, so `status` reports the divergence the other commands
 	// refuse on.
 	DaemonMismatchTitle = "Version mismatch"
-	DaemonMismatchFix   = "wtm run daemon restart"
 
 	// DaemonStateVersion is the index format. A file carrying anything else is
 	// read as empty and never written back, so an older binary cannot destroy

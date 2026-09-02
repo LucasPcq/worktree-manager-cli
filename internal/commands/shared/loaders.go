@@ -3,7 +3,9 @@ package shared
 import (
 	"errors"
 
+	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
@@ -65,16 +67,42 @@ func LoadPRsAllStatesGraceful(projectDir string) []domain.PRInfo {
 	return prs
 }
 
-// LoadJobsGraceful fetches the daemon's running jobs, returning nil when the daemon is not running.
+// LoadJobsGraceful fetches the daemon's jobs, returning nil when there are none
+// to fetch. A daemon exits once no foreground job is left, so nobody listening
+// says nothing about whether detached stacks are up: when the index still holds
+// some, one is started to read them back. When it holds nothing there is nothing
+// to report, and no daemon is forked for it.
 func LoadJobsGraceful() []domain.JobInfo {
+	jobs, _ := LoadJobs()
+	return jobs
+}
+
+// LoadJobs is LoadJobsGraceful for the callers whose whole output is that list.
+// The error worth surfacing is a daemon of another build: reported as "no jobs",
+// it would be the exact silence the version handshake exists to break.
+func LoadJobs() ([]domain.JobInfo, error) {
 	socketPath := process.SocketPath()
 	if !process.IsDaemonRunning(socketPath) {
-		return nil
+		if !process.HasAnyIndexedJob() {
+			return nil, nil
+		}
+		global, err := config.LoadGlobal()
+		if err != nil {
+			return nil, nil
+		}
+		if err := process.EnsureDaemon(process.DaemonParams{
+			SocketPath: socketPath,
+			ProxyPort:  rules.ProxyPort(global),
+		}); err != nil {
+			return nil, nil
+		}
 	}
-	client := process.NewClient(socketPath)
-	resp, err := client.Send(process.Request{Action: process.ActionList})
+	resp, err := process.NewClient(socketPath).Send(process.Request{Action: process.ActionList})
 	if err != nil {
-		return nil
+		if errors.Is(err, domain.ErrDaemonVersionMismatch) {
+			return nil, err
+		}
+		return nil, nil
 	}
-	return resp.Jobs
+	return resp.Jobs, nil
 }

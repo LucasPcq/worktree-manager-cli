@@ -130,11 +130,10 @@ func NewManagerWith(params ManagerParams) *Manager {
 }
 
 // Adopt takes over the jobs a previous daemon left behind. It starts nothing and
-// stops nothing: each entry is classified by rules.ReconcileJob and registered
-// as it is, so `run ps` can report it and `run down` can tear it down.
-//
-// The adopted jobs carry no process — no Cmd, no PTY, no output hub. Every path
-// that would reach for one already gates on a status they do not have.
+// stops nothing — it registers what rules.ReconcileJob makes of each entry, so
+// `run ps` can report it and `run down` can tear it down. The adopted jobs carry
+// no process, and every path that would reach for one gates on a status they do
+// not have.
 func (m *Manager) Adopt(records []domain.JobRecord) {
 	m.mu.Lock()
 	for _, record := range records {
@@ -323,9 +322,8 @@ func (m *Manager) Start(params StartParams) error {
 			m.mu.Unlock()
 			return err
 		}
-		// The launcher is gone and the work it started is not ours: from here
-		// the job is detached, a state it keeps until something stops it. Only
-		// now is it worth indexing — a launcher that failed left nothing behind.
+		// The launcher is gone and the work it started is not ours. Indexed only
+		// now: a launcher that failed left nothing behind.
 		m.mu.Lock()
 		managed.Status = domain.JobStatusDetached
 		m.mu.Unlock()
@@ -867,16 +865,21 @@ type jobRef struct {
 func (m *Manager) attachableJob(ref jobRef) (*ManagedJob, error) {
 	m.mu.Lock()
 	job, ok := m.jobs[jobKey(ref.Name, ref.WorkDir)]
-	isRunning := ok && job.Status == domain.JobStatusRunning
+	// Snapshotted, never re-read: Status is written by whichever goroutine reaps
+	// or stops the job, so a second read outside the lock is a race.
+	var status domain.JobStatus
+	if ok {
+		status = job.Status
+	}
 	m.mu.Unlock()
 
 	if !ok {
 		return nil, fmt.Errorf("job %s not found", ref.Name)
 	}
-	if job.Status == domain.JobStatusDetached {
+	if status == domain.JobStatusDetached {
 		return nil, fmt.Errorf("job %s is detached: its launcher exited and left no stream (see wtm run logs)", ref.Name)
 	}
-	if !isRunning {
+	if status != domain.JobStatusRunning {
 		return nil, fmt.Errorf("job %s is not running", ref.Name)
 	}
 	if job.output == nil {
