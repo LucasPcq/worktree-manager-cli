@@ -83,7 +83,7 @@ func TestDaemonHandleList_ReportsWhenAJobStartedAndHowItEnded(t *testing.T) {
 	running := waitForJob(t, d.manager, "dev", func(ManagedJob) bool { return true })
 
 	var buf bytes.Buffer
-	d.handleList(json.NewEncoder(&buf), Request{Action: ActionList})
+	d.handleList(replyEncoder{enc: json.NewEncoder(&buf)}, Request{Action: ActionList})
 	payloads := jobPayloadsByName(t, buf.Bytes())
 
 	dev, ok := payloads["dev"]
@@ -124,7 +124,7 @@ func TestDaemonHandleStopAll_SnapshotsTheJobsItStopped(t *testing.T) {
 	started := waitForJob(t, d.manager, "dev", func(ManagedJob) bool { return true })
 
 	var buf bytes.Buffer
-	d.handleStopAll(json.NewEncoder(&buf), Request{Action: ActionStopAll, WorkDir: dir})
+	d.handleStopAll(replyEncoder{enc: json.NewEncoder(&buf)}, Request{Action: ActionStopAll, WorkDir: dir})
 	payloads := jobPayloadsByName(t, buf.Bytes())
 
 	dev, ok := payloads["dev"]

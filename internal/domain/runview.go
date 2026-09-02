@@ -42,6 +42,9 @@ const (
 	JobMarkStopped JobMark = iota
 	JobMarkStarting
 	JobMarkRunning
+	// JobMarkDetached is up but not ours: its launcher exited and left the work
+	// to something else, so there is nothing to attach to.
+	JobMarkDetached
 	JobMarkDone
 	JobMarkCrashed
 )

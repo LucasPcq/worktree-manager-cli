@@ -96,12 +96,21 @@ func findJob(jobs []domain.JobInfo, name string) domain.JobInfo {
 
 func pickPsAction(job domain.JobInfo) (string, error) {
 	var items []components.SelectItem
-	if job.Status == domain.JobStatusRunning {
+	switch {
+	case job.Status == domain.JobStatusRunning:
 		items = []components.SelectItem{
 			{Label: "Stop", Value: ActionPsStop},
 			{Label: "Logs (attach)", Value: ActionPsLogs},
 		}
-	} else {
+	case job.Status == domain.JobStatusDetached:
+		// No attach: the launcher's stream ended with it. Restarting is offered
+		// because a detached launcher is idempotent, which is what makes it
+		// detachable in the first place.
+		items = []components.SelectItem{
+			{Label: "Stop", Value: ActionPsStop},
+			{Label: "Restart", Value: ActionPsRestart},
+		}
+	default:
 		items = []components.SelectItem{
 			{Label: "Restart", Value: ActionPsRestart},
 			{Label: "Remove (stop)", Value: ActionPsStop},
@@ -124,7 +133,7 @@ func pickPsAction(job domain.JobInfo) (string, error) {
 
 func statusBadge(status domain.JobStatus) components.Badge {
 	switch status {
-	case domain.JobStatusRunning:
+	case domain.JobStatusRunning, domain.JobStatusDetached:
 		return components.Badge{Text: string(status), Variant: components.BadgeSuccess}
 	case domain.JobStatusCrashed:
 		return components.Badge{Text: string(status), Variant: components.BadgeWarning}

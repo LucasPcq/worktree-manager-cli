@@ -47,6 +47,9 @@ func runDown(cmd *cobra.Command, args []string) error {
 
 	socketPath := process.SocketPath()
 
+	if err := ensureDaemonForDown(cmd, ensureDownParams{SocketPath: socketPath, Dir: dir, All: all}); err != nil {
+		return err
+	}
 	if !process.IsDaemonRunning(socketPath) {
 		if format == domain.OutputJSON {
 			return output.WriteJobResultsJSON(cmd.OutOrStdout(), nil)
@@ -167,4 +170,37 @@ func runDown(cmd *cobra.Command, args []string) error {
 	}
 	output.FrameEnd(cmd.OutOrStdout())
 	return nil
+}
+
+type ensureDownParams struct {
+	SocketPath string
+	Dir        string
+	All        bool
+}
+
+// ensureDaemonForDown wakes a daemon when the index still holds jobs for what is
+// being stopped. A daemon exits once no foreground job is left, so after a reboot
+// — or simply half an hour later — nothing is listening while detached stacks are
+// very much up, and `run down` is exactly the command that must reach them.
+func ensureDaemonForDown(cmd *cobra.Command, params ensureDownParams) error {
+	if process.IsDaemonRunning(params.SocketPath) {
+		return nil
+	}
+
+	indexed := process.HasIndexedJobs(params.Dir)
+	if params.All {
+		indexed = process.HasAnyIndexedJob()
+	}
+	if !indexed {
+		return nil
+	}
+
+	result, err := shared.LoadConfig(cmd, params.Dir)
+	if err != nil {
+		return err
+	}
+	return process.EnsureDaemon(process.DaemonParams{
+		SocketPath: params.SocketPath,
+		ProxyPort:  rules.ProxyPort(result.Config.Global),
+	})
 }

@@ -3,12 +3,16 @@ package domain
 
 import "time"
 
+// Version is the build this binary was cut from, stamped at link time by
+// .goreleaser.yaml. It is a var rather than a const precisely so ldflags can
+// reach it, and it must stay the single stamped symbol: the run daemon compares
+// it across the socket, so a second one stamped elsewhere would let a client and
+// its daemon disagree about which build each is.
+var Version = "dev"
+
 const (
 	// AppName is the canonical name of the CLI binary.
 	AppName = "wtm"
-
-	// Version is the current release version, overridden at build time via ldflags.
-	Version = "dev"
 
 	// ExitCodeOK indicates successful execution.
 	ExitCodeOK = 0
@@ -1244,6 +1248,7 @@ const (
 	// launchd bound on the privileged port.
 	CmdProxyForward = "proxy-forward"
 	FlagTarget      = "target"
+	CmdRestart      = "restart"
 	CmdStatus       = "status"
 	CmdInstall      = "install"
 	CmdUninstall    = "uninstall"
@@ -1278,6 +1283,53 @@ const (
 
 	// DaemonStartTimeoutSeconds is how long to wait for the daemon to start.
 	DaemonStartTimeoutSeconds = 5
+
+	// DaemonStateFileName is the daemon's durable index, beside the socket under
+	// the global dir: the daemon is global, and an index it could only read from
+	// one repository would be an index of nothing.
+	DaemonStateFileName = "jobs.json"
+
+	// DaemonVersionUnknown stands in for a daemon too old to stamp its answers:
+	// the field was added with the handshake itself, so its absence dates the
+	// daemon rather than leaving the message blank.
+	DaemonVersionUnknown = "an older build"
+
+	// DaemonVersionMismatchFmt takes the daemon's version then the client's. It
+	// names the way out, because there is nothing the user can do from the
+	// command they just ran.
+	DaemonVersionMismatchFmt = "the daemon holding the socket is %s, this is wtm %s — run 'wtm run daemon restart' to hand your jobs over"
+
+	// DaemonMismatchWhyFmt and DaemonMismatchFixLine are the same refusal with
+	// room to explain, for the callout `run daemon status` renders. One line per
+	// entry: a callout draws its own box around whatever it is given, and a
+	// paragraph would draw one as wide as itself.
+	DaemonMismatchWhyFmt  = "The daemon holding the socket is %s, this is wtm %s."
+	DaemonMismatchReason  = "It runs your jobs, so its behavior is the one that applies — not this build's."
+	DaemonMismatchFixLine = "Run `wtm run daemon restart`: detached services survive it, foreground ones stop."
+
+	// The `run daemon` surface's wording.
+	DaemonStatusTitle      = "Run daemon"
+	DaemonStatusStateFmt   = "State      %s"
+	DaemonStatusStopped    = "not running"
+	DaemonStatusUpFmt      = "running (pid %d)"
+	DaemonStatusVersFmt    = "Version    %s"
+	DaemonStatusJobsFmt    = "Jobs       %d foreground · %d detached"
+	DaemonStatusSocketFmt  = "Socket     %s"
+	DaemonStatusIndexFmt   = "Index      %s"
+	DaemonStatusProxyFmt   = "Proxy      port %d"
+	DaemonStopped          = "Daemon stopped."
+	DaemonAlreadyStopped   = "No daemon running."
+	DaemonStopConfirmTitle = "Stop the run daemon?"
+	DaemonStopConfirmFmt   = "%d foreground service(s) are drained through it and will be stopped. Detached services keep running."
+	// DaemonMismatchTitle heads the status callout naming a daemon this binary
+	// did not build, so `status` reports the divergence the other commands
+	// refuse on.
+	DaemonMismatchTitle = "Version mismatch"
+
+	// DaemonStateVersion is the index format. A file carrying anything else is
+	// read as empty and never written back, so an older binary cannot destroy
+	// the index of a newer one.
+	DaemonStateVersion = 1
 
 	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
 	CtrlCByte byte = 0x03
@@ -1417,7 +1469,10 @@ const (
 	RunViewCursorMark  = "▸"
 	RunViewMarkRunning = "●"
 	RunViewMarkStopped = "○"
-	RunViewMarkCrashed = "✗"
+	// RunViewMarkDetached differs in shape rather than in colour: a detached
+	// service is up like a running one, but nothing about it can be attached.
+	RunViewMarkDetached = "◆"
+	RunViewMarkCrashed  = "✗"
 
 	// RunViewPaneWaiting and RunViewPaneNoHistory stand in
 	// for a pane with nothing in it yet, and RunViewPane*Label say where what is

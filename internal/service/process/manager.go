@@ -77,6 +77,9 @@ type ManagedJob struct {
 	// that publishes none. Kept so the route is withdrawn by the same name it
 	// was published under, whatever the config has become since.
 	RouteHost string
+	// LogDir is where this job's output is persisted, kept for the index: a
+	// daemon adopting the job must be able to hand it back to `run logs`.
+	LogDir string
 	// ExitCode, like Status, is written by the goroutine that reaps the process
 	// and read by List: both are only ever touched under the manager lock.
 	ExitCode *int
@@ -95,6 +98,7 @@ type RouteSink interface {
 type Manager struct {
 	jobs   map[string]*ManagedJob
 	routes RouteSink
+	index  JobIndex
 	mu     sync.Mutex
 }
 
@@ -107,6 +111,112 @@ func NewManagerWithRoutes(routes RouteSink) *Manager {
 		jobs:   make(map[string]*ManagedJob),
 		routes: routes,
 	}
+}
+
+type ManagerParams struct {
+	Routes RouteSink
+	// Index is the durable record of what is up. Nil keeps the manager entirely
+	// in memory, which is what a job whose process dies with us would want
+	// anyway.
+	Index JobIndex
+}
+
+func NewManagerWith(params ManagerParams) *Manager {
+	return &Manager{
+		jobs:   make(map[string]*ManagedJob),
+		routes: params.Routes,
+		index:  params.Index,
+	}
+}
+
+// Adopt takes over the jobs a previous daemon left behind. It starts nothing and
+// stops nothing — it registers what rules.ReconcileJob makes of each entry, so
+// `run ps` can report it and `run down` can tear it down. The adopted jobs carry
+// no process, and every path that would reach for one gates on a status they do
+// not have.
+func (m *Manager) Adopt(records []domain.JobRecord) {
+	m.mu.Lock()
+	for _, record := range records {
+		decision := rules.ReconcileJob(rules.ReconcileJobParams{
+			Record:        record,
+			WorkDirExists: dirExists(record.WorkDir),
+		})
+		if !decision.Adopt {
+			continue
+		}
+		key := jobKey(record.Name, record.WorkDir)
+		if _, taken := m.jobs[key]; taken {
+			continue
+		}
+		exited := make(chan struct{})
+		close(exited)
+		m.jobs[key] = &ManagedJob{
+			Name:      record.Name,
+			Config:    record.Config,
+			Status:    decision.Status,
+			WorkDir:   record.WorkDir,
+			StartedAt: record.StartedAt,
+			Env:       record.Env,
+			RouteHost: record.RouteHost,
+			LogDir:    record.LogDir,
+			exited:    exited,
+		}
+	}
+	adopted := m.upRecordsLocked()
+	m.mu.Unlock()
+
+	for _, job := range m.List() {
+		if job.Status == domain.JobStatusDetached {
+			m.publishRoute(&job)
+		}
+	}
+	m.saveIndex(adopted)
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// upRecordsLocked snapshots what belongs in the index. The caller holds the
+// lock; the write itself happens outside it, since a slow state dir must not
+// hold up every List, Attach and Stop the daemon serves.
+func (m *Manager) upRecordsLocked() []domain.JobRecord {
+	records := make([]domain.JobRecord, 0, len(m.jobs))
+	for _, job := range m.jobs {
+		if !rules.IsJobUp(job.Status) {
+			continue
+		}
+		records = append(records, domain.JobRecord{
+			Name:      job.Name,
+			WorkDir:   job.WorkDir,
+			Config:    job.Config,
+			Env:       job.Env,
+			RouteHost: job.RouteHost,
+			LogDir:    job.LogDir,
+			StartedAt: job.StartedAt,
+		})
+	}
+	return records
+}
+
+func (m *Manager) saveIndex(records []domain.JobRecord) {
+	if m.index == nil {
+		return
+	}
+	_ = m.index.Save(records)
+}
+
+// persist rewrites the index from the current state. Never called with the lock
+// held: it takes it to snapshot, then writes outside it.
+func (m *Manager) persist() {
+	if m.index == nil {
+		return
+	}
+	m.mu.Lock()
+	records := m.upRecordsLocked()
+	m.mu.Unlock()
+	m.saveIndex(records)
 }
 
 func jobKey(name string, workDir string) string {
@@ -192,6 +302,7 @@ func (m *Manager) Start(params StartParams) error {
 		StartedAt: time.Now(),
 		Env:       env,
 		RouteHost: params.RouteHost,
+		LogDir:    params.LogDir,
 		output:    hub,
 		logs:      logs,
 		exited:    make(chan struct{}),
@@ -211,10 +322,17 @@ func (m *Manager) Start(params StartParams) error {
 			m.mu.Unlock()
 			return err
 		}
+		// The launcher is gone and the work it started is not ours. Indexed only
+		// now: a launcher that failed left nothing behind.
+		m.mu.Lock()
+		managed.Status = domain.JobStatusDetached
+		m.mu.Unlock()
+		m.persist()
 		return nil
 	default:
 		go m.drainToHub(managed)
 		go m.waitForExit(managed)
+		m.persist()
 		return nil
 	}
 }
@@ -638,10 +756,22 @@ func (m *Manager) Stop(name string, workDir string) error {
 	return m.stopByKey(jobKey(name, workDir))
 }
 
-// StopAll spans every worktree: it is the daemon-shutdown path, and a caller
-// after one worktree's jobs wants StopAllInWorkDir instead.
+// StopAll spans every worktree and every kind, detached stacks included: it
+// serves `run down --all`, where stopping everything is the whole request. A
+// caller after one worktree's jobs wants StopAllInWorkDir instead, and one
+// shutting the daemon down wants StopForeground.
 func (m *Manager) StopAll() error {
 	return m.stopAllMatching(func(*ManagedJob) bool { return true })
+}
+
+// StopForeground is the shutdown path. It leaves detached jobs alone: their work
+// runs outside this process and outlives it by design, and the index is what
+// hands them to the next daemon. Foreground services would die with us anyway —
+// stopping them first is what turns that into a clean exit rather than a SIGHUP.
+func (m *Manager) StopForeground() error {
+	return m.stopAllMatching(func(job *ManagedJob) bool {
+		return job.Status == domain.JobStatusRunning
+	})
 }
 
 func (m *Manager) StopAllInWorkDir(workDir string) error {
@@ -654,7 +784,7 @@ func (m *Manager) stopAllMatching(keep func(*ManagedJob) bool) error {
 	m.mu.Lock()
 	keys := make([]string, 0, len(m.jobs))
 	for key, job := range m.jobs {
-		if job.Status != domain.JobStatusRunning {
+		if !rules.IsJobUp(job.Status) {
 			continue
 		}
 		if !keep(job) {
@@ -735,13 +865,21 @@ type jobRef struct {
 func (m *Manager) attachableJob(ref jobRef) (*ManagedJob, error) {
 	m.mu.Lock()
 	job, ok := m.jobs[jobKey(ref.Name, ref.WorkDir)]
-	isRunning := ok && job.Status == domain.JobStatusRunning
+	// Snapshotted, never re-read: Status is written by whichever goroutine reaps
+	// or stops the job, so a second read outside the lock is a race.
+	var status domain.JobStatus
+	if ok {
+		status = job.Status
+	}
 	m.mu.Unlock()
 
 	if !ok {
 		return nil, fmt.Errorf("job %s not found", ref.Name)
 	}
-	if !isRunning {
+	if status == domain.JobStatusDetached {
+		return nil, fmt.Errorf("job %s is detached: its launcher exited and left no stream (see wtm run logs)", ref.Name)
+	}
+	if status != domain.JobStatusRunning {
 		return nil, fmt.Errorf("job %s is not running", ref.Name)
 	}
 	if job.output == nil {
@@ -819,11 +957,17 @@ func (m *Manager) IsRunning() bool {
 }
 
 func (m *Manager) markStopped(job *ManagedJob) {
-	job.PTY.Close()
+	// An adopted job has no PTY: the daemon that owned it is gone, and this one
+	// only ever knew how to stop it.
+	if job.PTY != nil {
+		job.PTY.Close()
+	}
 
 	m.mu.Lock()
 	job.Status = domain.JobStatusStopped
 	m.mu.Unlock()
+
+	m.persist()
 }
 
 func (m *Manager) stopWithCommand(job *ManagedJob) error {
@@ -848,7 +992,7 @@ func (m *Manager) stopWithCommand(job *ManagedJob) error {
 }
 
 func (m *Manager) stopWithSignal(job *ManagedJob) error {
-	if job.Cmd.Process == nil {
+	if job.Cmd == nil || job.Cmd.Process == nil {
 		return nil
 	}
 
@@ -885,23 +1029,19 @@ func (m *Manager) waitForExit(job *ManagedJob) {
 	exit := exitCodeOf(job.Cmd.Wait())
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	job.ExitCode = &exit
+	crashed := job.Status == domain.JobStatusRunning && job.Config.Stop == ""
+	if crashed {
+		job.Status = domain.JobStatusCrashed
+	}
+	m.mu.Unlock()
 
-	if job.Status != domain.JobStatusRunning {
+	if !crashed {
 		return
 	}
 
-	// Detached services (with a stop command) persist after the launcher
-	// exits: the real work keeps running. Keep them marked as Running so they
-	// can be found and stopped later.
-	if job.Config.Stop != "" {
-		return
-	}
-
-	job.Status = domain.JobStatusCrashed
 	m.withdrawRoute(job)
+	m.persist()
 }
 
 // publishRoute makes a started job reachable by name. A job declaring no url, or

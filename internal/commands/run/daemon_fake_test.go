@@ -27,6 +27,10 @@ type fakeDaemon struct {
 	// Streams maps a job name to the raw bytes ActionAttach writes on the
 	// accepted connection before hanging up.
 	Streams map[string][]byte
+	// Version is what the daemon stamps its answers with. Empty means this
+	// build's, so only a test about the version handshake sets it; the literal
+	// "none" answers unstamped, like a daemon predating the handshake.
+	Version string
 
 	mu       sync.Mutex
 	requests []process.Request
@@ -84,6 +88,31 @@ func startFakeDaemon(t *testing.T, daemon *fakeDaemon) *fakeDaemon {
 	return daemon
 }
 
+// stampedEncoder mirrors the real daemon's replyEncoder: every answer carries a
+// version, because a client refuses to talk to a daemon whose build it cannot
+// match. A test wanting that refusal sets fakeDaemon.Version.
+type stampedEncoder struct {
+	enc     *json.Encoder
+	version string
+}
+
+func (e stampedEncoder) Encode(resp process.Response) error {
+	resp.Version = e.version
+	return e.enc.Encode(resp)
+}
+
+// version defaults to this build's, which is what every test that is not about
+// the handshake wants.
+func (d *fakeDaemon) version() string {
+	if d.Version == "none" {
+		return ""
+	}
+	if d.Version != "" {
+		return d.Version
+	}
+	return domain.Version
+}
+
 func (d *fakeDaemon) serve(conn net.Conn) {
 	defer conn.Close()
 
@@ -96,7 +125,7 @@ func (d *fakeDaemon) serve(conn net.Conn) {
 	d.requests = append(d.requests, req)
 	d.mu.Unlock()
 
-	encoder := json.NewEncoder(conn)
+	encoder := stampedEncoder{enc: json.NewEncoder(conn), version: d.version()}
 	if req.Action == process.ActionList {
 		_ = encoder.Encode(process.Response{Status: process.StatusOK, Jobs: d.Jobs})
 		return

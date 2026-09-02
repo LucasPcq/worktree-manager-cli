@@ -105,7 +105,7 @@ func (m Model) headerTitle() string {
 func (m Model) runningCount() int {
 	running := 0
 	for _, view := range m.jobs {
-		if view.Status == domain.JobStatusRunning {
+		if rules.IsJobUp(view.Status) {
 			running++
 		}
 	}
@@ -182,6 +182,8 @@ func renderMark(mark domain.JobMark) string {
 		return styles.Warning.Render(domain.RunViewMarkStarting)
 	case domain.JobMarkRunning:
 		return styles.Success.Render(domain.RunViewMarkRunning)
+	case domain.JobMarkDetached:
+		return styles.Success.Render(domain.RunViewMarkDetached)
 	case domain.JobMarkDone:
 		return styles.Success.Render(domain.RunViewMarkDone)
 	case domain.JobMarkCrashed:

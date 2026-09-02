@@ -243,16 +243,25 @@ func (f *pruneFlow) purgeJobLogs(branch string) {
 }
 
 func (f *pruneFlow) stopServices(branchName string) {
-	socket := process.SocketPath()
-	if !process.IsDaemonRunning(socket) {
-		return
-	}
 	wt, err := worktree.FindByBranch(worktree.FindByBranchParams{
 		ProjectDir: f.ctx.ProjectDir,
 		Branch:     branchName,
 	})
 	if err != nil {
 		return
+	}
+
+	socket := process.SocketPath()
+	if !process.IsDaemonRunning(socket) {
+		// Nothing listening does not mean nothing running: a detached stack
+		// outlives its daemon. The index is what says whether waking one is
+		// worth a fork.
+		if !process.HasIndexedJobs(wt.Path) {
+			return
+		}
+		if err := process.EnsureDaemon(process.DaemonParams{SocketPath: socket}); err != nil {
+			return
+		}
 	}
 	if process.StopWorktreeJobs(process.NewClient(socket), wt.Path) {
 		f.presenter.Status(flow.Notice{

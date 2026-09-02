@@ -42,7 +42,7 @@ type JobUptimeParams struct {
 // than counting backwards, and a caller that did not say when now is gets no
 // answer at all rather than a 0s reading as a job that just started.
 func JobUptime(params JobUptimeParams) string {
-	if params.Now.IsZero() || params.Job.Status != domain.JobStatusRunning || params.Job.StartedAt.IsZero() {
+	if params.Now.IsZero() || !IsJobUp(params.Job.Status) || params.Job.StartedAt.IsZero() {
 		return ""
 	}
 
