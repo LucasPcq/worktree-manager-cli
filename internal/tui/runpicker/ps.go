@@ -21,10 +21,13 @@ const (
 // Distinct from any real job name.
 const sentinelStopAll = "__wtm_stop_all__"
 
-// PsPickerResult describes the selected running job and chosen action.
+// PsPickerResult describes the selected running job and chosen action. WorkDir
+// is where that job runs: `run ps` lists every repository the daemon knows, so
+// the action has to be carried out there rather than wherever ps was launched.
 type PsPickerResult struct {
-	Name   string
-	Action string
+	Name    string
+	Action  string
+	WorkDir string
 }
 
 // RunPsPicker shows the running-jobs picker with contextual actions.
@@ -82,7 +85,7 @@ func RunPsPicker(jobs []domain.JobInfo) (PsPickerResult, error) {
 	if err != nil {
 		return PsPickerResult{}, err
 	}
-	return PsPickerResult{Name: selected.Name, Action: action}, nil
+	return PsPickerResult{Name: selected.Name, Action: action, WorkDir: selected.WorkDir}, nil
 }
 
 func findJob(jobs []domain.JobInfo, name string) domain.JobInfo {

@@ -10,27 +10,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
 
-func TestJoinJobNames_Empty(t *testing.T) {
-	if got := joinJobNames(nil); got != "" {
-		t.Errorf("got %q, want empty", got)
-	}
-}
-
-func TestJoinJobNames_One(t *testing.T) {
-	got := joinJobNames([]string{"api"})
-	if got != "api" {
-		t.Errorf("got %q, want %q", got, "api")
-	}
-}
-
-func TestJoinJobNames_Multiple(t *testing.T) {
-	got := joinJobNames([]string{"api", "web", "worker"})
-	want := "api, web, worker"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
 func exitCode(code int) *int { return &code }
 
 // failingMigration is the profile every abort test runs: a service that comes

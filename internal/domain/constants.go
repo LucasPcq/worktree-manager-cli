@@ -179,10 +179,13 @@ const (
 	// ProxyTLD is the special-use TLD every wtm route lives under (RFC 6761).
 	ProxyTLD = "localhost"
 	// ProxyDefaultPort is what the run proxy listens on when the config says
-	// nothing. It reads as "100 then 80" — the privileged port with a prefix,
-	// which is what it serves. Above every common dev default (3000, 4000, 4200,
-	// 5173, 8000, 8080, 9000) and below 49152, where the ephemeral range starts.
-	ProxyDefaultPort = 10080
+	// nothing: above every common dev default (3000, 4000, 4200, 5173, 8000,
+	// 8080, 9000), below 49152 where the ephemeral range starts, and — the
+	// constraint that decides it — absent from the browsers' blocked-port lists.
+	// It was 10080, which reads better as "100 then 80" but is Chromium's and
+	// Gecko's `amanda` port: every named URL answered ERR_UNSAFE_PORT while the
+	// proxy itself was serving perfectly. See rules.IsBrowserBlockedPort.
+	ProxyDefaultPort = 11080
 	// ProxyPortScanSpan is how many ports past the configured one the proxy
 	// tries before giving up. A name answering on an unexpected port beats a
 	// name answering nowhere, but a port far from the one asked for is no
@@ -677,6 +680,7 @@ const (
 	FlagCwd        = "cwd"
 	FlagPort       = "port"
 	FlagName       = "name"
+	FlagJob        = "job"
 	FlagJobs       = "jobs"
 	FlagDefault    = "default"
 	FlagTo         = "to"
@@ -1234,7 +1238,6 @@ const (
 	CmdCreate = "create"
 	CmdClean  = "clean"
 	CmdList   = "list"
-	CmdSwitch = "switch"
 	CmdUp     = "up"
 	CmdDown   = "down"
 	CmdStart  = "start"
@@ -1574,6 +1577,28 @@ const (
 	// RunURLPickerTitle heads the picker `run open` offers when several jobs
 	// publish and the run is interactive enough to ask.
 	RunURLPickerTitle = "Which job to open"
+
+	// RunWorktreePicker* head the worktree picker every run command opens when
+	// its positional is absent and the run is interactive, and label the entry
+	// the cursor starts on.
+	RunWorktreePickerTitle = "Select worktree"
+	RunWorktreePickerDesc  = "Which worktree to act on?"
+	RunWorktreeCurrent     = "current"
+	// RunWorktreeJobsFmt annotates a worktree with what the daemon's index says
+	// is up in it, which is what makes the picker a view rather than a toll.
+	RunWorktreeJobsFmt = "%d running"
+
+	// RunJobPickerTitle heads the job picker `run start` and `run stop` open;
+	// naming the job is required on every other path.
+	RunJobPickerTitle = "Select job"
+
+	// RunProfilePicker* head the profile step, and the Run*StepName label each
+	// question in the wizard's breadcrumb.
+	RunProfilePickerTitle = "Select profile"
+	RunProfilePickerDesc  = "Which profile to start?"
+	RunWorktreeStepName   = "Worktree"
+	RunJobStepName        = "Job"
+	RunProfileStepName    = "Profile"
 
 	// RunURLSuffixSep sets a job's URL apart from the line announcing it, far
 	// enough that a terminal-detected link does not swallow the ports before it.

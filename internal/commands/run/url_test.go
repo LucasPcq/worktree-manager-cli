@@ -91,11 +91,11 @@ func TestRunURLNamedJobWins(t *testing.T) {
 	}})
 	fakeTTY(t, false)
 
-	web, _, err := runCmd(t, domain.CmdURL, "web", "--"+domain.FlagRaw)
+	web, _, err := runCmd(t, domain.CmdURL, "--"+domain.FlagJob, "web", "--"+domain.FlagRaw)
 	if err != nil {
 		t.Fatalf("run url web: %v", err)
 	}
-	api, _, err := runCmd(t, domain.CmdURL, "api", "--"+domain.FlagRaw)
+	api, _, err := runCmd(t, domain.CmdURL, "--"+domain.FlagJob, "api", "--"+domain.FlagRaw)
 	if err != nil {
 		t.Fatalf("run url api: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestRunURLUnknownJobNamesTheOnesThatPublish(t *testing.T) {
 	writeRunTOML(t, stateDir, domain.RunConfig{Jobs: []domain.JobConfig{published("web", 3000, "")}})
 	fakeTTY(t, false)
 
-	_, _, err := runCmd(t, domain.CmdURL, "nope")
+	_, _, err := runCmd(t, domain.CmdURL, "--"+domain.FlagJob, "nope")
 	if err == nil || !strings.Contains(err.Error(), "web") {
 		t.Fatalf("err = %v, want one naming the jobs that do publish", err)
 	}

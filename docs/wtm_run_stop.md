@@ -4,16 +4,18 @@ Stop a single job
 
 ### Synopsis
 
-Stop an individual running job by name.
+Stop one running job of [worktree] — the current one when omitted, picked interactively when there is a terminal.
+The job is named with --job; without it, a fully interactive run offers a picker.
 
 ```
-wtm run stop <job> [flags]
+wtm run stop [worktree] [flags]
 ```
 
 ### Options
 
 ```
   -h, --help            help for stop
+      --job string      Job to stop (required without a terminal or in --output json mode)
       --output string   Output format: text or json (default "text")
 ```
 

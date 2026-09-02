@@ -142,7 +142,6 @@ func runList(cmd *cobra.Command, _ []string) error {
 
 const (
 	lsActionGo           = "go"
-	lsActionSwitch       = "switch"
 	lsActionOpenPR       = "open-pr"
 	lsActionServicesUp   = "services-up"
 	lsActionServicesDown = "services-down"
@@ -362,7 +361,6 @@ func buildActionItems(params buildActionItemsParams) []components.SelectItem {
 
 	return []components.SelectItem{
 		{Label: "Go (cd to worktree)", Value: lsActionGo},
-		{Label: "Switch (go + start services)", Value: lsActionSwitch},
 		{Label: "Open PR", Value: lsActionOpenPR, Disabled: openPRDisabled},
 		{Separator: true},
 		{Label: "Start profile", Value: lsActionServicesUp},
@@ -387,20 +385,6 @@ func executeWorktreeAction(cmd *cobra.Command, action string, selected domain.Wo
 		}
 		fmt.Println(selected.Path)
 		return nil
-
-	case lsActionSwitch:
-		goFile := os.Getenv(domain.EnvGoFile)
-		if goFile != "" {
-			if err := os.WriteFile(goFile, []byte(selected.Path), 0o644); err != nil {
-				return err
-			}
-		}
-		c := exec.Command(bin, domain.CmdRun, domain.CmdUp)
-		c.Dir = selected.Path
-		c.Stdin = os.Stdin
-		c.Stdout = os.Stdout
-		c.Stderr = os.Stderr
-		return c.Run()
 
 	case lsActionOpenPR:
 		if pr, ok := findPRForBranch(prs, selected.Branch); ok {

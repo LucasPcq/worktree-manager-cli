@@ -19,15 +19,17 @@ import (
 // newStartCmd creates the wtm run start subcommand.
 func newStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdStart + " <job>",
+		Use:   domain.CmdStart + " [worktree]",
 		Short: "Start a single job",
-		Long: "Start an individual job by name (defined in run.toml).\n" +
+		Long: "Start one job of [worktree] — the current one when omitted, picked interactively when there is a terminal.\n" +
+			"The job is named with --job; without it, a fully interactive run offers a picker.\n" +
 			"A service attaches: its output opens in the run view, and leaving the view detaches without stopping it.\n" +
 			"-d starts it and returns the prompt instead.\n" +
 			"A task always runs inline and blocks until it exits, with or without -d.",
-		Args: cobra.ExactArgs(1),
+		Args: cobra.MaximumNArgs(1),
 		RunE: runStart,
 	}
+	shared.AddJobFlag(cmd, "Job to start (required without a terminal or in --output json mode)")
 	cmd.Flags().BoolP(domain.FlagDetach, "d", false, "Start the service and return immediately instead of opening its output")
 	shared.AddOutputFlag(cmd)
 	return cmd
@@ -53,13 +55,27 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	job, ok := rules.FindJob(runCfg, args[0])
-	if !ok {
-		return fmt.Errorf("job %q not found in config", args[0])
-	}
-
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
+	interactive := isTTY() && rules.IsHumanFormat(format)
+
+	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
+	resolved, err := resolveInputs(inputsParams{
+		Args:        args,
+		Cwd:         dir,
+		ProjectDir:  result.ProjectDir,
+		Interactive: interactive,
+		Pick:        true,
+		Second:      secondAxis{Given: jobName, Jobs: runCfg.Jobs, Required: true},
+	})
+	if err != nil {
+		return err
+	}
+
+	job, err := declaredJob(runCfg, resolved.Second)
+	if err != nil {
+		return err
+	}
 
 	socketPath := process.SocketPath()
 	if err := components.RunLoading(components.LoadingParams{
@@ -72,8 +88,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ensure daemon: %w", err)
 	}
 
-	logDir := jobLogDir(jobLogDirParams{StateDir: result.StateDir, Dir: dir})
-	env := jobEnv(jobEnvParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir})
+	logDir := jobLogDir(jobLogDirParams{StateDir: result.StateDir, Dir: resolved.Dir})
+	env := jobEnv(jobEnvParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: resolved.Dir})
 
 	surface := rules.DecideRunSurface(rules.RunSurfaceParams{
 		Inline: job.Kind == domain.JobKindTask,
@@ -82,7 +98,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		Format: format,
 	})
 	if surface == domain.RunSurfaceView {
-		seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
+		seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: resolved.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
 		return showRunView(viewParams{
 			Cmd:     cmd,
 			Session: seam.session,
@@ -95,7 +111,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		Cmd:    cmd,
 		Client: process.NewClient(socketPath),
 		Job:    job,
-		Dir:    dir,
+		Dir:    resolved.Dir,
 		LogDir: logDir,
 		Env:    env,
 		Format: format,

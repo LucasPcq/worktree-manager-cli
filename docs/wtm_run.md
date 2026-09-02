@@ -16,7 +16,7 @@ Run commands and profiles declared in <git-common-dir>/wtm/run.toml — long-run
 
 * [wtm](wtm.md)	 - Orchestrate git worktrees and team dev workflows from the terminal
 * [wtm run daemon](wtm_run_daemon.md)	 - Inspect, stop or restart the process that runs the jobs
-* [wtm run down](wtm_run_down.md)	 - Stop jobs running in the current worktree
+* [wtm run down](wtm_run_down.md)	 - Stop a worktree's running jobs
 * [wtm run export](wtm_run_export.md)	 - Export run.toml as JSON on stdout
 * [wtm run import](wtm_run_import.md)	 - Import a JSON run config into run.toml
 * [wtm run init](wtm_run_init.md)	 - Configure the run module (services & tasks) for this repo
@@ -30,5 +30,5 @@ Run commands and profiles declared in <git-common-dir>/wtm/run.toml — long-run
 * [wtm run start](wtm_run_start.md)	 - Start a single job
 * [wtm run stop](wtm_run_stop.md)	 - Stop a single job
 * [wtm run up](wtm_run_up.md)	 - Start a profile's jobs
-* [wtm run url](wtm_run_url.md)	 - Print where a job is reachable in this worktree
+* [wtm run url](wtm_run_url.md)	 - Print where a job is reachable in a worktree
 

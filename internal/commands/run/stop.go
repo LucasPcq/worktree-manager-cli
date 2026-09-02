@@ -18,12 +18,13 @@ import (
 // newStopCmd creates the wtm run stop subcommand.
 func newStopCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdStop + " <job>",
+		Use:   domain.CmdStop + " [worktree]",
 		Short: "Stop a single job",
-		Long:  "Stop an individual running job by name.",
-		Args:  cobra.ExactArgs(1),
+		Long:  "Stop one running job of [worktree] — the current one when omitted, picked interactively when there is a terminal.\nThe job is named with --job; without it, a fully interactive run offers a picker.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE:  runStop,
 	}
+	shared.AddJobFlag(cmd, "Job to stop (required without a terminal or in --output json mode)")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -35,9 +36,10 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	interactive := isTTY() && rules.IsHumanFormat(format)
 
-	// Validate the job is declared so a typo'd name fails with a precise exit
-	// code instead of silently no-opping at the daemon.
+	// The job is resolved against run.toml so a typo'd name fails with a precise
+	// exit code instead of silently no-opping at the daemon.
 	stateDir, err := shared.StateDir(dir)
 	if err != nil {
 		return err
@@ -49,8 +51,27 @@ func runStop(cmd *cobra.Command, args []string) error {
 	if err := shared.RequireRunInitialized(runCfg); err != nil {
 		return err
 	}
-	if _, declared := rules.FindJob(runCfg, args[0]); !declared {
-		return fmt.Errorf("%w: %s", domain.ErrJobNotFound, args[0])
+
+	projectDir, err := shared.ProjectRoot(dir)
+	if err != nil {
+		return err
+	}
+	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
+	resolved, err := resolveInputs(inputsParams{
+		Args:        args,
+		Cwd:         dir,
+		ProjectDir:  projectDir,
+		Interactive: interactive,
+		Pick:        true,
+		Second:      secondAxis{Given: jobName, Jobs: runCfg.Jobs, Required: true},
+	})
+	if err != nil {
+		return err
+	}
+
+	job, err := declaredJob(runCfg, resolved.Second)
+	if err != nil {
+		return err
 	}
 
 	socketPath := process.SocketPath()
@@ -67,34 +88,34 @@ func runStop(cmd *cobra.Command, args []string) error {
 	client := process.NewClient(socketPath)
 	var resp process.Response
 	err = components.RunLoading(components.LoadingParams{
-		Message: fmt.Sprintf("Stopping %s…", args[0]),
+		Message: fmt.Sprintf("Stopping %s…", job.Name),
 		Animate: rules.IsHumanFormat(format),
 		Work: func() error {
 			var e error
 			resp, e = client.Send(process.Request{
 				Action:  process.ActionStop,
-				Name:    args[0],
-				WorkDir: dir,
+				Name:    job.Name,
+				WorkDir: resolved.Dir,
 			})
 			return e
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("stop %s: %w", args[0], err)
+		return fmt.Errorf("stop %s: %w", job.Name, err)
 	}
 	if resp.Status == process.StatusError {
-		return fmt.Errorf("stop %s: %s", args[0], resp.Message)
+		return fmt.Errorf("stop %s: %s", job.Name, resp.Message)
 	}
 
 	if format == domain.OutputJSON {
 		return output.WriteJobResultJSON(cmd.OutOrStdout(), domain.JobActionResult{
-			Name:   args[0],
+			Name:   job.Name,
 			Status: domain.JobActionStopped,
 		})
 	}
 
 	output.Frame(cmd.OutOrStdout(), func() {
-		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", args[0]))
+		output.Success(cmd.OutOrStdout(), fmt.Sprintf("%s stopped", job.Name))
 	})
 	return nil
 }

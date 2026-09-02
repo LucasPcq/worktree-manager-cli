@@ -263,6 +263,26 @@ the Prompter has put the flow in the wrong layer, and a service closure injected
 `docs/dev/` (`flow-layer.md`, `adding-a-mutation-command.md`); the import rule above is
 checked mechanically by the `build-validator` subagent.
 
+**How a command designates a worktree (LUC-211).** One rule, no exception: **the subject is
+positional, and a worktree that is not the subject is a flag named after its role.**
+`clean [branch]`, `env [worktree]`, `extract [source]`, `sync [branch...]` take their subject
+positionally; `extract --to`, `create --from`, `sync --base` name a second worktree. The `run`
+module follows the same rule with the worktree as its subject — `run up [worktree] --profile`,
+`run start [worktree] --job` — so the job and the profile are flags. A new command adds no
+third form.
+
+Omitting the positional resolves in one of two ways, and which one is not a matter of taste:
+**the current directory when it is a safe default for that command, a picker otherwise.** `run`
+has one (you are standing in the worktree whose services you want), so a non-interactive run
+silently takes it — category 1 of the bypass model below, no exception to write. `clean` has
+none (which worktree would it destroy?), so it errors or opens a picker — category 2.
+
+Whatever answers, a resolved worktree is always **the worktree root as git spells it**
+(`infra.Toplevel`), never a raw `os.Getwd()`. The daemon keys a job on `name + WorkDir` by
+string equality *and* runs it there, resolving `run.toml`'s `cwd` against it: a subdirectory,
+or macOS's `/var` where git says `/private/var`, splits one worktree into two keys and
+mis-resolves every relative `cwd`.
+
 **Mutation commands — bypass flags (two orthogonal axes):** every worktree-mutating
 command (`create`, `clean`, `sync`, `prune`, `relocate`, `reparent`, `extract`,
 `checkout`, `env`) exposes bypass on two independent axes. This is the standardized model

@@ -1,19 +1,20 @@
 ## wtm run url
 
-Print where a job is reachable in this worktree
+Print where a job is reachable in a worktree
 
 ### Synopsis
 
-Write a job's URL on stdout and nothing else, for $(…). --raw prints the job's own port instead of its name, which every OS resolves and no proxy has to serve.
+Write a job's URL on stdout and nothing else, for $(…). [worktree] defaults to the current one, and no picker ever opens here — an ambiguity is an error naming --job. --raw prints the job's own port instead of its name, which every OS resolves and no proxy has to serve.
 
 ```
-wtm run url [job] [flags]
+wtm run url [worktree] [flags]
 ```
 
 ### Options
 
 ```
   -h, --help            help for url
+      --job string      Job whose URL to print (required when several jobs publish one)
       --output string   Output format: text or json (default "text")
       --raw             Print the direct http://localhost:<port> address
 ```
