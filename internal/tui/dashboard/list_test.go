@@ -120,3 +120,23 @@ func TestSpinnerKeepsTickingWhileAnOperationRuns(t *testing.T) {
 		t.Error("a tick while a run is in flight must re-arm, or the locked row's spinner freezes")
 	}
 }
+
+// The dashboard's whole promise here is telling you what is running where, so
+// the count belongs on the row rather than one keystroke away.
+func TestRowMetaNamesTheJobsAWorktreeIsRunning(t *testing.T) {
+	m := Model{running: map[string]int{"/wt/feature": 2}}
+	status := domain.WorktreeStatus{Branch: "feature", Path: "/wt/feature"}
+
+	if got := m.rowMeta(status, false); !strings.Contains(got, "2 running") {
+		t.Errorf("meta = %q, want it to name the running jobs", got)
+	}
+}
+
+func TestRowMetaSaysNothingAboutAWorktreeRunningNothing(t *testing.T) {
+	m := Model{running: map[string]int{"/wt/other": 2}}
+	status := domain.WorktreeStatus{Branch: "feature", Path: "/wt/feature"}
+
+	if got := m.rowMeta(status, false); strings.Contains(got, "running") {
+		t.Errorf("meta = %q, want no mention of another worktree's jobs", got)
+	}
+}

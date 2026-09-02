@@ -15,6 +15,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/runjobs"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
@@ -52,6 +53,11 @@ type worktreesMsg struct {
 	fetchedAt time.Time
 	err       error
 }
+
+// jobsMsg carries the run daemon's index: how many jobs each worktree has up.
+// It never fails the dashboard — a daemon that is not listening simply means
+// nothing is running, which is the answer.
+type jobsMsg struct{ running map[string]int }
 
 type prsMsg struct {
 	prs  []domain.PRInfo
@@ -114,6 +120,9 @@ type Model struct {
 	prs       []domain.PRInfo
 	ghConn    domain.GHConnection
 	prsLoaded bool
+
+	// running counts the jobs the run daemon holds per worktree path.
+	running map[string]int
 
 	outputLines    []string
 	outputOffset   int
@@ -247,7 +256,7 @@ func (m Model) loadWorktreesCmd(fetch bool) tea.Cmd {
 // loadTreeCmd builds the forest off the UI thread. It costs a rev-list per node,
 // which is why it is only ever asked for once the Tree tab has been opened.
 func (m Model) loadTreeCmd() tea.Cmd {
-	listParams := m.listParams
+	listParams, running := m.listParams, m.running
 	return func() tea.Msg {
 		forest, err := worktree.BuildTree(worktree.BuildTreeParams{
 			ProjectDir: listParams.ProjectDir,
@@ -257,7 +266,7 @@ func (m Model) loadTreeCmd() tea.Cmd {
 		if err != nil {
 			return treeMsg{err: err}
 		}
-		return treeMsg{rows: rules.FlattenForest(forest)}
+		return treeMsg{rows: rules.FlattenForest(rules.ForestWithRunningJobs(forest, running))}
 	}
 }
 
@@ -316,6 +325,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prsMsg:
 		m.prs, m.ghConn, m.prsLoaded = msg.prs, msg.conn, true
 		return m, nil
+
+	case jobsMsg:
+		m.running = msg.running
+		// The tree carries the count on its nodes, so the rows already drawn hold a
+		// stale one until they are rebuilt.
+		return m, m.treeCmd()
 
 	case pollMsg:
 		if m.loading {
@@ -562,7 +577,7 @@ func (m Model) refresh() (Model, tea.Cmd) {
 	m.loading, m.prsLoaded = true, false
 	m.treeLoading = m.treeLoaded || m.tab == tabTree
 	next, detailCmd := m.reloadDetailCmd()
-	return next, tea.Batch(next.loadWorktreesCmd(true), next.loadPRsCmd(), next.treeCmd(), detailCmd)
+	return next, tea.Batch(next.loadWorktreesCmd(true), next.loadPRsCmd(), next.loadJobsCmd(), next.treeCmd(), detailCmd)
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -887,4 +902,13 @@ func (m Model) withOverlays(frame string) string {
 		return overlay(overlayParams{Base: frame, Box: box, At: rect})
 	}
 	return frame
+}
+
+// loadJobsCmd reads the run daemon's index off the UI thread. It is graceful by
+// design: no daemon means nothing is running, which is an answer and not an
+// error, so it never reaches the output panel.
+func (m Model) loadJobsCmd() tea.Cmd {
+	return func() tea.Msg {
+		return jobsMsg{running: rules.RunningJobsByWorktree(runjobs.Load())}
+	}
 }

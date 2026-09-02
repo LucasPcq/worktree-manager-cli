@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -105,6 +106,9 @@ func (m Model) rowMeta(status domain.WorktreeStatus, colored bool) string {
 	parts := make([]string, 0, 4)
 	if parent := m.parents[status.Branch]; parent != "" {
 		parts = append(parts, styleMeta(domain.DashboardMetaFromPrefix+parent, colored, styles.DashboardRowMeta))
+	}
+	if count := m.running[status.Path]; count > 0 {
+		parts = append(parts, styleMeta(fmt.Sprintf(domain.TreeBadgeRunningFmt, count), colored, styles.Success))
 	}
 	for _, tag := range worktreepicker.BuildTags(worktreepicker.BuildTagsParams{Status: status, PRs: m.prs}) {
 		if colored {

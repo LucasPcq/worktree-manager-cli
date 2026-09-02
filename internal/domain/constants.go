@@ -1083,6 +1083,7 @@ const (
 	// Tree badge texts: what a node's status annotations read as, shared by the
 	// ASCII tree, the Mermaid export and the dashboard's Tree tab.
 	TreeBadgeVirtualText   = "(no worktree)"
+	TreeBadgeRunningFmt    = "▶ %d running"
 	TreeBadgeRebasingText  = "⚠ rebasing"
 	TreeBadgeDirtyText     = "⚠ dirty"
 	TreeBadgeNeedsSyncText = "⚠ needs sync"
