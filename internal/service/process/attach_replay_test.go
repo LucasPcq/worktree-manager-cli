@@ -2,6 +2,7 @@ package process
 
 import (
 	"encoding/json"
+	"github.com/LucasPcq/wtm/internal/domain"
 	"io"
 	"net"
 	"testing"
@@ -33,7 +34,7 @@ func TestAttachKeepsTheHistorySentWithTheAcceptance(t *testing.T) {
 		if decErr := json.NewDecoder(conn).Decode(&req); decErr != nil {
 			return
 		}
-		accepted, marshalErr := json.Marshal(Response{Status: StatusOK, Message: "attached"})
+		accepted, marshalErr := json.Marshal(Response{Status: StatusOK, Version: domain.Version, Message: "attached"})
 		if marshalErr != nil {
 			return
 		}

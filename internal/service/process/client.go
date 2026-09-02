@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 var daemonStartTimeout = time.Duration(domain.DaemonStartTimeoutSeconds) * time.Second
@@ -21,6 +22,14 @@ var daemonStartTimeout = time.Duration(domain.DaemonStartTimeoutSeconds) * time.
 // Client communicates with the daemon over a Unix socket.
 type Client struct {
 	socketPath string
+	// skipVersionCheck is set for the length of one SendUnchecked call. A Client
+	// is a per-command value dialing one connection at a time, never a shared
+	// pool, so the flag has no other conversation to leak into.
+	skipVersionCheck bool
+	// versionChecked keeps the preflight to once per client: a `run up` sends a
+	// request per job, and asking again between two of them would answer the
+	// same thing at the cost of a round-trip each.
+	versionChecked bool
 }
 
 // NewClient creates a client for the given socket path.
@@ -32,6 +41,16 @@ func NewClient(socketPath string) *Client {
 // (StatusOK, StatusDone, or StatusError). Intermediate StatusOutput chunks
 // are discarded — use SendStream when the caller wants to forward them.
 func (c *Client) Send(req Request) (Response, error) {
+	return c.SendStream(req, nil)
+}
+
+// SendUnchecked is Send without the version guard, for the two commands whose
+// job is that divergence: reporting it (`run daemon status`) and ending it
+// (`run daemon stop`/`restart`). Every other caller wants Send — talking to a
+// daemon of another build is what this whole guard exists to prevent.
+func (c *Client) SendUnchecked(req Request) (Response, error) {
+	c.skipVersionCheck = true
+	defer func() { c.skipVersionCheck = false }()
 	return c.SendStream(req, nil)
 }
 
@@ -48,6 +67,44 @@ func (c *Client) SendStream(req Request, onOutput func([]byte)) (Response, error
 // The daemon is not told anything — the job it is running is untouched, and only
 // this conversation about it ends.
 func (c *Client) SendStreamContext(ctx context.Context, req Request, onOutput func([]byte)) (Response, error) {
+	if err := c.preflight(req); err != nil {
+		return Response{}, err
+	}
+	return c.send(ctx, req, onOutput)
+}
+
+// preflight settles the version question before a request that changes
+// something is sent. Reading the version off the answer is too late: the daemon
+// acts on a request as it decodes it, so a `run down` served by a daemon of
+// another build has already torn the stack down by the time the client refuses
+// to believe its answer. A listing costs one round-trip on a unix socket and
+// changes nothing, which is what makes it safe to ask first.
+func (c *Client) preflight(req Request) error {
+	if c.skipVersionCheck || c.versionChecked || !mutates(req.Action) {
+		return nil
+	}
+	c.versionChecked = true
+
+	resp, err := c.send(context.Background(), Request{Action: ActionList}, nil)
+	if err != nil {
+		return err
+	}
+	return checkVersion(resp)
+}
+
+// mutates says whether the daemon does something irreversible on decoding this
+// request. A listing does not, and neither does an attach — it subscribes to
+// output a job is producing either way.
+func mutates(action RequestAction) bool {
+	switch action {
+	case ActionStart, ActionStop, ActionStopAll, ActionResize, ActionShutdown:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Client) send(ctx context.Context, req Request, onOutput func([]byte)) (Response, error) {
 	conn, err := net.Dial("unix", c.socketPath)
 	if err != nil {
 		return Response{}, fmt.Errorf("connect to daemon: %w", err)
@@ -71,6 +128,11 @@ func (c *Client) SendStreamContext(ctx context.Context, req Request, onOutput fu
 			}
 			return Response{}, fmt.Errorf("read response: %w", err)
 		}
+		if !c.skipVersionCheck {
+			if err := checkVersion(resp); err != nil {
+				return Response{}, err
+			}
+		}
 		if resp.Status == StatusOutput {
 			if onOutput != nil && len(resp.Data) > 0 {
 				onOutput(resp.Data)
@@ -79,6 +141,26 @@ func (c *Client) SendStreamContext(ctx context.Context, req Request, onOutput fu
 		}
 		return resp, nil
 	}
+}
+
+// checkVersion refuses a daemon built from another version of wtm. It is the
+// daemon that runs the jobs, so an older one silently serves its own behaviour —
+// the fix that made a client print the right port never reaches the process
+// binding it. Refusing beats warning: the user is told which two versions are in
+// play and how to get out, once, instead of being handed an outcome that looks
+// right.
+//
+// Never restarts on its own. The only daemon still alive on a mismatch is one
+// holding a foreground service — restarting it would kill the dev server the
+// user is working in.
+func checkVersion(resp Response) error {
+	if resp.Version == domain.Version {
+		return nil
+	}
+	return fmt.Errorf("%w: %s", domain.ErrDaemonVersionMismatch, rules.DaemonVersionMismatch(rules.DaemonVersionMismatchParams{
+		Client: domain.Version,
+		Daemon: resp.Version,
+	}))
 }
 
 // AttachParams holds inputs for attaching to a service.
@@ -115,6 +197,13 @@ func (c *Client) Attach(params AttachParams) (net.Conn, error) {
 	if err := decoder.Decode(&resp); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("read attach response: %w", err)
+	}
+
+	if !c.skipVersionCheck {
+		if err := checkVersion(resp); err != nil {
+			conn.Close()
+			return nil, err
+		}
 	}
 
 	if resp.Status != StatusOK {
@@ -208,6 +297,19 @@ func EnsureDaemon(params DaemonParams) error {
 	}
 
 	return fmt.Errorf("daemon did not start within %v", daemonStartTimeout)
+}
+
+// AwaitDaemonStopped waits for the socket to stop answering, so a restart never
+// races the exit it just asked for.
+func AwaitDaemonStopped(socketPath string) error {
+	deadline := time.Now().Add(daemonStartTimeout)
+	for time.Now().Before(deadline) {
+		if !IsDaemonRunning(socketPath) {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return fmt.Errorf("daemon did not stop within %v", daemonStartTimeout)
 }
 
 // StartDaemon forks "wtm daemon" as a detached background process. The proxy

@@ -208,3 +208,8 @@ var (
 	// ErrDashboardJSON is returned when `wtm ui` is invoked with --output json.
 	ErrDashboardJSON = errors.New("`wtm ui` has no --output json form — the dashboard cannot be driven by an agent; use `wtm list --output json`")
 )
+
+// ErrDaemonVersionMismatch is a run daemon built from another version of wtm
+// holding the socket. It is the daemon that runs the jobs, so its behaviour is
+// the one that applies, whatever the client's version fixed.
+var ErrDaemonVersionMismatch = errors.New("run daemon version mismatch")

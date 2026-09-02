@@ -167,8 +167,10 @@ func waitFor(t *testing.T, what string, done func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// scriptedDaemon answers one request with the responses given, in order, then
-// hangs up — enough to read what the adapter keeps of the daemon's answer.
+// scriptedDaemon answers the scripted request with the responses given, in
+// order, then hangs up — enough to read what the adapter keeps of the daemon's
+// answer. Listings are answered on their own, empty: a client checks the
+// daemon's version with one before it sends anything that changes state.
 func scriptedDaemon(t *testing.T, responses ...process.Response) string {
 	t.Helper()
 	socket := socktest.Path(t)
@@ -182,27 +184,40 @@ func scriptedDaemon(t *testing.T, responses ...process.Response) string {
 	t.Cleanup(func() { close(held) })
 
 	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-
-		var req process.Request
-		if err := json.NewDecoder(conn).Decode(&req); err != nil {
-			return
-		}
-		encoder := json.NewEncoder(conn)
-		for _, resp := range responses {
-			if err := encoder.Encode(resp); err != nil {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
 				return
 			}
+			go serveScript(conn, responses, held)
 		}
-		// A daemon running a three-minute task holds the line: what the client
-		// does about that is the client's business.
-		<-held
 	}()
 	return socket
+}
+
+func serveScript(conn net.Conn, responses []process.Response, held <-chan struct{}) {
+	defer conn.Close()
+
+	var req process.Request
+	if err := json.NewDecoder(conn).Decode(&req); err != nil {
+		return
+	}
+	encoder := json.NewEncoder(conn)
+	// Stamped like the real daemon's: a client refuses to talk to one whose
+	// build it cannot match.
+	if req.Action == process.ActionList {
+		_ = encoder.Encode(process.Response{Status: process.StatusOK, Version: domain.Version})
+		return
+	}
+	for _, resp := range responses {
+		resp.Version = domain.Version
+		if err := encoder.Encode(resp); err != nil {
+			return
+		}
+	}
+	// A daemon running a three-minute task holds the line: what the client does
+	// about that is the client's business.
+	<-held
 }
 
 func TestServiceStartKeepsWhatTheDaemonAnswered(t *testing.T) {

@@ -3,6 +3,7 @@ package run
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/commands/run/daemoncmd"
 	"github.com/LucasPcq/wtm/internal/commands/run/jobcmd"
 	"github.com/LucasPcq/wtm/internal/commands/run/profilecmd"
 	"github.com/LucasPcq/wtm/internal/commands/run/proxycmd"
@@ -34,6 +35,7 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(jobcmd.NewCmd())
 	cmd.AddCommand(profilecmd.NewCmd())
 	cmd.AddCommand(proxycmd.NewCmd())
+	cmd.AddCommand(daemoncmd.NewCmd())
 
 	return cmd
 }

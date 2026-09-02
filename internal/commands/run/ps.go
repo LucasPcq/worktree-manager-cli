@@ -41,15 +41,26 @@ func runPs(cmd *cobra.Command, _ []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 
 	if format == domain.OutputJSON {
-		return output.WriteRunningJobsJSON(cmd.OutOrStdout(), shared.LoadJobsGraceful())
+		jobs, loadErr := shared.LoadJobs()
+		if loadErr != nil {
+			return loadErr
+		}
+		return output.WriteRunningJobsJSON(cmd.OutOrStdout(), jobs)
 	}
 
 	var jobs []domain.JobInfo
-	_ = components.RunLoading(components.LoadingParams{
+	loadErr := components.RunLoading(components.LoadingParams{
 		Message: "Loading jobs…",
 		Animate: true,
-		Work:    func() error { jobs = shared.LoadJobsGraceful(); return nil },
+		Work: func() error {
+			var e error
+			jobs, e = shared.LoadJobs()
+			return e
+		},
 	})
+	if loadErr != nil {
+		return loadErr
+	}
 
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		output.Frame(cmd.OutOrStdout(), func() {
