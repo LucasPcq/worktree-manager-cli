@@ -39,6 +39,7 @@ func newUpCmd() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive(domain.FlagExclusive, domain.FlagParallel)
 	cmd.Flags().BoolP(domain.FlagDetach, "d", false, "Start the jobs and return immediately instead of opening their output")
 	cmd.Flags().Bool(domain.FlagNoProbe, false, "Skip the check that each declared port was actually bound")
+	shared.AddYesFlag(cmd, "Skip all prompts; leaves the other worktrees' jobs running unless --exclusive")
 	shared.AddOutputFlag(cmd)
 
 	return cmd
@@ -67,6 +68,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
 	exclusive, _ := cmd.Flags().GetBool(domain.FlagExclusive)
 	parallel, _ := cmd.Flags().GetBool(domain.FlagParallel)
@@ -87,7 +89,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 		// The run wizard may be reached through the shell wrapper, which
 		// consumes stdout.
 		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
-			Interactive: isTTY() && rules.IsHumanFormat(format),
+			Interactive: shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
 			Stderr:      true,
 		}),
 		Presenter: upPresenter{CLIPresenter: shared.NewPresenter(cmd, format), detach: detach},

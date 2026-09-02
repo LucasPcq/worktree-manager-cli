@@ -10,7 +10,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	startflow "github.com/LucasPcq/wtm/internal/flow/run/start"
-	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // newStartCmd creates the wtm run start subcommand.
@@ -28,6 +27,7 @@ func newStartCmd() *cobra.Command {
 	}
 	shared.AddJobFlag(cmd, "Job to start (required without a terminal or in --output json mode)")
 	cmd.Flags().BoolP(domain.FlagDetach, "d", false, "Start the service and return immediately instead of opening its output")
+	shared.AddYesFlag(cmd, "Skip all prompts; --job is then required")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -52,6 +52,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
 	job, _ := cmd.Flags().GetString(domain.FlagJob)
 
@@ -64,7 +65,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 			Config:   runCfg,
 		},
 		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
-			Interactive: isTTY() && rules.IsHumanFormat(format),
+			Interactive: shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
 			Stderr:      true,
 		}),
 		Presenter: startPresenter{CLIPresenter: shared.NewPresenter(cmd, format), detach: detach},

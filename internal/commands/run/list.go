@@ -23,6 +23,7 @@ func newListCmd() *cobra.Command {
 		Long:  "Show the jobs and profiles configured for the project.\nIn a TTY, offers an interactive picker with start/stop/logs actions.",
 		RunE:  runList,
 	}
+	shared.AddYesFlag(cmd, "Skip the interactive picker; print the table instead")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -52,7 +53,8 @@ func runList(cmd *cobra.Command, _ []string) error {
 		return output.WriteRunConfigJSON(cmd.OutOrStdout(), runCfg)
 	}
 
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
+	if yes || !term.IsTerminal(int(os.Stdin.Fd())) {
 		output.Frame(cmd.OutOrStdout(), func() {
 			fmt.Fprint(cmd.OutOrStdout(), output.FormatRunConfig(runCfg))
 		})

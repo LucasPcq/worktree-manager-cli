@@ -33,6 +33,7 @@ func newLogsCmd() *cobra.Command {
 		RunE: runLogs,
 	}
 	shared.AddJobFlag(cmd, "Focus a single job instead of showing them all")
+	shared.AddYesFlag(cmd, "Skip all prompts; shows every job of the current worktree")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -57,6 +58,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	job, _ := cmd.Flags().GetString(domain.FlagJob)
 
 	outcome, err := logsflow.Run(logsflow.Params{
@@ -68,7 +70,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 			Config:   runCfg,
 		},
 		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
-			Interactive: isTTY() && rules.IsHumanFormat(format),
+			Interactive: shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
 			Stderr:      true,
 		}),
 		Presenter: logsPresenter{CLIPresenter: shared.NewPresenter(cmd, format)},

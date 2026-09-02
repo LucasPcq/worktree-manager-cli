@@ -11,7 +11,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	downflow "github.com/LucasPcq/wtm/internal/flow/run/down"
 	"github.com/LucasPcq/wtm/internal/output"
-	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // newDownCmd creates the wtm run down subcommand.
@@ -24,6 +23,7 @@ func newDownCmd() *cobra.Command {
 		RunE:  runDown,
 	}
 	shared.AddProfileFlag(cmd, "Stop only this profile's jobs")
+	shared.AddYesFlag(cmd, "Skip all prompts; stops what the worktree has running")
 	shared.AddOutputFlag(cmd)
 	cmd.Flags().Bool(domain.FlagAll, false, "Stop jobs across every worktree (bypasses per-worktree scoping)")
 	return cmd
@@ -31,6 +31,7 @@ func newDownCmd() *cobra.Command {
 
 func runDown(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	all, _ := cmd.Flags().GetBool(domain.FlagAll)
 	profile, _ := cmd.Flags().GetString(domain.FlagProfile)
 
@@ -67,7 +68,7 @@ func runDown(cmd *cobra.Command, args []string) error {
 			Config:   runCfg,
 		},
 		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
-			Interactive: !all && isTTY() && rules.IsHumanFormat(format),
+			Interactive: !all && shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
 			Stderr:      true,
 		}),
 		Presenter: downPresenter{CLIPresenter: shared.NewPresenter(cmd, format)},

@@ -24,6 +24,7 @@ func newPsCmd() *cobra.Command {
 		Long:  "Show the jobs managed by the background daemon (name, kind, status, PID, uptime, worktree).\nIn a TTY, offers an interactive picker with stop/logs/restart actions.",
 		RunE:  runPs,
 	}
+	shared.AddYesFlag(cmd, "Skip the interactive picker; print the table instead")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -61,7 +62,8 @@ func runPs(cmd *cobra.Command, _ []string) error {
 		return loadErr
 	}
 
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
+	if yes || !term.IsTerminal(int(os.Stdin.Fd())) {
 		output.Frame(cmd.OutOrStdout(), func() {
 			fmt.Fprint(cmd.OutOrStdout(), output.FormatRunningJobs(output.FormatRunningJobsParams{Jobs: jobs, Now: time.Now()}))
 		})

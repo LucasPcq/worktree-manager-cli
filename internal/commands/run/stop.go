@@ -10,7 +10,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	stopflow "github.com/LucasPcq/wtm/internal/flow/run/stop"
-	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // newStopCmd creates the wtm run stop subcommand.
@@ -23,6 +22,7 @@ func newStopCmd() *cobra.Command {
 		RunE:  runStop,
 	}
 	shared.AddJobFlag(cmd, "Job to stop (required without a terminal or in --output json mode)")
+	shared.AddYesFlag(cmd, "Skip all prompts; --job is then required")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -47,6 +47,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	job, _ := cmd.Flags().GetString(domain.FlagJob)
 
 	outcome, err := stopflow.Run(stopflow.Params{
@@ -58,7 +59,7 @@ func runStop(cmd *cobra.Command, args []string) error {
 			Config:   runCfg,
 		},
 		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
-			Interactive: isTTY() && rules.IsHumanFormat(format),
+			Interactive: shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
 			Stderr:      true,
 		}),
 		Presenter: stopPresenter{CLIPresenter: shared.NewPresenter(cmd, format)},

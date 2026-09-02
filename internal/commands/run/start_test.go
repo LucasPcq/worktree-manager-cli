@@ -136,3 +136,37 @@ func TestRunStartWithoutATerminalNeverOpensTheView(t *testing.T) {
 		t.Errorf("stdout does not report the started service:\n%s", stdout)
 	}
 }
+
+// --yes is the confirmation axis: it runs unattended, so a required selection
+// with no safe default is refused by name rather than answered by a picker.
+func TestRunStartYesRefusesWithoutAJob(t *testing.T) {
+	setupStartProject(t, &fakeDaemon{})
+	view := captureRunView(t)
+	fakeTTY(t, true)
+
+	_, stderr, err := runCmd(t, domain.CmdStart, "--"+domain.FlagYes)
+	if err == nil {
+		t.Fatal("run start --yes started something without being told which job")
+	}
+	if !strings.Contains(err.Error()+stderr, domain.FlagJob) {
+		t.Errorf("the refusal %q does not name --%s", err, domain.FlagJob)
+	}
+	if len(view.calls) != 0 {
+		t.Error("a picker ran under --yes")
+	}
+}
+
+// --yes on a command whose every question has a safe default asks nothing and
+// still runs: the worktree is the current one.
+func TestRunStartYesWithAJobRunsUnattended(t *testing.T) {
+	daemon := setupStartProject(t, &fakeDaemon{})
+	captureRunView(t)
+	fakeTTY(t, true)
+
+	if _, _, err := runCmd(t, domain.CmdStart, "--"+domain.FlagYes, "--"+domain.FlagJob, "api", "-d"); err != nil {
+		t.Fatalf("run start --yes --job api -d: %v", err)
+	}
+	if got := daemon.startedJobs(); len(got) != 1 || got[0] != "api" {
+		t.Errorf("the daemon was asked to start %v, want [api]", got)
+	}
+}

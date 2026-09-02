@@ -80,6 +80,25 @@ func AddProfileFlag(cmd *cobra.Command, usage string) {
 	cmd.Flags().String(domain.FlagProfile, "", usage)
 }
 
+// AddYesFlag adds the confirmation axis. It is the only thing that turns prompts
+// off; --force, where a command has one, is the safety axis and implies nothing
+// here.
+func AddYesFlag(cmd *cobra.Command, usage string) {
+	cmd.Flags().BoolP(domain.FlagYes, "y", false, usage)
+}
+
+// Unattended folds --yes into the prompt-capability gate: a human format, on a
+// terminal, and not bypassed.
+type UnattendedParams struct {
+	TTY    bool
+	Format string
+	Yes    bool
+}
+
+func Interactive(params UnattendedParams) bool {
+	return params.TTY && rules.IsHumanFormat(params.Format) && !params.Yes
+}
+
 // RequireRunInitialized enforces the run-module opt-in guard: the module counts
 // as initialized once run.toml declares at least one job or profile. Blocked run
 // commands call this after loading run.toml; the creation paths (run init,
