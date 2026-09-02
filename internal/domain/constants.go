@@ -1618,6 +1618,12 @@ const (
 	// RunConcurrencyRememberedFmt confirms what was written to run.toml, so a
 	// remembered answer is never a silent one.
 	RunConcurrencyRememberedFmt = "Remembered: concurrency = %q in run.toml"
+	// RunStoppingFmt, RunStoppedFmt and RunNoJobsRunning are one job's own stop,
+	// as `run stop` and `run down` report it.
+	RunStoppingFmt   = "Stopping %s…"
+	RunStoppedFmt    = "%s stopped"
+	RunNoJobsRunning = "No jobs running."
+
 	// RunStoppingOthers and RunStoppedOtherFmt report the worktrees an exclusive
 	// run cleared before starting.
 	RunStoppingOthers     = "Stopping the other worktrees' jobs…"

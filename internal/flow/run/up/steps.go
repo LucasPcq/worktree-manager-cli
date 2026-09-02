@@ -30,7 +30,7 @@ const (
 func (f *upFlow) session() flow.Session {
 	return flow.Session{
 		ErrLabel: domain.CmdUp,
-		Presets:  f.presets(),
+		Presets:  target.Presets(target.PresetParams{Named: f.named, Profile: f.request.Profile}),
 		Steps: []flow.Step{
 			target.WorktreeStep(target.WorktreeParams{
 				ProjectDir: f.ctx.ProjectDir,
@@ -44,16 +44,6 @@ func (f *upFlow) session() flow.Session {
 			f.concurrencyStep(),
 		},
 	}
-}
-
-// presets carry what the flags already answered: the step is not asked, but it
-// is still read back, so a flag never makes a line vanish from the recap.
-func (f *upFlow) presets() flow.Answers {
-	values := map[string]string{target.KeyProfile: f.request.Profile}
-	if f.named != nil {
-		values[target.KeyWorktree] = f.named.Dir
-	}
-	return flow.NewAnswers(values)
 }
 
 // concurrencyStep is asked at most once per project. It is skipped when nothing
@@ -152,6 +142,12 @@ func (f *upFlow) othersSummary(answers flow.Answers) string {
 		lines = append(lines, fmt.Sprintf("%s (%s)", filepath.Base(dir), strings.Join(others[dir], domain.RunURLListSep)))
 	}
 	return strings.Join(lines, domain.RunURLListSep)
+}
+
+// workDir is the worktree this run acts on, as git spells it — the daemon's key
+// for every job it is about to start.
+func (f *upFlow) workDir(answers flow.Answers) string {
+	return target.WorkDir(target.WorkDirParams{Answers: answers, Named: f.named, Cwd: f.request.Cwd})
 }
 
 func (f *upFlow) defaultProfile() string {

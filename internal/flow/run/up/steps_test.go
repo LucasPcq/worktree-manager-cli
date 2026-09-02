@@ -6,6 +6,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/flow/run/seam"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/service/runconfig"
 	"github.com/LucasPcq/wtm/internal/testutil/flowtest"
@@ -180,4 +181,6 @@ func TestAOneOffAnswerIsNotRemembered(t *testing.T) {
 // hand-over to a surface belongs to the run, not to a question.
 type presenterOnly struct{ *flowtest.Recorder }
 
-func (presenterOnly) Sequence(SequenceParams) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil }
+func (presenterOnly) Sequence(seam.SequenceParams) (runlogs.Outcome, error) {
+	return runlogs.Outcome{}, nil
+}

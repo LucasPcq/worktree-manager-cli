@@ -40,19 +40,9 @@ type Outcome struct {
 	Aborted bool
 }
 
-// SequenceParams is the hand-over: the surface draws, calls Start when it is
-// ready to report, and answers with what the run concluded.
-type SequenceParams struct {
-	Board   runlogs.Board
-	Profile string
-	Start   runlogs.StartFunc
-}
-
 type Presenter interface {
 	flow.Presenter
-	// Sequence shows the start. It is the one thing a run cannot report through
-	// Stage: the surface has to be drawing before the first job is asked for.
-	Sequence(SequenceParams) (runlogs.Outcome, error)
+	seam.Watcher
 }
 
 type Params struct {
@@ -98,9 +88,12 @@ type upFlow struct {
 }
 
 func (f *upFlow) run() (Outcome, error) {
-	if err := f.resolveNamed(); err != nil {
+	named, err := target.Named(target.NamedParams{ProjectDir: f.ctx.ProjectDir, Query: f.request.Worktree})
+	if err != nil {
 		return Outcome{}, err
 	}
+	f.named = named
+
 	if err := f.connect(); err != nil {
 		return Outcome{}, err
 	}
@@ -122,21 +115,6 @@ func (f *upFlow) run() (Outcome, error) {
 	}
 
 	return f.start(answers)
-}
-
-func (f *upFlow) resolveNamed() error {
-	if f.request.Worktree == "" {
-		return nil
-	}
-	resolved, err := target.Resolve(target.ResolveParams{
-		ProjectDir: f.ctx.ProjectDir,
-		Query:      f.request.Worktree,
-	})
-	if err != nil {
-		return err
-	}
-	f.named = &resolved
-	return nil
 }
 
 // connect wakes the daemon and reads its index once. Both the worktree badges
@@ -247,7 +225,7 @@ func (f *upFlow) start(answers flow.Answers) (Outcome, error) {
 		ProxyPort:   rules.ProxyPort(f.ctx.Config.Global),
 	})
 
-	result, err := f.presenter.Sequence(SequenceParams{
+	result, err := f.presenter.Sequence(seam.SequenceParams{
 		Board:   runSeam.Board(),
 		Profile: profile.Name,
 		Start:   runSeam.Starter(seam.StartParams{Profile: profile.Name, Jobs: profile.Jobs}),
@@ -261,18 +239,6 @@ func (f *upFlow) start(answers flow.Answers) (Outcome, error) {
 		Result:  result,
 		Aborted: result.Aborted(),
 	}, nil
-}
-
-// workDir is the worktree this run acts on, as git spells it — the daemon's key
-// for every job it is about to start.
-func (f *upFlow) workDir(answers flow.Answers) string {
-	if answered := answers.Value(target.KeyWorktree); answered != "" {
-		return answered
-	}
-	if f.named != nil {
-		return f.named.Dir
-	}
-	return target.Root(f.request.Cwd)
 }
 
 // resolvedProfile is what this run settled on: a name for it and the jobs it

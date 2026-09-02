@@ -157,3 +157,26 @@ func newProber(budget time.Duration, disabled bool) runlogs.Prober {
 	}
 	return dialProber{budget: budget}
 }
+
+// SequenceParams is the hand-over from a run to the surface watching it: what
+// the surface lists, what it calls when it is ready to report, and what to call
+// the run in a header.
+type SequenceParams struct {
+	Board runlogs.Board
+	// Profile and Job name the run, exactly one of them set: a profile for
+	// `run up`, a job for `run start`.
+	Profile string
+	Job     string
+	Start   runlogs.StartFunc
+	// Inline says the run blocks until it ends — a task, whose output belongs to
+	// the scrollback rather than to a screen given back when it exits. It is the
+	// flow that knows, because it is the flow that resolved the job.
+	Inline bool
+}
+
+// Watcher is the half of a run's Presenter that shows the start. It is the one
+// thing a run cannot report through Stage: the surface has to be drawing before
+// the first job is asked for, so it is the surface that calls Start.
+type Watcher interface {
+	Sequence(SequenceParams) (runlogs.Outcome, error)
+}

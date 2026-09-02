@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
@@ -120,4 +121,57 @@ func (l *worktreeList) branchOf(path string) string {
 		}
 	}
 	return path
+}
+
+type NamedParams struct {
+	ProjectDir string
+	Query      string
+}
+
+// Named resolves the positional, and reports nil when there was none — which is
+// the difference between "this worktree" and "no worktree named yet".
+func Named(params NamedParams) (*Resolved, error) {
+	if params.Query == "" {
+		return nil, nil
+	}
+	resolved, err := Resolve(ResolveParams{ProjectDir: params.ProjectDir, Query: params.Query})
+	if err != nil {
+		return nil, err
+	}
+	return &resolved, nil
+}
+
+type WorkDirParams struct {
+	Answers flow.Answers
+	Named   *Resolved
+	Cwd     string
+}
+
+// WorkDir is the worktree a run acts on, as git spells it: what the step
+// answered, else the positional, else where the command was launched.
+func WorkDir(params WorkDirParams) string {
+	if answered := params.Answers.Value(KeyWorktree); answered != "" {
+		return answered
+	}
+	if params.Named != nil {
+		return params.Named.Dir
+	}
+	return Root(params.Cwd)
+}
+
+type PresetParams struct {
+	Named   *Resolved
+	Job     string
+	Profile string
+}
+
+// Presets carry what the flags and the positional already answered. A preset
+// step is not asked but is still read back, which is what keeps a flag from
+// erasing a line from the recap.
+func Presets(params PresetParams) flow.Answers {
+	values := map[string]string{KeyJob: params.Job, KeyProfile: params.Profile}
+	if params.Named != nil {
+		values[KeyWorktree] = params.Named.Dir
+	}
+	return flow.NewAnswers(values)
 }
