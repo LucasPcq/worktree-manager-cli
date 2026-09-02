@@ -308,16 +308,22 @@ func TestWriteJobLogsJSONOnAWorktreeWithNothingRecordedIsAnEmptyArray(t *testing
 }
 
 func TestRunLogsJSONNeverOpensTheView(t *testing.T) {
-	dir, err := os.Getwd()
+	stateDir := setupTestProject(t)
+	// The command resolves its worktree from the working directory, and this one
+	// needs a branch to name a log directory with. Standing in the repo the setup
+	// just built keeps that off the ambient checkout, which on CI is a detached
+	// HEAD with no branch to read.
+	t.Chdir(filepath.Dir(filepath.Dir(stateDir)))
+
+	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	root, err := infra.Toplevel(dir)
+	root, err := infra.Toplevel(cwd)
 	if err != nil {
 		t.Fatalf("toplevel: %v", err)
 	}
 
-	stateDir := setupTestProject(t)
 	writeRunTOML(t, stateDir, domain.RunConfig{Jobs: []domain.JobConfig{apiJob}})
 	startFakeDaemon(t, &fakeDaemon{
 		Jobs: []domain.JobInfo{
