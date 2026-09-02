@@ -1600,6 +1600,13 @@ const (
 	RunJobStepName        = "Job"
 	RunProfileStepName    = "Profile"
 
+	// Run*Skip reasons say why a target step was never asked. A step that cannot
+	// list the worktrees is skipped rather than failed: acting where you stand is
+	// the answer it would have resolved to anyway.
+	RunWorktreeOnlyOne    = "single worktree"
+	RunWorktreeUnreadable = "worktrees could not be listed"
+	RunProfileNoChoice    = "no other profile to choose from"
+
 	// RunURLSuffixSep sets a job's URL apart from the line announcing it, far
 	// enough that a terminal-detected link does not swallow the ports before it.
 	RunURLSuffixSep     = "   "
