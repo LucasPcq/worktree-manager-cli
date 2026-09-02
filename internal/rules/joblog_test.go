@@ -172,18 +172,39 @@ func TestWorktreeLogDirRefusesABranchThatEscapesItsSegment(t *testing.T) {
 	}
 }
 
-func TestJobLogFileNameFoldsPathSeparators(t *testing.T) {
+func TestJobLogFileNameEscapesPathSeparators(t *testing.T) {
 	cases := map[string]string{
-		"web":         "web.log",
-		"web-api":     "web-api.log",
-		"api/gateway": "api_gateway.log",
-		"../escape":   ".._escape.log",
-		"db 2":        "db_2.log",
+		"web":            "web.log",
+		"web-api":        "web-api.log",
+		"api-db:migrate": "api-db:migrate.log",
+		"api/gateway":    "api%2Fgateway.log",
+		"../escape":      "..%2Fescape.log",
+		"db 2":           "db%202.log",
+		"":               "",
 	}
 	for job, want := range cases {
 		if got := JobLogFileName(job); got != want {
 			t.Errorf("JobLogFileName(%q) = %q, want %q", job, got, want)
 		}
+	}
+}
+
+// Two jobs never share a file. Folding every unusual rune onto '_' made
+// distinct names collide, which merely interleaved their lines until a start
+// began emptying the file it opens (LUC-198).
+func TestJobLogFileNameNeverCollides(t *testing.T) {
+	names := []string{"web api", "web:api", "web_api", "web/api", "web%20api", "web.api", "web-api"}
+
+	seen := map[string]string{}
+	for _, name := range names {
+		file := JobLogFileName(name)
+		if strings.ContainsAny(file, `/\`) {
+			t.Errorf("JobLogFileName(%q) = %q, which is not a single path segment", name, file)
+		}
+		if other, taken := seen[file]; taken {
+			t.Errorf("%q and %q both map to %q", other, name, file)
+		}
+		seen[file] = name
 	}
 }
 
@@ -255,6 +276,37 @@ func TestSanitizeLogChunkOnBinaryOutput(t *testing.T) {
 		}
 		if !utf8.ValidString(record.Text) {
 			t.Errorf("record %q is not valid UTF-8", record.Text)
+		}
+	}
+}
+
+func TestParseLogLineReadsBackWhatFormatWrote(t *testing.T) {
+	at := time.Date(2026, 9, 2, 10, 4, 11, 0, time.UTC)
+	line := FormatLogRecord(domain.LogRecord{At: at, Text: "listening on 3000"})
+
+	got := ParseLogLine(ParseLogLineParams{Job: "api", Line: line})
+	want := domain.JobLogEntry{Job: "api", At: "2026-09-02T10:04:11Z", Text: "listening on 3000"}
+	if got != want {
+		t.Errorf("ParseLogLine = %+v, want %+v", got, want)
+	}
+}
+
+// A line whose text carries the separator keeps all of it: only the first cut
+// is the stamp.
+func TestParseLogLineKeepsASeparatorInsideTheText(t *testing.T) {
+	got := ParseLogLine(ParseLogLineParams{Job: "api", Line: "2026-09-02T10:04:11Z  GET /  200"})
+	if got.Text != "GET /  200" {
+		t.Errorf("text = %q, want the whole line after the stamp", got.Text)
+	}
+}
+
+// A log written before this format is still worth handing over: it loses its
+// date, not its content.
+func TestParseLogLineCarriesAnUndatableLineWhole(t *testing.T) {
+	for _, line := range []string{"listening on 3000", "not a date  listening on 3000"} {
+		got := ParseLogLine(ParseLogLineParams{Job: "api", Line: line})
+		if got.At != "" || got.Text != line {
+			t.Errorf("ParseLogLine(%q) = %+v, want the line whole and undated", line, got)
 		}
 	}
 }

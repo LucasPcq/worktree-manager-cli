@@ -76,8 +76,14 @@ func runStop(cmd *cobra.Command, args []string) error {
 
 	socketPath := process.SocketPath()
 	if !process.IsDaemonRunning(socketPath) {
+		// An object like every other answer this command gives: the shape follows
+		// the arity of the command, never the branch it happened to take
+		// (LUC-198). Nothing was running, so the job is stopped either way.
 		if format == domain.OutputJSON {
-			return output.WriteJobResultsJSON(cmd.OutOrStdout(), nil)
+			return output.WriteJobResultJSON(cmd.OutOrStdout(), domain.JobActionResult{
+				Name:   job.Name,
+				Status: domain.JobActionStopped,
+			})
 		}
 		output.Frame(cmd.OutOrStdout(), func() {
 			output.Message(cmd.OutOrStdout(), "No jobs running.")

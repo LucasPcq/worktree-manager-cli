@@ -47,8 +47,18 @@ self-documenting:
    on-conflict to abort — pass `--on-conflict resolve`); `reparent` needs worktrees and `--to`;
    `checkout` needs the PR `<number>`; `relocate` uses `--to` to change base_path; `create`
    needs `--from` when the branch already exists locally (its parent can't be inferred).
-   Read-only data commands (`list`, `tree`, `resolve`, `config show`, `run list`/`ps`) take
-   `--output json` with no `--yes`. Check `--help` when unsure.
+   Read-only data commands (`list`, `tree`, `resolve`, `config show`, `run list`/`ps`/`logs`)
+   take `--output json` with no `--yes`. Check `--help` when unsure.
+   Across the `run` module the machine surface follows one rule: **the shape follows the
+   arity, the exit code follows the success.** A command acting on N jobs (`run up`,
+   `run down`, `run logs`) gives an array, one acting on a single job (`run start`,
+   `run stop`, `run job *`) gives an object — always that shape, whatever branch the
+   command took — and any of them exits non-zero when what it attempted failed. A command
+   that got far enough to have per-job results writes its **whole** document and *then*
+   exits non-zero (`run up`, `run down`: read the array, the `status: "error"` entries say
+   which job); one that failed before that (no such job, daemon refused, config invalid)
+   writes **nothing** on stdout and puts the reason on stderr. So: check the exit code,
+   and parse stdout only if it is non-empty.
 6. **Operations are idempotent — safe to retry.** `create --if-not-exists` no-ops on an
    existing worktree (including one holding the branch outside `base_path`, whose path it
    returns — even the **main** worktree's own path, if that's where the branch is checked
@@ -89,7 +99,7 @@ self-documenting:
 | Where a job answers in a worktree | `wtm run url [worktree] --output json` |
 | What serves the named URLs (bind port, public port, redirection) | `wtm run proxy status --output json` |
 | What a `run up` started, with each job's `url` | `wtm run up -d --output json` |
-| What a job printed | `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (read it as a file) |
+| What a job printed | `wtm run logs [worktree] --job <name> --output json` → `[{job, at, text}]` |
 | Resolved project config | `wtm config show --output json` |
 | A branch's worktree path | `wtm resolve <branch> --output json` |
 
@@ -352,10 +362,16 @@ and **experimental**: the global `wtm init` does not configure it.
   reason `--raw` is the agent's form.
 - `run logs [worktree] --job <name>` opens that same view on a terminal. Without one it writes every running
   job's output as `[job] line` on stdout and only ends when the jobs do — do not call it
-  expecting it to return. Prefer reading the journal instead: every job's output is
-  persisted to `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (rotated
-  5 MB x 3), which you can read with your own file tools; `run logs --job <name>` on a job that
-  is **not** running prints that file back and returns.
+  expecting it to return. **`--output json` is the agent's form**: it replays each job's
+  last **1000** lines as `[{job, at, text}]` (`at` is RFC3339 UTC) and **never attaches**,
+  so it returns even on a job that is still running. Entries are **grouped by job** and
+  chronological within a job, so `at` goes backwards where one job ends and the next
+  begins — never read the array as a single merged timeline. `--job` narrows it without
+  changing its shape. What it replays is the job's **last start only**: starting a job
+  clears its log, so one file is one run and a tail can never reach back into a previous
+  one — including the log of a crash you just restarted past. The file itself is
+  `<git-common-dir>/wtm/logs/<url-escaped-branch>/<url-escaped-job>.log` (rotated 5 MB x 3
+  *within* a run) if you need more than the last 1000 lines.
 - **`status` has four values, and `detached` is not a weaker `running`.** A service with
   a `stop` command (a `docker compose up -d`) is reported `detached` from the moment its
   launcher exits: the real work runs outside wtm, nothing about it was verified, and
@@ -552,10 +568,9 @@ On non-zero exit, read stderr, then:
 - `gh: …` → `gh` isn't authenticated; tell the user to run `gh auth login`.
 - A `run up` job failed → its entry in the JSON array is `{"name", "status": "error",
   "message"}` plus **`output`** (everything the job wrote before it failed) and
-  **`exit_code`**. `message` is the daemon's one-line reason; `output` is why. Note that
-  `run up --output json` exits **0** even when the profile aborted, so the document stays
-  parseable — branch on an entry with `status: "error"`, not on the exit code. `run start
-  --output json` is the opposite: one object, and a failing job exits non-zero.
+  **`exit_code`**. `message` is the daemon's one-line reason; `output` is why. The document
+  on stdout is always complete, exit code or not, so read it either way — branching on an
+  entry with `status: "error"` tells you *which* job, which the exit code does not.
 - A `sync` exited non-zero → some branch is `status: conflict`/`error` in the JSON. For a
   `conflict` (default mode) the rebase was aborted and the branch + descendants skipped —
   the user resolves it manually in its worktree, then re-run `sync`. `kept_in_progress:

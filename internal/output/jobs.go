@@ -43,6 +43,14 @@ func WriteJobResultsJSON(w io.Writer, results []domain.JobActionResult) error {
 	return encodeJSON(w, results)
 }
 
+// WriteJobLogsJSON writes the lines `run logs` read back.
+func WriteJobLogsJSON(w io.Writer, entries []domain.JobLogEntry) error {
+	if entries == nil {
+		entries = []domain.JobLogEntry{}
+	}
+	return encodeJSON(w, entries)
+}
+
 // WriteJobResultJSON writes a single job outcome (start/stop single job).
 func WriteJobResultJSON(w io.Writer, result domain.JobActionResult) error {
 	return encodeJSON(w, result)

@@ -53,6 +53,11 @@ func writeRunTOML(t *testing.T, stateDir string, cfg domain.RunConfig) {
 func runCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 	cmd := NewCmd()
+	// The root command sets both, and a subcommand built on its own does not
+	// inherit them: without this cobra writes its usage onto the same stream as
+	// the command's output every time a test exercises a failure.
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
 	var outBuf, errBuf bytes.Buffer
 	cmd.SetOut(&outBuf)
 	cmd.SetErr(&errBuf)

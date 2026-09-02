@@ -540,8 +540,10 @@ ports genuinely need more room than 10.
 detaches — the daemon keeps the jobs running. `-d` starts them and hands the prompt back
 instead. Without a terminal, or under `--output json`, no view opens: the run reports
 itself as lines, which is what a script or an agent gets. Each job's output is also
-journaled to `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (5 MB x 3), and
-`run logs` reads that back for a job that is no longer running.
+journaled to `<git-common-dir>/wtm/logs/<url-escaped-branch>/<url-escaped-job>.log`
+(5 MB x 3 within one run), and `run logs` reads that back for a job that is no longer
+running. Starting a job clears its log first, so one file is one run: what `run logs`
+replays never reaches back into an earlier one.
 
 The daemon itself is disposable. It exits ~30 s after the last **foreground** job, while
 detached services — those with a `stop` command, a `docker compose up -d` typically —
