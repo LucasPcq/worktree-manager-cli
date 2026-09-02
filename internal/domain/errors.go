@@ -191,8 +191,6 @@ var (
 	// the flag rather than falling back to a picker.
 	ErrJobRequired = errors.New("specify --job (no interactive picker without a terminal or in --output json mode)")
 
-	// ErrJobNonePublished is returned when no job in run.toml declares a url,
-	// so there is no address to print.
 	// ErrProxyNoListeners means launchd started the forwarder without handing it
 	// the sockets it exists to serve.
 	ErrProxyNoListeners = errors.New("launchd started the port-80 forwarder with no listening socket")
@@ -208,6 +206,8 @@ var (
 	// named URLs keep their port there, which is a state, not a failure.
 	ErrProxyRedirectUnsupported = errors.New("serving the proxy on port 80 is not implemented on this platform yet — named URLs keep their port")
 
+	// ErrJobNonePublished is returned when no job in run.toml declares a url, so
+	// there is no address to print.
 	ErrJobNonePublished = errors.New("no job declares a url in run.toml — add one with `url = { port = \"PORT\" }`")
 
 	// ErrDashboardJSON is returned when `wtm ui` is invoked with --output json.

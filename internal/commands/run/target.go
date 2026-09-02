@@ -2,7 +2,6 @@ package run
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
@@ -42,9 +41,23 @@ func resolveTarget(params targetParams) (target, error) {
 		return resolveNamed(params.ProjectDir, query)
 	}
 	if !params.Interactive || !params.Pick {
-		return target{Dir: params.Cwd}, nil
+		return target{Dir: worktreeRoot(params.Cwd)}, nil
 	}
 	return pickTarget(params)
+}
+
+// worktreeRoot is the worktree containing dir, spelled the way git spells it.
+// Never dir itself: the directory a command was launched from doubles as the
+// daemon's key for a job (name + WorkDir) and as the job's own working
+// directory, which run.toml's `cwd` is resolved against. A subdirectory would
+// therefore both mis-resolve that `cwd` and make the same worktree two distinct
+// keys, so `run down` could not find what `run up` had started.
+func worktreeRoot(dir string) string {
+	root, err := infra.Toplevel(dir)
+	if err != nil {
+		return dir
+	}
+	return root
 }
 
 func firstArg(args []string) string {
@@ -71,34 +84,18 @@ func pickTarget(params targetParams) (target, error) {
 		return target{}, fmt.Errorf("list worktrees: %w", err)
 	}
 	if len(worktrees) <= 1 {
-		return target{Dir: params.Cwd}, nil
+		return target{Dir: worktreeRoot(params.Cwd)}, nil
 	}
 
 	picked, err := pickWorktree(runpicker.WorktreePickerParams{
 		Worktrees: worktrees,
-		Current:   currentPath(worktrees, params.Cwd),
+		Current:   worktreeRoot(params.Cwd),
 		Running:   rules.RunningJobsByWorktree(shared.LoadJobsGraceful()),
 	})
 	if err != nil {
 		return target{}, err
 	}
 	return target{Dir: picked.Path, Branch: picked.Branch}, nil
-}
-
-// currentPath maps the directory the command was launched from onto the worktree
-// containing it, which may be one of its subdirectories. Both sides go through
-// infra.ResolvePath: on macOS the cwd is reached through /var and git reports
-// /private/var, and a raw compare would leave the cursor on the wrong entry. An
-// unmatched cwd pre-selects nothing rather than the wrong worktree.
-func currentPath(worktrees []domain.GitWorktree, cwd string) string {
-	resolved := infra.ResolvePath(cwd)
-	for _, wt := range worktrees {
-		path := infra.ResolvePath(wt.Path)
-		if resolved == path || strings.HasPrefix(resolved, path+string(filepath.Separator)) {
-			return wt.Path
-		}
-	}
-	return ""
 }
 
 // pickJob is a variable for the same reason as pickWorktree.

@@ -106,8 +106,8 @@ func TestResolveTargetFallsBackToTheCwdWithoutATerminal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if tgt.Dir != projectDir {
-		t.Errorf("resolved %q, want the current directory %q", tgt.Dir, projectDir)
+	if tgt.Dir != infra.ResolvePath(projectDir) {
+		t.Errorf("resolved %q, want the current worktree %q", tgt.Dir, projectDir)
 	}
 }
 
@@ -126,8 +126,8 @@ func TestResolveTargetKeepsTheCwdWhenPickingIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if tgt.Dir != projectDir {
-		t.Errorf("resolved %q, want the current directory %q", tgt.Dir, projectDir)
+	if tgt.Dir != infra.ResolvePath(projectDir) {
+		t.Errorf("resolved %q, want the current worktree %q", tgt.Dir, projectDir)
 	}
 }
 

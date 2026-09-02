@@ -10,6 +10,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
+	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/testutil/runlogstest"
 )
 
@@ -173,10 +174,17 @@ func TestRunLogsWithoutATerminalWritesPrefixedLines(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
+	// The daemon keys a job on the worktree it was started from, never on the
+	// subdirectory or the spelling the caller happened to use, so the fake has to
+	// answer with the same key the command will ask for.
+	root, err := infra.Toplevel(dir)
+	if err != nil {
+		t.Fatalf("toplevel: %v", err)
+	}
 
 	setupStartProject(t, &fakeDaemon{
 		Jobs: []domain.JobInfo{
-			{Name: "api", Kind: domain.JobKindService, Status: domain.JobStatusRunning, WorkDir: dir},
+			{Name: "api", Kind: domain.JobKindService, Status: domain.JobStatusRunning, WorkDir: root},
 		},
 		Streams: map[string][]byte{"api": []byte("listening on 3000\nrequest handled\n")},
 	})

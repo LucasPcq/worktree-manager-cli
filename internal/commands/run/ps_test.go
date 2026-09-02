@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/runpicker"
 )
 
@@ -43,5 +44,50 @@ func TestPsStopAllNeedsNoJob(t *testing.T) {
 func TestPsUnknownActionRunsNothing(t *testing.T) {
 	if _, _, ok := psInvocation(runpicker.PsPickerResult{Action: "nope"}); ok {
 		t.Error("an unknown action produced a command to run")
+	}
+}
+
+// The re-exec inherits this terminal, so a sub-command left with no positional
+// would open its own worktree picker and let the reader undo the job they just
+// chose. The branch is named alongside the directory.
+func TestPsActionNamesTheWorktree(t *testing.T) {
+	projectDir := setupWorktrees(t)
+
+	pick := runpicker.PsPickerResult{
+		Name:    "api",
+		Action:  runpicker.ActionPsStop,
+		WorkDir: projectDir,
+	}
+
+	args, _, ok := psInvocation(pick)
+	if !ok {
+		t.Fatal("the action produced no command")
+	}
+	branch, err := worktree.CurrentBranch(worktree.CurrentBranchParams{Dir: projectDir})
+	if err != nil {
+		t.Fatalf("branch: %v", err)
+	}
+	if got := strings.Join(args, " "); !strings.Contains(got, " "+branch+" ") {
+		t.Errorf("args %v do not name the worktree %q, so the child would open a picker", args, branch)
+	}
+}
+
+// A worktree git cannot name — a detached HEAD, or a directory outside any
+// repository — falls back to the directory alone rather than passing a bogus
+// positional the child would fail to resolve.
+func TestPsActionOmitsAnUnnameableWorktree(t *testing.T) {
+	args, dir, ok := psInvocation(runpicker.PsPickerResult{
+		Name:    "api",
+		Action:  runpicker.ActionPsStop,
+		WorkDir: t.TempDir(),
+	})
+	if !ok {
+		t.Fatal("the action produced no command")
+	}
+	if len(args) != 4 {
+		t.Errorf("args %v carry a positional for a worktree git cannot name", args)
+	}
+	if dir == "" {
+		t.Error("the command lost the job's directory as well")
 	}
 }

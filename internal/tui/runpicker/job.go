@@ -2,6 +2,7 @@ package runpicker
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -36,5 +37,5 @@ func RunJobPicker(jobs []domain.JobConfig) (domain.JobConfig, error) {
 			return job, nil
 		}
 	}
-	return domain.JobConfig{}, domain.ErrUserAborted
+	return domain.JobConfig{}, fmt.Errorf("%w: %s", domain.ErrJobNotFound, name)
 }

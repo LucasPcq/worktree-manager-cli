@@ -58,5 +58,5 @@ func RunWorktreePicker(params WorktreePickerParams) (domain.GitWorktree, error) 
 			return wt, nil
 		}
 	}
-	return domain.GitWorktree{}, domain.ErrUserAborted
+	return domain.GitWorktree{}, fmt.Errorf("picked worktree %q is not in the list", path)
 }
