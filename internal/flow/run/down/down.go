@@ -88,7 +88,7 @@ type downFlow struct {
 }
 
 func (f *downFlow) run() (Outcome, error) {
-	named, err := target.Named(target.NamedParams{ProjectDir: f.ctx.ProjectDir, Query: f.request.Worktree})
+	named, err := target.Named(target.ResolveParams{ProjectDir: f.ctx.ProjectDir, Query: f.request.Worktree})
 	if err != nil {
 		return Outcome{}, err
 	}

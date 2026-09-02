@@ -123,18 +123,13 @@ func (l *worktreeList) branchOf(path string) string {
 	return path
 }
 
-type NamedParams struct {
-	ProjectDir string
-	Query      string
-}
-
 // Named resolves the positional, and reports nil when there was none — which is
 // the difference between "this worktree" and "no worktree named yet".
-func Named(params NamedParams) (*Resolved, error) {
+func Named(params ResolveParams) (*Resolved, error) {
 	if params.Query == "" {
 		return nil, nil
 	}
-	resolved, err := Resolve(ResolveParams{ProjectDir: params.ProjectDir, Query: params.Query})
+	resolved, err := Resolve(params)
 	if err != nil {
 		return nil, err
 	}
