@@ -1279,6 +1279,16 @@ const (
 	// DaemonStartTimeoutSeconds is how long to wait for the daemon to start.
 	DaemonStartTimeoutSeconds = 5
 
+	// DaemonStateFileName is the daemon's durable index, beside the socket under
+	// the global dir: the daemon is global, and an index it could only read from
+	// one repository would be an index of nothing.
+	DaemonStateFileName = "jobs.json"
+
+	// DaemonStateVersion is the index format. A file carrying anything else is
+	// read as empty and never written back, so an older binary cannot destroy
+	// the index of a newer one.
+	DaemonStateVersion = 1
+
 	// CtrlCByte is the ASCII code for Ctrl+C, used for PTY detach.
 	CtrlCByte byte = 0x03
 

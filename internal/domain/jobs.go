@@ -114,7 +114,37 @@ const (
 	JobStatusRunning JobStatus = "running"
 	JobStatusStopped JobStatus = "stopped"
 	JobStatusCrashed JobStatus = "crashed"
+	// JobStatusDetached is a service whose launcher has exited, leaving the real
+	// work to something wtm does not own — a compose stack, typically. It is not
+	// a weaker "running": nothing was ever verified, before or after a daemon
+	// restart, and there is no stream to attach to.
+	JobStatusDetached JobStatus = "detached"
 )
+
+// JobRecord is one entry of the daemon's durable index: which worktree started
+// which job, and everything needed to stop it later from a daemon that never
+// spawned it. Env, RouteHost and LogDir are resolved by a client — the daemon
+// cannot run git — so losing them would mean losing the ability to tear the job
+// down (a `docker compose down` without COMPOSE_PROJECT_NAME dismantles the
+// wrong project, or nothing at all).
+//
+// No PID: the only entries that survive a daemon are detached ones, whose
+// launcher is dead by construction and whose stop is a command, never a signal.
+type JobRecord struct {
+	Name      string            `json:"name"`
+	WorkDir   string            `json:"work_dir"`
+	Config    JobConfig         `json:"config"`
+	Env       map[string]string `json:"env,omitempty"`
+	RouteHost string            `json:"route_host,omitempty"`
+	LogDir    string            `json:"log_dir,omitempty"`
+	StartedAt time.Time         `json:"started_at,omitzero"`
+}
+
+// DaemonState is the index as it sits on disk.
+type DaemonState struct {
+	Version int         `json:"version"`
+	Jobs    []JobRecord `json:"jobs"`
+}
 
 // JobInfo is the JSON representation of a managed job, shared across the daemon
 // protocol and the output/tui layers that render it.
