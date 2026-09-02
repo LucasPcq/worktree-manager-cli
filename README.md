@@ -146,6 +146,7 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 | [`run export`](docs/wtm_run_export.md) / [`import`](docs/wtm_run_import.md) | Share a job layout between machines |
 | [`run job`](docs/wtm_run_job.md) / [`profile`](docs/wtm_run_profile.md) | Add / remove / edit jobs and profiles |
 | [`run proxy`](docs/wtm_run_proxy.md) | Report, install or remove the redirection that serves named URLs on port 80 |
+| [`run daemon`](docs/wtm_run_daemon.md) | Inspect, stop or restart the process that runs the jobs |
 
 ### GitHub
 
@@ -175,7 +176,7 @@ stable. Discover the exact fields by running the command once:
 ```bash
 wtm list --output json | jq '.[] | select(.is_dirty).branch'
 wtm checkout 42 --output json | jq '.path'
-wtm run ps --output json | jq '.[] | select(.status=="running").name'
+wtm run ps --output json | jq '.[] | select(.status=="running" or .status=="detached").name'
 ```
 
 Non-interactive note: `--output json` never prompts, so destructive commands need an
@@ -529,10 +530,11 @@ ports genuinely need more room than 10.
 > under the old name and a new `run up` will not find them — stop them once with
 > `docker compose -p <old-name> down`.
 >
-> The run daemon is global and outlives the command that started it, so a daemon already
-> running keeps serving with the binary that forked it: right after an upgrade your jobs
-> may still start without their ports. `wtm run down` and let the next command fork a
-> fresh one.
+> The run daemon is global and outlives the command that started it, so a daemon started
+> by an older binary would keep serving its own behavior. It is now refused rather than
+> silently used: any `run` command names both versions and points at
+> `wtm run daemon restart`, which hands the jobs over. Detached services survive that
+> restart; foreground ones are stopped.
 
 `run up` and `run start` **attach**: a full-screen view opens with one pane per job, and
 `wtm run logs` reopens it later. Leaving the view (`q`, or Ctrl+C outside focus mode)
@@ -541,6 +543,16 @@ instead. Without a terminal, or under `--output json`, no view opens: the run re
 itself as lines, which is what a script or an agent gets. Each job's output is also
 journaled to `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (5 MB x 3), and
 `run logs` reads that back for a job that is no longer running.
+
+The daemon itself is disposable. It exits ~30 s after the last **foreground** job, while
+detached services — those with a `stop` command, a `docker compose up -d` typically —
+keep running without it: the real work belongs to Docker, not to wtm. What wtm keeps is
+an index of what it started, in `~/.config/wtm/jobs.json`, which the next daemon reads
+back. That is what makes `wtm run ps` still list your stacks after a reboot, and
+`wtm run down` still stop them. Those stacks show as `detached` rather than `running`,
+because nothing about them was ever verified — wtm launched them and has not seen them
+since. `wtm run daemon status` reports what is up, and `stop` / `restart` are the way
+out when you want the process gone.
 
 ### Global config
 

@@ -1458,7 +1458,10 @@ const (
 	RunViewCursorMark  = "▸"
 	RunViewMarkRunning = "●"
 	RunViewMarkStopped = "○"
-	RunViewMarkCrashed = "✗"
+	// RunViewMarkDetached differs in shape rather than in colour: a detached
+	// service is up like a running one, but nothing about it can be attached.
+	RunViewMarkDetached = "◆"
+	RunViewMarkCrashed  = "✗"
 
 	// RunViewPaneWaiting and RunViewPaneNoHistory stand in
 	// for a pane with nothing in it yet, and RunViewPane*Label say where what is

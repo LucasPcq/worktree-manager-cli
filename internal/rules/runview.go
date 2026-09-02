@@ -78,6 +78,8 @@ func statusMark(status domain.JobStatus) domain.JobMark {
 	switch status {
 	case domain.JobStatusRunning:
 		return domain.JobMarkRunning
+	case domain.JobStatusDetached:
+		return domain.JobMarkDetached
 	case domain.JobStatusCrashed:
 		return domain.JobMarkCrashed
 	default:

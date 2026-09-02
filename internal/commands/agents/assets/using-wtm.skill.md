@@ -346,6 +346,29 @@ and **experimental**: the global `wtm init` does not configure it.
   persisted to `<git-common-dir>/wtm/logs/<url-escaped-branch>/<job>.log` (rotated
   5 MB x 3), which you can read with your own file tools; `run logs <job>` on a job that
   is **not** running prints that file back and returns.
+- **`status` has four values, and `detached` is not a weaker `running`.** A service with
+  a `stop` command (a `docker compose up -d`) is reported `detached` from the moment its
+  launcher exits: the real work runs outside wtm, nothing about it was verified, and
+  there is **nothing to attach to** — `run logs` on it prints its persisted file and
+  returns. It is up: it counts as a running job for `run down`, and `wtm run up` on it
+  simply relaunches the launcher rather than refusing "already running". `running` is a
+  foreground service the daemon holds a terminal for, `crashed` one whose process died,
+  `stopped` one that was stopped.
+- **The daemon survives nothing, and that is by design.** It exits ~30 s after the last
+  *foreground* job, and detached services keep running without it. It records what it
+  started in `~/.config/wtm/jobs.json`, so the next daemon picks those back up: after a
+  reboot, `wtm run ps` still lists the detached stacks and `wtm run down` still stops
+  them. `run down`, `clean` and `prune` start a daemon by themselves when that index
+  holds something for the worktree they act on.
+- `run daemon status` reports whether a daemon is up, its build, its PID and what it
+  holds (`--output json` gives one object). `run daemon stop` ends it — detached services
+  keep running — and `run daemon restart` hands its jobs to a daemon built from the
+  current binary. Both only prompt when foreground services would be stopped; pass
+  `--yes` (required without a terminal, and in JSON).
+- **A version mismatch is refused, never worked around.** The daemon is what runs the
+  jobs, so one built from another version of wtm keeps applying its own behavior. Every
+  command refuses with a message naming both versions; the way out is
+  `wtm run daemon restart`. Do not retry the command — it will refuse identically.
 - `run proxy status` reports what actually serves those names: the proxy's bind port, the
   public port announced in URLs, and whether the port-80 redirection is installed.
   `--output json` gives the whole thing as one object. `run proxy install` needs no
