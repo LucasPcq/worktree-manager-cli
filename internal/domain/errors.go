@@ -191,6 +191,10 @@ var (
 	// the flag rather than falling back to a picker.
 	ErrJobRequired = errors.New("specify --job (no interactive picker without a terminal or in --output json mode)")
 
+	// ErrNoJobsDeclared is a job step with nothing to offer: the question cannot
+	// be asked, and the answer is to declare a job rather than to pick one.
+	ErrNoJobsDeclared = errors.New("no jobs declared in run.toml")
+
 	// ErrProxyNoListeners means launchd started the forwarder without handing it
 	// the sockets it exists to serve.
 	ErrProxyNoListeners = errors.New("launchd started the port-80 forwarder with no listening socket")

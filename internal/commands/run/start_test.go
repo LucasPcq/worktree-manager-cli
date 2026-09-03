@@ -136,3 +136,68 @@ func TestRunStartWithoutATerminalNeverOpensTheView(t *testing.T) {
 		t.Errorf("stdout does not report the started service:\n%s", stdout)
 	}
 }
+
+// --yes is the confirmation axis: it runs unattended, so a required selection
+// with no safe default is refused by name rather than answered by a picker.
+func TestRunStartYesRefusesWithoutAJob(t *testing.T) {
+	setupStartProject(t, &fakeDaemon{})
+	view := captureRunView(t)
+	fakeTTY(t, true)
+
+	_, stderr, err := runCmd(t, domain.CmdStart, "--"+domain.FlagYes)
+	if err == nil {
+		t.Fatal("run start --yes started something without being told which job")
+	}
+	if !strings.Contains(err.Error()+stderr, domain.FlagJob) {
+		t.Errorf("the refusal %q does not name --%s", err, domain.FlagJob)
+	}
+	if len(view.calls) != 0 {
+		t.Error("a picker ran under --yes")
+	}
+}
+
+// --yes on a command whose every question has a safe default asks nothing and
+// still runs: the worktree is the current one.
+func TestRunStartYesWithAJobRunsUnattended(t *testing.T) {
+	daemon := setupStartProject(t, &fakeDaemon{})
+	captureRunView(t)
+	fakeTTY(t, true)
+
+	if _, _, err := runCmd(t, domain.CmdStart, "--"+domain.FlagYes, "--"+domain.FlagJob, "api", "-d"); err != nil {
+		t.Fatalf("run start --yes --job api -d: %v", err)
+	}
+	if got := daemon.startedJobs(); len(got) != 1 || got[0] != "api" {
+		t.Errorf("the daemon was asked to start %v, want [api]", got)
+	}
+}
+
+// A run that failed still owes a machine reader a document: an exit code with
+// no cause is what `run up`'s `output` field exists to avoid, and `run start`
+// was writing nothing at all.
+func TestRunStartJSONReportsAFailingJob(t *testing.T) {
+	setupStartProject(t, failingMigration())
+	captureRunView(t)
+	fakeTTY(t, false)
+
+	stdout, _, err := runCmd(t, domain.CmdStart, "--"+domain.FlagJob, "migrate", "--"+domain.FlagOutput, domain.OutputJSON)
+	if err == nil {
+		t.Fatal("a failing job exited zero")
+	}
+
+	var result domain.JobActionResult
+	if decodeErr := json.Unmarshal([]byte(stdout), &result); decodeErr != nil {
+		t.Fatalf("stdout is not a single object: %v\n%s", decodeErr, stdout)
+	}
+	if result.Name != "migrate" || result.Status != domain.JobActionError {
+		t.Errorf("result = %+v, want the job named and marked in error", result)
+	}
+	if result.Message != "task migrate failed: exit status 1" {
+		t.Errorf("message = %q, want the daemon's reason", result.Message)
+	}
+	if !strings.Contains(result.Output, "does not exist") {
+		t.Errorf("output = %q, want what the task wrote before it died", result.Output)
+	}
+	if result.ExitCode == nil || *result.ExitCode != 1 {
+		t.Errorf("exit_code = %v, want the code the daemon reported", result.ExitCode)
+	}
+}

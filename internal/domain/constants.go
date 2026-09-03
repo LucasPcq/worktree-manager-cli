@@ -1083,6 +1083,7 @@ const (
 	// Tree badge texts: what a node's status annotations read as, shared by the
 	// ASCII tree, the Mermaid export and the dashboard's Tree tab.
 	TreeBadgeVirtualText   = "(no worktree)"
+	TreeBadgeRunningFmt    = "▶ %d running"
 	TreeBadgeRebasingText  = "⚠ rebasing"
 	TreeBadgeDirtyText     = "⚠ dirty"
 	TreeBadgeNeedsSyncText = "⚠ needs sync"
@@ -1600,6 +1601,41 @@ const (
 	RunJobStepName        = "Job"
 	RunProfileStepName    = "Profile"
 
+	// Run*Skip reasons say why a target step was never asked. A step that cannot
+	// list the worktrees is skipped rather than failed: acting where you stand is
+	// the answer it would have resolved to anyway.
+	RunWorktreeOnlyOne = "single worktree"
+
+	// RunConcurrency* is the question `run up` asks once when another worktree
+	// already has jobs up, and the wording of the two answers it remembers.
+	RunConcurrencyStepName    = "Other worktrees"
+	RunConcurrencyTitle       = "Other worktrees are running jobs"
+	RunConcurrencyDescFmt     = "%s. Each worktree has its own ports and resource names, so they can run side by side."
+	RunConcurrencyParallel    = "Run in parallel"
+	RunConcurrencyExclusive   = "Stop the other worktrees' jobs first"
+	RunConcurrencyAlwaysFmt   = "%s — always for this project"
+	RunConcurrencySkipSettled = "already answered for this project"
+	RunConcurrencySkipFlag    = "set by --exclusive or --parallel"
+	RunConcurrencySkipAlone   = "no other worktree is running jobs"
+	// RunConcurrencyRememberedFmt confirms what was written to run.toml, so a
+	// remembered answer is never a silent one.
+	RunConcurrencyRememberedFmt = "Remembered: concurrency = %q in run.toml"
+	// RunStoppingFmt, RunStoppedFmt and RunNoJobsRunning are one job's own stop,
+	// as `run stop` and `run down` report it.
+	RunStoppingFmt   = "Stopping %s…"
+	RunStoppedFmt    = "%s stopped"
+	RunNoJobsRunning = "No jobs running."
+	RunNoJobsHere    = "No jobs running in this worktree."
+	RunStoppingJobs  = "Stopping jobs…"
+
+	// RunStoppingOthers and RunStoppedOtherFmt report the worktrees an exclusive
+	// run cleared before starting.
+	RunStoppingOthers     = "Stopping the other worktrees' jobs…"
+	RunStoppedOtherFmt    = "Stopped jobs in %s"
+	RunStopOtherFailFmt   = "stop jobs in %s: %s"
+	RunWorktreeUnreadable = "worktrees could not be listed"
+	RunProfileNoChoice    = "no other profile to choose from"
+
 	// RunURLSuffixSep sets a job's URL apart from the line announcing it, far
 	// enough that a terminal-detected link does not swallow the ports before it.
 	RunURLSuffixSep     = "   "
@@ -2047,6 +2083,11 @@ const (
 	OpKindReparent = "reparent"
 	OpKindPrune    = "prune"
 	OpKindSync     = "sync"
+	OpKindRunUp    = "run-up"
+	OpKindRunLogs  = "run-logs"
+	OpKindRunDown  = "run-down"
+	OpKindRunStart = "run-start"
+	OpKindRunStop  = "run-stop"
 
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"
@@ -2075,6 +2116,9 @@ const (
 	// list's state or how much panel height happens to be free.
 	DashboardDetailCommits = 5
 	DashboardDetailChanges = 5
+	// DashboardDetailJobs is RUN's equivalent fixed cap, over the jobs run.toml
+	// declares rather than over the ones that happen to be up.
+	DashboardDetailJobs = 6
 	// DashboardDetailDebounce delays a detail load so a fast walk through the
 	// list does not fire one git log per row crossed.
 	DashboardDetailDebounce = 150 * time.Millisecond
@@ -2173,10 +2217,27 @@ const (
 
 	DashboardTabWorktrees = "Worktrees"
 	DashboardTabTree      = "Tree"
-	DashboardListTitle    = "Worktrees"
-	DashboardTreeTitle    = "Worktree tree"
-	DashboardDetailTitle  = "Detail"
-	DashboardOutputTitle  = "Output"
+	DashboardTabServices  = "Services"
+
+	DashboardServicesTitle = "SERVICES"
+	// DashboardServicesEmpty and its hint: an empty tab names what would fill it,
+	// the way DashboardRunNotConfigured points at `wtm run init`.
+	DashboardServicesEmpty    = "Nothing is running"
+	DashboardServicesUpFmt    = "%d up"
+	DashboardServicesCountFmt = "%d running"
+	DashboardHelpServices     = "↑↓ job · ↵ logs · u open · m menu · r refresh · q quit"
+	DashboardListTitle        = "Worktrees"
+	DashboardTreeTitle        = "Worktree tree"
+	DashboardDetailTitle      = "Detail"
+	// DashboardPanelTab* head the right-hand panel. They take the place of its
+	// title: the panel is what they name.
+	DashboardPanelTabDetail = "DETAIL"
+	DashboardPanelTabLogs   = "LOGS"
+	DashboardPanelTabSep    = " │ "
+	// DashboardPanelTabsChrome is what the tab bar costs the panel's body: its
+	// own row, the rule under it and the blank line after that.
+	DashboardPanelTabsChrome = 3
+	DashboardOutputTitle     = "Output"
 
 	// DashboardEmptyList is shown when the list loaded but came back with
 	// nothing — in a valid repository the main worktree is always present, so
@@ -2261,6 +2322,22 @@ const (
 	// a cascade would skip left unchecked — they stay listed, with the tag saying
 	// why.
 	DashboardMenuSyncAll = "Sync worktrees"
+	// DashboardMenuRun* drive the run module from a row. They are offered on the
+	// base row too: the main checkout runs jobs like any other worktree. A
+	// profile and a job are two different requests, so they are two different
+	// entries.
+	DashboardMenuRunUp    = "Start profile"
+	DashboardMenuRunStart = "Start a job"
+	DashboardMenuRunDown  = "Stop everything"
+	DashboardMenuRunStop  = "Stop a job"
+	DashboardMenuRunLogs  = "View logs"
+	// DashboardMenuSection* head the blocks of a context menu. A block is what
+	// tells "move this worktree" and "start its services" apart at a glance.
+	DashboardMenuSectionGit = "GIT"
+	DashboardMenuSectionRun = "RUN"
+	// DashboardRunNotConfigured is what a row offers when the project has no run
+	// module: the answer is `wtm run init`, not a picker with nothing in it.
+	DashboardRunNotConfigured = "No run jobs are configured for this project"
 	// DashboardMenuEmpty stands in for the actions of a worktree that has none.
 	DashboardMenuEmpty = "No actions available"
 	// DashboardMenuChrome is what the menu box spends on its borders and padding.
@@ -2339,6 +2416,44 @@ const (
 	// DashboardOpenPRLabel names a failed browser launch for the REVIEW
 	// section's PR line, in the same "✗ <label>: <err>" form.
 	DashboardOpenPRLabel = "open PR"
+	// DashboardOpenURLLabel names a failed browser launch for a RUN row.
+	DashboardOpenURLLabel = "open URL"
+
+	// RunDetached* report a start nobody is watching: the surface gave the
+	// terminal back, so each step says what it did instead of showing it.
+	RunDetachedStartingFmt = "starting %s (%d/%d)"
+	RunDetachedStartedFmt  = "%s is up"
+	RunDetachedDoneFmt     = "%s finished"
+	RunDetachedAddressFmt  = "%s → %s"
+	RunDetachedFailedFmt   = "%s failed: %s"
+	RunDetachedAlreadyFmt  = "%s was already up"
+
+	// DashboardLogsLines is how far back the detail panel's logs view reads. It
+	// is a glance, not a session: runview is what scrolls.
+	DashboardLogsLines = 200
+	// DashboardLogsChrome is what the logs view spends under its tail: the blank
+	// line and the key reminder.
+	DashboardLogsChrome = 2
+	// DetailLogsHeaderFmt heads the logs view with the job and its state: a tail
+	// of a job that has stopped is still worth reading, and must not read as a
+	// live one.
+	DetailLogsHeaderFmt = "%s · %s"
+	DetailJobUpLabel    = "up"
+	DashboardLogsHint   = "←→ job    esc detail    ↵ full session"
+	// DashboardLogs* tell apart the three ways the logs view can have nothing to
+	// show: the answer differs, so the message does.
+	DashboardLogsNoModule     = "This project runs nothing"
+	DashboardLogsNoModuleHint = "declare jobs with `wtm run init`"
+	DashboardLogsNeverRan     = "This job has never run here"
+	DashboardLogsNeverRanHint = "start it with `wtm run start --job`, or from the worktree's menu"
+	DashboardLogsQuiet        = "Nothing logged yet"
+	DashboardLogsQuietHint    = "the job is up and has written nothing so far"
+	// DashboardLogsJobGap separates two job chips on the logs view's selection
+	// line. Three spaces: two read as a column gap inside one chip.
+	DashboardLogsJobGap = "   "
+	// DashboardLogsMore* mark a selection line showing only part of its jobs.
+	DashboardLogsMoreBefore = "‹ "
+	DashboardLogsMoreAfter  = " ›"
 
 	// KeyNew opens the new-worktree wizard, the keyboard equivalent of the list
 	// header's add button.
@@ -2361,6 +2476,12 @@ const (
 
 	// KeyOpenURL opens the selected job's URL in a browser.
 	KeyOpenURL = "o"
+	// KeyRunLogs reads a job's logs in the detail panel. Upper case: "l" is the
+	// list's vim-right.
+	KeyRunLogs = "L"
+	// KeyOpenAddress opens the designated job's address in a browser. "u": "o"
+	// is the output panel and "p" the pull request.
+	KeyOpenAddress = "u"
 
 	KeyHelp = "?"
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so
@@ -2384,13 +2505,31 @@ const (
 	// FetchHeadFileName is the file whose mtime marks the last successful fetch.
 	FetchHeadFileName = "FETCH_HEAD"
 
-	// DetailSection* names the detail panel's four conditional sections. A
+	// DetailSection* names the detail panel's five conditional sections. A
 	// section is emitted only when it has something to say, so its position
 	// varies between worktrees — its rank in DetailSectionDropOrder never does.
+	DetailSectionRun      = "RUN"
 	DetailSectionReview   = "REVIEW"
 	DetailSectionChanges  = "CHANGES"
 	DetailSectionActivity = "ACTIVITY"
 	DetailSectionLinks    = "LINKS"
+
+	// DetailJob* draw one row of the RUN section. A declared job that is not
+	// running is an answer, not an absence, so it keeps its row — and says
+	// nothing beyond its glyph, which already reads as down.
+	DetailJobUpGlyph   = "●"
+	DetailJobDownGlyph = "○"
+	DetailJobPortFmt   = ":%d"
+	// DetailColumnGap separates two columns of a detail-section table. Two spaces
+	// rather than one: a single one reads as a word break inside a cell.
+	// DetailGlyphGap follows the state glyph, which is a mark on its row rather
+	// than a column of its own.
+	DetailColumnGap = "  "
+	DetailGlyphGap  = " "
+	// DetailRunNothing and DetailRunUpCountFmt head the section: what is up, or
+	// that nothing is.
+	DetailRunNothing    = "nothing running"
+	DetailRunUpCountFmt = "%d up"
 
 	DetailYouAreHere = "● you are here"
 	DetailMoreFmt    = "…  %d more"
@@ -2526,4 +2665,13 @@ var DashboardWordmarkLines = [3]string{
 	`╻ ╻ ╺┳╸ ┏┳┓`,
 	`┃╻┃  ┃  ┃┃┃`,
 	`┗┻┛  ╹  ╹ ╹`,
+}
+
+// DashboardServicesEmptyRows are the routes an empty Services tab names: the
+// command, then what it starts. Every way to start something is listed, the
+// single job included — naming only the profile is what the first version did.
+var DashboardServicesEmptyRows = [][2]string{
+	{"wtm run up", "a worktree's default profile"},
+	{"wtm run start --job", "a single job"},
+	{"m on a worktree", "the same two, from its menu"},
 }

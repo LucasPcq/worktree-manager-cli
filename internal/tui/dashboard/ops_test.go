@@ -66,7 +66,7 @@ func TestTheMenuShowsTheDeleteEntryAsUnusableWhileTheTargetIsHeld(t *testing.T) 
 	model = creating(t, model, "feat")
 	model = selectBranch(t, model, "feat")
 
-	items := model.menuItems()
+	items := menuActions(model.menuItems())
 	if items[0].disabled == "" {
 		t.Fatal("the entry must say it cannot be used, not fail silently once clicked")
 	}

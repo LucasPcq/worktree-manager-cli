@@ -79,6 +79,16 @@ type DetailSectionsParams struct {
 	// shows, the caller only supplies why the read failed.
 	PRUnavailable string
 	Parent        string
+	// RunConfig is what the project declares it can run, and Jobs what the daemon
+	// currently holds. Together they are the RUN section: a declared job that is
+	// not in Jobs is down, which is an answer and not an absence.
+	RunConfig domain.RunConfig
+	Jobs      []domain.JobInfo
+	// Addresses is where each declared job answers in this worktree, keyed by
+	// job name. It follows the poll like Jobs does, not the lazily loaded
+	// Detail: an address is a property of the worktree's offset, and the two
+	// must not be able to disagree.
+	Addresses map[string]domain.JobAddress
 	// DetailLoaded is false on the very first render for a branch, before its
 	// WorktreeDetail has ever landed (§8 state 3). CHANGES and ACTIVITY — the
 	// two sections that depend on Detail — render a single "loading…"
@@ -122,7 +132,17 @@ func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 
 	changesBudget, activityBudget := listBudgets(wantChanges, wantActivity)
 
-	sections := make([]domain.DetailSection, 0, 4)
+	sections := make([]domain.DetailSection, 0, 5)
+	if len(params.RunConfig.Jobs) > 0 {
+		sections = append(sections, runSection(runSectionParams{
+			Jobs:      params.RunConfig.Jobs,
+			Infos:     params.Jobs,
+			Addresses: params.Addresses,
+			WorkDir:   params.Status.Path,
+			Budget:    domain.DashboardDetailJobs,
+			Now:       params.Now,
+		}))
+	}
 	if review != nil {
 		sections = append(sections, *review)
 	}
@@ -485,7 +505,7 @@ func FitSections(params FitSectionsParams) []domain.DetailSection {
 func sectionsHeight(sections []domain.DetailSection) int {
 	total := 0
 	for _, section := range sections {
-		total += domain.DetailSectionChrome + len(section.Lines)
+		total += domain.DetailSectionChrome + len(section.Lines) + len(section.Rows)
 	}
 	return total
 }
@@ -500,4 +520,124 @@ func dropLowestPriority(sections []domain.DetailSection) []domain.DetailSection 
 		}
 	}
 	return nil
+}
+
+type runSectionParams struct {
+	Jobs      []domain.JobConfig
+	Infos     []domain.JobInfo
+	Addresses map[string]domain.JobAddress
+	WorkDir   string
+	Budget    int
+	Now       time.Time
+}
+
+// runSection is one row per declared job, not per running one: a job that is
+// down is an answer, and a section shrinking as things stop would read as data
+// loss. The count heads it, so what the section is worth is legible before its
+// body is.
+func runSection(params runSectionParams) domain.DetailSection {
+	infos := upJobsByName(params.Infos, params.WorkDir)
+	shown, folded := splitBudget(len(params.Jobs), params.Budget)
+
+	up := 0
+	rows := make([]domain.DetailRow, 0, shown)
+	for index, job := range params.Jobs {
+		info, running := infos[job.Name]
+		// Counted over the declared jobs, not over the daemon's index: a job
+		// dropped from run.toml while still up has no row here, and a header
+		// counting it would name something the body does not show.
+		if running {
+			up++
+		}
+		if index >= shown {
+			continue
+		}
+		rows = append(rows, jobRow(jobRowParams{
+			Job:     job,
+			Info:    info,
+			Up:      running,
+			Address: params.Addresses[job.Name],
+			Now:     params.Now,
+		}))
+	}
+	if folded > 0 {
+		rows = append(rows, domain.DetailRow{Cells: []domain.DetailCell{{
+			Kind: domain.DetailCellNote, Text: fmt.Sprintf(domain.DetailMoreFmt, folded),
+		}}})
+	}
+
+	return domain.DetailSection{
+		Key:        domain.DetailSectionRun,
+		Title:      domain.DetailSectionRun,
+		TitleRight: runCount(up),
+		Rows:       rows,
+	}
+}
+
+type jobRowParams struct {
+	Job     domain.JobConfig
+	Info    domain.JobInfo
+	Up      bool
+	Address domain.JobAddress
+	Now     time.Time
+}
+
+// jobRow is the one place a job's row is shaped, shared by the detail panel and
+// the run board. A down job says nothing beyond its glyph and its name: its
+// address is where it would answer, not where it does, and an uptime on it
+// would date a run that is over.
+func jobRow(params jobRowParams) domain.DetailRow {
+	glyph := domain.DetailJobDownGlyph
+	if params.Up {
+		glyph = domain.DetailJobUpGlyph
+	}
+	cells := []domain.DetailCell{
+		{Kind: domain.DetailCellGlyph, Text: glyph},
+		{Kind: domain.DetailCellName, Text: params.Job.Name},
+	}
+	if !params.Up {
+		return domain.DetailRow{Key: params.Job.Name, Cells: cells}
+	}
+
+	if address := jobAddressText(params.Address); address != "" {
+		cells = append(cells, domain.DetailCell{Kind: domain.DetailCellAddress, Text: address})
+	}
+	if uptime := JobUptime(JobUptimeParams{Job: params.Info, Now: params.Now}); uptime != "" {
+		cells = append(cells, domain.DetailCell{Kind: domain.DetailCellMeta, Text: uptime})
+	}
+	return domain.DetailRow{Key: params.Job.Name, Cells: cells, Up: true, URL: params.Address.URL}
+}
+
+// jobAddressText is the url when the job publishes one, its ports otherwise —
+// never both: a url already carries the port, and printing the two is the same
+// fact twice, which is what made the section read as columns of noise.
+func jobAddressText(address domain.JobAddress) string {
+	if address.URL != "" {
+		return address.URL
+	}
+	names := make([]string, 0, len(address.Ports))
+	for _, port := range address.Ports {
+		names = append(names, fmt.Sprintf(domain.DetailJobPortFmt, port))
+	}
+	return strings.Join(names, domain.DetailListSep)
+}
+
+func runCount(up int) string {
+	if up == 0 {
+		return domain.DetailRunNothing
+	}
+	return fmt.Sprintf(domain.DetailRunUpCountFmt, up)
+}
+
+// upJobsByName keeps only what this worktree has up: the daemon indexes every
+// repository it knows, and a job of the same name elsewhere is not this one.
+func upJobsByName(infos []domain.JobInfo, workDir string) map[string]domain.JobInfo {
+	up := make(map[string]domain.JobInfo, len(infos))
+	for _, info := range infos {
+		if info.WorkDir != workDir || !IsJobUp(info.Status) {
+			continue
+		}
+		up[info.Name] = info
+	}
+	return up
 }

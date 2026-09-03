@@ -12,12 +12,11 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	logsflow "github.com/LucasPcq/wtm/internal/flow/run/logs"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
-	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/styles"
-	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
 // newLogsCmd creates the wtm run logs subcommand.
@@ -34,6 +33,7 @@ func newLogsCmd() *cobra.Command {
 		RunE: runLogs,
 	}
 	shared.AddJobFlag(cmd, "Focus a single job instead of showing them all")
+	shared.AddYesFlag(cmd, "Skip all prompts; shows every job of the current worktree")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -53,41 +53,51 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load run config: %w", err)
 	}
-
 	if err := shared.RequireRunInitialized(runCfg); err != nil {
 		return err
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	job, _ := cmd.Flags().GetString(domain.FlagJob)
-	resolved, err := resolveInputs(inputsParams{
-		Args:        args,
-		Cwd:         dir,
-		ProjectDir:  result.ProjectDir,
-		Interactive: isTTY() && rules.IsHumanFormat(format),
-		Pick:        true,
+
+	outcome, err := logsflow.Run(logsflow.Params{
+		Context: shared.FlowContext(result),
+		Request: logsflow.Request{
+			Worktree: firstArg(args),
+			Cwd:      dir,
+			Job:      job,
+			Config:   runCfg,
+		},
+		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
+			Interactive: shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
+			Stderr:      true,
+		}),
+		Presenter: logsPresenter{CLIPresenter: shared.NewPresenter(cmd, format)},
 	})
 	if err != nil {
 		return err
 	}
-
-	socketPath := process.SocketPath()
-	if err := components.RunLoading(components.LoadingParams{
-		Message: domain.RunDaemonConnecting,
-		Animate: rules.IsHumanFormat(format),
-		Work: func() error {
-			return process.EnsureDaemon(process.DaemonParams{SocketPath: socketPath, ProxyPort: rules.ProxyPort(result.Config.Global)})
-		},
-	}); err != nil {
-		return fmt.Errorf("ensure daemon: %w", err)
+	if outcome.Aborted {
+		return domain.ErrAborted
 	}
+	return nil
+}
 
-	seam := openRunSeam(runSeamParams{ProjectDir: result.ProjectDir, StateDir: result.StateDir, Dir: resolved.Dir, Jobs: runCfg.Jobs, ProxyPort: rules.ProxyPort(result.Config.Global)})
-	params := jobLinesParams{Cmd: cmd, Session: seam.session, Job: job}
+// logsPresenter picks where the jobs' output goes: the full-screen view, a JSON
+// document, or one prefixed line per job on a single stream.
+type logsPresenter struct {
+	shared.CLIPresenter
+}
 
-	switch rules.DecideRunSurface(rules.RunSurfaceParams{TTY: isTTY(), Format: format}) {
+func (p logsPresenter) Show(show logsflow.ShowParams) error {
+	params := jobLinesParams{Cmd: p.Cmd, Board: show.Board, Job: show.Job}
+	switch rules.DecideRunSurface(rules.RunSurfaceParams{TTY: isTTY(), Format: p.Format}) {
 	case domain.RunSurfaceView:
-		return showRunView(viewParams{Cmd: cmd, Session: seam.session, Job: job})
+		// `run logs` starts nothing, so the view has no outcome to conclude from:
+		// it only ever reports what was already running.
+		_, err := showRunView(viewParams{Cmd: p.Cmd, Board: show.Board, Job: show.Job})
+		return err
 	case domain.RunSurfaceMachine:
 		return writeJobLogsJSON(params)
 	default:
@@ -104,8 +114,8 @@ var jobColors = []func(string) string{
 }
 
 type jobLinesParams struct {
-	Cmd     *cobra.Command
-	Session runlogs.Session
+	Cmd   *cobra.Command
+	Board runlogs.Board
 	// Job narrows the output to one job; empty takes every job the worktree has.
 	Job string
 }
@@ -114,18 +124,18 @@ type jobLinesParams struct {
 // document. It never attaches, not even to a running job — an endless stream is
 // not a document, and `run ps` is what reports on a job that is still going.
 func writeJobLogsJSON(params jobLinesParams) error {
-	if err := params.Session.Refresh(); err != nil {
+	if err := params.Board.Refresh(); err != nil {
 		return fmt.Errorf("list jobs: %w", err)
 	}
 
-	views, err := logJobViews(logViewsParams{Session: params.Session, Job: params.Job, Persisted: true})
+	views, err := logsflow.Views(logsflow.ViewsParams{Board: params.Board, Job: params.Job, Persisted: true})
 	if err != nil {
 		return err
 	}
 
 	entries := []domain.JobLogEntry{}
 	for _, view := range views {
-		lines, historyErr := params.Session.History(runlogs.HistoryParams{Job: view.Name})
+		lines, historyErr := params.Board.History(runlogs.HistoryParams{Job: view.Name})
 		if historyErr != nil {
 			// One unreadable file is not the whole document: the other jobs still
 			// have something to hand over, and stdout stays a clean document
@@ -145,11 +155,11 @@ func writeJobLogsJSON(params jobLinesParams) error {
 // file when it does not. Nothing here touches the terminal's mode — the process
 // is left to die on SIGINT like any other pipe.
 func writeJobLines(params jobLinesParams) error {
-	if err := params.Session.Refresh(); err != nil {
+	if err := params.Board.Refresh(); err != nil {
 		return fmt.Errorf("list jobs: %w", err)
 	}
 
-	views, err := logJobViews(logViewsParams{Session: params.Session, Job: params.Job})
+	views, err := logsflow.Views(logsflow.ViewsParams{Board: params.Board, Job: params.Job})
 	if err != nil {
 		return err
 	}
@@ -167,7 +177,7 @@ func writeJobLines(params jobLinesParams) error {
 		prefix := jobColors[i%len(jobColors)](fmt.Sprintf(domain.RunLogsPrefixFmt, view.Name))
 
 		if !view.Attachable {
-			lines, historyErr := params.Session.History(runlogs.HistoryParams{Job: view.Name})
+			lines, historyErr := params.Board.History(runlogs.HistoryParams{Job: view.Name})
 			if historyErr != nil {
 				output.Error(params.Cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", view.Name, historyErr))
 				continue
@@ -178,7 +188,7 @@ func writeJobLines(params jobLinesParams) error {
 			continue
 		}
 
-		stream, attachErr := params.Session.Attach(runlogs.AttachParams{Job: view.Name})
+		stream, attachErr := params.Board.Attach(runlogs.AttachParams{Job: view.Name})
 		if attachErr != nil {
 			output.Error(params.Cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", view.Name, attachErr))
 			continue
@@ -198,37 +208,6 @@ func writeJobLines(params jobLinesParams) error {
 	wg.Wait()
 	output.FrameEnd(out)
 	return nil
-}
-
-type logViewsParams struct {
-	Session runlogs.Session
-	Job     string
-	// Persisted takes every job the worktree declares rather than only the ones
-	// a stream can be opened on: reading log files back, a stopped job has as
-	// much to show as a running one.
-	Persisted bool
-}
-
-// logJobViews is what this run of `run logs` reports on: the named job, or every
-// job the worktree has anything to show for.
-func logJobViews(params logViewsParams) ([]runlogs.JobView, error) {
-	jobs := params.Session.Jobs()
-	if params.Job != "" {
-		for _, view := range jobs {
-			if view.Name == params.Job {
-				return []runlogs.JobView{view}, nil
-			}
-		}
-		return nil, fmt.Errorf("%w: %s", domain.ErrJobNotFound, params.Job)
-	}
-
-	views := make([]runlogs.JobView, 0, len(jobs))
-	for _, view := range jobs {
-		if params.Persisted || view.Attachable {
-			views = append(views, view)
-		}
-	}
-	return views, nil
 }
 
 // lineWriter serializes the lines several jobs write at once: without it two

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -13,7 +12,6 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
-	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 	runpicker "github.com/LucasPcq/wtm/internal/tui/runpicker"
 )
@@ -26,6 +24,7 @@ func newPsCmd() *cobra.Command {
 		Long:  "Show the jobs managed by the background daemon (name, kind, status, PID, uptime, worktree).\nIn a TTY, offers an interactive picker with stop/logs/restart actions.",
 		RunE:  runPs,
 	}
+	shared.AddYesFlag(cmd, "Skip the interactive picker; print the table instead")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -63,7 +62,8 @@ func runPs(cmd *cobra.Command, _ []string) error {
 		return loadErr
 	}
 
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
+	if yes || !term.IsTerminal(int(os.Stdin.Fd())) {
 		output.Frame(cmd.OutOrStdout(), func() {
 			fmt.Fprint(cmd.OutOrStdout(), output.FormatRunningJobs(output.FormatRunningJobsParams{Jobs: jobs, Now: time.Now()}))
 		})
@@ -88,62 +88,37 @@ func runPs(cmd *cobra.Command, _ []string) error {
 	return execPsAction(cmd, pick)
 }
 
-func execPsAction(cmd *cobra.Command, pick runpicker.PsPickerResult) error {
-	bin, err := os.Executable()
-	if err != nil {
-		return err
+// psDispatch is the picked action as this process will run it. The worktree
+// comes from the job, never from here: ps lists every repository the daemon
+// knows, so acting in the current directory would act on the wrong worktree —
+// the bug LUC-211 set out to fix.
+func psDispatch(cmd *cobra.Command, pick runpicker.PsPickerResult) (dispatchParams, bool) {
+	switch pick.Action {
+	case runpicker.ActionPsStop, runpicker.ActionPsLogs, runpicker.ActionPsRestart, runpicker.ActionPsStopAll:
+	default:
+		return dispatchParams{}, false
 	}
+	return dispatchParams{
+		Cmd:     cmd,
+		WorkDir: pick.WorkDir,
+		Job:     pick.Name,
+		Format:  domain.OutputText,
+	}, true
+}
 
-	args, dir, ok := psInvocation(pick)
+func execPsAction(cmd *cobra.Command, pick runpicker.PsPickerResult) error {
+	params, ok := psDispatch(cmd, pick)
 	if !ok {
 		return nil
 	}
-
-	c := exec.Command(bin, args...)
-	// The job's own directory, not this one: ps lists every repository the daemon
-	// knows, and a worktree argument only ever resolves inside the current one.
-	c.Dir = dir
-	c.Stdin = os.Stdin
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	return c.Run()
-}
-
-// psInvocation is the picked action as a command line: which subcommand to
-// re-enter, and where to run it.
-//
-// The worktree is named as well as entered. The re-exec inherits this terminal,
-// so a sub-command left with no positional would open its own worktree picker
-// and let the reader undo the job they just chose. Naming the branch resolves it
-// against the repository of dir, which is why this works for a job of another
-// repository too — a branch git cannot name falls back to the picker, opened on
-// the right worktree.
-func psInvocation(pick runpicker.PsPickerResult) (args []string, dir string, ok bool) {
-	jobFlag, allFlag := "--"+domain.FlagJob, "--"+domain.FlagAll
-	where := worktreeArg(pick.WorkDir)
-
 	switch pick.Action {
 	case runpicker.ActionPsStop:
-		args = append([]string{domain.CmdRun, domain.CmdStop}, append(where, jobFlag, pick.Name)...)
+		return params.dispatchStop()
 	case runpicker.ActionPsLogs:
-		args = append([]string{domain.CmdRun, domain.CmdLogs}, append(where, jobFlag, pick.Name)...)
+		return params.dispatchLogs()
 	case runpicker.ActionPsRestart:
-		args = append([]string{domain.CmdRun, domain.CmdStart}, append(where, jobFlag, pick.Name)...)
-	case runpicker.ActionPsStopAll:
-		args = []string{domain.CmdRun, domain.CmdDown, allFlag}
+		return params.dispatchStart()
 	default:
-		return nil, "", false
+		return params.dispatchDown(true)
 	}
-	return args, pick.WorkDir, true
-}
-
-func worktreeArg(workDir string) []string {
-	if workDir == "" {
-		return nil
-	}
-	branch, err := worktree.CurrentBranch(worktree.CurrentBranchParams{Dir: workDir})
-	if err != nil || branch == "" {
-		return nil
-	}
-	return []string{branch}
 }

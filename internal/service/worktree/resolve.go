@@ -130,3 +130,13 @@ type CurrentBranchParams struct {
 func CurrentBranch(params CurrentBranchParams) (string, error) {
 	return infra.CurrentBranch(params.Dir)
 }
+
+// Root is the worktree containing dir, spelled the way git spells it. It exists
+// so a flow can ask without reaching into infra/: the directory a command was
+// launched from doubles as the daemon's key for a job (name + WorkDir) and as
+// the job's own working directory, which run.toml's `cwd` is resolved against.
+// A subdirectory — or macOS's /var where git says /private/var — would both
+// mis-resolve that `cwd` and split one worktree into two keys.
+func Root(dir string) (string, error) {
+	return infra.Toplevel(dir)
+}

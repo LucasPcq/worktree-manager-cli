@@ -20,6 +20,7 @@ wtm run logs [worktree] [flags]
   -h, --help            help for logs
       --job string      Focus a single job instead of showing them all
       --output string   Output format: text or json (default "text")
+  -y, --yes             Skip all prompts; shows every job of the current worktree
 ```
 
 ### SEE ALSO

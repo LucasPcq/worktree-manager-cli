@@ -19,6 +19,7 @@ wtm run down [worktree] [flags]
   -h, --help             help for down
       --output string    Output format: text or json (default "text")
       --profile string   Stop only this profile's jobs
+  -y, --yes              Skip all prompts; stops what the worktree has running
 ```
 
 ### SEE ALSO

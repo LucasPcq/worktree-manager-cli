@@ -37,8 +37,19 @@ type Option struct {
 	// Selected pre-checks the option in a StepMultiSelect, so a step can offer a
 	// set it already narrowed rather than an empty one.
 	Selected bool
-	// Tag is a short status word shown before the label, coloured by Tone.
+	// Tag is a short status word shown before the label, coloured by Tone. It is
+	// the leading tag of a StepMultiSelect row; Badges are the trailing ones of a
+	// StepSelect row, and a step declares whichever its kind renders.
 	Tag  string
+	Tone domain.Tone
+	// Badges are short words shown after the label, aligned across rows.
+	Badges []Badge
+}
+
+// Badge is one trailing word on a select row — a count, a state, "current" —
+// declared by the flow and coloured by the surface.
+type Badge struct {
+	Text string
 	Tone domain.Tone
 }
 
@@ -46,6 +57,10 @@ type StepContent struct {
 	Title       string
 	Description string
 	Options     []Option
+	// Start is the option the cursor opens on. A step whose answer has a standing
+	// default names it here rather than reordering its options: acting where you
+	// already stand must cost one keystroke without moving the entry that says so.
+	Start string
 	// Blockers are the refusals the step folds into its Description, named one by
 	// one for a surface that can have each of them lifted separately.
 	Blockers []Blocker

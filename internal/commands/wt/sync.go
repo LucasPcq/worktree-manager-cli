@@ -94,7 +94,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	_, err = syncflow.Run(syncflow.Params{
-		Context: flowContext(config),
+		Context: shared.FlowContext(config),
 		Request: syncflow.Request{
 			Branches:     args,
 			All:          all,
@@ -107,8 +107,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 			BaseBranch:   resolveBase(baseOverride, config),
 		},
 		// The picker may be reached through the shell wrapper, which consumes stdout.
-		Prompter:  flowPrompter(flowPrompterParams{Interactive: interactive, Stderr: true}),
-		Presenter: syncPresenter{cliPresenter: newPresenter(cmd, format)},
+		Prompter:  shared.FlowPrompter(shared.FlowPrompterParams{Interactive: interactive, Stderr: true}),
+		Presenter: syncPresenter{CLIPresenter: shared.NewPresenter(cmd, format)},
 	})
 	return err
 }

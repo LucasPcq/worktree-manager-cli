@@ -90,6 +90,33 @@ const (
 	ChipKindNeutral  ChipKind = "neutral"
 )
 
+type DetailCellKind string
+
+const (
+	DetailCellGlyph   DetailCellKind = "glyph"
+	DetailCellName    DetailCellKind = "name"
+	DetailCellAddress DetailCellKind = "address"
+	DetailCellMeta    DetailCellKind = "meta"
+	// DetailCellNote is a standalone muted body line inside a rowed section —
+	// the "… N more" fold, which is not a job and has no columns to align on.
+	DetailCellNote DetailCellKind = "note"
+)
+
+type DetailCell struct {
+	Kind DetailCellKind
+	Text string
+}
+
+// DetailRow is one line of a rowed section before its columns are sized: only
+// the renderer can measure a cell once it is styled. Key names what the row
+// designates, URL what clicking it opens.
+type DetailRow struct {
+	Key   string
+	Cells []DetailCell
+	Up    bool
+	URL   string
+}
+
 // DetailSection is one block of the detail panel, already reduced to its plain
 // text lines. Rendering decides nothing: it styles and it stacks.
 type DetailSection struct {
@@ -100,12 +127,38 @@ type DetailSection struct {
 	// and dropped whole, never truncated, when the panel is too narrow for it.
 	TitleRight string
 	Lines      []string
+	// Rows is read instead of Lines when it is non-nil: a section whose body is
+	// a table cannot arrive pre-padded, since rules/ cannot measure a styled
+	// cell.
+	Rows []DetailRow
+}
+
+type ServicesRowKind string
+
+const (
+	ServicesRowHeader ServicesRowKind = "header"
+	ServicesRowJob    ServicesRowKind = "job"
+	ServicesRowGap    ServicesRowKind = "gap"
+)
+
+// ServicesRow is one drawn line of the Services tab. The tab is a flat list
+// like the tree is: a cursor that walks jobs, an offset that scrolls lines and
+// a mouse zone per row all need one index, not a stack of blocks.
+type ServicesRow struct {
+	Kind   ServicesRowKind
+	Branch string
+	Path   string
+	// Up heads a block: how many of that worktree's jobs are running.
+	Up int
+	// Job is the row's own line, zero on a header and on a gap.
+	Job DetailRow
 }
 
 // DetailSectionDropOrder is the order sections give up their place when the
 // panel runs out of height: the last one listed falls first. The vital strip
 // and the blockers line are not in it — they never fall.
 var DetailSectionDropOrder = []string{
+	DetailSectionRun,
 	DetailSectionReview,
 	DetailSectionChanges,
 	DetailSectionActivity,

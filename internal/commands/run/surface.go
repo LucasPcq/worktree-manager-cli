@@ -1,19 +1,15 @@
 package run
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/integration"
-	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/tui/runview"
 )
 
@@ -27,115 +23,42 @@ var isTTY = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 // terminal the test does not have.
 var showRunView = openRunView
 
-type runSeamParams struct {
-	ProjectDir string
-	StateDir   string
-	Dir        string
-	// Jobs are what the surface lists. `run up` passes the profile it resolved,
-	// so the view shows the run rather than every job run.toml declares beside
-	// it, with the previous run's log behind each (LUC-208); `run logs` passes
-	// them all, which is what it is for.
-	Jobs []domain.JobConfig
-	// Prober checks the declared ports once the jobs are up. Nil skips the check.
-	Prober runlogs.Prober
-	// ProxyPort is where the run proxy serves the jobs' names. Zero leaves them
-	// on their own ports.
-	ProxyPort int
-}
-
-// runSeam is this command's end of internal/flow/runlogs: the daemon's view of
-// the worktree's jobs and the start sequence a surface drives. Opening it
-// assumes the daemon is already up — the caller is what made sure of that.
-type runSeam struct {
-	service   runlogs.Service
-	session   runlogs.Session
-	workDir   string
-	logDir    string
-	env       map[string]string
-	prober    runlogs.Prober
-	project   string
-	proxyPort int
-}
-
-func openRunSeam(params runSeamParams) runSeam {
-	logDir := jobLogDir(jobLogDirParams{StateDir: params.StateDir, Dir: params.Dir})
-	service := runlogs.NewService(runlogs.ServiceParams{SocketPath: process.SocketPath()})
-	return runSeam{
-		env:     jobEnv(jobEnvParams{ProjectDir: params.ProjectDir, StateDir: params.StateDir, Dir: params.Dir}),
-		service: service,
-		session: runlogs.NewSession(runlogs.SessionParams{
-			Service: service,
-			Jobs:    params.Jobs,
-			WorkDir: params.Dir,
-			LogDir:  logDir,
-		}),
-		workDir:   params.Dir,
-		logDir:    logDir,
-		prober:    params.Prober,
-		project:   filepath.Base(params.ProjectDir),
-		proxyPort: params.ProxyPort,
-	}
-}
-
-// starter is the start sequence as a surface drives it. Cancelling the context
-// it is called with ends the reporting, never the jobs: a view the reader
-// walked away from stops being written to while the daemon keeps running what
-// it started.
-func (s runSeam) starter(profile resolvedProfile) runview.StartFunc {
-	return func(ctx context.Context, sink runlogs.Sink) (runlogs.Outcome, error) {
-		return runlogs.Run(ctx, runlogs.RunParams{
-			Service:   s.service,
-			Sink:      sink,
-			Jobs:      profile.Jobs,
-			Profile:   profile.Name,
-			WorkDir:   s.workDir,
-			LogDir:    s.logDir,
-			Env:       s.env,
-			Prober:    s.prober,
-			Project:   s.project,
-			ProxyPort: s.proxyPort,
-		})
-	}
-}
-
 type viewParams struct {
 	Cmd     *cobra.Command
-	Session runlogs.Session
+	Board   runlogs.Board
 	Job     string
 	Profile string
-	Start   runview.StartFunc
+	Start   runlogs.StartFunc
 }
 
 // openRunView hands the terminal to the full-screen view and frames what it
 // leaves behind. The view returns its recap rather than printing it: the
 // alternate screen has to be given back before anything is written to the
-// scrollback underneath it.
-func openRunView(params viewParams) error {
+// scrollback underneath it. What the run concluded goes back to the flow, which
+// is what turns it into an exit code.
+func openRunView(params viewParams) (runlogs.Outcome, error) {
 	result, err := runview.Run(runview.Params{
-		Session: params.Session,
+		Board:   params.Board,
 		Job:     params.Job,
 		Profile: params.Profile,
 		Start:   params.Start,
 		Open:    integration.OpenURL,
 	})
 	if err != nil {
-		return err
+		return runlogs.Outcome{}, err
 	}
 
 	if result.Recap != "" {
 		out := params.Cmd.OutOrStdout()
 		output.Frame(out, func() { fmt.Fprintln(out, result.Recap) })
 	}
-	if result.Outcome.Aborted() {
-		return domain.ErrAborted
-	}
-	return nil
+	return result.Outcome, nil
 }
 
 type streamParams struct {
 	Cmd     *cobra.Command
 	Profile string
-	Start   runview.StartFunc
+	Start   runlogs.StartFunc
 	// Hyperlinks says whether a job's URL may be wrapped in an OSC-8 sequence.
 	Hyperlinks bool
 }
@@ -143,7 +66,7 @@ type streamParams struct {
 // runOnStream reports a start sequence as lines on the terminal it was launched
 // from — `-d`, a pipe, a CI job. An aborted run ends on stderr, which is where
 // its frame closes.
-func runOnStream(params streamParams) error {
+func runOnStream(params streamParams) (runlogs.Outcome, error) {
 	out, errOut := params.Cmd.OutOrStdout(), params.Cmd.ErrOrStderr()
 
 	output.FrameStart(out)
@@ -154,31 +77,28 @@ func runOnStream(params streamParams) error {
 		Hyperlinks: params.Hyperlinks,
 	}))
 	if err != nil {
-		return err
+		return runlogs.Outcome{}, err
 	}
 
 	if outcome.Aborted() {
 		output.FrameEnd(errOut)
-		return domain.ErrAborted
+		return outcome, nil
 	}
 	output.FrameEnd(out)
-	return nil
+	return outcome, nil
 }
 
 // runForMachine emits the run's outcome as a JSON document, then fails when the
 // profile aborted. The document is complete either way: the module's rule is
 // that the shape follows the arity and the exit code follows the success, and
 // an exit code has never made a document unreadable (LUC-198).
-func runForMachine(params streamParams) error {
+func runForMachine(params streamParams) (runlogs.Outcome, error) {
 	outcome, err := params.Start(params.Cmd.Context(), nil)
 	if err != nil {
-		return err
+		return runlogs.Outcome{}, err
 	}
 	if err := output.WriteRunOutcomeJSON(params.Cmd.OutOrStdout(), outcome); err != nil {
-		return err
+		return runlogs.Outcome{}, err
 	}
-	if outcome.Aborted() {
-		return domain.ErrAborted
-	}
-	return nil
+	return outcome, nil
 }

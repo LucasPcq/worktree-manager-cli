@@ -12,6 +12,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/run/seam"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/process"
@@ -100,7 +101,7 @@ func loadURLContext(cmd *cobra.Command, cwd string) (urlContext, error) {
 // publishedIn lists the jobs reachable in one worktree. The worktree is what
 // makes the addresses differ: its ordinal decides every port.
 func (c urlContext) publishedIn(dir string) []domain.JobURLEntry {
-	env := jobEnv(jobEnvParams{ProjectDir: c.config.ProjectDir, StateDir: c.config.StateDir, Dir: dir})
+	env := seam.JobEnv(seam.JobEnvParams{ProjectDir: c.config.ProjectDir, StateDir: c.config.StateDir, WorkDir: dir})
 	offset, _ := strconv.Atoi(env[domain.EnvPortOffset])
 	project := filepath.Base(c.config.ProjectDir)
 

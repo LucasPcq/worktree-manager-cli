@@ -13,18 +13,18 @@ import (
 
 const workDir = "/work/api"
 
-func newSession(t *testing.T, service *runlogstest.Service, jobs ...domain.JobConfig) runlogs.Session {
+func newBoard(t *testing.T, service *runlogstest.Service, jobs ...domain.JobConfig) runlogs.Board {
 	t.Helper()
-	session := runlogs.NewSession(runlogs.SessionParams{
+	board := runlogs.NewBoard(runlogs.BoardParams{
 		Service: service,
 		Jobs:    jobs,
 		WorkDir: workDir,
 		LogDir:  "/state/logs/api",
 	})
-	if err := session.Refresh(); err != nil {
+	if err := board.Refresh(); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
-	return session
+	return board
 }
 
 func running(name string, kind domain.JobKind) domain.JobInfo {
@@ -37,10 +37,10 @@ func running(name string, kind domain.JobKind) domain.JobInfo {
 	}
 }
 
-func TestSessionListsDeclaredJobsWhetherOrNotTheyRun(t *testing.T) {
+func TestBoardListsDeclaredJobsWhetherOrNotTheyRun(t *testing.T) {
 	service := &runlogstest.Service{Infos: []domain.JobInfo{running("api", domain.JobKindService)}}
 
-	views := newSession(t, service, migrate, api, docker).Jobs()
+	views := newBoard(t, service, migrate, api, docker).Jobs()
 
 	names := make([]string, len(views))
 	for i, view := range views {
@@ -60,28 +60,28 @@ func TestSessionListsDeclaredJobsWhetherOrNotTheyRun(t *testing.T) {
 	}
 }
 
-func TestSessionRefusesToAttachAJobWithoutLiveOutput(t *testing.T) {
+func TestBoardRefusesToAttachAJobWithoutLiveOutput(t *testing.T) {
 	exited := 1
 	service := &runlogstest.Service{Infos: []domain.JobInfo{
 		running("api", domain.JobKindService),
 		running("docker", domain.JobKindService),
 		{Name: "migrate", Kind: domain.JobKindTask, Status: domain.JobStatusStopped, WorkDir: workDir, ExitCode: &exited},
 	}}
-	session := newSession(t, service, migrate, api, docker)
+	board := newBoard(t, service, migrate, api, docker)
 
 	for _, job := range []string{"docker", "migrate"} {
-		if _, err := session.Attach(runlogs.AttachParams{Job: job}); !errors.Is(err, domain.ErrJobNotAttachable) {
+		if _, err := board.Attach(runlogs.AttachParams{Job: job}); !errors.Is(err, domain.ErrJobNotAttachable) {
 			t.Fatalf("attaching %s: %v, want ErrJobNotAttachable", job, err)
 		}
 	}
-	if _, err := session.Attach(runlogs.AttachParams{Job: "ghost"}); !errors.Is(err, domain.ErrJobNotFound) {
+	if _, err := board.Attach(runlogs.AttachParams{Job: "ghost"}); !errors.Is(err, domain.ErrJobNotFound) {
 		t.Fatalf("attaching an unknown job: %v, want ErrJobNotFound", err)
 	}
 	if len(service.Attached) > 0 {
 		t.Fatalf("the daemon was asked anyway: %+v", service.Attached)
 	}
 
-	views := session.Jobs()
+	views := board.Jobs()
 	if views[2].Attachable {
 		t.Fatal("a detached launcher offers a live stream")
 	}
@@ -94,23 +94,23 @@ func TestSessionRefusesToAttachAJobWithoutLiveOutput(t *testing.T) {
 // from a detached launcher only, and attachableJob takes any job that has one.
 // A three-minute migration read from a second terminal belongs in its pane, not
 // in the sanitized file the log falls back to.
-func TestSessionAttachesARunningTask(t *testing.T) {
+func TestBoardAttachesARunningTask(t *testing.T) {
 	stream := runlogstest.NewStream()
 	service := &runlogstest.Service{
 		Infos:   []domain.JobInfo{running("migrate", domain.JobKindTask)},
 		Streams: map[string]runlogs.Stream{"migrate": stream},
 	}
-	session := newSession(t, service, migrate)
+	board := newBoard(t, service, migrate)
 
-	if views := session.Jobs(); !views[0].Attachable {
+	if views := board.Jobs(); !views[0].Attachable {
 		t.Fatalf("a running task reads as %+v", views[0])
 	}
-	if _, err := session.Attach(runlogs.AttachParams{Job: "migrate"}); err != nil {
+	if _, err := board.Attach(runlogs.AttachParams{Job: "migrate"}); err != nil {
 		t.Fatalf("Attach: %v", err)
 	}
 }
 
-func TestSessionRefusesToAttachAJobThatStopped(t *testing.T) {
+func TestBoardRefusesToAttachAJobThatStopped(t *testing.T) {
 	exited := 0
 	stopped := func(name string, kind domain.JobKind) domain.JobInfo {
 		return domain.JobInfo{
@@ -124,7 +124,7 @@ func TestSessionRefusesToAttachAJobThatStopped(t *testing.T) {
 		stopped("seed", domain.JobKindTask),
 	}}
 
-	views := newSession(t, service, api).Jobs()
+	views := newBoard(t, service, api).Jobs()
 
 	for _, view := range views {
 		if view.Attachable {
@@ -138,10 +138,10 @@ func TestSessionRefusesToAttachAJobThatStopped(t *testing.T) {
 
 // A job run.toml no longer declares is read the same way, task or service: what
 // the daemon holds a hub for is what can be attached.
-func TestSessionAttachesARunningUndeclaredTask(t *testing.T) {
+func TestBoardAttachesARunningUndeclaredTask(t *testing.T) {
 	service := &runlogstest.Service{Infos: []domain.JobInfo{running("legacy-migrate", domain.JobKindTask)}}
 
-	views := newSession(t, service, api).Jobs()
+	views := newBoard(t, service, api).Jobs()
 
 	if len(views) != 2 || views[1].Name != "legacy-migrate" {
 		t.Fatalf("jobs %+v, want the undeclared task listed", views)
@@ -151,15 +151,15 @@ func TestSessionAttachesARunningUndeclaredTask(t *testing.T) {
 	}
 }
 
-func TestSessionAttachSizesThePTYToThePane(t *testing.T) {
+func TestBoardAttachSizesThePTYToThePane(t *testing.T) {
 	stream := runlogstest.NewStream()
 	service := &runlogstest.Service{
 		Infos:   []domain.JobInfo{running("api", domain.JobKindService)},
 		Streams: map[string]runlogs.Stream{"api": stream},
 	}
-	session := newSession(t, service, api)
+	board := newBoard(t, service, api)
 
-	attached, err := session.Attach(runlogs.AttachParams{Job: "api", Size: runlogs.Size{Cols: 120, Rows: 40}})
+	attached, err := board.Attach(runlogs.AttachParams{Job: "api", Size: runlogs.Size{Cols: 120, Rows: 40}})
 	if err != nil {
 		t.Fatalf("Attach: %v", err)
 	}
@@ -173,11 +173,11 @@ func TestSessionAttachSizesThePTYToThePane(t *testing.T) {
 	}
 }
 
-func TestSessionReadsAStoppedJobsHistoryFromItsLog(t *testing.T) {
+func TestBoardReadsAStoppedJobsHistoryFromItsLog(t *testing.T) {
 	service := &runlogstest.Service{Lines: map[string][]string{"migrate": {"2026-08-20T10:00:00Z  applying 001"}}}
-	session := newSession(t, service, migrate)
+	board := newBoard(t, service, migrate)
 
-	lines, err := session.History(runlogs.HistoryParams{Job: "migrate", Lines: 50})
+	lines, err := board.History(runlogs.HistoryParams{Job: "migrate", Lines: 50})
 	if err != nil {
 		t.Fatalf("History: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestSessionReadsAStoppedJobsHistoryFromItsLog(t *testing.T) {
 		t.Fatalf("tail requests %+v, want %+v", service.Tailed, want)
 	}
 
-	if _, err := session.History(runlogs.HistoryParams{Job: "migrate"}); err != nil {
+	if _, err := board.History(runlogs.HistoryParams{Job: "migrate"}); err != nil {
 		t.Fatalf("History without a count: %v", err)
 	}
 	if got := service.Tailed[1].Lines; got != domain.JobLogTailLines {
@@ -198,12 +198,12 @@ func TestSessionReadsAStoppedJobsHistoryFromItsLog(t *testing.T) {
 	}
 }
 
-func TestSessionIgnoresAnotherWorktreesJobsAndKeepsUndeclaredOnes(t *testing.T) {
+func TestBoardIgnoresAnotherWorktreesJobsAndKeepsUndeclaredOnes(t *testing.T) {
 	other := running("api", domain.JobKindService)
 	other.WorkDir = "/work/web"
 	service := &runlogstest.Service{Infos: []domain.JobInfo{other, running("legacy", domain.JobKindService)}}
 
-	views := newSession(t, service, api).Jobs()
+	views := newBoard(t, service, api).Jobs()
 
 	if len(views) != 2 {
 		t.Fatalf("jobs %+v, want the declared one and the undeclared runner", views)
@@ -216,14 +216,14 @@ func TestSessionIgnoresAnotherWorktreesJobsAndKeepsUndeclaredOnes(t *testing.T) 
 	}
 }
 
-func TestSessionRefreshSurfacesTheDaemonsError(t *testing.T) {
+func TestBoardRefreshSurfacesTheDaemonsError(t *testing.T) {
 	service := &runlogstest.Service{ListErr: errors.New("connect to daemon: no such file")}
-	session := runlogs.NewSession(runlogs.SessionParams{Service: service, Jobs: []domain.JobConfig{api}, WorkDir: workDir})
+	board := runlogs.NewBoard(runlogs.BoardParams{Service: service, Jobs: []domain.JobConfig{api}, WorkDir: workDir})
 
-	if err := session.Refresh(); err == nil {
+	if err := board.Refresh(); err == nil {
 		t.Fatal("Refresh swallowed the daemon error")
 	}
-	if views := session.Jobs(); len(views) != 1 || views[0].Status != domain.JobStatusStopped {
+	if views := board.Jobs(); len(views) != 1 || views[0].Status != domain.JobStatusStopped {
 		t.Fatalf("jobs after a failed refresh = %+v", views)
 	}
 }
