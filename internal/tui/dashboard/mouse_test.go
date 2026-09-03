@@ -375,29 +375,38 @@ func runningDetailModel(t *testing.T, params RunParams, addresses map[string]dom
 	return model
 }
 
-func TestClickingAnUpJobRowOpensItsURL(t *testing.T) {
+func TestClickingTheAddressOpensItAndClickingTheRowOpensTheLogs(t *testing.T) {
 	opened := make(chan string, 1)
 	model := runningDetailModel(t,
-		RunParams{URLOpener: func(url string) error { opened <- url; return nil }},
+		RunParams{
+			URLOpener:  func(url string) error { opened <- url; return nil },
+			LogsLoader: func(logsRequest) ([]string, error) { return []string{"ready"}, nil },
+		},
 		map[string]domain.JobAddress{"web": {URL: "http://web.wtm"}},
 		domain.JobConfig{Name: "web"},
 	)
-	renderAndWait(t, model, runRowZone("web"))
+	renderAndWait(t, model, runRowZone("web"), runURLZone("web"))
 
-	zone := model.zones.Get(runRowZone("web"))
-	_, cmd := updateCmd(model, click(zone.StartX+3, zone.StartY))
+	address := model.zones.Get(runURLZone("web"))
+	_, cmd := updateCmd(model, click(address.StartX, address.StartY))
 	if cmd == nil {
-		t.Fatal("cmd = nil, want the url opened off the UI goroutine")
+		t.Fatal("clicking the address did nothing")
 	}
 	cmd()
-
 	select {
 	case got := <-opened:
 		if got != "http://web.wtm" {
 			t.Errorf("opened %q, want http://web.wtm", got)
 		}
 	default:
-		t.Fatal("nothing opened")
+		t.Fatal("the address was not opened")
+	}
+
+	// Away from the address, the row leads to what else the job has.
+	row := model.zones.Get(runRowZone("web"))
+	next, _ := updateCmd(model, click(row.EndX, row.StartY))
+	if next.logsJob != "web" {
+		t.Error("clicking the row away from its address did not open the logs")
 	}
 }
 
@@ -414,5 +423,17 @@ func TestADownJobRowTakesNoZone(t *testing.T) {
 
 	if !model.zones.Get(runRowZone("worker")).IsZero() {
 		t.Error("a stopped job's row is clickable, want no zone: it answers nowhere")
+	}
+}
+
+// The DETAIL panel has no cursor, so it designates no job: u is silent there,
+// exactly as p is silent where no PR is designated.
+func TestTheAddressKeyIsSilentOnTheDetailPanel(t *testing.T) {
+	model := runningDetailModel(t, RunParams{
+		URLOpener: func(string) error { t.Error("u opened an address with no job designated"); return nil },
+	}, map[string]domain.JobAddress{"web": {URL: "http://web.wtm"}}, domain.JobConfig{Name: "web"})
+
+	if _, cmd := updateCmd(model, key(domain.KeyOpenAddress)); cmd != nil {
+		cmd()
 	}
 }

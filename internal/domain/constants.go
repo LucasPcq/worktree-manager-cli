@@ -2460,6 +2460,9 @@ const (
 	// KeyRunLogs reads a job's logs in the detail panel. Upper case: "l" is the
 	// list's vim-right.
 	KeyRunLogs = "L"
+	// KeyOpenAddress opens the designated job's address in a browser. "u": "o"
+	// is the output panel and "p" the pull request.
+	KeyOpenAddress = "u"
 
 	KeyHelp = "?"
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so

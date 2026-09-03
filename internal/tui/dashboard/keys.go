@@ -31,6 +31,7 @@ const (
 	keyActions      = domain.KeyActions
 	keyOpenPR       = domain.KeyOpenPR
 	keyRunLogs      = domain.KeyRunLogs
+	keyOpenAddress  = domain.KeyOpenAddress
 	keySpace        = " "
 	keyOutputUp     = "shift+up"
 	keyOutputDown   = "shift+down"

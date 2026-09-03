@@ -316,3 +316,47 @@ func TestTheEmptyServicesTabNamesEveryWayToStartSomething(t *testing.T) {
 		t.Error("the empty state never mentions starting a single job")
 	}
 }
+
+func TestTheAddressKeyOpensTheAddressOfTheJobUnderTheCursor(t *testing.T) {
+	opened := make(chan string, 1)
+	model := servicesModel(t, "a")
+	model.params.URLOpener = func(url string) error { opened <- url; return nil }
+
+	_, cmd := updateCmd(model, key(domain.KeyOpenAddress))
+	if cmd == nil {
+		t.Fatal("u did nothing")
+	}
+	cmd()
+
+	select {
+	case got := <-opened:
+		if got != "http://web.a.wtm" {
+			t.Errorf("opened %q, want the address of the job under the cursor", got)
+		}
+	default:
+		t.Fatal("nothing opened")
+	}
+}
+
+func TestClickingAServiceAddressOpensIt(t *testing.T) {
+	opened := make(chan string, 1)
+	model := servicesModel(t, "a")
+	model.params.URLOpener = func(url string) error { opened <- url; return nil }
+	renderAndWait(t, model, servicesURLZone(1))
+
+	zone := model.zones.Get(servicesURLZone(1))
+	_, cmd := updateCmd(model, click(zone.StartX, zone.StartY))
+	if cmd == nil {
+		t.Fatal("clicking a Services address did nothing: every url there used to be dead")
+	}
+	cmd()
+
+	select {
+	case got := <-opened:
+		if got != "http://web.a.wtm" {
+			t.Errorf("opened %q, want the row's own address", got)
+		}
+	default:
+		t.Fatal("nothing opened")
+	}
+}

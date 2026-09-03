@@ -211,15 +211,16 @@ func (m Model) watchLogs() (Model, tea.Cmd) {
 // one. A job that publishes none leads to its logs instead.
 func (m Model) clickRunRow(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 	for _, job := range m.runConfig.Jobs {
+		// The address cell first: clicking what you read opens what you read,
+		// and the rest of the row leads to the job's logs.
+		if m.inZone(runURLZone(job.Name), msg) {
+			model, cmd := m.openJobURL(m.addressFor(job.Name).URL)
+			return model, cmd, true
+		}
 		if !m.inZone(runRowZone(job.Name), msg) {
 			continue
 		}
-		url := m.addressFor(job.Name).URL
-		if url == "" {
-			model, cmd := m.openLogsTabOn(job.Name)
-			return model, cmd, true
-		}
-		model, cmd := m.openJobURL(url)
+		model, cmd := m.openLogsTabOn(job.Name)
 		return model, cmd, true
 	}
 	return m, nil, false
@@ -234,7 +235,7 @@ func (m Model) addressFor(job string) domain.JobAddress {
 // inside Update would freeze the program.
 func (m Model) openJobURL(url string) (Model, tea.Cmd) {
 	opener := m.urlOpener()
-	if opener == nil {
+	if opener == nil || url == "" {
 		return m, nil
 	}
 	return m, func() tea.Msg { return openURLMsg{err: opener(url)} }
@@ -245,4 +246,22 @@ func (m Model) urlOpener() func(string) error {
 		return m.params.URLOpener
 	}
 	return integration.OpenURL
+}
+
+// openSelectedAddress opens the address of the job the surface designates: the
+// one on the logs view's selection line, or the one under the Services cursor.
+// The DETAIL panel designates none — it has no cursor — so it stays silent, the
+// same way KeyOpenPR is silent where no PR is designated.
+func (m Model) openSelectedAddress() (Model, tea.Cmd) {
+	if m.logsOpen() {
+		return m.openJobURL(m.logsAddress().URL)
+	}
+	if m.tab != tabServices {
+		return m, nil
+	}
+	row, ok := m.selectedService()
+	if !ok {
+		return m, nil
+	}
+	return m.openJobURL(m.addresses[row.Branch][row.Job.Key].URL)
 }

@@ -17,6 +17,8 @@ const (
 	zonePanelTabDtl  = "panel:tab:detail"
 	zonePanelTabLogs = "panel:tab:logs"
 	zoneDetailRunPfx = "detail:run:"
+	zoneDetailURLPfx = "detail:url:"
+	zoneServicesURL  = "services:url:"
 	zoneOutput       = "panel:output"
 	zoneOutputToggle = "output:toggle"
 	zoneAdd          = "header:add"
@@ -48,3 +50,10 @@ func runRowZone(job string) string { return zoneDetailRunPfx + job }
 // servicesRowZone keys a block by its index in the board, so a click resolves the
 // same worktree whatever started or stopped since the last frame.
 func servicesRowZone(index int) string { return zoneServicesPfx + strconv.Itoa(index) }
+
+// runURLZone keys the address cell of a RUN row. It is a zone of its own inside
+// the row's: clicking what you read opens what you read, and the rest of the row
+// leads to the job's logs.
+func runURLZone(job string) string { return zoneDetailURLPfx + job }
+
+func servicesURLZone(index int) string { return zoneServicesURL + strconv.Itoa(index) }

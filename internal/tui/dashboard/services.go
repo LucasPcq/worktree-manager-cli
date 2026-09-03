@@ -127,6 +127,9 @@ func (m Model) servicesBody(layout domain.DashboardLayout) []string {
 		case domain.ServicesRowJob:
 			line := sectionRowLines(sectionRowLinesParams{
 				Rows: []domain.DetailRow{row.Job}, Width: width, NameWidth: nameWidth,
+				MarkAddress: func(_ domain.DetailRow, cell string) string {
+					return m.marks().Mark(servicesURLZone(index), cell)
+				},
 			})[0]
 			lines = append(lines, m.marks().Mark(servicesRowZone(index), m.servicesJobLine(index, line)))
 		}
@@ -182,4 +185,20 @@ func (m Model) servicesEmptyLines(width int) []string {
 				styles.DashboardRowMeta.Render(truncate(row[1], budget)))
 	}
 	return lines
+}
+
+// clickServiceAddress answers a click on a Services address cell. The row's own
+// zone is left to clickRow, which selects it; enter then opens its logs.
+func (m Model) clickServiceAddress(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
+	if m.tab != tabServices || m.servicesLogs {
+		return m, nil, false
+	}
+	for index, row := range m.services {
+		if row.Kind != domain.ServicesRowJob || !m.inZone(servicesURLZone(index), msg) {
+			continue
+		}
+		model, cmd := m.openJobURL(row.Job.URL)
+		return model, cmd, true
+	}
+	return m, nil, false
 }

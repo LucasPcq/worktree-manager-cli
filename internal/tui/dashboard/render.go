@@ -529,6 +529,7 @@ func (m Model) helpBox() (string, domain.Rect) {
 		{"p", "open the pull request in a browser (or click its line)"},
 		{"L", "open the panel's LOGS tab (or click it)"},
 		{"←→", "switch job while the LOGS tab is up"},
+		{"u", "open the selected job's address"},
 		{"o", "fold/unfold the output panel (or click its header)"},
 		{"shift+↑ · shift+↓", "scroll the output panel"},
 		{"r", "refresh worktrees and pull requests"},

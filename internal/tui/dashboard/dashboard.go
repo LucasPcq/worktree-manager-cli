@@ -774,6 +774,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openPR()
 	case keyRunLogs:
 		return m.openLogsTab()
+	case keyOpenAddress:
+		return m.openSelectedAddress()
 
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded
@@ -917,6 +919,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if model, cmd, hit := m.clickRunRow(msg); hit {
+		return model, cmd
+	}
+
+	if model, cmd, hit := m.clickServiceAddress(msg); hit {
 		return model, cmd
 	}
 

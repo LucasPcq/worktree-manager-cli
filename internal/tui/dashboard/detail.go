@@ -231,7 +231,12 @@ func (m Model) appendSections(lines []string, sections []domain.DetailSection, w
 // Only an up row takes a zone: a stopped job answers nowhere, the same rule
 // REVIEW's first line follows when there is no PR to open.
 func (m Model) runRowLines(section domain.DetailSection, width int, stale bool) []string {
-	lines := sectionRowLines(sectionRowLinesParams{Rows: section.Rows, Width: width, Stale: stale})
+	lines := sectionRowLines(sectionRowLinesParams{
+		Rows: section.Rows, Width: width, Stale: stale,
+		MarkAddress: func(row domain.DetailRow, cell string) string {
+			return m.marks().Mark(runURLZone(row.Key), cell)
+		},
+	})
 	for index, row := range section.Rows {
 		if index >= len(lines) || !row.Up {
 			continue
@@ -245,6 +250,10 @@ type sectionRowLinesParams struct {
 	Rows  []domain.DetailRow
 	Width int
 	Stale bool
+	// MarkAddress wraps the address cell in its own mouse zone, after it has
+	// been truncated and styled — never before, or spread could cut through the
+	// marker. Nil for a caller that marks nothing.
+	MarkAddress func(row domain.DetailRow, cell string) string
 	// NameWidth sizes the name column from outside, for a surface stacking
 	// several groups of rows that must read as one table. Zero sizes it on the
 	// rows given, which is what a single section wants.
@@ -270,19 +279,21 @@ func sectionRowLines(params sectionRowLinesParams) []string {
 		}
 		meta := rowMetaCell(row, params.Stale)
 		lines = append(lines, spread(rowLeft(rowLeftParams{
-			Row:       row,
-			NameWidth: nameWidth,
-			Stale:     params.Stale,
-			Budget:    max(params.Width-lipgloss.Width(meta)-1, 0),
+			Row:         row,
+			NameWidth:   nameWidth,
+			Stale:       params.Stale,
+			Budget:      max(params.Width-lipgloss.Width(meta)-1, 0),
+			MarkAddress: params.MarkAddress,
 		}), meta, params.Width))
 	}
 	return lines
 }
 
 type rowLeftParams struct {
-	Row       domain.DetailRow
-	NameWidth int
-	Stale     bool
+	Row         domain.DetailRow
+	NameWidth   int
+	Stale       bool
+	MarkAddress func(row domain.DetailRow, cell string) string
 	// Budget is what the left side may occupy. The address is cut to it here,
 	// with an ellipsis: spread would clip it silently, and a clipped url reads
 	// as a whole one — on a row whose click opens the real address.
@@ -309,7 +320,11 @@ func rowLeft(params rowLeftParams) string {
 	if params.Row.URL != "" {
 		style = styles.DashboardURL
 	}
-	return head + domain.DetailColumnGap + styleText(params.Stale, style, address)
+	cell := styleText(params.Stale, style, address)
+	if params.MarkAddress != nil && params.Row.URL != "" {
+		cell = params.MarkAddress(params.Row, cell)
+	}
+	return head + domain.DetailColumnGap + cell
 }
 
 func rowMetaCell(row domain.DetailRow, stale bool) string {
