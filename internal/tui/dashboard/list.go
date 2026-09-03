@@ -71,6 +71,8 @@ func (m Model) renderRow(index, width int) []string {
 		metaPlain, metaColored = op.stage, op.stage
 	}
 
+	badge := m.runningBadge(status)
+
 	if index == m.cursor {
 		bar := styles.DashboardRowBar.Render(rowBar + " ")
 		line := spread(name, pillText, inner)
@@ -82,7 +84,7 @@ func (m Model) renderRow(index, width int) []string {
 		}
 		return []string{
 			bar + rowStyle.Width(inner).Bold(true).Render(line),
-			bar + rowStyle.Width(inner).Render(truncate(metaPlain, inner)),
+			bar + rowStyle.Width(inner).Render(metaLine(metaLineParams{Meta: metaPlain, Badge: badge, Inner: inner})),
 		}
 	}
 
@@ -91,8 +93,39 @@ func (m Model) renderRow(index, width int) []string {
 	// a short second line would cut its zone short.
 	return []string{
 		rowIndent + line,
-		rowIndent + pad(truncateRendered(metaColored, inner), inner),
+		rowIndent + metaLine(metaLineParams{
+			Meta:  metaColored,
+			Badge: styleMeta(badge, true, styles.Success),
+			Inner: inner,
+		}),
 	}
+}
+
+// runningBadge is what the worktree has up. It hangs at the end of the meta
+// line, under the state pill, rather than taking its rank among the tags: a
+// worktree with no parent would otherwise carry it first, and the eye would
+// have to look for it row by row.
+func (m Model) runningBadge(status domain.WorktreeStatus) string {
+	count := m.running[status.Path]
+	if count == 0 {
+		return ""
+	}
+	return fmt.Sprintf(domain.TreeBadgeRunningFmt, count)
+}
+
+type metaLineParams struct {
+	Meta  string
+	Badge string
+	Inner int
+}
+
+// metaLine pads to the full width either way: the row is one clickable block,
+// and a badge is never allowed to push the meta out of the line it shares.
+func metaLine(params metaLineParams) string {
+	if params.Badge == "" {
+		return pad(truncateRendered(params.Meta, params.Inner), params.Inner)
+	}
+	return spread(params.Meta, params.Badge, params.Inner)
 }
 
 // rowBarWidth is the gutter the accent bar and its space take, kept off the
@@ -106,9 +139,6 @@ func (m Model) rowMeta(status domain.WorktreeStatus, colored bool) string {
 	parts := make([]string, 0, 4)
 	if parent := m.parents[status.Branch]; parent != "" {
 		parts = append(parts, styleMeta(domain.DashboardMetaFromPrefix+parent, colored, styles.DashboardRowMeta))
-	}
-	if count := m.running[status.Path]; count > 0 {
-		parts = append(parts, styleMeta(fmt.Sprintf(domain.TreeBadgeRunningFmt, count), colored, styles.Success))
 	}
 	for _, tag := range worktreepicker.BuildTags(worktreepicker.BuildTagsParams{Status: status, PRs: m.prs}) {
 		if colored {
