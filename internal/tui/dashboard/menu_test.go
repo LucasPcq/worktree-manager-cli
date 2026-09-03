@@ -310,11 +310,21 @@ func TestEveryMenuEntryIsClickableAcrossTheWholeBox(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b")
 	renderAndWait(t, model, rowZone(0))
 	model = update(model, key(domain.KeyMenu))
-	lead := firstMenuAction(t, model)
-	renderAndWait(t, model, menuZone(lead))
+
+	// Every zone the loop reads is waited for, not just the first: the manager
+	// stores a frame's zones one at a time, so one settling proves nothing
+	// about the next.
+	items := model.menuItems()
+	ids := make([]string, 0, len(items))
+	for index, item := range items {
+		if item.kind == menuEntryAction {
+			ids = append(ids, menuZone(index))
+		}
+	}
+	renderAndWait(t, model, ids...)
 
 	_, rect := model.menuBox()
-	for index, item := range model.menuItems() {
+	for index, item := range items {
 		if item.kind != menuEntryAction {
 			continue
 		}

@@ -244,13 +244,17 @@ type sectionRowLinesParams struct {
 	Rows  []domain.DetailRow
 	Width int
 	Stale bool
+	// NameWidth sizes the name column from outside, for a surface stacking
+	// several groups of rows that must read as one table. Zero sizes it on the
+	// rows given, which is what a single section wants.
+	NameWidth int
 }
 
 // sectionRowLines sizes the name column on its widest cell and lays the meta
 // flush right, the same way a panel's title row does: a table only reads down
 // its columns once every cell knows how wide its column ended up.
 func sectionRowLines(params sectionRowLinesParams) []string {
-	nameWidth := 0
+	nameWidth := params.NameWidth
 	for _, row := range params.Rows {
 		nameWidth = max(nameWidth, len([]rune(cellText(row, domain.DetailCellName))))
 	}

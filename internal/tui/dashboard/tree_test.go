@@ -115,6 +115,8 @@ func TestEachTabKeepsItsOwnCursor(t *testing.T) {
 		t.Fatalf("list cursor = %d, want it untouched", model.cursor)
 	}
 
+	// Tab cycles Worktrees → Tree → Running, so two presses come back to the list.
+	model = update(model, key(keyTab))
 	model = update(model, key(keyTab))
 	model = update(model, key("j"))
 
@@ -183,6 +185,11 @@ func TestTheHeaderCountsWhatTheActiveTabLists(t *testing.T) {
 
 	if got := model.countLabel(); !strings.Contains(got, "4") {
 		t.Errorf("count = %q, want the four nodes of the forest", got)
+	}
+
+	model = update(model, key(keyTab))
+	if got := model.countLabel(); !strings.Contains(got, "0") {
+		t.Errorf("count = %q, want the Running tab to count what is up", got)
 	}
 
 	model = update(model, key(keyTab))

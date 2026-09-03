@@ -83,6 +83,11 @@ func (m Model) worktreeMenuItems() []menuItem {
 	}
 
 	items := worktreeActions(selected)
+	// The Running tab does not speak of git, and it lists no worktree to
+	// destroy: its blocks answer for what runs, so only the run block applies.
+	if m.tab == tabRunning {
+		items = runActions()[1:]
+	}
 	caption, busy := m.busyCaption(selected.Branch)
 	if !busy {
 		return items

@@ -110,13 +110,14 @@ type treeMsg struct {
 	err  error
 }
 
-var tabs = []string{domain.DashboardTabWorktrees, domain.DashboardTabTree}
+var tabs = []string{domain.DashboardTabWorktrees, domain.DashboardTabTree, domain.DashboardTabRunning}
 
-// tabTree is the index of the Tree tab in tabs; the renderer and the loader both
-// key off it rather than off its title.
+// The tab indices; the renderer and the loaders key off them rather than off
+// the titles.
 const (
 	tabWorktrees = iota
 	tabTree
+	tabRunning
 )
 
 // Model is the dashboard's root Bubbletea model. It owns its own zone manager
@@ -165,6 +166,10 @@ type Model struct {
 	outputLines    []string
 	outputOffset   int
 	outputExpanded bool
+
+	// runningCursor walks the Running tab's blocks: there, the cursor selects a
+	// worktree, not a job.
+	runningCursor int
 
 	treeRows    []domain.TreeRow
 	treeCursor  int
@@ -341,6 +346,7 @@ func (m Model) layout() domain.DashboardLayout {
 		Height:         m.height,
 		OutputExpanded: m.outputExpanded,
 		DetailOpen:     m.detailOpen,
+		FullBody:       m.tab == tabRunning,
 	})
 }
 
@@ -587,6 +593,13 @@ func (m Model) selected() (domain.WorktreeStatus, bool) {
 	if m.tab == tabTree {
 		return m.selectedTreeWorktree()
 	}
+	if m.tab == tabRunning {
+		block, ok := m.selectedRunning()
+		if !ok {
+			return domain.WorktreeStatus{}, false
+		}
+		return m.statusFor(block.Branch), true
+	}
 	if m.cursor < 0 || m.cursor >= len(m.statuses) {
 		return domain.WorktreeStatus{}, false
 	}
@@ -618,6 +631,10 @@ func (m Model) moveCursor(delta int) Model {
 		m.treeCursor = rules.ClampIndex(m.treeCursor+delta, len(m.treeRows))
 		return m.reflow()
 	}
+	if m.tab == tabRunning {
+		m.runningCursor = rules.ClampIndex(m.runningCursor+delta, len(m.runningBlocks()))
+		return m.reflow()
+	}
 	m.cursor = rules.ClampIndex(m.cursor+delta, len(m.statuses))
 	return m.reflow()
 }
@@ -627,6 +644,9 @@ func (m Model) moveCursor(delta int) Model {
 func (m Model) rowCount() int {
 	if m.tab == tabTree {
 		return len(m.treeRows)
+	}
+	if m.tab == tabRunning {
+		return len(m.runningBlocks())
 	}
 	return len(m.statuses)
 }
@@ -856,6 +876,16 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // clickRow selects the row under the pointer on whichever tab is showing.
 func (m Model) clickRow(msg tea.MouseMsg) (Model, bool) {
+	if m.tab == tabRunning {
+		for index := range m.runningBlocks() {
+			if !m.inZone(runningRowZone(index), msg) {
+				continue
+			}
+			m.runningCursor = index
+			return m.reflow(), true
+		}
+		return m, false
+	}
 	if m.tab == tabTree {
 		for index := range m.treeRows {
 			if !m.inZone(treeRowZone(index), msg) {
@@ -965,8 +995,11 @@ func (m Model) View() string {
 // list's place rather than the whole body, so the detail stays beside it and a
 // node keeps leading somewhere.
 func (m Model) renderMain(layout domain.DashboardLayout) string {
-	if m.tab == tabTree {
+	switch m.tab {
+	case tabTree:
 		return m.renderTree(layout)
+	case tabRunning:
+		return m.renderRunning(layout)
 	}
 	return m.renderList(layout)
 }

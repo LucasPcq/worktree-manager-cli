@@ -28,12 +28,14 @@ func NewCmd() *cobra.Command {
 		Long: "Open a full-screen dashboard of the repository's worktrees.\n" +
 			"The Worktrees tab lists them with their git state against both the base branch and\n" +
 			"origin, and their pull requests; the Tree tab lays the same worktrees out as the\n" +
-			"parent-child forest `wtm tree` prints. `n` creates a worktree; right-click a row\n" +
-			"(or press `m`) to reparent, sync, or delete it; `a` opens the actions that run over\n" +
-			"several worktrees at once, syncing or reparenting a selection of them. The list's\n" +
-			"local git state refreshes on a short poll; the detail panel reloads when the\n" +
-			"selection changes or an operation touches it, and pull requests load once —\n" +
-			"both refresh on demand with `r`.\n" +
+			"parent-child forest `wtm tree` prints; the Running tab gathers every worktree the\n" +
+			"run daemon holds something up in, with the addresses its jobs answer on. `n`\n" +
+			"creates a worktree; right-click a row (or press `m`) to reparent, sync, or delete\n" +
+			"it; `a` opens the actions that run over several worktrees at once, syncing or\n" +
+			"reparenting a selection of them; `L` reads a job's logs in the detail panel.\n" +
+			"The list's local git state refreshes on a short poll; the detail panel reloads\n" +
+			"when the selection changes or an operation touches it, and pull requests load\n" +
+			"once — both refresh on demand with `r`.\n" +
 			"Press `?` for the key reference.",
 		Args: cobra.NoArgs,
 		RunE: runUI,

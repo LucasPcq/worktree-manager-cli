@@ -2217,10 +2217,21 @@ const (
 
 	DashboardTabWorktrees = "Worktrees"
 	DashboardTabTree      = "Tree"
-	DashboardListTitle    = "Worktrees"
-	DashboardTreeTitle    = "Worktree tree"
-	DashboardDetailTitle  = "Detail"
-	DashboardOutputTitle  = "Output"
+	DashboardTabRunning   = "Running"
+
+	DashboardRunningTitle = "RUNNING"
+	// DashboardRunningEmpty and its hint: an empty tab names what would fill it,
+	// the way DashboardRunNotConfigured points at `wtm run init`.
+	DashboardRunningEmpty     = "nothing is running"
+	DashboardRunningEmptyHint = "start a profile with `wtm run up`, or from a worktree's menu"
+	DashboardRunningUpFmt     = "%d up"
+	DashboardRunningCountFmt  = "%d running"
+	DashboardRunningCountOne  = "1 running"
+	DashboardHelpRunning      = "↑↓ worktree · m menu · r refresh · ? help · q quit"
+	DashboardListTitle        = "Worktrees"
+	DashboardTreeTitle        = "Worktree tree"
+	DashboardDetailTitle      = "Detail"
+	DashboardOutputTitle      = "Output"
 
 	// DashboardEmptyList is shown when the list loaded but came back with
 	// nothing — in a valid repository the main worktree is always present, so
