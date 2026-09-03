@@ -34,7 +34,7 @@ func (m Model) triggerDetailReload(before string) (Model, tea.Cmd) {
 		return m, nil
 	}
 	// The logs panel speaks of one worktree's job: moving off it closes it.
-	m = m.closeLogsPanel()
+	m = m.closePanelLogs()
 	if branch == "" {
 		return m, nil
 	}

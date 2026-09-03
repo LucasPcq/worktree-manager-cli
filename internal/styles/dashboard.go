@@ -40,6 +40,14 @@ var (
 	// so it stays muted like the rest of the chrome.
 	DashboardContext = lipgloss.NewStyle().Foreground(ColorMuted)
 
+	// DashboardPanelTab* draw the right-hand panel's tabs: the active one in the
+	// weight a panel title takes, the idle one muted, and the one a project
+	// without a run module cannot reach dimmer still — it is shown, not hidden,
+	// so the panel does not change shape between projects.
+	DashboardPanelTabActive = DashboardPanelTitle
+	DashboardPanelTabIdle   = lipgloss.NewStyle().Foreground(ColorMuted)
+	DashboardPanelTabOff    = lipgloss.NewStyle().Foreground(ColorMuted).Faint(true)
+
 	// DashboardSectionTitle heads a group of fields inside a panel. It separates
 	// two groups, it does not accent one: muted, not the navigation color.
 	DashboardSectionTitle = lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)

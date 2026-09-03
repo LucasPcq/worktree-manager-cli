@@ -99,7 +99,6 @@ func TestRunActionsRefuseWithoutARunModule(t *testing.T) {
 	for name, start := range map[string]func(domain.WorktreeStatus) (Model, tea.Cmd){
 		"up":   model.startRunUp,
 		"down": model.startRunDown,
-		"logs": model.startRunLogs,
 	} {
 		next, cmd := start(domain.WorktreeStatus{Branch: "feature", Path: "/wt/feature"})
 		if cmd != nil {
@@ -108,5 +107,14 @@ func TestRunActionsRefuseWithoutARunModule(t *testing.T) {
 		if got := strings.Join(next.outputLines, "\n"); !strings.Contains(got, domain.DashboardRunNotConfigured) {
 			t.Errorf("run %s said %q, want it to name the missing run module", name, got)
 		}
+	}
+
+	// watchLogs reads the branch its logs view is on, so it takes no argument.
+	next, cmd := model.watchLogs()
+	if cmd != nil {
+		t.Error("run logs started something without a run module")
+	}
+	if got := strings.Join(next.outputLines, "\n"); !strings.Contains(got, domain.DashboardRunNotConfigured) {
+		t.Errorf("run logs said %q, want it to name the missing run module", got)
 	}
 }

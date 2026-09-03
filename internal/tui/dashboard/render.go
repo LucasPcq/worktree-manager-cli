@@ -53,6 +53,17 @@ func (m Model) renderPanel(params panelParams) string {
 		return ""
 	}
 
+	// A panel whose head is its own first body line — the detail's tab bar —
+	// passes no title, and no empty row is drawn in its place.
+	if params.Title == "" {
+		lines := clipRenderedLines(params.Body, contentHeight)
+		box := styles.DashboardPanel.
+			Width(params.Rect.Width - borderWidth).
+			Height(contentHeight).
+			Render(strings.Join(lines, "\n"))
+		return m.marks().Mark(params.Zone, box)
+	}
+
 	title := styles.DashboardPanelTitle.Render(pad(truncate(params.Title, textWidth), textWidth))
 	if rightWidth := lipgloss.Width(params.TitleRight); params.TitleRight != "" && rightWidth+1 < textWidth {
 		left := styles.DashboardPanelTitle.Render(truncate(params.Title, textWidth-rightWidth-1))
@@ -516,7 +527,8 @@ func (m Model) helpBox() (string, domain.Rect) {
 		{"enter · →", "open the detail (narrow terminals)"},
 		{"esc · ←", "close the detail"},
 		{"p", "open the pull request in a browser (or click its line)"},
-		{"L", "read a job's logs in the detail panel"},
+		{"L", "open the panel's LOGS tab (or click it)"},
+		{"←→", "switch job while the LOGS tab is up"},
 		{"o", "fold/unfold the output panel (or click its header)"},
 		{"shift+↑ · shift+↓", "scroll the output panel"},
 		{"r", "refresh worktrees and pull requests"},

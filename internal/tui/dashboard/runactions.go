@@ -173,8 +173,11 @@ func (m Model) startRunDown(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 	})
 }
 
-// startRunLogs opens the run view on what the worktree has, starting nothing.
-func (m Model) startRunLogs(selected domain.WorktreeStatus) (Model, tea.Cmd) {
+// watchLogs hands the terminal to the run view, on the job the logs view is
+// showing. It is the one run action that takes the terminal on purpose: the
+// full session is what it is for.
+func (m Model) watchLogs() (Model, tea.Cmd) {
+	selected := m.statusFor(m.logsBranch)
 	if reason, refused := m.busyReason(selected.Branch); refused {
 		return m.refuse(reason), nil
 	}
@@ -183,6 +186,9 @@ func (m Model) startRunLogs(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 		return m.refuse(domain.DashboardRunNotConfigured), nil
 	}
 
+	request := m.watchLogsRequest()
+	request.Config = cfg
+
 	m, id := m.beginOp(beginParams{
 		Operation: flow.Operation{Kind: domain.OpKindRunLogs, Mode: flow.ModeBlocking},
 	})
@@ -190,7 +196,7 @@ func (m Model) startRunLogs(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 
 	params := logsflow.Params{
 		Context:   m.flowContext(),
-		Request:   logsflow.Request{Worktree: runWorktree(selected), Cwd: selected.Path, Config: cfg},
+		Request:   request,
 		Prompter:  flow.Unattended{},
 		Presenter: logsPresenter{presenter: presenter{send: send, id: id}, watcher: watcher{send: send}},
 	}
@@ -210,7 +216,7 @@ func (m Model) clickRunRow(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		url := m.addressFor(job.Name).URL
 		if url == "" {
-			model, cmd := m.openLogsPanel(job.Name)
+			model, cmd := m.openLogsTabOn(job.Name)
 			return model, cmd, true
 		}
 		model, cmd := m.openJobURL(url)

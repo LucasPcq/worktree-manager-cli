@@ -15,12 +15,11 @@ import (
 )
 
 func (m Model) renderDetail(layout domain.DashboardLayout) string {
+	width := max(layout.Detail.Width-borderWidth-paddingWidth, 0)
 	return m.renderPanel(panelParams{
-		Rect:       layout.Detail,
-		Title:      domain.DashboardDetailTitle,
-		TitleRight: m.detailFreshnessMarker(),
-		Body:       m.detailBody(layout),
-		Zone:       zoneDetail,
+		Rect: layout.Detail,
+		Body: append([]string{m.panelTabsLine(width), ""}, m.detailBody(layout)...),
+		Zone: zoneDetail,
 	})
 }
 
@@ -61,7 +60,9 @@ func (m Model) detailBody(layout domain.DashboardLayout) []string {
 	}
 
 	pr := m.prFor(status.Branch)
-	budget := max(panelBodyHeight(layout.Detail)-len(lines), 0)
+	// The tab bar and the blank under it are drawn by renderDetail, inside the
+	// same body: the sections have to be told what they cost.
+	budget := max(panelBodyHeight(layout.Detail)-domain.DashboardPanelTabsChrome-len(lines), 0)
 	sections := m.detailSections(detailSectionsInput{
 		Status:        status,
 		Detail:        detail,

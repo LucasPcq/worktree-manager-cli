@@ -198,6 +198,9 @@ type Model struct {
 	detailOpen bool
 	showHelp   bool
 
+	// panelTab is which of the right-hand panel's two tabs is showing.
+	panelTab int
+
 	// logsBranch and logsJob name the job whose tail replaces the detail's
 	// sections; both empty means the panel is closed.
 	logsBranch string
@@ -437,12 +440,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.appendOutput(OutputLineMsg{
 			Text: fmt.Sprintf(domain.DashboardFailedFmt, domain.DashboardOpenPRLabel, msg.err),
 		}), nil
-
-	case logsJobMsg:
-		if msg.job == "" {
-			return m, nil
-		}
-		return m.openLogsPanel(msg.job)
 
 	case logsTailMsg:
 		return m.applyLogsTail(msg), nil
@@ -734,13 +731,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.logsOpen() {
 		switch key {
 		case keyEscape:
-			return m.closeLogsPanel().reflow(), nil
+			return m.closePanelLogs().reflow(), nil
+		case keyLeft, keyVimLeft:
+			return m.stepLogsJob(-1).retail()
+		case keyRight, keyVimRight:
+			return m.stepLogsJob(1).retail()
 		case keyEnter:
-			selected, ok := m.selected()
-			if !ok {
-				return m, nil
-			}
-			return m.startRunLogs(selected)
+			return m.watchLogs()
 		}
 	}
 
@@ -760,7 +757,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyOpenPR:
 		return m.openPR()
 	case keyRunLogs:
-		return m.askLogsJob()
+		return m.openLogsTab()
 
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded
@@ -805,6 +802,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // its new position, when ui.animations has not turned that off and the rule
 // actually moves — switching to the tab already active is a no-op either way.
 func (m Model) selectTab(index int) (Model, tea.Cmd) {
+	// The logs view belongs to the panel it is drawn in: left open across a tab
+	// change it kept esc and enter while showing nothing.
+	m = m.closePanelLogs()
 	width := m.layout().Tabs.Width
 	from := tabStart(width, m.tab)
 	m.tab = index
@@ -881,6 +881,13 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.inZone(zoneActions, msg) {
 		zone := m.zones.Get(zoneActions)
 		return m.openActionsMenu(domain.Rect{X: zone.StartX, Y: zone.EndY}), nil
+	}
+
+	if m.inZone(zonePanelTabDtl, msg) {
+		return m.closePanelLogs().reflow(), nil
+	}
+	if m.inZone(zonePanelTabLogs, msg) {
+		return m.openLogsTab()
 	}
 
 	if m.inZone(zoneDetailPR, msg) {

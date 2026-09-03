@@ -33,7 +33,7 @@ func TestOpeningTheLogsPanelTailsTheJob(t *testing.T) {
 	}, "a")
 	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
 
-	model, cmd := model.openLogsPanel("web")
+	model, cmd := model.openLogsTabOn("web")
 	if model.logsJob != "web" || model.logsBranch != "a" {
 		t.Fatalf("panel = %q/%q, want web on a", model.logsBranch, model.logsJob)
 	}
@@ -136,7 +136,7 @@ func TestTheDetailPanelYieldsToTheLogsPanelWhileItIsOpen(t *testing.T) {
 	model := logsModel(t, RunParams{}, "a")
 	model.detailOpen = true
 	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
-	model.logsBranch, model.logsJob = "a", "web"
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
 	model.logsLines = []string{"tailed"}
 
 	body := stripANSI(strings.Join(model.detailBody(model.layout()), "\n"))
@@ -151,49 +151,12 @@ func TestTheDetailPanelYieldsToTheLogsPanelWhileItIsOpen(t *testing.T) {
 
 func TestEscapeLeavesTheLogsPanelForTheDetail(t *testing.T) {
 	model := logsModel(t, RunParams{}, "a")
-	model.logsBranch, model.logsJob = "a", "web"
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
 
 	next, _ := updateCmd(model, namedKey(tea.KeyEscape))
 
 	if next.logsOpen() {
 		t.Error("esc left the panel open")
-	}
-}
-
-func TestTheLogsKeyOpensTheJobPicker(t *testing.T) {
-	model := logsModel(t, RunParams{}, "a")
-	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "api"}}}
-
-	next, _ := updateCmd(model, key(domain.KeyRunLogs))
-
-	if !next.modal.open {
-		t.Fatal("the picker never opened: the detail has no cursor to name a job with")
-	}
-	if next.logsOpen() {
-		t.Error("a job was opened without being chosen")
-	}
-}
-
-func TestTheLogsKeyRefusesAProjectWithNoRunModule(t *testing.T) {
-	model := logsModel(t, RunParams{}, "a")
-
-	next, _ := updateCmd(model, key(domain.KeyRunLogs))
-
-	if next.modal.open {
-		t.Error("a picker opened with nothing in it, want the refusal")
-	}
-	if !strings.Contains(strings.Join(next.outputLines, "\n"), domain.DashboardRunNotConfigured) {
-		t.Errorf("output = %v, want it to name `wtm run init`", next.outputLines)
-	}
-}
-
-func TestADismissedPickerOpensNothing(t *testing.T) {
-	model := logsModel(t, RunParams{}, "a")
-
-	next := update(model, logsJobMsg{})
-
-	if next.logsOpen() {
-		t.Error("a dismissed picker opened a panel")
 	}
 }
 
@@ -211,5 +174,157 @@ func TestClickingAJobWithNoURLOpensItsLogs(t *testing.T) {
 
 	if next.logsJob != "pg" {
 		t.Errorf("logsJob = %q, want the click to lead to what the job does have", next.logsJob)
+	}
+}
+
+func TestTheJobsLineNamesEveryDeclaredJobAndMarksWhatIsUp(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "api"}, {Name: "pg"}}}
+	model.jobs = []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"}}
+	model.addresses = map[string]map[string]domain.JobAddress{"a": {"web": {URL: "http://web.wtm"}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
+
+	line := stripANSI(model.logsJobsLine(60))
+
+	for _, name := range []string{"web", "api", "pg"} {
+		if !strings.Contains(line, name) {
+			t.Errorf("line = %q, misses %q: a stopped job's tail is still readable", line, name)
+		}
+	}
+	if !strings.Contains(line, domain.DetailJobUpGlyph) || !strings.Contains(line, domain.DetailJobDownGlyph) {
+		t.Errorf("line = %q, want up and down told apart", line)
+	}
+	if !strings.HasSuffix(line, "http://web.wtm") {
+		t.Errorf("line = %q, want the current job's address flush right", line)
+	}
+}
+
+func TestSteppingTheJobStaysInsideItsWorktree(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a", "b")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "api"}}}
+	model.logsBranch, model.logsJob = "a", "web"
+
+	model = model.stepLogsJob(1)
+	if model.logsJob != "api" || model.logsBranch != "a" {
+		t.Errorf("job = %q on %q, want api on a", model.logsJob, model.logsBranch)
+	}
+
+	model = model.stepLogsJob(1)
+	if model.logsJob != "api" {
+		t.Errorf("job = %q, want it clamped at the last one", model.logsJob)
+	}
+
+	model = model.stepLogsJob(-5)
+	if model.logsJob != "web" {
+		t.Errorf("job = %q, want it clamped at the first one", model.logsJob)
+	}
+}
+
+func TestSteppingTheJobRetailsIt(t *testing.T) {
+	asked := make(chan string, 2)
+	model := logsModel(t, RunParams{
+		LogsLoader: func(req logsRequest) ([]string, error) { asked <- req.Job; return nil, nil },
+	}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "api"}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
+
+	model = model.stepLogsJob(1)
+	if cmd := model.tailLogsCmd(); cmd != nil {
+		cmd()
+	}
+
+	select {
+	case job := <-asked:
+		if job != "api" {
+			t.Errorf("tailed %q, want api", job)
+		}
+	default:
+		t.Fatal("nothing was tailed after the job changed")
+	}
+}
+
+// The logs view is hosted by the Services tab too, where the selected worktree
+// and the tailed one part company.
+func TestTheLogsAddressIsReadOffTheTailedBranch(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a", "b")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+	model.addresses = map[string]map[string]domain.JobAddress{
+		"a": {"web": {URL: "http://web.a.wtm"}},
+		"b": {"web": {URL: "http://web.b.wtm"}},
+	}
+	model.logsBranch, model.logsJob = "b", "web"
+
+	if got := model.logsAddress().URL; got != "http://web.b.wtm" {
+		t.Errorf("address = %q, want the tailed worktree's own, not the selected one's", got)
+	}
+}
+
+func TestTheLogsKeyOpensTheTabWithoutAPicker(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "worker"}, {Name: "web"}}}
+	model.jobs = []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"}}
+
+	next, _ := updateCmd(model, key(domain.KeyRunLogs))
+
+	if next.modal.open {
+		t.Error("a modal opened, want the selection line to replace the picker")
+	}
+	if next.panelTab != panelLogs {
+		t.Error("the panel stayed on DETAIL")
+	}
+	if next.logsJob != "web" {
+		t.Errorf("logsJob = %q, want the first job that is up", next.logsJob)
+	}
+}
+
+func TestTheLogsKeyDoesNothingWithoutARunModule(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a")
+
+	next, _ := updateCmd(model, key(domain.KeyRunLogs))
+
+	if next.panelTab == panelLogs {
+		t.Error("the LOGS tab opened with no job declared, want it inert")
+	}
+}
+
+func TestArrowsWalkTheJobsWhileTheLogsTabIsUp(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "api"}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
+
+	next, _ := updateCmd(model, namedKey(tea.KeyRight))
+
+	if next.logsJob != "api" {
+		t.Errorf("logsJob = %q, want the right arrow to walk the selection line", next.logsJob)
+	}
+	if next.cursor != 0 {
+		t.Errorf("cursor = %d, want the list left alone while the logs tab has the keys", next.cursor)
+	}
+}
+
+func TestEnterHandsRunviewTheJobOnScreen(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "api"}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "api"
+
+	request := model.watchLogsRequest()
+
+	if request.Job != "api" {
+		t.Errorf("Job = %q, want runview opened on the job on screen, not on the whole worktree", request.Job)
+	}
+	if request.Worktree != "a" {
+		t.Errorf("Worktree = %q, want a", request.Worktree)
+	}
+}
+
+func TestChangingTabClosesTheLogsView(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
+
+	next, _ := updateCmd(model, key(keyTab))
+
+	if next.panelTab != panelDetail {
+		t.Error("the logs view survived the tab change and kept esc and enter, while not being drawn")
 	}
 }

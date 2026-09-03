@@ -2230,7 +2230,15 @@ const (
 	DashboardListTitle        = "Worktrees"
 	DashboardTreeTitle        = "Worktree tree"
 	DashboardDetailTitle      = "Detail"
-	DashboardOutputTitle      = "Output"
+	// DashboardPanelTab* head the right-hand panel. They take the place of its
+	// title: the panel is what they name.
+	DashboardPanelTabDetail = "DETAIL"
+	DashboardPanelTabLogs   = "LOGS"
+	DashboardPanelTabSep    = " │ "
+	// DashboardPanelTabsChrome is what the tab bar costs the panel's body: its
+	// own row and the blank line under it.
+	DashboardPanelTabsChrome = 2
+	DashboardOutputTitle     = "Output"
 
 	// DashboardEmptyList is shown when the list loaded but came back with
 	// nothing — in a valid repository the main worktree is always present, so
@@ -2423,8 +2431,11 @@ const (
 	// live one.
 	DetailLogsHeaderFmt = "%s · %s"
 	DetailJobUpLabel    = "up"
-	DashboardLogsHint   = "esc detail    enter full session"
+	DashboardLogsHint   = "←→ job    esc detail    ↵ full session"
 	DashboardLogsEmpty  = "nothing logged yet"
+	// DashboardLogsJobGap separates two job chips on the logs view's selection
+	// line. Three spaces: two read as a column gap inside one chip.
+	DashboardLogsJobGap = "   "
 
 	// KeyNew opens the new-worktree wizard, the keyboard equivalent of the list
 	// header's add button.

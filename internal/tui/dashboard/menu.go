@@ -288,7 +288,7 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 	case menuRunDown:
 		return m.startRunDown(selected)
 	case menuRunLogs:
-		return m.askLogsJob()
+		return m.openLogsTab()
 	}
 	return m, nil
 }

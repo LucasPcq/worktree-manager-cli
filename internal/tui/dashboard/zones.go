@@ -14,6 +14,8 @@ const (
 	zoneTreeRowPfx   = "tree:"
 	zoneDetail       = "panel:detail"
 	zoneDetailPR     = "detail:pr"
+	zonePanelTabDtl  = "panel:tab:detail"
+	zonePanelTabLogs = "panel:tab:logs"
 	zoneDetailRunPfx = "detail:run:"
 	zoneOutput       = "panel:output"
 	zoneOutputToggle = "output:toggle"

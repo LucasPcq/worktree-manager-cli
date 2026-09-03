@@ -3,14 +3,12 @@ package dashboard
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/flow"
+	logsflow "github.com/LucasPcq/wtm/internal/flow/run/logs"
 	"github.com/LucasPcq/wtm/internal/flow/run/seam"
-	"github.com/LucasPcq/wtm/internal/flow/run/target"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
@@ -24,10 +22,6 @@ type logsRequest struct {
 	Jobs    []domain.JobConfig
 	Lines   int
 }
-
-// logsJobMsg carries the job the picker settled on back onto the UI goroutine.
-// An empty job means the picker was dismissed, which opens nothing.
-type logsJobMsg struct{ job string }
 
 type logsTailMsg struct {
 	branch string
@@ -59,25 +53,62 @@ func DefaultLogsLoader(params LogsLoaderParams) func(logsRequest) ([]string, err
 	}
 }
 
-// openLogsPanel turns the detail panel into a job's tail. The panel speaks of
-// one worktree's job, so it is keyed on both and closed by any move off it.
-func (m Model) openLogsPanel(job string) (Model, tea.Cmd) {
-	status, ok := m.selected()
-	if !ok || job == "" {
+// openLogsTab shows the panel's logs view. It lands on the first job that is
+// up, or on the first declared one when nothing is: opening on a job rather
+// than on a question is what removes the picker.
+func (m Model) openLogsTab() (Model, tea.Cmd) { return m.openLogsTabOn("") }
+
+// openLogsTabOn is the same, on a job the surface already designates — a click
+// on its row.
+func (m Model) openLogsTabOn(job string) (Model, tea.Cmd) {
+	if !m.logsAvailable() {
 		return m, nil
 	}
-	m.logsBranch, m.logsJob = status.Branch, job
+	status, ok := m.selected()
+	if !ok {
+		return m, nil
+	}
+	m.panelTab = panelLogs
+	m.logsBranch = status.Branch
+	m.logsJob = job
+	if job == "" {
+		m.logsJob = m.firstLogsJob()
+	}
 	m.logsLines, m.logsErr = nil, nil
 	return m, m.tailLogsCmd()
 }
 
-func (m Model) closeLogsPanel() Model {
+func (m Model) firstLogsJob() string {
+	jobs := m.logsJobs()
+	for _, job := range jobs {
+		if m.jobIsUp(job.Name) {
+			return job.Name
+		}
+	}
+	return jobs[0].Name
+}
+
+func (m Model) closePanelLogs() Model {
+	m.panelTab = panelDetail
 	m.logsBranch, m.logsJob = "", ""
 	m.logsLines, m.logsErr = nil, nil
 	return m
 }
 
-func (m Model) logsOpen() bool { return m.logsJob != "" }
+func (m Model) logsOpen() bool { return m.panelTab == panelLogs && m.logsJob != "" }
+
+func (m Model) retail() (Model, tea.Cmd) { return m, m.tailLogsCmd() }
+
+// watchLogsRequest is what enter hands runview: the job on screen, never the
+// whole worktree. A view opened on one job that comes back showing every job of
+// the worktree is not the same view.
+func (m Model) watchLogsRequest() logsflow.Request {
+	return logsflow.Request{
+		Worktree: m.logsBranch,
+		Cwd:      m.statusFor(m.logsBranch).Path,
+		Job:      m.logsJob,
+	}
+}
 
 func (m Model) tailLogsCmd() tea.Cmd {
 	if m.params.LogsLoader == nil || !m.logsOpen() {
@@ -110,28 +141,107 @@ func (m Model) applyLogsTail(msg logsTailMsg) Model {
 	return m
 }
 
-// logsBody replaces the detail's sections while a job's tail is open. The
-// newest lines are the ones kept: this panel is a glance at what just
-// happened, and runview is what scrolls.
-func (m Model) logsBody(layout domain.DashboardLayout) []string {
-	width := layout.Detail.Width - borderWidth - paddingWidth
-	if width <= 0 {
+// logsJobs are the jobs the selection line offers: every declared one, in
+// run.toml's order. A stopped job keeps its place — History reads back what it
+// persisted, which is exactly what one looks for after a crash.
+func (m Model) logsJobs() []domain.JobConfig { return m.runConfig.Jobs }
+
+// logsJobsLine heads the logs view: the jobs to switch between, and where the
+// current one answers.
+func (m Model) logsJobsLine(width int) string {
+	jobs := m.logsJobs()
+	chips := make([]string, 0, len(jobs))
+	for _, job := range jobs {
+		chips = append(chips, m.logsJobChip(job))
+	}
+	return spread(
+		strings.Join(chips, domain.DashboardLogsJobGap),
+		styles.DashboardURL.Render(m.logsAddress().URL),
+		width,
+	)
+}
+
+func (m Model) logsJobChip(job domain.JobConfig) string {
+	glyph, style := domain.DetailJobDownGlyph, styles.DashboardRowMeta
+	if m.jobIsUp(job.Name) {
+		glyph, style = domain.DetailJobUpGlyph, styles.DashboardValue
+	}
+	if job.Name == m.logsJob {
+		style = styles.DashboardRowSelected
+	}
+	return style.Render(glyph + domain.DetailGlyphGap + job.Name)
+}
+
+func (m Model) jobIsUp(name string) bool {
+	workDir := m.statusFor(m.logsBranch).Path
+	for _, info := range m.jobs {
+		if info.Name == name && info.WorkDir == workDir && rules.IsJobUp(info.Status) {
+			return true
+		}
+	}
+	return false
+}
+
+// logsAddress is where the job on screen answers — read off logsBranch, never
+// off the selected worktree: the two part company as soon as the logs view is
+// hosted by the Services tab.
+func (m Model) logsAddress() domain.JobAddress {
+	return m.addresses[m.logsBranch][m.logsJob]
+}
+
+// stepLogsJob walks the selection line, clamped at both ends: the line is a row
+// of chips, not a carousel, so an end that wraps would lose the reader.
+func (m Model) stepLogsJob(delta int) Model {
+	jobs := m.logsJobs()
+	if len(jobs) == 0 {
+		return m
+	}
+	index := 0
+	for position, job := range jobs {
+		if job.Name == m.logsJob {
+			index = position
+			break
+		}
+	}
+	next := jobs[rules.ClampIndex(index+delta, len(jobs))]
+	if next.Name == m.logsJob {
+		return m
+	}
+	m.logsJob, m.logsLines, m.logsErr = next.Name, nil, nil
+	return m
+}
+
+type logsViewParams struct {
+	Width  int
+	Height int
+}
+
+// logsViewBody is the logs view wherever it is hosted: the right-hand panel
+// under its LOGS tab, and the Services tab at full width. One component, two
+// hosts — the alternative was writing "show a tail" twice. The newest lines are
+// the ones kept: this is a glance at what just happened, and runview is what
+// scrolls.
+func (m Model) logsViewBody(params logsViewParams) []string {
+	if params.Width <= 0 {
 		return nil
 	}
 
 	head := []string{
-		spread(
-			styles.DashboardBranch.Render(truncate(m.logsHeader(), width)),
-			styles.DashboardURL.Render(m.addressFor(m.logsJob).URL),
-			width,
-		),
-		styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, width)),
+		m.logsJobsLine(params.Width),
+		styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, params.Width)),
 		"",
 	}
-	hint := styles.DashboardRowMeta.Render(truncate(domain.DashboardLogsHint, width))
-	budget := max(panelBodyHeight(layout.Detail)-len(head)-domain.DashboardLogsChrome, 0)
+	hint := styles.DashboardRowMeta.Render(truncate(domain.DashboardLogsHint, params.Width))
+	budget := max(params.Height-len(head)-domain.DashboardLogsChrome, 0)
 
-	return append(append(head, m.logsTailLines(logsTailParams{Budget: budget, Width: width})...), "", hint)
+	return append(append(head, m.logsTailLines(logsTailParams{Budget: budget, Width: params.Width})...), "", hint)
+}
+
+func (m Model) logsBody(layout domain.DashboardLayout) []string {
+	return m.logsViewBody(logsViewParams{
+		Width:  layout.Detail.Width - borderWidth - paddingWidth,
+		Height: panelBodyHeight(layout.Detail) - domain.DashboardPanelTabsChrome,
+	})
 }
 
 type logsTailParams struct {
@@ -154,46 +264,4 @@ func (m Model) logsTailLines(params logsTailParams) []string {
 		rendered = append(rendered, styles.DashboardValue.Render(truncate(line, params.Width)))
 	}
 	return rendered
-}
-
-func (m Model) logsHeader() string {
-	workDir := m.statusFor(m.logsBranch).Path
-	for _, info := range m.jobs {
-		if info.Name != m.logsJob || info.WorkDir != workDir || !rules.IsJobUp(info.Status) {
-			continue
-		}
-		state := domain.DetailJobUpLabel
-		if uptime := rules.JobUptime(rules.JobUptimeParams{Job: info, Now: time.Now()}); uptime != "" {
-			state += " " + uptime
-		}
-		return fmt.Sprintf(domain.DetailLogsHeaderFmt, m.logsJob, state)
-	}
-	return m.logsJob
-}
-
-// askLogsJob puts the job question to the picker rather than guessing one: the
-// detail panel has no cursor, and reading a job's logs is not a mutation, so
-// this borrows target.JobStep without going through a flow.
-func (m Model) askLogsJob() (Model, tea.Cmd) {
-	if len(m.runConfig.Jobs) == 0 {
-		return m.refuse(domain.DashboardRunNotConfigured), nil
-	}
-	if _, ok := m.selected(); !ok {
-		return m, nil
-	}
-
-	reply := make(chan promptReply, 1)
-	model, cmd := m.openModal(promptMsg{
-		title:   domain.DashboardMenuRunLogs,
-		shape:   modalStepper,
-		session: flow.Session{Steps: []flow.Step{target.JobStep(target.JobParams{Jobs: m.runConfig.Jobs})}},
-		reply:   reply,
-	})
-	return model, tea.Batch(cmd, func() tea.Msg {
-		answered := <-reply
-		if answered.err != nil {
-			return logsJobMsg{}
-		}
-		return logsJobMsg{job: answered.answers.Value(target.KeyJob)}
-	})
 }
