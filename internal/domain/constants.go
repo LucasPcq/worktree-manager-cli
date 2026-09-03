@@ -2398,6 +2398,17 @@ const (
 	DashboardOperationLabel = "operation"
 	// DashboardOpenPRLabel names a failed browser launch for the REVIEW
 	// section's PR line, in the same "✗ <label>: <err>" form.
+	// DashboardLogsLines is how far back the detail panel's logs view reads. It
+	// is a glance, not a session: runview is what scrolls.
+	DashboardLogsLines = 200
+	// DetailLogsHeaderFmt heads the logs view with the job and its state: a tail
+	// of a job that has stopped is still worth reading, and must not read as a
+	// live one.
+	DetailLogsHeaderFmt = "%s · %s"
+	DetailJobUpLabel    = "up"
+	DashboardLogsHint   = "esc detail    enter full session"
+	DashboardLogsEmpty  = "nothing logged yet"
+
 	DashboardOpenPRLabel = "open PR"
 	// DashboardOpenURLLabel names a failed browser launch for a RUN row.
 	DashboardOpenURLLabel = "open URL"
@@ -2423,6 +2434,9 @@ const (
 
 	// KeyOpenURL opens the selected job's URL in a browser.
 	KeyOpenURL = "o"
+	// KeyRunLogs reads a job's logs in the detail panel. Upper case: "l" is the
+	// list's vim-right.
+	KeyRunLogs = "L"
 
 	KeyHelp = "?"
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so

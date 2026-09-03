@@ -283,7 +283,7 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 	case menuRunDown:
 		return m.startRunDown(selected)
 	case menuRunLogs:
-		return m.startRunLogs(selected)
+		return m.askLogsJob()
 	}
 	return m, nil
 }

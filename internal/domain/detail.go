@@ -65,7 +65,7 @@ type WorktreeDetail struct {
 	// CHANGES' uncommitted volume. Left zero for the parent worktree, which
 	// has no base to diff against.
 	BranchDiff DiffStat
-	LoadedAt time.Time
+	LoadedAt   time.Time
 
 	// Failures names families that could not be read. A family absent from
 	// the map was read successfully, even if empty: this is what distinguishes

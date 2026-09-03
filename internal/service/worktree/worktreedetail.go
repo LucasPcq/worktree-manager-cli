@@ -76,7 +76,6 @@ func Detail(params DetailParams) domain.WorktreeDetail {
 		detail.Failures[domain.DetailFamilyEnv] = err
 	}
 
-
 	return detail
 }
 

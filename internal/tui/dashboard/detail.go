@@ -36,6 +36,9 @@ func (m Model) detailBody(layout domain.DashboardLayout) []string {
 	if width <= 0 {
 		return nil
 	}
+	if m.logsOpen() {
+		return m.logsBody(layout)
+	}
 
 	stale := m.detailIsStale()
 	detail, hasDetail := m.details[status.Branch]

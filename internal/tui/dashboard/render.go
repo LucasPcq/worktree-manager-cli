@@ -479,6 +479,8 @@ func (m Model) renderHelpBar(layout domain.DashboardLayout) string {
 	switch {
 	case m.loadErr != nil:
 		hint = m.loadErr.Error()
+	case m.logsOpen():
+		hint = domain.DashboardLogsHint
 	case m.tab == tabTree:
 		hint = domain.DashboardHelpTree
 	case layout.Narrow && m.detailOpen:
@@ -505,6 +507,7 @@ func (m Model) helpBox() (string, domain.Rect) {
 		{"enter · →", "open the detail (narrow terminals)"},
 		{"esc · ←", "close the detail"},
 		{"p", "open the pull request in a browser (or click its line)"},
+		{"L", "read a job's logs in the detail panel"},
 		{"o", "fold/unfold the output panel (or click its header)"},
 		{"shift+↑ · shift+↓", "scroll the output panel"},
 		{"r", "refresh worktrees and pull requests"},

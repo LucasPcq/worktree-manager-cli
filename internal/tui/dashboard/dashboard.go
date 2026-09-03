@@ -49,6 +49,9 @@ type RunParams struct {
 	// given worktrees that already have a job up: BranchEnv allocates an ordinal
 	// the first time it is asked for one.
 	AddressLoader func(branches []string) map[string]map[string]domain.JobAddress
+	// LogsLoader reads back a job's persisted output for the detail panel's
+	// logs view. Injected like JobsLoader, so a test never opens a real board.
+	LogsLoader func(logsRequest) ([]string, error)
 }
 
 // OutputLineMsg appends one line to the bottom output panel. Every phase of a
@@ -172,6 +175,13 @@ type Model struct {
 
 	detailOpen bool
 	showHelp   bool
+
+	// logsBranch and logsJob name the job whose tail replaces the detail's
+	// sections; both empty means the panel is closed.
+	logsBranch string
+	logsJob    string
+	logsLines  []string
+	logsErr    error
 
 	// details caches the last detail loaded per branch, invalidated (never
 	// emptied) by the poll and by a finished operation, so the panel keeps
@@ -378,8 +388,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The detail panel is deliberately absent from the poll: a reload every
 		// few seconds mutes the whole panel behind a "refreshing" marker while
 		// the user is reading it. It reloads when the selection changes, when an
-		// operation touches its branch, and on KeyRefresh — never on a timer.
-		return m, tea.Batch(m.loadWorktreesCmd(false), m.loadJobsCmd(false), tree, pollCmd())
+		// operation touches its branch, and on KeyRefresh — never on a timer. Its
+		// logs view is the exception: a tail nobody refreshes is a screenshot.
+		return m, tea.Batch(m.loadWorktreesCmd(false), m.loadJobsCmd(false), tree, m.tailLogsCmd(), pollCmd())
 
 	case treeMsg:
 		before := m.selectedBranch()
@@ -396,6 +407,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.appendOutput(OutputLineMsg{
 			Text: fmt.Sprintf(domain.DashboardFailedFmt, domain.DashboardOpenPRLabel, msg.err),
 		}), nil
+
+	case logsJobMsg:
+		if msg.job == "" {
+			return m, nil
+		}
+		return m.openLogsPanel(msg.job)
+
+	case logsTailMsg:
+		return m.applyLogsTail(msg), nil
 
 	case openURLMsg:
 		if msg.err == nil {
@@ -664,6 +684,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	layout := m.layout()
 
+	// The logs panel owns esc and enter while it is up: esc gives the detail
+	// back, enter hands the terminal to runview for the session this is only a
+	// glance at.
+	if m.logsOpen() {
+		switch key {
+		case keyEscape:
+			return m.closeLogsPanel().reflow(), nil
+		case keyEnter:
+			selected, ok := m.selected()
+			if !ok {
+				return m, nil
+			}
+			return m.startRunLogs(selected)
+		}
+	}
+
 	switch key {
 	case keyInterrupt, keyQuit:
 		return m, tea.Quit
@@ -679,6 +715,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openActionsMenu(m.actionsAnchorPoint()), nil
 	case keyOpenPR:
 		return m.openPR()
+	case keyRunLogs:
+		return m.askLogsJob()
 
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded

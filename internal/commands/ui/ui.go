@@ -80,6 +80,10 @@ func buildRunParams(dir string, result shared.ConfigResult) dashboard.RunParams 
 			return ghservice.OpenPR(ghservice.OpenPRParams{ProjectDir: result.ProjectDir, Number: number})
 		},
 		URLOpener: integration.OpenURL,
+		LogsLoader: dashboard.DefaultLogsLoader(dashboard.LogsLoaderParams{
+			ProjectDir: result.ProjectDir,
+			StateDir:   result.StateDir,
+		}),
 		// The public port is dialed here rather than once at startup: the loader
 		// already runs off the UI goroutine, and a daemon started after the
 		// dashboard was opened must not leave every address unpublished.

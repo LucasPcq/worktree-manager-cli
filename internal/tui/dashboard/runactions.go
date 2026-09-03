@@ -210,7 +210,8 @@ func (m Model) clickRunRow(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 		}
 		url := m.addressFor(job.Name).URL
 		if url == "" {
-			return m, nil, true
+			model, cmd := m.openLogsPanel(job.Name)
+			return model, cmd, true
 		}
 		model, cmd := m.openJobURL(url)
 		return model, cmd, true
