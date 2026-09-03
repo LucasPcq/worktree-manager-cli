@@ -84,6 +84,15 @@ type JobURLEntry struct {
 	URL string `json:"url"`
 }
 
+// JobAddress is where a declared job answers in one worktree: the ports it
+// binds there, and the name it is published under when it publishes one. It is
+// a property of the worktree's offset, known whether or not anything is
+// running.
+type JobAddress struct {
+	Ports []int
+	URL   string
+}
+
 // ProfileConfig defines a named, ordered group of jobs.
 type ProfileConfig struct {
 	Name    string   `toml:"name"    json:"name"`

@@ -189,3 +189,13 @@ func TestDetailSkipsBranchDiffForParent(t *testing.T) {
 		t.Errorf("BranchDiff = %+v, want zero for the parent worktree", got.BranchDiff)
 	}
 }
+
+// A project with no run module has no address to compute, and inventing an
+// empty map would make the panel announce a section that has nothing to say.
+func TestDetailCarriesNoAddressWhenTheProjectDeclaresNoJob(t *testing.T) {
+	detail := Detail(DetailParams{Status: domain.WorktreeStatus{Branch: "feat/x"}})
+
+	if detail.RunAddresses != nil {
+		t.Fatalf("RunAddresses = %v, want none where nothing is declared", detail.RunAddresses)
+	}
+}
