@@ -2,6 +2,9 @@ package dashboard
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -436,4 +439,106 @@ func TestTheAddressKeyIsSilentOnTheDetailPanel(t *testing.T) {
 	if _, cmd := updateCmd(model, key(domain.KeyOpenAddress)); cmd != nil {
 		cmd()
 	}
+}
+
+// A zone that is marked but whose lookup sits in a function nothing calls is a
+// click that lands nowhere, and nothing else catches it. Checking only that a
+// lookup exists somewhere is not enough — that is how the logs view's job chips
+// shipped marked and inert, their lookup alive inside a helper handleMouse
+// never reached.
+func TestEveryZoneHelperIsMarkedAndReachableFromTheMouseHandler(t *testing.T) {
+	sources := dashboardSources(t)
+
+	helpers := regexp.MustCompile(`func ([a-z][A-Za-z]*Zone)\(`).FindAllStringSubmatch(sources["zones.go"], -1)
+	if len(helpers) == 0 {
+		t.Fatal("no zone helper found, this test is looking at the wrong file")
+	}
+	reachable := mouseHandlerCallees(t, sources)
+
+	for _, helper := range helpers {
+		name := helper[1]
+		marked, handledBy := false, ""
+		for path, body := range sources {
+			if path == "zones.go" {
+				continue
+			}
+			if strings.Contains(body, "Mark("+name+"(") {
+				marked = true
+			}
+			for _, fn := range functionsMentioning(body, "inZone("+name+"(") {
+				handledBy = fn
+			}
+		}
+		if !marked {
+			t.Errorf("%s is never marked: nothing draws it", name)
+			continue
+		}
+		if handledBy == "" {
+			t.Errorf("%s is marked but never looked up: a click on it lands nowhere", name)
+			continue
+		}
+		if !reachable[handledBy] {
+			t.Errorf("%s is looked up in %s, which handleMouse never calls: the zone is inert", name, handledBy)
+		}
+	}
+}
+
+func dashboardSources(t *testing.T) map[string]string {
+	t.Helper()
+	paths, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := make(map[string]string, len(paths))
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sources[path] = string(body)
+	}
+	return sources
+}
+
+// functionsMentioning names the top-level functions of a file whose body holds
+// the needle.
+func functionsMentioning(body, needle string) []string {
+	var found []string
+	decls := regexp.MustCompile(`(?m)^func (?:\([^)]*\) )?([A-Za-z][A-Za-z0-9]*)\(`).FindAllStringSubmatchIndex(body, -1)
+	for index, decl := range decls {
+		end := len(body)
+		if index+1 < len(decls) {
+			end = decls[index+1][0]
+		}
+		if strings.Contains(body[decl[0]:end], needle) {
+			found = append(found, body[decl[2]:decl[3]])
+		}
+	}
+	return found
+}
+
+// mouseHandlerCallees is handleMouse itself plus every method it calls, one
+// level deep — enough to catch a helper that was written and never wired.
+func mouseHandlerCallees(t *testing.T, sources map[string]string) map[string]bool {
+	t.Helper()
+	reachable := map[string]bool{"handleMouse": true}
+	for _, body := range sources {
+		decls := regexp.MustCompile(`(?m)^func \([^)]*\) (handleMouse)\(`).FindAllStringSubmatchIndex(body, -1)
+		for _, decl := range decls {
+			end := len(body)
+			if next := strings.Index(body[decl[1]:], "\n}\n"); next >= 0 {
+				end = decl[1] + next
+			}
+			for _, call := range regexp.MustCompile(`m\.([a-z][A-Za-z0-9]*)\(`).FindAllStringSubmatch(body[decl[0]:end], -1) {
+				reachable[call[1]] = true
+			}
+		}
+	}
+	if len(reachable) < 2 {
+		t.Fatal("handleMouse was not found, this test is checking nothing")
+	}
+	return reachable
 }

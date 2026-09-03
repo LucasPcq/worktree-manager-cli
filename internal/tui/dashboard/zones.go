@@ -19,6 +19,7 @@ const (
 	zoneDetailRunPfx = "detail:run:"
 	zoneDetailURLPfx = "detail:url:"
 	zoneLogsJobPfx   = "logs:job:"
+	zoneLogsURL      = "logs:url"
 	zoneServicesURL  = "services:url:"
 	zoneOutput       = "panel:output"
 	zoneOutputToggle = "output:toggle"
@@ -62,3 +63,7 @@ func servicesURLZone(index int) string { return zoneServicesURL + strconv.Itoa(i
 // logsJobZone keys a chip on the logs view's selection line, so the line is
 // walked with the mouse as well as with the arrows.
 func logsJobZone(job string) string { return zoneLogsJobPfx + job }
+
+// logsURLZone keys the address on the logs view's selection line. One at a
+// time, so it needs no key of its own.
+func logsURLZone() string { return zoneLogsURL }

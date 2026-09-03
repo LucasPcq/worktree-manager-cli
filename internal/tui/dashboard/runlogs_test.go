@@ -379,3 +379,94 @@ func TestClosingOneHostLeavesTheOtherOneItsTail(t *testing.T) {
 		t.Errorf("logs = %q/%v, want them dropped once no host shows them", model.logsJob, model.logsLines)
 	}
 }
+
+// The chips were marked but nothing ever looked them up: a zone with no
+// handler is a click that lands nowhere.
+func TestClickingAJobChipSwitchesToIt(t *testing.T) {
+	tailed := make(chan string, 2)
+	model := logsModel(t, RunParams{
+		LogsLoader: func(req logsRequest) ([]string, error) { tailed <- req.Job; return nil, nil },
+	}, "a")
+	model.detailOpen = true
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "api"}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
+	renderAndWait(t, model, logsJobZone("api"))
+
+	zone := model.zones.Get(logsJobZone("api"))
+	next, cmd := updateCmd(model, click(zone.StartX, zone.StartY))
+
+	if next.logsJob != "api" {
+		t.Fatalf("logsJob = %q, want the chip that was clicked", next.logsJob)
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil, want the new job tailed")
+	}
+	cmd()
+	select {
+	case job := <-tailed:
+		if job != "api" {
+			t.Errorf("tailed %q, want api", job)
+		}
+	default:
+		t.Fatal("nothing was tailed")
+	}
+}
+
+func TestClickingTheChipAlreadyShownChangesNothing(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a")
+	model.detailOpen = true
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "api"}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
+	model.logsLines = []string{"kept"}
+	renderAndWait(t, model, logsJobZone("web"))
+
+	zone := model.zones.Get(logsJobZone("web"))
+	next, _ := updateCmd(model, click(zone.StartX, zone.StartY))
+
+	if len(next.logsLines) != 1 {
+		t.Errorf("lines = %v, want the tail on screen left alone", next.logsLines)
+	}
+}
+
+func TestClickingTheAddressInTheLogsViewOpensIt(t *testing.T) {
+	opened := make(chan string, 1)
+	model := logsModel(t, RunParams{
+		URLOpener: func(url string) error { opened <- url; return nil },
+	}, "a")
+	model.detailOpen = true
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+	model.addresses = map[string]map[string]domain.JobAddress{"a": {"web": {URL: "http://web.wtm"}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
+	renderAndWait(t, model, logsURLZone())
+
+	zone := model.zones.Get(logsURLZone())
+	_, cmd := updateCmd(model, click(zone.StartX, zone.StartY))
+	if cmd == nil {
+		t.Fatal("clicking the address in the logs view did nothing")
+	}
+	cmd()
+
+	select {
+	case got := <-opened:
+		if got != "http://web.wtm" {
+			t.Errorf("opened %q, want http://web.wtm", got)
+		}
+	default:
+		t.Fatal("nothing opened")
+	}
+}
+
+// A job that publishes no address has none to mark: a zone over empty text
+// would swallow clicks meant for the chips beside it.
+func TestAJobWithoutAnAddressMarksNoZoneInTheLogsView(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a")
+	model.detailOpen = true
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "pg"}}}
+	model.addresses = map[string]map[string]domain.JobAddress{"a": {"pg": {Ports: []int{5432}}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "pg"
+	renderAndWait(t, model, zoneDetail)
+
+	if !model.zones.Get(logsURLZone()).IsZero() {
+		t.Error("an address zone was marked for a job that publishes none")
+	}
+}

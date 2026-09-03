@@ -167,6 +167,34 @@ func (m Model) applyLogsTail(msg logsTailMsg) Model {
 	return m
 }
 
+// clickLogsAddress answers a click on the address the logs view shows.
+func (m Model) clickLogsAddress(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
+	if !m.logsOpen() || !m.inZone(logsURLZone(), msg) {
+		return m, nil, false
+	}
+	model, cmd := m.openJobURL(m.logsAddress().URL)
+	return model, cmd, true
+}
+
+// clickLogsJob answers a click on the selection line. It serves both hosts:
+// the line is the same component wherever it is drawn.
+func (m Model) clickLogsJob(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
+	if !m.logsOpen() {
+		return m, nil, false
+	}
+	for _, job := range m.logsJobs() {
+		if !m.inZone(logsJobZone(job.Name), msg) {
+			continue
+		}
+		if job.Name == m.logsJob {
+			return m, nil, true
+		}
+		m.logsJob, m.logsLines, m.logsErr = job.Name, nil, nil
+		return m, m.tailLogsCmd(), true
+	}
+	return m, nil, false
+}
+
 // logsJobs are the jobs the selection line offers: every declared one, in
 // run.toml's order. A stopped job keeps its place — History reads back what it
 // persisted, which is exactly what one looks for after a crash.
@@ -175,9 +203,15 @@ func (m Model) logsJobs() []domain.JobConfig { return m.runConfig.Jobs }
 // logsJobsLine heads the logs view: the jobs to switch between, and where the
 // current one answers.
 func (m Model) logsJobsLine(width int) string {
-	address := styles.DashboardURL.Render(m.logsAddress().URL)
-	budget := max(width-lipgloss.Width(address)-1, 0)
-	return spread(m.logsJobChips(budget), address, width)
+	// Cut to its own budget before it is styled and marked: spread clips the
+	// segments it is handed, and a cut through a zone marker breaks that zone
+	// silently — the same discipline the RUN rows follow.
+	address := truncate(m.logsAddress().URL, max(width/2, 0))
+	rendered := ""
+	if address != "" {
+		rendered = m.marks().Mark(logsURLZone(), styles.DashboardURL.Render(address))
+	}
+	return spread(m.logsJobChips(max(width-lipgloss.Width(rendered)-1, 0)), rendered, width)
 }
 
 // logsJobChips shows what fits around the current job, with a mark on each side

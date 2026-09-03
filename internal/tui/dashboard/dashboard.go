@@ -919,6 +919,14 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.openPR()
 	}
 
+	if model, cmd, hit := m.clickLogsAddress(msg); hit {
+		return model, cmd
+	}
+
+	if model, cmd, hit := m.clickLogsJob(msg); hit {
+		return model, cmd
+	}
+
 	if model, cmd, hit := m.clickRunRow(msg); hit {
 		return model, cmd
 	}
