@@ -48,6 +48,12 @@ var (
 	DashboardLabel = lipgloss.NewStyle().Foreground(ColorMuted)
 	DashboardValue = lipgloss.NewStyle()
 
+	// DashboardURL is the one full-intensity text of a rowed section: the palette
+	// keeps ColorPrimary for navigation, so a job's address is emphasised by
+	// everything around it withdrawing to ColorMuted, plus the underline that
+	// says "link".
+	DashboardURL = lipgloss.NewStyle().Underline(true)
+
 	// DashboardChip renders a non-state element of the vital strip, DashboardChipSep
 	// what separates them. The working-tree state has its own, coloured styles: it
 	// is the only coloured thing in the strip.

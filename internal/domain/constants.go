@@ -2306,15 +2306,13 @@ const (
 	// why.
 	DashboardMenuSyncAll = "Sync worktrees"
 	// DashboardMenuRun* drive the run module from a row. They are offered on the
-	// base row too: the main checkout runs jobs like any other worktree. Starting
-	// jobs and reading them both hand the terminal to the run view, which is the
-	// same view `wtm run up` and `wtm run logs` open. A profile and a job are two
-	// different requests, so they are two different entries: "start jobs" for
-	// what starts a profile named neither.
-	DashboardMenuRunUp    = "Start profile…"
-	DashboardMenuRunStart = "Start a job…"
+	// base row too: the main checkout runs jobs like any other worktree. A
+	// profile and a job are two different requests, so they are two different
+	// entries.
+	DashboardMenuRunUp    = "Start profile"
+	DashboardMenuRunStart = "Start a job"
 	DashboardMenuRunDown  = "Stop everything"
-	DashboardMenuRunStop  = "Stop a job…"
+	DashboardMenuRunStop  = "Stop a job"
 	DashboardMenuRunLogs  = "View logs"
 	// DashboardMenuSection* head the blocks of a context menu. A block is what
 	// tells "move this worktree" and "start its services" apart at a glance.
@@ -2401,6 +2399,8 @@ const (
 	// DashboardOpenPRLabel names a failed browser launch for the REVIEW
 	// section's PR line, in the same "✗ <label>: <err>" form.
 	DashboardOpenPRLabel = "open PR"
+	// DashboardOpenURLLabel names a failed browser launch for a RUN row.
+	DashboardOpenURLLabel = "open URL"
 
 	// KeyNew opens the new-worktree wizard, the keyboard equivalent of the list
 	// header's add button.
@@ -2455,12 +2455,11 @@ const (
 	DetailSectionActivity = "ACTIVITY"
 	DetailSectionLinks    = "LINKS"
 
-	// DetailJob* draw one line of the RUN section: a job that is up, its ports
-	// and the name it answers under, or a job that is simply down. A declared job
-	// that is not running is an answer, not an absence, so it keeps its line.
+	// DetailJob* draw one row of the RUN section. A declared job that is not
+	// running is an answer, not an absence, so it keeps its row — and says
+	// nothing beyond its glyph, which already reads as down.
 	DetailJobUpGlyph   = "●"
 	DetailJobDownGlyph = "○"
-	DetailJobStopped   = "stopped"
 	DetailJobPortFmt   = ":%d"
 	// DetailColumnGap separates two columns of a detail-section table. Two spaces
 	// rather than one: a single one reads as a word break inside a cell.
@@ -2468,10 +2467,10 @@ const (
 	// than a column of its own.
 	DetailColumnGap = "  "
 	DetailGlyphGap  = " "
-	// DetailRunNothing and DetailRunCountFmt head the section: what is up, or
+	// DetailRunNothing and DetailRunUpCountFmt head the section: what is up, or
 	// that nothing is.
-	DetailRunNothing  = "nothing running"
-	DetailRunCountFmt = "%d running"
+	DetailRunNothing    = "nothing running"
+	DetailRunUpCountFmt = "%d up"
 
 	DetailYouAreHere = "● you are here"
 	DetailMoreFmt    = "…  %d more"

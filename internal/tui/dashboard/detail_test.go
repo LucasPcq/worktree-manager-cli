@@ -11,6 +11,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/styles"
 )
 
 func detailModel(t *testing.T, status domain.WorktreeStatus) Model {
@@ -258,5 +259,69 @@ func TestAnUnchangedRunConfigReloadsNothing(t *testing.T) {
 
 	if cmd != nil {
 		t.Fatal("the same config read again is not news: the panel must be left alone")
+	}
+}
+
+func runRowsFixture() []domain.DetailRow {
+	return []domain.DetailRow{
+		{Key: "web", Up: true, URL: "http://web.wtm", Cells: []domain.DetailCell{
+			{Kind: domain.DetailCellGlyph, Text: domain.DetailJobUpGlyph},
+			{Kind: domain.DetailCellName, Text: "web"},
+			{Kind: domain.DetailCellAddress, Text: "http://web.wtm"},
+			{Kind: domain.DetailCellMeta, Text: "1h12m"},
+		}},
+		{Key: "worker", Cells: []domain.DetailCell{
+			{Kind: domain.DetailCellGlyph, Text: domain.DetailJobDownGlyph},
+			{Kind: domain.DetailCellName, Text: "worker"},
+		}},
+	}
+}
+
+func TestSectionRowLinesAlignsNamesAndFlushesMetaRight(t *testing.T) {
+	lines := sectionRowLines(sectionRowLinesParams{Rows: runRowsFixture(), Width: 60})
+
+	if len(lines) != 2 {
+		t.Fatalf("lines = %d, want one per row", len(lines))
+	}
+	plain := stripANSI(lines[0])
+	if lipgloss.Width(plain) != 60 {
+		t.Errorf("width = %d, want the row padded to 60", lipgloss.Width(plain))
+	}
+	if !strings.HasSuffix(plain, "1h12m") {
+		t.Errorf("row = %q, want the meta flush right", plain)
+	}
+	nameStart := strings.Index(plain, "web")
+	otherStart := strings.Index(stripANSI(lines[1]), "worker")
+	if nameStart != otherStart {
+		t.Errorf("name column starts at %d then %d, want one column", nameStart, otherStart)
+	}
+	if addr := strings.Index(plain, "http://web.wtm"); addr <= nameStart+len("worker") {
+		t.Errorf("address at %d, want it after the widest name", addr)
+	}
+}
+
+func TestSectionRowLinesGivesTheURLTheOnlyFullIntensityStyle(t *testing.T) {
+	line := sectionRowLines(sectionRowLinesParams{Rows: runRowsFixture()[:1], Width: 60})[0]
+
+	if !strings.Contains(line, styles.DashboardURL.Render("http://web.wtm")) {
+		t.Errorf("line = %q, want the url rendered through DashboardURL", line)
+	}
+	if !strings.Contains(line, styles.DashboardRowMeta.Render("web")) {
+		t.Errorf("line = %q, want the name muted", line)
+	}
+}
+
+func TestSectionRowLinesRendersANoteAsAPlainMutedLine(t *testing.T) {
+	rows := []domain.DetailRow{{Cells: []domain.DetailCell{
+		{Kind: domain.DetailCellNote, Text: "… 3 more"},
+	}}}
+
+	line := stripANSI(sectionRowLines(sectionRowLinesParams{Rows: rows, Width: 60})[0])
+
+	if !strings.Contains(line, "… 3 more") {
+		t.Errorf("line = %q, want the fold shown", line)
+	}
+	if strings.HasSuffix(line, "… 3 more") == false && strings.TrimSpace(line) != "… 3 more" {
+		t.Errorf("line = %q, want the fold left-aligned, not flush right", line)
 	}
 }

@@ -573,3 +573,17 @@ func hasMenuEntry(items []menuItem, kind menuEntryKind, label string) bool {
 	}
 	return false
 }
+
+func TestRunMenuLabelsCarryNoEllipsis(t *testing.T) {
+	for _, label := range []string{
+		domain.DashboardMenuRunUp,
+		domain.DashboardMenuRunStart,
+		domain.DashboardMenuRunDown,
+		domain.DashboardMenuRunStop,
+		domain.DashboardMenuRunLogs,
+	} {
+		if strings.Contains(label, "…") {
+			t.Errorf("label %q keeps an ellipsis", label)
+		}
+	}
+}

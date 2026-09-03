@@ -84,6 +84,11 @@ type DetailSectionsParams struct {
 	// not in Jobs is down, which is an answer and not an absence.
 	RunConfig domain.RunConfig
 	Jobs      []domain.JobInfo
+	// Addresses is where each declared job answers in this worktree, keyed by
+	// job name. It follows the poll like Jobs does, not the lazily loaded
+	// Detail: an address is a property of the worktree's offset, and the two
+	// must not be able to disagree.
+	Addresses map[string]domain.JobAddress
 	// DetailLoaded is false on the very first render for a branch, before its
 	// WorktreeDetail has ever landed (§8 state 3). CHANGES and ACTIVITY — the
 	// two sections that depend on Detail — render a single "loading…"
@@ -132,7 +137,7 @@ func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 		sections = append(sections, runSection(runSectionParams{
 			Jobs:      params.RunConfig.Jobs,
 			Infos:     params.Jobs,
-			Addresses: params.Detail.RunAddresses,
+			Addresses: params.Addresses,
 			WorkDir:   params.Status.Path,
 			Budget:    domain.DashboardDetailJobs,
 			Now:       params.Now,
@@ -500,7 +505,7 @@ func FitSections(params FitSectionsParams) []domain.DetailSection {
 func sectionsHeight(sections []domain.DetailSection) int {
 	total := 0
 	for _, section := range sections {
-		total += domain.DetailSectionChrome + len(section.Lines)
+		total += domain.DetailSectionChrome + len(section.Lines) + len(section.Rows)
 	}
 	return total
 }
@@ -526,7 +531,7 @@ type runSectionParams struct {
 	Now       time.Time
 }
 
-// runSection is one line per declared job, not per running one: a job that is
+// runSection is one row per declared job, not per running one: a job that is
 // down is an answer, and a section shrinking as things stop would read as data
 // loss. The count heads it, so what the section is worth is legible before its
 // body is.
@@ -535,11 +540,11 @@ func runSection(params runSectionParams) domain.DetailSection {
 	shown, folded := splitBudget(len(params.Jobs), params.Budget)
 
 	up := 0
-	rows := make([]runRow, 0, shown)
+	rows := make([]domain.DetailRow, 0, shown)
 	for index, job := range params.Jobs {
 		info, running := infos[job.Name]
 		// Counted over the declared jobs, not over the daemon's index: a job
-		// dropped from run.toml while still up has no line here, and a header
+		// dropped from run.toml while still up has no row here, and a header
 		// counting it would name something the body does not show.
 		if running {
 			up++
@@ -547,114 +552,81 @@ func runSection(params runSectionParams) domain.DetailSection {
 		if index >= shown {
 			continue
 		}
-		rows = append(rows, runRow{
-			Glyph: jobGlyph(running),
-			Name:  job.Name,
-			Ports: portList(params.Addresses[job.Name].Ports, running),
-			State: jobState(jobStateParams{Info: info, Up: running, Now: params.Now}),
-			URL:   jobURLCell(params.Addresses[job.Name].URL, running),
-		})
+		rows = append(rows, jobRow(jobRowParams{
+			Job:     job,
+			Info:    info,
+			Up:      running,
+			Address: params.Addresses[job.Name],
+			Now:     params.Now,
+		}))
 	}
-
-	lines := runLines(rows)
 	if folded > 0 {
-		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailMoreFmt, folded))
+		rows = append(rows, domain.DetailRow{Cells: []domain.DetailCell{{
+			Kind: domain.DetailCellNote, Text: fmt.Sprintf(domain.DetailMoreFmt, folded),
+		}}})
 	}
 
 	return domain.DetailSection{
 		Key:        domain.DetailSectionRun,
 		Title:      domain.DetailSectionRun,
 		TitleRight: runCount(up),
-		Lines:      lines,
+		Rows:       rows,
 	}
 }
 
-// runRow is one job before its columns are sized: the section is a table, and a
-// table is only readable once every cell knows how wide its column ended up.
-type runRow struct {
-	Glyph string
-	Name  string
-	Ports string
-	State string
-	URL   string
+type jobRowParams struct {
+	Job     domain.JobConfig
+	Info    domain.JobInfo
+	Up      bool
+	Address domain.JobAddress
+	Now     time.Time
 }
 
-// runLines sizes each column on its own longest cell, so a name, a port list
-// and an uptime read down the column rather than drifting with the row above.
-// The url closes the line and is never padded; the line is trimmed, so a job
-// with nothing to say ends where its words do.
-func runLines(rows []runRow) []string {
-	name, ports, state := 0, 0, 0
-	for _, row := range rows {
-		// Counted in runes, like the pad that consumes them: a name measured in
-		// bytes over-pads every non-ASCII cell against its ASCII neighbours.
-		name = max(name, len([]rune(row.Name)))
-		ports = max(ports, len([]rune(row.Ports)))
-		state = max(state, len([]rune(row.State)))
+// jobRow is the one place a job's row is shaped, shared by the detail panel and
+// the run board. A down job says nothing beyond its glyph and its name: its
+// address is where it would answer, not where it does, and an uptime on it
+// would date a run that is over.
+func jobRow(params jobRowParams) domain.DetailRow {
+	glyph := domain.DetailJobDownGlyph
+	if params.Up {
+		glyph = domain.DetailJobUpGlyph
+	}
+	cells := []domain.DetailCell{
+		{Kind: domain.DetailCellGlyph, Text: glyph},
+		{Kind: domain.DetailCellName, Text: params.Job.Name},
+	}
+	if !params.Up {
+		return domain.DetailRow{Key: params.Job.Name, Cells: cells}
 	}
 
-	lines := make([]string, 0, len(rows))
-	for _, row := range rows {
-		line := domain.DetailListIndent + row.Glyph + domain.DetailGlyphGap + strings.Join([]string{
-			pad(row.Name, name),
-			pad(row.Ports, ports),
-			pad(row.State, state),
-			row.URL,
-		}, domain.DetailColumnGap)
-		lines = append(lines, strings.TrimRight(line, " "))
+	if address := jobAddressText(params.Address); address != "" {
+		cells = append(cells, domain.DetailCell{Kind: domain.DetailCellAddress, Text: address})
 	}
-	return lines
+	if uptime := JobUptime(JobUptimeParams{Job: params.Info, Now: params.Now}); uptime != "" {
+		cells = append(cells, domain.DetailCell{Kind: domain.DetailCellMeta, Text: uptime})
+	}
+	return domain.DetailRow{Key: params.Job.Name, Cells: cells, Up: true, URL: params.Address.URL}
+}
+
+// jobAddressText is the url when the job publishes one, its ports otherwise —
+// never both: a url already carries the port, and printing the two is the same
+// fact twice, which is what made the section read as columns of noise.
+func jobAddressText(address domain.JobAddress) string {
+	if address.URL != "" {
+		return address.URL
+	}
+	names := make([]string, 0, len(address.Ports))
+	for _, port := range address.Ports {
+		names = append(names, fmt.Sprintf(domain.DetailJobPortFmt, port))
+	}
+	return strings.Join(names, domain.DetailListSep)
 }
 
 func runCount(up int) string {
 	if up == 0 {
 		return domain.DetailRunNothing
 	}
-	return fmt.Sprintf(domain.DetailRunCountFmt, up)
-}
-
-func jobGlyph(up bool) string {
-	if up {
-		return domain.DetailJobUpGlyph
-	}
-	return domain.DetailJobDownGlyph
-}
-
-type jobStateParams struct {
-	Info domain.JobInfo
-	Up   bool
-	Now  time.Time
-}
-
-// A job that is up says how long it has been, which is the only thing about it
-// that changes; one that is down says so, since an uptime on a stopped job
-// would date a run that is over.
-func jobState(params jobStateParams) string {
-	if !params.Up {
-		return domain.DetailJobStopped
-	}
-	return JobUptime(JobUptimeParams{Job: params.Info, Now: params.Now})
-}
-
-// A stopped job shows neither its ports nor its url: they are where it would
-// answer, not where it does, and printing them would read as a service that is
-// up.
-func portList(ports []int, up bool) string {
-	if !up {
-		return ""
-	}
-	names := make([]string, 0, len(ports))
-	for _, port := range ports {
-		names = append(names, fmt.Sprintf(domain.DetailJobPortFmt, port))
-	}
-	return strings.Join(names, domain.DetailListSep)
-}
-
-func jobURLCell(url string, up bool) string {
-	if !up {
-		return ""
-	}
-	return url
+	return fmt.Sprintf(domain.DetailRunUpCountFmt, up)
 }
 
 // upJobsByName keeps only what this worktree has up: the daemon indexes every

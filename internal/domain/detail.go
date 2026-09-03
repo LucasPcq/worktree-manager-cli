@@ -95,6 +95,33 @@ const (
 	ChipKindNeutral  ChipKind = "neutral"
 )
 
+type DetailCellKind string
+
+const (
+	DetailCellGlyph   DetailCellKind = "glyph"
+	DetailCellName    DetailCellKind = "name"
+	DetailCellAddress DetailCellKind = "address"
+	DetailCellMeta    DetailCellKind = "meta"
+	// DetailCellNote is a standalone muted body line inside a rowed section —
+	// the "… N more" fold, which is not a job and has no columns to align on.
+	DetailCellNote DetailCellKind = "note"
+)
+
+type DetailCell struct {
+	Kind DetailCellKind
+	Text string
+}
+
+// DetailRow is one line of a rowed section before its columns are sized: only
+// the renderer can measure a cell once it is styled. Key names what the row
+// designates, URL what clicking it opens.
+type DetailRow struct {
+	Key   string
+	Cells []DetailCell
+	Up    bool
+	URL   string
+}
+
 // DetailSection is one block of the detail panel, already reduced to its plain
 // text lines. Rendering decides nothing: it styles and it stacks.
 type DetailSection struct {
@@ -105,6 +132,10 @@ type DetailSection struct {
 	// and dropped whole, never truncated, when the panel is too narrow for it.
 	TitleRight string
 	Lines      []string
+	// Rows is read instead of Lines when it is non-nil: a section whose body is
+	// a table cannot arrive pre-padded, since rules/ cannot measure a styled
+	// cell.
+	Rows []DetailRow
 }
 
 // DetailSectionDropOrder is the order sections give up their place when the

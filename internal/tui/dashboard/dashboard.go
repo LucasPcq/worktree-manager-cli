@@ -42,6 +42,9 @@ type RunParams struct {
 	// reads without, and known reports whether the index could be read at all.
 	// Injected like PRLoader, so a test never dials a real socket.
 	JobsLoader func(wake bool) (jobs []domain.JobInfo, known bool)
+	// URLOpener hands a job's address to the desktop's own opener. Injected like
+	// PROpener so a click on a RUN row is asserted without launching a browser.
+	URLOpener func(url string) error
 }
 
 // OutputLineMsg appends one line to the bottom output panel. Every phase of a
@@ -52,6 +55,10 @@ type OutputLineMsg struct{ Text string }
 // on success — opening the tab is its own feedback, so nothing is posted to
 // the output panel unless the launch itself failed.
 type openPRMsg struct{ err error }
+
+// openURLMsg is openPRMsg for a job's address: the opened tab is its own
+// feedback, so only a failed launch reaches the output panel.
+type openURLMsg struct{ err error }
 
 type worktreesMsg struct {
 	statuses  []domain.WorktreeStatus
@@ -379,6 +386,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.appendOutput(OutputLineMsg{
 			Text: fmt.Sprintf(domain.DashboardFailedFmt, domain.DashboardOpenPRLabel, msg.err),
+		}), nil
+
+	case openURLMsg:
+		if msg.err == nil {
+			return m, nil
+		}
+		return m.appendOutput(OutputLineMsg{
+			Text: fmt.Sprintf(domain.DashboardFailedFmt, domain.DashboardOpenURLLabel, msg.err),
 		}), nil
 
 	case flowMsg:
@@ -779,6 +794,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	if m.inZone(zoneDetailPR, msg) {
 		return m.openPR()
+	}
+
+	if model, cmd, hit := m.clickRunRow(msg); hit {
+		return model, cmd
 	}
 
 	if model, hit := m.clickRow(msg); hit {

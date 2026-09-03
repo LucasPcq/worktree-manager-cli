@@ -68,6 +68,7 @@ func (m Model) detailBody(layout domain.DashboardLayout) []string {
 		PRUnavailable: m.prUnavailableReason(),
 		RunConfig:     m.runConfig,
 		Jobs:          m.jobs,
+		Addresses:     detail.RunAddresses,
 		Height:        budget,
 	})
 	return m.appendSections(lines, sections, width, stale, pr)
@@ -178,6 +179,7 @@ type detailSectionsInput struct {
 	// worktree.
 	RunConfig domain.RunConfig
 	Jobs      []domain.JobInfo
+	Addresses map[string]domain.JobAddress
 	Height    int
 }
 
@@ -192,6 +194,7 @@ func (m Model) detailSections(input detailSectionsInput) []domain.DetailSection 
 		PRUnavailable: input.PRUnavailable,
 		RunConfig:     input.RunConfig,
 		Jobs:          input.Jobs,
+		Addresses:     input.Addresses,
 		Parent:        input.Parent,
 		Height:        input.Height,
 		Now:           time.Now(),
@@ -206,6 +209,10 @@ func (m Model) detailSections(input detailSectionsInput) []domain.DetailSection 
 func (m Model) appendSections(lines []string, sections []domain.DetailSection, width int, stale bool, pr *domain.PRInfo) []string {
 	for _, section := range sections {
 		lines = append(lines, "", sectionTitleLine(stale, section, width), "")
+		if section.Rows != nil {
+			lines = append(lines, m.runRowLines(section, width, stale)...)
+			continue
+		}
 		for index, line := range section.Lines {
 			rendered := styleText(stale, styles.DashboardValue, truncate(line, width))
 			if pr != nil && section.Key == domain.DetailSectionReview && index == 0 {
@@ -215,6 +222,94 @@ func (m Model) appendSections(lines []string, sections []domain.DetailSection, w
 		}
 	}
 	return lines
+}
+
+// Only an up row takes a zone: a stopped job answers nowhere, the same rule
+// REVIEW's first line follows when there is no PR to open.
+func (m Model) runRowLines(section domain.DetailSection, width int, stale bool) []string {
+	lines := sectionRowLines(sectionRowLinesParams{Rows: section.Rows, Width: width, Stale: stale})
+	for index, row := range section.Rows {
+		if index >= len(lines) || !row.Up {
+			continue
+		}
+		lines[index] = m.marks().Mark(runRowZone(row.Key), lines[index])
+	}
+	return lines
+}
+
+type sectionRowLinesParams struct {
+	Rows  []domain.DetailRow
+	Width int
+	Stale bool
+}
+
+// sectionRowLines sizes the name column on its widest cell and lays the meta
+// flush right, the same way a panel's title row does: a table only reads down
+// its columns once every cell knows how wide its column ended up.
+func sectionRowLines(params sectionRowLinesParams) []string {
+	nameWidth := 0
+	for _, row := range params.Rows {
+		nameWidth = max(nameWidth, len([]rune(cellText(row, domain.DetailCellName))))
+	}
+
+	lines := make([]string, 0, len(params.Rows))
+	for _, row := range params.Rows {
+		if note := cellText(row, domain.DetailCellNote); note != "" {
+			indent := domain.DetailListIndent
+			lines = append(lines, styleText(params.Stale, styles.DashboardRowMeta,
+				indent+truncate(note, max(params.Width-len(indent), 0))))
+			continue
+		}
+		lines = append(lines, spread(rowLeft(rowLeftParams{
+			Row: row, NameWidth: nameWidth, Stale: params.Stale,
+		}), rowMetaCell(row, params.Stale), params.Width))
+	}
+	return lines
+}
+
+type rowLeftParams struct {
+	Row       domain.DetailRow
+	NameWidth int
+	Stale     bool
+}
+
+func rowLeft(params rowLeftParams) string {
+	glyphStyle := styles.DashboardRowMeta
+	if params.Row.Up {
+		glyphStyle = styles.Success
+	}
+	left := domain.DetailListIndent +
+		styleText(params.Stale, glyphStyle, cellText(params.Row, domain.DetailCellGlyph)) +
+		domain.DetailGlyphGap +
+		styleText(params.Stale, styles.DashboardRowMeta,
+			pad(cellText(params.Row, domain.DetailCellName), params.NameWidth))
+
+	address := cellText(params.Row, domain.DetailCellAddress)
+	if address == "" {
+		return left
+	}
+	style := styles.DashboardRowMeta
+	if params.Row.URL != "" {
+		style = styles.DashboardURL
+	}
+	return left + domain.DetailColumnGap + styleText(params.Stale, style, address)
+}
+
+func rowMetaCell(row domain.DetailRow, stale bool) string {
+	meta := cellText(row, domain.DetailCellMeta)
+	if meta == "" {
+		return ""
+	}
+	return styleText(stale, styles.DashboardRowMeta, meta)
+}
+
+func cellText(row domain.DetailRow, kind domain.DetailCellKind) string {
+	for _, cell := range row.Cells {
+		if cell.Kind == kind {
+			return cell.Text
+		}
+	}
+	return ""
 }
 
 // Off the UI goroutine: PROpener shells out to gh, and calling it inside Update

@@ -355,3 +355,64 @@ func TestNoPRZoneWhenThereIsNoPR(t *testing.T) {
 		t.Error("no PR line was drawn — no zone should exist for it")
 	}
 }
+
+// runningDetailModel is a dashboard whose selected worktree has jobs up, with
+// the detail panel showing: what a click on a RUN row is asserted against.
+func runningDetailModel(t *testing.T, params RunParams, addresses map[string]domain.JobAddress, jobs ...domain.JobConfig) Model {
+	t.Helper()
+	model := New(params)
+	t.Cleanup(model.Close)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model = update(model, worktreesMsg{statuses: statuses("a"), parents: map[string]string{}})
+	model.runConfig = domain.RunConfig{Jobs: jobs}
+	infos := make([]domain.JobInfo, 0, len(jobs))
+	for _, job := range jobs {
+		infos = append(infos, domain.JobInfo{Name: job.Name, Status: domain.JobStatusRunning, WorkDir: "/tmp/a"})
+	}
+	model.jobs = infos
+	model.details = map[string]domain.WorktreeDetail{"a": {Branch: "a", RunAddresses: addresses}}
+	return model
+}
+
+func TestClickingAnUpJobRowOpensItsURL(t *testing.T) {
+	opened := make(chan string, 1)
+	model := runningDetailModel(t,
+		RunParams{URLOpener: func(url string) error { opened <- url; return nil }},
+		map[string]domain.JobAddress{"web": {URL: "http://web.wtm"}},
+		domain.JobConfig{Name: "web"},
+	)
+	renderAndWait(t, model, runRowZone("web"))
+
+	zone := model.zones.Get(runRowZone("web"))
+	_, cmd := updateCmd(model, click(zone.StartX+3, zone.StartY))
+	if cmd == nil {
+		t.Fatal("cmd = nil, want the url opened off the UI goroutine")
+	}
+	cmd()
+
+	select {
+	case got := <-opened:
+		if got != "http://web.wtm" {
+			t.Errorf("opened %q, want http://web.wtm", got)
+		}
+	default:
+		t.Fatal("nothing opened")
+	}
+}
+
+func TestADownJobRowTakesNoZone(t *testing.T) {
+	model := New(RunParams{})
+	t.Cleanup(model.Close)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model = update(model, worktreesMsg{statuses: statuses("a"), parents: map[string]string{}})
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "worker"}}}
+	model.details = map[string]domain.WorktreeDetail{"a": {Branch: "a", RunAddresses: map[string]domain.JobAddress{
+		"worker": {URL: "http://worker.wtm"},
+	}}}
+
+	renderAndWait(t, model, zoneDetail)
+
+	if !model.zones.Get(runRowZone("worker")).IsZero() {
+		t.Error("a stopped job's row is clickable, want no zone: it answers nowhere")
+	}
+}

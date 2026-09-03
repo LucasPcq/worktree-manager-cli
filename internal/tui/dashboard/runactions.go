@@ -10,6 +10,7 @@ import (
 	startflow "github.com/LucasPcq/wtm/internal/flow/run/start"
 	stopflow "github.com/LucasPcq/wtm/internal/flow/run/stop"
 	upflow "github.com/LucasPcq/wtm/internal/flow/run/up"
+	"github.com/LucasPcq/wtm/internal/service/integration"
 	"github.com/LucasPcq/wtm/internal/service/runconfig"
 )
 
@@ -198,4 +199,43 @@ func (m Model) startRunLogs(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 		_, err := logsflow.Run(params)
 		return opDoneMsg{id: id, err: err}
 	})
+}
+
+// clickRunRow answers a click on a RUN row: the job's address when it publishes
+// one. A job that publishes none leads to its logs instead.
+func (m Model) clickRunRow(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
+	for _, job := range m.runConfig.Jobs {
+		if !m.inZone(runRowZone(job.Name), msg) {
+			continue
+		}
+		url := m.addressFor(job.Name).URL
+		if url == "" {
+			return m, nil, true
+		}
+		model, cmd := m.openJobURL(url)
+		return model, cmd, true
+	}
+	return m, nil, false
+}
+
+// addressFor is where the selected worktree's job answers.
+func (m Model) addressFor(job string) domain.JobAddress {
+	return m.details[m.selectedBranch()].RunAddresses[job]
+}
+
+// Off the UI goroutine: the opener hands the url to the desktop, and calling it
+// inside Update would freeze the program.
+func (m Model) openJobURL(url string) (Model, tea.Cmd) {
+	opener := m.urlOpener()
+	if opener == nil {
+		return m, nil
+	}
+	return m, func() tea.Msg { return openURLMsg{err: opener(url)} }
+}
+
+func (m Model) urlOpener() func(string) error {
+	if m.params.URLOpener != nil {
+		return m.params.URLOpener
+	}
+	return integration.OpenURL
 }
