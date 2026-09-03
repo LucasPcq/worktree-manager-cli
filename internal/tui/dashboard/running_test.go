@@ -28,7 +28,7 @@ func runningModel(t *testing.T, running ...string) Model {
 		addresses[branch] = map[string]domain.JobAddress{"web": {URL: "http://web." + branch + ".wtm"}}
 	}
 	model.addresses = addresses
-	return model
+	return model.withBoard()
 }
 
 func TestRunningTabListsOneBlockPerWorktreeThatRuns(t *testing.T) {
@@ -154,6 +154,7 @@ func TestRunningTabAlignsAddressesAcrossBlocks(t *testing.T) {
 		Name: "database", Status: domain.JobStatusRunning, WorkDir: "/tmp/b", StartedAt: time.Now(),
 	})
 	model.addresses["b"]["database"] = domain.JobAddress{Ports: []int{5432}}
+	model = model.withBoard()
 
 	lines := model.runningBody(model.layout())
 	columns := make([]int, 0, 3)
@@ -176,5 +177,23 @@ func TestRunningTabAlignsAddressesAcrossBlocks(t *testing.T) {
 			t.Errorf("addresses start at %v, want one column across every block", columns)
 			break
 		}
+	}
+}
+
+// The board was rebuilt by countText, runningBody, selected, rowCount, clickRow
+// and selectedRunning — six times a frame, each with its own time.Now().
+func TestTheBoardIsBuiltByThePollNotByTheRenderer(t *testing.T) {
+	model := runningModel(t, "a")
+
+	before := model.board
+	_ = model.runningBody(model.layout())
+	_, _ = model.selected()
+	_ = model.countText()
+
+	if len(before) == 0 {
+		t.Fatal("board is empty, want it built when the jobs landed")
+	}
+	if &model.board[0] != &before[0] {
+		t.Error("the renderer rebuilt the board, want it read off the model")
 	}
 }

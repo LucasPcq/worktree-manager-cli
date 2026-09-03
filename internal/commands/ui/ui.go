@@ -15,7 +15,6 @@ import (
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/integration"
 	"github.com/LucasPcq/wtm/internal/service/process"
-	"github.com/LucasPcq/wtm/internal/service/runconfig"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/dashboard"
 )
@@ -89,16 +88,12 @@ func buildRunParams(dir string, result shared.ConfigResult) dashboard.RunParams 
 		// The public port is dialed here rather than once at startup: the loader
 		// already runs off the UI goroutine, and a daemon started after the
 		// dashboard was opened must not leave every address unpublished.
-		AddressLoader: func(branches []string) map[string]map[string]domain.JobAddress {
-			cfg, err := runconfig.Load(result.StateDir)
-			if err != nil {
-				return nil
-			}
+		AddressLoader: func(request dashboard.AddressRequest) map[string]map[string]domain.JobAddress {
 			return worktree.RunAddressesFor(worktree.RunAddressesForParams{
 				ProjectDir: result.ProjectDir,
 				StateDir:   result.StateDir,
-				RunConfig:  cfg,
-				Branches:   branches,
+				RunConfig:  request.Config,
+				Branches:   request.Branches,
 				ProxyPort:  process.PublicProxyPort(rules.ProxyPort(result.Config.Global)),
 			})
 		},

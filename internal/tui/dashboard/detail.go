@@ -267,9 +267,13 @@ func sectionRowLines(params sectionRowLinesParams) []string {
 				indent+truncate(note, max(params.Width-len(indent), 0))))
 			continue
 		}
+		meta := rowMetaCell(row, params.Stale)
 		lines = append(lines, spread(rowLeft(rowLeftParams{
-			Row: row, NameWidth: nameWidth, Stale: params.Stale,
-		}), rowMetaCell(row, params.Stale), params.Width))
+			Row:       row,
+			NameWidth: nameWidth,
+			Stale:     params.Stale,
+			Budget:    max(params.Width-lipgloss.Width(meta)-1, 0),
+		}), meta, params.Width))
 	}
 	return lines
 }
@@ -278,6 +282,10 @@ type rowLeftParams struct {
 	Row       domain.DetailRow
 	NameWidth int
 	Stale     bool
+	// Budget is what the left side may occupy. The address is cut to it here,
+	// with an ellipsis: spread would clip it silently, and a clipped url reads
+	// as a whole one — on a row whose click opens the real address.
+	Budget int
 }
 
 func rowLeft(params rowLeftParams) string {
@@ -285,21 +293,22 @@ func rowLeft(params rowLeftParams) string {
 	if params.Row.Up {
 		glyphStyle = styles.Success
 	}
-	left := domain.DetailListIndent +
+	head := domain.DetailListIndent +
 		styleText(params.Stale, glyphStyle, cellText(params.Row, domain.DetailCellGlyph)) +
 		domain.DetailGlyphGap +
 		styleText(params.Stale, styles.DashboardRowMeta,
 			pad(cellText(params.Row, domain.DetailCellName), params.NameWidth))
 
-	address := cellText(params.Row, domain.DetailCellAddress)
+	address := truncate(cellText(params.Row, domain.DetailCellAddress),
+		max(params.Budget-lipgloss.Width(head)-len(domain.DetailColumnGap), 0))
 	if address == "" {
-		return left
+		return head
 	}
 	style := styles.DashboardRowMeta
 	if params.Row.URL != "" {
 		style = styles.DashboardURL
 	}
-	return left + domain.DetailColumnGap + styleText(params.Stale, style, address)
+	return head + domain.DetailColumnGap + styleText(params.Stale, style, address)
 }
 
 func rowMetaCell(row domain.DetailRow, stale bool) string {

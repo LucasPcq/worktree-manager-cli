@@ -325,3 +325,24 @@ func TestSectionRowLinesRendersANoteAsAPlainMutedLine(t *testing.T) {
 		t.Errorf("line = %q, want the fold left-aligned, not flush right", line)
 	}
 }
+
+func TestSectionRowLinesMarksATruncatedAddressAsTruncated(t *testing.T) {
+	rows := []domain.DetailRow{{Key: "web", Up: true, URL: "http://a-very-long-hostname.example.test", Cells: []domain.DetailCell{
+		{Kind: domain.DetailCellGlyph, Text: domain.DetailJobUpGlyph},
+		{Kind: domain.DetailCellName, Text: "web"},
+		{Kind: domain.DetailCellAddress, Text: "http://a-very-long-hostname.example.test"},
+		{Kind: domain.DetailCellMeta, Text: "1h12m"},
+	}}}
+
+	line := stripANSI(sectionRowLines(sectionRowLinesParams{Rows: rows, Width: 40})[0])
+
+	if lipgloss.Width(line) != 40 {
+		t.Fatalf("width = %d, want 40", lipgloss.Width(line))
+	}
+	if !strings.Contains(line, "…") {
+		t.Errorf("line = %q, want the cut marked: a clipped url reads as a whole one, and the row opens the real address", line)
+	}
+	if strings.Contains(line, "http://a-very-long-hostname.example.test") {
+		t.Errorf("line = %q, want the address clipped to fit", line)
+	}
+}

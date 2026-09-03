@@ -651,8 +651,8 @@ func TestJobsPollOnlyAsksAddressesForWorktreesThatHaveSomethingUp(t *testing.T) 
 				{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"},
 			}, true
 		},
-		AddressLoader: func(branches []string) map[string]map[string]domain.JobAddress {
-			asked <- branches
+		AddressLoader: func(request AddressRequest) map[string]map[string]domain.JobAddress {
+			asked <- request.Branches
 			return map[string]map[string]domain.JobAddress{"a": {"web": {URL: "http://web.wtm"}}}
 		},
 	})
@@ -660,7 +660,11 @@ func TestJobsPollOnlyAsksAddressesForWorktreesThatHaveSomethingUp(t *testing.T) 
 	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
 	model = update(model, worktreesMsg{statuses: statuses("a", "idle"), parents: map[string]string{}})
 
-	msg := model.loadJobsCmd(false)()
+	jobs, _ := model.loadJobsCmd(false)().(jobsMsg)
+	jobs.config = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+	model, _ = model.applyJobs(jobs)
+
+	msg := model.resolveAddressesCmd()()
 
 	select {
 	case branches := <-asked:
@@ -671,12 +675,12 @@ func TestJobsPollOnlyAsksAddressesForWorktreesThatHaveSomethingUp(t *testing.T) 
 		t.Fatal("addresses were never asked for")
 	}
 
-	jobs, ok := msg.(jobsMsg)
+	got, ok := msg.(addressesMsg)
 	if !ok {
-		t.Fatalf("msg = %T, want jobsMsg", msg)
+		t.Fatalf("msg = %T, want addressesMsg", msg)
 	}
-	if jobs.addresses["a"]["web"].URL != "http://web.wtm" {
-		t.Errorf("addresses = %v, want them carried by the poll", jobs.addresses)
+	if got.addresses["a"]["web"].URL != "http://web.wtm" {
+		t.Errorf("addresses = %v, want them carried by the poll", got.addresses)
 	}
 }
 
@@ -684,7 +688,7 @@ func TestJobsPollAsksNoAddressWhenNothingIsUp(t *testing.T) {
 	called := false
 	model := New(RunParams{
 		JobsLoader: func(bool) ([]domain.JobInfo, bool) { return nil, true },
-		AddressLoader: func([]string) map[string]map[string]domain.JobAddress {
+		AddressLoader: func(AddressRequest) map[string]map[string]domain.JobAddress {
 			called = true
 			return nil
 		},
@@ -693,9 +697,50 @@ func TestJobsPollAsksNoAddressWhenNothingIsUp(t *testing.T) {
 	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
 	model = update(model, worktreesMsg{statuses: statuses("a"), parents: map[string]string{}})
 
-	model.loadJobsCmd(false)()
+	if cmd := model.resolveAddressesCmd(); cmd != nil {
+		cmd()
+	}
 
 	if called {
 		t.Error("addresses were asked for with nothing up, want the ordinal left unallocated")
+	}
+}
+
+// Init loads worktrees and jobs in parallel, so the jobs command is built while
+// m.statuses is still empty. Capturing the statuses there asked for no address
+// at all, and the RUN section showed no url until the next poll.
+func TestAddressesLandEvenWhenTheJobsLoadRacesTheWorktrees(t *testing.T) {
+	model := New(RunParams{
+		JobsLoader: func(bool) ([]domain.JobInfo, bool) {
+			return []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"}}, true
+		},
+		AddressLoader: func(request AddressRequest) map[string]map[string]domain.JobAddress {
+			if len(request.Branches) != 1 || request.Branches[0] != "a" {
+				t.Errorf("branches = %v, want the worktree that has a job up", request.Branches)
+			}
+			return map[string]map[string]domain.JobAddress{"a": {"web": {URL: "http://web.wtm"}}}
+		},
+	})
+	t.Cleanup(model.Close)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+
+	jobs, ok := model.loadJobsCmd(true)().(jobsMsg)
+	if !ok {
+		t.Fatal("want a jobsMsg")
+	}
+	jobs.config = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+	model, _ = model.applyJobs(jobs)
+	model = update(model, worktreesMsg{statuses: statuses("a"), parents: map[string]string{}})
+
+	cmd := model.resolveAddressesCmd()
+	if cmd == nil {
+		t.Fatal("cmd = nil, want the addresses asked for once the worktrees are known")
+	}
+	got, ok := cmd().(addressesMsg)
+	if !ok {
+		t.Fatalf("msg = %T, want addressesMsg", cmd())
+	}
+	if got.addresses["a"]["web"].URL != "http://web.wtm" {
+		t.Errorf("addresses = %v, want them resolved on the first load", got.addresses)
 	}
 }

@@ -1,6 +1,9 @@
 package dashboard
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -399,5 +402,26 @@ func TestAHeldWorktreeKeepsAnInertEntryThatSaysWhy(t *testing.T) {
 	model.View()
 	if !model.zones.Get(menuZone(0)).IsZero() {
 		t.Error("an inert entry must not be clickable at all")
+	}
+}
+
+// styles/ owns every visual attribute. A .Width()/.MaxWidth() chained in tui/ is
+// a dimension and stays allowed; a .Bold()/.Foreground()/.Underline() is a
+// choice and belongs in a named style.
+func TestNoStyleAttributeIsChosenOutsideStyles(t *testing.T) {
+	forbidden := regexp.MustCompile(`styles\.[A-Za-z]+\.(Bold|Foreground|Background|Underline|Italic|Faint)\(`)
+
+	paths, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loc := forbidden.FindIndex(body); loc != nil {
+			t.Errorf("%s chooses a style attribute: %q", path, body[loc[0]:loc[1]])
+		}
 	}
 }

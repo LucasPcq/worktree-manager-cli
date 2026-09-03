@@ -2,12 +2,10 @@ package dashboard
 
 import (
 	"fmt"
-	"strings"
-	"time"
-
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
+	"strings"
 )
 
 func (m Model) renderRunning(layout domain.DashboardLayout) string {
@@ -21,15 +19,7 @@ func (m Model) renderRunning(layout domain.DashboardLayout) string {
 
 // runningBlocks is what the daemon holds up, read off the poll: jobs and
 // addresses, never a lazily loaded detail.
-func (m Model) runningBlocks() []rules.RunWorktreeBlock {
-	return rules.RunBoard(rules.RunBoardParams{
-		Config:    m.runConfig,
-		Jobs:      m.jobs,
-		Addresses: m.addresses,
-		Statuses:  m.statuses,
-		Now:       time.Now(),
-	})
-}
+func (m Model) runningBlocks() []rules.RunWorktreeBlock { return m.board }
 
 func (m Model) selectedRunning() (rules.RunWorktreeBlock, bool) {
 	blocks := m.runningBlocks()
@@ -73,7 +63,7 @@ func (m Model) runningBody(layout domain.DashboardLayout) []string {
 			lines = append(lines, "")
 		}
 		header := spread(
-			m.runningBranchCell(index, block.Branch),
+			m.runningBranchCell(servicesBranchParams{Index: index, Branch: block.Branch}),
 			styles.DashboardRowMeta.Render(fmt.Sprintf(domain.DashboardRunningUpFmt, block.Up)),
 			width,
 		)
@@ -85,11 +75,16 @@ func (m Model) runningBody(layout domain.DashboardLayout) []string {
 	return lines
 }
 
+type servicesBranchParams struct {
+	Index  int
+	Branch string
+}
+
 // The block under the cursor carries the accent bar and the tint a list row
 // does, so the two tabs read as one dashboard.
-func (m Model) runningBranchCell(index int, branch string) string {
-	if index == m.runningCursor {
-		return styles.DashboardRowBar.Render(rowBar+" ") + styles.DashboardRowSelected.Bold(true).Render(branch)
+func (m Model) runningBranchCell(params servicesBranchParams) string {
+	if params.Index == m.runningCursor {
+		return styles.DashboardRowBar.Render(rowBar+" ") + styles.DashboardServicesBranch.Render(params.Branch)
 	}
-	return strings.Repeat(" ", rowBarWidth) + styles.DashboardRowName.Render(branch)
+	return strings.Repeat(" ", rowBarWidth) + styles.DashboardRowName.Render(params.Branch)
 }

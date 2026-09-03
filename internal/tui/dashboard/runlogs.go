@@ -129,24 +129,29 @@ func (m Model) logsBody(layout domain.DashboardLayout) []string {
 		"",
 	}
 	hint := styles.DashboardRowMeta.Render(truncate(domain.DashboardLogsHint, width))
-	budget := max(panelBodyHeight(layout.Detail)-len(head)-2, 0)
+	budget := max(panelBodyHeight(layout.Detail)-len(head)-domain.DashboardLogsChrome, 0)
 
-	return append(append(head, m.logsTailLines(budget, width)...), "", hint)
+	return append(append(head, m.logsTailLines(logsTailParams{Budget: budget, Width: width})...), "", hint)
 }
 
-func (m Model) logsTailLines(budget, width int) []string {
+type logsTailParams struct {
+	Budget int
+	Width  int
+}
+
+func (m Model) logsTailLines(params logsTailParams) []string {
 	if m.logsErr != nil {
 		return []string{styles.DashboardBlockers.Render(truncate(
-			fmt.Sprintf(domain.DashboardUnavailableFmt, m.logsErr), width))}
+			fmt.Sprintf(domain.DashboardUnavailableFmt, m.logsErr), params.Width))}
 	}
 	if len(m.logsLines) == 0 {
-		return []string{styles.DashboardEmpty.Render(truncate(domain.DashboardLogsEmpty, width))}
+		return []string{styles.DashboardEmpty.Render(truncate(domain.DashboardLogsEmpty, params.Width))}
 	}
 
-	kept := m.logsLines[max(len(m.logsLines)-budget, 0):]
+	kept := m.logsLines[max(len(m.logsLines)-params.Budget, 0):]
 	rendered := make([]string, 0, len(kept))
 	for _, line := range kept {
-		rendered = append(rendered, styles.DashboardValue.Render(truncate(line, width)))
+		rendered = append(rendered, styles.DashboardValue.Render(truncate(line, params.Width)))
 	}
 	return rendered
 }

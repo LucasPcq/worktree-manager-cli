@@ -79,9 +79,6 @@ func Detail(params DetailParams) domain.WorktreeDetail {
 	return detail
 }
 
-// runAddresses reads the environment by branch rather than by directory: the
-// branch is already known, and asking git for it would cost an exec per detail
-// load for nothing.
 func readChanges(worktreePath string) (domain.WorkingChanges, error) {
 	entries, err := infra.ListModifiedFiles(infra.ListModifiedFilesParams{WorktreePath: worktreePath})
 	if err != nil {

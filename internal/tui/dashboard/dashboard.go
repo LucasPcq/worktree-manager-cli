@@ -47,8 +47,9 @@ type RunParams struct {
 	URLOpener func(url string) error
 	// AddressLoader is where the named worktrees' jobs answer. It is only ever
 	// given worktrees that already have a job up: BranchEnv allocates an ordinal
-	// the first time it is asked for one.
-	AddressLoader func(branches []string) map[string]map[string]domain.JobAddress
+	// the first time it is asked for one. It takes the run.toml the poll already
+	// read, so the file is not read twice a poll.
+	AddressLoader func(request AddressRequest) map[string]map[string]domain.JobAddress
 	// LogsLoader reads back a job's persisted output for the detail panel's
 	// logs view. Injected like JobsLoader, so a test never opens a real board.
 	LogsLoader func(logsRequest) ([]string, error)
@@ -78,11 +79,23 @@ type worktreesMsg struct {
 // what each worktree has up, and what the project declares it could run. It
 // never fails the dashboard — a daemon that is not listening simply means
 // nothing is running, which is the answer.
-type jobsMsg struct {
-	jobs      []domain.JobInfo
+type AddressRequest struct {
+	Branches []string
+	Config   domain.RunConfig
+}
+
+// addressesMsg lands the addresses the poll asked for. It is its own message
+// rather than a field of jobsMsg because the two reads cannot be ordered: Init
+// loads the worktrees and the jobs in parallel, and whichever answers last is
+// the one that knows enough to ask.
+type addressesMsg struct {
 	addresses map[string]map[string]domain.JobAddress
-	running   map[string]int
-	config    domain.RunConfig
+}
+
+type jobsMsg struct {
+	jobs    []domain.JobInfo
+	running map[string]int
+	config  domain.RunConfig
 	// known is false when the daemon could not be asked while its index still
 	// holds jobs: what runs is then unknown, which is not the same answer as
 	// nothing running, and the counts already on screen are kept.
@@ -162,6 +175,10 @@ type Model struct {
 	// branch → job. It follows the poll, like jobs: an address is a property of
 	// the worktree's port offset, and two sources for it would diverge.
 	addresses map[string]map[string]domain.JobAddress
+	// board is what the daemon holds up, per worktree. Rebuilt when the jobs,
+	// the worktrees or the addresses land — never in the renderer, which asked
+	// for it six times a frame with a different time.Now() each time.
+	board []rules.RunWorktreeBlock
 
 	outputLines    []string
 	outputOffset   int
@@ -370,8 +387,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case worktreesMsg:
 		before := m.selectedBranch()
 		next, animCmd := m.applyWorktrees(msg)
+		next = next.withBoard()
 		model, detailCmd := next.triggerDetailReload(before)
-		return model, tea.Batch(animCmd, detailCmd)
+		// Both halves ask: whichever of the worktrees and the jobs answers last
+		// is the one holding enough to name the branches.
+		return model, tea.Batch(animCmd, detailCmd, next.resolveAddressesCmd())
+
+	case addressesMsg:
+		m.addresses = msg.addresses
+		return m.withBoard(), nil
 
 	case prsMsg:
 		m.prs, m.ghConn, m.prsLoaded = msg.prs, msg.conn, true
@@ -1028,22 +1052,43 @@ func (m Model) withOverlays(frame string) string {
 // output panel.
 func (m Model) loadJobsCmd(wake bool) tea.Cmd {
 	load, stateDir := m.jobsLoader(), m.params.StateDir
-	addressesFor, statuses := m.params.AddressLoader, m.statuses
 	return func() tea.Msg {
 		jobs, known := load(wake)
 		cfg, _ := runconfig.Load(stateDir)
-		msg := jobsMsg{jobs: jobs, running: rules.RunningJobsByWorktree(jobs), config: cfg, known: known}
-
-		// Asked for the running worktrees only: BranchEnv allocates an ordinal
-		// to whichever branch it is handed, and an idle worktree must not be
-		// given one just because a poll swept past it.
-		branches := rules.BranchesWithJobsUp(rules.BranchesWithJobsUpParams{Jobs: jobs, Statuses: statuses})
-		if addressesFor == nil || len(branches) == 0 {
-			return msg
-		}
-		msg.addresses = addressesFor(branches)
-		return msg
+		return jobsMsg{jobs: jobs, running: rules.RunningJobsByWorktree(jobs), config: cfg, known: known}
 	}
+}
+
+// resolveAddressesCmd asks where the running worktrees' jobs answer. It is
+// built from the model the jobs have already been applied to, never captured by
+// the command that read them: Init loads the worktrees and the jobs in
+// parallel, so that model's statuses may still be empty — which asked for no
+// address at all and left the RUN section without one until the next poll.
+//
+// Only the worktrees that already have a job up are named: BranchEnv allocates
+// an ordinal to whichever branch it is handed, and an idle worktree must not be
+// given one just because a poll swept past it.
+func (m Model) withBoard() Model {
+	m.board = rules.RunBoard(rules.RunBoardParams{
+		Config:    m.runConfig,
+		Jobs:      m.jobs,
+		Addresses: m.addresses,
+		Statuses:  m.statuses,
+		Now:       time.Now(),
+	})
+	return m
+}
+
+func (m Model) resolveAddressesCmd() tea.Cmd {
+	if m.params.AddressLoader == nil || len(m.runConfig.Jobs) == 0 {
+		return nil
+	}
+	branches := rules.BranchesWithJobsUp(rules.BranchesWithJobsUpParams{Jobs: m.jobs, Statuses: m.statuses})
+	if len(branches) == 0 {
+		return nil
+	}
+	load, request := m.params.AddressLoader, AddressRequest{Branches: branches, Config: m.runConfig}
+	return func() tea.Msg { return addressesMsg{addresses: load(request)} }
 }
 
 func (m Model) jobsLoader() func(bool) ([]domain.JobInfo, bool) {
@@ -1070,13 +1115,13 @@ func (m Model) applyJobs(msg jobsMsg) (Model, tea.Cmd) {
 	m.runConfig = msg.config
 	if msg.known {
 		m.jobs, m.running = msg.jobs, msg.running
-		m.addresses = msg.addresses
 	}
 	// The tree carries the count on its nodes, so the rows already drawn hold a
 	// stale one until they are rebuilt.
+	m = m.withBoard()
 	if !changed {
-		return m, m.treeCmd()
+		return m, tea.Batch(m.treeCmd(), m.resolveAddressesCmd())
 	}
 	next, detailCmd := m.invalidateDetail(m.selectedBranch())
-	return next, tea.Batch(next.treeCmd(), detailCmd)
+	return next, tea.Batch(next.treeCmd(), detailCmd, next.resolveAddressesCmd())
 }

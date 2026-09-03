@@ -156,6 +156,10 @@ var (
 	DashboardRowName = lipgloss.NewStyle().Bold(true)
 	DashboardRowMeta = lipgloss.NewStyle().Foreground(ColorMuted)
 
+	// DashboardServicesBranch is a Services block header under the cursor: a
+	// row's selected tint, in the weight a heading takes.
+	DashboardServicesBranch = DashboardRowSelected.Bold(true)
+
 	// DashboardRowFlashBright is a just-created row's opening beat: brighter
 	// than the ordinary selected tint, before it settles into
 	// DashboardRowSelected — see rules.FlashLit.

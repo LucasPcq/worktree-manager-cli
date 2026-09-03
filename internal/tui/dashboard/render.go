@@ -393,9 +393,6 @@ func (m Model) countText() string {
 		for _, block := range m.runningBlocks() {
 			up += block.Up
 		}
-		if up == 1 {
-			return domain.DashboardRunningCountOne
-		}
 		return fmt.Sprintf(domain.DashboardRunningCountFmt, up)
 	}
 	if m.tab == tabTree {
@@ -624,13 +621,20 @@ func pad(text string, width int) string {
 }
 
 // spread lays a left and a right segment on one row of the given width, keeping
-// the right one whole and clipping the left when they collide.
+// the right one whole and clipping the left when they collide. A width leaving
+// the left segment no room at all drops it rather than letting it through:
+// truncateRendered(left, 0) returns the text whole, and a line wider than its
+// panel is re-wrapped by lipgloss and breaks the frame.
 func spread(left, right string, width int) string {
 	rightWidth := lipgloss.Width(right)
 	if rightWidth >= width {
 		return truncateRendered(right, width)
 	}
-	left = truncateRendered(left, width-rightWidth-1)
+	budget := width - rightWidth - 1
+	if budget <= 0 {
+		return pad(truncateRendered(right, width), width)
+	}
+	left = truncateRendered(left, budget)
 	gap := width - lipgloss.Width(left) - rightWidth
 	return left + strings.Repeat(" ", max(gap, 0)) + right
 }

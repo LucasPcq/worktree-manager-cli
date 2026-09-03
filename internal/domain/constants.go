@@ -2226,7 +2226,6 @@ const (
 	DashboardRunningEmptyHint = "start a profile with `wtm run up`, or from a worktree's menu"
 	DashboardRunningUpFmt     = "%d up"
 	DashboardRunningCountFmt  = "%d running"
-	DashboardRunningCountOne  = "1 running"
 	DashboardHelpRunning      = "↑↓ worktree · m menu · r refresh · ? help · q quit"
 	DashboardListTitle        = "Worktrees"
 	DashboardTreeTitle        = "Worktree tree"
@@ -2409,9 +2408,16 @@ const (
 	DashboardOperationLabel = "operation"
 	// DashboardOpenPRLabel names a failed browser launch for the REVIEW
 	// section's PR line, in the same "✗ <label>: <err>" form.
+	DashboardOpenPRLabel = "open PR"
+	// DashboardOpenURLLabel names a failed browser launch for a RUN row.
+	DashboardOpenURLLabel = "open URL"
+
 	// DashboardLogsLines is how far back the detail panel's logs view reads. It
 	// is a glance, not a session: runview is what scrolls.
 	DashboardLogsLines = 200
+	// DashboardLogsChrome is what the logs view spends under its tail: the blank
+	// line and the key reminder.
+	DashboardLogsChrome = 2
 	// DetailLogsHeaderFmt heads the logs view with the job and its state: a tail
 	// of a job that has stopped is still worth reading, and must not read as a
 	// live one.
@@ -2419,10 +2425,6 @@ const (
 	DetailJobUpLabel    = "up"
 	DashboardLogsHint   = "esc detail    enter full session"
 	DashboardLogsEmpty  = "nothing logged yet"
-
-	DashboardOpenPRLabel = "open PR"
-	// DashboardOpenURLLabel names a failed browser launch for a RUN row.
-	DashboardOpenURLLabel = "open URL"
 
 	// KeyNew opens the new-worktree wizard, the keyboard equivalent of the list
 	// header's add button.
