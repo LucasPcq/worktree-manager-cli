@@ -28,6 +28,12 @@ func (m Model) runRequest(selected domain.WorktreeStatus) (domain.RunConfig, boo
 	return cfg, true
 }
 
+// runWorktree is what a run started from a row is told to act on. A row already
+// designates a worktree, so it goes in where the positional would: target
+// presets it, and the worktree step is read back in the recap instead of being
+// put to someone who has just answered it by clicking.
+func runWorktree(selected domain.WorktreeStatus) string { return selected.Path }
+
 // startRunUp brings a worktree's default profile up, in the run view. The view
 // takes the terminal for as long as it is open and gives it back on exit, the
 // jobs carrying on without it — the same contract as `wtm run up`.
@@ -46,7 +52,7 @@ func (m Model) startRunUp(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 
 	params := upflow.Params{
 		Context: m.flowContext(),
-		Request: upflow.Request{Cwd: selected.Path, Config: cfg},
+		Request: upflow.Request{Worktree: runWorktree(selected), Cwd: selected.Path, Config: cfg},
 		Prompter: prompter{
 			send:      send,
 			title:     domain.DashboardMenuRunUp,
@@ -79,7 +85,7 @@ func (m Model) startRunDown(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 
 	params := downflow.Params{
 		Context:   m.flowContext(),
-		Request:   downflow.Request{Cwd: selected.Path, Config: cfg},
+		Request:   downflow.Request{Worktree: runWorktree(selected), Cwd: selected.Path, Config: cfg},
 		Prompter:  flow.Unattended{},
 		Presenter: downPresenter{presenter: presenter{send: send, id: id}},
 	}
@@ -107,7 +113,7 @@ func (m Model) startRunLogs(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 
 	params := logsflow.Params{
 		Context:   m.flowContext(),
-		Request:   logsflow.Request{Cwd: selected.Path, Config: cfg},
+		Request:   logsflow.Request{Worktree: runWorktree(selected), Cwd: selected.Path, Config: cfg},
 		Prompter:  flow.Unattended{},
 		Presenter: logsPresenter{presenter: presenter{send: send, id: id}, watcher: watcher{send: send}},
 	}
