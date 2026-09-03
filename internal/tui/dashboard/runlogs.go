@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	logsflow "github.com/LucasPcq/wtm/internal/flow/run/logs"
@@ -46,9 +47,9 @@ func DefaultLogsLoader(params LogsLoaderParams) func(logsRequest) ([]string, err
 			Jobs:       req.Jobs,
 			NoProbe:    true,
 		}).Board()
-		if err := board.Refresh(); err != nil {
-			return nil, err
-		}
+		// No Refresh: History tails the job's log file, and asking the daemon
+		// first made a dead daemon look like an unreadable log — in the very
+		// case one opens the logs for.
 		return board.History(runlogs.HistoryParams{Job: req.Job, Lines: req.Lines})
 	}
 }
@@ -56,14 +57,19 @@ func DefaultLogsLoader(params LogsLoaderParams) func(logsRequest) ([]string, err
 // openLogsTab shows the panel's logs view. It lands on the first job that is
 // up, or on the first declared one when nothing is: opening on a job rather
 // than on a question is what removes the picker.
-func (m Model) openLogsTab() (Model, tea.Cmd) { return m.openLogsTabOn("") }
+// openLogsTab shows the logs view in whichever host is on screen. On the
+// Services tab that is its own body: arming the right-hand panel there left an
+// invisible view holding esc, enter and the arrows.
+func (m Model) openLogsTab() (Model, tea.Cmd) {
+	if m.tab == tabServices {
+		return m.openServiceLogs()
+	}
+	return m.openLogsTabOn("")
+}
 
 // openLogsTabOn is the same, on a job the surface already designates — a click
 // on its row.
 func (m Model) openLogsTabOn(job string) (Model, tea.Cmd) {
-	if !m.logsAvailable() {
-		return m, nil
-	}
 	status, ok := m.selected()
 	if !ok {
 		return m, nil
@@ -78,8 +84,14 @@ func (m Model) openLogsTabOn(job string) (Model, tea.Cmd) {
 	return m, m.tailLogsCmd()
 }
 
+// firstLogsJob is where the view opens: what is up, else the first declared
+// job, else nothing — a project with no run module still opens the tab, which
+// then says what would fill it.
 func (m Model) firstLogsJob() string {
 	jobs := m.logsJobs()
+	if len(jobs) == 0 {
+		return ""
+	}
 	for _, job := range jobs {
 		if m.jobIsUp(job.Name) {
 			return job.Name
@@ -88,18 +100,28 @@ func (m Model) firstLogsJob() string {
 	return jobs[0].Name
 }
 
+// closePanelLogs and closeServiceLogs each put away their own host. The tail
+// itself is shared, so it is only dropped once neither host shows it: clearing
+// it from one closed the other's view out from under it.
 func (m Model) closePanelLogs() Model {
 	m.panelTab = panelDetail
+	return m.forgetHiddenLogs()
+}
+
+func (m Model) forgetHiddenLogs() Model {
+	if m.logsOpen() {
+		return m
+	}
 	m.logsBranch, m.logsJob = "", ""
 	m.logsLines, m.logsErr = nil, nil
 	return m
 }
 
 // logsOpen is true wherever the logs view is drawn: under the panel's LOGS tab,
-// or as the Services tab's body. The keys it owns follow the view, not a host.
-func (m Model) logsOpen() bool {
-	return m.logsJob != "" && (m.panelTab == panelLogs || m.servicesLogs)
-}
+// or as the Services tab's body. The keys it owns follow the view, not a host,
+// and it is open even with no job to show — esc has to get back out of an
+// empty view too.
+func (m Model) logsOpen() bool { return m.panelTab == panelLogs || m.servicesLogs }
 
 func (m Model) retail() (Model, tea.Cmd) { return m, m.tailLogsCmd() }
 
@@ -153,16 +175,49 @@ func (m Model) logsJobs() []domain.JobConfig { return m.runConfig.Jobs }
 // logsJobsLine heads the logs view: the jobs to switch between, and where the
 // current one answers.
 func (m Model) logsJobsLine(width int) string {
+	address := styles.DashboardURL.Render(m.logsAddress().URL)
+	budget := max(width-lipgloss.Width(address)-1, 0)
+	return spread(m.logsJobChips(budget), address, width)
+}
+
+// logsJobChips shows what fits around the current job, with a mark on each side
+// that has more. A wrapping row would change the header's height from one
+// worktree to the next, and the tail would start somewhere new each time.
+func (m Model) logsJobChips(budget int) string {
 	jobs := m.logsJobs()
-	chips := make([]string, 0, len(jobs))
-	for _, job := range jobs {
-		chips = append(chips, m.logsJobChip(job))
+	if len(jobs) == 0 {
+		return ""
 	}
-	return spread(
-		strings.Join(chips, domain.DashboardLogsJobGap),
-		styles.DashboardURL.Render(m.logsAddress().URL),
-		width,
-	)
+
+	window := rules.LogsJobWindow(rules.LogsJobWindowParams{
+		Jobs:    jobNames(jobs),
+		Current: m.logsJob,
+		Budget:  budget,
+		Gap:     lipgloss.Width(domain.DashboardLogsJobGap),
+		Marks:   lipgloss.Width(domain.DashboardLogsMoreBefore),
+	})
+
+	chips := make([]string, 0, window.End-window.Start)
+	for _, job := range jobs[window.Start:window.End] {
+		chips = append(chips, m.marks().Mark(logsJobZone(job.Name), m.logsJobChip(job)))
+	}
+	line := strings.Join(chips, domain.DashboardLogsJobGap)
+
+	if window.Start > 0 {
+		line = styles.DashboardRowMeta.Render(domain.DashboardLogsMoreBefore) + line
+	}
+	if window.End < len(jobs) {
+		line += styles.DashboardRowMeta.Render(domain.DashboardLogsMoreAfter)
+	}
+	return line
+}
+
+func jobNames(jobs []domain.JobConfig) []string {
+	names := make([]string, 0, len(jobs))
+	for _, job := range jobs {
+		names = append(names, job.Name)
+	}
+	return names
 }
 
 func (m Model) logsJobChip(job domain.JobConfig) string {
@@ -200,12 +255,13 @@ func (m Model) stepLogsJob(delta int) Model {
 	if len(jobs) == 0 {
 		return m
 	}
-	index := 0
-	for position, job := range jobs {
-		if job.Name == m.logsJob {
-			index = position
-			break
-		}
+	// A run.toml edited under the view can drop the job on screen. Landing on
+	// the first one would make an arrow jump somewhere unrelated, so an unknown
+	// job is re-seated before it is stepped from.
+	index, known := logsJobIndex(jobs, m.logsJob)
+	if !known {
+		m.logsJob, m.logsLines, m.logsErr = jobs[0].Name, nil, nil
+		return m
 	}
 	next := jobs[rules.ClampIndex(index+delta, len(jobs))]
 	if next.Name == m.logsJob {
@@ -230,21 +286,29 @@ func (m Model) logsViewBody(params logsViewParams) []string {
 		return nil
 	}
 
-	head := []string{
-		m.logsJobsLine(params.Width),
-		styles.DashboardRule.Render(strings.Repeat(domain.DashboardRuleGlyph, params.Width)),
-		"",
+	// No rule under the selection line: the tab bar already draws one two rows
+	// above, and a second so close reads as a box rather than as a separation.
+	// A project with no job has no line to draw at all.
+	head := []string{}
+	if len(m.logsJobs()) > 0 {
+		head = append(head, m.logsJobsLine(params.Width), "")
 	}
 	hint := styles.DashboardRowMeta.Render(truncate(domain.DashboardLogsHint, params.Width))
 	budget := max(params.Height-len(head)-domain.DashboardLogsChrome, 0)
 
-	return append(append(head, m.logsTailLines(logsTailParams{Budget: budget, Width: params.Width})...), "", hint)
+	// Padded to its whole budget so the hint sits on the panel's last row: a
+	// reminder that follows the tail lands somewhere new on every job.
+	body := m.logsTailLines(logsTailParams{Budget: budget, Width: params.Width})
+	for len(body) < budget {
+		body = append(body, "")
+	}
+	return append(append(head, body...), "", hint)
 }
 
 func (m Model) logsBody(layout domain.DashboardLayout) []string {
 	return m.logsViewBody(logsViewParams{
 		Width:  layout.Detail.Width - borderWidth - paddingWidth,
-		Height: panelBodyHeight(layout.Detail) - domain.DashboardPanelTabsChrome,
+		Height: tabbedPanelBodyHeight(layout.Detail),
 	})
 }
 
@@ -254,12 +318,12 @@ type logsTailParams struct {
 }
 
 func (m Model) logsTailLines(params logsTailParams) []string {
+	if empty := m.logsEmptyLines(params.Width); empty != nil {
+		return empty
+	}
 	if m.logsErr != nil {
 		return []string{styles.DashboardBlockers.Render(truncate(
 			fmt.Sprintf(domain.DashboardUnavailableFmt, m.logsErr), params.Width))}
-	}
-	if len(m.logsLines) == 0 {
-		return []string{styles.DashboardEmpty.Render(truncate(domain.DashboardLogsEmpty, params.Width))}
 	}
 
 	kept := m.logsLines[max(len(m.logsLines)-params.Budget, 0):]
@@ -268,4 +332,38 @@ func (m Model) logsTailLines(params logsTailParams) []string {
 		rendered = append(rendered, styles.DashboardValue.Render(truncate(line, params.Width)))
 	}
 	return rendered
+}
+
+// logsEmptyLines tells the three ways this view can have nothing to show apart,
+// because the answer differs: a project with no run module needs `wtm run init`,
+// a job that never ran needs starting, and a job that ran and wrote nothing is
+// simply quiet. Returns nil when there is a tail to draw.
+func (m Model) logsEmptyLines(width int) []string {
+	if len(m.logsJobs()) == 0 {
+		return m.logsNotice(width, domain.DashboardLogsNoModule, domain.DashboardLogsNoModuleHint)
+	}
+	if len(m.logsLines) > 0 || m.logsErr != nil {
+		return nil
+	}
+	if m.jobIsUp(m.logsJob) {
+		return m.logsNotice(width, domain.DashboardLogsQuiet, domain.DashboardLogsQuietHint)
+	}
+	return m.logsNotice(width, domain.DashboardLogsNeverRan, domain.DashboardLogsNeverRanHint)
+}
+
+func (m Model) logsNotice(width int, title, hint string) []string {
+	return []string{
+		styles.DashboardEmpty.Render(truncate(title, width)),
+		"",
+		styles.DashboardRowMeta.Render(truncate(hint, width)),
+	}
+}
+
+func logsJobIndex(jobs []domain.JobConfig, name string) (index int, known bool) {
+	for position, job := range jobs {
+		if job.Name == name {
+			return position, true
+		}
+	}
+	return 0, false
 }

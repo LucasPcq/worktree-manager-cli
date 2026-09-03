@@ -400,9 +400,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, animCmd := m.applyWorktrees(msg)
 		next = next.withBoard()
 		model, detailCmd := next.triggerDetailReload(before)
-		// Both halves ask: whichever of the worktrees and the jobs answers last
-		// is the one holding enough to name the branches.
-		return model, tea.Batch(animCmd, detailCmd, next.resolveAddressesCmd())
+		// Only the worktrees ask here, and only while the jobs have not been read
+		// yet: past the first poll it is applyJobs that knows something changed,
+		// and both asking would run the read twice every tick.
+		return model, tea.Batch(animCmd, detailCmd, next.firstAddressesCmd())
 
 	case addressesMsg:
 		m.addresses = msg.addresses
@@ -922,7 +923,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return model, cmd
 	}
 
-	if model, cmd, hit := m.clickServiceAddress(msg); hit {
+	if model, cmd, hit := m.clickServiceRow(msg); hit {
 		return model, cmd
 	}
 
@@ -936,13 +937,8 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // clickRow selects the row under the pointer on whichever tab is showing.
 func (m Model) clickRow(msg tea.MouseMsg) (Model, bool) {
 	if m.tab == tabServices {
-		for index, row := range m.services {
-			if row.Kind != domain.ServicesRowJob || !m.inZone(servicesRowZone(index), msg) {
-				continue
-			}
-			m.servicesCursor = index
-			return m.reflow(), true
-		}
+		// clickServiceRow owns those rows: it selects and then opens, which a
+		// bare selection here would pre-empt.
 		return m, false
 	}
 	if m.tab == tabTree {
@@ -1016,7 +1012,7 @@ func (m Model) wheel(msg tea.MouseMsg, delta int) Model {
 	if m.outputExpanded && m.inZone(zoneOutput, msg) {
 		return m.scrollOutput(delta)
 	}
-	if m.inZone(zoneList, msg) || m.inZone(zoneTree, msg) {
+	if m.inZone(zoneList, msg) || m.inZone(zoneTree, msg) || m.inZone(zoneServices, msg) {
 		return m.moveCursor(delta)
 	}
 	return m
@@ -1094,15 +1090,8 @@ func (m Model) loadJobsCmd(wake bool) tea.Cmd {
 	}
 }
 
-// resolveAddressesCmd asks where the running worktrees' jobs answer. It is
-// built from the model the jobs have already been applied to, never captured by
-// the command that read them: Init loads the worktrees and the jobs in
-// parallel, so that model's statuses may still be empty — which asked for no
-// address at all and left the RUN section without one until the next poll.
-//
-// Only the worktrees that already have a job up are named: BranchEnv allocates
-// an ordinal to whichever branch it is handed, and an idle worktree must not be
-// given one just because a poll swept past it.
+// withBoard rebuilds what the daemon holds up and the lines the Services tab
+// draws from it, then re-seats that tab's cursor and offset on the new list.
 func (m Model) withBoard() Model {
 	m.board = rules.RunBoard(rules.RunBoardParams{
 		Config:    m.runConfig,
@@ -1115,10 +1104,32 @@ func (m Model) withBoard() Model {
 	// Re-bound here, not only when an arrow is pressed: a job stopping shrinks
 	// the list under a cursor nobody moved, and selected() then answered
 	// "nothing" — no menu, no selection, until the user pressed a key.
-	m.servicesCursor = m.nearestServiceJob(m.servicesCursor, 1)
-	return m
+	m.servicesCursor = m.nearestServiceJob(nearestJobParams{Index: m.servicesCursor, Direction: 1})
+	// The offset with it: a board that shrinks under an offset nobody moved
+	// leaves servicesVisible past the end, and the tab draws nothing at all.
+	return m.reflow()
 }
 
+// firstAddressesCmd covers the one case applyJobs cannot: Init reads the
+// worktrees and the jobs in parallel, so the jobs may have landed while the
+// list was still empty. Once the addresses are in, the poll's own path owns
+// them.
+func (m Model) firstAddressesCmd() tea.Cmd {
+	if len(m.addresses) > 0 {
+		return nil
+	}
+	return m.resolveAddressesCmd()
+}
+
+// resolveAddressesCmd asks where the running worktrees' jobs answer. It is
+// built from the model the jobs have already been applied to, never captured by
+// the command that read them: Init loads the worktrees and the jobs in
+// parallel, so that model's statuses may still be empty — which asked for no
+// address at all and left the RUN section without one until the next poll.
+//
+// Only the worktrees that already have a job up are named: BranchEnv allocates
+// an ordinal to whichever branch it is handed, and an idle worktree must not be
+// given one just because a poll swept past it.
 func (m Model) resolveAddressesCmd() tea.Cmd {
 	if m.params.AddressLoader == nil || len(m.runConfig.Jobs) == 0 {
 		return nil

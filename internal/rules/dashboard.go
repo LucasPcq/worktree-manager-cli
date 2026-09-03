@@ -80,7 +80,7 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 		layout.List, layout.ListVisible = body, true
 		layout.ListRows = dashboardListRows(body.Height)
 		layout.TreeRows = dashboardTreeRows(body.Height)
-		layout.ServicesRows = dashboardTreeRows(body.Height)
+		layout.ServicesRows = dashboardServicesRows(body.Height)
 		return layout
 	}
 	if layout.Narrow {
@@ -91,7 +91,7 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 		layout.List, layout.ListVisible = body, true
 		layout.ListRows = dashboardListRows(body.Height)
 		layout.TreeRows = dashboardTreeRows(body.Height)
-		layout.ServicesRows = dashboardTreeRows(body.Height)
+		layout.ServicesRows = dashboardServicesRows(body.Height)
 		return layout
 	}
 
@@ -101,7 +101,7 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 	layout.ListVisible, layout.DetailVisible = true, true
 	layout.ListRows = dashboardListRows(body.Height)
 	layout.TreeRows = dashboardTreeRows(body.Height)
-	layout.ServicesRows = dashboardTreeRows(body.Height)
+	layout.ServicesRows = dashboardServicesRows(body.Height)
 	return layout
 }
 
@@ -119,6 +119,12 @@ func dashboardListRows(bodyHeight int) int {
 // with no gap, so the connector gutters line up down the panel.
 func dashboardTreeRows(bodyHeight int) int {
 	return max(bodyHeight-domain.DashboardChromeHeight-domain.DashboardTitleGap, 0) / domain.DashboardTreeRowHeight
+}
+
+// dashboardServicesRows is how many Services lines fit: one line each, unlike a
+// tree node, which carries the spacer under it.
+func dashboardServicesRows(bodyHeight int) int {
+	return max(bodyHeight-domain.DashboardChromeHeight-domain.DashboardTitleGap, 0)
 }
 
 func dashboardListWidth(width int) int {

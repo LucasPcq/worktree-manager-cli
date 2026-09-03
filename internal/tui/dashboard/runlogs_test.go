@@ -103,7 +103,8 @@ func TestLogsPanelHeadsWithTheJobAndKeepsTheLastLines(t *testing.T) {
 
 func TestLogsPanelDropsTheOldestLinesWhenTheBudgetIsShort(t *testing.T) {
 	model := logsModel(t, RunParams{}, "a")
-	model.logsBranch, model.logsJob = "a", "web"
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
 	for index := range 200 {
 		model.logsLines = append(model.logsLines, "line "+string(rune('a'+index%26))+string(rune('0'+index/26)))
 	}
@@ -122,7 +123,8 @@ func TestLogsPanelDropsTheOldestLinesWhenTheBudgetIsShort(t *testing.T) {
 
 func TestLogsPanelSaysWhyItCouldNotRead(t *testing.T) {
 	model := logsModel(t, RunParams{}, "a")
-	model.logsBranch, model.logsJob = "a", "web"
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
 	model.logsErr = errors.New("no log for web")
 
 	body := stripANSI(strings.Join(model.logsBody(model.layout()), "\n"))
@@ -277,13 +279,40 @@ func TestTheLogsKeyOpensTheTabWithoutAPicker(t *testing.T) {
 	}
 }
 
-func TestTheLogsKeyDoesNothingWithoutARunModule(t *testing.T) {
+// The tab always opens: a greyed-out tab left the reader guessing, and a
+// project with no run module has something to be told rather than a door that
+// does not answer.
+func TestTheLogsTabOpensWithoutARunModuleAndSaysWhatIsMissing(t *testing.T) {
 	model := logsModel(t, RunParams{}, "a")
 
 	next, _ := updateCmd(model, key(domain.KeyRunLogs))
 
-	if next.panelTab == panelLogs {
-		t.Error("the LOGS tab opened with no job declared, want it inert")
+	if next.panelTab != panelLogs {
+		t.Fatal("the LOGS tab did not open")
+	}
+	body := stripANSI(strings.Join(next.detailBody(next.layout()), "\n"))
+	if !strings.Contains(body, domain.DashboardLogsNoModule) {
+		t.Errorf("body = %q, want it to say the project runs nothing", body)
+	}
+	if !strings.Contains(body, domain.DashboardLogsNoModuleHint) {
+		t.Errorf("body = %q, want `wtm run init` named", body)
+	}
+}
+
+func TestTheLogsViewTellsANeverRunJobFromAQuietOne(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
+
+	down := stripANSI(strings.Join(model.logsViewBody(logsViewParams{Width: 60, Height: 20}), "\n"))
+	if !strings.Contains(down, domain.DashboardLogsNeverRan) {
+		t.Errorf("body = %q, want a stopped job told it has never run here", down)
+	}
+
+	model.jobs = []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"}}
+	up := stripANSI(strings.Join(model.logsViewBody(logsViewParams{Width: 60, Height: 20}), "\n"))
+	if !strings.Contains(up, domain.DashboardLogsQuiet) {
+		t.Errorf("body = %q, want a running job that wrote nothing told apart", up)
 	}
 }
 
@@ -326,5 +355,27 @@ func TestChangingTabClosesTheLogsView(t *testing.T) {
 
 	if next.panelTab != panelDetail {
 		t.Error("the logs view survived the tab change and kept esc and enter, while not being drawn")
+	}
+}
+
+// The tail is shared by the two hosts. Closing one of them used to drop it, so
+// a Services row of another worktree opened its logs and lost them at once —
+// triggerDetailReload closes the panel on every change of selected branch.
+func TestClosingOneHostLeavesTheOtherOneItsTail(t *testing.T) {
+	model := logsModel(t, RunParams{}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+	model.servicesLogs = true
+	model.logsBranch, model.logsJob = "a", "web"
+	model.logsLines = []string{"kept"}
+
+	model = model.closePanelLogs()
+
+	if model.logsJob != "web" || len(model.logsLines) != 1 {
+		t.Errorf("logs = %q/%v, want the Services view's tail untouched", model.logsJob, model.logsLines)
+	}
+
+	model = model.closeServiceLogs()
+	if model.logsJob != "" || model.logsLines != nil {
+		t.Errorf("logs = %q/%v, want them dropped once no host shows them", model.logsJob, model.logsLines)
 	}
 }

@@ -30,6 +30,13 @@ func panelBodyHeight(rect domain.Rect) int {
 	return max(rect.Height-borderWidth-panelChromeRows, 0)
 }
 
+// tabbedPanelBodyHeight is panelBodyHeight for a panel that heads itself: it
+// passes no Title, so renderPanel prepends nothing, and what its own head costs
+// is the tab bar rather than the title row.
+func tabbedPanelBodyHeight(rect domain.Rect) int {
+	return max(rect.Height-borderWidth-domain.DashboardPanelTabsChrome, 0)
+}
+
 type panelParams struct {
 	Rect  domain.Rect
 	Title string
@@ -54,8 +61,10 @@ func (m Model) renderPanel(params panelParams) string {
 	}
 
 	// A panel whose head is its own first body line — the detail's tab bar —
-	// passes no title, and no empty row is drawn in its place.
-	if params.Title == "" {
+	// passes no title, and no empty row is drawn in its place. It must not carry
+	// title decorations either: there is no title row to hang them on, and
+	// dropping them silently is how a zone goes missing without an error.
+	if params.Title == "" && params.TitleRight == "" && params.TitleZone == "" {
 		lines := clipRenderedLines(params.Body, contentHeight)
 		box := styles.DashboardPanel.
 			Width(params.Rect.Width - borderWidth).

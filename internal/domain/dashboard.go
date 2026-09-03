@@ -33,8 +33,9 @@ type DashboardLayout struct {
 	// fit in the output body (0 when it is folded).
 	ListRows int
 	TreeRows int
-	// ServicesRows is how many lines the Services tab draws — one per row, like
-	// the tree, since its blocks are flattened into a single list.
+	// ServicesRows is how many lines the Services tab draws. One per row, and
+	// therefore not TreeRows: a tree node takes two lines, the spacer under it
+	// included.
 	ServicesRows int
 	OutputLines  int
 }

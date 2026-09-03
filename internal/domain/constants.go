@@ -2225,7 +2225,7 @@ const (
 	DashboardServicesEmpty    = "Nothing is running"
 	DashboardServicesUpFmt    = "%d up"
 	DashboardServicesCountFmt = "%d running"
-	DashboardHelpServices     = "↑↓ job · ↵ logs · m menu · r refresh · ? help · q quit"
+	DashboardHelpServices     = "↑↓ job · ↵ logs · u open · m menu · r refresh · q quit"
 	DashboardListTitle        = "Worktrees"
 	DashboardTreeTitle        = "Worktree tree"
 	DashboardDetailTitle      = "Detail"
@@ -2235,8 +2235,8 @@ const (
 	DashboardPanelTabLogs   = "LOGS"
 	DashboardPanelTabSep    = " │ "
 	// DashboardPanelTabsChrome is what the tab bar costs the panel's body: its
-	// own row and the blank line under it.
-	DashboardPanelTabsChrome = 2
+	// own row, the rule under it and the blank line after that.
+	DashboardPanelTabsChrome = 3
 	DashboardOutputTitle     = "Output"
 
 	// DashboardEmptyList is shown when the list loaded but came back with
@@ -2423,6 +2423,7 @@ const (
 	// terminal back, so each step says what it did instead of showing it.
 	RunDetachedStartingFmt = "starting %s (%d/%d)"
 	RunDetachedStartedFmt  = "%s is up"
+	RunDetachedDoneFmt     = "%s finished"
 	RunDetachedAddressFmt  = "%s → %s"
 	RunDetachedFailedFmt   = "%s failed: %s"
 	RunDetachedAlreadyFmt  = "%s was already up"
@@ -2439,10 +2440,20 @@ const (
 	DetailLogsHeaderFmt = "%s · %s"
 	DetailJobUpLabel    = "up"
 	DashboardLogsHint   = "←→ job    esc detail    ↵ full session"
-	DashboardLogsEmpty  = "nothing logged yet"
+	// DashboardLogs* tell apart the three ways the logs view can have nothing to
+	// show: the answer differs, so the message does.
+	DashboardLogsNoModule     = "This project runs nothing"
+	DashboardLogsNoModuleHint = "declare jobs with `wtm run init`"
+	DashboardLogsNeverRan     = "This job has never run here"
+	DashboardLogsNeverRanHint = "start it with `wtm run start --job`, or from the worktree's menu"
+	DashboardLogsQuiet        = "Nothing logged yet"
+	DashboardLogsQuietHint    = "the job is up and has written nothing so far"
 	// DashboardLogsJobGap separates two job chips on the logs view's selection
 	// line. Three spaces: two read as a column gap inside one chip.
 	DashboardLogsJobGap = "   "
+	// DashboardLogsMore* mark a selection line showing only part of its jobs.
+	DashboardLogsMoreBefore = "‹ "
+	DashboardLogsMoreAfter  = " ›"
 
 	// KeyNew opens the new-worktree wizard, the keyboard equivalent of the list
 	// header's add button.

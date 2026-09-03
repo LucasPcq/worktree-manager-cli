@@ -44,7 +44,7 @@ func (s detachedSink) Emit(event runlogs.Event) {
 		stage := fmt.Sprintf(domain.RunDetachedStartingFmt, event.Job, event.Step, event.Steps)
 		s.send(opStageMsg{id: s.id, stage: stage})
 		s.line(stage)
-	case runlogs.PhaseStarted, runlogs.PhaseDone:
+	case runlogs.PhaseStarted:
 		if event.AlreadyRunning {
 			s.line(fmt.Sprintf(domain.RunDetachedAlreadyFmt, event.Job))
 			return
@@ -53,6 +53,10 @@ func (s detachedSink) Emit(event runlogs.Event) {
 		if event.URL != "" {
 			s.line(fmt.Sprintf(domain.RunDetachedAddressFmt, event.Job, event.URL))
 		}
+	// A task that ran to its end is done, not up: PhaseDone concludes a task,
+	// where PhaseStarted announces a service.
+	case runlogs.PhaseDone:
+		s.line(fmt.Sprintf(domain.RunDetachedDoneFmt, event.Job))
 	case runlogs.PhaseFailed:
 		s.line(fmt.Sprintf(domain.RunDetachedFailedFmt, event.Job, event.Reason))
 	case runlogs.PhaseNotice:

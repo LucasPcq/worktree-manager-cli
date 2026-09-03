@@ -27,7 +27,13 @@ func (m Model) servicesBlocks() []rules.RunWorktreeBlock { return m.board }
 
 // nearestServiceJob is the first job row from index in the given direction,
 // then in the other: a header and a gap are drawn, never selected.
-func (m Model) nearestServiceJob(index, direction int) int {
+type nearestJobParams struct {
+	Index     int
+	Direction int
+}
+
+func (m Model) nearestServiceJob(params nearestJobParams) int {
+	index, direction := params.Index, params.Direction
 	if len(m.services) == 0 {
 		return 0
 	}
@@ -62,7 +68,7 @@ func (m Model) stepServices(delta int) Model {
 	}
 	cursor := m.servicesCursor
 	for range max(delta, -delta) {
-		next := m.nearestServiceJob(cursor+direction, direction)
+		next := m.nearestServiceJob(nearestJobParams{Index: cursor + direction, Direction: direction})
 		if next == cursor {
 			break
 		}
@@ -131,7 +137,7 @@ func (m Model) servicesBody(layout domain.DashboardLayout) []string {
 					return m.marks().Mark(servicesURLZone(index), cell)
 				},
 			})[0]
-			lines = append(lines, m.marks().Mark(servicesRowZone(index), m.servicesJobLine(index, line)))
+			lines = append(lines, m.marks().Mark(servicesRowZone(index), m.servicesJobLine(servicesJobLineParams{Index: index, Line: line})))
 		}
 	}
 	return lines
@@ -153,14 +159,18 @@ func (m Model) openServiceLogs() (Model, tea.Cmd) {
 
 func (m Model) closeServiceLogs() Model {
 	m.servicesLogs = false
-	m.logsBranch, m.logsJob = "", ""
-	m.logsLines, m.logsErr = nil, nil
-	return m
+	return m.forgetHiddenLogs()
 }
 
 // servicesJobLine marks the row under the cursor the way a list row is marked:
 // the accent bar in its gutter, so the two tabs read as one dashboard.
-func (m Model) servicesJobLine(index int, line string) string {
+type servicesJobLineParams struct {
+	Index int
+	Line  string
+}
+
+func (m Model) servicesJobLine(params servicesJobLineParams) string {
+	index, line := params.Index, params.Line
 	if index != m.servicesCursor {
 		return line
 	}
@@ -178,7 +188,7 @@ func (m Model) servicesEmptyLines(width int) []string {
 	lines := []string{styles.DashboardEmpty.Render(truncate(domain.DashboardServicesEmpty, width)), ""}
 	for _, row := range domain.DashboardServicesEmptyRows {
 		head := domain.DetailListIndent + pad(truncate(row[0], width), command)
-		budget := max(width-lipgloss.Width(head)-len(domain.DetailColumnGap), 0)
+		budget := max(width-lipgloss.Width(head)-lipgloss.Width(domain.DetailColumnGap), 0)
 		lines = append(lines,
 			styles.DashboardValue.Render(head)+
 				domain.DetailColumnGap+
@@ -187,17 +197,26 @@ func (m Model) servicesEmptyLines(width int) []string {
 	return lines
 }
 
-// clickServiceAddress answers a click on a Services address cell. The row's own
-// zone is left to clickRow, which selects it; enter then opens its logs.
-func (m Model) clickServiceAddress(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
+// clickServiceRow answers a click on a Services job row, with the same rule the
+// detail panel follows: the address cell opens the address, the rest of the row
+// opens that job's logs.
+func (m Model) clickServiceRow(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 	if m.tab != tabServices || m.servicesLogs {
 		return m, nil, false
 	}
 	for index, row := range m.services {
-		if row.Kind != domain.ServicesRowJob || !m.inZone(servicesURLZone(index), msg) {
+		if row.Kind != domain.ServicesRowJob {
 			continue
 		}
-		model, cmd := m.openJobURL(row.Job.URL)
+		if m.inZone(servicesURLZone(index), msg) {
+			model, cmd := m.openJobURL(row.Job.URL)
+			return model, cmd, true
+		}
+		if !m.inZone(servicesRowZone(index), msg) {
+			continue
+		}
+		m.servicesCursor = index
+		model, cmd := m.reflow().openServiceLogs()
 		return model, cmd, true
 	}
 	return m, nil, false

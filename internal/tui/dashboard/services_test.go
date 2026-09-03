@@ -360,3 +360,77 @@ func TestClickingAServiceAddressOpensIt(t *testing.T) {
 		t.Fatal("nothing opened")
 	}
 }
+
+// Arming the right-hand panel from a tab that does not draw it left an
+// invisible view holding esc, enter and the arrows.
+func TestTheLogsKeyOnServicesOpensThatTabsOwnView(t *testing.T) {
+	model := servicesModel(t, "a")
+	model.params.LogsLoader = func(logsRequest) ([]string, error) { return []string{"ready"}, nil }
+
+	next, _ := updateCmd(model, key(domain.KeyRunLogs))
+
+	if next.panelTab == panelLogs {
+		t.Error("the right-hand panel was armed from Services, where it is not drawn")
+	}
+	if !next.servicesLogs {
+		t.Error("the Services tab's own logs view did not open")
+	}
+}
+
+func TestServicesRowsFillTheWholePanel(t *testing.T) {
+	branches := make([]string, 0, 12)
+	for index := range 12 {
+		branches = append(branches, fmt.Sprintf("wt%02d", index))
+	}
+	model := servicesModel(t, branches...)
+
+	layout := model.layout()
+	drawable := panelBodyHeight(layout.List)
+
+	if layout.ServicesRows != drawable {
+		t.Errorf("ServicesRows = %d, want %d: a Services row is one line, unlike a tree node", layout.ServicesRows, drawable)
+	}
+}
+
+// The cursor was re-seated when the board shrank; the offset was not, and
+// servicesVisible past the end drew nothing at all.
+func TestServicesOffsetIsReboundWhenTheBoardShrinks(t *testing.T) {
+	branches := make([]string, 0, 12)
+	for index := range 12 {
+		branches = append(branches, fmt.Sprintf("wt%02d", index))
+	}
+	model := servicesModel(t, branches...)
+	for range 11 {
+		model = model.stepServices(1)
+	}
+	model = model.reflow()
+	if model.servicesOffset == 0 {
+		t.Fatal("the list never scrolled, so this test proves nothing")
+	}
+
+	model.jobs = model.jobs[:1]
+	model, _ = model.applyJobs(jobsMsg{
+		jobs: model.jobs, running: rules.RunningJobsByWorktree(model.jobs),
+		config: model.runConfig, known: true,
+	})
+
+	if len(model.servicesVisible(model.layout())) == 0 {
+		t.Error("the tab draws nothing after the board shrank, want the window re-seated")
+	}
+}
+
+func TestClickingAServiceRowAwayFromItsAddressOpensItsLogs(t *testing.T) {
+	model := servicesModel(t, "a", "b")
+	model.params.LogsLoader = func(logsRequest) ([]string, error) { return []string{"ready"}, nil }
+	renderAndWait(t, model, servicesRowZone(4))
+
+	zone := model.zones.Get(servicesRowZone(4))
+	next, _ := updateCmd(model, click(zone.EndX, zone.StartY))
+
+	if !next.servicesLogs {
+		t.Fatal("clicking a row away from its address opened no logs — the rule differs from the detail panel's")
+	}
+	if next.logsBranch != "b" {
+		t.Errorf("logsBranch = %q, want the row that was clicked", next.logsBranch)
+	}
+}

@@ -9,8 +9,8 @@ const (
 	zoneRowPrefix    = "row:"
 	zoneList         = "panel:list"
 	zoneTree         = "panel:tree"
-	zoneServices     = "panel:running"
-	zoneServicesPfx  = "running:"
+	zoneServices     = "panel:services"
+	zoneServicesPfx  = "services:"
 	zoneTreeRowPfx   = "tree:"
 	zoneDetail       = "panel:detail"
 	zoneDetailPR     = "detail:pr"
@@ -18,6 +18,7 @@ const (
 	zonePanelTabLogs = "panel:tab:logs"
 	zoneDetailRunPfx = "detail:run:"
 	zoneDetailURLPfx = "detail:url:"
+	zoneLogsJobPfx   = "logs:job:"
 	zoneServicesURL  = "services:url:"
 	zoneOutput       = "panel:output"
 	zoneOutputToggle = "output:toggle"
@@ -57,3 +58,7 @@ func servicesRowZone(index int) string { return zoneServicesPfx + strconv.Itoa(i
 func runURLZone(job string) string { return zoneDetailURLPfx + job }
 
 func servicesURLZone(index int) string { return zoneServicesURL + strconv.Itoa(index) }
+
+// logsJobZone keys a chip on the logs view's selection line, so the line is
+// walked with the mouse as well as with the arrows.
+func logsJobZone(job string) string { return zoneLogsJobPfx + job }
