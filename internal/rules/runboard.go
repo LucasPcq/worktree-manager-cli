@@ -54,3 +54,25 @@ func RunBoard(params RunBoardParams) []RunWorktreeBlock {
 	}
 	return blocks
 }
+
+// ServicesRows flattens the board into the lines the Services tab draws. Every
+// row carries its worktree, header or not: the menu acts on the worktree of the
+// job under the cursor, and a job row that could not name it would send the
+// action somewhere else.
+func ServicesRows(blocks []RunWorktreeBlock) []domain.ServicesRow {
+	rows := make([]domain.ServicesRow, 0, len(blocks)*3)
+	for index, block := range blocks {
+		if index > 0 {
+			rows = append(rows, domain.ServicesRow{Kind: domain.ServicesRowGap})
+		}
+		rows = append(rows, domain.ServicesRow{
+			Kind: domain.ServicesRowHeader, Branch: block.Branch, Path: block.Path, Up: block.Up,
+		})
+		for _, job := range block.Rows {
+			rows = append(rows, domain.ServicesRow{
+				Kind: domain.ServicesRowJob, Branch: block.Branch, Path: block.Path, Job: job,
+			})
+		}
+	}
+	return rows
+}

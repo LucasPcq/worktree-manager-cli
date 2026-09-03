@@ -2217,16 +2217,15 @@ const (
 
 	DashboardTabWorktrees = "Worktrees"
 	DashboardTabTree      = "Tree"
-	DashboardTabRunning   = "Running"
+	DashboardTabServices  = "Services"
 
-	DashboardRunningTitle = "RUNNING"
-	// DashboardRunningEmpty and its hint: an empty tab names what would fill it,
+	DashboardServicesTitle = "SERVICES"
+	// DashboardServicesEmpty and its hint: an empty tab names what would fill it,
 	// the way DashboardRunNotConfigured points at `wtm run init`.
-	DashboardRunningEmpty     = "nothing is running"
-	DashboardRunningEmptyHint = "start a profile with `wtm run up`, or from a worktree's menu"
-	DashboardRunningUpFmt     = "%d up"
-	DashboardRunningCountFmt  = "%d running"
-	DashboardHelpRunning      = "↑↓ worktree · m menu · r refresh · ? help · q quit"
+	DashboardServicesEmpty    = "Nothing is running"
+	DashboardServicesUpFmt    = "%d up"
+	DashboardServicesCountFmt = "%d running"
+	DashboardHelpServices     = "↑↓ job · ↵ logs · m menu · r refresh · ? help · q quit"
 	DashboardListTitle        = "Worktrees"
 	DashboardTreeTitle        = "Worktree tree"
 	DashboardDetailTitle      = "Detail"
@@ -2644,4 +2643,13 @@ var DashboardWordmarkLines = [3]string{
 	`╻ ╻ ╺┳╸ ┏┳┓`,
 	`┃╻┃  ┃  ┃┃┃`,
 	`┗┻┛  ╹  ╹ ╹`,
+}
+
+// DashboardServicesEmptyRows are the routes an empty Services tab names: the
+// command, then what it starts. Every way to start something is listed, the
+// single job included — naming only the profile is what the first version did.
+var DashboardServicesEmptyRows = [][2]string{
+	{"wtm run up", "a worktree's default profile"},
+	{"wtm run start --job", "a single job"},
+	{"m on a worktree", "the same two, from its menu"},
 }

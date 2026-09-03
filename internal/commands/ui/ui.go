@@ -27,7 +27,7 @@ func NewCmd() *cobra.Command {
 		Long: "Open a full-screen dashboard of the repository's worktrees.\n" +
 			"The Worktrees tab lists them with their git state against both the base branch and\n" +
 			"origin, and their pull requests; the Tree tab lays the same worktrees out as the\n" +
-			"parent-child forest `wtm tree` prints; the Running tab gathers every worktree the\n" +
+			"parent-child forest `wtm tree` prints; the Services tab gathers every worktree the\n" +
 			"run daemon holds something up in, with the addresses its jobs answer on. `n`\n" +
 			"creates a worktree; right-click a row (or press `m`) to reparent, sync, or delete\n" +
 			"it; `a` opens the actions that run over several worktrees at once, syncing or\n" +

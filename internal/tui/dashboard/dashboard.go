@@ -123,14 +123,14 @@ type treeMsg struct {
 	err  error
 }
 
-var tabs = []string{domain.DashboardTabWorktrees, domain.DashboardTabTree, domain.DashboardTabRunning}
+var tabs = []string{domain.DashboardTabWorktrees, domain.DashboardTabTree, domain.DashboardTabServices}
 
 // The tab indices; the renderer and the loaders key off them rather than off
 // the titles.
 const (
 	tabWorktrees = iota
 	tabTree
-	tabRunning
+	tabServices
 )
 
 // Model is the dashboard's root Bubbletea model. It owns its own zone manager
@@ -184,9 +184,12 @@ type Model struct {
 	outputOffset   int
 	outputExpanded bool
 
-	// runningCursor walks the Running tab's blocks: there, the cursor selects a
-	// worktree, not a job.
-	runningCursor int
+	// services is the Services tab flattened into drawn lines, servicesCursor the
+	// job row it points at — headers and gaps are drawn, never selected — and
+	// servicesOffset the window's first line.
+	services       []domain.ServicesRow
+	servicesCursor int
+	servicesOffset int
 
 	treeRows    []domain.TreeRow
 	treeCursor  int
@@ -197,6 +200,11 @@ type Model struct {
 
 	detailOpen bool
 	showHelp   bool
+
+	// servicesLogs says the Services tab's body is the logs view rather than its
+	// list. The logs view is one component with two hosts, so which host is
+	// showing it is state of that host.
+	servicesLogs bool
 
 	// panelTab is which of the right-hand panel's two tabs is showing.
 	panelTab int
@@ -366,7 +374,7 @@ func (m Model) layout() domain.DashboardLayout {
 		Height:         m.height,
 		OutputExpanded: m.outputExpanded,
 		DetailOpen:     m.detailOpen,
-		FullBody:       m.tab == tabRunning,
+		FullBody:       m.tab == tabServices,
 	})
 }
 
@@ -598,6 +606,12 @@ func (m Model) reflow() Model {
 		Visible: layout.TreeRows,
 		Offset:  m.treeOffset,
 	})
+	m.servicesOffset = rules.DashboardScrollOffset(rules.DashboardScrollParams{
+		Cursor:  m.servicesCursor,
+		Total:   len(m.services),
+		Visible: layout.ServicesRows,
+		Offset:  m.servicesOffset,
+	})
 	m.outputOffset = rules.DashboardClampOffset(rules.DashboardOffsetParams{
 		Offset:  m.outputOffset,
 		Total:   len(m.outputLines),
@@ -614,12 +628,12 @@ func (m Model) selected() (domain.WorktreeStatus, bool) {
 	if m.tab == tabTree {
 		return m.selectedTreeWorktree()
 	}
-	if m.tab == tabRunning {
-		block, ok := m.selectedRunning()
+	if m.tab == tabServices {
+		row, ok := m.selectedService()
 		if !ok {
 			return domain.WorktreeStatus{}, false
 		}
-		return m.statusFor(block.Branch), true
+		return m.statusFor(row.Branch), true
 	}
 	if m.cursor < 0 || m.cursor >= len(m.statuses) {
 		return domain.WorktreeStatus{}, false
@@ -652,9 +666,8 @@ func (m Model) moveCursor(delta int) Model {
 		m.treeCursor = rules.ClampIndex(m.treeCursor+delta, len(m.treeRows))
 		return m.reflow()
 	}
-	if m.tab == tabRunning {
-		m.runningCursor = rules.ClampIndex(m.runningCursor+delta, len(m.runningBlocks()))
-		return m.reflow()
+	if m.tab == tabServices {
+		return m.stepServices(delta).reflow()
 	}
 	m.cursor = rules.ClampIndex(m.cursor+delta, len(m.statuses))
 	return m.reflow()
@@ -666,8 +679,8 @@ func (m Model) rowCount() int {
 	if m.tab == tabTree {
 		return len(m.treeRows)
 	}
-	if m.tab == tabRunning {
-		return len(m.runningBlocks())
+	if m.tab == tabServices {
+		return len(m.services)
 	}
 	return len(m.statuses)
 }
@@ -731,6 +744,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.logsOpen() {
 		switch key {
 		case keyEscape:
+			if m.servicesLogs {
+				return m.closeServiceLogs().reflow(), nil
+			}
 			return m.closePanelLogs().reflow(), nil
 		case keyLeft, keyVimLeft:
 			return m.stepLogsJob(-1).retail()
@@ -783,6 +799,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyOutputDown:
 		return m.scrollOutput(1), nil
 	case keyEnter, keyRight, keyVimRight:
+		if m.tab == tabServices && key == keyEnter {
+			return m.openServiceLogs()
+		}
 		if layout.Narrow {
 			m.detailOpen = true
 			return m.reflow(), nil
@@ -802,9 +821,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // its new position, when ui.animations has not turned that off and the rule
 // actually moves — switching to the tab already active is a no-op either way.
 func (m Model) selectTab(index int) (Model, tea.Cmd) {
-	// The logs view belongs to the panel it is drawn in: left open across a tab
+	// The logs view belongs to the tab it is drawn in: left open across a tab
 	// change it kept esc and enter while showing nothing.
-	m = m.closePanelLogs()
+	m = m.closePanelLogs().closeServiceLogs()
 	width := m.layout().Tabs.Width
 	from := tabStart(width, m.tab)
 	m.tab = index
@@ -825,8 +844,11 @@ func (m Model) selectTab(index int) (Model, tea.Cmd) {
 }
 
 func (m Model) pageRows(layout domain.DashboardLayout) int {
-	if m.tab == tabTree {
+	switch m.tab {
+	case tabTree:
 		return layout.TreeRows
+	case tabServices:
+		return layout.ServicesRows
 	}
 	return layout.ListRows
 }
@@ -907,12 +929,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // clickRow selects the row under the pointer on whichever tab is showing.
 func (m Model) clickRow(msg tea.MouseMsg) (Model, bool) {
-	if m.tab == tabRunning {
-		for index := range m.runningBlocks() {
-			if !m.inZone(runningRowZone(index), msg) {
+	if m.tab == tabServices {
+		for index, row := range m.services {
+			if row.Kind != domain.ServicesRowJob || !m.inZone(servicesRowZone(index), msg) {
 				continue
 			}
-			m.runningCursor = index
+			m.servicesCursor = index
 			return m.reflow(), true
 		}
 		return m, false
@@ -1029,8 +1051,8 @@ func (m Model) renderMain(layout domain.DashboardLayout) string {
 	switch m.tab {
 	case tabTree:
 		return m.renderTree(layout)
-	case tabRunning:
-		return m.renderRunning(layout)
+	case tabServices:
+		return m.renderServices(layout)
 	}
 	return m.renderList(layout)
 }
@@ -1083,6 +1105,11 @@ func (m Model) withBoard() Model {
 		Statuses:  m.statuses,
 		Now:       time.Now(),
 	})
+	m.services = rules.ServicesRows(m.board)
+	// Re-bound here, not only when an arrow is pressed: a job stopping shrinks
+	// the list under a cursor nobody moved, and selected() then answered
+	// "nothing" — no menu, no selection, until the user pressed a key.
+	m.servicesCursor = m.nearestServiceJob(m.servicesCursor, 1)
 	return m
 }
 

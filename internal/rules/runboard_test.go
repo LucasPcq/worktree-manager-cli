@@ -74,3 +74,41 @@ func TestRunBoardSkipsAJobTheConfigNoLongerDeclares(t *testing.T) {
 		t.Errorf("board = %+v, want no block: nothing declared is up here", board)
 	}
 }
+
+func TestServicesRowsFlattensBlocksWithTheirHeaders(t *testing.T) {
+	rows := ServicesRows([]RunWorktreeBlock{
+		{Branch: "feat/a", Path: "/wt/a", Up: 2, Rows: []domain.DetailRow{{Key: "web"}, {Key: "api"}}},
+		{Branch: "main", Path: "/wt/main", Up: 1, Rows: []domain.DetailRow{{Key: "pg"}}},
+	})
+
+	want := []domain.ServicesRowKind{
+		domain.ServicesRowHeader, domain.ServicesRowJob, domain.ServicesRowJob,
+		domain.ServicesRowGap,
+		domain.ServicesRowHeader, domain.ServicesRowJob,
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("rows = %d, want %d", len(rows), len(want))
+	}
+	for index, kind := range want {
+		if rows[index].Kind != kind {
+			t.Fatalf("row %d = %q, want %q", index, rows[index].Kind, kind)
+		}
+	}
+	if rows[1].Branch != "feat/a" || rows[1].Path != "/wt/a" {
+		t.Errorf("job row = %+v, want it to carry its worktree: the menu acts on it", rows[1])
+	}
+	if rows[0].Up != 2 {
+		t.Errorf("header Up = %d, want 2", rows[0].Up)
+	}
+	if rows[1].Job.Key != "web" {
+		t.Errorf("job row key = %q, want web", rows[1].Job.Key)
+	}
+}
+
+func TestServicesRowsPutsNoGapBeforeTheFirstBlock(t *testing.T) {
+	rows := ServicesRows([]RunWorktreeBlock{{Branch: "a", Rows: []domain.DetailRow{{Key: "web"}}}})
+
+	if len(rows) != 2 || rows[0].Kind != domain.ServicesRowHeader {
+		t.Errorf("rows = %+v, want a header then its job, with no leading gap", rows)
+	}
+}

@@ -7,7 +7,7 @@ Open the worktree dashboard
 Open a full-screen dashboard of the repository's worktrees.
 The Worktrees tab lists them with their git state against both the base branch and
 origin, and their pull requests; the Tree tab lays the same worktrees out as the
-parent-child forest `wtm tree` prints; the Running tab gathers every worktree the
+parent-child forest `wtm tree` prints; the Services tab gathers every worktree the
 run daemon holds something up in, with the addresses its jobs answer on. `n`
 creates a worktree; right-click a row (or press `m`) to reparent, sync, or delete
 it; `a` opens the actions that run over several worktrees at once, syncing or

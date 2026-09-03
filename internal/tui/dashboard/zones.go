@@ -9,8 +9,8 @@ const (
 	zoneRowPrefix    = "row:"
 	zoneList         = "panel:list"
 	zoneTree         = "panel:tree"
-	zoneRunning      = "panel:running"
-	zoneRunningPfx   = "running:"
+	zoneServices     = "panel:running"
+	zoneServicesPfx  = "running:"
 	zoneTreeRowPfx   = "tree:"
 	zoneDetail       = "panel:detail"
 	zoneDetailPR     = "detail:pr"
@@ -45,6 +45,6 @@ func rowZone(index int) string { return zoneRowPrefix + strconv.Itoa(index) }
 // to that job whatever the section folded above it.
 func runRowZone(job string) string { return zoneDetailRunPfx + job }
 
-// runningRowZone keys a block by its index in the board, so a click resolves the
+// servicesRowZone keys a block by its index in the board, so a click resolves the
 // same worktree whatever started or stopped since the last frame.
-func runningRowZone(index int) string { return zoneRunningPfx + strconv.Itoa(index) }
+func servicesRowZone(index int) string { return zoneServicesPfx + strconv.Itoa(index) }

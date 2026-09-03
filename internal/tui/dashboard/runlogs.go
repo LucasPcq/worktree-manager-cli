@@ -95,7 +95,11 @@ func (m Model) closePanelLogs() Model {
 	return m
 }
 
-func (m Model) logsOpen() bool { return m.panelTab == panelLogs && m.logsJob != "" }
+// logsOpen is true wherever the logs view is drawn: under the panel's LOGS tab,
+// or as the Services tab's body. The keys it owns follow the view, not a host.
+func (m Model) logsOpen() bool {
+	return m.logsJob != "" && (m.panelTab == panelLogs || m.servicesLogs)
+}
 
 func (m Model) retail() (Model, tea.Cmd) { return m, m.tailLogsCmd() }
 

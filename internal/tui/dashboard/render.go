@@ -399,12 +399,12 @@ func joinHeader(segments ...string) string {
 // countText counts what the active tab lists, in plain text: worktrees, or
 // the nodes of the forest — which includes the parents that have none.
 func (m Model) countText() string {
-	if m.tab == tabRunning {
+	if m.tab == tabServices {
 		up := 0
-		for _, block := range m.runningBlocks() {
+		for _, block := range m.servicesBlocks() {
 			up += block.Up
 		}
-		return fmt.Sprintf(domain.DashboardRunningCountFmt, up)
+		return fmt.Sprintf(domain.DashboardServicesCountFmt, up)
 	}
 	if m.tab == tabTree {
 		if !m.treeLoaded {
@@ -501,8 +501,8 @@ func (m Model) renderHelpBar(layout domain.DashboardLayout) string {
 		hint = domain.DashboardLogsHint
 	case m.tab == tabTree:
 		hint = domain.DashboardHelpTree
-	case m.tab == tabRunning:
-		hint = domain.DashboardHelpRunning
+	case m.tab == tabServices:
+		hint = domain.DashboardHelpServices
 	case layout.Narrow && m.detailOpen:
 		hint = domain.DashboardHelpDetail
 	case layout.Narrow:

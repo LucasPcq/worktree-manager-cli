@@ -133,6 +133,27 @@ type DetailSection struct {
 	Rows []DetailRow
 }
 
+type ServicesRowKind string
+
+const (
+	ServicesRowHeader ServicesRowKind = "header"
+	ServicesRowJob    ServicesRowKind = "job"
+	ServicesRowGap    ServicesRowKind = "gap"
+)
+
+// ServicesRow is one drawn line of the Services tab. The tab is a flat list
+// like the tree is: a cursor that walks jobs, an offset that scrolls lines and
+// a mouse zone per row all need one index, not a stack of blocks.
+type ServicesRow struct {
+	Kind   ServicesRowKind
+	Branch string
+	Path   string
+	// Up heads a block: how many of that worktree's jobs are running.
+	Up int
+	// Job is the row's own line, zero on a header and on a gap.
+	Job DetailRow
+}
+
 // DetailSectionDropOrder is the order sections give up their place when the
 // panel runs out of height: the last one listed falls first. The vital strip
 // and the blockers line are not in it — they never fall.

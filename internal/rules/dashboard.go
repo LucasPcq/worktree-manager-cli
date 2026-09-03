@@ -80,6 +80,7 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 		layout.List, layout.ListVisible = body, true
 		layout.ListRows = dashboardListRows(body.Height)
 		layout.TreeRows = dashboardTreeRows(body.Height)
+		layout.ServicesRows = dashboardTreeRows(body.Height)
 		return layout
 	}
 	if layout.Narrow {
@@ -90,6 +91,7 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 		layout.List, layout.ListVisible = body, true
 		layout.ListRows = dashboardListRows(body.Height)
 		layout.TreeRows = dashboardTreeRows(body.Height)
+		layout.ServicesRows = dashboardTreeRows(body.Height)
 		return layout
 	}
 
@@ -99,6 +101,7 @@ func ComputeDashboardLayout(params DashboardLayoutParams) domain.DashboardLayout
 	layout.ListVisible, layout.DetailVisible = true, true
 	layout.ListRows = dashboardListRows(body.Height)
 	layout.TreeRows = dashboardTreeRows(body.Height)
+	layout.ServicesRows = dashboardTreeRows(body.Height)
 	return layout
 }
 
