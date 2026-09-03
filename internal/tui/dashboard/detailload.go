@@ -7,6 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/process"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
@@ -87,7 +89,12 @@ func (m Model) applyDetail(msg detailMsg) Model {
 // git, and calling it inside Update would freeze the whole program.
 func (m Model) loadDetailCmd(branch string) tea.Cmd {
 	params := m.detailParams(branch)
+	configured := rules.ProxyPort(m.params.Config.Global)
 	return func() tea.Msg {
+		// The public port is asked of the daemon, so it is read here rather than
+		// in detailParams: Update runs on the UI goroutine, and a dial from there
+		// would freeze the program.
+		params.ProxyPort = process.PublicProxyPort(configured)
 		return detailMsg{branch: branch, detail: worktree.Detail(params)}
 	}
 }
@@ -104,6 +111,7 @@ func (m Model) detailParams(branch string) worktree.DetailParams {
 		Children:   m.childrenOf(branch),
 		PRs:        m.prs,
 		Commits:    domain.DashboardDetailCommits,
+		RunConfig:  m.runConfig,
 	}
 }
 

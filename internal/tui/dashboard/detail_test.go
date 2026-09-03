@@ -219,3 +219,44 @@ func TestThePullRequestOpensFromTheKeyboardToo(t *testing.T) {
 		t.Errorf("opener called %d times, want 1", opened)
 	}
 }
+
+func TestTheDetailPanelShowsWhatIsRunning(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model.detailOpen = true
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+	model.jobs = []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"}}
+	model.details = map[string]domain.WorktreeDetail{"a": {Branch: "a"}}
+
+	body := stripANSI(strings.Join(model.detailBody(model.layout()), "\n"))
+
+	if !strings.Contains(body, domain.DetailSectionRun) || !strings.Contains(body, "web") {
+		t.Fatalf("detail body %q must carry the RUN section", body)
+	}
+}
+
+// A run config landing after the panel was built must not leave RUN missing for
+// the rest of the session.
+func TestANewRunConfigReloadsTheDetailOnScreen(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model.details = map[string]domain.WorktreeDetail{"a": {Branch: "a"}}
+
+	_, cmd := updateCmd(model, jobsMsg{config: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}})
+
+	if cmd == nil {
+		t.Fatal("a run config that just appeared must reload the detail built without it")
+	}
+}
+
+// The same config read again is not news: reloading on every poll would mute
+// the panel behind its refreshing marker while it is being read.
+func TestAnUnchangedRunConfigReloadsNothing(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+	model.details = map[string]domain.WorktreeDetail{"a": {Branch: "a"}}
+
+	_, cmd := updateCmd(model, jobsMsg{config: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}})
+
+	if cmd != nil {
+		t.Fatal("the same config read again is not news: the panel must be left alone")
+	}
+}

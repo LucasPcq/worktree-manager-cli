@@ -66,6 +66,8 @@ func (m Model) detailBody(layout domain.DashboardLayout) []string {
 		Parent:        m.parents[status.Branch],
 		PR:            pr,
 		PRUnavailable: m.prUnavailableReason(),
+		RunConfig:     m.runConfig,
+		Jobs:          m.jobs,
 		Height:        budget,
 	})
 	return m.appendSections(lines, sections, width, stale, pr)
@@ -170,7 +172,13 @@ type detailSectionsInput struct {
 	// authenticated), empty when it is fine. Set alongside PR so a broken tool
 	// never renders as "no PR" (§8 state 4).
 	PRUnavailable string
-	Height        int
+	// RunConfig is what the project declares it can run, Jobs what the daemon
+	// holds right now. They are read straight off the model rather than off the
+	// lazily loaded Detail: the jobs follow the poll, the addresses follow the
+	// worktree.
+	RunConfig domain.RunConfig
+	Jobs      []domain.JobInfo
+	Height    int
 }
 
 // Which sections exist, their order and their placeholder lines are rules/'s
@@ -182,6 +190,8 @@ func (m Model) detailSections(input detailSectionsInput) []domain.DetailSection 
 		DetailLoaded:  input.HasDetail,
 		PR:            input.PR,
 		PRUnavailable: input.PRUnavailable,
+		RunConfig:     input.RunConfig,
+		Jobs:          input.Jobs,
 		Parent:        input.Parent,
 		Height:        input.Height,
 		Now:           time.Now(),
