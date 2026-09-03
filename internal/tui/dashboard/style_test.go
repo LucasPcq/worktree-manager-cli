@@ -350,7 +350,7 @@ func TestTheParentWorktreeIsOfferedOnlyItsOwnRefresh(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "main", "feature/x")
 	model.statuses[0] = domain.WorktreeStatus{Branch: "main", Path: "/tmp/main", IsParent: true}
 
-	items := model.menuItems()
+	items := menuActions(model.menuItems())
 	if items[0].action != menuRefreshBase {
 		t.Fatalf("items = %+v, want the base refresh first: no other graph action could apply", items)
 	}
@@ -382,7 +382,7 @@ func TestAHeldWorktreeKeepsAnInertEntryThatSaysWhy(t *testing.T) {
 	model = creating(t, model, "feat")
 	model = selectBranch(t, model, "feat")
 
-	item := model.menuItems()[0]
+	item := menuActions(model.menuItems())[0]
 	if item.disabled == "" {
 		t.Fatal("the entry must say it cannot be used")
 	}

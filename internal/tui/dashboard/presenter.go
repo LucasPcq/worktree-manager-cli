@@ -14,6 +14,7 @@ import (
 	downflow "github.com/LucasPcq/wtm/internal/flow/run/down"
 	logsflow "github.com/LucasPcq/wtm/internal/flow/run/logs"
 	"github.com/LucasPcq/wtm/internal/flow/run/seam"
+	stopflow "github.com/LucasPcq/wtm/internal/flow/run/stop"
 	syncflow "github.com/LucasPcq/wtm/internal/flow/sync"
 	"github.com/LucasPcq/wtm/internal/rules"
 )
@@ -198,6 +199,19 @@ func (p downPresenter) Downed(outcome downflow.Outcome) error {
 		}
 		p.line(fmt.Sprintf(domain.RunStoppedFmt, result.Name))
 	}
+	return nil
+}
+
+// stopPresenter reports a single job stopped. Like downPresenter it has no view
+// to open, so what became of the job is named in the output panel.
+type stopPresenter struct{ presenter }
+
+func (p stopPresenter) Stopped(outcome stopflow.Outcome) error {
+	if outcome.NoDaemon {
+		p.line(domain.RunNoJobsHere)
+		return nil
+	}
+	p.line(fmt.Sprintf(domain.RunStoppedFmt, outcome.Job))
 	return nil
 }
 

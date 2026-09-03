@@ -117,7 +117,8 @@ func TestTheMenuFloatsUnderTheCellItWasOpenedFrom(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
 	model = update(model, key("j"))
 	model = update(model, key(domain.KeyMenu))
-	renderAndWait(t, model, menuZone(0))
+	lead := firstMenuAction(t, model)
+	renderAndWait(t, model, menuZone(lead))
 
 	_, rect := model.menuBox()
 	if rect.Y != model.menuAnchor.Y+1 {
@@ -128,10 +129,10 @@ func TestTheMenuFloatsUnderTheCellItWasOpenedFrom(t *testing.T) {
 			model.menuAnchor.Y, want)
 	}
 
-	entry := model.zones.Get(menuZone(0))
-	wantX, wantY := menuEntryPoint(t, model, 0)
+	entry := model.zones.Get(menuZone(lead))
+	wantX, wantY := menuEntryPoint(t, model, lead)
 	if entry.StartY != wantY || entry.StartX != wantX {
-		t.Errorf("entry 0 starts at (%d,%d), want (%d,%d) — inside the box the rule placed",
+		t.Errorf("the first action starts at (%d,%d), want (%d,%d) — inside the box the rule placed",
 			entry.StartX, entry.StartY, wantX, wantY)
 	}
 }
@@ -147,6 +148,31 @@ func TestTheMenuFlipsAboveTheAnchorRatherThanRunningOffTheBottom(t *testing.T) {
 	if rect.Y >= testHeight-1 {
 		t.Errorf("the menu sits at y=%d, want it above an anchor on the last row", rect.Y)
 	}
+}
+
+// firstMenuAction is where the cursor opens: the menu leads with a heading, so
+// index 0 is read, never used.
+func firstMenuAction(t *testing.T, model Model) int {
+	t.Helper()
+	for index, item := range model.menuItems() {
+		if item.kind == menuEntryAction {
+			return index
+		}
+	}
+	t.Fatal("the menu offers no action at all")
+	return -1
+}
+
+// menuActions is what a test asserting on availability iterates: a heading and
+// a rule are never usable and never disabled.
+func menuActions(items []menuItem) []menuItem {
+	actions := make([]menuItem, 0, len(items))
+	for _, item := range items {
+		if item.kind == menuEntryAction {
+			actions = append(actions, item)
+		}
+	}
+	return actions
 }
 
 // menuIndexOf locates an entry by what it does, so a test does not break when
@@ -236,7 +262,7 @@ func TestARunHoldingTheWorktreeDisablesEveryEntry(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b")
 	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindCreate, target: "a"})
 
-	for _, item := range model.menuItems() {
+	for _, item := range menuActions(model.menuItems()) {
 		if item.disabled == "" {
 			t.Errorf("entry %q stays usable while a run holds its worktree", item.label)
 		}
@@ -249,7 +275,7 @@ func TestClickingOffTheMenuOnlyClosesIt(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b", "c")
 	renderAndWait(t, model, rowZone(2))
 	model = update(model, key(domain.KeyMenu))
-	renderAndWait(t, model, menuZone(0))
+	renderAndWait(t, model, menuZone(firstMenuAction(t, model)))
 
 	// Right on a row of the frame, whose zone the last unobstructed frame left
 	// behind: the menu still swallows it.
@@ -284,10 +310,14 @@ func TestEveryMenuEntryIsClickableAcrossTheWholeBox(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b")
 	renderAndWait(t, model, rowZone(0))
 	model = update(model, key(domain.KeyMenu))
-	renderAndWait(t, model, menuZone(0), menuZone(1))
+	lead := firstMenuAction(t, model)
+	renderAndWait(t, model, menuZone(lead))
 
 	_, rect := model.menuBox()
-	for index := range model.menuItems() {
+	for index, item := range model.menuItems() {
+		if item.kind != menuEntryAction {
+			continue
+		}
 		zone := model.zones.Get(menuZone(index))
 		width := zone.EndX - zone.StartX + 1
 		if want := rect.Width - 2*menuBorder - 2*menuPadding; width < want {
@@ -311,8 +341,8 @@ func TestTheActionsMenuListsGlobalActionsWithNoSelection(t *testing.T) {
 	if len(items) == 0 {
 		t.Fatal("the global menu must offer something with no worktree selected")
 	}
-	if items[0].action != menuReparentBatch {
-		t.Errorf("first entry = %v, want the batch reparent", items[0].action)
+	if actions := menuActions(items); actions[0].action != menuReparentBatch {
+		t.Errorf("first entry = %v, want the batch reparent", actions[0].action)
 	}
 	if title, ok := model.menuTitle(); !ok || title != domain.DashboardActionsTitle {
 		t.Errorf("title = %q, want the menu to name itself rather than a worktree", title)
@@ -340,7 +370,7 @@ func TestTheActionsMenuGoesInertWhileARunHoldsTheSurface(t *testing.T) {
 	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindClean, mode: flow.ModeBlocking})
 	model = update(model, key(domain.KeyActions))
 
-	for _, item := range model.menuItems() {
+	for _, item := range menuActions(model.menuItems()) {
 		if item.disabled == "" {
 			t.Errorf("entry %q stays usable while a run holds the dashboard", item.label)
 		}
@@ -383,7 +413,7 @@ func TestTheActionsMenuStartsThePruneRun(t *testing.T) {
 func TestTheRowMenuLeadsWithSync(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b")
 
-	items := model.worktreeMenuItems()
+	items := menuActions(model.worktreeMenuItems())
 
 	if len(items) == 0 || items[0].action != menuSync {
 		t.Fatalf("items = %+v, want the row menu to lead with the sync", items)
@@ -402,7 +432,7 @@ func TestTheBaseRowOffersTheBaseRefreshAlone(t *testing.T) {
 		parents:  map[string]string{},
 	})
 
-	items := model.worktreeMenuItems()
+	items := menuActions(model.worktreeMenuItems())
 
 	// The base has no parent to move to and cannot be deleted, so the only graph
 	// action it offers is catching up with its own remote. The run module does
@@ -413,7 +443,7 @@ func TestTheBaseRowOffersTheBaseRefreshAlone(t *testing.T) {
 	if items[0].label != domain.DashboardMenuRefreshBase {
 		t.Errorf("label = %q, want the refresh named", items[0].label)
 	}
-	if got := actionsOf(items); got != "6,7,8,9" {
+	if got := actionsOf(items); got != "7,8,9,10,11,12" {
 		t.Errorf("actions = %s, want the refresh followed by the run entries", got)
 	}
 }
@@ -484,4 +514,62 @@ func actionsOf(items []menuItem) string {
 		parts = append(parts, strconv.Itoa(int(item.action)))
 	}
 	return strings.Join(parts, ",")
+}
+
+// "Start jobs" named neither a profile nor a job. The two are different
+// requests, so the menu names them apart and groups them under a heading.
+func TestTheWorktreeMenuIsReadInSections(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model = update(model, key(domain.KeyMenu))
+
+	items := model.menuItems()
+	if items[0].kind != menuEntryHeading || items[0].label != domain.DashboardMenuSectionGit {
+		t.Fatalf("first entry = %+v, want the GIT heading", items[0])
+	}
+	if !hasMenuEntry(items, menuEntryHeading, domain.DashboardMenuSectionRun) {
+		t.Error("the run actions must sit under their own heading")
+	}
+	if !hasMenuEntry(items, menuEntryAction, domain.DashboardMenuRunUp) {
+		t.Error("what starts a profile must be named as such")
+	}
+	if !hasMenuEntry(items, menuEntryAction, domain.DashboardMenuRunStart) {
+		t.Error("starting a single job is its own entry")
+	}
+	if model.menuCursor == 0 {
+		t.Error("the cursor opens on an action, never on a heading")
+	}
+}
+
+func TestTheMenuCursorWalksOverHeadingsAndRules(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model = update(model, key(domain.KeyMenu))
+
+	for range model.menuItems() {
+		model = model.moveMenu(1)
+		if item := model.menuItems()[model.menuCursor]; !item.activatable() {
+			t.Fatalf("cursor parked on %+v, want an action", item)
+		}
+	}
+}
+
+// A heading answers no keypress and no click: activating one would fire the
+// action its zero value happens to name.
+func TestActivatingAHeadingDoesNothing(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model = update(model, key(domain.KeyMenu))
+
+	started, cmd := model.activateMenu(0)
+
+	if cmd != nil || started.ops.active() {
+		t.Fatal("a heading is read, never used")
+	}
+}
+
+func hasMenuEntry(items []menuItem, kind menuEntryKind, label string) bool {
+	for _, item := range items {
+		if item.kind == kind && item.label == label {
+			return true
+		}
+	}
+	return false
 }

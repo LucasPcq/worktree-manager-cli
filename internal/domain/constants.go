@@ -2305,10 +2305,18 @@ const (
 	// DashboardMenuRun* drive the run module from a row. They are offered on the
 	// base row too: the main checkout runs jobs like any other worktree. Starting
 	// jobs and reading them both hand the terminal to the run view, which is the
-	// same view `wtm run up` and `wtm run logs` open.
-	DashboardMenuRunUp   = "Start jobs"
-	DashboardMenuRunDown = "Stop jobs"
-	DashboardMenuRunLogs = "View job logs"
+	// same view `wtm run up` and `wtm run logs` open. A profile and a job are two
+	// different requests, so they are two different entries: "start jobs" for
+	// what starts a profile named neither.
+	DashboardMenuRunUp    = "Start profile…"
+	DashboardMenuRunStart = "Start a job…"
+	DashboardMenuRunDown  = "Stop everything"
+	DashboardMenuRunStop  = "Stop a job…"
+	DashboardMenuRunLogs  = "View logs"
+	// DashboardMenuSection* head the blocks of a context menu. A block is what
+	// tells "move this worktree" and "start its services" apart at a glance.
+	DashboardMenuSectionGit = "GIT"
+	DashboardMenuSectionRun = "RUN"
 	// DashboardRunNotConfigured is what a row offers when the project has no run
 	// module: the answer is `wtm run init`, not a picker with nothing in it.
 	DashboardRunNotConfigured = "No run jobs are configured for this project"

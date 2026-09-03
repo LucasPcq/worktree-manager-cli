@@ -172,7 +172,7 @@ func TestTheMainWorktreeOffersOnlyTheBaseRefreshFromTheTree(t *testing.T) {
 	model, _ = model.selectTab(tabTree)
 	model = update(model, treeMsg{rows: rules.FlattenForest(sampleForest())})
 
-	items := model.menuItems()
+	items := menuActions(model.menuItems())
 	if items[0].action != menuRefreshBase {
 		t.Errorf("menu = %+v, want the base refresh first on the main worktree", items)
 	}

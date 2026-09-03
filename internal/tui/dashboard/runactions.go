@@ -7,6 +7,8 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow"
 	downflow "github.com/LucasPcq/wtm/internal/flow/run/down"
 	logsflow "github.com/LucasPcq/wtm/internal/flow/run/logs"
+	startflow "github.com/LucasPcq/wtm/internal/flow/run/start"
+	stopflow "github.com/LucasPcq/wtm/internal/flow/run/stop"
 	upflow "github.com/LucasPcq/wtm/internal/flow/run/up"
 	"github.com/LucasPcq/wtm/internal/service/runconfig"
 )
@@ -65,6 +67,75 @@ func (m Model) startRunUp(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 
 	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
 		_, err := upflow.Run(params)
+		return opDoneMsg{id: id, err: err}
+	})
+}
+
+// startRunJob starts one job the user names, in the run view: a job is a
+// request of its own, and `target.JobStep` has no safe default — which is why
+// its picker opens here rather than a job being guessed.
+func (m Model) startRunJob(selected domain.WorktreeStatus) (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(selected.Branch); refused {
+		return m.refuse(reason), nil
+	}
+	cfg, ok := m.runRequest(selected)
+	if !ok {
+		return m.refuse(domain.DashboardRunNotConfigured), nil
+	}
+
+	declared := startflow.Operation()
+	m, id := m.beginOp(beginParams{Operation: declared, Target: selected.Branch})
+	send := m.sender()
+
+	params := startflow.Params{
+		Context: m.flowContext(),
+		Request: startflow.Request{Worktree: runWorktree(selected), Cwd: selected.Path, Config: cfg},
+		Prompter: prompter{
+			send:      send,
+			title:     domain.DashboardMenuRunStart,
+			shape:     modalStepper,
+			opID:      id,
+			targetKey: declared.TargetKey,
+		},
+		Presenter: runPresenter{presenter: presenter{send: send, id: id}, watcher: watcher{send: send}},
+	}
+
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		_, err := startflow.Run(params)
+		return opDoneMsg{id: id, err: err}
+	})
+}
+
+// stopRunJob stops one job the user names. Nothing is attached to, so no view
+// opens: what became of the job is reported in the output panel.
+func (m Model) stopRunJob(selected domain.WorktreeStatus) (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(selected.Branch); refused {
+		return m.refuse(reason), nil
+	}
+	cfg, ok := m.runRequest(selected)
+	if !ok {
+		return m.refuse(domain.DashboardRunNotConfigured), nil
+	}
+
+	declared := stopflow.Operation()
+	m, id := m.beginOp(beginParams{Operation: declared, Target: selected.Branch})
+	send := m.sender()
+
+	params := stopflow.Params{
+		Context: m.flowContext(),
+		Request: stopflow.Request{Worktree: runWorktree(selected), Cwd: selected.Path, Config: cfg},
+		Prompter: prompter{
+			send:      send,
+			title:     domain.DashboardMenuRunStop,
+			shape:     modalStepper,
+			opID:      id,
+			targetKey: declared.TargetKey,
+		},
+		Presenter: stopPresenter{presenter: presenter{send: send, id: id}},
+	}
+
+	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
+		_, err := stopflow.Run(params)
 		return opDoneMsg{id: id, err: err}
 	})
 }
