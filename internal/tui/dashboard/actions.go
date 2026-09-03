@@ -341,6 +341,10 @@ func (m Model) finishOp(msg opDoneMsg) (Model, tea.Cmd) {
 	op, _ := m.ops.byID(msg.id)
 	m.ops = m.ops.end(msg.id)
 	m, detailCmd := m.invalidateDetail(op.target)
+	// A run that just started or stopped jobs changes what the badges and the
+	// RUN section say, and waiting for the next poll to notice is what made a
+	// finished run look like nothing had happened.
+	detailCmd = tea.Batch(detailCmd, m.loadJobsCmd(true))
 	// ErrAborted is a run that already reported its own failure — a cascade whose
 	// steps each said what became of them. A second, redundant line under them
 	// would name nothing the panel does not already hold.

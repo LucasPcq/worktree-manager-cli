@@ -544,3 +544,67 @@ func TestFoldingTheOutputPanelClampsItsScroll(t *testing.T) {
 		t.Errorf("offset = %d once folded, want it clamped back to 0", model.outputOffset)
 	}
 }
+
+// Every leaf runs on its own goroutine: a batch from Init holds listenCmd,
+// which blocks on the flow channel until the program ends.
+func fire(cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	go func() {
+		if batch, ok := cmd().(tea.BatchMsg); ok {
+			for _, sub := range batch {
+				fire(sub)
+			}
+		}
+	}()
+}
+
+func TestJobsAreReadWithoutAnExplicitRefresh(t *testing.T) {
+	wakes := make(chan bool, 8)
+	model := New(RunParams{JobsLoader: func(wake bool) []domain.JobInfo {
+		wakes <- wake
+		return nil
+	}})
+	t.Cleanup(model.Close)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model = update(model, worktreesMsg{statuses: statuses("a"), parents: map[string]string{}})
+
+	fire(model.Init())
+	if wake := nextWake(t, wakes); !wake {
+		t.Error("the first read wakes a sleeping daemon: the opening frame must be true")
+	}
+
+	_, cmd := updateCmd(model, pollMsg{})
+	fire(cmd)
+	if wake := nextWake(t, wakes); wake {
+		t.Error("the poll must not wake a daemon: it reads what is there")
+	}
+}
+
+func nextWake(t *testing.T, wakes chan bool) bool {
+	t.Helper()
+	select {
+	case wake := <-wakes:
+		return wake
+	case <-time.After(5 * time.Second):
+		t.Fatal("the jobs were never read")
+		return false
+	}
+}
+
+func TestJobCountsAreDerivedFromTheDaemonIndex(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+
+	model = update(model, jobsMsg{
+		jobs:    []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"}},
+		running: map[string]int{"/tmp/a": 1},
+	})
+
+	if model.running["/tmp/a"] != 1 {
+		t.Fatalf("running = %v, want the count the daemon reported", model.running)
+	}
+	if len(model.jobs) != 1 {
+		t.Fatalf("jobs = %v, want the index kept for the detail panel", model.jobs)
+	}
+}

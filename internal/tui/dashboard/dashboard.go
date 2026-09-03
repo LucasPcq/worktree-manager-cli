@@ -15,6 +15,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/service/runconfig"
 	"github.com/LucasPcq/wtm/internal/service/runjobs"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -36,6 +37,11 @@ type RunParams struct {
 	// wired with ProjectDir). Injected the same way PRLoader is, so a test can
 	// exercise the REVIEW section's click without shelling out to a real gh.
 	PROpener func(number int) error
+	// JobsLoader reads the run daemon's index. wake says whether waking a
+	// sleeping daemon is worth it: every explicit path reads with, the poll
+	// reads without. Injected like PRLoader, so a test never dials a real
+	// socket.
+	JobsLoader func(wake bool) []domain.JobInfo
 }
 
 // OutputLineMsg appends one line to the bottom output panel. Every phase of a
@@ -54,10 +60,15 @@ type worktreesMsg struct {
 	err       error
 }
 
-// jobsMsg carries the run daemon's index: how many jobs each worktree has up.
-// It never fails the dashboard — a daemon that is not listening simply means
+// jobsMsg carries the run daemon's index and the run.toml it is read against:
+// what each worktree has up, and what the project declares it could run. It
+// never fails the dashboard — a daemon that is not listening simply means
 // nothing is running, which is the answer.
-type jobsMsg struct{ running map[string]int }
+type jobsMsg struct {
+	jobs    []domain.JobInfo
+	running map[string]int
+	config  domain.RunConfig
+}
 
 type prsMsg struct {
 	prs  []domain.PRInfo
@@ -121,8 +132,12 @@ type Model struct {
 	ghConn    domain.GHConnection
 	prsLoaded bool
 
-	// running counts the jobs the run daemon holds per worktree path.
-	running map[string]int
+	// running counts the jobs the run daemon holds per worktree path; jobs is
+	// what those counts were derived from, and runConfig what the project
+	// declares — the detail panel needs all three.
+	running   map[string]int
+	jobs      []domain.JobInfo
+	runConfig domain.RunConfig
 
 	outputLines    []string
 	outputOffset   int
@@ -212,7 +227,7 @@ func (m Model) Init() tea.Cmd {
 	// The spinner is started on demand, at the point a detail load actually
 	// begins (fireDetailTick, reloadDetailCmd) — not here, or it would tick for
 	// the life of the program whether or not anything is loading.
-	return tea.Batch(m.loadWorktreesCmd(false), m.loadPRsCmd(), pollCmd(), listenCmd(m.msgs))
+	return tea.Batch(m.loadWorktreesCmd(false), m.loadPRsCmd(), m.loadJobsCmd(true), pollCmd(), listenCmd(m.msgs))
 }
 
 func pollCmd() tea.Cmd {
@@ -327,10 +342,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case jobsMsg:
-		m.running = msg.running
-		// The tree carries the count on its nodes, so the rows already drawn hold a
-		// stale one until they are rebuilt.
-		return m, m.treeCmd()
+		return m.applyJobs(msg)
 
 	case pollMsg:
 		if m.loading {
@@ -347,7 +359,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// few seconds mutes the whole panel behind a "refreshing" marker while
 		// the user is reading it. It reloads when the selection changes, when an
 		// operation touches its branch, and on KeyRefresh — never on a timer.
-		return m, tea.Batch(m.loadWorktreesCmd(false), tree, pollCmd())
+		return m, tea.Batch(m.loadWorktreesCmd(false), m.loadJobsCmd(false), tree, pollCmd())
 
 	case treeMsg:
 		before := m.selectedBranch()
@@ -580,7 +592,7 @@ func (m Model) refresh() (Model, tea.Cmd) {
 	m.loading, m.prsLoaded = true, false
 	m.treeLoading = m.treeLoaded || m.tab == tabTree
 	next, detailCmd := m.reloadDetailCmd()
-	return next, tea.Batch(next.loadWorktreesCmd(true), next.loadPRsCmd(), next.loadJobsCmd(), next.treeCmd(), detailCmd)
+	return next, tea.Batch(next.loadWorktreesCmd(true), next.loadPRsCmd(), next.loadJobsCmd(true), next.treeCmd(), detailCmd)
 }
 
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -907,11 +919,44 @@ func (m Model) withOverlays(frame string) string {
 	return frame
 }
 
-// loadJobsCmd reads the run daemon's index off the UI thread. It is graceful by
-// design: no daemon means nothing is running, which is an answer and not an
-// error, so it never reaches the output panel.
-func (m Model) loadJobsCmd() tea.Cmd {
+// loadJobsCmd reads the run daemon's index off the UI thread, with the run.toml
+// those jobs are declared in. It is graceful by design: no daemon means nothing
+// is running, which is an answer and not an error, so it never reaches the
+// output panel.
+func (m Model) loadJobsCmd(wake bool) tea.Cmd {
+	load, stateDir := m.jobsLoader(), m.params.StateDir
 	return func() tea.Msg {
-		return jobsMsg{running: rules.RunningJobsByWorktree(runjobs.Load())}
+		jobs := load(wake)
+		cfg, _ := runconfig.Load(stateDir)
+		return jobsMsg{jobs: jobs, running: rules.RunningJobsByWorktree(jobs), config: cfg}
 	}
+}
+
+func (m Model) jobsLoader() func(bool) []domain.JobInfo {
+	if m.params.JobsLoader != nil {
+		return m.params.JobsLoader
+	}
+	return defaultJobsLoader
+}
+
+func defaultJobsLoader(wake bool) []domain.JobInfo {
+	if wake {
+		return runjobs.Load()
+	}
+	return runjobs.Peek()
+}
+
+// applyJobs also reloads the detail on screen when the project's declared jobs
+// changed: a panel built before run.toml was read would otherwise stay without
+// its RUN section for the rest of the session.
+func (m Model) applyJobs(msg jobsMsg) (Model, tea.Cmd) {
+	changed := !rules.SameJobNames(m.runConfig, msg.config)
+	m.jobs, m.running, m.runConfig = msg.jobs, msg.running, msg.config
+	// The tree carries the count on its nodes, so the rows already drawn hold a
+	// stale one until they are rebuilt.
+	if !changed {
+		return m, m.treeCmd()
+	}
+	next, detailCmd := m.invalidateDetail(m.selectedBranch())
+	return next, tea.Batch(next.treeCmd(), detailCmd)
 }

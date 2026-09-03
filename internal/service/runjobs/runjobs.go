@@ -52,3 +52,19 @@ func Load() []domain.JobInfo {
 	jobs, _ := List()
 	return jobs
 }
+
+// Peek is Load for a reader whose question does not justify waking anything: it
+// reports what a live daemon holds, and nothing when none is listening. The
+// dashboard's poll reads through it — forking a daemon every three seconds is
+// not what a background refresh is for.
+func Peek() []domain.JobInfo {
+	socketPath := process.SocketPath()
+	if !process.IsDaemonRunning(socketPath) {
+		return nil
+	}
+	resp, err := process.NewClient(socketPath).Send(process.Request{Action: process.ActionList})
+	if err != nil {
+		return nil
+	}
+	return resp.Jobs
+}
