@@ -533,22 +533,23 @@ type runSectionParams struct {
 func runSection(params runSectionParams) domain.DetailSection {
 	infos := upJobsByName(params.Infos, params.WorkDir)
 	shown, folded := splitBudget(len(params.Jobs), params.Budget)
-	width := longestJobName(params.Jobs)
 
-	lines := make([]string, 0, shown+1)
+	rows := make([]runRow, 0, shown)
 	for index, job := range params.Jobs {
 		if index >= shown {
 			break
 		}
 		info, up := infos[job.Name]
-		lines = append(lines, runJobLine(runJobLineParams{
-			Name:    pad(job.Name, width),
-			Info:    info,
-			Up:      up,
-			Address: params.Addresses[job.Name],
-			Now:     params.Now,
-		}))
+		rows = append(rows, runRow{
+			Glyph: jobGlyph(up),
+			Name:  job.Name,
+			Ports: portList(params.Addresses[job.Name].Ports, up),
+			State: jobState(jobStateParams{Info: info, Up: up, Now: params.Now}),
+			URL:   jobURLCell(params.Addresses[job.Name].URL, up),
+		})
 	}
+
+	lines := runLines(rows)
 	if folded > 0 {
 		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailMoreFmt, folded))
 	}
@@ -561,6 +562,41 @@ func runSection(params runSectionParams) domain.DetailSection {
 	}
 }
 
+// runRow is one job before its columns are sized: the section is a table, and a
+// table is only readable once every cell knows how wide its column ended up.
+type runRow struct {
+	Glyph string
+	Name  string
+	Ports string
+	State string
+	URL   string
+}
+
+// runLines sizes each column on its own longest cell, so a name, a port list
+// and an uptime read down the column rather than drifting with the row above.
+// The url closes the line and is never padded; the line is trimmed, so a job
+// with nothing to say ends where its words do.
+func runLines(rows []runRow) []string {
+	name, ports, state := 0, 0, 0
+	for _, row := range rows {
+		name = max(name, len(row.Name))
+		ports = max(ports, len(row.Ports))
+		state = max(state, len(row.State))
+	}
+
+	lines := make([]string, 0, len(rows))
+	for _, row := range rows {
+		line := domain.DetailListIndent + row.Glyph + " " + strings.Join([]string{
+			pad(row.Name, name),
+			pad(row.Ports, ports),
+			pad(row.State, state),
+			row.URL,
+		}, domain.DetailColumnGap)
+		lines = append(lines, strings.TrimRight(line, " "))
+	}
+	return lines
+}
+
 func runCount(up int) string {
 	if up == 0 {
 		return domain.DetailRunNothing
@@ -568,48 +604,48 @@ func runCount(up int) string {
 	return fmt.Sprintf(domain.DetailRunCountFmt, up)
 }
 
-type runJobLineParams struct {
-	Name    string
-	Info    domain.JobInfo
-	Up      bool
-	Address domain.JobAddress
-	Now     time.Time
+func jobGlyph(up bool) string {
+	if up {
+		return domain.DetailJobUpGlyph
+	}
+	return domain.DetailJobDownGlyph
 }
 
-// A job that is down says so and nothing else: its ports are where it would
+type jobStateParams struct {
+	Info domain.JobInfo
+	Up   bool
+	Now  time.Time
+}
+
+// A job that is up says how long it has been, which is the only thing about it
+// that changes; one that is down says so, since an uptime on a stopped job
+// would date a run that is over.
+func jobState(params jobStateParams) string {
+	if !params.Up {
+		return domain.DetailJobStopped
+	}
+	return JobUptime(JobUptimeParams{Job: params.Info, Now: params.Now})
+}
+
+// A stopped job shows neither its ports nor its url: they are where it would
 // answer, not where it does, and printing them would read as a service that is
 // up.
-func runJobLine(params runJobLineParams) string {
-	if !params.Up {
-		return runLine(domain.DetailJobDownGlyph, params.Name, domain.DetailJobStopped)
+func portList(ports []int, up bool) string {
+	if !up {
+		return ""
 	}
-	return runLine(domain.DetailJobUpGlyph, params.Name,
-		portList(params.Address.Ports),
-		JobUptime(JobUptimeParams{Job: params.Info, Now: params.Now}),
-		params.Address.URL)
-}
-
-// An empty column is dropped rather than padded: a job with no port and no url
-// would otherwise trail a run of spaces its neighbours make look like a missing
-// value.
-func runLine(glyph, name string, fields ...string) string {
-	parts := make([]string, 0, len(fields)+2)
-	parts = append(parts, glyph, name)
-	for _, field := range fields {
-		if field == "" {
-			continue
-		}
-		parts = append(parts, field)
-	}
-	return domain.DetailListIndent + strings.Join(parts, " ")
-}
-
-func portList(ports []int) string {
 	names := make([]string, 0, len(ports))
 	for _, port := range ports {
 		names = append(names, fmt.Sprintf(domain.DetailJobPortFmt, port))
 	}
 	return strings.Join(names, domain.DetailListSep)
+}
+
+func jobURLCell(url string, up bool) string {
+	if !up {
+		return ""
+	}
+	return url
 }
 
 // upJobsByName keeps only what this worktree has up: the daemon indexes every
@@ -623,12 +659,4 @@ func upJobsByName(infos []domain.JobInfo, workDir string) map[string]domain.JobI
 		up[info.Name] = info
 	}
 	return up
-}
-
-func longestJobName(jobs []domain.JobConfig) int {
-	width := 0
-	for _, job := range jobs {
-		width = max(width, len(job.Name))
-	}
-	return width
 }
