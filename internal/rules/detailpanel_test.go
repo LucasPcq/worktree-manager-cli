@@ -626,3 +626,44 @@ func TestRunSectionIsTheLastToFallWhenTheHeightRunsShort(t *testing.T) {
 		t.Fatalf("kept = %+v, want RUN alone standing", kept)
 	}
 }
+
+// A job dropped from run.toml while it is still up has no line here, so the
+// header must not count it: a count naming something the body does not show
+// reads as a section that lost a row.
+func TestRunSectionCountsOnlyWhatItCouldList(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 60, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}},
+		Jobs: []domain.JobInfo{
+			{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/wt/x"},
+			{Name: "gone", Status: domain.JobStatusRunning, WorkDir: "/wt/x"},
+		},
+	})
+
+	if want := fmt.Sprintf(domain.DetailRunCountFmt, 1); sections[0].TitleRight != want {
+		t.Fatalf("TitleRight = %q, want %q — only the declared job has a line", sections[0].TitleRight, want)
+	}
+}
+
+// A folded job is still up, and the count says so: the « … N more » line is
+// what explains the difference between the header and the rows.
+func TestRunSectionCountsWhatItFolded(t *testing.T) {
+	jobs := make([]domain.JobConfig, 0, domain.DashboardDetailJobs+2)
+	infos := make([]domain.JobInfo, 0, domain.DashboardDetailJobs+2)
+	for index := range domain.DashboardDetailJobs + 2 {
+		name := fmt.Sprintf("job%d", index)
+		jobs = append(jobs, domain.JobConfig{Name: name})
+		infos = append(infos, domain.JobInfo{Name: name, Status: domain.JobStatusRunning, WorkDir: "/wt/x"})
+	}
+
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 80, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: jobs}, Jobs: infos,
+	})
+
+	if want := fmt.Sprintf(domain.DetailRunCountFmt, len(jobs)); sections[0].TitleRight != want {
+		t.Fatalf("TitleRight = %q, want %q", sections[0].TitleRight, want)
+	}
+}

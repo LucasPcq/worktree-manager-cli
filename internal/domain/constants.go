@@ -2464,7 +2464,10 @@ const (
 	DetailJobPortFmt   = ":%d"
 	// DetailColumnGap separates two columns of a detail-section table. Two spaces
 	// rather than one: a single one reads as a word break inside a cell.
+	// DetailGlyphGap follows the state glyph, which is a mark on its row rather
+	// than a column of its own.
 	DetailColumnGap = "  "
+	DetailGlyphGap  = " "
 	// DetailRunNothing and DetailRunCountFmt head the section: what is up, or
 	// that nothing is.
 	DetailRunNothing  = "nothing running"

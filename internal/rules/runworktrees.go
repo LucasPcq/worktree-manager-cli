@@ -20,16 +20,38 @@ func RunningJobsByWorktree(jobs []domain.JobInfo) map[string]int {
 	return counts
 }
 
-// SameJobNames says whether two readings of run.toml declare the same jobs. It
-// is what a surface caching a per-worktree view asks before rebuilding it: the
-// ports and the urls follow the names, and nothing else in the file changes
-// what that view holds.
-func SameJobNames(before, after domain.RunConfig) bool {
+// SameRunJobs says whether two readings of run.toml declare the same jobs, in
+// the sense a surface caching a per-worktree view cares about: the name, the
+// ports and the published url are exactly what WorktreeJobAddresses reads, so a
+// port edited without a rename is a change too.
+func SameRunJobs(before, after domain.RunConfig) bool {
 	if len(before.Jobs) != len(after.Jobs) {
 		return false
 	}
 	for index, job := range before.Jobs {
-		if after.Jobs[index].Name != job.Name {
+		if !sameJob(job, after.Jobs[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameJob(before, after domain.JobConfig) bool {
+	if before.Name != after.Name || !samePorts(before.Ports, after.Ports) {
+		return false
+	}
+	if before.URL == nil || after.URL == nil {
+		return before.URL == after.URL
+	}
+	return *before.URL == *after.URL
+}
+
+func samePorts(before, after map[string]int) bool {
+	if len(before) != len(after) {
+		return false
+	}
+	for name, port := range before {
+		if after[name] != port {
 			return false
 		}
 	}

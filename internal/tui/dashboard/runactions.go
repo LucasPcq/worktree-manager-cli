@@ -34,7 +34,12 @@ func (m Model) runRequest(selected domain.WorktreeStatus) (domain.RunConfig, boo
 // designates a worktree, so it goes in where the positional would: target
 // presets it, and the worktree step is read back in the recap instead of being
 // put to someone who has just answered it by clicking.
-func runWorktree(selected domain.WorktreeStatus) string { return selected.Path }
+//
+// The branch, never the path: the positional is resolved by name
+// (worktree.Resolve matches branches, exactly then by substring), so a path
+// matches nothing and refuses the run. A detached worktree carries no branch
+// and names nothing — the flow then falls back to Cwd, which is this same row.
+func runWorktree(selected domain.WorktreeStatus) string { return selected.Branch }
 
 // startRunUp brings a worktree's default profile up, in the run view. The view
 // takes the terminal for as long as it is open and gives it back on exit, the

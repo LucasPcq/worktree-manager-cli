@@ -53,18 +53,21 @@ func Load() []domain.JobInfo {
 	return jobs
 }
 
-// Peek is Load for a reader whose question does not justify waking anything: it
-// reports what a live daemon holds, and nothing when none is listening. The
-// dashboard's poll reads through it — forking a daemon every three seconds is
-// not what a background refresh is for.
-func Peek() []domain.JobInfo {
+// Peek is Load for a reader whose question does not justify waking anything —
+// the dashboard's poll, since forking a daemon every three seconds is not what
+// a background refresh is for. The second result says whether it could tell at
+// all: a daemon exits once no foreground job is left, so nobody listening while
+// the index still holds jobs means "cannot say", never "nothing is running". A
+// caller that took that silence for an answer would blink a detached stack out
+// of its panel on every poll.
+func Peek() (jobs []domain.JobInfo, known bool) {
 	socketPath := process.SocketPath()
 	if !process.IsDaemonRunning(socketPath) {
-		return nil
+		return nil, !process.HasAnyIndexedJob()
 	}
 	resp, err := process.NewClient(socketPath).Send(process.Request{Action: process.ActionList})
 	if err != nil {
-		return nil
+		return nil, false
 	}
-	return resp.Jobs
+	return resp.Jobs, true
 }

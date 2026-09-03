@@ -39,9 +39,9 @@ type RunParams struct {
 	PROpener func(number int) error
 	// JobsLoader reads the run daemon's index. wake says whether waking a
 	// sleeping daemon is worth it: every explicit path reads with, the poll
-	// reads without. Injected like PRLoader, so a test never dials a real
-	// socket.
-	JobsLoader func(wake bool) []domain.JobInfo
+	// reads without, and known reports whether the index could be read at all.
+	// Injected like PRLoader, so a test never dials a real socket.
+	JobsLoader func(wake bool) (jobs []domain.JobInfo, known bool)
 }
 
 // OutputLineMsg appends one line to the bottom output panel. Every phase of a
@@ -68,6 +68,10 @@ type jobsMsg struct {
 	jobs    []domain.JobInfo
 	running map[string]int
 	config  domain.RunConfig
+	// known is false when the daemon could not be asked while its index still
+	// holds jobs: what runs is then unknown, which is not the same answer as
+	// nothing running, and the counts already on screen are kept.
+	known bool
 }
 
 type prsMsg struct {
@@ -926,22 +930,24 @@ func (m Model) withOverlays(frame string) string {
 func (m Model) loadJobsCmd(wake bool) tea.Cmd {
 	load, stateDir := m.jobsLoader(), m.params.StateDir
 	return func() tea.Msg {
-		jobs := load(wake)
+		jobs, known := load(wake)
 		cfg, _ := runconfig.Load(stateDir)
-		return jobsMsg{jobs: jobs, running: rules.RunningJobsByWorktree(jobs), config: cfg}
+		return jobsMsg{jobs: jobs, running: rules.RunningJobsByWorktree(jobs), config: cfg, known: known}
 	}
 }
 
-func (m Model) jobsLoader() func(bool) []domain.JobInfo {
+func (m Model) jobsLoader() func(bool) ([]domain.JobInfo, bool) {
 	if m.params.JobsLoader != nil {
 		return m.params.JobsLoader
 	}
 	return defaultJobsLoader
 }
 
-func defaultJobsLoader(wake bool) []domain.JobInfo {
+// A waking read always knows: it opens the daemon rather than asking whether
+// one happens to be listening.
+func defaultJobsLoader(wake bool) ([]domain.JobInfo, bool) {
 	if wake {
-		return runjobs.Load()
+		return runjobs.Load(), true
 	}
 	return runjobs.Peek()
 }
@@ -950,8 +956,11 @@ func defaultJobsLoader(wake bool) []domain.JobInfo {
 // changed: a panel built before run.toml was read would otherwise stay without
 // its RUN section for the rest of the session.
 func (m Model) applyJobs(msg jobsMsg) (Model, tea.Cmd) {
-	changed := !rules.SameJobNames(m.runConfig, msg.config)
-	m.jobs, m.running, m.runConfig = msg.jobs, msg.running, msg.config
+	changed := !rules.SameRunJobs(m.runConfig, msg.config)
+	m.runConfig = msg.config
+	if msg.known {
+		m.jobs, m.running = msg.jobs, msg.running
+	}
 	// The tree carries the count on its nodes, so the rows already drawn hold a
 	// stale one until they are rebuilt.
 	if !changed {

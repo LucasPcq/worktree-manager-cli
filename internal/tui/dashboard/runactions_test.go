@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -12,11 +13,18 @@ import (
 func TestARunStartedFromARowNamesItsWorktree(t *testing.T) {
 	selected := domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}
 
-	presets := target.Presets(target.PresetParams{
-		Named: &target.Resolved{Dir: runWorktree(selected), Branch: selected.Branch},
+	named, err := target.Named(target.ResolveParams{
+		ProjectDir: t.TempDir(),
+		Query:      runWorktree(selected),
 	})
 
-	if got := presets.Value(target.KeyWorktree); got != "/wt/x" {
-		t.Fatalf("preset worktree = %q, want the row's own path", got)
+	// The repository is empty, so the name resolves to nothing — but it must
+	// have been looked up as a name. A path is refused before that, which is the
+	// regression this guards.
+	if err == nil {
+		t.Fatalf("named = %+v, want the empty repository to answer nothing", named)
+	}
+	if !strings.Contains(err.Error(), selected.Branch) {
+		t.Fatalf("error = %v, want the branch quoted: the positional is resolved by name", err)
 	}
 }

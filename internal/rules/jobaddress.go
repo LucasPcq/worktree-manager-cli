@@ -40,8 +40,7 @@ func WorktreeJobAddresses(params WorktreeJobAddressesParams) map[string]domain.J
 	return addresses
 }
 
-// Sorted because a map range would permute the ports between two reads of the
-// same worktree, and a panel must not move under the eye.
+// A map range would permute the ports between two reads of the same config.
 func sortedPortValues(ports map[string]int) []int {
 	values := make([]int, 0, len(ports))
 	for _, port := range ports {

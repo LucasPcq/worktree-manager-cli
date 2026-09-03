@@ -89,7 +89,13 @@ func (m Model) applyDetail(msg detailMsg) Model {
 // git, and calling it inside Update would freeze the whole program.
 func (m Model) loadDetailCmd(branch string) tea.Cmd {
 	params := m.detailParams(branch)
-	configured := rules.ProxyPort(m.params.Config.Global)
+	// A project with no run module computes no address, so its port is never
+	// read: PublicProxyPort dials the daemon, and paying for it on every change
+	// of selection would buy a value nobody looks at.
+	configured := 0
+	if len(m.runConfig.Jobs) > 0 {
+		configured = rules.ProxyPort(m.params.Config.Global)
+	}
 	return func() tea.Msg {
 		// The public port is asked of the daemon, so it is read here rather than
 		// in detailParams: Update runs on the UI goroutine, and a dial from there

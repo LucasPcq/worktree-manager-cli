@@ -534,18 +534,25 @@ func runSection(params runSectionParams) domain.DetailSection {
 	infos := upJobsByName(params.Infos, params.WorkDir)
 	shown, folded := splitBudget(len(params.Jobs), params.Budget)
 
+	up := 0
 	rows := make([]runRow, 0, shown)
 	for index, job := range params.Jobs {
-		if index >= shown {
-			break
+		info, running := infos[job.Name]
+		// Counted over the declared jobs, not over the daemon's index: a job
+		// dropped from run.toml while still up has no line here, and a header
+		// counting it would name something the body does not show.
+		if running {
+			up++
 		}
-		info, up := infos[job.Name]
+		if index >= shown {
+			continue
+		}
 		rows = append(rows, runRow{
-			Glyph: jobGlyph(up),
+			Glyph: jobGlyph(running),
 			Name:  job.Name,
-			Ports: portList(params.Addresses[job.Name].Ports, up),
-			State: jobState(jobStateParams{Info: info, Up: up, Now: params.Now}),
-			URL:   jobURLCell(params.Addresses[job.Name].URL, up),
+			Ports: portList(params.Addresses[job.Name].Ports, running),
+			State: jobState(jobStateParams{Info: info, Up: running, Now: params.Now}),
+			URL:   jobURLCell(params.Addresses[job.Name].URL, running),
 		})
 	}
 
@@ -557,7 +564,7 @@ func runSection(params runSectionParams) domain.DetailSection {
 	return domain.DetailSection{
 		Key:        domain.DetailSectionRun,
 		Title:      domain.DetailSectionRun,
-		TitleRight: runCount(len(infos)),
+		TitleRight: runCount(up),
 		Lines:      lines,
 	}
 }
@@ -579,14 +586,16 @@ type runRow struct {
 func runLines(rows []runRow) []string {
 	name, ports, state := 0, 0, 0
 	for _, row := range rows {
-		name = max(name, len(row.Name))
-		ports = max(ports, len(row.Ports))
-		state = max(state, len(row.State))
+		// Counted in runes, like the pad that consumes them: a name measured in
+		// bytes over-pads every non-ASCII cell against its ASCII neighbours.
+		name = max(name, len([]rune(row.Name)))
+		ports = max(ports, len([]rune(row.Ports)))
+		state = max(state, len([]rune(row.State)))
 	}
 
 	lines := make([]string, 0, len(rows))
 	for _, row := range rows {
-		line := domain.DetailListIndent + row.Glyph + " " + strings.Join([]string{
+		line := domain.DetailListIndent + row.Glyph + domain.DetailGlyphGap + strings.Join([]string{
 			pad(row.Name, name),
 			pad(row.Ports, ports),
 			pad(row.State, state),

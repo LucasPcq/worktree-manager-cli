@@ -562,9 +562,9 @@ func fire(cmd tea.Cmd) {
 
 func TestJobsAreReadWithoutAnExplicitRefresh(t *testing.T) {
 	wakes := make(chan bool, 8)
-	model := New(RunParams{JobsLoader: func(wake bool) []domain.JobInfo {
+	model := New(RunParams{JobsLoader: func(wake bool) ([]domain.JobInfo, bool) {
 		wakes <- wake
-		return nil
+		return nil, true
 	}})
 	t.Cleanup(model.Close)
 	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
@@ -599,6 +599,7 @@ func TestJobCountsAreDerivedFromTheDaemonIndex(t *testing.T) {
 	model = update(model, jobsMsg{
 		jobs:    []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"}},
 		running: map[string]int{"/tmp/a": 1},
+		known:   true,
 	})
 
 	if model.running["/tmp/a"] != 1 {
@@ -606,5 +607,38 @@ func TestJobCountsAreDerivedFromTheDaemonIndex(t *testing.T) {
 	}
 	if len(model.jobs) != 1 {
 		t.Fatalf("jobs = %v, want the index kept for the detail panel", model.jobs)
+	}
+}
+
+// A daemon that has withdrawn while detached stacks are still indexed cannot
+// say what runs. Taking that silence for "nothing runs" blinked a running stack
+// out of the panel on every poll, and back in on every refresh.
+func TestAReadThatCouldNotTellKeepsTheCountsOnScreen(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model = update(model, jobsMsg{
+		jobs:    []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"}},
+		running: map[string]int{"/tmp/a": 1},
+		known:   true,
+	})
+
+	model = update(model, jobsMsg{known: false})
+
+	if model.running["/tmp/a"] != 1 || len(model.jobs) != 1 {
+		t.Fatalf("running = %v, jobs = %v, want the last reading kept", model.running, model.jobs)
+	}
+}
+
+func TestAReadThatTellsNothingIsUpClearsTheCounts(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model = update(model, jobsMsg{
+		jobs:    []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"}},
+		running: map[string]int{"/tmp/a": 1},
+		known:   true,
+	})
+
+	model = update(model, jobsMsg{known: true})
+
+	if len(model.running) != 0 || len(model.jobs) != 0 {
+		t.Fatalf("running = %v, jobs = %v, want them cleared by an answer", model.running, model.jobs)
 	}
 }

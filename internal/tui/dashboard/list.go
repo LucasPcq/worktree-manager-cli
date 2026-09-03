@@ -94,9 +94,10 @@ func (m Model) renderRow(index, width int) []string {
 	return []string{
 		rowIndent + line,
 		rowIndent + metaLine(metaLineParams{
-			Meta:  metaColored,
-			Badge: styleMeta(badge, true, styles.Success),
-			Inner: inner,
+			Meta:    metaColored,
+			Badge:   badge,
+			Colored: true,
+			Inner:   inner,
 		}),
 	}
 }
@@ -114,18 +115,22 @@ func (m Model) runningBadge(status domain.WorktreeStatus) string {
 }
 
 type metaLineParams struct {
-	Meta  string
-	Badge string
-	Inner int
+	Meta    string
+	Badge   string
+	Colored bool
+	Inner   int
 }
 
 // metaLine pads to the full width either way: the row is one clickable block,
-// and a badge is never allowed to push the meta out of the line it shares.
+// and a badge is never allowed to push the meta out of the line it shares. The
+// badge is styled here, never before: an empty string rendered through a style
+// comes back as a pair of escapes — zero columns wide, but not empty, which
+// would cost the meta a column on every row that runs nothing.
 func metaLine(params metaLineParams) string {
 	if params.Badge == "" {
 		return pad(truncateRendered(params.Meta, params.Inner), params.Inner)
 	}
-	return spread(params.Meta, params.Badge, params.Inner)
+	return spread(params.Meta, styleMeta(params.Badge, params.Colored, styles.Success), params.Inner)
 }
 
 // rowBarWidth is the gutter the accent bar and its space take, kept off the
