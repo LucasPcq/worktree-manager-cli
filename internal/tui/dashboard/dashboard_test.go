@@ -642,3 +642,60 @@ func TestAReadThatTellsNothingIsUpClearsTheCounts(t *testing.T) {
 		t.Fatalf("running = %v, jobs = %v, want them cleared by an answer", model.running, model.jobs)
 	}
 }
+
+func TestJobsPollOnlyAsksAddressesForWorktreesThatHaveSomethingUp(t *testing.T) {
+	asked := make(chan []string, 1)
+	model := New(RunParams{
+		JobsLoader: func(bool) ([]domain.JobInfo, bool) {
+			return []domain.JobInfo{
+				{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"},
+			}, true
+		},
+		AddressLoader: func(branches []string) map[string]map[string]domain.JobAddress {
+			asked <- branches
+			return map[string]map[string]domain.JobAddress{"a": {"web": {URL: "http://web.wtm"}}}
+		},
+	})
+	t.Cleanup(model.Close)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model = update(model, worktreesMsg{statuses: statuses("a", "idle"), parents: map[string]string{}})
+
+	msg := model.loadJobsCmd(false)()
+
+	select {
+	case branches := <-asked:
+		if len(branches) != 1 || branches[0] != "a" {
+			t.Errorf("branches = %v, want only the one with a job up: BranchEnv writes an ordinal", branches)
+		}
+	default:
+		t.Fatal("addresses were never asked for")
+	}
+
+	jobs, ok := msg.(jobsMsg)
+	if !ok {
+		t.Fatalf("msg = %T, want jobsMsg", msg)
+	}
+	if jobs.addresses["a"]["web"].URL != "http://web.wtm" {
+		t.Errorf("addresses = %v, want them carried by the poll", jobs.addresses)
+	}
+}
+
+func TestJobsPollAsksNoAddressWhenNothingIsUp(t *testing.T) {
+	called := false
+	model := New(RunParams{
+		JobsLoader: func(bool) ([]domain.JobInfo, bool) { return nil, true },
+		AddressLoader: func([]string) map[string]map[string]domain.JobAddress {
+			called = true
+			return nil
+		},
+	})
+	t.Cleanup(model.Close)
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model = update(model, worktreesMsg{statuses: statuses("a"), parents: map[string]string{}})
+
+	model.loadJobsCmd(false)()
+
+	if called {
+		t.Error("addresses were asked for with nothing up, want the ordinal left unallocated")
+	}
+}

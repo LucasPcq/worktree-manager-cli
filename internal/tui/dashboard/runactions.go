@@ -220,7 +220,7 @@ func (m Model) clickRunRow(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 
 // addressFor is where the selected worktree's job answers.
 func (m Model) addressFor(job string) domain.JobAddress {
-	return m.details[m.selectedBranch()].RunAddresses[job]
+	return m.addresses[m.selectedBranch()][job]
 }
 
 // Off the UI goroutine: the opener hands the url to the desktop, and calling it

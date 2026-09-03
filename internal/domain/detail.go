@@ -65,12 +65,7 @@ type WorktreeDetail struct {
 	// CHANGES' uncommitted volume. Left zero for the parent worktree, which
 	// has no base to diff against.
 	BranchDiff DiffStat
-	// RunAddresses is where each declared job answers in this worktree, keyed by
-	// job name. Nil for a project with no run module, and for a worktree whose
-	// environment could not be read — a port computed on a missing offset would
-	// be wrong, and a wrong port reads as a truth.
-	RunAddresses map[string]JobAddress
-	LoadedAt     time.Time
+	LoadedAt time.Time
 
 	// Failures names families that could not be read. A family absent from
 	// the map was read successfully, even if empty: this is what distinguishes

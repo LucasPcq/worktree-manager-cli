@@ -68,7 +68,7 @@ func (m Model) detailBody(layout domain.DashboardLayout) []string {
 		PRUnavailable: m.prUnavailableReason(),
 		RunConfig:     m.runConfig,
 		Jobs:          m.jobs,
-		Addresses:     detail.RunAddresses,
+		Addresses:     m.addresses[status.Branch],
 		Height:        budget,
 	})
 	return m.appendSections(lines, sections, width, stale, pr)

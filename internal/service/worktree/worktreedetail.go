@@ -1,8 +1,6 @@
 package worktree
 
 import (
-	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -25,11 +23,6 @@ type DetailParams struct {
 	Children   []string
 	PRs        []domain.PRInfo
 	Commits    int
-	// RunConfig is run.toml as the surface already read it, and ProxyPort where
-	// the run proxy serves the jobs' names. Together they say where each job
-	// answers in this worktree; an empty config asks for no address at all.
-	RunConfig domain.RunConfig
-	ProxyPort int
 }
 
 // Detail gathers what the detail panel displays beyond the status. It never
@@ -83,7 +76,6 @@ func Detail(params DetailParams) domain.WorktreeDetail {
 		detail.Failures[domain.DetailFamilyEnv] = err
 	}
 
-	detail.RunAddresses = runAddresses(params)
 
 	return detail
 }
@@ -91,31 +83,6 @@ func Detail(params DetailParams) domain.WorktreeDetail {
 // runAddresses reads the environment by branch rather than by directory: the
 // branch is already known, and asking git for it would cost an exec per detail
 // load for nothing.
-func runAddresses(params DetailParams) map[string]domain.JobAddress {
-	if len(params.RunConfig.Jobs) == 0 {
-		return nil
-	}
-	env, err := BranchEnv(WorktreeRef{
-		ProjectDir: params.ProjectDir,
-		StateDir:   params.StateDir,
-		Branch:     params.Status.Branch,
-	})
-	if err != nil {
-		return nil
-	}
-	offset, err := strconv.Atoi(env[domain.EnvPortOffset])
-	if err != nil {
-		return nil
-	}
-	return rules.WorktreeJobAddresses(rules.WorktreeJobAddressesParams{
-		Config:     params.RunConfig,
-		PortOffset: offset,
-		Worktree:   env[domain.EnvWorktree],
-		Project:    filepath.Base(params.ProjectDir),
-		PublicPort: params.ProxyPort,
-	})
-}
-
 func readChanges(worktreePath string) (domain.WorkingChanges, error) {
 	entries, err := infra.ListModifiedFiles(infra.ListModifiedFilesParams{WorktreePath: worktreePath})
 	if err != nil {

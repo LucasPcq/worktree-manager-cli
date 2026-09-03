@@ -45,6 +45,10 @@ type RunParams struct {
 	// URLOpener hands a job's address to the desktop's own opener. Injected like
 	// PROpener so a click on a RUN row is asserted without launching a browser.
 	URLOpener func(url string) error
+	// AddressLoader is where the named worktrees' jobs answer. It is only ever
+	// given worktrees that already have a job up: BranchEnv allocates an ordinal
+	// the first time it is asked for one.
+	AddressLoader func(branches []string) map[string]map[string]domain.JobAddress
 }
 
 // OutputLineMsg appends one line to the bottom output panel. Every phase of a
@@ -72,9 +76,10 @@ type worktreesMsg struct {
 // never fails the dashboard — a daemon that is not listening simply means
 // nothing is running, which is the answer.
 type jobsMsg struct {
-	jobs    []domain.JobInfo
-	running map[string]int
-	config  domain.RunConfig
+	jobs      []domain.JobInfo
+	addresses map[string]map[string]domain.JobAddress
+	running   map[string]int
+	config    domain.RunConfig
 	// known is false when the daemon could not be asked while its index still
 	// holds jobs: what runs is then unknown, which is not the same answer as
 	// nothing running, and the counts already on screen are kept.
@@ -149,6 +154,10 @@ type Model struct {
 	running   map[string]int
 	jobs      []domain.JobInfo
 	runConfig domain.RunConfig
+	// addresses is where each worktree's declared jobs answer, keyed
+	// branch → job. It follows the poll, like jobs: an address is a property of
+	// the worktree's port offset, and two sources for it would diverge.
+	addresses map[string]map[string]domain.JobAddress
 
 	outputLines    []string
 	outputOffset   int
@@ -948,10 +957,21 @@ func (m Model) withOverlays(frame string) string {
 // output panel.
 func (m Model) loadJobsCmd(wake bool) tea.Cmd {
 	load, stateDir := m.jobsLoader(), m.params.StateDir
+	addressesFor, statuses := m.params.AddressLoader, m.statuses
 	return func() tea.Msg {
 		jobs, known := load(wake)
 		cfg, _ := runconfig.Load(stateDir)
-		return jobsMsg{jobs: jobs, running: rules.RunningJobsByWorktree(jobs), config: cfg, known: known}
+		msg := jobsMsg{jobs: jobs, running: rules.RunningJobsByWorktree(jobs), config: cfg, known: known}
+
+		// Asked for the running worktrees only: BranchEnv allocates an ordinal
+		// to whichever branch it is handed, and an idle worktree must not be
+		// given one just because a poll swept past it.
+		branches := rules.BranchesWithJobsUp(rules.BranchesWithJobsUpParams{Jobs: jobs, Statuses: statuses})
+		if addressesFor == nil || len(branches) == 0 {
+			return msg
+		}
+		msg.addresses = addressesFor(branches)
+		return msg
 	}
 }
 
@@ -979,6 +999,7 @@ func (m Model) applyJobs(msg jobsMsg) (Model, tea.Cmd) {
 	m.runConfig = msg.config
 	if msg.known {
 		m.jobs, m.running = msg.jobs, msg.running
+		m.addresses = msg.addresses
 	}
 	// The tree carries the count on its nodes, so the rows already drawn hold a
 	// stale one until they are rebuilt.

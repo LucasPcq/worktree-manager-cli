@@ -31,3 +31,26 @@ func TestSameRunJobsSeesAPublishedURLAppearAndVanish(t *testing.T) {
 		t.Fatal("the same published job is the same job")
 	}
 }
+
+func TestBranchesWithJobsUpNamesOnlyWhatRuns(t *testing.T) {
+	branches := BranchesWithJobsUp(BranchesWithJobsUpParams{
+		Jobs: []domain.JobInfo{
+			{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/wt/b"},
+			{Name: "api", Status: domain.JobStatusRunning, WorkDir: "/wt/a"},
+			{Name: "old", Status: domain.JobStatusStopped, WorkDir: "/wt/idle"},
+		},
+		Statuses: []domain.WorktreeStatus{
+			{Branch: "feat/b", Path: "/wt/b"},
+			{Branch: "feat/idle", Path: "/wt/idle"},
+			{Branch: "feat/a", Path: "/wt/a"},
+			{Branch: "", Path: "/wt/detached"},
+		},
+	})
+
+	if len(branches) != 2 {
+		t.Fatalf("branches = %v, want only the two running something", branches)
+	}
+	if branches[0] != "feat/a" || branches[1] != "feat/b" {
+		t.Errorf("branches = %v, want them sorted so two polls ask for the same thing", branches)
+	}
+}

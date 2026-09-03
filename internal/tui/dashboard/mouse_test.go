@@ -370,7 +370,8 @@ func runningDetailModel(t *testing.T, params RunParams, addresses map[string]dom
 		infos = append(infos, domain.JobInfo{Name: job.Name, Status: domain.JobStatusRunning, WorkDir: "/tmp/a"})
 	}
 	model.jobs = infos
-	model.details = map[string]domain.WorktreeDetail{"a": {Branch: "a", RunAddresses: addresses}}
+	model.details = map[string]domain.WorktreeDetail{"a": {Branch: "a"}}
+	model.addresses = map[string]map[string]domain.JobAddress{"a": addresses}
 	return model
 }
 
@@ -406,9 +407,8 @@ func TestADownJobRowTakesNoZone(t *testing.T) {
 	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
 	model = update(model, worktreesMsg{statuses: statuses("a"), parents: map[string]string{}})
 	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "worker"}}}
-	model.details = map[string]domain.WorktreeDetail{"a": {Branch: "a", RunAddresses: map[string]domain.JobAddress{
-		"worker": {URL: "http://worker.wtm"},
-	}}}
+	model.details = map[string]domain.WorktreeDetail{"a": {Branch: "a"}}
+	model.addresses = map[string]map[string]domain.JobAddress{"a": {"worker": {URL: "http://worker.wtm"}}}
 
 	renderAndWait(t, model, zoneDetail)
 

@@ -1,6 +1,10 @@
 package rules
 
-import "github.com/LucasPcq/wtm/internal/domain"
+import (
+	"sort"
+
+	"github.com/LucasPcq/wtm/internal/domain"
+)
 
 // RunningJobsByWorktree counts what the daemon's index holds per working
 // directory, keyed the way the index itself keys it. A job the index knows but
@@ -18,6 +22,28 @@ func RunningJobsByWorktree(jobs []domain.JobInfo) map[string]int {
 		counts[job.WorkDir]++
 	}
 	return counts
+}
+
+type BranchesWithJobsUpParams struct {
+	Jobs     []domain.JobInfo
+	Statuses []domain.WorktreeStatus
+}
+
+// BranchesWithJobsUp names the worktrees the daemon holds something up in,
+// sorted so two polls of the same state ask for the same thing. A job is keyed
+// on its WorkDir; the branch is what every other layer designates a worktree
+// by, and a detached worktree names none.
+func BranchesWithJobsUp(params BranchesWithJobsUpParams) []string {
+	running := RunningJobsByWorktree(params.Jobs)
+	branches := make([]string, 0, len(running))
+	for _, status := range params.Statuses {
+		if status.Branch == "" || running[status.Path] == 0 {
+			continue
+		}
+		branches = append(branches, status.Branch)
+	}
+	sort.Strings(branches)
+	return branches
 }
 
 // SameRunJobs says whether two readings of run.toml declare the same jobs, in

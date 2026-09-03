@@ -13,6 +13,10 @@ import (
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/rules"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
+	"github.com/LucasPcq/wtm/internal/service/integration"
+	"github.com/LucasPcq/wtm/internal/service/process"
+	"github.com/LucasPcq/wtm/internal/service/runconfig"
+	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/dashboard"
 )
 
@@ -74,6 +78,23 @@ func buildRunParams(dir string, result shared.ConfigResult) dashboard.RunParams 
 		PRLoader:   func() ([]domain.PRInfo, domain.GHConnection) { return shared.LoadPRsWithChecks(result.ProjectDir) },
 		PROpener: func(number int) error {
 			return ghservice.OpenPR(ghservice.OpenPRParams{ProjectDir: result.ProjectDir, Number: number})
+		},
+		URLOpener: integration.OpenURL,
+		// The public port is dialed here rather than once at startup: the loader
+		// already runs off the UI goroutine, and a daemon started after the
+		// dashboard was opened must not leave every address unpublished.
+		AddressLoader: func(branches []string) map[string]map[string]domain.JobAddress {
+			cfg, err := runconfig.Load(result.StateDir)
+			if err != nil {
+				return nil
+			}
+			return worktree.RunAddressesFor(worktree.RunAddressesForParams{
+				ProjectDir: result.ProjectDir,
+				StateDir:   result.StateDir,
+				RunConfig:  cfg,
+				Branches:   branches,
+				ProxyPort:  process.PublicProxyPort(rules.ProxyPort(result.Config.Global)),
+			})
 		},
 	}
 }
