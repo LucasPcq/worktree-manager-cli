@@ -79,6 +79,11 @@ type DetailSectionsParams struct {
 	// shows, the caller only supplies why the read failed.
 	PRUnavailable string
 	Parent        string
+	// RunConfig is what the project declares it can run, and Jobs what the daemon
+	// currently holds. Together they are the RUN section: a declared job that is
+	// not in Jobs is down, which is an answer and not an absence.
+	RunConfig domain.RunConfig
+	Jobs      []domain.JobInfo
 	// DetailLoaded is false on the very first render for a branch, before its
 	// WorktreeDetail has ever landed (§8 state 3). CHANGES and ACTIVITY — the
 	// two sections that depend on Detail — render a single "loading…"
@@ -122,7 +127,17 @@ func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 
 	changesBudget, activityBudget := listBudgets(wantChanges, wantActivity)
 
-	sections := make([]domain.DetailSection, 0, 4)
+	sections := make([]domain.DetailSection, 0, 5)
+	if len(params.RunConfig.Jobs) > 0 {
+		sections = append(sections, runSection(runSectionParams{
+			Jobs:      params.RunConfig.Jobs,
+			Infos:     params.Jobs,
+			Addresses: params.Detail.RunAddresses,
+			WorkDir:   params.Status.Path,
+			Budget:    domain.DashboardDetailJobs,
+			Now:       params.Now,
+		}))
+	}
 	if review != nil {
 		sections = append(sections, *review)
 	}
@@ -500,4 +515,120 @@ func dropLowestPriority(sections []domain.DetailSection) []domain.DetailSection 
 		}
 	}
 	return nil
+}
+
+type runSectionParams struct {
+	Jobs      []domain.JobConfig
+	Infos     []domain.JobInfo
+	Addresses map[string]domain.JobAddress
+	WorkDir   string
+	Budget    int
+	Now       time.Time
+}
+
+// runSection is one line per declared job, not per running one: a job that is
+// down is an answer, and a section shrinking as things stop would read as data
+// loss. The count heads it, so what the section is worth is legible before its
+// body is.
+func runSection(params runSectionParams) domain.DetailSection {
+	infos := upJobsByName(params.Infos, params.WorkDir)
+	shown, folded := splitBudget(len(params.Jobs), params.Budget)
+	width := longestJobName(params.Jobs)
+
+	lines := make([]string, 0, shown+1)
+	for index, job := range params.Jobs {
+		if index >= shown {
+			break
+		}
+		info, up := infos[job.Name]
+		lines = append(lines, runJobLine(runJobLineParams{
+			Name:    pad(job.Name, width),
+			Info:    info,
+			Up:      up,
+			Address: params.Addresses[job.Name],
+			Now:     params.Now,
+		}))
+	}
+	if folded > 0 {
+		lines = append(lines, domain.DetailListIndent+fmt.Sprintf(domain.DetailMoreFmt, folded))
+	}
+
+	return domain.DetailSection{
+		Key:        domain.DetailSectionRun,
+		Title:      domain.DetailSectionRun,
+		TitleRight: runCount(len(infos)),
+		Lines:      lines,
+	}
+}
+
+func runCount(up int) string {
+	if up == 0 {
+		return domain.DetailRunNothing
+	}
+	return fmt.Sprintf(domain.DetailRunCountFmt, up)
+}
+
+type runJobLineParams struct {
+	Name    string
+	Info    domain.JobInfo
+	Up      bool
+	Address domain.JobAddress
+	Now     time.Time
+}
+
+// A job that is down says so and nothing else: its ports are where it would
+// answer, not where it does, and printing them would read as a service that is
+// up.
+func runJobLine(params runJobLineParams) string {
+	if !params.Up {
+		return runLine(domain.DetailJobDownGlyph, params.Name, domain.DetailJobStopped)
+	}
+	return runLine(domain.DetailJobUpGlyph, params.Name,
+		portList(params.Address.Ports),
+		JobUptime(JobUptimeParams{Job: params.Info, Now: params.Now}),
+		params.Address.URL)
+}
+
+// An empty column is dropped rather than padded: a job with no port and no url
+// would otherwise trail a run of spaces its neighbours make look like a missing
+// value.
+func runLine(glyph, name string, fields ...string) string {
+	parts := make([]string, 0, len(fields)+2)
+	parts = append(parts, glyph, name)
+	for _, field := range fields {
+		if field == "" {
+			continue
+		}
+		parts = append(parts, field)
+	}
+	return domain.DetailListIndent + strings.Join(parts, " ")
+}
+
+func portList(ports []int) string {
+	names := make([]string, 0, len(ports))
+	for _, port := range ports {
+		names = append(names, fmt.Sprintf(domain.DetailJobPortFmt, port))
+	}
+	return strings.Join(names, domain.DetailListSep)
+}
+
+// upJobsByName keeps only what this worktree has up: the daemon indexes every
+// repository it knows, and a job of the same name elsewhere is not this one.
+func upJobsByName(infos []domain.JobInfo, workDir string) map[string]domain.JobInfo {
+	up := make(map[string]domain.JobInfo, len(infos))
+	for _, info := range infos {
+		if info.WorkDir != workDir || !IsJobUp(info.Status) {
+			continue
+		}
+		up[info.Name] = info
+	}
+	return up
+}
+
+func longestJobName(jobs []domain.JobConfig) int {
+	width := 0
+	for _, job := range jobs {
+		width = max(width, len(job.Name))
+	}
+	return width
 }

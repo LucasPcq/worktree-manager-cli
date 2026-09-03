@@ -111,6 +111,7 @@ type DetailSection struct {
 // panel runs out of height: the last one listed falls first. The vital strip
 // and the blockers line are not in it — they never fall.
 var DetailSectionDropOrder = []string{
+	DetailSectionRun,
 	DetailSectionReview,
 	DetailSectionChanges,
 	DetailSectionActivity,

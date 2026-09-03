@@ -2,6 +2,7 @@ package rules
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -517,5 +518,111 @@ func TestActivityTitleRightSaysWhyOnDiffFailure(t *testing.T) {
 	})
 	if !strings.Contains(section.TitleRight, "git diff failed") {
 		t.Errorf("ACTIVITY.TitleRight = %q, want the failure reason, not a fabricated zero", section.TitleRight)
+	}
+}
+
+func TestRunSectionLeadsThePanelAndNamesEveryDeclaredJob(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status:       domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
+		DetailLoaded: true,
+		Height:       60,
+		Now:          time.Now(),
+		RunConfig:    domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "worker"}}},
+		Jobs: []domain.JobInfo{{
+			Name: "web", Status: domain.JobStatusRunning, WorkDir: "/wt/x",
+			StartedAt: time.Now().Add(-4 * time.Minute),
+		}},
+		Detail: domain.WorktreeDetail{RunAddresses: map[string]domain.JobAddress{
+			"web": {Ports: []int{3000}, URL: "http://web.wtm"},
+		}},
+	})
+
+	if sections[0].Key != domain.DetailSectionRun {
+		t.Fatalf("first section = %q, want RUN in the lead", sections[0].Key)
+	}
+	if want := fmt.Sprintf(domain.DetailRunCountFmt, 1); sections[0].TitleRight != want {
+		t.Errorf("TitleRight = %q, want %q", sections[0].TitleRight, want)
+	}
+	body := strings.Join(sections[0].Lines, "\n")
+	for _, want := range []string{"web", ":3000", "http://web.wtm", "worker", domain.DetailJobStopped} {
+		if !strings.Contains(body, want) {
+			t.Errorf("RUN body %q misses %q", body, want)
+		}
+	}
+}
+
+// A job of the same name in another worktree is not this one: the daemon
+// indexes every repository it knows.
+func TestRunSectionIgnoresAnotherWorktreesJobs(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 60, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}},
+		Jobs:      []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/wt/other"}},
+	})
+
+	if sections[0].TitleRight != domain.DetailRunNothing {
+		t.Fatalf("TitleRight = %q, want nothing counted here", sections[0].TitleRight)
+	}
+}
+
+func TestRunSectionSaysNothingIsUpRatherThanVanishing(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 60, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}},
+	})
+
+	if sections[0].TitleRight != domain.DetailRunNothing {
+		t.Errorf("TitleRight = %q, want the section to say what it is worth", sections[0].TitleRight)
+	}
+	if len(sections[0].Lines) != 1 {
+		t.Errorf("lines = %v, want the declared job listed as down", sections[0].Lines)
+	}
+}
+
+func TestRunSectionIsAbsentWhenTheProjectHasNoRun(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x"}, DetailLoaded: true, Height: 60, Now: time.Now(),
+	})
+
+	for _, section := range sections {
+		if section.Key == domain.DetailSectionRun {
+			t.Fatal("no run configured is a legitimate absence, not a state to announce")
+		}
+	}
+}
+
+func TestRunSectionFoldsWhatItCannotShow(t *testing.T) {
+	jobs := make([]domain.JobConfig, 0, domain.DashboardDetailJobs+3)
+	for index := range domain.DashboardDetailJobs + 3 {
+		jobs = append(jobs, domain.JobConfig{Name: fmt.Sprintf("job%d", index)})
+	}
+
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x"}, DetailLoaded: true, Height: 80, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: jobs},
+	})
+
+	if got := len(sections[0].Lines); got != domain.DashboardDetailJobs {
+		t.Fatalf("RUN has %d lines, want the cap, its « more » line included", got)
+	}
+	if last := sections[0].Lines[len(sections[0].Lines)-1]; !strings.Contains(last, "4") {
+		t.Errorf("last line = %q, want it to name what was folded", last)
+	}
+}
+
+// RUN is the most volatile thing the panel holds, so it leads it — and gives up
+// its place last when the height runs short.
+func TestRunSectionIsTheLastToFallWhenTheHeightRunsShort(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 8, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}},
+	})
+	kept := FitSections(FitSectionsParams{Sections: sections, Height: 6})
+
+	if len(kept) != 1 || kept[0].Key != domain.DetailSectionRun {
+		t.Fatalf("kept = %+v, want RUN alone standing", kept)
 	}
 }

@@ -2116,6 +2116,9 @@ const (
 	// list's state or how much panel height happens to be free.
 	DashboardDetailCommits = 5
 	DashboardDetailChanges = 5
+	// DashboardDetailJobs is RUN's equivalent fixed cap, over the jobs run.toml
+	// declares rather than over the ones that happen to be up.
+	DashboardDetailJobs = 6
 	// DashboardDetailDebounce delays a detail load so a fast walk through the
 	// list does not fire one git log per row crossed.
 	DashboardDetailDebounce = 150 * time.Millisecond
@@ -2443,13 +2446,26 @@ const (
 	// FetchHeadFileName is the file whose mtime marks the last successful fetch.
 	FetchHeadFileName = "FETCH_HEAD"
 
-	// DetailSection* names the detail panel's four conditional sections. A
+	// DetailSection* names the detail panel's five conditional sections. A
 	// section is emitted only when it has something to say, so its position
 	// varies between worktrees — its rank in DetailSectionDropOrder never does.
+	DetailSectionRun      = "RUN"
 	DetailSectionReview   = "REVIEW"
 	DetailSectionChanges  = "CHANGES"
 	DetailSectionActivity = "ACTIVITY"
 	DetailSectionLinks    = "LINKS"
+
+	// DetailJob* draw one line of the RUN section: a job that is up, its ports
+	// and the name it answers under, or a job that is simply down. A declared job
+	// that is not running is an answer, not an absence, so it keeps its line.
+	DetailJobUpGlyph   = "●"
+	DetailJobDownGlyph = "○"
+	DetailJobStopped   = "stopped"
+	DetailJobPortFmt   = ":%d"
+	// DetailRunNothing and DetailRunCountFmt head the section: what is up, or
+	// that nothing is.
+	DetailRunNothing  = "nothing running"
+	DetailRunCountFmt = "%d running"
 
 	DetailYouAreHere = "● you are here"
 	DetailMoreFmt    = "…  %d more"
