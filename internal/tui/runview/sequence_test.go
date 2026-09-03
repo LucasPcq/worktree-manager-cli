@@ -40,15 +40,15 @@ func startedHarness(t *testing.T, params harnessParams, script func(runlogs.Sink
 		scripted[name] = stream
 		streams[name] = stream
 	}
-	session := runlogstest.NewSession(runlogstest.SessionParams{
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
 		Views:   params.Views,
 		Streams: streams,
 		Lines:   params.Lines,
 	})
 
 	model := New(Params{
-		Session: session,
-		Job:     params.Job,
+		Board: board,
+		Job:   params.Job,
 		Start: func(_ context.Context, emitter runlogs.Sink) (runlogs.Outcome, error) {
 			return script(emitter), nil
 		},
@@ -56,7 +56,7 @@ func startedHarness(t *testing.T, params harnessParams, script func(runlogs.Sink
 	t.Cleanup(func() { model.panes.closeAll() })
 	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
 
-	h := &testHarness{model: model, session: session, streams: scripted}
+	h := &testHarness{model: model, board: board, streams: scripted}
 	h.model = update(h.model, jobsMsg{jobs: params.Views})
 
 	finished := h.model.startCmd()()
@@ -419,8 +419,8 @@ func TestDetachCancelsTheReportingOfARun(t *testing.T) {
 // for ever.
 func TestSinkGivesUpOnceTheViewIsGone(t *testing.T) {
 	model := New(Params{
-		Session: runlogstest.NewSession(runlogstest.SessionParams{}),
-		Start:   func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
+		Board: runlogstest.NewBoard(runlogstest.BoardParams{}),
+		Start: func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
 	})
 	emitter := sink{panes: model.panes, msgs: model.msgs, done: model.runCtx.Done()}
 	model.cancel()
@@ -459,8 +459,8 @@ func TestFollowingStopsWhenTheReaderTakesTheCursor(t *testing.T) {
 // before the first chunk lands and while nothing else is subscribed.
 func TestRedrawClockRunsWhileTheRunDoes(t *testing.T) {
 	model := New(Params{
-		Session: runlogstest.NewSession(runlogstest.SessionParams{}),
-		Start:   func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
+		Board: runlogstest.NewBoard(runlogstest.BoardParams{}),
+		Start: func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
 	})
 	t.Cleanup(model.cancel)
 
@@ -484,8 +484,8 @@ func TestRedrawClockRunsWhileTheRunDoes(t *testing.T) {
 // PhaseOutput ever reaches the model, so nothing else would.
 func TestRedrawClockIsArmedAgainWhenTheSequenceStarts(t *testing.T) {
 	model := New(Params{
-		Session: runlogstest.NewSession(runlogstest.SessionParams{Views: []runlogs.JobView{stopped("migrate")}}),
-		Start:   func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
+		Board: runlogstest.NewBoard(runlogstest.BoardParams{Views: []runlogs.JobView{stopped("migrate")}}),
+		Start: func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
 	})
 	t.Cleanup(model.cancel)
 	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})

@@ -267,6 +267,12 @@ quotes, `&&`, pipes, redirections and globs behave as they do in a terminal, and
 expands from the job's environment. POSIX `sh` is used on every machine, never your own
 interactive shell, so a shared `run.toml` behaves the same everywhere.
 
+Two worktrees can run their stacks side by side — each has its own ports and resource
+names. The first time `wtm run up` finds another worktree's jobs running it asks what to
+do about it, and can write the answer as `concurrency = "parallel" | "exclusive"` at the
+top of the file so it never asks again. `--parallel` and `--exclusive` override it for a
+single run.
+
 ```toml
 [[job]]
 name = "docker"

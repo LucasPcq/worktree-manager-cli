@@ -538,21 +538,40 @@ func (m *Manager) runTask(job *ManagedJob, streamer io.Writer) error {
 		// When a streamer was attached the client already saw the output live,
 		// so we return a concise error instead of re-embedding the full capture.
 		if streamer != nil {
-			return fmt.Errorf("task %s failed (exit %d)", job.Name, exit)
+			return failure{message: fmt.Sprintf("task %s failed (exit %d)", job.Name, exit), code: exit}
 		}
 		if captured != "" {
-			return fmt.Errorf("task %s failed (exit %d):\n%s", job.Name, exit, captured)
+			return failure{message: fmt.Sprintf("task %s failed (exit %d):\n%s", job.Name, exit, captured), code: exit}
 		}
 		return fmt.Errorf("task %s failed: %w", job.Name, waitErr)
 	}
 	return nil
 }
 
+// failure is a job that ended badly, carrying the code beside the sentence
+// rather than only inside it. The messages below are read by people and could
+// not take a %w without growing a second copy of the error; without the code
+// travelling separately, everything downstream — the JSON document's exit_code
+// among it — read the 1 exitCodeOf invents for an unattributed failure.
+type failure struct {
+	message string
+	code    int
+}
+
+func (f failure) Error() string { return f.message }
+
+// ExitCode is what exitCodeOf reads back, the same shape *exec.ExitError offers.
+func (f failure) ExitCode() int { return f.code }
+
 // exitCodeOf invents the 1 it answers for a failure Wait did not attribute to
 // the process itself; the -1 comes from the stdlib and means a signal killed it.
 func exitCodeOf(err error) int {
 	if err == nil {
 		return 0
+	}
+	var carried failure
+	if errors.As(err, &carried) {
+		return carried.ExitCode()
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -599,7 +618,7 @@ func (m *Manager) waitDetached(job *ManagedJob, streamer io.Writer) error {
 		// so return a concise error instead of re-embedding the capture (mirrors
 		// runTask) — otherwise `run up` would print the launcher output twice.
 		if streamer != nil {
-			return fmt.Errorf("job %s failed (exit %d)", job.Name, exitCodeOf(err))
+			return failure{message: fmt.Sprintf("job %s failed (exit %d)", job.Name, exitCodeOf(err)), code: exitCodeOf(err)}
 		}
 		out := cleanPTYOutput(buf.String())
 		if out == "" {

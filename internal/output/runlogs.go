@@ -178,6 +178,14 @@ func (p *RunPrinter) ready(outcome runlogs.Outcome) {
 // live stream, and the daemon's message alone ("task migrate failed: exit status
 // 1") does not say why.
 func WriteRunOutcomeJSON(w io.Writer, outcome runlogs.Outcome) error {
+	return WriteJobResultsJSON(w, RunOutcomeResults(outcome))
+}
+
+// RunOutcomeResults is what a run concluded, one entry per job it reached: the
+// sequence's own results, with the probes and the failure's detail folded back
+// in. `run up` writes the whole slice and `run start` the single entry its one
+// job earned, so the two cannot disagree about the same job.
+func RunOutcomeResults(outcome runlogs.Outcome) []domain.JobActionResult {
 	results := make([]domain.JobActionResult, len(outcome.Results))
 	copy(results, outcome.Results)
 
@@ -194,8 +202,7 @@ func WriteRunOutcomeJSON(w io.Writer, outcome runlogs.Outcome) error {
 		results[i].Output = string(outcome.FailedOutput)
 		results[i].ExitCode = outcome.FailedExitCode
 	}
-
-	return WriteJobResultsJSON(w, results)
+	return results
 }
 
 func joinJobNames(names []string) string {

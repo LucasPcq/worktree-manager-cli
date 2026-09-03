@@ -2,6 +2,7 @@ package rules
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -517,5 +518,250 @@ func TestActivityTitleRightSaysWhyOnDiffFailure(t *testing.T) {
 	})
 	if !strings.Contains(section.TitleRight, "git diff failed") {
 		t.Errorf("ACTIVITY.TitleRight = %q, want the failure reason, not a fabricated zero", section.TitleRight)
+	}
+}
+
+func runSectionOf(t *testing.T, params DetailSectionsParams) domain.DetailSection {
+	t.Helper()
+	for _, section := range DetailSections(params) {
+		if section.Key == domain.DetailSectionRun {
+			return section
+		}
+	}
+	t.Fatal("no RUN section")
+	return domain.DetailSection{}
+}
+
+func cellOf(row domain.DetailRow, kind domain.DetailCellKind) string {
+	for _, cell := range row.Cells {
+		if cell.Kind == kind {
+			return cell.Text
+		}
+	}
+	return ""
+}
+
+func TestRunSectionLeadsThePanelAndNamesEveryDeclaredJob(t *testing.T) {
+	now := time.Now()
+	sections := DetailSections(DetailSectionsParams{
+		Status:       domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"},
+		DetailLoaded: true,
+		Height:       60,
+		Now:          now,
+		RunConfig:    domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "worker"}}},
+		Jobs: []domain.JobInfo{{
+			Name: "web", Status: domain.JobStatusRunning, WorkDir: "/wt/x",
+			StartedAt: now.Add(-4 * time.Minute),
+		}},
+		Addresses: map[string]domain.JobAddress{"web": {Ports: []int{3000}, URL: "http://web.wtm"}},
+	})
+
+	if sections[0].Key != domain.DetailSectionRun {
+		t.Fatalf("first section = %q, want RUN in the lead", sections[0].Key)
+	}
+	if want := fmt.Sprintf(domain.DetailRunUpCountFmt, 1); sections[0].TitleRight != want {
+		t.Errorf("TitleRight = %q, want %q", sections[0].TitleRight, want)
+	}
+	if len(sections[0].Rows) != 2 {
+		t.Fatalf("rows = %d, want one per declared job", len(sections[0].Rows))
+	}
+	if got := cellOf(sections[0].Rows[1], domain.DetailCellName); got != "worker" {
+		t.Errorf("second row name = %q, want the down job listed", got)
+	}
+}
+
+// The url already carries the port: printing both is the same fact twice, and
+// it is what made the section read as columns of noise.
+func TestRunSectionShowsTheURLNeverAlsoItsPort(t *testing.T) {
+	now := time.Now()
+	section := runSectionOf(t, DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 60, Now: now,
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}},
+		Jobs: []domain.JobInfo{{
+			Name: "web", Status: domain.JobStatusRunning, WorkDir: "/wt/x",
+			StartedAt: now.Add(-4 * time.Minute),
+		}},
+		Addresses: map[string]domain.JobAddress{"web": {Ports: []int{3000}, URL: "http://web.wtm"}},
+	})
+
+	if section.Lines != nil {
+		t.Errorf("Lines = %v, want a rowed section", section.Lines)
+	}
+	row := section.Rows[0]
+	if got := cellOf(row, domain.DetailCellAddress); got != "http://web.wtm" {
+		t.Errorf("address = %q, want the url alone", got)
+	}
+	if row.URL != "http://web.wtm" {
+		t.Errorf("URL = %q, want it carried for the click", row.URL)
+	}
+	if !row.Up {
+		t.Error("Up = false, want the running job marked up")
+	}
+	if cellOf(row, domain.DetailCellMeta) == "" {
+		t.Error("meta is empty, want the uptime")
+	}
+}
+
+func TestRunSectionFallsBackToPortsWhenAJobPublishesNoURL(t *testing.T) {
+	now := time.Now()
+	section := runSectionOf(t, DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 60, Now: now,
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "pg"}}},
+		Jobs: []domain.JobInfo{{
+			Name: "pg", Status: domain.JobStatusRunning, WorkDir: "/wt/x", StartedAt: now.Add(-time.Minute),
+		}},
+		Addresses: map[string]domain.JobAddress{"pg": {Ports: []int{5432}}},
+	})
+
+	row := section.Rows[0]
+	if got, want := cellOf(row, domain.DetailCellAddress), fmt.Sprintf(domain.DetailJobPortFmt, 5432); got != want {
+		t.Errorf("address = %q, want %q", got, want)
+	}
+	if row.URL != "" {
+		t.Errorf("URL = %q, want none", row.URL)
+	}
+}
+
+func TestRunSectionSaysNothingAboutADownJobBeyondItsGlyph(t *testing.T) {
+	section := runSectionOf(t, DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 60, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "worker"}}},
+		Addresses: map[string]domain.JobAddress{"worker": {Ports: []int{9000}, URL: "http://worker.wtm"}},
+	})
+
+	row := section.Rows[0]
+	if row.Up {
+		t.Error("Up = true, want down")
+	}
+	if got := cellOf(row, domain.DetailCellGlyph); got != domain.DetailJobDownGlyph {
+		t.Errorf("glyph = %q, want %q", got, domain.DetailJobDownGlyph)
+	}
+	for _, kind := range []domain.DetailCellKind{domain.DetailCellAddress, domain.DetailCellMeta} {
+		if got := cellOf(row, kind); got != "" {
+			t.Errorf("%s = %q, want nothing: a stopped job answers nowhere", kind, got)
+		}
+	}
+	if row.URL != "" {
+		t.Errorf("URL = %q, want none: it is where it would answer, not where it does", row.URL)
+	}
+}
+
+// A job of the same name in another worktree is not this one: the daemon
+// indexes every repository it knows.
+func TestRunSectionIgnoresAnotherWorktreesJobs(t *testing.T) {
+	section := runSectionOf(t, DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 60, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}},
+		Jobs:      []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/wt/other"}},
+	})
+
+	if section.TitleRight != domain.DetailRunNothing {
+		t.Fatalf("TitleRight = %q, want nothing counted here", section.TitleRight)
+	}
+}
+
+func TestRunSectionSaysNothingIsUpRatherThanVanishing(t *testing.T) {
+	section := runSectionOf(t, DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 60, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}},
+	})
+
+	if section.TitleRight != domain.DetailRunNothing {
+		t.Errorf("TitleRight = %q, want the section to say what it is worth", section.TitleRight)
+	}
+	if len(section.Rows) != 1 {
+		t.Errorf("rows = %v, want the declared job listed as down", section.Rows)
+	}
+}
+
+func TestRunSectionIsAbsentWhenTheProjectHasNoRun(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x"}, DetailLoaded: true, Height: 60, Now: time.Now(),
+	})
+
+	for _, section := range sections {
+		if section.Key == domain.DetailSectionRun {
+			t.Fatal("no run configured is a legitimate absence, not a state to announce")
+		}
+	}
+}
+
+func TestRunSectionFoldsWhatItCannotShow(t *testing.T) {
+	jobs := make([]domain.JobConfig, 0, domain.DashboardDetailJobs+3)
+	for index := range domain.DashboardDetailJobs + 3 {
+		jobs = append(jobs, domain.JobConfig{Name: fmt.Sprintf("job%d", index)})
+	}
+
+	section := runSectionOf(t, DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x"}, DetailLoaded: true, Height: 80, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: jobs},
+	})
+
+	if got := len(section.Rows); got != domain.DashboardDetailJobs {
+		t.Fatalf("RUN has %d rows, want the cap, its « more » row included", got)
+	}
+	if last := cellOf(section.Rows[len(section.Rows)-1], domain.DetailCellNote); !strings.Contains(last, "4") {
+		t.Errorf("last row = %q, want it to name what was folded", last)
+	}
+}
+
+// RUN is the most volatile thing the panel holds, so it leads it — and gives up
+// its place last when the height runs short.
+func TestRunSectionIsTheLastToFallWhenTheHeightRunsShort(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 8, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}},
+	})
+	kept := FitSections(FitSectionsParams{Sections: sections, Height: 6})
+
+	if len(kept) != 1 || kept[0].Key != domain.DetailSectionRun {
+		t.Fatalf("kept = %+v, want RUN alone standing", kept)
+	}
+}
+
+// A job dropped from run.toml while it is still up has no line here, so the
+// header must not count it: a count naming something the body does not show
+// reads as a section that lost a row.
+func TestRunSectionCountsOnlyWhatItCouldList(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 60, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}},
+		Jobs: []domain.JobInfo{
+			{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/wt/x"},
+			{Name: "gone", Status: domain.JobStatusRunning, WorkDir: "/wt/x"},
+		},
+	})
+
+	if want := fmt.Sprintf(domain.DetailRunUpCountFmt, 1); sections[0].TitleRight != want {
+		t.Fatalf("TitleRight = %q, want %q — only the declared job has a row", sections[0].TitleRight, want)
+	}
+}
+
+// A folded job is still up, and the count says so: the « … N more » line is
+// what explains the difference between the header and the rows.
+func TestRunSectionCountsWhatItFolded(t *testing.T) {
+	jobs := make([]domain.JobConfig, 0, domain.DashboardDetailJobs+2)
+	infos := make([]domain.JobInfo, 0, domain.DashboardDetailJobs+2)
+	for index := range domain.DashboardDetailJobs + 2 {
+		name := fmt.Sprintf("job%d", index)
+		jobs = append(jobs, domain.JobConfig{Name: name})
+		infos = append(infos, domain.JobInfo{Name: name, Status: domain.JobStatusRunning, WorkDir: "/wt/x"})
+	}
+
+	sections := DetailSections(DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 80, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: jobs}, Jobs: infos,
+	})
+
+	if want := fmt.Sprintf(domain.DetailRunUpCountFmt, len(jobs)); sections[0].TitleRight != want {
+		t.Fatalf("TitleRight = %q, want %q", sections[0].TitleRight, want)
 	}
 }

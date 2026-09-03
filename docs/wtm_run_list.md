@@ -16,6 +16,7 @@ wtm run list [flags]
 ```
   -h, --help            help for list
       --output string   Output format: text or json (default "text")
+  -y, --yes             Skip the interactive picker; print the table instead
 ```
 
 ### SEE ALSO

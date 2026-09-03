@@ -333,6 +333,18 @@ and **experimental**: the global `wtm init` does not configure it.
   job in declared order. The step counter (`[2/5]`) covers exactly those jobs, so a count
   smaller than the profile means the profile itself is short, never that wtm dropped
   something.
+- **Another worktree already running jobs is not a conflict.** Each worktree has its own
+  ports and resource names, so stacks cohabit. `run up` asks about it once, and only on a
+  terminal; on your paths (no TTY, `--output json`, or `--yes`) it resolves to leaving the
+  others running and stops nothing. Force either way for one run with `--exclusive` (stop
+  them first) or `--parallel`; the two are mutually exclusive. A project can settle it for
+  good with `concurrency = "parallel" | "exclusive"` in `run.toml`, which is what the
+  question's "always" answers write.
+- **`--yes` is on every `run` command** and is the confirmation axis: it runs unattended,
+  never opens a picker, and resolves each question to its documented safe default. Where
+  there is no safe default it errors naming the flag — `run start --yes` and `run stop
+  --yes` require `--job`. There is no `--force` in the run module: nothing here refuses for
+  safety, so there is nothing to lift.
 - `run up` and `run start --job <service>` **attach by default**: on a terminal they open the
   full-screen run view. Always pass **`-d`** (or `--output json`, which never opens it) —
   `-d` starts the jobs and returns immediately, which is the behaviour you want. A `task`

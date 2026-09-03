@@ -38,6 +38,20 @@ const (
 	AddressingNames Addressing = "names"
 )
 
+// Concurrency is what `run up` does about the jobs another worktree already has
+// running. Isolation gave each worktree its own ports and resource names, so two
+// stacks no longer collide; what is left is that a machine may not hold three of
+// them at once. That is a preference, not a conflict — so it is remembered here
+// rather than asked at every start.
+type Concurrency string
+
+const (
+	// ConcurrencyParallel leaves the other worktrees' jobs running.
+	ConcurrencyParallel Concurrency = "parallel"
+	// ConcurrencyExclusive stops them before starting here.
+	ConcurrencyExclusive Concurrency = "exclusive"
+)
+
 // JobConfig defines a managed job from .wtm/run.toml.
 type JobConfig struct {
 	Name string  `toml:"name"           json:"name"`
@@ -70,6 +84,15 @@ type JobURLEntry struct {
 	URL string `json:"url"`
 }
 
+// JobAddress is where a declared job answers in one worktree: the ports it
+// binds there, and the name it is published under when it publishes one. It is
+// a property of the worktree's offset, known whether or not anything is
+// running.
+type JobAddress struct {
+	Ports []int
+	URL   string
+}
+
 // ProfileConfig defines a named, ordered group of jobs.
 type ProfileConfig struct {
 	Name    string   `toml:"name"    json:"name"`
@@ -98,6 +121,10 @@ type RunConfig struct {
 	// project that publishes names wants its .env values to reach them, and one
 	// that publishes none is unaffected either way.
 	Addressing Addressing `toml:"addressing,omitempty" json:"addressing,omitempty"`
+	// Concurrency is the standing answer to "other worktrees are running jobs".
+	// Empty means the question is still open: `run up` asks it once, and writes
+	// the answer here when the user asks it to be remembered.
+	Concurrency Concurrency `toml:"concurrency,omitempty" json:"concurrency,omitempty"`
 }
 
 // ExecSpec is a command ready for exec: the binary and the arguments it takes,

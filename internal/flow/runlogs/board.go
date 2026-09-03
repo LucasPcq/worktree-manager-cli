@@ -8,7 +8,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/rules"
 )
 
-type SessionParams struct {
+type BoardParams struct {
 	Service Service
 	// Jobs are the worktree's declared jobs, in the order a surface lists them.
 	Jobs    []domain.JobConfig
@@ -16,11 +16,11 @@ type SessionParams struct {
 	LogDir  string
 }
 
-// NewSession builds the surface's view of a worktree's jobs. It reads nothing
+// NewBoard builds the surface's view of a worktree's jobs. It reads nothing
 // until Refresh: a surface opens before the daemon is asked anything, and a job
 // nobody has started yet is still a job to show.
-func NewSession(params SessionParams) Session {
-	return &session{
+func NewBoard(params BoardParams) Board {
+	return &board{
 		service: params.Service,
 		jobs:    params.Jobs,
 		workDir: params.WorkDir,
@@ -28,7 +28,7 @@ func NewSession(params SessionParams) Session {
 	}
 }
 
-type session struct {
+type board struct {
 	service Service
 	jobs    []domain.JobConfig
 	workDir string
@@ -40,8 +40,8 @@ type session struct {
 	liveOrder []string
 }
 
-func (s *session) Refresh() error {
-	infos, err := s.service.List(s.workDir)
+func (b *board) Refresh() error {
+	infos, err := b.service.List(b.workDir)
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func (s *session) Refresh() error {
 	live := make(map[string]domain.JobInfo, len(infos))
 	order := make([]string, 0, len(infos))
 	for _, info := range infos {
-		if info.WorkDir != s.workDir {
+		if info.WorkDir != b.workDir {
 			continue
 		}
 		if _, known := live[info.Name]; !known {
@@ -58,21 +58,21 @@ func (s *session) Refresh() error {
 		live[info.Name] = info
 	}
 
-	s.mu.Lock()
-	s.live = live
-	s.liveOrder = order
-	s.mu.Unlock()
+	b.mu.Lock()
+	b.live = live
+	b.liveOrder = order
+	b.mu.Unlock()
 	return nil
 }
 
-func (s *session) Jobs() []JobView {
-	s.mu.RLock()
-	live, order := s.live, s.liveOrder
-	s.mu.RUnlock()
+func (b *board) Jobs() []JobView {
+	b.mu.RLock()
+	live, order := b.live, b.liveOrder
+	b.mu.RUnlock()
 
-	declared := make(map[string]bool, len(s.jobs))
-	views := make([]JobView, 0, len(s.jobs))
-	for _, job := range s.jobs {
+	declared := make(map[string]bool, len(b.jobs))
+	views := make([]JobView, 0, len(b.jobs))
+	for _, job := range b.jobs {
 		declared[job.Name] = true
 		views = append(views, declaredView(job, live[job.Name]))
 	}
@@ -88,27 +88,27 @@ func (s *session) Jobs() []JobView {
 	return views
 }
 
-func (s *session) Attach(params AttachParams) (Stream, error) {
-	view, found := s.view(params.Job)
+func (b *board) Attach(params AttachParams) (Stream, error) {
+	view, found := b.view(params.Job)
 	if !found {
 		return nil, fmt.Errorf("%w: %s", domain.ErrJobNotFound, params.Job)
 	}
 	if !view.Attachable {
 		return nil, fmt.Errorf("%w: %s", domain.ErrJobNotAttachable, params.Job)
 	}
-	return s.service.Attach(AttachRequest{Name: params.Job, WorkDir: s.workDir, Size: params.Size})
+	return b.service.Attach(AttachRequest{Name: params.Job, WorkDir: b.workDir, Size: params.Size})
 }
 
-func (s *session) History(params HistoryParams) ([]string, error) {
+func (b *board) History(params HistoryParams) ([]string, error) {
 	lines := params.Lines
 	if lines <= 0 {
 		lines = domain.JobLogTailLines
 	}
-	return s.service.Tail(TailRequest{LogDir: s.logDir, Job: params.Job, Lines: lines})
+	return b.service.Tail(TailRequest{LogDir: b.logDir, Job: params.Job, Lines: lines})
 }
 
-func (s *session) view(name string) (JobView, bool) {
-	for _, view := range s.Jobs() {
+func (b *board) view(name string) (JobView, bool) {
+	for _, view := range b.Jobs() {
 		if view.Name == name {
 			return view, true
 		}

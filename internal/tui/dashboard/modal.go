@@ -361,13 +361,29 @@ func newSelectList(content flow.StepContent) components.SelectListModel {
 			Value:     option.Value,
 			Separator: option.Separator,
 			Danger:    option.Danger,
+			Badges:    selectBadges(option.Badges),
 		})
 	}
 	return components.NewSelectList(components.NewSelectListParams{
 		Title:       content.Title,
 		Description: content.Description,
 		Items:       items,
+		Start:       content.Start,
 	})
+}
+
+func selectBadges(badges []flow.Badge) []components.Badge {
+	if len(badges) == 0 {
+		return nil
+	}
+	rendered := make([]components.Badge, 0, len(badges))
+	for _, badge := range badges {
+		rendered = append(rendered, components.Badge{
+			Text:    badge.Text,
+			Variant: components.BadgeVariantOf(badge.Tone),
+		})
+	}
+	return rendered
 }
 
 // branchItems applies the content's exclusions over the step's candidates, the

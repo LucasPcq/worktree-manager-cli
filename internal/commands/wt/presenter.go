@@ -3,84 +3,24 @@ package wt
 import (
 	"fmt"
 
-	"github.com/spf13/cobra"
-
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
-	"github.com/LucasPcq/wtm/internal/flow"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
 	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 	syncflow "github.com/LucasPcq/wtm/internal/flow/sync"
 	"github.com/LucasPcq/wtm/internal/output"
-	"github.com/LucasPcq/wtm/internal/rules"
-	"github.com/LucasPcq/wtm/internal/tui/components"
-	"github.com/LucasPcq/wtm/internal/tui/flowui"
 )
 
-// cliPresenter is the CLI half of flow.Presenter: the flow decides what happens,
-// this decides how it reads.
-type cliPresenter struct {
-	cmd    *cobra.Command
-	format string
-	// human means the output is meant for a person: progress is animated and the
-	// hook phase gets its title.
-	human bool
-}
-
-func newPresenter(cmd *cobra.Command, format string) cliPresenter {
-	return cliPresenter{cmd: cmd, format: format, human: rules.IsHumanFormat(format)}
-}
-
-func (p cliPresenter) Stage(params flow.StageParams) error {
-	return components.RunLoading(components.LoadingParams{
-		Message: params.Message,
-		Animate: p.human,
-		Work:    params.Work,
-	})
-}
-
-func (p cliPresenter) HookPhase(params flow.HookPhaseParams) error {
-	if p.human {
-		output.HooksSection(p.cmd.ErrOrStderr(), params.Title)
-	}
-	return params.Run(p.cmd.ErrOrStderr())
-}
-
-func (p cliPresenter) Notice(notice flow.Notice) {
-	if notice.Kind == flow.NoticeWarning {
-		output.Frame(p.cmd.ErrOrStderr(), func() {
-			output.Warning(p.cmd.ErrOrStderr(), notice.Text)
-		})
-		return
-	}
-	output.Frame(p.cmd.OutOrStdout(), func() {
-		output.Message(p.cmd.OutOrStdout(), notice.Text)
-	})
-}
-
-func (p cliPresenter) Status(notice flow.Notice) {
-	if len(notice.Lines) > 0 {
-		output.Callout(p.cmd.ErrOrStderr(), notice.Text, notice.Lines)
-		return
-	}
-	switch notice.Kind {
-	case flow.NoticeWarning:
-		output.Warning(p.cmd.ErrOrStderr(), notice.Text)
-	default:
-		output.Success(p.cmd.ErrOrStderr(), notice.Text)
-	}
-}
-
 type createPresenter struct {
-	cliPresenter
+	shared.CLIPresenter
 	config shared.ConfigResult
 }
 
 func (p createPresenter) Created(outcome createflow.Outcome) error {
-	if p.format == domain.OutputJSON {
-		return output.WriteWorktreeCreateJSON(p.cmd.OutOrStdout(), outcome.Result)
+	if p.Format == domain.OutputJSON {
+		return output.WriteWorktreeCreateJSON(p.Cmd.OutOrStdout(), outcome.Result)
 	}
 
 	// A reused branch's divergence from origin is the one thing "Created worktree x
@@ -95,8 +35,8 @@ func (p createPresenter) Created(outcome createflow.Outcome) error {
 		})
 	}
 
-	output.Frame(p.cmd.OutOrStdout(), func() {
-		output.FormatCreateResult(p.cmd.OutOrStdout(), output.CreateResultParams{
+	output.Frame(p.Cmd.OutOrStdout(), func() {
+		output.FormatCreateResult(p.Cmd.OutOrStdout(), output.CreateResultParams{
 			Branch:        outcome.Branch,
 			AlreadyExists: outcome.Result.AlreadyExists,
 			From:          outcome.FromBranch,
@@ -116,25 +56,25 @@ func (p createPresenter) Created(outcome createflow.Outcome) error {
 }
 
 type cleanPresenter struct {
-	cliPresenter
+	shared.CLIPresenter
 }
 
 func (p cleanPresenter) Cleaned(outcome cleanflow.Outcome) error {
 	if outcome.AlreadyAbsent {
-		if p.format == domain.OutputJSON {
-			return output.WriteWorktreeCleanJSON(p.cmd.OutOrStdout(), output.WriteWorktreeCleanJSONParams{
+		if p.Format == domain.OutputJSON {
+			return output.WriteWorktreeCleanJSON(p.Cmd.OutOrStdout(), output.WriteWorktreeCleanJSONParams{
 				Branch:        outcome.Branch,
 				AlreadyAbsent: true,
 			})
 		}
-		output.Frame(p.cmd.OutOrStdout(), func() {
-			output.Message(p.cmd.OutOrStdout(), fmt.Sprintf(domain.CleanAlreadyAbsentFmt, outcome.Branch))
+		output.Frame(p.Cmd.OutOrStdout(), func() {
+			output.Message(p.Cmd.OutOrStdout(), fmt.Sprintf(domain.CleanAlreadyAbsentFmt, outcome.Branch))
 		})
 		return nil
 	}
 
-	if p.format == domain.OutputJSON {
-		return output.WriteWorktreeCleanJSON(p.cmd.OutOrStdout(), output.WriteWorktreeCleanJSONParams{
+	if p.Format == domain.OutputJSON {
+		return output.WriteWorktreeCleanJSON(p.Cmd.OutOrStdout(), output.WriteWorktreeCleanJSONParams{
 			Branch:           outcome.Branch,
 			Path:             outcome.Path,
 			Reparented:       outcome.Reparented,
@@ -142,20 +82,20 @@ func (p cleanPresenter) Cleaned(outcome cleanflow.Outcome) error {
 		})
 	}
 
-	output.Frame(p.cmd.OutOrStdout(), func() {
-		output.Success(p.cmd.OutOrStdout(), fmt.Sprintf(domain.CleanedFmt, outcome.Branch))
+	output.Frame(p.Cmd.OutOrStdout(), func() {
+		output.Success(p.Cmd.OutOrStdout(), fmt.Sprintf(domain.CleanedFmt, outcome.Branch))
 		for _, child := range outcome.Reparented {
-			output.Success(p.cmd.OutOrStdout(), fmt.Sprintf(domain.CleanReparentedFmt, child.Branch, child.NewParent))
+			output.Success(p.Cmd.OutOrStdout(), fmt.Sprintf(domain.CleanReparentedFmt, child.Branch, child.NewParent))
 		}
 		for _, child := range outcome.OrphanedChildren {
-			output.Warning(p.cmd.OutOrStdout(), fmt.Sprintf(domain.CleanStillOrphanedFmt, child.Branch, child.OldParent))
+			output.Warning(p.Cmd.OutOrStdout(), fmt.Sprintf(domain.CleanStillOrphanedFmt, child.Branch, child.OldParent))
 		}
 	})
 	return nil
 }
 
 type prunePresenter struct {
-	cliPresenter
+	shared.CLIPresenter
 }
 
 // Pruned renders the three shapes a prune run concludes in: nothing matched, a
@@ -163,85 +103,85 @@ type prunePresenter struct {
 // never in JSON.
 func (p prunePresenter) Pruned(outcome pruneflow.Outcome) error {
 	if outcome.Empty {
-		if p.format == domain.OutputJSON {
-			return output.WritePruneResultJSON(p.cmd.OutOrStdout(), domain.PruneResult{})
+		if p.Format == domain.OutputJSON {
+			return output.WritePruneResultJSON(p.Cmd.OutOrStdout(), domain.PruneResult{})
 		}
-		output.Frame(p.cmd.OutOrStdout(), func() {
-			output.Message(p.cmd.OutOrStdout(), domain.PruneNothingToPrune)
+		output.Frame(p.Cmd.OutOrStdout(), func() {
+			output.Message(p.Cmd.OutOrStdout(), domain.PruneNothingToPrune)
 		})
 		return nil
 	}
 
-	if p.format == domain.OutputJSON {
-		return output.WritePruneResultJSON(p.cmd.OutOrStdout(), outcome.Result)
+	if p.Format == domain.OutputJSON {
+		return output.WritePruneResultJSON(p.Cmd.OutOrStdout(), outcome.Result)
 	}
 
 	if outcome.Result.DryRun {
-		output.Frame(p.cmd.OutOrStdout(), func() {
-			output.FormatPrunePlan(p.cmd.OutOrStdout(), outcome.Plan)
+		output.Frame(p.Cmd.OutOrStdout(), func() {
+			output.FormatPrunePlan(p.Cmd.OutOrStdout(), outcome.Plan)
 		})
 		return nil
 	}
 
-	output.Frame(p.cmd.OutOrStdout(), func() {
-		output.FormatPruneResult(p.cmd.OutOrStdout(), outcome.Result)
+	output.Frame(p.Cmd.OutOrStdout(), func() {
+		output.FormatPruneResult(p.Cmd.OutOrStdout(), outcome.Result)
 	})
 	return nil
 }
 
 type syncPresenter struct {
-	cliPresenter
+	shared.CLIPresenter
 }
 
 // Planned prints the cascade a run that could not ask never saw in a recap. It
 // opens the frame on stderr, where the plan has always been written.
 func (p syncPresenter) Planned(plan domain.SyncPlan) {
-	if !p.human {
+	if !p.Human {
 		return
 	}
-	output.FrameStart(p.cmd.ErrOrStderr())
-	output.FormatSyncPlan(p.cmd.ErrOrStderr(), plan)
+	output.FrameStart(p.Cmd.ErrOrStderr())
+	output.FormatSyncPlan(p.Cmd.ErrOrStderr(), plan)
 }
 
 // Rebased is the recap the user reads BEFORE being asked to push. Its single
 // leading blank separates the plan/spinner section (stderr) from the recap.
 func (p syncPresenter) Rebased(result domain.SyncResult) {
-	if !p.human {
+	if !p.Human {
 		return
 	}
-	output.Blank(p.cmd.OutOrStdout())
-	output.FormatSyncResult(p.cmd.OutOrStdout(), result)
+	output.Blank(p.Cmd.OutOrStdout())
+	output.FormatSyncResult(p.Cmd.OutOrStdout(), result)
 }
 
 func (p syncPresenter) Synced(outcome syncflow.Outcome) error {
-	if p.format == domain.OutputJSON {
-		return output.WriteSyncResultJSON(p.cmd.OutOrStdout(), outcome.Result)
+	if p.Format == domain.OutputJSON {
+		return output.WriteSyncResultJSON(p.Cmd.OutOrStdout(), outcome.Result)
 	}
 	if outcome.Empty {
-		output.Frame(p.cmd.OutOrStdout(), func() {
-			output.Message(p.cmd.OutOrStdout(), domain.SyncNothingToSync)
+		output.Frame(p.Cmd.OutOrStdout(), func() {
+			output.Message(p.Cmd.OutOrStdout(), domain.SyncNothingToSync)
 		})
 		return nil
 	}
-	output.FormatSyncPushSummary(p.cmd.OutOrStdout(), outcome.Result.Steps)
-	output.FrameEnd(p.cmd.OutOrStdout())
+	output.FormatSyncPushSummary(p.Cmd.OutOrStdout(), outcome.Result.Steps)
+	output.FrameEnd(p.Cmd.OutOrStdout())
 	return nil
 }
 
 type reparentPresenter struct {
-	cliPresenter
+	shared.CLIPresenter
 }
 
 func (p reparentPresenter) Reparented(outcome reparentflow.Outcome) error {
-	if p.format == domain.OutputJSON {
-		return output.WriteReparentJSON(p.cmd.OutOrStdout(), outcome.Results)
+	if p.Format == domain.OutputJSON {
+		return output.WriteReparentJSON(p.Cmd.OutOrStdout(), outcome.Results)
 	}
 
-	output.Frame(p.cmd.OutOrStdout(), func() {
+	output.Frame(p.Cmd.OutOrStdout(), func() {
 		for _, result := range outcome.Results {
-			output.Success(p.cmd.OutOrStdout(), fmt.Sprintf(domain.ReparentedFmt, result.Branch, result.OldParent, result.NewParent))
+			output.Success(p.Cmd.OutOrStdout(), fmt.Sprintf(domain.ReparentedFmt, result.Branch, result.OldParent, result.NewParent))
 		}
-		output.Message(p.cmd.OutOrStdout(), reparentSyncHint(outcome.Results))
+		output.Message(p.Cmd.OutOrStdout(), reparentSyncHint(outcome.Results))
 	})
 	return nil
 }
@@ -253,27 +193,4 @@ func reparentSyncHint(results []domain.ReparentResult) string {
 		return fmt.Sprintf(domain.ReparentSyncHintFmt, results[0].Branch)
 	}
 	return domain.ReparentSyncHintBare
-}
-
-// flowContext: the flow cannot load the config itself, which reads cobra flags.
-func flowContext(config shared.ConfigResult) flow.Context {
-	return flow.Context{
-		ProjectDir: config.ProjectDir,
-		StateDir:   config.StateDir,
-		Config:     config.Config,
-	}
-}
-
-type flowPrompterParams struct {
-	// Interactive is the prompt-capability gate: a human format, on a terminal, and
-	// not bypassed by --yes.
-	Interactive bool
-	Stderr      bool
-}
-
-func flowPrompter(params flowPrompterParams) flow.Prompter {
-	if !params.Interactive {
-		return flow.Unattended{}
-	}
-	return flowui.New(flowui.Params{Stderr: params.Stderr})
 }

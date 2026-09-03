@@ -3,6 +3,7 @@ package runview
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,7 +14,7 @@ import (
 )
 
 type Params struct {
-	Session runlogs.Session
+	Board runlogs.Board
 	// Job is selected when the view opens; empty takes the first one.
 	Job string
 	// Profile names what Start brings up, shown in the header and the recap.
@@ -22,26 +23,28 @@ type Params struct {
 	// Start runs a profile's start sequence while the view is open, reporting to
 	// the Sink it is given. Nil for a view that only reads what is already
 	// running. Cancelling the context ends the reporting, never the jobs.
-	Start StartFunc
+	Start runlogs.StartFunc
 	// Open hands a job's URL to the desktop. Nil leaves the open key without an
 	// object, which is what a surface that cannot open a browser installs.
 	Open OpenFunc
+	// In and Out are the terminal the view takes over. Nil means os.Stdin and
+	// os.Stdout, which is every case but one: a dashboard handing the terminal
+	// over is given the streams by bubbletea and has to pass them on, or the two
+	// programs read the same keyboard at once.
+	In  io.Reader
+	Out io.Writer
 }
 
 // OpenFunc opens a URL outside the terminal. The view never dials anything
 // itself: it names what to open and lets the seam do it.
 type OpenFunc func(url string) error
 
-// StartFunc is a start sequence the view drives — runlogs.Run, wired by the
-// command that opened the view.
-type StartFunc func(context.Context, runlogs.Sink) (runlogs.Outcome, error)
-
 // Model is the run view's root Bubbletea model: a job list, the selected job's
 // terminal emulator, and nothing else. What a job is, whether it can be
 // attached to and what it has printed are runlogs' answers, never its own.
 type Model struct {
-	session runlogs.Session
-	panes   *paneStore
+	board runlogs.Board
+	panes *paneStore
 	// msgs carries what the stream readers post; listenCmd is its only reader.
 	msgs chan tea.Msg
 
@@ -72,7 +75,7 @@ type Model struct {
 	// written to is redrawn on a clock, never once per chunk.
 	ticking bool
 
-	start StartFunc
+	start runlogs.StartFunc
 	// profile names the run the view is reporting on, for the header and the recap.
 	profile string
 	open    OpenFunc
@@ -93,7 +96,7 @@ type Model struct {
 func New(params Params) Model {
 	ctx, cancel := context.WithCancel(context.Background())
 	return Model{
-		session:  params.Session,
+		board:    params.Board,
 		selected: params.Job,
 		profile:  params.Profile,
 		panes:    newPaneStore(PaneSize{}),
@@ -116,7 +119,14 @@ func New(params Params) Model {
 // start sequence it was reporting on carries on without a reader.
 func Run(params Params) (Result, error) {
 	model := New(params)
-	final, err := tea.NewProgram(model, tea.WithAltScreen()).Run()
+	options := []tea.ProgramOption{tea.WithAltScreen()}
+	if params.In != nil {
+		options = append(options, tea.WithInput(params.In))
+	}
+	if params.Out != nil {
+		options = append(options, tea.WithOutput(params.Out))
+	}
+	final, err := tea.NewProgram(model, options...).Run()
 	if err != nil {
 		model.cancel()
 		model.panes.closeAll()
@@ -181,12 +191,12 @@ type frameMsg struct{}
 type pollMsg struct{}
 
 func (m Model) refreshCmd() tea.Cmd {
-	session := m.session
+	board := m.board
 	return func() tea.Msg {
-		if err := session.Refresh(); err != nil {
-			return jobsMsg{jobs: session.Jobs(), err: err}
+		if err := board.Refresh(); err != nil {
+			return jobsMsg{jobs: board.Jobs(), err: err}
 		}
-		return jobsMsg{jobs: session.Jobs()}
+		return jobsMsg{jobs: board.Jobs()}
 	}
 }
 
@@ -196,9 +206,9 @@ type attachParams struct {
 }
 
 func (m Model) attachCmd(params attachParams) tea.Cmd {
-	session := m.session
+	board := m.board
 	return func() tea.Msg {
-		stream, err := session.Attach(runlogs.AttachParams{
+		stream, err := board.Attach(runlogs.AttachParams{
 			Job:  params.Job,
 			Size: runlogs.Size{Cols: params.Size.Cols, Rows: params.Size.Rows},
 		})
@@ -207,9 +217,9 @@ func (m Model) attachCmd(params attachParams) tea.Cmd {
 }
 
 func (m Model) historyCmd(job string) tea.Cmd {
-	session := m.session
+	board := m.board
 	return func() tea.Msg {
-		lines, err := session.History(runlogs.HistoryParams{Job: job})
+		lines, err := board.History(runlogs.HistoryParams{Job: job})
 		return historyMsg{job: job, lines: lines, err: err}
 	}
 }
