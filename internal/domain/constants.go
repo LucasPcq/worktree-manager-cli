@@ -2419,6 +2419,14 @@ const (
 	// DashboardOpenURLLabel names a failed browser launch for a RUN row.
 	DashboardOpenURLLabel = "open URL"
 
+	// RunDetached* report a start nobody is watching: the surface gave the
+	// terminal back, so each step says what it did instead of showing it.
+	RunDetachedStartingFmt = "starting %s (%d/%d)"
+	RunDetachedStartedFmt  = "%s is up"
+	RunDetachedAddressFmt  = "%s → %s"
+	RunDetachedFailedFmt   = "%s failed: %s"
+	RunDetachedAlreadyFmt  = "%s was already up"
+
 	// DashboardLogsLines is how far back the detail panel's logs view reads. It
 	// is a glance, not a session: runview is what scrolls.
 	DashboardLogsLines = 200

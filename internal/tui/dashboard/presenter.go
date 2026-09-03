@@ -176,11 +176,12 @@ func (p syncPresenter) Synced(outcome syncflow.Outcome) error {
 }
 
 // runPresenter reports a `run up` the dashboard started: the phases in the
-// output panel like any flow, and the start sequence through the run view,
-// which takes the terminal while it is open.
+// output panel like any flow, and the start sequence through whichever watcher
+// the action installed — detached for a start, the terminal hand-over for
+// `View logs`, which takes the screen on purpose.
 type runPresenter struct {
 	presenter
-	watcher
+	seam.Watcher
 }
 
 // downPresenter reports a stop. It has no view to open — nothing is attached to

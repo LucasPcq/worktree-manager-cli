@@ -42,9 +42,11 @@ func (m Model) runRequest(selected domain.WorktreeStatus) (domain.RunConfig, boo
 // and names nothing — the flow then falls back to Cwd, which is this same row.
 func runWorktree(selected domain.WorktreeStatus) string { return selected.Branch }
 
-// startRunUp brings a worktree's default profile up, in the run view. The view
-// takes the terminal for as long as it is open and gives it back on exit, the
-// jobs carrying on without it — the same contract as `wtm run up`.
+// startRunUp brings a worktree's default profile up, detached: the surface is
+// given back and the progress goes to the output panel and to the held row's
+// stage. Starting three worktrees in a row is the case this serves, and each
+// one used to cost an open and an exit of the run view. Watching is what the
+// LOGS tab is for.
 func (m Model) startRunUp(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 	if reason, refused := m.busyReason(selected.Branch); refused {
 		return m.refuse(reason), nil
@@ -68,7 +70,7 @@ func (m Model) startRunUp(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 			opID:      id,
 			targetKey: declared.TargetKey,
 		},
-		Presenter: runPresenter{presenter: presenter{send: send, id: id}, watcher: watcher{send: send}},
+		Presenter: runPresenter{presenter: presenter{send: send, id: id}, Watcher: detachedWatcher{send: send, id: id}},
 	}
 
 	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
@@ -77,8 +79,8 @@ func (m Model) startRunUp(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 	})
 }
 
-// startRunJob starts one job the user names, in the run view: a job is a
-// request of its own, and `target.JobStep` has no safe default — which is why
+// startRunJob starts one job the user names, detached like startRunUp: a job is
+// a request of its own, and `target.JobStep` has no safe default — which is why
 // its picker opens here rather than a job being guessed.
 func (m Model) startRunJob(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 	if reason, refused := m.busyReason(selected.Branch); refused {
@@ -103,7 +105,7 @@ func (m Model) startRunJob(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 			opID:      id,
 			targetKey: declared.TargetKey,
 		},
-		Presenter: runPresenter{presenter: presenter{send: send, id: id}, watcher: watcher{send: send}},
+		Presenter: runPresenter{presenter: presenter{send: send, id: id}, Watcher: detachedWatcher{send: send, id: id}},
 	}
 
 	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
