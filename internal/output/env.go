@@ -37,6 +37,11 @@ func printEnvFile(w io.Writer, f domain.EnvFileResult, check bool, hasPorts bool
 		f.Target,
 		styles.Muted.Render(fmt.Sprintf(domain.EnvFileSourceFmt, f.Strategy, f.Source))))
 
+	if f.Unresolvable {
+		Warning(w, fmt.Sprintf(domain.EnvFileUnresolvableFmt, f.Target))
+		return
+	}
+
 	rows := rules.EnvKeyRows(rules.EnvKeyRowsParams{File: f, Check: check})
 	if len(rows) == 0 {
 		Success(w, styles.Muted.Render(rules.EnvFileVerdict(hasPorts)))

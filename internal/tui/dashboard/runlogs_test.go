@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/runlogs"
+	"github.com/LucasPcq/wtm/internal/testutil/runlogstest"
 )
 
 func logsModel(t *testing.T, params RunParams, branches ...string) Model {
@@ -179,25 +182,48 @@ func TestClickingAJobWithNoURLOpensItsLogs(t *testing.T) {
 	}
 }
 
-func TestTheJobsLineNamesEveryDeclaredJobAndMarksWhatIsUp(t *testing.T) {
+func TestTheJobColumnNamesEveryDeclaredJobAndMarksWhatIsUp(t *testing.T) {
 	model := logsModel(t, RunParams{}, "a")
 	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "api"}, {Name: "pg"}}}
 	model.jobs = []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"}}
 	model.addresses = map[string]map[string]domain.JobAddress{"a": {"web": {URL: "http://web.wtm"}}}
 	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "web"
 
-	line := stripANSI(model.logsJobsLine(60))
+	column := stripANSI(strings.Join(model.logsJobColumn(logsJobColumnParams{Width: 20, Rows: 10}), "\n"))
 
 	for _, name := range []string{"web", "api", "pg"} {
-		if !strings.Contains(line, name) {
-			t.Errorf("line = %q, misses %q: a stopped job's tail is still readable", line, name)
+		if !strings.Contains(column, name) {
+			t.Errorf("column = %q, misses %q: a stopped job's tail is still readable", column, name)
 		}
 	}
-	if !strings.Contains(line, domain.DetailJobUpGlyph) || !strings.Contains(line, domain.DetailJobDownGlyph) {
-		t.Errorf("line = %q, want up and down told apart", line)
+	if !strings.Contains(column, domain.DetailJobUpGlyph) || !strings.Contains(column, domain.DetailJobDownGlyph) {
+		t.Errorf("column = %q, want up and down told apart", column)
 	}
-	if !strings.HasSuffix(line, "http://web.wtm") {
-		t.Errorf("line = %q, want the current job's address flush right", line)
+	if address := stripANSI(model.logsAddressLine(60)); !strings.Contains(address, "http://web.wtm") {
+		t.Errorf("address line = %q, want the current job's address", address)
+	}
+}
+
+// Ten jobs used to be windowed into a row of chips behind ‹ › marks; the column
+// lists them down the side and every one of them stays reachable.
+func TestTheJobColumnHoldsEveryJobOfALongList(t *testing.T) {
+	jobs := make([]domain.JobConfig, 0, 10)
+	for i := range 10 {
+		jobs = append(jobs, domain.JobConfig{Name: fmt.Sprintf("service-%02d", i)})
+	}
+	model := logsModel(t, RunParams{}, "a")
+	model.runConfig = domain.RunConfig{Jobs: jobs}
+	model.panelTab, model.logsBranch, model.logsJob = panelLogs, "a", "service-09"
+
+	column := stripANSI(strings.Join(model.logsJobColumn(logsJobColumnParams{Width: 20, Rows: 10}), "\n"))
+
+	if !strings.Contains(column, "service-09") {
+		t.Errorf("column = %q, want the selected job visible", column)
+	}
+	for _, mark := range []string{"‹", "›"} {
+		if strings.Contains(column, mark) {
+			t.Errorf("column = %q, want no windowing marks left", column)
+		}
 	}
 }
 
@@ -358,28 +384,6 @@ func TestChangingTabClosesTheLogsView(t *testing.T) {
 	}
 }
 
-// The tail is shared by the two hosts. Closing one of them used to drop it, so
-// a Services row of another worktree opened its logs and lost them at once —
-// triggerDetailReload closes the panel on every change of selected branch.
-func TestClosingOneHostLeavesTheOtherOneItsTail(t *testing.T) {
-	model := logsModel(t, RunParams{}, "a")
-	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
-	model.servicesLogs = true
-	model.logsBranch, model.logsJob = "a", "web"
-	model.logsLines = []string{"kept"}
-
-	model = model.closePanelLogs()
-
-	if model.logsJob != "web" || len(model.logsLines) != 1 {
-		t.Errorf("logs = %q/%v, want the Services view's tail untouched", model.logsJob, model.logsLines)
-	}
-
-	model = model.closeServiceLogs()
-	if model.logsJob != "" || model.logsLines != nil {
-		t.Errorf("logs = %q/%v, want them dropped once no host shows them", model.logsJob, model.logsLines)
-	}
-}
-
 // The chips were marked but nothing ever looked them up: a zone with no
 // handler is a click that lands nowhere.
 func TestClickingAJobChipSwitchesToIt(t *testing.T) {
@@ -468,5 +472,154 @@ func TestAJobWithoutAnAddressMarksNoZoneInTheLogsView(t *testing.T) {
 
 	if !model.zones.Get(logsURLZone()).IsZero() {
 		t.Error("an address zone was marked for a job that publishes none")
+	}
+}
+
+// The panel shows the run view itself, at a panel's size: the same renderer and
+// the same live stream `run logs` uses, rather than a second way of drawing
+// logs. Enter opens that very view full-screen — the miniature is a preview,
+// and it reads no key.
+func TestTheLogsPanelHostsTheRunView(t *testing.T) {
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
+		Views: []runlogs.JobView{{Name: "web", Kind: domain.JobKindService, Status: domain.JobStatusStopped}},
+		Lines: map[string][]string{"web": {"ready in 380ms"}},
+	})
+	model := logsModel(t, RunParams{
+		BoardLoader: func(logsRequest) runlogs.Board { return board },
+		LogsLoader:  func(logsRequest) ([]string, error) { return nil, nil },
+	}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+
+	model, _ = model.openLogsTabOn("web")
+	if !model.previewOn {
+		t.Fatal("the panel opened without a preview although a board was available")
+	}
+
+	body := stripANSI(strings.Join(model.logsBody(model.layout()), "\n"))
+	if !strings.Contains(body, "web") {
+		t.Errorf("panel does not name the job it is previewing:\n%s", body)
+	}
+
+	// Leaving releases the stream: a panel closed without it leaks one
+	// subscription per job it ever showed.
+	model = model.closePanelLogs()
+	if model.previewOn {
+		t.Error("the preview outlived the panel that held it")
+	}
+}
+
+// Without a board — a test, a surface with no daemon — the panel keeps the
+// persisted tail it always had.
+func TestTheLogsPanelFallsBackToTheTailWithoutABoard(t *testing.T) {
+	model := logsModel(t, RunParams{
+		LogsLoader: func(logsRequest) ([]string, error) { return []string{"ready in 380ms"}, nil },
+	}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+
+	model, cmd := model.openLogsTabOn("web")
+	if model.previewOn {
+		t.Fatal("a preview was opened with no board to attach through")
+	}
+	tail, ok := cmd().(logsTailMsg)
+	if !ok {
+		t.Fatalf("msg = %T, want logsTailMsg", cmd())
+	}
+	model = model.applyLogsTail(tail)
+
+	body := stripANSI(strings.Join(model.logsBody(model.layout()), "\n"))
+	if !strings.Contains(body, "ready in 380ms") {
+		t.Errorf("panel lost its tail:\n%s", body)
+	}
+}
+
+// The panel's body must not move as the reader walks the jobs: the address
+// keeps its row whether or not the job publishes one.
+func TestTheLogsPanelKeepsItsHeightWithAndWithoutAnAddress(t *testing.T) {
+	model := logsModel(t, RunParams{
+		LogsLoader: func(logsRequest) ([]string, error) { return []string{"ready"}, nil },
+	}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "worker"}}}
+	model.addresses = map[string]map[string]domain.JobAddress{"a": {"web": {URL: "http://web.wtm"}}}
+
+	published, _ := model.openLogsTabOn("web")
+	bare, _ := model.openLogsTabOn("worker")
+
+	withURL := strings.Split(strings.Join(published.logsBody(published.layout()), "\n"), "\n")
+	without := strings.Split(strings.Join(bare.logsBody(bare.layout()), "\n"), "\n")
+	if len(withURL) != len(without) {
+		t.Errorf("body is %d rows with an address and %d without: the panel moves under the reader",
+			len(withURL), len(without))
+	}
+	if !strings.Contains(stripANSI(withURL[0]), "http://web.wtm") {
+		t.Errorf("first row = %q, want the address", stripANSI(withURL[0]))
+	}
+	// The row is kept, and it says why it holds no address rather than leaving a
+	// hole where one usually is.
+	if !strings.Contains(stripANSI(without[0]), domain.DashboardLogsNoAddress) {
+		t.Errorf("first row = %q, want it to say the job declares no port", stripANSI(without[0]))
+	}
+}
+
+// A live preview draws a bordered pane whose first row is that border and whose
+// second names the job. The column starts on that second row, so the job it
+// highlights sits level with the job the pane names.
+func TestTheJobColumnLinesUpWithThePaneTitle(t *testing.T) {
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
+		Views: []runlogs.JobView{{Name: "web", Kind: domain.JobKindService, Status: domain.JobStatusStopped}},
+	})
+	model := logsModel(t, RunParams{
+		BoardLoader: func(logsRequest) runlogs.Board { return board },
+		LogsLoader:  func(logsRequest) ([]string, error) { return nil, nil },
+	}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}, {Name: "worker"}}}
+
+	model, _ = model.openLogsTabOn("web")
+	rows := strings.Split(stripANSI(strings.Join(model.logsBody(model.layout()), "\n")), "\n")
+
+	border, first := -1, -1
+	for i, row := range rows {
+		if border < 0 && strings.Contains(row, "╭") {
+			border = i
+		}
+		if first < 0 && strings.Contains(row, "web") {
+			first = i
+		}
+	}
+	if border < 0 || first < 0 {
+		t.Fatalf("body holds no pane or no job:\n%s", strings.Join(rows, "\n"))
+	}
+	if first != border+1 {
+		t.Errorf("first job on row %d, pane border on row %d: want the job level with the pane's title", first, border)
+	}
+}
+
+// The output panel takes its rows from the panel above it. A preview sized when
+// it opened and never again was drawn into a box it no longer fitted.
+func TestThePreviewFollowsTheOutputPanelOpening(t *testing.T) {
+	board := runlogstest.NewBoard(runlogstest.BoardParams{
+		Views: []runlogs.JobView{{Name: "web", Kind: domain.JobKindService, Status: domain.JobStatusStopped}},
+	})
+	model := logsModel(t, RunParams{
+		BoardLoader: func(logsRequest) runlogs.Board { return board },
+		LogsLoader:  func(logsRequest) ([]string, error) { return nil, nil },
+	}, "a")
+	model.runConfig = domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web"}}}
+
+	model, _ = model.openLogsTabOn("web")
+	before := len(model.logsBody(model.layout()))
+
+	next, _ := model.Update(key(keyToggleOutput))
+	expanded, _ := next.(Model)
+	if !expanded.outputExpanded {
+		t.Fatal("the output panel did not open")
+	}
+
+	after := len(expanded.logsBody(expanded.layout()))
+	if after >= before {
+		t.Fatalf("logs body is %d rows with the output panel open and %d without: it did not give any up", after, before)
+	}
+	rendered := len(strings.Split(strings.Join(expanded.logsBody(expanded.layout()), "\n"), "\n"))
+	if rendered != after {
+		t.Errorf("body renders %d rows for a %d-row box", rendered, after)
 	}
 }

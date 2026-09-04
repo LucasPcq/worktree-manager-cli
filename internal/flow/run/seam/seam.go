@@ -28,6 +28,10 @@ type Params struct {
 	// with the previous run's log behind each (LUC-208); `run logs` passes them
 	// all, which is what it is for.
 	Jobs []domain.JobConfig
+	// Declared is every job run.toml holds, not just the ones this run starts.
+	// A port is owned by whichever job binds it, and the job holding the base
+	// port may well be one this profile never names. Empty falls back to Jobs.
+	Declared []domain.JobConfig
 	// ProxyPort is where the run proxy serves the jobs' names. Zero leaves them
 	// on their own ports.
 	ProxyPort int
@@ -38,41 +42,49 @@ type Params struct {
 }
 
 type Seam struct {
-	service   runlogs.Service
-	board     runlogs.Board
-	workDir   string
-	worktree  string
-	logDir    string
-	env       map[string]string
-	prober    runlogs.Prober
-	project   string
-	proxyPort int
+	service    runlogs.Service
+	board      runlogs.Board
+	workDir    string
+	worktree   string
+	logDir     string
+	env        map[string]string
+	prober     runlogs.Prober
+	project    string
+	proxyPort  int
+	projectDir string
+	jobs       []domain.JobConfig
+	declared   []domain.JobConfig
 }
 
 func Open(params Params) Seam {
 	branch := target.BranchOf(params.WorkDir)
 	logDir := logDirOf(params.StateDir, branch)
 	service := runlogs.NewService(runlogs.ServiceParams{SocketPath: process.SocketPath()})
+	env := JobEnv(JobEnvParams{
+		ProjectDir: params.ProjectDir,
+		StateDir:   params.StateDir,
+		WorkDir:    params.WorkDir,
+	})
 	return Seam{
 		service: service,
 		board: runlogs.NewBoard(runlogs.BoardParams{
-			Service:  service,
-			Jobs:     params.Jobs,
-			WorkDir:  params.WorkDir,
-			Worktree: branch,
-			LogDir:   logDir,
+			Service:   service,
+			Jobs:      params.Jobs,
+			WorkDir:   params.WorkDir,
+			Worktree:  branch,
+			LogDir:    logDir,
+			Addresses: boardAddresses(boardAddressParams{Params: params, Env: env}),
 		}),
-		workDir:  params.WorkDir,
-		worktree: branch,
-		logDir:   logDir,
-		env: JobEnv(JobEnvParams{
-			ProjectDir: params.ProjectDir,
-			StateDir:   params.StateDir,
-			WorkDir:    params.WorkDir,
-		}),
-		prober:    newProber(params.ProbeBudget, params.NoProbe),
-		project:   filepath.Base(params.ProjectDir),
-		proxyPort: params.ProxyPort,
+		workDir:    params.WorkDir,
+		worktree:   branch,
+		logDir:     logDir,
+		env:        env,
+		jobs:       params.Jobs,
+		declared:   params.Declared,
+		prober:     newProber(params.ProbeBudget, params.NoProbe),
+		project:    filepath.Base(params.ProjectDir),
+		proxyPort:  params.ProxyPort,
+		projectDir: params.ProjectDir,
 	}
 }
 
@@ -100,17 +112,76 @@ func (s Seam) Starter(params StartParams) runlogs.StartFunc {
 
 func (s Seam) run(ctx context.Context, sink runlogs.Sink, params StartParams) (runlogs.Outcome, error) {
 	return runlogs.Run(ctx, runlogs.RunParams{
-		Service:   s.service,
-		Sink:      sink,
-		Jobs:      params.Jobs,
-		Profile:   params.Profile,
-		WorkDir:   s.workDir,
-		Worktree:  s.worktree,
-		LogDir:    s.logDir,
-		Env:       s.env,
-		Prober:    s.prober,
-		Project:   s.project,
-		ProxyPort: s.proxyPort,
+		BaseOwners: s.baseOwners(),
+		Service:    s.service,
+		Sink:       sink,
+		Jobs:       params.Jobs,
+		Profile:    params.Profile,
+		WorkDir:    s.workDir,
+		Worktree:   s.worktree,
+		LogDir:     s.logDir,
+		Env:        s.env,
+		Prober:     s.prober,
+		Project:    s.project,
+		ProxyPort:  s.proxyPort,
+	})
+}
+
+// baseOwners names the worktree bound to each declared base port, so the probe
+// does not blame a command for a port the main checkout holds. An unreachable
+// daemon yields nothing, which restores the older message rather than refusing
+// the run: a diagnosis never blocks a start.
+func (s Seam) baseOwners() map[int]string {
+	running, err := s.service.List("")
+	if err != nil {
+		return nil
+	}
+	jobs := s.declared
+	if len(jobs) == 0 {
+		jobs = s.jobs
+	}
+	return rules.BasePortOwners(rules.BasePortOwnersParams{
+		SelfWorkDir: s.workDir,
+		Jobs:        jobs,
+		Running:     running,
+		Holders:     holdersOf(running),
+	})
+}
+
+// holdersOf names each worktree the daemon has something up in. The branch is
+// looked up here rather than carried by the daemon, which must never run git.
+func holdersOf(running []domain.JobInfo) []rules.PortHolder {
+	seen := make(map[string]bool, len(running))
+	holders := make([]rules.PortHolder, 0, len(running))
+	for _, info := range running {
+		if info.WorkDir == "" || seen[info.WorkDir] {
+			continue
+		}
+		seen[info.WorkDir] = true
+		holders = append(holders, rules.PortHolder{
+			WorkDir:  info.WorkDir,
+			Worktree: target.BranchOf(info.WorkDir),
+		})
+	}
+	return holders
+}
+
+type boardAddressParams struct {
+	Params Params
+	Env    map[string]string
+}
+
+// boardAddresses is where each declared job answers in this worktree. The seam
+// computes it because it is the side holding the worktree's offset and the
+// proxy's port; every surface then reads the same figures off the board rather
+// than deriving its own.
+func boardAddresses(params boardAddressParams) map[string]domain.JobAddress {
+	return rules.WorktreeJobAddresses(rules.WorktreeJobAddressesParams{
+		Config:     domain.RunConfig{Jobs: params.Params.Jobs},
+		PortOffset: rules.PortOffsetFromEnv(params.Env),
+		Worktree:   params.Env[domain.EnvWorktree],
+		Project:    filepath.Base(params.Params.ProjectDir),
+		PublicPort: params.Params.ProxyPort,
 	})
 }
 

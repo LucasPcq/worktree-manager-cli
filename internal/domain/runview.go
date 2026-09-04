@@ -20,6 +20,12 @@ type RunViewLayout struct {
 	// what is left once its border and title row are taken out.
 	PaneCols int
 	PaneRows int
+	// MarginCols holds the whole view off the terminal's edges, GutterCols
+	// separates the two panels, and GapRows is the blank row under the header
+	// and above the help. Zero on a frame too small to afford them.
+	MarginCols int
+	GutterCols int
+	GapRows    int
 }
 
 // JobStep is where a job stands in a profile's start sequence, which the

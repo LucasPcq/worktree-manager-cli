@@ -179,9 +179,13 @@ func TestURLItemsOfferEveryCandidateChecked(t *testing.T) {
 		{Name: "cache", Kind: domain.JobKindService, Ports: map[string]int{"REDIS_PORT": 6379}},
 	}}
 
+	// cache est proposé aussi : il ne déclare qu'un port, et un port unique est
+	// celui sur lequel le job répond. La proposition est additive — décocher
+	// coûte une case, ne rien proposer coûtait une URL aux fronts Vite, qui ne
+	// déclarent que VITE_PORT.
 	items := urlItemsFor(cfg, []string{"web", "api", "cache"})
-	if len(items) != 2 {
-		t.Fatalf("items = %d (%v), want web et api seulement", len(items), items)
+	if len(items) != 3 {
+		t.Fatalf("items = %d (%v), want web, api et cache", len(items), items)
 	}
 	for _, item := range items {
 		if !item.Selected {

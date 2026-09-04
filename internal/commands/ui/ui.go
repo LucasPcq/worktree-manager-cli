@@ -104,6 +104,10 @@ func buildRunParams(params buildParams) dashboard.RunParams {
 			ProjectDir: result.ProjectDir,
 			StateDir:   result.StateDir,
 		}),
+		BoardLoader: dashboard.DefaultBoardLoader(dashboard.LogsLoaderParams{
+			ProjectDir: result.ProjectDir,
+			StateDir:   result.StateDir,
+		}),
 		// The public port is dialed here rather than once at startup: the loader
 		// already runs off the UI goroutine, and a daemon started after the
 		// dashboard was opened must not leave every address unpublished.

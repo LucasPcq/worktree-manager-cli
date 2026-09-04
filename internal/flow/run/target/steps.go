@@ -3,7 +3,6 @@ package target
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
@@ -229,12 +228,13 @@ type ProfileParams struct {
 	Default string
 }
 
-// ProfileStep asks which profile to start. Unlike the job, it has a safe
+// ProfileStep asks which profiles to start. Unlike the job, it has a safe
 // default — the config's default profile — so it resolves rather than refuses,
-// and a config with one profile or none is never asked at all.
+// and a config with one profile or none is never asked at all. It takes a set:
+// starting two products' stacks at once is one run, not two.
 func ProfileStep(params ProfileParams) flow.Step {
 	return flow.Step{
-		Kind:  flow.StepSelect,
+		Kind:  flow.StepMultiSelect,
 		Key:   KeyProfile,
 		Label: domain.RunProfileStepName,
 		Skip: func(flow.Answers) (bool, string) {
@@ -247,24 +247,35 @@ func ProfileStep(params ProfileParams) flow.Step {
 			return flow.StepContent{
 				Title:       domain.RunProfilePickerTitle,
 				Description: domain.RunProfilePickerDesc,
-				Options:     profileOptions(params.Profiles),
-				Start:       params.Default,
+				Options:     profileOptions(params),
 			}, nil
 		},
-		Resolve: func(flow.Answers) (flow.Answer, error) {
-			return flow.Answer{Value: params.Default}, nil
+		// Without this an emptied selection reads as unanswered, and the run
+		// started the default profile the reader had just unchecked.
+		ValidateSet: func(values []string) error {
+			if len(values) == 0 {
+				return errors.New(domain.RunProfileSelectAtLeastOne)
+			}
+			return nil
 		},
+		Resolve: func(flow.Answers) (flow.Answer, error) {
+			if params.Default == "" {
+				return flow.Answer{}, nil
+			}
+			return flow.Answer{Values: []string{params.Default}}, nil
+		},
+		Summarize: flow.SummarizeSet,
 	}
 }
 
-func profileOptions(profiles []domain.ProfileConfig) []flow.Option {
-	options := make([]flow.Option, 0, len(profiles))
-	for _, profile := range profiles {
-		label := profile.Name
-		if len(profile.Jobs) > 0 {
-			label += fmt.Sprintf(" (%s)", strings.Join(profile.Jobs, domain.RunURLListSep))
-		}
-		options = append(options, flow.Option{Label: label, Value: profile.Name})
+func profileOptions(params ProfileParams) []flow.Option {
+	options := make([]flow.Option, 0, len(params.Profiles))
+	for _, profile := range params.Profiles {
+		options = append(options, flow.Option{
+			Label:    fmt.Sprintf(domain.RunProfileOptionFmt, profile.Name, len(profile.Jobs)),
+			Value:    profile.Name,
+			Selected: profile.Name == params.Default,
+		})
 	}
 	return options
 }

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -130,5 +131,37 @@ func TestBuildScriptJobsFallsBackToTheNameWhenKindIsUnset(t *testing.T) {
 
 	if cfg.Jobs[0].Kind != domain.JobKindService {
 		t.Errorf("kind = %s, want service from the name", cfg.Jobs[0].Kind)
+	}
+}
+
+// Two products holding a package of the same name gave `admin-dev` and
+// `admin-dev-2`: a suffix that says nothing, on whichever happened to be
+// second. The directory above the package is what tells them apart.
+func TestScriptJobsNameCollisionsByTheirProduct(t *testing.T) {
+	cfg := BuildScriptJobs(BuildScriptJobsParams{
+		PackageManager: domain.PkgManagerPnpm,
+		Scripts: []domain.PackageScript{
+			{Name: "dev", PkgName: "admin", Workspace: "apps/crm/admin", Kind: domain.JobKindService},
+			{Name: "dev", PkgName: "admin", Workspace: "apps/shop/admin", Kind: domain.JobKindService},
+			{Name: "dev", PkgName: "api", Workspace: "apps/crm/api", Kind: domain.JobKindService},
+		},
+	})
+
+	var names []string
+	for _, job := range cfg.Jobs {
+		names = append(names, job.Name)
+	}
+
+	want := []string{"crm-admin-dev", "shop-admin-dev", "api-dev"}
+	for i, expected := range want {
+		if names[i] != expected {
+			t.Errorf("names = %v, want %v", names, want)
+			break
+		}
+	}
+	for _, name := range names {
+		if strings.HasSuffix(name, "-2") {
+			t.Errorf("names = %v, want no positional suffix left", names)
+		}
 	}
 }

@@ -270,3 +270,66 @@ func TestMergeRunConfigsKeepsTheAddressing(t *testing.T) {
 		t.Errorf("a re-init reset what the project settled: %+v", out)
 	}
 }
+
+func TestFilterToProfileKeepsProjectSettings(t *testing.T) {
+	cfg := domain.RunConfig{
+		PortOffsetBlock:  50,
+		PortProbeTimeout: 30,
+		Addressing:       domain.AddressingPorts,
+		Concurrency:      domain.ConcurrencyExclusive,
+		Jobs: []domain.JobConfig{
+			{Name: "web", Kind: domain.JobKindService, Cmd: "pnpm dev"},
+			{Name: "api", Kind: domain.JobKindService, Cmd: "pnpm api"},
+		},
+		Profiles: []domain.ProfileConfig{
+			{Name: "front", Jobs: []string{"web"}},
+			{Name: "back", Jobs: []string{"api"}},
+		},
+		EnvPorts: []domain.EnvPortLink{
+			{File: ".env", Key: "WEB_PORT", Job: "web", Port: "PORT"},
+			{File: ".env", Key: "API_PORT", Job: "api", Port: "PORT"},
+		},
+	}
+
+	got, err := FilterToProfile(cfg, "front")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got.PortOffsetBlock != 50 {
+		t.Errorf("PortOffsetBlock = %d, want 50", got.PortOffsetBlock)
+	}
+	if got.PortProbeTimeout != 30 {
+		t.Errorf("PortProbeTimeout = %d, want 30", got.PortProbeTimeout)
+	}
+	if got.Addressing != domain.AddressingPorts {
+		t.Errorf("Addressing = %q, want %q", got.Addressing, domain.AddressingPorts)
+	}
+	if got.Concurrency != domain.ConcurrencyExclusive {
+		t.Errorf("Concurrency = %q, want %q", got.Concurrency, domain.ConcurrencyExclusive)
+	}
+	if len(got.EnvPorts) != 1 || got.EnvPorts[0].Key != "WEB_PORT" {
+		t.Errorf("EnvPorts = %+v, want only the WEB_PORT link", got.EnvPorts)
+	}
+	if len(got.Jobs) != 1 || got.Jobs[0].Name != "web" {
+		t.Errorf("Jobs = %+v, want only web", got.Jobs)
+	}
+	if len(got.Profiles) != 1 || got.Profiles[0].Name != "front" {
+		t.Errorf("Profiles = %+v, want only front", got.Profiles)
+	}
+}
+
+func TestFilterToProfileDoesNotMutateInput(t *testing.T) {
+	cfg := domain.RunConfig{
+		Jobs:     []domain.JobConfig{{Name: "web"}, {Name: "api"}},
+		Profiles: []domain.ProfileConfig{{Name: "front", Jobs: []string{"web"}}},
+		EnvPorts: []domain.EnvPortLink{{File: ".env", Key: "API_PORT", Job: "api", Port: "PORT"}},
+	}
+
+	if _, err := FilterToProfile(cfg, "front"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Jobs) != 2 || len(cfg.EnvPorts) != 1 {
+		t.Errorf("input mutated: %+v", cfg)
+	}
+}

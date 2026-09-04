@@ -10,11 +10,20 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
+type ShouldProbeJobParams struct {
+	Kind  domain.JobKind
+	Ports map[string]int
+	Probe *bool
+}
+
 // ShouldProbeJob singles out the jobs a probe has anything to say about: a
-// service that declared a port. A task does not listen, and a service with no
-// declaration has nothing to check.
-func ShouldProbeJob(kind domain.JobKind, ports map[string]int) bool {
-	return kind == domain.JobKindService && len(ports) > 0
+// service that declared a port and was not told to stay quiet. A task does not
+// listen, and a service with no declaration has nothing to check.
+func ShouldProbeJob(params ShouldProbeJobParams) bool {
+	if params.Probe != nil && !*params.Probe {
+		return false
+	}
+	return params.Kind == domain.JobKindService && len(params.Ports) > 0
 }
 
 type DiagnosePortProbesParams struct {
@@ -28,6 +37,10 @@ type DiagnosePortProbesParams struct {
 	// port are the same, which is what makes the BaseListening hint meaningless
 	// on the main checkout.
 	Offset int
+	// BaseOwners names the worktree bound to a base port, for the ports another
+	// worktree's running job already holds. A base found here is not this job's
+	// failure to read its variable.
+	BaseOwners map[int]string
 }
 
 // DiagnosePortProbes turns what was observed into one verdict per declared
@@ -48,7 +61,9 @@ func DiagnosePortProbes(params DiagnosePortProbesParams) []domain.PortProbe {
 		case params.Listening[port]:
 			probe.Status = domain.PortListening
 		case params.Offset != 0 && params.Listening[port-params.Offset]:
-			probe.BaseListening = port - params.Offset
+			base := port - params.Offset
+			probe.BaseListening = base
+			probe.BaseOwner = params.BaseOwners[base]
 		}
 		probes = append(probes, probe)
 	}
@@ -87,11 +102,16 @@ func PortProbeLines(probes []domain.PortProbe) []string {
 			continue
 		}
 		lines = append(lines, fmt.Sprintf(domain.PortProbeSilentFmt, p.Job, p.Name, p.Port))
-		if p.BaseListening > 0 {
-			lines = append(lines,
-				fmt.Sprintf(domain.PortProbeBaseFmt, p.BaseListening),
-				domain.PortProbeBaseHint)
+		if p.BaseListening == 0 {
+			continue
 		}
+		if p.BaseOwner != "" {
+			lines = append(lines, fmt.Sprintf(domain.PortProbeBaseHeldFmt, p.BaseListening, p.BaseOwner))
+			continue
+		}
+		lines = append(lines,
+			fmt.Sprintf(domain.PortProbeBaseFmt, p.BaseListening),
+			domain.PortProbeBaseHint)
 	}
 	return lines
 }
@@ -237,4 +257,68 @@ func EnvVarNameFor(name string) string {
 		return domain.ComposeVarNamePrefix + varName
 	}
 	return varName
+}
+
+type JobsToSilenceParams struct {
+	Probes []domain.PortProbe
+	Jobs   []domain.JobConfig
+}
+
+// JobsToSilence names the jobs whose warning is both true and bound to repeat:
+// the resolved port is silent while its own base answers, which is a command
+// that never read its variable and will do the same at every run. A port silent
+// with nothing on its base is a job that did not come up — a crash, a slow
+// build — and silencing that would switch off the check in the one case it
+// exists for. Stable order, no duplicates, and a job that already opted out is
+// never offered again.
+func JobsToSilence(params JobsToSilenceParams) []string {
+	quiet := make(map[string]bool, len(params.Jobs))
+	for _, job := range params.Jobs {
+		if job.Probe != nil && !*job.Probe {
+			quiet[job.Name] = true
+		}
+	}
+
+	seen := make(map[string]bool, len(params.Probes))
+	var names []string
+	for _, probe := range params.Probes {
+		if probe.Status == domain.PortListening || probe.BaseListening == 0 || probe.BaseOwner != "" {
+			continue
+		}
+		if quiet[probe.Job] || seen[probe.Job] {
+			continue
+		}
+		seen[probe.Job] = true
+		names = append(names, probe.Job)
+	}
+	return names
+}
+
+type SilenceProbesParams struct {
+	Config domain.RunConfig
+	Jobs   []string
+}
+
+// SilenceProbes returns a copy of the config with probe = false on the named
+// jobs. The config is copied whole rather than rebuilt field by field: this
+// result is written straight back to run.toml.
+func SilenceProbes(params SilenceProbesParams) domain.RunConfig {
+	silence := make(map[string]bool, len(params.Jobs))
+	for _, name := range params.Jobs {
+		silence[name] = true
+	}
+
+	out := params.Config
+	out.Jobs = make([]domain.JobConfig, len(params.Config.Jobs))
+	copy(out.Jobs, params.Config.Jobs)
+	for i, job := range out.Jobs {
+		if !silence[job.Name] {
+			continue
+		}
+		// One pointer per job: a shared one makes two entries of run.toml the
+		// same value, which is a trap the moment anything writes through it.
+		off := false
+		out.Jobs[i].Probe = &off
+	}
+	return out
 }

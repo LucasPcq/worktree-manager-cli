@@ -156,19 +156,41 @@ func TestProfileStepResolvesToTheDefaultProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if answer.Value != "default" {
-		t.Errorf("Resolve = %q, want the default profile", answer.Value)
+	if len(answer.Values) != 1 || answer.Values[0] != "default" {
+		t.Errorf("Resolve = %v, want the default profile alone", answer.Values)
 	}
 
 	content, err := step.Build(flow.Answers{})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	if content.Start != "default" {
-		t.Errorf("Start = %q, want the cursor on the default profile", content.Start)
+	if !content.Options[0].Selected {
+		t.Error("the default profile must come pre-checked")
 	}
 	if !strings.Contains(content.Options[0].Label, "default") {
 		t.Errorf("first option = %q, want it to name the profile", content.Options[0].Label)
+	}
+}
+
+func TestProfileOptionsCountJobsInsteadOfListingThem(t *testing.T) {
+	step := target.ProfileStep(target.ProfileParams{
+		Profiles: []domain.ProfileConfig{
+			{Name: "front", Jobs: []string{"web", "api", "db", "cache", "worker", "mailer", "search", "queue"}},
+			{Name: "back"},
+		},
+		Default: "front",
+	})
+
+	content, err := step.Build(flow.Answers{})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	label := content.Options[0].Label
+	if strings.Contains(label, "mailer") {
+		t.Errorf("option = %q, want a count rather than eight job names", label)
+	}
+	if !strings.Contains(label, "8") {
+		t.Errorf("option = %q, want it to count the jobs", label)
 	}
 }
 

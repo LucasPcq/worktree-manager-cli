@@ -29,6 +29,12 @@ type JobView struct {
 	// attachable while it runs — the daemon streams it like any other job, and
 	// its pane is the only place its colours and redraws survive.
 	Attachable bool
+	// Address is where the job answers in this worktree — its ports, and the
+	// name it is published under. It is a property of the worktree's offset, so
+	// it is known whether or not the job runs, and it is carried here so every
+	// surface reads one source: `run up`, `run logs` and the dashboard used to
+	// compute it three times, and only the first of them showed it.
+	Address domain.JobAddress
 }
 
 type Size struct {
@@ -144,6 +150,9 @@ const (
 	PhaseFailed
 	PhaseAborted
 	PhaseProbed
+	// PhaseCrashed reports a job the daemon accepted that was gone by the end of
+	// the sequence.
+	PhaseCrashed
 	PhaseNotice
 	PhaseReady
 )
@@ -177,8 +186,12 @@ type Event struct {
 	// Chunk is a PhaseOutput's raw bytes, under the read-only contract Stream
 	// states.
 	Chunk []byte
-	// Reason is what the daemon answered when a job could not be started.
+	// Reason is what the daemon answered when a job could not be started, and
+	// the state it was found in on PhaseCrashed.
 	Reason string
+	// ExitCode is what a PhaseCrashed job left behind, nil when its process was
+	// never reaped.
+	ExitCode *int
 	// AlreadyRunning marks a start refused because the job was already up, which
 	// is benign: it counts as running and the sequence carries on.
 	AlreadyRunning bool

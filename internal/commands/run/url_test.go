@@ -1,6 +1,7 @@
 package run
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -139,5 +140,30 @@ func TestPublicProxyPortWithoutDaemon(t *testing.T) {
 	}
 	if got := process.PublicProxyPort(0); got != 0 {
 		t.Errorf("proxy éteint : got %d, want 0", got)
+	}
+}
+
+// --job narrows the document as it narrows the line: a caller asking for one
+// job's address must not have to find it in an array.
+func TestRunURLJSONHonoursTheJobFlag(t *testing.T) {
+	stateDir := setupTestProject(t)
+	writeRunTOML(t, stateDir, domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "web", Kind: domain.JobKindService, Cmd: "true", Ports: map[string]int{"PORT": 3000}, URL: &domain.JobURLConfig{Port: "PORT"}},
+			{Name: "api", Kind: domain.JobKindService, Cmd: "true", Ports: map[string]int{"PORT": 4000}, URL: &domain.JobURLConfig{Port: "PORT"}},
+		},
+	})
+
+	stdout, _, err := runCmd(t, domain.CmdURL, "--"+domain.FlagJob, "web", "--"+domain.FlagOutput, domain.OutputJSON)
+	if err != nil {
+		t.Fatalf("run url: %v", err)
+	}
+
+	var entries []domain.JobURLEntry
+	if err := json.Unmarshal([]byte(stdout), &entries); err != nil {
+		t.Fatalf("parse JSON: %v\n%s", err, stdout)
+	}
+	if len(entries) != 1 || entries[0].Job != "web" {
+		t.Errorf("entries = %+v, want only web", entries)
 	}
 }

@@ -529,24 +529,35 @@ func TestAConditionalRecapIsStillSkipped(t *testing.T) {
 	}
 }
 
-// A conditional step is drawn by choiceStep, which only knows how to draw a
-// select. Any other kind would be silently downgraded to a picker — the shape
-// the recap bug had — so it is refused instead.
-func TestBuildRefusesAConditionalStepItCannotGate(t *testing.T) {
+// A conditional multi-select keeps its own model and is gated, exactly as a
+// conditional recap is: only a select is folded into the list choiceStep draws,
+// because only a select's whole model can be rebuilt from its answer. Drawing
+// the others as a picker was the shape the recap bug had; refusing them
+// outright left `run up --profile` unable to ask on a terminal.
+func TestAConditionalMultiSelectIsGatedNotRedrawn(t *testing.T) {
 	step := multiSelectStep("b", "one")
-	step.Skip = func(flow.Answers) (bool, string) { return false, "" }
+	step.Skip = func(flow.Answers) (bool, string) { return true, "only one profile" }
 
-	_, err := build(flow.Session{Steps: []flow.Step{selectStep("a", "one"), step}})
-	if err == nil {
-		t.Fatal("a conditional multi-select must be refused rather than drawn as a picker")
+	plan, err := build(flow.Session{Steps: []flow.Step{selectStep("a", "one"), step}})
+	if err != nil {
+		t.Fatalf("build: %v", err)
 	}
-	if !strings.Contains(err.Error(), "b") {
-		t.Errorf("error %q should name the step", err)
+
+	gated := plan.steps[1]
+	if _, ok := gated.Model.(components.MultiSelectModel); !ok {
+		t.Errorf("model = %T, want a MultiSelectModel", gated.Model)
+	}
+	gated.Build(plan.steps[:1])
+	if !gated.AutoSkip(components.WizardModel{}) {
+		t.Fatal("a step its flow skips must not be shown")
+	}
+	if got := gated.SkipReason(); got != "only one profile" {
+		t.Errorf("reason = %q, want the flow's own", got)
 	}
 }
 
-// The refusal is about what choiceStep can draw, so a conditional step landing
-// first — decided up front, then rendered by its own kind — stays fine.
+// A conditional step landing first is decided up front, then rendered by its
+// own kind.
 func TestAConditionalFirstStepKeepsItsOwnKind(t *testing.T) {
 	step := multiSelectStep("a", "one")
 	step.Skip = func(flow.Answers) (bool, string) { return false, "" }

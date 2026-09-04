@@ -85,22 +85,126 @@ func PlanEnvPorts(params PlanEnvPortsParams) domain.EnvPortPlan {
 		PublicPort: params.Origins.PublicPort,
 	}
 
-	for _, link := range params.Links {
-		base, declared := EnvPortBaseFor(params.Bases, link)
-		if !declared {
-			continue
-		}
-		plan.Entries = append(plan.Entries, planEnvPortEntry(planEnvPortEntryParams{
-			Link:    link,
-			Base:    base,
+	// Links are grouped by the value they act on: a key listing two origins is
+	// one line of one file, rewritten once, and two entries for it would have the
+	// second overwrite the first.
+	for _, group := range groupLinksByKey(params.Links, params.Bases) {
+		plan.Entries = append(plan.Entries, planEnvPortKey(planEnvPortKeyParams{
+			Group:   group,
 			Offset:  params.Offset,
 			Block:   params.Block,
-			Lines:   params.Lines[link.File],
+			Lines:   params.Lines[group.File],
 			Origins: params.Origins,
 		}))
 	}
 
 	return plan
+}
+
+// linkGroup is every link one .env key follows, in declaration order.
+type linkGroup struct {
+	File  string
+	Key   string
+	Links []domain.EnvPortLink
+	Bases []int
+}
+
+func groupLinksByKey(links []domain.EnvPortLink, bases map[domain.PortRef]int) []linkGroup {
+	var order []string
+	byKey := map[string]*linkGroup{}
+	for _, link := range links {
+		base, declared := EnvPortBaseFor(bases, link)
+		if !declared {
+			continue
+		}
+		id := link.File + "\x00" + link.Key
+		group, seen := byKey[id]
+		if !seen {
+			group = &linkGroup{File: link.File, Key: link.Key}
+			byKey[id] = group
+			order = append(order, id)
+		}
+		group.Links = append(group.Links, link)
+		group.Bases = append(group.Bases, base)
+	}
+
+	groups := make([]linkGroup, 0, len(order))
+	for _, id := range order {
+		groups = append(groups, *byKey[id])
+	}
+	return groups
+}
+
+type planEnvPortKeyParams struct {
+	Group   linkGroup
+	Offset  int
+	Block   int
+	Lines   []domain.EnvLine
+	Origins OriginContext
+}
+
+// planEnvPortKey folds every link a key follows over the same value, each one
+// moving its own port and leaving the rest of the value — an origin no job
+// declares, a port belonging to nothing here — exactly as it found it.
+func planEnvPortKey(params planEnvPortKeyParams) domain.EnvPortEntry {
+	merged := planEnvPortEntry(planEnvPortEntryParams{
+		Link:    params.Group.Links[0],
+		Base:    params.Group.Bases[0],
+		Offset:  params.Offset,
+		Block:   params.Block,
+		Lines:   params.Lines,
+		Origins: params.Origins,
+	})
+	merged.Moves = []domain.EnvPortMove{moveOf(params.Group.Links[0], params.Group.Bases[0], params.Offset)}
+	if len(params.Group.Links) == 1 {
+		return merged
+	}
+
+	lines := params.Lines
+	for i := 1; i < len(params.Group.Links); i++ {
+		// Each link reads the value the one before it left, so two ports in one
+		// value both move.
+		if merged.Status == domain.EnvPortStatusRewrite {
+			lines = ApplyEnvPorts(lines, []domain.EnvPortEntry{merged})
+		}
+		next := planEnvPortEntry(planEnvPortEntryParams{
+			Link:    params.Group.Links[i],
+			Base:    params.Group.Bases[i],
+			Offset:  params.Offset,
+			Block:   params.Block,
+			Lines:   lines,
+			Origins: params.Origins,
+		})
+		merged = foldEnvPortEntry(merged, next)
+		merged.Moves = append(merged.Moves, moveOf(params.Group.Links[i], params.Group.Bases[i], params.Offset))
+	}
+	return merged
+}
+
+func moveOf(link domain.EnvPortLink, base, offset int) domain.EnvPortMove {
+	return domain.EnvPortMove{Port: link.Port, Job: link.Job, Base: base, Resolved: base + offset}
+}
+
+// foldEnvPortEntry keeps what the run has done so far and what the next link
+// adds to it. A key is rewritten as soon as one of its ports moves, and its
+// value is whatever the last rewrite left; a link that found nothing to do
+// never withdraws the work of the one before it.
+func foldEnvPortEntry(into, next domain.EnvPortEntry) domain.EnvPortEntry {
+	if next.Status == domain.EnvPortStatusRewrite {
+		into.NewValue = next.NewValue
+		into.Status = domain.EnvPortStatusRewrite
+		into.Addressing = next.Addressing
+		return into
+	}
+	if into.Status == domain.EnvPortStatusRewrite {
+		return into
+	}
+	// Neither moved: the more specific reading wins, so a key nobody could place
+	// still says why.
+	if into.Status == domain.EnvPortStatusUnchanged || into.Status == domain.EnvPortStatusNotFound {
+		into.Status = next.Status
+	}
+	return into
 }
 
 type planEnvPortEntryParams struct {
@@ -423,30 +527,47 @@ type EnvPortCandidatesParams struct {
 	JobsByDir map[string]string
 }
 
-// EnvPortCandidates finds the .env keys whose value holds exactly one declared
-// base port. A value matching two different ports is not offered: one link moves
-// one number, so wtm would have to pick which service the key belongs to.
+// EnvPortCandidates finds the .env keys whose value holds a declared base port,
+// one link per port found. A CORS_ORIGIN listing two front-ends follows both:
+// the key belongs to no single service, and asking wtm to pick one would leave
+// the other pinned to the main checkout in every worktree.
 func EnvPortCandidates(params EnvPortCandidatesParams) []domain.EnvPortLink {
-	declared := map[domain.EnvPortLink]bool{}
-	for _, link := range params.Existing {
-		declared[domain.EnvPortLink{File: link.File, Key: link.Key}] = true
+	// Keyed by the port too: a key may follow several, and a re-run must offer
+	// the ones run.toml does not already hold rather than none of them. A link
+	// that names no job covers every job declaring that port name — it is how a
+	// config written when only one did still reads.
+	declared := func(link domain.EnvPortLink) bool {
+		for _, existing := range params.Existing {
+			if existing.File != link.File || existing.Key != link.Key || existing.Port != link.Port {
+				continue
+			}
+			if existing.Job == "" || existing.Job == link.Job {
+				return true
+			}
+		}
+		return false
 	}
 
 	var candidates []domain.EnvPortLink
 	for _, file := range sortedKeys(params.Lines) {
 		for _, line := range params.Lines[file] {
-			if line.Kind != domain.EnvLinePair || declared[domain.EnvPortLink{File: file, Key: line.Key}] {
+			if line.Kind != domain.EnvLinePair {
 				continue
 			}
-			if ref, sole := solePortIn(line.Value, params.Bases); sole {
-				candidates = append(candidates, domain.EnvPortLink{
-					File: file, Key: line.Key, Job: ref.Job, Port: ref.Name,
-				})
+			if refs := portsIn(line.Value, params.Bases); len(refs) > 0 {
+				for _, ref := range refs {
+					link := domain.EnvPortLink{File: file, Key: line.Key, Job: ref.Job, Port: ref.Name}
+					if declared(link) {
+						continue
+					}
+					candidates = append(candidates, link)
+				}
 				continue
 			}
-			if link, found := linkByDir(linkByDirParams{
+			link, found := linkByDir(linkByDirParams{
 				File: file, Line: line, Bases: params.Bases, JobsByDir: params.JobsByDir,
-			}); found {
+			})
+			if found && !declared(link) {
 				candidates = append(candidates, link)
 			}
 		}
@@ -491,17 +612,18 @@ func linkByDir(params linkByDirParams) (domain.EnvPortLink, bool) {
 
 // solePortIn names the one declared port whose base sits exactly once in value.
 // Two ports sharing a base cannot both be it, so neither is offered.
-func solePortIn(value string, bases map[domain.PortRef]int) (ref domain.PortRef, sole bool) {
+// portsIn names every declaration the value spells out exactly once. A port
+// appearing twice in one value is left alone: two occurrences of one base are
+// two different things the key means by it, and moving both together would be a
+// guess.
+func portsIn(value string, bases map[domain.PortRef]int) []domain.PortRef {
+	var refs []domain.PortRef
 	for _, candidate := range sortedPortRefs(bases) {
-		if len(portOffsets(value, bases[candidate])) != 1 {
-			continue
+		if len(portOffsets(value, bases[candidate])) == 1 {
+			refs = append(refs, candidate)
 		}
-		if sole {
-			return domain.PortRef{}, false
-		}
-		ref, sole = candidate, true
 	}
-	return ref, sole
+	return refs
 }
 
 // sortedPortRefs orders the declarations so a match is picked the same way twice.

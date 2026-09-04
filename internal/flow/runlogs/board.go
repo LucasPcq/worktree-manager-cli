@@ -17,6 +17,10 @@ type BoardParams struct {
 	// worktree's rows.
 	Worktree string
 	LogDir   string
+	// Addresses is where each declared job answers in this worktree, keyed by
+	// job name. Computed by the surface, which is the side that reads the
+	// worktree's offset and the proxy's port.
+	Addresses map[string]domain.JobAddress
 }
 
 // NewBoard builds the surface's view of a worktree's jobs. It reads nothing
@@ -24,20 +28,22 @@ type BoardParams struct {
 // nobody has started yet is still a job to show.
 func NewBoard(params BoardParams) Board {
 	return &board{
-		service:  params.Service,
-		jobs:     params.Jobs,
-		workDir:  params.WorkDir,
-		worktree: params.Worktree,
-		logDir:   params.LogDir,
+		service:   params.Service,
+		jobs:      params.Jobs,
+		workDir:   params.WorkDir,
+		worktree:  params.Worktree,
+		logDir:    params.LogDir,
+		addresses: params.Addresses,
 	}
 }
 
 type board struct {
-	service  Service
-	jobs     []domain.JobConfig
-	workDir  string
-	worktree string
-	logDir   string
+	service   Service
+	jobs      []domain.JobConfig
+	workDir   string
+	worktree  string
+	logDir    string
+	addresses map[string]domain.JobAddress
 
 	// mu guards live, which a surface refreshes off the goroutine that renders it.
 	mu        sync.RWMutex
@@ -79,7 +85,11 @@ func (b *board) Jobs() []JobView {
 	views := make([]JobView, 0, len(b.jobs))
 	for _, job := range b.jobs {
 		declared[job.Name] = true
-		views = append(views, b.own(declaredView(job, live[job.Name])))
+		views = append(views, b.own(declaredView(declaredViewParams{
+			Job:     job,
+			Info:    live[job.Name],
+			Address: b.addresses[job.Name],
+		})))
 	}
 
 	// A job the daemon holds but run.toml no longer declares is still running:
@@ -129,14 +139,25 @@ func (b *board) view(name string) (JobView, bool) {
 	return JobView{}, false
 }
 
-func declaredView(job domain.JobConfig, info domain.JobInfo) JobView {
-	view := JobView{Name: job.Name, Kind: job.Kind, Status: domain.JobStatusStopped}
-	if info.Name != "" {
-		view.Status = info.Status
-		view.StartedAt = info.StartedAt
-		view.ExitCode = info.ExitCode
+type declaredViewParams struct {
+	Job     domain.JobConfig
+	Info    domain.JobInfo
+	Address domain.JobAddress
+}
+
+func declaredView(params declaredViewParams) JobView {
+	view := JobView{
+		Name:    params.Job.Name,
+		Kind:    params.Job.Kind,
+		Status:  domain.JobStatusStopped,
+		Address: params.Address,
 	}
-	view.Attachable = view.Status == domain.JobStatusRunning && !rules.IsDetached(job)
+	if params.Info.Name != "" {
+		view.Status = params.Info.Status
+		view.StartedAt = params.Info.StartedAt
+		view.ExitCode = params.Info.ExitCode
+	}
+	view.Attachable = view.Status == domain.JobStatusRunning && !rules.IsDetached(params.Job)
 	return view
 }
 

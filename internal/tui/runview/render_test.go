@@ -179,3 +179,35 @@ func TestPanesAreSizedFromTheLayout(t *testing.T) {
 		t.Fatalf("pane size = %+v, want the layout's %dx%d", got, layout.PaneCols, layout.PaneRows)
 	}
 }
+
+// The first line a job writes is not a continuation of its name: the pane sets
+// its output off from its title the way the sidebar sets the jobs off from
+// theirs, and the emulator's row budget accounts for that blank line — a row
+// the layout does not know about is a row the panel overflows by.
+func TestPaneSetsTheOutputOffFromTheTitle(t *testing.T) {
+	h := newHarness(t, harnessParams{
+		Views: []runlogs.JobView{stopped("migrate")},
+		Lines: map[string][]string{"migrate": {"applied 3 migrations"}},
+	})
+	h.waitForPane(t, h.model.selected, "applied 3 migrations")
+
+	lines := strings.Split(ansi.Strip(h.model.View()), "\n")
+	title, output := -1, -1
+	for i, line := range lines {
+		if strings.Contains(line, "migrate ·") {
+			title = i
+		}
+		if strings.Contains(line, "applied 3 migrations") {
+			output = i
+		}
+	}
+	if title < 0 || output < 0 {
+		t.Fatalf("frame does not hold both the title and the output:\n%s", strings.Join(lines, "\n"))
+	}
+	if output != title+2 {
+		t.Errorf("output on row %d, title on row %d: want one blank row between them", output, title)
+	}
+	if got := len(lines); got != h.model.height {
+		t.Errorf("frame is %d rows, want the terminal's %d: the blank row overflowed it", got, h.model.height)
+	}
+}

@@ -79,6 +79,11 @@
                 "description": "Host segment this job is published under, defaulting to the job's name. May contain dots to create an intermediate level: `web.app-1` puts the job under `.app-1.<worktree>.<project>.localhost`, which the app's siblings then share a cookie parent with."
               }
             }
+          },
+          "probe": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether `wtm run up` checks that this job's declared ports were actually bound. Set to false to stop reporting a service that binds the base port because its command never reads the injected variable — the fix is to pass --port ${PORT} to it, and this key acknowledges the warning until then. Omitted means true."
           }
         },
         "allOf": [

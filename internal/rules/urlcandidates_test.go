@@ -236,3 +236,46 @@ func TestURLCandidatesForCocheUnJobNeuf(t *testing.T) {
 		{Job: "web", Port: domain.PortNameDefault, Publish: true},
 	})
 }
+
+// A Vite app declares VITE_PORT and nothing else. Reading only PORT and
+// <JOB>_PORT left every front-end — the jobs a human opens in a browser —
+// without a name, which is what the whole named-URL layer is for.
+func TestPublishablePortNameTakesASingleDeclaredPort(t *testing.T) {
+	got := PublishablePortName(domain.JobConfig{
+		Name:  "crm-web-dev",
+		Kind:  domain.JobKindService,
+		Ports: map[string]int{"VITE_PORT": 5175},
+	})
+
+	if got != "VITE_PORT" {
+		t.Errorf("got %q, want VITE_PORT", got)
+	}
+}
+
+// Several ports are several meanings, and only a name settles which one is
+// listened on: a compose stack publishing seven of them publishes no url.
+func TestPublishablePortNameRefusesToGuessAmongSeveral(t *testing.T) {
+	got := PublishablePortName(domain.JobConfig{
+		Name:  "docker-compose",
+		Kind:  domain.JobKindService,
+		Ports: map[string]int{"POSTGRES_PORT": 5432, "REDIS_PORT": 6379},
+	})
+
+	if got != "" {
+		t.Errorf("got %q, want nothing published", got)
+	}
+}
+
+// The wiring question stays strict: a job whose only port is one it dials is
+// still offered a PORT of its own.
+func TestListeningPortNameStaysStrict(t *testing.T) {
+	got := ListeningPortName(domain.JobConfig{
+		Name:  "api-dev",
+		Kind:  domain.JobKindService,
+		Ports: map[string]int{"DB_PORT": 5432},
+	})
+
+	if got != "" {
+		t.Errorf("got %q, want nothing: a DB_PORT is dialled, not listened on", got)
+	}
+}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -31,9 +32,13 @@ func (m Model) recapBlock(outcome runlogs.Outcome) []string {
 	}
 	if len(outcome.Started) > 0 {
 		lines = append(lines, fmt.Sprintf(domain.RunViewRecapRunningFmt, joinJobs(outcome.Started)))
+		lines = append(lines, m.addressLines(outcome)...)
 	}
 	if len(outcome.Completed) > 0 {
 		lines = append(lines, fmt.Sprintf(domain.RunViewRecapCompletedFmt, joinJobs(outcome.Completed)))
+	}
+	if len(outcome.Crashed) > 0 {
+		lines = append(lines, styles.DangerText.Render(fmt.Sprintf(domain.RunViewRecapCrashedFmt, joinJobs(crashedNames(outcome.Crashed)))))
 	}
 	if outcome.Failed != "" {
 		lines = append(lines, styles.DangerText.Render(fmt.Sprintf(domain.RunViewRecapFailedFmt, outcome.Failed)))
@@ -45,6 +50,37 @@ func (m Model) recapBlock(outcome runlogs.Outcome) []string {
 		lines = append(lines, domain.RunViewRecapNoneRunning)
 	}
 	return lines
+}
+
+// addressLines say where the jobs left running answer. Only the ones that have
+// an address are listed: a job with neither a published name nor a declared
+// port has nothing to point at, and a blank column would read as a failure.
+func (m Model) addressLines(outcome runlogs.Outcome) []string {
+	started := make(map[string]bool, len(outcome.Started))
+	for _, name := range outcome.Started {
+		started[name] = true
+	}
+
+	var lines []string
+	for _, view := range m.jobs {
+		if view.WorkDir != outcome.WorkDir || !started[view.Name] {
+			continue
+		}
+		address := rules.JobAddressText(view.Address)
+		if address == "" {
+			continue
+		}
+		lines = append(lines, styles.Muted.Render(fmt.Sprintf(domain.RunViewRecapAddressFmt, view.Name, address)))
+	}
+	return lines
+}
+
+func crashedNames(exits []domain.JobExit) []string {
+	names := make([]string, 0, len(exits))
+	for _, exit := range exits {
+		names = append(names, exit.Job)
+	}
+	return names
 }
 
 func (m Model) anythingStarted() bool {

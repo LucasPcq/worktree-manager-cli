@@ -167,6 +167,9 @@ flagged; everything else is what the name implies.
   to abort). **When `--to` names a branch that already exists locally**, the same rule as
   `create` applies: its parent can't be inferred, so `--from` is **required** there too
   (the command errors naming the flag rather than guessing).
+  When `--to` creates a worktree, its `.env` port values are settled onto the ports that
+  worktree binds, exactly as `create` does — so its services do not collide with the main
+  checkout's. Under `--yes` this applies without asking.
   `--files` takes paths exactly as reported (spaces and non-ASCII are never quoted or escaped),
   including each untracked file of a brand-new directory individually; pass a directory
   (`--files newmod/`) to take everything below it. Gitignored files are never listed — `.env`
@@ -184,7 +187,10 @@ flagged; everything else is what the name implies.
   pull a different source for a run. If there is no `.env` to sync from at all yet (fresh
   project: templates detected by `init`, but no value files created), every expected key is
   `missing_unresolved` and `source` reads `template (no .env to sync from)` — filling them
-  (interactively) scaffolds the `.env` from the template. `--mode add` (default)
+  (interactively) scaffolds the `.env` from the template. A configured file that exists
+  **nowhere** — no value anywhere, no template either — is flagged `unresolvable:true` and
+  never counts as clean: it names a path the repository does not have, and the fix is in
+  `config.toml`, not in any worktree. `--mode add` (default)
   only fills missing keys and never touches an existing value; `--mode refresh` also settles
   values that diverge from the source. `--check` is a read-only drift report (writes nothing).
   In JSON/`--yes` mode it is **report-only except safe additions**: keys missing from the child
@@ -333,6 +339,9 @@ and **experimental**: the global `wtm init` does not configure it.
   This detection feeds the `[[env_port]]` pass below: the port it declares is the base
   those links then follow, so a `.env` holding `PORT=5173` and
   `VITE_API_URL=http://localhost:5173/api` ends up with **both** keys shifted per worktree.
+  A key may follow **several** ports: a `CORS_ORIGIN=http://localhost:5173,http://localhost:5174`
+  gets one link per front-end and every origin moves onto the port its own job binds. A port
+  no job declares — an external origin — is left exactly as it was.
 - What `run init` refuses to declare, and reports instead: port ranges, mappings with no
   host port, a `ports:` list carrying a YAML anchor or alias, `${VAR}` with no default,
   and a variable two services give two different defaults. It also **withdraws** a
@@ -354,6 +363,9 @@ and **experimental**: the global `wtm init` does not configure it.
   single-worktree. Above one worktree the JSON changes shape (see the arity rule below) and
   every human line names the worktree it came from.
 - `run up [worktree] --profile <name>` / `run down [worktree]` — start / stop a profile.
+  On `run up` **`--profile` is repeatable**: `--profile front --profile back` starts the
+  union of both, in the order given, and a job several of them list starts once.
+  `run down --profile` still takes one.
   `run start [worktree] --job <name>` / `run stop [worktree] --job <name>` — one job.
   `--job` is **required** on `start`/`stop` on your paths: without a terminal there is no
   picker to fall back on, and the command errors naming the flag. A failing job aborts the rest and exits non-zero, leaving started
@@ -451,7 +463,15 @@ and **experimental**: the global `wtm init` does not configure it.
   privilege — launchd binds port 80 and hands the socket to wtm — but it installs a
   LaunchAgent in the user's home, so **do not run it on your own initiative**: propose it,
   and let the user decide. Without a terminal it refuses unless you pass `--yes`.
-- `run export` / `run import` — share a layout as JSON.
+- `run init` accepts `--yes` (its older `--non-interactive` still works) — the run module's
+  own bootstrap, which writes run.toml and may rewrite compose files and .env.
+- `run url --job <name> --output json` returns **that job alone**, not the whole array.
+- `run export` / `run import` — share a layout as JSON. **`run import` replaces the whole
+  `run.toml`**: jobs, profiles, `[[env_port]]` links and project settings alike, so what
+  the file held is lost. **It always needs `--yes` on your paths**: without a terminal to
+  confirm on — a piped payload included — it refuses rather than replacing silently, and
+  `--output json` requires `--yes` too. Nothing is reconciled afterwards —
+  tell the user to run `wtm env` if the `.env` values must follow.
 - `run job` and `run profile` are fully agent-drivable with flags — `add`, `rm` and
   `edit` alike. No wizard is ever needed, and none opens as long as a flag is passed.
 - `run job edit <name>` **patches**: a flag left out keeps that field, so
@@ -488,7 +508,10 @@ and **experimental**: the global `wtm init` does not configure it.
   `globalPassThroughEnv` in `turbo.json`). wtm never edits third-party config; report the
   finding and tell the user what to change. The check never fails the run and never
   changes the exit code — do not treat it as an error. `--no-probe` skips it;
-  `port_probe_timeout` in run.toml sets the budget (default 15s, negative disables).
+  `port_probe_timeout` in run.toml sets the budget (default 15s, negative disables), and
+  `probe = false` on a `[[job]]` silences it for that job alone. When the base port turns
+  out to be held by another worktree — the main checkout running alongside — the report
+  names that worktree instead of blaming the job's command.
 - **Port isolation is declarative.** A job declares the ports it binds on the main
   checkout, and wtm injects `base + WTM_PORT_OFFSET` under that name — so the command
   needs no arithmetic of its own:

@@ -61,7 +61,7 @@ func newInitCmd() *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: runRunInit,
 	}
-	cmd.Flags().Bool(domain.FlagNonInteractive, false, "Auto-generate from detection; never prompt")
+	shared.AddNoPromptFlags(cmd, "Auto-generate from detection; never prompt")
 	cmd.Flags().Bool(domain.FlagPatchCompose, false, "Rewrite the selected compose files' literal host ports and absolute names to read a variable")
 	cmd.Flags().Bool(domain.FlagLinkEnv, false, "Link the .env keys holding a declared port, so each worktree gets its own")
 	return cmd
@@ -78,7 +78,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	nonInteractive, _ := cmd.Flags().GetBool(domain.FlagNonInteractive)
+	nonInteractive := shared.NoPrompt(cmd)
 	patchCompose, _ := cmd.Flags().GetBool(domain.FlagPatchCompose)
 	linkEnv, _ := cmd.Flags().GetBool(domain.FlagLinkEnv)
 	interactive := !nonInteractive && term.IsTerminal(int(os.Stdin.Fd()))
@@ -254,7 +254,9 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			Unported: rules.ServicesWithoutPorts(outcome.Config),
 			Ignoring: rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
 				Config: outcome.Config,
-				Exempt: rules.ComposeJobsFor(rules.ComposeJobsParams{Config: outcome.Config, Files: answers.DockerComposeFiles}),
+				Exempt: append(
+					rules.ComposeJobsFor(rules.ComposeJobsParams{Config: outcome.Config, Files: answers.DockerComposeFiles}),
+					rules.JobsReadingTheirEnv(rules.JobsReadingTheirEnvParams{Config: outcome.Config, ScansByDir: envScans})...),
 			}),
 		})
 		proxyPort := rules.ProxyPort(res.Config.Global)

@@ -148,43 +148,61 @@ func runEnvNonInteractive(cmd *cobra.Command, cfg shared.ConfigResult, arg strin
 // resolution → recap), then applies the collected decisions. When a worktree arg is
 // given, the selection step is preset.
 func runEnvInteractive(cmd *cobra.Command, cfg shared.ConfigResult, arg string, f envFlags) error {
-	statuses, err := worktree.List(domain.ListParams{
-		ProjectDir: cfg.ProjectDir,
-		StateDir:   cfg.StateDir,
-		Config:     cfg.Config,
-	})
-	if err != nil {
-		return fmt.Errorf("list worktrees: %w", err)
-	}
+	var (
+		statuses      []domain.WorktreeStatus
+		diffByBranch  map[string][]domain.EnvFileResult
+		portsByBranch map[string]domain.EnvPortPlan
+		preset        string
+	)
 
-	preset := ""
-	if arg != "" {
-		if worktreePathForBranch(statuses, arg) == "" {
-			return fmt.Errorf("worktree %q: %w", arg, domain.ErrWorktreeNotFound)
-		}
-		preset = arg
-	}
+	// One box over the whole pre-scan rather than one per phase: it is a single
+	// wait as far as the reader is concerned, and two boxes in a row flicker.
+	if err := components.RunLoading(components.LoadingParams{
+		Message: domain.EnvScanLoading,
+		Animate: true,
+		Work: func() error {
+			var err error
+			statuses, err = worktree.List(domain.ListParams{
+				ProjectDir: cfg.ProjectDir,
+				StateDir:   cfg.StateDir,
+				Config:     cfg.Config,
+			})
+			if err != nil {
+				return fmt.Errorf("list worktrees: %w", err)
+			}
 
-	// Precompute the drift for the branches the wizard will surface: just the preset
-	// one, or every candidate (so the selection list can badge each with its drift).
-	branches := []string{preset}
-	if preset == "" {
-		branches = branchNames(statuses)
-	}
-	diffByBranch := make(map[string][]domain.EnvFileResult, len(branches))
-	portsByBranch := make(map[string]domain.EnvPortPlan, len(branches))
-	for _, b := range branches {
-		files, err := computeBranchDiff(cfg, statuses, b, f)
-		if err != nil {
-			return err
-		}
-		diffByBranch[b] = files
+			if arg != "" {
+				if worktreePathForBranch(statuses, arg) == "" {
+					return fmt.Errorf("worktree %q: %w", arg, domain.ErrWorktreeNotFound)
+				}
+				preset = arg
+			}
 
-		plan, err := computeBranchPorts(cfg, statuses, b)
-		if err != nil {
-			return err
-		}
-		portsByBranch[b] = plan
+			// The drift is precomputed for every branch the wizard will surface, so
+			// the selection list can badge each one with it.
+			branches := []string{preset}
+			if preset == "" {
+				branches = branchNames(statuses)
+			}
+			diffByBranch = make(map[string][]domain.EnvFileResult, len(branches))
+			portsByBranch = make(map[string]domain.EnvPortPlan, len(branches))
+			for _, b := range branches {
+				files, err := computeBranchDiff(cfg, statuses, b, f)
+				if err != nil {
+					return err
+				}
+				diffByBranch[b] = files
+
+				plan, err := computeBranchPorts(cfg, statuses, b)
+				if err != nil {
+					return err
+				}
+				portsByBranch[b] = plan
+			}
+			return nil
+		},
+	}); err != nil {
+		return err
 	}
 
 	res, err := envwizard.Run(envwizard.RunParams{

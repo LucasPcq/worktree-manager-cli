@@ -14,35 +14,89 @@ type RunViewLayoutParams struct {
 	NoticeLines int
 }
 
+type PreviewLayoutParams struct {
+	Width  int
+	Height int
+}
+
+// PreviewLayout is the run view hosted inside a panel: the whole rect is the
+// pane. It shares the pane's chrome arithmetic with the full view, which is what
+// keeps a job's output the same size in both.
+func PreviewLayout(params PreviewLayoutParams) domain.RunViewLayout {
+	width, height := max(params.Width, 0), max(params.Height, 0)
+	return domain.RunViewLayout{
+		Pane:     domain.Rect{Width: width, Height: height},
+		PaneCols: max(width-domain.RunViewBorderWidth, 0),
+		PaneRows: max(height-domain.RunViewPanelChrome, 0),
+	}
+}
+
+// fitsSidebar says the list can be shown beside a pane still wide enough to be
+// worth reading, once the frame has paid for its margin and gutter.
+func fitsSidebar(width, margin, gutter int) bool {
+	inner := max(width-2*margin, 0)
+	return inner-domain.RunViewSidebarWidth-gutter >= domain.RunViewSidebarMinPaneCols
+}
+
 // ComputeRunViewLayout places the run view's regions for one frame, and sizes
 // the emulator the pane box will hold. It is the single reference the renderer
 // draws from and the job's PTY is resized against.
 func ComputeRunViewLayout(params RunViewLayoutParams) domain.RunViewLayout {
 	width, height := max(params.Width, 0), max(params.Height, 0)
 
+	// No header row: what the view has to say about itself rides the help row,
+	// and the row it used to spend is a row of output.
 	helpHeight := min(1, height)
-	headerHeight := min(1, max(height-helpHeight, 0))
-	available := max(height-helpHeight-headerHeight, 0)
+	headerHeight := 0
+	available := max(height-helpHeight, 0)
 
+	// The notice is served before the air: a report the reader has to act on
+	// outranks a blank row, and a frame with room for neither keeps the report.
 	noticeHeight := min(max(params.NoticeLines, 0), max(available-domain.RunViewMinBodyRows, 0))
-	bodyHeight := available - noticeHeight
+	rest := available - noticeHeight
 
+	gaps := 0
+	if rest-domain.RunViewGapRows >= domain.RunViewMinBodyRows {
+		gaps = domain.RunViewGapRows
+		rest -= gaps
+	}
+	bodyHeight := rest
+
+	// Columns follow the same order: the list outranks the margin, so the air is
+	// dropped whenever taking it would be what pushes the list off the frame.
+	margin, gutter := domain.RunViewMarginCols, domain.RunViewGutterCols
+	if width < domain.RunViewMinAiredCols {
+		margin, gutter = 0, 0
+	}
+	if fitsSidebar(width, 0, 0) && !fitsSidebar(width, margin, gutter) {
+		margin, gutter = 0, 0
+	}
+
+	inner := max(width-2*margin, 0)
 	sidebarWidth := 0
-	if width-domain.RunViewSidebarWidth >= domain.RunViewSidebarMinPaneCols {
+	if fitsSidebar(width, margin, gutter) {
 		sidebarWidth = domain.RunViewSidebarWidth
 	}
-	bodyY := headerHeight + noticeHeight
+	paneGutter := gutter
+	if sidebarWidth == 0 {
+		paneGutter = 0
+	}
+	paneWidth := max(inner-sidebarWidth-paneGutter, 0)
+	bodyY := headerHeight + gaps/2 + noticeHeight
 
 	return domain.RunViewLayout{
-		Header:         domain.Rect{X: 0, Y: 0, Width: width, Height: headerHeight},
-		Notice:         domain.Rect{X: 0, Y: headerHeight, Width: width, Height: noticeHeight},
-		Sidebar:        domain.Rect{X: 0, Y: bodyY, Width: sidebarWidth, Height: bodyHeight},
-		Pane:           domain.Rect{X: sidebarWidth, Y: bodyY, Width: width - sidebarWidth, Height: bodyHeight},
-		Help:           domain.Rect{X: 0, Y: max(height-1, 0), Width: width, Height: helpHeight},
+		Header:         domain.Rect{X: margin, Y: 0, Width: inner, Height: headerHeight},
+		Notice:         domain.Rect{X: margin, Y: headerHeight + gaps/2, Width: inner, Height: noticeHeight},
+		Sidebar:        domain.Rect{X: margin, Y: bodyY, Width: sidebarWidth, Height: bodyHeight},
+		Pane:           domain.Rect{X: margin + sidebarWidth + paneGutter, Y: bodyY, Width: paneWidth, Height: bodyHeight},
+		Help:           domain.Rect{X: margin, Y: max(height-1, 0), Width: inner, Height: helpHeight},
 		SidebarVisible: sidebarWidth > 0,
 		SidebarRows:    max(bodyHeight-domain.RunViewSidebarChrome, 0),
-		PaneCols:       max(width-sidebarWidth-domain.RunViewBorderWidth, 0),
+		PaneCols:       max(paneWidth-domain.RunViewBorderWidth, 0),
 		PaneRows:       max(bodyHeight-domain.RunViewPanelChrome, 0),
+		MarginCols:     margin,
+		GutterCols:     paneGutter,
+		GapRows:        gaps / 2,
 	}
 }
 
@@ -106,4 +160,37 @@ func ClipReport(lines []string, height int) []string {
 // empty filter matches everything: the box is open but says nothing yet.
 func MatchesJobFilter(name, filter string) bool {
 	return strings.Contains(strings.ToLower(name), strings.ToLower(strings.TrimSpace(filter)))
+}
+
+type ClipSegmentsParams struct {
+	Text  string
+	Sep   string
+	Width int
+}
+
+// ClipSegments cuts a separated list at the last whole segment that fits. A
+// hint bar sharing its row with the run's state is clipped often, and a cut
+// through a word — "…enter focus · o open · r refresh · q" — reads as a bug in
+// the hint rather than as a hint that did not fit.
+func ClipSegments(params ClipSegmentsParams) string {
+	if params.Width <= 0 || params.Sep == "" {
+		return ""
+	}
+	if len([]rune(params.Text)) <= params.Width {
+		return params.Text
+	}
+
+	segments := strings.Split(params.Text, params.Sep)
+	kept := ""
+	for _, segment := range segments {
+		next := segment
+		if kept != "" {
+			next = kept + params.Sep + segment
+		}
+		if len([]rune(next)) > params.Width {
+			break
+		}
+		kept = next
+	}
+	return kept
 }

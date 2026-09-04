@@ -120,3 +120,22 @@ func TestEnvPortPlanTouches(t *testing.T) {
 		t.Error("EnvPortPlanTouches() = true for a file it never names")
 	}
 }
+
+// A file the repository does not have anywhere is never "no drift": nothing is
+// missing from it because nothing can ever be in it.
+func TestEnvSummaryRefusesToCallAnUnresolvableFileClean(t *testing.T) {
+	summary := EnvOutcomeSummary(domain.EnvSyncResult{
+		Check: true,
+		Files: []domain.EnvFileResult{
+			{Target: "apps/api/.env", Unresolvable: true},
+			{Target: "apps/web/.env"},
+		},
+	})
+
+	if summary.Done {
+		t.Error("summary reported the run as done over a file that exists nowhere")
+	}
+	if !strings.Contains(summary.Text, "1") {
+		t.Errorf("summary = %q, want it to count the unresolvable file", summary.Text)
+	}
+}

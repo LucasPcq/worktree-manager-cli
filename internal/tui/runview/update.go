@@ -56,6 +56,58 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleMouse routes the wheel to whatever it is over: the pane scrolls its own
+// scrollback, the list moves the selection. A job that has the keyboard keeps
+// it — the wheel must not move a cursor the reader handed to the process.
+func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.focused || m.filtering {
+		return m, nil
+	}
+
+	up, ok := wheelDirection(msg)
+	if !ok {
+		return m, nil
+	}
+
+	// The wheel is the reader acting, exactly as a keystroke is: it dismisses a
+	// standing refusal and takes the cursor back from the run, which would
+	// otherwise pull the selection away on the next event.
+	m.notice = ""
+	m.following = false
+
+	if m.overSidebar(msg) {
+		if up {
+			return m.move(-1)
+		}
+		return m.move(1)
+	}
+
+	if up {
+		return m.scroll(domain.RunViewScrollLines), nil
+	}
+	return m.scroll(-domain.RunViewScrollLines), nil
+}
+
+func wheelDirection(msg tea.MouseMsg) (up, isWheel bool) {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		return true, true
+	case tea.MouseButtonWheelDown:
+		return false, true
+	}
+	return false, false
+}
+
+// overSidebar answers where the pointer is. A frame too narrow to draw the list
+// has none, and every wheel event is then the pane's.
+func (m Model) overSidebar(msg tea.MouseMsg) bool {
+	layout := m.layout()
+	if !layout.SidebarVisible {
+		return false
+	}
+	return msg.X >= layout.Sidebar.X && msg.X < layout.Sidebar.X+layout.Sidebar.Width
+}
+
 // handleFocusKey hands the keyboard to the job: every key it can encode is
 // written to the job's stdin, Ctrl+C included — interrupting the child is the
 // whole point of focus. Even the exit key goes through, since a lone press

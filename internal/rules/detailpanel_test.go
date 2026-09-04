@@ -692,6 +692,31 @@ func TestRunSectionIsAbsentWhenTheProjectHasNoRun(t *testing.T) {
 }
 
 func TestRunSectionFoldsWhatItCannotShow(t *testing.T) {
+	jobs := make([]domain.JobConfig, 0, 20)
+	for index := range 20 {
+		jobs = append(jobs, domain.JobConfig{Name: fmt.Sprintf("job%d", index)})
+	}
+
+	// A panel too short for twenty jobs: the section folds what does not fit and
+	// says how much.
+	section := runSectionOf(t, DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x"}, DetailLoaded: true, Height: 12, Now: time.Now(),
+		RunConfig: domain.RunConfig{Jobs: jobs},
+	})
+
+	if got := len(section.Rows); got >= len(jobs) {
+		t.Fatalf("RUN has %d rows for %d jobs on a 12-row panel, want them folded", got, len(jobs))
+	}
+	last := cellOf(section.Rows[len(section.Rows)-1], domain.DetailCellNote)
+	if last == "" {
+		t.Errorf("last row = %q, want it to name what was folded", last)
+	}
+}
+
+// The other lists keep a fixed cap because what they could show is unbounded.
+// The jobs are a closed list the panel exists to show, so RUN spends the rows
+// nothing else wants rather than folding an address away under blank ones.
+func TestRunSectionTakesTheRowsNothingElseWants(t *testing.T) {
 	jobs := make([]domain.JobConfig, 0, domain.DashboardDetailJobs+3)
 	for index := range domain.DashboardDetailJobs + 3 {
 		jobs = append(jobs, domain.JobConfig{Name: fmt.Sprintf("job%d", index)})
@@ -702,11 +727,13 @@ func TestRunSectionFoldsWhatItCannotShow(t *testing.T) {
 		RunConfig: domain.RunConfig{Jobs: jobs},
 	})
 
-	if got := len(section.Rows); got != domain.DashboardDetailJobs {
-		t.Fatalf("RUN has %d rows, want the cap, its « more » row included", got)
+	if got := len(section.Rows); got != len(jobs) {
+		t.Errorf("RUN has %d rows for %d jobs on an 80-row panel, want every one of them", got, len(jobs))
 	}
-	if last := cellOf(section.Rows[len(section.Rows)-1], domain.DetailCellNote); !strings.Contains(last, "4") {
-		t.Errorf("last row = %q, want it to name what was folded", last)
+	for _, row := range section.Rows {
+		if cellOf(row, domain.DetailCellNote) != "" {
+			t.Errorf("a « more » row survived on a panel with room to spare: %+v", row)
+		}
 	}
 }
 
@@ -763,5 +790,37 @@ func TestRunSectionCountsWhatItFolded(t *testing.T) {
 
 	if want := fmt.Sprintf(domain.DetailRunUpCountFmt, len(jobs)); sections[0].TitleRight != want {
 		t.Fatalf("TitleRight = %q, want %q", sections[0].TitleRight, want)
+	}
+}
+
+// A panel too short to list every job used to fold whichever came last in
+// run.toml — including running ones, whose address is the reason the section is
+// read at all. What is folded must be what has nothing to say.
+func TestRunSectionFoldsStoppedJobsBeforeRunningOnes(t *testing.T) {
+	now := time.Now()
+	jobs := make([]domain.JobConfig, 0, 30)
+	for i := range 30 {
+		jobs = append(jobs, domain.JobConfig{Name: fmt.Sprintf("job%02d", i)})
+	}
+
+	// Short enough that even the grown section cannot hold them all.
+	section := runSectionOf(t, DetailSectionsParams{
+		Status: domain.WorktreeStatus{Branch: "feat/x", Path: "/wt/x"}, DetailLoaded: true,
+		Height: 12, Now: now,
+		RunConfig: domain.RunConfig{Jobs: jobs},
+		// The last declared job is the one that runs, so a budget served in
+		// declared order would fold exactly it.
+		Jobs: []domain.JobInfo{{
+			Name: "job29", Status: domain.JobStatusRunning, WorkDir: "/wt/x",
+			StartedAt: now.Add(-time.Minute),
+		}},
+		Addresses: map[string]domain.JobAddress{"job29": {Ports: []int{3000}, URL: "http://job29.wtm"}},
+	})
+
+	if len(section.Rows) >= len(jobs) {
+		t.Fatalf("the panel fitted all %d jobs at height 24, so nothing was folded: the fixture no longer exercises the rule", len(jobs))
+	}
+	if got := cellOf(section.Rows[0], domain.DetailCellName); got != "job29" {
+		t.Errorf("first row = %q, want the running job kept when the rest is folded", got)
 	}
 }

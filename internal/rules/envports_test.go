@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -292,5 +293,60 @@ func TestEnvPortCandidatesNeRattachePasAUnAutreJob(t *testing.T) {
 
 	if len(got) != 0 {
 		t.Errorf("candidats = %+v, want aucun", got)
+	}
+}
+
+// A CORS_ORIGIN listing two front-ends follows both: each origin moves onto the
+// port its own job binds, and one link picking a service would have left the
+// other pinned to the main checkout in every worktree.
+func TestPlanEnvPortsMovesEveryPortAKeyFollows(t *testing.T) {
+	const value = "http://localhost:5173,http://localhost:5174"
+	plan := PlanEnvPorts(PlanEnvPortsParams{
+		Links: []domain.EnvPortLink{
+			{File: ".env", Key: "CORS_ORIGIN", Job: "web", Port: "VITE_PORT"},
+			{File: ".env", Key: "CORS_ORIGIN", Job: "admin", Port: "VITE_PORT"},
+		},
+		Bases: map[domain.PortRef]int{
+			{Job: "web", Name: "VITE_PORT"}:   5173,
+			{Job: "admin", Name: "VITE_PORT"}: 5174,
+		},
+		Offset: 10,
+		Block:  10,
+		Lines:  map[string][]domain.EnvLine{".env": ParseEnv("CORS_ORIGIN=" + value + "\n")},
+	})
+
+	if len(plan.Entries) != 1 {
+		t.Fatalf("entries = %+v, want one per key however many ports it follows", plan.Entries)
+	}
+	entry := plan.Entries[0]
+	if entry.Status != domain.EnvPortStatusRewrite {
+		t.Fatalf("status = %q, want a rewrite", entry.Status)
+	}
+	if entry.NewValue != "http://localhost:5183,http://localhost:5184" {
+		t.Errorf("value = %q, want both origins moved", entry.NewValue)
+	}
+	if len(entry.Moves) != 2 {
+		t.Errorf("moves = %+v, want one per port followed", entry.Moves)
+	}
+}
+
+// A port no job declares is not this worktree's: shifting it would break an
+// address that points somewhere else entirely.
+func TestPlanEnvPortsLeavesAnUndeclaredPortAlone(t *testing.T) {
+	plan := PlanEnvPorts(PlanEnvPortsParams{
+		Links:  []domain.EnvPortLink{{File: ".env", Key: "CORS_ORIGIN", Job: "web", Port: "VITE_PORT"}},
+		Bases:  map[domain.PortRef]int{{Job: "web", Name: "VITE_PORT"}: 5173},
+		Offset: 10,
+		Block:  10,
+		Lines: map[string][]domain.EnvLine{
+			".env": ParseEnv("CORS_ORIGIN=http://localhost:5173,https://app.example.com:8443\n"),
+		},
+	})
+
+	if got := plan.Entries[0].NewValue; got != "http://localhost:5173,https://app.example.com:8443" && got != "http://localhost:5183,https://app.example.com:8443" {
+		t.Fatalf("value = %q, unexpected shape", got)
+	}
+	if !strings.Contains(plan.Entries[0].NewValue, "app.example.com:8443") {
+		t.Errorf("value = %q, want the external origin untouched", plan.Entries[0].NewValue)
 	}
 }

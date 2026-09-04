@@ -251,51 +251,28 @@ func TestServicesCursorIsReboundWhenAJobStops(t *testing.T) {
 	}
 }
 
-func TestEnterOnAServiceOpensItsLogsFullWidth(t *testing.T) {
+// Enter goes straight to the full run view. The tab used to turn its own body
+// into a smaller logs view first, which meant two keystrokes and a second stop
+// on the way to the same place.
+func TestEnterOnAServiceOpensTheFullLogsView(t *testing.T) {
 	model := servicesModel(t, "a")
 	model.params.LogsLoader = func(logsRequest) ([]string, error) { return []string{"ready"}, nil }
 
-	next, cmd := updateCmd(model, namedKey(tea.KeyEnter))
+	next, _ := updateCmd(model, namedKey(tea.KeyEnter))
 
-	if !next.servicesLogs {
-		t.Fatal("enter did not open the logs view")
-	}
+	// The run view is opened through watchLogs, which needs a run.toml on disk
+	// this fixture does not have; what enter must do here is name the job and
+	// leave the panel alone, never turn the tab into a second logs view.
 	if next.logsJob != "web" || next.logsBranch != "a" {
 		t.Errorf("logs = %q/%q, want the job under the cursor", next.logsBranch, next.logsJob)
 	}
-	if cmd == nil {
-		t.Error("cmd = nil, want the tail read")
+	if next.panelTab == panelLogs {
+		t.Error("the right-hand panel was armed from Services, where it is not drawn")
 	}
 
 	body := stripANSI(strings.Join(next.servicesBody(next.layout()), "\n"))
 	if !strings.Contains(body, "web") {
-		t.Errorf("body = %q, want the same selection line as the panel's logs view", body)
-	}
-}
-
-func TestEscapeReturnsFromTheServicesLogsToTheList(t *testing.T) {
-	model := servicesModel(t, "a")
-	model, _ = model.openServiceLogs()
-
-	next, _ := updateCmd(model, namedKey(tea.KeyEscape))
-
-	if next.servicesLogs {
-		t.Error("esc left the logs view open")
-	}
-}
-
-func TestTheServicesLogsViewUsesTheWholeWidth(t *testing.T) {
-	model := servicesModel(t, "a")
-	model, _ = model.openServiceLogs()
-	model.logsLines = []string{"a line"}
-
-	widest := 0
-	for _, line := range model.servicesBody(model.layout()) {
-		widest = max(widest, lipgloss.Width(stripANSI(line)))
-	}
-
-	if widest <= testWidth/2 {
-		t.Errorf("widest line = %d, want the full width: that is why this tab has it", widest)
+		t.Errorf("body = %q, want the tab still showing its overview", body)
 	}
 }
 
@@ -363,7 +340,7 @@ func TestClickingAServiceAddressOpensIt(t *testing.T) {
 
 // Arming the right-hand panel from a tab that does not draw it left an
 // invisible view holding esc, enter and the arrows.
-func TestTheLogsKeyOnServicesOpensThatTabsOwnView(t *testing.T) {
+func TestTheLogsKeyOnServicesOpensTheFullView(t *testing.T) {
 	model := servicesModel(t, "a")
 	model.params.LogsLoader = func(logsRequest) ([]string, error) { return []string{"ready"}, nil }
 
@@ -372,8 +349,8 @@ func TestTheLogsKeyOnServicesOpensThatTabsOwnView(t *testing.T) {
 	if next.panelTab == panelLogs {
 		t.Error("the right-hand panel was armed from Services, where it is not drawn")
 	}
-	if !next.servicesLogs {
-		t.Error("the Services tab's own logs view did not open")
+	if next.logsJob != "web" {
+		t.Errorf("logsJob = %q, want the job under the cursor named for the full view", next.logsJob)
 	}
 }
 
@@ -419,7 +396,10 @@ func TestServicesOffsetIsReboundWhenTheBoardShrinks(t *testing.T) {
 	}
 }
 
-func TestClickingAServiceRowAwayFromItsAddressOpensItsLogs(t *testing.T) {
+// Opening a log is a full change of view and the rows sit close together, so a
+// click only moves the cursor: enter opens. Only the address cell still acts on
+// a click, since pointing at it says exactly what it does.
+func TestClickingAServiceRowAwayFromItsAddressOnlyMovesTheCursor(t *testing.T) {
 	model := servicesModel(t, "a", "b")
 	model.params.LogsLoader = func(logsRequest) ([]string, error) { return []string{"ready"}, nil }
 	renderAndWait(t, model, servicesRowZone(4))
@@ -427,10 +407,10 @@ func TestClickingAServiceRowAwayFromItsAddressOpensItsLogs(t *testing.T) {
 	zone := model.zones.Get(servicesRowZone(4))
 	next, _ := updateCmd(model, click(zone.EndX, zone.StartY))
 
-	if !next.servicesLogs {
-		t.Fatal("clicking a row away from its address opened no logs — the rule differs from the detail panel's")
+	if next.panelTab == panelLogs {
+		t.Error("a click opened the logs view; only enter may")
 	}
-	if next.logsBranch != "b" {
-		t.Errorf("logsBranch = %q, want the row that was clicked", next.logsBranch)
+	if next.servicesCursor != 4 {
+		t.Errorf("servicesCursor = %d, want the clicked row 4", next.servicesCursor)
 	}
 }

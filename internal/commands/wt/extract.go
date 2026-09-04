@@ -10,6 +10,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/envports"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
@@ -93,13 +94,26 @@ func runExtract(cmd *cobra.Command, args []string) error {
 		return domain.ErrExtractSourceRequired
 	}
 
-	statuses, err := worktree.List(domain.ListParams{
-		ProjectDir: cfg.ProjectDir,
-		StateDir:   cfg.StateDir,
-		Config:     cfg.Config,
-	})
-	if err != nil {
-		return fmt.Errorf("list worktrees: %w", err)
+	// worktree.List runs a git status per worktree, so on a large repo this is
+	// the wait the command used to spend saying nothing.
+	var statuses []domain.WorktreeStatus
+	if err := components.RunLoading(components.LoadingParams{
+		Message: domain.ExtractScanLoading,
+		Animate: interactive,
+		Work: func() error {
+			var listErr error
+			statuses, listErr = worktree.List(domain.ListParams{
+				ProjectDir: cfg.ProjectDir,
+				StateDir:   cfg.StateDir,
+				Config:     cfg.Config,
+			})
+			if listErr != nil {
+				return fmt.Errorf("list worktrees: %w", listErr)
+			}
+			return nil
+		},
+	}); err != nil {
+		return err
 	}
 
 	source, err := resolveSource(resolveSourceParams{
@@ -121,8 +135,15 @@ func runExtract(cmd *cobra.Command, args []string) error {
 	// Fixed source (argument): its changes are known up front, so the empty-changes
 	// case short-circuits here. A picked source loads its changes lazily instead.
 	if !needSource {
-		source.available, err = listExtractFiles(source.path)
-		if err != nil {
+		if err := components.RunLoading(components.LoadingParams{
+			Message: domain.ExtractScanLoading,
+			Animate: interactive,
+			Work: func() error {
+				var filesErr error
+				source.available, filesErr = listExtractFiles(source.path)
+				return filesErr
+			},
+		}); err != nil {
 			return err
 		}
 		if len(source.available) == 0 {
@@ -625,11 +646,12 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 			_ = branch.FastForwardIfBehind(branch.BranchParams{ProjectDir: params.cfg.ProjectDir, Branch: ffSubjectBranch})
 		}
 		return createTarget(createTargetParams{
-			cmd:        params.cmd,
-			showHeader: params.human,
-			cfg:        params.cfg,
-			branch:     toFlag,
-			fromBranch: fromBranch,
+			cmd:         params.cmd,
+			showHeader:  params.human,
+			cfg:         params.cfg,
+			branch:      toFlag,
+			fromBranch:  fromBranch,
+			interactive: params.interactive,
 		})
 	}
 
@@ -652,11 +674,12 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 		return extractTarget{}, domain.ErrUserAborted
 	}
 	return createTarget(createTargetParams{
-		cmd:        params.cmd,
-		showHeader: params.human,
-		cfg:        params.cfg,
-		branch:     params.create.BranchName,
-		fromBranch: params.create.FromBranch,
+		cmd:         params.cmd,
+		showHeader:  params.human,
+		cfg:         params.cfg,
+		branch:      params.create.BranchName,
+		fromBranch:  params.create.FromBranch,
+		interactive: params.interactive,
 	})
 }
 
@@ -683,11 +706,12 @@ func defaultParent(params defaultParentParams) string {
 }
 
 type createTargetParams struct {
-	cmd        *cobra.Command
-	showHeader bool
-	cfg        shared.ConfigResult
-	branch     string
-	fromBranch string
+	cmd         *cobra.Command
+	showHeader  bool
+	cfg         shared.ConfigResult
+	branch      string
+	fromBranch  string
+	interactive bool
 }
 
 func createTarget(params createTargetParams) (extractTarget, error) {
@@ -702,6 +726,20 @@ func createTarget(params createTargetParams) (extractTarget, error) {
 	if err != nil {
 		return extractTarget{}, err
 	}
+
+	// Before the hooks: one of them may read the .env, and it has to read the
+	// ports this worktree binds rather than the ones it was copied from.
+	format, _ := params.cmd.Flags().GetString(domain.FlagOutput)
+	if err := envports.Settle(envports.Params{
+		Context:      shared.FlowContext(params.cfg),
+		Branch:       res.Branch,
+		WorktreePath: res.Path,
+		Prompter:     shared.FlowPrompter(shared.FlowPrompterParams{Interactive: params.interactive}),
+		Presenter:    shared.NewPresenter(params.cmd, format),
+	}); err != nil {
+		return extractTarget{}, err
+	}
+
 	// on_create hooks as a distinct, titled phase (shared with create/checkout).
 	if err := shared.RunCreateHooksPhase(shared.CreateHooksPhaseParams{
 		StateDir:     params.cfg.StateDir,

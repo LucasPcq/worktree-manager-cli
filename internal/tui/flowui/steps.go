@@ -23,17 +23,19 @@ type (
 
 func (p *plan) componentStep(step flow.Step, conditional bool) (components.Step, error) {
 	if conditional {
-		// A recap owns its model — its cancel row, and the plan its Load fills in —
-		// so its Skip gates the step instead of replacing it with a choice list.
-		if step.Kind == flow.StepRecap {
-			return p.gated(step, p.recapStep(step)), nil
+		// A select is the one kind whose whole model can be rebuilt from its
+		// answer, so its Skip is folded into the list it draws. Every other kind
+		// owns its model — a recap owns its cancel row and the plan its Load
+		// fills in, a multi-select owns its checked set — so its Skip gates the
+		// step instead of replacing it.
+		if step.Kind == flow.StepSelect {
+			return p.choiceStep(step), nil
 		}
-		// Every other conditional step is drawn as a choice list, so one of another
-		// kind would be silently downgraded to a picker rather than refused.
-		if step.Kind != flow.StepSelect {
+		built, err := p.componentStep(step, false)
+		if err != nil {
 			return components.Step{}, conditionalKindErr(step)
 		}
-		return p.choiceStep(step), nil
+		return p.gated(step, built), nil
 	}
 	switch step.Kind {
 	case flow.StepText:

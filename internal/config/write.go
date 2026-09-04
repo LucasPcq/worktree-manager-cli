@@ -130,7 +130,7 @@ func WriteRun(params WriteRunParams) error {
 
 	var buf bytes.Buffer
 	buf.WriteString("#:schema ./schemas/run.schema.json\n\n")
-	if err := toml.NewEncoder(&buf).Encode(params.Config); err != nil {
+	if err := toml.NewEncoder(&buf).Encode(runFileOf(params.Config)); err != nil {
 		return fmt.Errorf("encode run config: %w", err)
 	}
 
@@ -139,6 +139,40 @@ func WriteRun(params WriteRunParams) error {
 	}
 
 	return nil
+}
+
+// runFile is run.toml as it is written. It exists for the two settings whose
+// unset value is zero: the TOML encoder does not honour `omitempty` on a scalar
+// int, so a plain encode wrote `port_offset_block = 0` into every generated
+// file — a value the loader ignores and the file's own schema rejects, since it
+// requires a minimum of 1. A pointer is empty in the way the encoder
+// understands.
+type runFile struct {
+	PortOffsetBlock  *int               `toml:"port_offset_block,omitempty"`
+	PortProbeTimeout *int               `toml:"port_probe_timeout,omitempty"`
+	Addressing       domain.Addressing  `toml:"addressing,omitempty"`
+	Concurrency      domain.Concurrency `toml:"concurrency,omitempty"`
+
+	Jobs     []domain.JobConfig     `toml:"job"`
+	Profiles []domain.ProfileConfig `toml:"profile,omitempty"`
+	EnvPorts []domain.EnvPortLink   `toml:"env_port,omitempty"`
+}
+
+func runFileOf(cfg domain.RunConfig) runFile {
+	file := runFile{
+		Addressing:  cfg.Addressing,
+		Concurrency: cfg.Concurrency,
+		Jobs:        cfg.Jobs,
+		Profiles:    cfg.Profiles,
+		EnvPorts:    cfg.EnvPorts,
+	}
+	if cfg.PortOffsetBlock != 0 {
+		file.PortOffsetBlock = &cfg.PortOffsetBlock
+	}
+	if cfg.PortProbeTimeout != 0 {
+		file.PortProbeTimeout = &cfg.PortProbeTimeout
+	}
+	return file
 }
 
 // runTemplateContent is a fully-commented run.toml written when init detects or

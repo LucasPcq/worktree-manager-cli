@@ -43,12 +43,12 @@ func TestValidateRunPortsRejectsBadLinks(t *testing.T) {
 			"file is required",
 		},
 		{
-			"same key linked twice in one file",
+			"same key following the same port twice",
 			cfgWithLinks(
 				domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Job: "db", Port: "POSTGRES_PORT"},
 				domain.EnvPortLink{File: ".env", Key: "DATABASE_URL", Job: "db", Port: "POSTGRES_PORT"},
 			),
-			"declared twice",
+			"twice",
 		},
 	}
 
@@ -60,6 +60,25 @@ func TestValidateRunPortsRejectsBadLinks(t *testing.T) {
 			}
 		})
 	}
+
+	// A CORS_ORIGIN listing two front-ends follows both. Refusing that was what
+	// left such a key pinned to the main checkout in every worktree.
+	t.Run("same key following two different ports", func(t *testing.T) {
+		cfg := domain.RunConfig{
+			Jobs: []domain.JobConfig{
+				{Name: "web", Kind: domain.JobKindService, Cmd: "x", Ports: map[string]int{"VITE_PORT": 5173}},
+				{Name: "admin", Kind: domain.JobKindService, Cmd: "x", Ports: map[string]int{"VITE_PORT": 5174}},
+			},
+			EnvPorts: []domain.EnvPortLink{
+				{File: ".env", Key: "CORS_ORIGIN", Job: "web", Port: "VITE_PORT"},
+				{File: ".env", Key: "CORS_ORIGIN", Job: "admin", Port: "VITE_PORT"},
+			},
+		}
+		errs := ValidateRunPorts(cfg)
+		if len(errs) != 0 {
+			t.Errorf("ValidateRunPorts() = %v, want a key allowed to follow two ports", errs)
+		}
+	})
 }
 
 // The same key may follow different ports in two different files — a monorepo
@@ -107,10 +126,15 @@ func TestEnvPortCandidates(t *testing.T) {
 	})
 
 	// Each candidate names the job whose port it follows: that is what the link
-	// needs to resolve to one base rather than to a name two jobs may share.
+	// needs to resolve to one base rather than to a name two jobs may share. A
+	// value holding two declared ports — an origin list, a url carrying a query
+	// — follows both: picking one would leave the other pinned to the main
+	// checkout in every worktree.
 	want := []domain.EnvPortLink{
 		{File: ".env", Key: "DATABASE_URL", Job: "db", Port: "POSTGRES_PORT"},
 		{File: ".env", Key: "API_URL", Job: "db", Port: "API_PORT"},
+		{File: ".env", Key: "BOTH", Job: "db", Port: "API_PORT"},
+		{File: ".env", Key: "BOTH", Job: "db", Port: "POSTGRES_PORT"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("EnvPortCandidates() = %+v, want %+v", got, want)

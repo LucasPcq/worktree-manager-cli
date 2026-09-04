@@ -91,6 +91,21 @@ type BackfillScriptPortsResult struct {
 // files of the directory it runs in, matched on the same "<pm> run <script>"
 // command and cwd BuildScriptJobs emits. Additive by construction: a variable
 // the job already declares keeps its value, so re-running `run init` is safe.
+type portPair struct {
+	Name string
+	Base int
+}
+
+func declaredPortPairs(cfg domain.RunConfig) map[portPair]bool {
+	pairs := map[portPair]bool{}
+	for _, job := range cfg.Jobs {
+		for name, base := range job.Ports {
+			pairs[portPair{Name: name, Base: base}] = true
+		}
+	}
+	return pairs
+}
+
 func BackfillScriptPorts(params BackfillScriptPortsParams) BackfillScriptPortsResult {
 	result := BackfillScriptPortsResult{
 		Config:  params.Config,
@@ -99,6 +114,8 @@ func BackfillScriptPorts(params BackfillScriptPortsParams) BackfillScriptPortsRe
 	}
 	result.Config.Jobs = make([]domain.JobConfig, len(params.Config.Jobs))
 	copy(result.Config.Jobs, params.Config.Jobs)
+
+	claimed := declaredPortPairs(params.Config)
 
 	for _, script := range params.Scripts {
 		if script.Kind != domain.JobKindService {
@@ -118,6 +135,15 @@ func BackfillScriptPorts(params BackfillScriptPortsParams) BackfillScriptPortsRe
 			}
 			for _, name := range sortedPortNames(scan.Ports) {
 				if _, declared := result.Config.Jobs[i].Ports[name]; declared {
+					continue
+				}
+				// A variable another job already declares at the same base is that
+				// job's port, not this one's. A root .env holds the compose stack's
+				// ports, and every script sharing that directory would otherwise
+				// claim them — leaving the job that actually binds them with none.
+				// Two jobs declaring the same name at different bases are two
+				// ports, and both are kept.
+				if claimed[portPair{Name: name, Base: scan.Ports[name]}] {
 					continue
 				}
 				// Cloned on first write: the slice copy above shares every job's

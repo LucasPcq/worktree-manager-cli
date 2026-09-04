@@ -30,7 +30,7 @@ const (
 func (f *upFlow) session() flow.Session {
 	return flow.Session{
 		ErrLabel: domain.CmdUp,
-		Presets:  target.Presets(target.PresetParams{Worktrees: target.Dirs(f.named), Profile: f.request.Profile}),
+		Presets:  target.Presets(target.PresetParams{Worktrees: target.Dirs(f.named), Profiles: f.request.Profiles}),
 		Steps: []flow.Step{
 			target.WorktreesStep(target.WorktreesParams{
 				ProjectDir: f.ctx.ProjectDir,

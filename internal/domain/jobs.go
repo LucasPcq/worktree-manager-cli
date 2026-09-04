@@ -66,6 +66,9 @@ type JobConfig struct {
 	// URL publishes one of the ports above under a name. Absent means the job
 	// keeps no name and stays reachable by its port, as before.
 	URL *JobURLConfig `toml:"url,omitempty" json:"url,omitempty"`
+	// Probe gates the port check for this job. Nil means the default, which is
+	// to check: a job only opts out after its reader was asked and said so.
+	Probe *bool `toml:"probe,omitempty" json:"probe,omitempty"`
 }
 
 // JobURLEntry is one published job as a surface reports it: the job's name and
@@ -190,6 +193,14 @@ type JobInfo struct {
 	// signal killed it. A detached launcher exiting does not end its job, so it
 	// keeps a nil code for as long as the service it started is registered.
 	ExitCode *int `json:"exit_code,omitempty"`
+}
+
+// JobExit is a job that was started and did not survive the sequence: what the
+// daemon says of it now, and the code it left if its process was reaped.
+type JobExit struct {
+	Job      string    `json:"job"`
+	Status   JobStatus `json:"status"`
+	ExitCode *int      `json:"exit_code,omitempty"`
 }
 
 // JobActionResult is one job's outcome as a `run *` command reports it, shared
