@@ -21,7 +21,7 @@ type upPresenter struct {
 	detach bool
 }
 
-func (p upPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcome, error) {
+func (p upPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcomes, error) {
 	switch rules.DecideRunSurface(rules.RunSurfaceParams{Detach: p.detach, TTY: isTTY(), Format: p.Format}) {
 	case domain.RunSurfaceView:
 		return showRunView(viewParams{
@@ -61,7 +61,7 @@ type startPresenter struct {
 	detach bool
 }
 
-func (p startPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcome, error) {
+func (p startPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcomes, error) {
 	surface := rules.DecideRunSurface(rules.RunSurfaceParams{
 		Inline: params.Inline,
 		Detach: p.detach,
@@ -83,15 +83,15 @@ func (p startPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcome, e
 // the success (LUC-198). A failed job writing nothing at all left a machine
 // reader with an exit code and no cause, which is exactly what the `output`
 // field of `run up`'s array exists to avoid.
-func (p startPresenter) machine(params seam.SequenceParams) (runlogs.Outcome, error) {
-	outcome, err := params.Start(p.Cmd.Context(), nil)
+func (p startPresenter) machine(params seam.SequenceParams) (runlogs.Outcomes, error) {
+	outcomes, err := params.Start(p.Cmd.Context(), nil)
 	if err != nil {
-		return outcome, err
+		return outcomes, err
 	}
-	return outcome, output.WriteJobResultJSON(p.Cmd.OutOrStdout(), jobResult(jobResultParams{
+	return outcomes, output.WriteJobResultJSON(p.Cmd.OutOrStdout(), jobResult(jobResultParams{
 		Job:     params.Job,
 		Inline:  params.Inline,
-		Outcome: outcome,
+		Outcome: outcomes.One(),
 	}))
 }
 

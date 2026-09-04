@@ -14,11 +14,11 @@ import (
 // frames it.
 type Result struct {
 	Recap   string
-	Outcome runlogs.Outcome
+	Outcomes runlogs.Outcomes
 }
 
 func (m Model) result() Result {
-	return Result{Recap: m.recap(), Outcome: m.sequence.outcome}
+	return Result{Recap: m.recap(), Outcomes: runlogs.Outcomes{m.sequence.outcome}}
 }
 
 // recap is the last thing said about a run, on the terminal the view was

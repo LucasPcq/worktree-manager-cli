@@ -123,7 +123,7 @@ func (f *startFlow) run() (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
-	return Outcome{WorkDir: workDir, Job: job, Result: result, Aborted: result.Aborted()}, nil
+	return Outcome{WorkDir: workDir, Job: job, Result: result.One(), Aborted: result.Aborted()}, nil
 }
 
 // connect wakes the daemon before anything is asked: the worktree picker shows

@@ -16,14 +16,14 @@ import (
 // a message and blocks until the view is done, the same way a prompt does.
 func TestTheWatcherBlocksUntilTheViewGivesTheTerminalBack(t *testing.T) {
 	msgs := make(chan tea.Msg, 1)
-	done := make(chan runlogs.Outcome, 1)
+	done := make(chan runlogs.Outcomes, 1)
 
 	go func() {
-		outcome, err := watcher{send: func(msg tea.Msg) { msgs <- msg }}.Sequence(seam.SequenceParams{Job: "web"})
+		outcomes, err := watcher{send: func(msg tea.Msg) { msgs <- msg }}.Sequence(seam.SequenceParams{Job: "web"})
 		if err != nil {
 			t.Errorf("Sequence: %v", err)
 		}
-		done <- outcome
+		done <- outcomes
 	}()
 
 	var asked handoffMsg
@@ -47,11 +47,11 @@ func TestTheWatcherBlocksUntilTheViewGivesTheTerminalBack(t *testing.T) {
 	case <-time.After(20 * time.Millisecond):
 	}
 
-	asked.reply <- handoffReply{outcome: runlogs.Outcome{Steps: 3}}
+	asked.reply <- handoffReply{outcomes: runlogs.Outcomes{{Steps: 3}}}
 	select {
-	case outcome := <-done:
-		if outcome.Steps != 3 {
-			t.Errorf("outcome = %+v, want what the view concluded", outcome)
+	case outcomes := <-done:
+		if outcomes.One().Steps != 3 {
+			t.Errorf("outcome = %+v, want what the view concluded", outcomes)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("the watcher never came back")
@@ -67,7 +67,7 @@ func TestTheTerminalComesBackWithItsMouse(t *testing.T) {
 
 	next, cmd := model.finishHandoff(handoffDoneMsg{
 		reply:   reply,
-		outcome: runlogs.Outcome{Steps: 2},
+		outcomes: runlogs.Outcomes{{Steps: 2}},
 		recap:   "web started",
 	})
 
@@ -79,8 +79,8 @@ func TestTheTerminalComesBackWithItsMouse(t *testing.T) {
 	}
 	select {
 	case answered := <-reply:
-		if answered.outcome.Steps != 2 {
-			t.Errorf("the flow was unblocked with %+v, want the view's outcome", answered.outcome)
+		if answered.outcomes.One().Steps != 2 {
+			t.Errorf("the flow was unblocked with %+v, want the view's outcome", answered.outcomes)
 		}
 	default:
 		t.Fatal("the flow was never unblocked")

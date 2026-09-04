@@ -40,6 +40,7 @@ type Seam struct {
 	service   runlogs.Service
 	board     runlogs.Board
 	workDir   string
+	worktree  string
 	logDir    string
 	env       map[string]string
 	prober    runlogs.Prober
@@ -48,18 +49,21 @@ type Seam struct {
 }
 
 func Open(params Params) Seam {
-	logDir := LogDir(LogDirParams{StateDir: params.StateDir, WorkDir: params.WorkDir})
+	branch := branchOf(params.WorkDir)
+	logDir := logDirOf(params.StateDir, branch)
 	service := runlogs.NewService(runlogs.ServiceParams{SocketPath: process.SocketPath()})
 	return Seam{
 		service: service,
 		board: runlogs.NewBoard(runlogs.BoardParams{
-			Service: service,
-			Jobs:    params.Jobs,
-			WorkDir: params.WorkDir,
-			LogDir:  logDir,
+			Service:  service,
+			Jobs:     params.Jobs,
+			WorkDir:  params.WorkDir,
+			Worktree: branch,
+			LogDir:   logDir,
 		}),
-		workDir: params.WorkDir,
-		logDir:  logDir,
+		workDir:  params.WorkDir,
+		worktree: branch,
+		logDir:   logDir,
 		env: JobEnv(JobEnvParams{
 			ProjectDir: params.ProjectDir,
 			StateDir:   params.StateDir,
@@ -72,6 +76,7 @@ func Open(params Params) Seam {
 }
 
 func (s Seam) Board() runlogs.Board     { return s.board }
+func (s Seam) Worktree() string         { return s.worktree }
 func (s Seam) Service() runlogs.Service { return s.service }
 func (s Seam) Env() map[string]string   { return s.env }
 func (s Seam) LogDir() string           { return s.logDir }
@@ -86,20 +91,26 @@ type StartParams struct {
 // Starter is the start sequence as a surface drives it: it draws first, then
 // calls what this returns.
 func (s Seam) Starter(params StartParams) runlogs.StartFunc {
-	return func(ctx context.Context, sink runlogs.Sink) (runlogs.Outcome, error) {
-		return runlogs.Run(ctx, runlogs.RunParams{
-			Service:   s.service,
-			Sink:      sink,
-			Jobs:      params.Jobs,
-			Profile:   params.Profile,
-			WorkDir:   s.workDir,
-			LogDir:    s.logDir,
-			Env:       s.env,
-			Prober:    s.prober,
-			Project:   s.project,
-			ProxyPort: s.proxyPort,
-		})
+	return func(ctx context.Context, sink runlogs.Sink) (runlogs.Outcomes, error) {
+		outcome, err := s.run(ctx, sink, params)
+		return runlogs.Outcomes{outcome}, err
 	}
+}
+
+func (s Seam) run(ctx context.Context, sink runlogs.Sink, params StartParams) (runlogs.Outcome, error) {
+	return runlogs.Run(ctx, runlogs.RunParams{
+		Service:   s.service,
+		Sink:      sink,
+		Jobs:      params.Jobs,
+		Profile:   params.Profile,
+		WorkDir:   s.workDir,
+		Worktree:  s.worktree,
+		LogDir:    s.logDir,
+		Env:       s.env,
+		Prober:    s.prober,
+		Project:   s.project,
+		ProxyPort: s.proxyPort,
+	})
 }
 
 type LogDirParams struct {
@@ -112,11 +123,25 @@ type LogDirParams struct {
 // never run git; a worktree with no branch, or one git cannot name, persists
 // nothing rather than sharing another's directory.
 func LogDir(params LogDirParams) string {
-	branch, err := worktree.CurrentBranch(worktree.CurrentBranchParams{Dir: params.WorkDir})
+	return logDirOf(params.StateDir, branchOf(params.WorkDir))
+}
+
+func logDirOf(stateDir, branch string) string {
+	if branch == "" {
+		return ""
+	}
+	return rules.WorktreeLogDir(rules.WorktreeLogDirParams{StateDir: stateDir, Branch: branch})
+}
+
+// branchOf names a worktree the way a reader recognises it, and answers empty
+// for one git cannot name — which is what makes such a worktree persist nothing
+// rather than share another's log directory.
+func branchOf(workDir string) string {
+	branch, err := worktree.CurrentBranch(worktree.CurrentBranchParams{Dir: workDir})
 	if err != nil {
 		return ""
 	}
-	return rules.WorktreeLogDir(rules.WorktreeLogDirParams{StateDir: params.StateDir, Branch: branch})
+	return branch
 }
 
 type JobEnvParams struct {
@@ -167,7 +192,11 @@ type SequenceParams struct {
 	// `run up`, a job for `run start`.
 	Profile string
 	Job     string
-	Start   runlogs.StartFunc
+	// Worktrees names the branches this run covers, in the order they were
+	// selected. A surface reads its length to know whether to say which worktree
+	// a line belongs to at all.
+	Worktrees []string
+	Start     runlogs.StartFunc
 	// Inline says the run blocks until it ends — a task, whose output belongs to
 	// the scrollback rather than to a screen given back when it exits. It is the
 	// flow that knows, because it is the flow that resolved the job.
@@ -178,5 +207,5 @@ type SequenceParams struct {
 // thing a run cannot report through Stage: the surface has to be drawing before
 // the first job is asked for, so it is the surface that calls Start.
 type Watcher interface {
-	Sequence(SequenceParams) (runlogs.Outcome, error)
+	Sequence(SequenceParams) (runlogs.Outcomes, error)
 }

@@ -154,8 +154,8 @@ func (m Model) startCmd() tea.Cmd {
 	start, ctx := m.start, m.runCtx
 	emitter := sink{panes: m.panes, msgs: m.msgs, done: ctx.Done()}
 	return func() tea.Msg {
-		outcome, err := start(ctx, emitter)
-		return runFinishedMsg{outcome: outcome, err: err}
+		outcomes, err := start(ctx, emitter)
+		return runFinishedMsg{outcomes: outcomes, err: err}
 	}
 }
 

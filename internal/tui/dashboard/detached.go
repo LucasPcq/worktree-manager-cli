@@ -19,9 +19,9 @@ type detachedWatcher struct {
 	id   int
 }
 
-func (w detachedWatcher) Sequence(params seam.SequenceParams) (runlogs.Outcome, error) {
+func (w detachedWatcher) Sequence(params seam.SequenceParams) (runlogs.Outcomes, error) {
 	if params.Start == nil {
-		return runlogs.Outcome{}, nil
+		return nil, nil
 	}
 	// A conversion, not a literal: the sink needs exactly what the watcher holds,
 	// and the two must stay that way — a field added to one has to be answered

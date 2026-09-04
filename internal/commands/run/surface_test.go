@@ -34,17 +34,17 @@ func captureRunView(t *testing.T) *viewRecorder {
 	return recorder
 }
 
-func (r *viewRecorder) show(params viewParams) (runlogs.Outcome, error) {
+func (r *viewRecorder) show(params viewParams) (runlogs.Outcomes, error) {
 	call := viewCall{Job: params.Job, Attached: params.Start != nil}
 	if params.Start != nil {
-		outcome, err := params.Start(context.Background(), &r.sink)
+		outcomes, err := params.Start(context.Background(), &r.sink)
 		if err != nil {
-			return runlogs.Outcome{}, err
+			return nil, err
 		}
-		call.Outcome = outcome
+		call.Outcome = outcomes.One()
 	}
 	r.calls = append(r.calls, call)
-	return call.Outcome, nil
+	return runlogs.Outcomes{call.Outcome}, nil
 }
 
 func (r *viewRecorder) only(t *testing.T) viewCall {

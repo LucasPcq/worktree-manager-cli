@@ -36,7 +36,7 @@ type viewParams struct {
 // alternate screen has to be given back before anything is written to the
 // scrollback underneath it. What the run concluded goes back to the flow, which
 // is what turns it into an exit code.
-func openRunView(params viewParams) (runlogs.Outcome, error) {
+func openRunView(params viewParams) (runlogs.Outcomes, error) {
 	result, err := runview.Run(runview.Params{
 		Board:   params.Board,
 		Job:     params.Job,
@@ -45,14 +45,14 @@ func openRunView(params viewParams) (runlogs.Outcome, error) {
 		Open:    integration.OpenURL,
 	})
 	if err != nil {
-		return runlogs.Outcome{}, err
+		return nil, err
 	}
 
 	if result.Recap != "" {
 		out := params.Cmd.OutOrStdout()
 		output.Frame(out, func() { fmt.Fprintln(out, result.Recap) })
 	}
-	return result.Outcome, nil
+	return result.Outcomes, nil
 }
 
 type streamParams struct {
@@ -66,39 +66,39 @@ type streamParams struct {
 // runOnStream reports a start sequence as lines on the terminal it was launched
 // from — `-d`, a pipe, a CI job. An aborted run ends on stderr, which is where
 // its frame closes.
-func runOnStream(params streamParams) (runlogs.Outcome, error) {
+func runOnStream(params streamParams) (runlogs.Outcomes, error) {
 	out, errOut := params.Cmd.OutOrStdout(), params.Cmd.ErrOrStderr()
 
 	output.FrameStart(out)
-	outcome, err := params.Start(params.Cmd.Context(), output.NewRunPrinter(output.RunPrinterParams{
+	outcomes, err := params.Start(params.Cmd.Context(), output.NewRunPrinter(output.RunPrinterParams{
 		Out:        out,
 		Err:        errOut,
 		Profile:    params.Profile,
 		Hyperlinks: params.Hyperlinks,
 	}))
 	if err != nil {
-		return runlogs.Outcome{}, err
+		return nil, err
 	}
 
-	if outcome.Aborted() {
+	if outcomes.Aborted() {
 		output.FrameEnd(errOut)
-		return outcome, nil
+		return outcomes, nil
 	}
 	output.FrameEnd(out)
-	return outcome, nil
+	return outcomes, nil
 }
 
 // runForMachine emits the run's outcome as a JSON document, then fails when the
 // profile aborted. The document is complete either way: the module's rule is
 // that the shape follows the arity and the exit code follows the success, and
 // an exit code has never made a document unreadable (LUC-198).
-func runForMachine(params streamParams) (runlogs.Outcome, error) {
-	outcome, err := params.Start(params.Cmd.Context(), nil)
+func runForMachine(params streamParams) (runlogs.Outcomes, error) {
+	outcomes, err := params.Start(params.Cmd.Context(), nil)
 	if err != nil {
-		return runlogs.Outcome{}, err
+		return nil, err
 	}
-	if err := output.WriteRunOutcomeJSON(params.Cmd.OutOrStdout(), outcome); err != nil {
-		return runlogs.Outcome{}, err
+	if err := output.WriteRunOutcomeJSON(params.Cmd.OutOrStdout(), outcomes.One()); err != nil {
+		return nil, err
 	}
-	return outcome, nil
+	return outcomes, nil
 }

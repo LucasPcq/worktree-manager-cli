@@ -181,8 +181,8 @@ func TestAOneOffAnswerIsNotRemembered(t *testing.T) {
 // hand-over to a surface belongs to the run, not to a question.
 type presenterOnly struct{ *flowtest.Recorder }
 
-func (presenterOnly) Sequence(seam.SequenceParams) (runlogs.Outcome, error) {
-	return runlogs.Outcome{}, nil
+func (presenterOnly) Sequence(seam.SequenceParams) (runlogs.Outcomes, error) {
+	return runlogs.Outcomes{{}}, nil
 }
 
 // The regression that shipped: Skip short-circuits Resolve, so a settled step

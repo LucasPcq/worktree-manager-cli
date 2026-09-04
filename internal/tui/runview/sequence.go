@@ -44,8 +44,8 @@ type eventMsg struct{ event runlogs.Event }
 type openFailedMsg struct{ err error }
 
 type runFinishedMsg struct {
-	outcome runlogs.Outcome
-	err     error
+	outcomes runlogs.Outcomes
+	err      error
 }
 
 // sink carries a run's events to the model. A job's output never goes through
@@ -127,8 +127,8 @@ func (m Model) followSequence(event runlogs.Event) (Model, tea.Cmd) {
 func (m Model) applyRunFinished(msg runFinishedMsg) (Model, tea.Cmd) {
 	noticeLines := len(m.report())
 	m.sequence.active = false
-	if msg.outcome.Recorded() {
-		m.sequence.outcome = msg.outcome
+	if outcome := msg.outcomes.One(); outcome.Recorded() {
+		m.sequence.outcome = outcome
 	}
 	if msg.err != nil && m.runCtx.Err() == nil {
 		m.err = msg.err

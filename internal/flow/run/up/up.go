@@ -236,7 +236,7 @@ func (f *upFlow) start(answers flow.Answers) (Outcome, error) {
 	return Outcome{
 		WorkDir: workDir,
 		Profile: profile.Name,
-		Result:  result,
+		Result:  result.One(),
 		Aborted: result.Aborted(),
 	}, nil
 }

@@ -219,4 +219,8 @@ func (noSink) Emit(Event) {}
 // calls this when it is ready to report. Cancelling the context ends the
 // reporting, never the jobs — a view the reader walked away from stops being
 // written to while the daemon keeps running what it started.
-type StartFunc func(context.Context, Sink) (Outcome, error)
+//
+// It answers with one Outcome per worktree it covered. A run over a single
+// worktree is an Outcomes of one rather than a shape of its own: the surfaces
+// read the arity, so there is nothing to branch on here.
+type StartFunc func(context.Context, Sink) (Outcomes, error)

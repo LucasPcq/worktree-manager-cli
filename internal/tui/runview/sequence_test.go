@@ -49,8 +49,8 @@ func startedHarness(t *testing.T, params harnessParams, script func(runlogs.Sink
 	model := New(Params{
 		Board: board,
 		Job:   params.Job,
-		Start: func(_ context.Context, emitter runlogs.Sink) (runlogs.Outcome, error) {
-			return script(emitter), nil
+		Start: func(_ context.Context, emitter runlogs.Sink) (runlogs.Outcomes, error) {
+			return runlogs.Outcomes{script(emitter)}, nil
 		},
 	})
 	t.Cleanup(func() { model.panes.closeAll() })
@@ -420,7 +420,7 @@ func TestDetachCancelsTheReportingOfARun(t *testing.T) {
 func TestSinkGivesUpOnceTheViewIsGone(t *testing.T) {
 	model := New(Params{
 		Board: runlogstest.NewBoard(runlogstest.BoardParams{}),
-		Start: func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
+		Start: func(context.Context, runlogs.Sink) (runlogs.Outcomes, error) { return runlogs.Outcomes{{}}, nil },
 	})
 	emitter := sink{panes: model.panes, msgs: model.msgs, done: model.runCtx.Done()}
 	model.cancel()
@@ -460,7 +460,7 @@ func TestFollowingStopsWhenTheReaderTakesTheCursor(t *testing.T) {
 func TestRedrawClockRunsWhileTheRunDoes(t *testing.T) {
 	model := New(Params{
 		Board: runlogstest.NewBoard(runlogstest.BoardParams{}),
-		Start: func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
+		Start: func(context.Context, runlogs.Sink) (runlogs.Outcomes, error) { return runlogs.Outcomes{{}}, nil },
 	})
 	t.Cleanup(model.cancel)
 
@@ -485,7 +485,7 @@ func TestRedrawClockRunsWhileTheRunDoes(t *testing.T) {
 func TestRedrawClockIsArmedAgainWhenTheSequenceStarts(t *testing.T) {
 	model := New(Params{
 		Board: runlogstest.NewBoard(runlogstest.BoardParams{Views: []runlogs.JobView{stopped("migrate")}}),
-		Start: func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
+		Start: func(context.Context, runlogs.Sink) (runlogs.Outcomes, error) { return runlogs.Outcomes{{}}, nil },
 	})
 	t.Cleanup(model.cancel)
 	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
