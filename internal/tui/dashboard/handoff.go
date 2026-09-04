@@ -53,13 +53,14 @@ func (h *handoff) SetStderr(io.Writer)   {}
 
 func (h *handoff) Run() error {
 	result, err := runview.Run(runview.Params{
-		Board:   h.params.Board,
-		Job:     h.params.Job,
-		Profile: h.params.Profile,
-		Start:   h.params.Start,
-		Open:    integration.OpenURL,
-		In:      h.in,
-		Out:     h.out,
+		Board:     h.params.Board,
+		Job:       h.params.Job,
+		Profile:   h.params.Profile,
+		Worktrees: h.params.Worktrees,
+		Start:     h.params.Start,
+		Open:      integration.OpenURL,
+		In:        h.in,
+		Out:       h.out,
 	})
 	if err != nil {
 		return err

@@ -16,9 +16,11 @@ import (
 // are runlogs' answers, carried here as they are emitted.
 type sequence struct {
 	active bool
-	// key is the job being acted on and job its name, the second only for a
-	// header that has no room for a path.
-	key  jobKey
+	// keys are the jobs being started right now — several since a run covers
+	// several worktrees, each stepping through its own sequence. What is in here
+	// is what the run alone is writing into, and what no pane may be released
+	// from under. job is the last one's name, for a header with no room for a path.
+	keys map[jobKey]bool
 	job  string
 	step int
 	// pending counts the worktrees that have not concluded yet. One of them
@@ -62,6 +64,20 @@ func (s *sequence) record(outcome runlogs.Outcome) {
 		}
 	}
 	s.outcomes = append(s.outcomes, outcome)
+}
+
+// hold and release bracket the moment a job's only copy of its output is the
+// pane the run is writing into: nothing replays that yet, so the pane must
+// survive the cursor moving away from it.
+func (s *sequence) hold(key jobKey, step domain.JobStep) {
+	s.keys[key] = true
+	s.states[key] = step
+}
+
+func (s *sequence) release(key jobKey, step domain.JobStep) {
+	delete(s.keys, key)
+	s.states[key] = step
+	s.job = ""
 }
 
 // aborted is the worktrees that stopped short, in the order they reported.
@@ -129,23 +145,23 @@ func (m Model) applyEvent(msg eventMsg) (Model, tea.Cmd) {
 	switch event.Phase {
 	case runlogs.PhaseStarting:
 		m.sequence.active = true
-		m.sequence.key, m.sequence.job, m.sequence.step = eventKey(event), event.Job, event.Step
-		m.sequence.states[eventKey(event)] = domain.JobStepStarting
+		m.sequence.job, m.sequence.step = event.Job, event.Step
+		m.sequence.hold(eventKey(event), domain.JobStepStarting)
 	case runlogs.PhaseStarted:
-		m.sequence.states[eventKey(event)], m.sequence.key, m.sequence.job = domain.JobStepStarted, "", ""
+		m.sequence.release(eventKey(event), domain.JobStepStarted)
 		m.sequence.remember(event)
 	case runlogs.PhaseDone:
-		m.sequence.states[eventKey(event)], m.sequence.key, m.sequence.job = domain.JobStepDone, "", ""
+		m.sequence.release(eventKey(event), domain.JobStepDone)
 		m.sequence.remember(event)
 	case runlogs.PhaseFailed:
-		m.sequence.states[eventKey(event)], m.sequence.key, m.sequence.job = domain.JobStepFailed, "", ""
+		m.sequence.release(eventKey(event), domain.JobStepFailed)
 		m.sequence.reasons[event.WorkDir] = event.Reason
 	case runlogs.PhaseNotice:
 		m.sequence.notices = append(m.sequence.notices, event.Notice)
 	case runlogs.PhaseAborted, runlogs.PhaseReady:
 		// One worktree ending says nothing about the others: the sequence is over
 		// when every one of them has reported.
-		m.sequence.key, m.sequence.job = "", ""
+		m.sequence.job = ""
 		m.sequence.record(event.Outcome)
 		m.sequence.pending = max(m.sequence.pending-1, 0)
 		m.sequence.active = m.sequence.pending > 0

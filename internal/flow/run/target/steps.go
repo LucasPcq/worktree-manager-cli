@@ -94,6 +94,10 @@ type WorktreesParams struct {
 	Selected []string
 	// Running counts the jobs each worktree has up. Empty leaves the badges off.
 	Running map[string]int
+	// Single narrows the answer back to one worktree, for a run whose flags cannot
+	// apply to several. The step is still the cumulative one: what changes is what
+	// it accepts, not what it offers.
+	Single bool
 }
 
 // WorktreesStep asks which worktrees the command acts on — the cumulative form
@@ -133,6 +137,9 @@ func WorktreesStep(params WorktreesParams) flow.Step {
 		ValidateSet: func(values []string) error {
 			if len(values) == 0 {
 				return errors.New(domain.RunWorktreeSelectAtLeastOne)
+			}
+			if params.Single && len(values) > 1 {
+				return domain.ErrExclusiveMultiWorktree
 			}
 			return nil
 		},

@@ -157,7 +157,11 @@ func writeJobLogsJSON(params jobLinesParams) error {
 			continue
 		}
 		for _, line := range lines {
-			entries = append(entries, rules.ParseLogLine(rules.ParseLogLineParams{Job: view.Name, Line: line}))
+			entry := rules.ParseLogLine(rules.ParseLogLineParams{Job: view.Name, Line: line})
+			if len(params.Worktrees) > 1 {
+				entry.Worktree = view.Worktree
+			}
+			entries = append(entries, entry)
 		}
 	}
 	return output.WriteJobLogsJSON(params.Cmd.OutOrStdout(), entries)

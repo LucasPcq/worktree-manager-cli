@@ -165,3 +165,20 @@ func TestWorktreeJobResultsJSONFollowsTheArity(t *testing.T) {
 		t.Error("a worktree that stopped nothing came back without a job array")
 	}
 }
+
+// A writer does not patch what it was handed.
+func TestWorktreeJobResultsJSONDoesNotTouchItsInput(t *testing.T) {
+	results := []domain.WorktreeJobResults{
+		{Worktree: "main", Path: "/work/main"},
+		{Worktree: "feature", Path: "/work/feature"},
+	}
+
+	if err := output.WriteWorktreeJobResultsJSON(&bytes.Buffer{}, results); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	for _, result := range results {
+		if result.Jobs != nil {
+			t.Errorf("%q came back with a job slice the writer filled in", result.Worktree)
+		}
+	}
+}

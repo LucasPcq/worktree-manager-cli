@@ -252,9 +252,13 @@ type LogRecord struct {
 // is absent on a line written before this format, or by a sink that could not
 // stamp it: the text is still worth handing over.
 type JobLogEntry struct {
-	Job  string `json:"job"`
-	At   string `json:"at,omitempty"`
-	Text string `json:"text"`
+	Job string `json:"job"`
+	// Worktree names where the line came from, and is absent above a single
+	// worktree — where the caller already knows. Without it the lines of two jobs
+	// called `web` are one indistinguishable stream (LUC-216).
+	Worktree string `json:"worktree,omitempty"`
+	At       string `json:"at,omitempty"`
+	Text     string `json:"text"`
 }
 
 // RunSurface names who shows a run's jobs: the full-screen view, a stream of

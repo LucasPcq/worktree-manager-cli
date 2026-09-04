@@ -160,3 +160,46 @@ func TestTheReportNamesEveryWorktreeThatAborted(t *testing.T) {
 		}
 	}
 }
+
+// N sequences write into N panes at once. Following the run from one worktree's
+// job to another's must not release the pane being left: nothing replays what a
+// run is writing into it yet, so it is the only copy of that output.
+func TestFollowingTheRunKeepsThePaneOfAWorktreeStillStarting(t *testing.T) {
+	board := runlogstest.NewBoard(runlogstest.BoardParams{Views: []runlogs.JobView{
+		inWorktree(running("web"), "/work/main", "main"),
+		inWorktree(running("web"), "/work/feature", "feature"),
+	}})
+	model := New(Params{
+		Board:     board,
+		Worktrees: []string{"main", "feature"},
+		Start:     func(context.Context, runlogs.Sink) (runlogs.Outcomes, error) { return nil, nil },
+	})
+	t.Cleanup(func() { model.panes.closeAll() })
+	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})
+	model = update(model, exec(t, model.refreshCmd()))
+
+	starting := func(dir, branch string) eventMsg {
+		return eventMsg{event: runlogs.Event{
+			Phase: runlogs.PhaseStarting, Job: "web", WorkDir: dir, Worktree: branch, Step: 1, Steps: 1,
+		}}
+	}
+
+	model = update(model, starting("/work/main", "main"))
+	model.panes.write(writeChunkParams{
+		Key: jobKeyOf("/work/main", "web"), Source: sourceSequence, Chunk: []byte("listening on 8119\r\n"),
+	})
+
+	// The second worktree starts its own job, and the cursor follows it there.
+	model = update(model, starting("/work/feature", "feature"))
+	if model.selected != jobKeyOf("/work/feature", "web") {
+		t.Fatalf("selected = %q, want the cursor to follow the run", model.selected)
+	}
+
+	entry, held := model.panes.entry(jobKeyOf("/work/main", "web"))
+	if !held {
+		t.Fatal("the first worktree's pane was released while its run was still writing into it")
+	}
+	if got := ansi.Strip(entry.pane.Render()); !strings.Contains(got, "listening on 8119") {
+		t.Errorf("pane = %q, want what the run had written kept", got)
+	}
+}

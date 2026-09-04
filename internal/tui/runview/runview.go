@@ -117,6 +117,7 @@ func New(params Params) Model {
 		ticking:   params.Start != nil,
 		following: params.Start != nil,
 		sequence: sequence{
+			keys:    map[jobKey]bool{},
 			states:  map[jobKey]domain.JobStep{},
 			reasons: map[string]string{},
 			pending: max(len(params.Worktrees), 1),
@@ -415,7 +416,7 @@ func (m Model) kindOf(key jobKey) domain.JobKind {
 // Those bytes are nowhere else yet: no subscription carries them and the log
 // file is still being written, so the pane is the only copy.
 func (m Model) sequenceHolds(key jobKey) bool {
-	return m.sequence.active && m.sequence.key == key
+	return m.sequence.active && m.sequence.keys[key]
 }
 
 func (m Model) applyAttached(msg attachedMsg) (Model, tea.Cmd) {

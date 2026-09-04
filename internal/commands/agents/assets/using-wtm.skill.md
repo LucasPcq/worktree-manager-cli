@@ -54,10 +54,12 @@ self-documenting:
    `run down`, `run logs`) gives an array, one acting on a single job (`run start`,
    `run stop`, `run job *`) gives an object — always that shape, whatever branch the
    command took — and any of them exits non-zero when what it attempted failed.
-   The worktree axis obeys the same rule: `run up`, `run down` and `run stop` on **one**
-   worktree keep the flat array of job results they have always given; on **several** they
-   give one document per worktree, `{worktree, path, profile?, aborted?, jobs: [...]}`, in
-   the order you named them. So branch on the shape only if you passed several worktrees. A command
+   The worktree axis obeys the same rule: `run up` and `run down` on **one** worktree keep
+   the flat array of job results they have always given, `run stop` its single object; on
+   **several** all three give one document per worktree,
+   `{worktree, path, profile?, aborted?, jobs: [...]}`, in the order you named them. So
+   branch on the shape only if you passed several worktrees. `run logs` keeps its flat array
+   of lines either way and adds a `worktree` field to each above one. A command
    that got far enough to have per-job results writes its **whole** document and *then*
    exits non-zero (`run up`, `run down`: read the array, the `status: "error"` entries say
    which job); one that failed before that (no such job, daemon refused, config invalid)

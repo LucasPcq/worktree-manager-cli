@@ -37,6 +37,9 @@ func (f *upFlow) session() flow.Session {
 				Current:    f.request.Cwd,
 				Selected:   target.Dirs(f.named),
 				Running:    f.running,
+				// --exclusive stops all but one, so it cannot be applied to a wider
+				// selection. Refused as the box is ticked rather than after the recap.
+				Single: f.request.Exclusive,
 			}),
 			target.ProfileStep(target.ProfileParams{
 				Profiles: f.request.Config.Profiles,

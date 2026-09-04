@@ -313,3 +313,30 @@ func TestWorkDirsPrefersTheAnswerThenThePositionalsThenTheCwd(t *testing.T) {
 		t.Errorf("WorkDirs = %v, want the current worktree alone", fallback)
 	}
 }
+
+// A branch and a path can name the same worktree. Running it twice would race
+// two identical sequences, the second failing on the jobs the first started.
+func TestWorkDirsKeepsOneMentionOfEachWorktree(t *testing.T) {
+	dirs := target.WorkDirs(target.WorkDirsParams{
+		Named: []target.Resolved{{Dir: "/a"}, {Dir: "/b"}, {Dir: "/a"}},
+		Cwd:   "/cwd",
+	})
+
+	if len(dirs) != 2 || dirs[0] != "/a" || dirs[1] != "/b" {
+		t.Errorf("WorkDirs = %v, want each worktree once in the order it was named", dirs)
+	}
+}
+
+// --exclusive stops all but one, so it cannot be applied to a wider selection.
+// The picker refuses at the tick rather than after the recap.
+func TestWorktreesStepRefusesASecondTickForASingleWorktreeRun(t *testing.T) {
+	repo := gittest.InitRepo(t)
+	step := target.WorktreesStep(target.WorktreesParams{ProjectDir: repo, Current: repo, Single: true})
+
+	if err := step.ValidateSet([]string{"/a"}); err != nil {
+		t.Errorf("ValidateSet: %v", err)
+	}
+	if err := step.ValidateSet([]string{"/a", "/b"}); !errors.Is(err, domain.ErrExclusiveMultiWorktree) {
+		t.Errorf("ValidateSet = %v, want the contradiction refused", err)
+	}
+}

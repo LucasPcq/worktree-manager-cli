@@ -10,7 +10,7 @@ import (
 
 const otherWorkDir = "/work/feature"
 
-func worktreeBoard(t *testing.T, service *runlogstest.Service, dir, branch string, jobs ...domain.JobConfig) runlogs.Board {
+func worktreeBoard(t *testing.T, service *runlogstest.Service, dir, branch string, jobs ...domain.JobConfig) runlogs.MergedEntry {
 	t.Helper()
 	board := runlogs.NewBoard(runlogs.BoardParams{
 		Service:  service,
@@ -22,7 +22,7 @@ func worktreeBoard(t *testing.T, service *runlogstest.Service, dir, branch strin
 	if err := board.Refresh(); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
-	return board
+	return runlogs.MergedEntry{WorkDir: dir, Board: board}
 }
 
 func TestMergedBoardKeepsEachWorktreesJobsApart(t *testing.T) {
@@ -31,7 +31,7 @@ func TestMergedBoardKeepsEachWorktreesJobsApart(t *testing.T) {
 		{Name: "api", Kind: domain.JobKindService, Status: domain.JobStatusRunning, WorkDir: otherWorkDir},
 	}}
 
-	merged := runlogs.NewMergedBoard([]runlogs.Board{
+	merged := runlogs.NewMergedBoard([]runlogs.MergedEntry{
 		worktreeBoard(t, service, workDir, "main", api),
 		worktreeBoard(t, service, otherWorkDir, "feature", api),
 	})
@@ -53,9 +53,9 @@ func TestMergedBoardKeepsEachWorktreesJobsApart(t *testing.T) {
 
 func TestMergedBoardOfOneIsTheBoardItself(t *testing.T) {
 	service := &runlogstest.Service{}
-	board := worktreeBoard(t, service, workDir, "main", api)
+	entry := worktreeBoard(t, service, workDir, "main", api)
 
-	if merged := runlogs.NewMergedBoard([]runlogs.Board{board}); merged != board {
+	if merged := runlogs.NewMergedBoard([]runlogs.MergedEntry{entry}); merged != entry.Board {
 		t.Fatal("a merged board of one should be the board itself, not a routing layer")
 	}
 }
@@ -66,7 +66,7 @@ func TestMergedBoardRoutesHistoryToTheNamedWorktree(t *testing.T) {
 		Lines: map[string][]string{"api": {"hello"}},
 	}
 
-	merged := runlogs.NewMergedBoard([]runlogs.Board{
+	merged := runlogs.NewMergedBoard([]runlogs.MergedEntry{
 		worktreeBoard(t, service, workDir, "main", api),
 		worktreeBoard(t, service, otherWorkDir, "feature", api),
 	})
@@ -84,7 +84,7 @@ func TestMergedBoardRoutesHistoryToTheNamedWorktree(t *testing.T) {
 
 func TestMergedBoardRefusesAnUnknownWorktree(t *testing.T) {
 	service := &runlogstest.Service{Infos: []domain.JobInfo{running("api", domain.JobKindService)}}
-	merged := runlogs.NewMergedBoard([]runlogs.Board{
+	merged := runlogs.NewMergedBoard([]runlogs.MergedEntry{
 		worktreeBoard(t, service, workDir, "main", api),
 		worktreeBoard(t, service, otherWorkDir, "feature", api),
 	})

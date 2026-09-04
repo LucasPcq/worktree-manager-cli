@@ -94,7 +94,7 @@ func TestDecideConcurrencyOnAMultiWorktreeRun(t *testing.T) {
 			want: rules.ConcurrencyDecision{Value: domain.ConcurrencyParallel, Ask: true, Contradiction: true},
 		},
 		{
-			name: "and it is asked even with nothing else up: three stacks is what the setting refused",
+			name:   "and it is asked even with nothing else up: three stacks is what the setting refused",
 			params: rules.ConcurrencyParams{Config: domain.ConcurrencyExclusive, Selection: 3},
 			want:   rules.ConcurrencyDecision{Value: domain.ConcurrencyParallel, Ask: true, Contradiction: true},
 		},

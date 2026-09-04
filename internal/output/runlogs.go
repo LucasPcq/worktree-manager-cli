@@ -21,8 +21,10 @@ type RunPrinterParams struct {
 	// run, or anything that would only show the escape sequence.
 	Hyperlinks bool
 	// Worktrees are the worktrees the run covers. More than one makes every line
-	// name where it came from: N sequences interleave on one stream, and two jobs
-	// called `web` are otherwise the same line twice.
+	// this printer composes name where it came from: N sequences interleave on one
+	// stream, and two jobs called `web` are otherwise the same line twice. A job's
+	// own bytes go through untouched — an escape sequence cut by a prefix is worse
+	// than an unattributed line.
 	Worktrees []string
 }
 

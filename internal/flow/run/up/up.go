@@ -99,7 +99,9 @@ func (f *upFlow) run() (Outcome, error) {
 
 	// A flag that contradicts itself is not a decision to default: --exclusive
 	// means one stack at a time, and it cannot be applied to a run that brings up
-	// several. Only the settled answer leaves a question to put to someone.
+	// several. Refused here rather than after the wizard so a run that cannot
+	// happen does not wake a daemon first; the picker refuses the same thing at
+	// the tick, through the step's ValidateSet.
 	if f.request.Exclusive && len(named) > 1 {
 		return Outcome{}, domain.ErrExclusiveMultiWorktree
 	}

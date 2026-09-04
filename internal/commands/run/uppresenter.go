@@ -126,19 +126,39 @@ type stopPresenter struct {
 
 func (p stopPresenter) Stopped(outcome stopflow.Outcome) error {
 	if p.Format == domain.OutputJSON {
-		// An object like every other answer this command gives: the shape follows
-		// the arity of the command, never the branch it happened to take
-		// (LUC-198). Nothing was running, so the job is stopped either way.
-		return output.WriteJobResultJSON(p.Cmd.OutOrStdout(), domain.JobActionResult{
-			Name:   outcome.Job,
-			Status: domain.JobActionStopped,
-		})
+		return p.machine(outcome)
 	}
 	out := p.Cmd.OutOrStdout()
 	if outcome.NoDaemon {
 		output.Frame(out, func() { output.Message(out, domain.RunNoJobsRunning) })
 		return nil
 	}
-	output.Frame(out, func() { output.Success(out, fmt.Sprintf(domain.RunStoppedFmt, outcome.Job)) })
+	output.Frame(out, func() {
+		for _, worktree := range outcome.Results {
+			output.Success(out, fmt.Sprintf(domain.RunStoppedFmt, p.label(outcome, worktree)))
+		}
+	})
 	return nil
+}
+
+// machine answers with an object for the one job the command names, and with a
+// document per worktree once it names the same job in several: the shape
+// follows the arity, never the branch the command happened to take (LUC-198).
+// Nothing was running is not a branch — the job is stopped either way.
+func (p stopPresenter) machine(outcome stopflow.Outcome) error {
+	if len(outcome.Results) > 1 {
+		return output.WriteWorktreeJobResultsJSON(p.Cmd.OutOrStdout(), outcome.Results)
+	}
+	return output.WriteJobResultJSON(p.Cmd.OutOrStdout(), domain.JobActionResult{
+		Name:   outcome.Job,
+		Status: domain.JobActionStopped,
+	})
+}
+
+// label names the worktree a job was stopped in, above more than one of them.
+func (p stopPresenter) label(outcome stopflow.Outcome, worktree domain.WorktreeJobResults) string {
+	if len(outcome.Results) <= 1 || worktree.Worktree == "" {
+		return outcome.Job
+	}
+	return fmt.Sprintf(domain.RunStreamWorktreeFmt, outcome.Job, worktree.Worktree)
 }

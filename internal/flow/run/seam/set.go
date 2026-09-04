@@ -49,14 +49,13 @@ func OpenSet(params SetParams) Set {
 }
 
 func (s Set) Board() runlogs.Board {
-	boards := make([]runlogs.Board, 0, len(s.seams))
+	entries := make([]runlogs.MergedEntry, 0, len(s.seams))
 	for _, seam := range s.seams {
-		boards = append(boards, seam.Board())
+		entries = append(entries, runlogs.MergedEntry{WorkDir: seam.workDir, Board: seam.Board()})
 	}
-	return runlogs.NewMergedBoard(boards)
+	return runlogs.NewMergedBoard(entries)
 }
 
-// Worktrees names the branches in the set, in selection order.
 func (s Set) Worktrees() []string {
 	names := make([]string, 0, len(s.seams))
 	for _, seam := range s.seams {

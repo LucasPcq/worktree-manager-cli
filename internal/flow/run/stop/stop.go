@@ -25,6 +25,9 @@ type Outcome struct {
 	// WorkDirs are the worktrees the job was stopped in, in selection order.
 	WorkDirs []string
 	Job      string
+	// Results is one entry per worktree, each holding the single job this command
+	// acts on. It is what lets the surfaces follow the arity (LUC-198).
+	Results []domain.WorktreeJobResults
 	// NoDaemon says nothing was listening. The job is stopped either way, which
 	// is why it is an outcome and not an error.
 	NoDaemon bool
@@ -110,8 +113,24 @@ func (f *stopFlow) run() (Outcome, error) {
 		if err := f.stop(socket, outcome.Job, workDir); err != nil {
 			return Outcome{}, err
 		}
+		outcome.Results = append(outcome.Results, domain.WorktreeJobResults{
+			Worktree: f.branchOf(workDir),
+			Path:     workDir,
+			Jobs:     []domain.JobActionResult{{Name: outcome.Job, Status: domain.JobActionStopped}},
+		})
 	}
 	return outcome, f.presenter.Stopped(outcome)
+}
+
+// branchOf names a worktree the way a reader recognises it, falling back to the
+// path git could not name.
+func (f *stopFlow) branchOf(workDir string) string {
+	for _, named := range f.named {
+		if named.Dir == workDir && named.Branch != "" {
+			return named.Branch
+		}
+	}
+	return target.BranchOf(workDir)
 }
 
 func (f *stopFlow) stop(socket, job, workDir string) error {

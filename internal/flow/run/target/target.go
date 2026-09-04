@@ -208,12 +208,28 @@ type WorkDirsParams struct {
 // cumulative form, and answers a set of one wherever that one is all there is.
 func WorkDirs(params WorkDirsParams) []string {
 	if answered := params.Answers.Values(KeyWorktree); len(answered) > 0 {
-		return answered
+		return dedupe(answered)
 	}
 	if len(params.Named) > 0 {
-		return Dirs(params.Named)
+		return dedupe(Dirs(params.Named))
 	}
 	return []string{Root(params.Cwd)}
+}
+
+// dedupe keeps the first mention of each worktree. A branch and a path can name
+// the same one, and running it twice would race two identical sequences against
+// each other — the second failing on jobs the first had just started.
+func dedupe(dirs []string) []string {
+	seen := make(map[string]bool, len(dirs))
+	unique := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		if seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		unique = append(unique, dir)
+	}
+	return unique
 }
 
 type WorkDirParams struct {

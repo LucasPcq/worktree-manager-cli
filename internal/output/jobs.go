@@ -55,12 +55,14 @@ func WriteWorktreeJobResultsJSON(w io.Writer, results []domain.WorktreeJobResult
 		}
 		return WriteJobResultsJSON(w, jobs)
 	}
-	for index := range results {
-		if results[index].Jobs == nil {
-			results[index].Jobs = []domain.JobActionResult{}
+	documents := make([]domain.WorktreeJobResults, len(results))
+	for index, result := range results {
+		if result.Jobs == nil {
+			result.Jobs = []domain.JobActionResult{}
 		}
+		documents[index] = result
 	}
-	return encodeJSON(w, results)
+	return encodeJSON(w, documents)
 }
 
 // WriteJobLogsJSON writes the lines `run logs` read back.

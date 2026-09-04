@@ -38,8 +38,8 @@ func (m Model) rows() []sidebarRow {
 	return rows
 }
 
-// headingOf names a worktree, falling back to its path for one git could not
-// name: a heading nobody can read is worse than a long one.
+// headingOf falls back to the path for a worktree git could not name: a heading
+// nobody can read is worse than a long one.
 func headingOf(view runlogs.JobView) string {
 	if view.Worktree != "" {
 		return view.Worktree
@@ -58,8 +58,6 @@ func selectedRowIndex(rows []sidebarRow, selected jobKey) int {
 	return 0
 }
 
-// indent sets a job's rows in from the heading above them, and leaves them
-// where they were when there is no heading.
 func (m Model) indent() string {
 	if !m.multi() {
 		return ""
