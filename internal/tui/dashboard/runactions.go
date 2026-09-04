@@ -62,7 +62,7 @@ func (m Model) startRunUp(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 
 	params := upflow.Params{
 		Context: m.flowContext(),
-		Request: upflow.Request{Worktree: runWorktree(selected), Cwd: selected.Path, Config: cfg},
+		Request: upflow.Request{Worktrees: []string{runWorktree(selected)}, Cwd: selected.Path, Config: cfg},
 		Prompter: prompter{
 			send:      send,
 			title:     domain.DashboardMenuRunUp,

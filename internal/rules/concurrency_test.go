@@ -79,3 +79,49 @@ func TestValidateRunRefusesAnUnknownConcurrency(t *testing.T) {
 		t.Error("ValidateRun accepted an unknown concurrency")
 	}
 }
+
+func TestDecideConcurrencyOnAMultiWorktreeRun(t *testing.T) {
+	cases := []struct {
+		name   string
+		params rules.ConcurrencyParams
+		want   rules.ConcurrencyDecision
+	}{
+		{
+			name: "a settled exclusive cannot be applied to a run that starts several",
+			params: rules.ConcurrencyParams{
+				Config: domain.ConcurrencyExclusive, Selection: 3, OthersRunning: true,
+			},
+			want: rules.ConcurrencyDecision{Value: domain.ConcurrencyParallel, Ask: true, Contradiction: true},
+		},
+		{
+			name: "and it is asked even with nothing else up: three stacks is what the setting refused",
+			params: rules.ConcurrencyParams{Config: domain.ConcurrencyExclusive, Selection: 3},
+			want:   rules.ConcurrencyDecision{Value: domain.ConcurrencyParallel, Ask: true, Contradiction: true},
+		},
+		{
+			name:   "--parallel settles the run, so there is no contradiction left",
+			params: rules.ConcurrencyParams{Config: domain.ConcurrencyExclusive, Selection: 3, Parallel: true},
+			want:   rules.ConcurrencyDecision{Value: domain.ConcurrencyParallel},
+		},
+		{
+			name: "a single worktree is exactly what the setting asked for",
+			params: rules.ConcurrencyParams{
+				Config: domain.ConcurrencyExclusive, Selection: 1, OthersRunning: true,
+			},
+			want: rules.ConcurrencyDecision{Value: domain.ConcurrencyExclusive},
+		},
+		{
+			name:   "a settled parallel says nothing about how many worktrees start",
+			params: rules.ConcurrencyParams{Config: domain.ConcurrencyParallel, Selection: 3, OthersRunning: true},
+			want:   rules.ConcurrencyDecision{Value: domain.ConcurrencyParallel},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rules.DecideConcurrency(tc.params); got != tc.want {
+				t.Errorf("DecideConcurrency = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}

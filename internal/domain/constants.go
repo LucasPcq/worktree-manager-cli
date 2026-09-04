@@ -1618,16 +1618,31 @@ const (
 	RunWorktreeOnlyOne = "single worktree"
 
 	// RunConcurrency* is the question `run up` asks once when another worktree
-	// already has jobs up, and the wording of the two answers it remembers.
+	// already has jobs up, and the wording of the two answers it remembers. It is
+	// about machine load, never about a port conflict: since the worktree ordinal
+	// and the declared ports, two stacks cohabit natively.
 	RunConcurrencyStepName    = "Other worktrees"
 	RunConcurrencyTitle       = "Other worktrees are running jobs"
-	RunConcurrencyDescFmt     = "%s. Each worktree has its own ports and resource names, so they can run side by side."
-	RunConcurrencyParallel    = "Run in parallel"
+	RunConcurrencyDescFmt     = "%s. Each worktree has its own ports and resource names, so they can run side by side — at the cost of running them all at once."
+	RunConcurrencyParallel    = "Keep them all running"
 	RunConcurrencyExclusive   = "Stop the other worktrees' jobs first"
 	RunConcurrencyAlwaysFmt   = "%s — always for this project"
 	RunConcurrencySkipSettled = "already answered for this project"
 	RunConcurrencySkipFlag    = "set by --exclusive or --parallel"
 	RunConcurrencySkipAlone   = "no other worktree is running jobs"
+
+	// RunConcurrencyContradiction* is the same question asked for the opposite
+	// reason: the project settled on one stack at a time and this run starts
+	// several. It is a guard rail rather than an ambush — the contradiction is one
+	// the user has just created, and this is the only place in the tool where the
+	// setting can be changed once it no longer fits.
+	RunConcurrencyContradictionTitle   = "This run starts several worktrees"
+	RunConcurrencyContradictionDescFmt = "run.toml settles on %q — one stack at a time — and this run brings up %d worktrees at once."
+	RunConcurrencyContradictionOnce    = "Start them all, just this once"
+	RunConcurrencyContradictionAlways  = "Start them all and remember parallel"
+	// RunConcurrencyOverriddenFmt says the same thing where nobody could be
+	// asked: the safe default destroys nothing, and says so.
+	RunConcurrencyOverriddenFmt = "concurrency = %q set aside: this run starts %d worktrees, so no other worktree was stopped"
 	// RunConcurrencyRememberedFmt confirms what was written to run.toml, so a
 	// remembered answer is never a silent one.
 	RunConcurrencyRememberedFmt = "Remembered: concurrency = %q in run.toml"
