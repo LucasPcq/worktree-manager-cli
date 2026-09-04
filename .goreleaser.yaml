@@ -26,6 +26,13 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+# A tag carrying a prerelease part (v0.28.0-beta.1) is published as a GitHub
+# pre-release, which keeps it out of /releases/latest — the endpoint the passive
+# update check and `wtm upgrade` read. Without this a beta would be offered to
+# every stable install.
+release:
+  prerelease: auto
+
 changelog:
   sort: asc
   filters:
@@ -36,6 +43,9 @@ changelog:
 
 brews:
   - name: wtm
+    # Same reason: a prerelease must not bump the formula every `brew upgrade`
+    # would then install. Testers take a beta through `wtm upgrade --version`.
+    skip_upload: auto
     repository:
       owner: LucasPcq
       name: homebrew-tap
