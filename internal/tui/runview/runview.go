@@ -567,11 +567,10 @@ func readStream(params readParams) {
 	}
 }
 
-// multi reports that the view covers more than one worktree, which is what
-// makes it group its list and name where each line came from. Below that, the
-// worktree is what the command was told and repeating it says nothing.
-func (m Model) multi() bool { return m.worktreeCount() > 1 }
-
+// worktreeCount is how many worktrees the view covers, which only the header
+// reads: naming a worktree is not gated on there being two. A view opened from a
+// picker shows one the reader chose rather than typed, and leaving it unnamed on
+// the run they do most is where it is missed hardest.
 func (m Model) worktreeCount() int {
 	seen := map[string]bool{}
 	for _, view := range m.jobs {
@@ -580,9 +579,9 @@ func (m Model) worktreeCount() int {
 	return len(seen)
 }
 
-// qualify names the worktree a line belongs to, above more than one of them.
+// qualify names the worktree a line belongs to, whenever it has one to name.
 func (m Model) qualify(line, worktree string) string {
-	if !m.multi() || worktree == "" {
+	if worktree == "" {
 		return line
 	}
 	return fmt.Sprintf(domain.RunStreamWorktreeFmt, line, worktree)

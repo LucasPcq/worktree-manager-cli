@@ -1442,6 +1442,10 @@ const (
 	// rows.
 	RunViewBorderWidth = 2
 	RunViewPanelChrome = 3
+	// RunViewSidebarChrome is the same plus the blank line under the list's title:
+	// the jobs need setting off from the heading, and a row the layout does not
+	// know about is a row the panel overflows by.
+	RunViewSidebarChrome = 4
 
 	// RunViewMsgBuffer sizes the channel the stream readers post on, and
 	// RunViewPollSeconds how often the job list is re-read from the daemon.
@@ -1549,6 +1553,12 @@ const (
 	RunViewRecapNoneRunning   = "No job left running."
 	RunViewRecapLogsHint      = "wtm run logs  — reopen this view"
 	RunViewRecapDownHint      = "wtm run down  — stop the jobs"
+	// RunDownRecap* are the same recap seen from the other side: `run down` says
+	// what it took down where `run up` says what it left standing, in the same box
+	// and with the same labels. The two are halves of one command and used to
+	// read as two different programs.
+	RunDownRecapStoppedFmt = "Stopped:      %s"
+	RunDownRecapUpHint     = "wtm run up    — start them again"
 	// RunViewRecapListSep joins the jobs named on one recap line.
 	RunViewRecapListSep = ", "
 

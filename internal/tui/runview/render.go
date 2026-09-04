@@ -120,7 +120,7 @@ func (m Model) renderSidebar(layout domain.RunViewLayout) string {
 	width := layout.Sidebar.Width - domain.RunViewBorderWidth
 	textWidth := width - 2
 	lines := append(
-		[]string{styles.Muted.Render(domain.RunViewJobsTitle)},
+		[]string{styles.Muted.Render(domain.RunViewJobsTitle), ""},
 		m.renderJobRows(jobRowsParams{Width: textWidth, Rows: layout.SidebarRows})...,
 	)
 
@@ -143,6 +143,11 @@ func (m Model) renderJobRows(params jobRowsParams) []string {
 
 	now := time.Now()
 	rendered := make([]string, 0, params.Rows)
+	// The pinned heading costs the row it occupies: a group whose name has
+	// scrolled away is worth more than the job that would have taken its place.
+	if sticky := stickyHeader(all, m.offset); sticky != "" {
+		rendered = append(rendered, styles.Muted.Render(truncate(sticky, params.Width)))
+	}
 	for _, row := range all[min(m.offset, len(all)):] {
 		if len(rendered) == params.Rows {
 			break

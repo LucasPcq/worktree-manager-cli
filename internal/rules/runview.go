@@ -40,7 +40,7 @@ func ComputeRunViewLayout(params RunViewLayoutParams) domain.RunViewLayout {
 		Pane:           domain.Rect{X: sidebarWidth, Y: bodyY, Width: width - sidebarWidth, Height: bodyHeight},
 		Help:           domain.Rect{X: 0, Y: max(height-1, 0), Width: width, Height: helpHeight},
 		SidebarVisible: sidebarWidth > 0,
-		SidebarRows:    max(bodyHeight-domain.RunViewPanelChrome, 0),
+		SidebarRows:    max(bodyHeight-domain.RunViewSidebarChrome, 0),
 		PaneCols:       max(width-sidebarWidth-domain.RunViewBorderWidth, 0),
 		PaneRows:       max(bodyHeight-domain.RunViewPanelChrome, 0),
 	}

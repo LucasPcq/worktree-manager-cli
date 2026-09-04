@@ -135,7 +135,7 @@ func (p stopPresenter) Stopped(outcome stopflow.Outcome) error {
 	}
 	output.Frame(out, func() {
 		for _, worktree := range outcome.Results {
-			output.Success(out, fmt.Sprintf(domain.RunStoppedFmt, p.label(outcome, worktree)))
+			output.Success(out, p.qualify(fmt.Sprintf(domain.RunStoppedFmt, outcome.Job), outcome, worktree))
 		}
 	})
 	return nil
@@ -155,10 +155,11 @@ func (p stopPresenter) machine(outcome stopflow.Outcome) error {
 	})
 }
 
-// label names the worktree a job was stopped in, above more than one of them.
-func (p stopPresenter) label(outcome stopflow.Outcome, worktree domain.WorktreeJobResults) string {
+// qualify names the worktree at the end of the line, the way every other run
+// surface does.
+func (p stopPresenter) qualify(line string, outcome stopflow.Outcome, worktree domain.WorktreeJobResults) string {
 	if len(outcome.Results) <= 1 || worktree.Worktree == "" {
-		return outcome.Job
+		return line
 	}
-	return fmt.Sprintf(domain.RunStreamWorktreeFmt, outcome.Job, worktree.Worktree)
+	return fmt.Sprintf(domain.RunStreamWorktreeFmt, line, worktree.Worktree)
 }

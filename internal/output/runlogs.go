@@ -268,3 +268,64 @@ func RunOutcomeResults(outcome runlogs.Outcome) []domain.JobActionResult {
 func joinJobNames(names []string) string {
 	return strings.Join(names, domain.RunViewRecapListSep)
 }
+
+type RunDownRecapParams struct {
+	// Profile names what was stopped, empty for a `run down` that took down
+	// everything the worktree had.
+	Profile string
+	// Results is one entry per worktree, in the order they were emptied.
+	Results []domain.WorktreeJobResults
+}
+
+// FormatRunDownRecap renders what `run down` took down, in the box `run up`
+// leaves behind on its way out. Stopping a profile and starting it are two
+// halves of one command; only one of them having a shape made them read as two
+// different programs.
+func FormatRunDownRecap(params RunDownRecapParams) string {
+	var lines []string
+	if params.Profile != "" {
+		lines = append(lines, fmt.Sprintf(domain.RunViewRecapProfileFmt, params.Profile))
+	}
+	for _, worktree := range params.Results {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, downRecapBlock(worktree)...)
+	}
+
+	body := strings.Join(append(lines, "", styles.Muted.Render(domain.RunDownRecapUpHint)), "\n")
+	// Terminated, like every other Format* body in this package: the frame writes
+	// one blank line after what it is given, and a body whose last line has no
+	// break of its own swallows it.
+	return styles.RenderRecap(styles.IntroParams{
+		Width: domain.RecapWidth,
+		Title: domain.RunViewRecapTitle,
+		Body:  body,
+	}) + "\n"
+}
+
+// downRecapBlock is one worktree's account: what it took down, and what refused
+// to go. The worktree is always named — a recap that says which worktree only
+// when there are two leaves the reader guessing on the run they do most.
+func downRecapBlock(worktree domain.WorktreeJobResults) []string {
+	var stopped, failed []string
+	for _, result := range worktree.Jobs {
+		if result.Status == domain.JobActionError {
+			failed = append(failed, result.Name)
+			continue
+		}
+		stopped = append(stopped, result.Name)
+	}
+
+	var lines []string
+	if worktree.Worktree != "" {
+		lines = append(lines, styles.Bold.Render(worktree.Worktree))
+	}
+	if len(stopped) > 0 {
+		lines = append(lines, fmt.Sprintf(domain.RunDownRecapStoppedFmt, joinJobNames(stopped)))
+	}
+	if len(failed) > 0 {
+		lines = append(lines, styles.DangerText.Render(fmt.Sprintf(domain.RunViewRecapFailedFmt, joinJobNames(failed))))
+	}
+	return lines
+}

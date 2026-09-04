@@ -82,7 +82,7 @@ func TestComputeRunViewLayoutSizesTheEmulatorToItsBox(t *testing.T) {
 	if want := layout.Pane.Height - domain.RunViewPanelChrome; layout.PaneRows != want {
 		t.Fatalf("PaneRows = %d, want what is left under the title row: %d", layout.PaneRows, want)
 	}
-	if layout.SidebarRows != layout.Sidebar.Height-domain.RunViewPanelChrome {
+	if layout.SidebarRows != layout.Sidebar.Height-domain.RunViewSidebarChrome {
 		t.Fatalf("SidebarRows = %d, want the rows under the list's title", layout.SidebarRows)
 	}
 }

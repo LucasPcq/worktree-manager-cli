@@ -51,14 +51,14 @@ func TestTheListGroupsJobsUnderTheirWorktree(t *testing.T) {
 	}
 }
 
-// The heading is what tells two jobs called `web` apart; below a single
-// worktree it would only repeat what the command was told.
-func TestTheListStaysFlatAboveOneWorktree(t *testing.T) {
+// A board naming no worktree at all gets no heading: an empty row says less
+// than the job it would push off the panel.
+func TestAListWithNoWorktreeToNameGetsNoHeading(t *testing.T) {
 	h := newHarness(t, harnessParams{Views: []runlogs.JobView{running("api"), running("web")}})
 
 	for _, row := range h.model.rows() {
-		if row.Header != "" {
-			t.Fatalf("a single worktree got a heading: %q", row.Header)
+		if row.Header != "" || row.Spacer {
+			t.Fatalf("a board naming no worktree got %+v", row)
 		}
 	}
 }
@@ -226,15 +226,28 @@ func TestTheRecapSetsEachWorktreesBlockApart(t *testing.T) {
 	}
 }
 
-// A single worktree keeps the recap it has always had, blank lines included.
-func TestTheRecapOfOneWorktreeIsUnchanged(t *testing.T) {
-	h := newHarness(t, harnessParams{Views: []runlogs.JobView{running("web")}})
-	h.model.started = true
-	h.model.profile = "dev"
-	h.model.sequence.record(runlogs.Outcome{Steps: 1, Started: []string{"web"}})
+// A single worktree is named like any other: the recap of the run they do most
+// is exactly the one that must not leave them guessing.
+func TestTheRecapNamesASingleWorktreeToo(t *testing.T) {
+	model := manyWorktreesModel(t, "main")
+	model.started = true
+	model.profile = "dev"
+	model.sequence.record(runlogs.Outcome{
+		WorkDir: "/w/main", Worktree: "main", Steps: 1, Started: []string{"web"},
+	})
 
-	if blankLineBetween(recapLines(h.model), "Profile:", "Running:") {
-		t.Errorf("a single worktree gained a blank line it never had:\n%s", ansi.Strip(h.model.recap()))
+	lines := recapLines(model)
+	named := false
+	for _, line := range lines {
+		if line == "main" {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("the recap does not name the worktree:\n%s", ansi.Strip(model.recap()))
+	}
+	if !blankLineBetween(lines, "Profile:", "main") {
+		t.Errorf("the block is not set off from the profile line:\n%s", ansi.Strip(model.recap()))
 	}
 }
 
@@ -264,6 +277,89 @@ func blankLineBetween(lines []string, first, second string) bool {
 	}
 	for _, line := range lines[from+1 : to] {
 		if line == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func manyWorktreesModel(t *testing.T, worktrees ...string) Model {
+	t.Helper()
+	var views []runlogs.JobView
+	for _, branch := range worktrees {
+		for _, job := range []string{"docker", "web", "api"} {
+			views = append(views, inWorktree(running(job), "/w/"+branch, branch))
+		}
+	}
+	board := runlogstest.NewBoard(runlogstest.BoardParams{Views: views})
+	model := New(Params{Board: board, Profile: "dev"})
+	t.Cleanup(func() { model.panes.closeAll() })
+	model = update(model, tea.WindowSizeMsg{Width: 100, Height: 24})
+	return update(model, exec(t, model.refreshCmd()))
+}
+
+// A list long enough to scroll takes its headings away with it, and the rows
+// left at the top then belong to a worktree nothing on screen names.
+func TestALongListPinsTheHeadingItScrolledPast(t *testing.T) {
+	model := manyWorktreesModel(t, "main", "feat-a", "feat-b", "feat-c", "feat-d", "feat-e")
+	for range 14 {
+		next, _ := model.move(1)
+		model = next.(Model)
+	}
+	if model.offset == 0 {
+		t.Fatal("the list never scrolled, so there is nothing to pin")
+	}
+
+	sidebar := sidebarLines(model)
+	if len(sidebar) == 0 {
+		t.Fatal("the sidebar rendered nothing")
+	}
+	if !isHeading(model, sidebar[0]) {
+		t.Errorf("the list opens on %q, want the heading of the group it is inside:\n%s",
+			sidebar[0], strings.Join(sidebar, "\n"))
+	}
+}
+
+// Pinning costs a row. Counting it as available is what let the cursor slide out
+// from under the panel it was measured to fit in.
+func TestTheCursorStaysOnScreenUnderThePinnedHeading(t *testing.T) {
+	model := manyWorktreesModel(t, "main", "feat-a", "feat-b", "feat-c", "feat-d", "feat-e")
+	for step := range 17 {
+		next, _ := model.move(1)
+		model = next.(Model)
+		if !strings.Contains(strings.Join(sidebarLines(model), "\n"), domain.RunViewCursorMark) {
+			t.Fatalf("the cursor left the panel after %d moves", step+1)
+		}
+	}
+}
+
+// A single worktree is named like any other: a list whose shape changes between
+// one and two is a shape the reader has to learn twice.
+func TestASingleWorktreeIsNamedToo(t *testing.T) {
+	model := manyWorktreesModel(t, "main")
+
+	rows := model.rows()
+	if len(rows) == 0 || rows[0].Header != "main" {
+		t.Fatalf("the list does not name the only worktree: %+v", rows)
+	}
+}
+
+// sidebarLines is the job list as drawn, without the box around it.
+func sidebarLines(model Model) []string {
+	var lines []string
+	for _, line := range strings.Split(ansi.Strip(model.renderSidebar(model.layout())), "\n") {
+		trimmed := strings.Trim(line, "│ ")
+		if trimmed == "" || trimmed == domain.RunViewJobsTitle || strings.Contains(trimmed, "─") {
+			continue
+		}
+		lines = append(lines, trimmed)
+	}
+	return lines
+}
+
+func isHeading(model Model, line string) bool {
+	for _, row := range model.rows() {
+		if row.Header != "" && row.Header == line {
 			return true
 		}
 	}

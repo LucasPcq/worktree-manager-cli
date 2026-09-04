@@ -197,7 +197,7 @@ func (m Model) setSelection(key jobKey) (Model, tea.Cmd) {
 	m.offset = rules.DashboardScrollOffset(rules.DashboardScrollParams{
 		Cursor:  selectedRowIndex(rows, m.selected),
 		Total:   len(rows),
-		Visible: m.layout().SidebarRows,
+		Visible: m.listViewport(),
 		Offset:  m.offset,
 	})
 	return m.fillSelectedPane()

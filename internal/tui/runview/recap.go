@@ -26,7 +26,7 @@ func (m Model) result() Result {
 // another block it could be confused with.
 func (m Model) recapBlock(outcome runlogs.Outcome) []string {
 	var lines []string
-	if m.multi() && outcome.Worktree != "" {
+	if outcome.Worktree != "" {
 		lines = append(lines, styles.Bold.Render(outcome.Worktree))
 	}
 	if len(outcome.Started) > 0 {
@@ -71,7 +71,7 @@ func (m Model) recap() string {
 	for _, outcome := range m.sequence.outcomes {
 		// Each worktree's account is a block of its own. Run together they read as
 		// one list of jobs, which is exactly what the heading is there to deny.
-		if m.multi() && len(lines) > 0 {
+		if len(lines) > 0 {
 			lines = append(lines, "")
 		}
 		lines = append(lines, m.recapBlock(outcome)...)

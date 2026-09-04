@@ -3,6 +3,7 @@ package output_test
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -180,5 +181,25 @@ func TestWorktreeJobResultsJSONDoesNotTouchItsInput(t *testing.T) {
 		if result.Jobs != nil {
 			t.Errorf("%q came back with a job slice the writer filled in", result.Worktree)
 		}
+	}
+}
+
+// The frame writes one blank line after the body it is given, and a body whose
+// last line has no break of its own swallows it.
+func TestRunDownRecapEndsOnItsOwnLineBreak(t *testing.T) {
+	recap := output.FormatRunDownRecap(output.RunDownRecapParams{
+		Profile: "dev",
+		Results: []domain.WorktreeJobResults{
+			{Worktree: "main", Path: "/work/main", Jobs: []domain.JobActionResult{
+				{Name: "web", Status: domain.JobActionStopped},
+			}},
+		},
+	})
+
+	if !strings.HasSuffix(recap, "\n") {
+		t.Errorf("recap does not end on a line break: %q", recap[max(len(recap)-40, 0):])
+	}
+	if strings.HasSuffix(recap, "\n\n") {
+		t.Errorf("recap ends on a blank line of its own, which the frame adds: %q", recap[max(len(recap)-40, 0):])
 	}
 }

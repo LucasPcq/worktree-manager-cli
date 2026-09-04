@@ -100,22 +100,35 @@ func (p downPresenter) Downed(outcome downflow.Outcome) error {
 		return nil
 	}
 
-	output.FrameStart(out)
+	// A job left standing is named on stderr as it is refused, so the reason
+	// reaches a reader piping stdout; the recap then accounts for it alongside
+	// what did go down.
 	for _, worktree := range outcome.Results {
 		for _, result := range worktree.Jobs {
-			label := result.Name
-			if len(outcome.Results) > 1 && worktree.Worktree != "" {
-				label = fmt.Sprintf(domain.RunStreamWorktreeFmt, label, worktree.Worktree)
-			}
-			if result.Status == domain.JobActionError {
-				output.Error(errOut, fmt.Sprintf("%s: %s", label, result.Message))
+			if result.Status != domain.JobActionError {
 				continue
 			}
-			output.Success(out, fmt.Sprintf(domain.RunStoppedFmt, label))
+			output.Error(errOut, p.qualify(fmt.Sprintf("%s: %s", result.Name, result.Message), outcome, worktree))
 		}
 	}
-	output.FrameEnd(out)
+
+	output.Frame(out, func() {
+		fmt.Fprint(out, output.FormatRunDownRecap(output.RunDownRecapParams{
+			Profile: outcome.Profile,
+			Results: outcome.Results,
+		}))
+	})
 	return nil
+}
+
+// qualify names the worktree at the end of the line, never inside it: `migrate
+// stopped · main` is the sentence `run up` writes, `migrate · main stopped` is
+// the same words in the wrong order.
+func (p downPresenter) qualify(line string, outcome downflow.Outcome, worktree domain.WorktreeJobResults) string {
+	if len(outcome.Results) <= 1 || worktree.Worktree == "" {
+		return line
+	}
+	return fmt.Sprintf(domain.RunStreamWorktreeFmt, line, worktree.Worktree)
 }
 
 func (p downPresenter) nothingRunning(outcome downflow.Outcome) string {

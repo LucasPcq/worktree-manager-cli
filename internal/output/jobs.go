@@ -250,7 +250,10 @@ func FormatRunningJobs(params FormatRunningJobsParams) string {
 	}
 
 	var b strings.Builder
-	header := fmt.Sprintf("%s%-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
+	// Rendered without its line break: a style given a string ending in one sees
+	// two lines and pads the empty second to the width of the first, which lands
+	// as a run of spaces in front of the first job.
+	header := fmt.Sprintf("%s%-*s  %-*s  %-*s  %-*s  %-*s  %s",
 		Indent,
 		nameW, "NAME",
 		kindW, "KIND",
@@ -260,6 +263,7 @@ func FormatRunningJobs(params FormatRunningJobsParams) string {
 		"WORKTREE",
 	)
 	b.WriteString(styles.Muted.Render(header))
+	b.WriteString("\n")
 
 	for i, j := range params.Jobs {
 		status := styleJobStatus(j.Status)
