@@ -96,7 +96,10 @@ func (p logsPresenter) Show(show logsflow.ShowParams) error {
 	case domain.RunSurfaceView:
 		// `run logs` starts nothing, so the view has no outcome to conclude from:
 		// it only ever reports what was already running.
-		_, err := showRunView(viewParams{Cmd: p.Cmd, Board: show.Board, Job: show.Job, Worktrees: show.Worktrees})
+		_, err := showRunView(viewParams{
+			Cmd: p.Cmd, Board: show.Board, Job: show.Job,
+			Worktrees: show.Worktrees, Warnings: show.Warnings,
+		})
 		return err
 	case domain.RunSurfaceMachine:
 		return writeJobLogsJSON(params)

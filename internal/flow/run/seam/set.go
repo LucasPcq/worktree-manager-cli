@@ -21,10 +21,13 @@ type SetParams struct {
 	// declare the same jobs and the same profiles.
 	Jobs []domain.JobConfig
 	// Declared is every job run.toml holds; see Params.Declared.
-	Declared    []domain.JobConfig
-	ProxyPort   int
-	ProbeBudget time.Duration
-	NoProbe     bool
+	Declared []domain.JobConfig
+	// PortAddressed keys the worktrees whose .env still spells its addresses as
+	// ports; see Params.PortAddressed.
+	PortAddressed map[string]bool
+	ProxyPort     int
+	ProbeBudget   time.Duration
+	NoProbe       bool
 }
 
 // Set is the seam over several worktrees at once. It holds one Seam each and
@@ -38,14 +41,15 @@ func OpenSet(params SetParams) Set {
 	seams := make([]Seam, 0, len(params.WorkDirs))
 	for _, workDir := range params.WorkDirs {
 		seams = append(seams, Open(Params{
-			ProjectDir:  params.ProjectDir,
-			StateDir:    params.StateDir,
-			WorkDir:     workDir,
-			Jobs:        params.Jobs,
-			Declared:    params.Declared,
-			ProxyPort:   params.ProxyPort,
-			ProbeBudget: params.ProbeBudget,
-			NoProbe:     params.NoProbe,
+			ProjectDir:    params.ProjectDir,
+			StateDir:      params.StateDir,
+			WorkDir:       workDir,
+			Jobs:          params.Jobs,
+			Declared:      params.Declared,
+			ProxyPort:     params.ProxyPort,
+			PortAddressed: params.PortAddressed[workDir],
+			ProbeBudget:   params.ProbeBudget,
+			NoProbe:       params.NoProbe,
 		}))
 	}
 	return Set{seams: seams}

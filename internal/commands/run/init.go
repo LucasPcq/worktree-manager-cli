@@ -273,6 +273,9 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		}); len(lines) > 0 {
 			output.Callout(cmd.ErrOrStderr(), domain.ProxyInstallHintTitle, lines)
 		}
+		// The main checkout is the one no command ever provisions, so it is the
+		// one the addressing just chosen leaves behind.
+		noticeAddressingDrift(cmd, res, res.ProjectDir)
 		output.Blank(cmd.OutOrStdout())
 		output.Message(cmd.OutOrStdout(), "Next: `wtm run up` to start · `wtm run job add` to add more")
 		output.Blank(cmd.OutOrStdout())

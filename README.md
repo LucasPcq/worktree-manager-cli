@@ -547,6 +547,36 @@ ports are written whatever the project asked for, and a notice says so. Under `n
 named URL becomes the only working entrance: opening `localhost:5183` directly sends an
 `Origin` the API no longer knows. `wtm run url` and `wtm run open` hand out the right link.
 
+The rewrite happens where wtm provisions: a worktree, when it is created and whenever
+`wtm env` reconciles it. **Nothing ever writes the main checkout's `.env`** — it is the one
+checkout that exists without wtm, the one a colleague clones and a `docker compose up` reads.
+So under `names` its values still hold ports — and then **the working entrance is the port**,
+not the name: the browser on `localhost:5175` sends an `Origin` the API's `CORS_ORIGIN`
+recognises, while the named URL sends one it does not. wtm follows the file rather than the
+setting: a worktree whose `.env` still spells ports is handed `http://localhost:<port>`
+everywhere — `run up`, `run url`, `run open`, the run view, the `wtm ui` panel — with one line
+saying why, and the named URL comes back the moment the file says so. The route is registered
+either way, so nothing has to restart:
+
+```bash
+wtm env main        # the positional takes the main checkout like any other worktree
+```
+
+wtm only ever sees the keys declared as `[[env_port]]` links: a `CORS_ORIGIN` nothing links
+to a declared port is invisible to both the pass and the warning, so silence means "nothing
+linked is out of step", not "everything is right". And a `.env` that already holds named
+origins whose port went stale — what `wtm run proxy install` does to every worktree at once —
+keeps its names and is told they are out of step, rather than being sent back to ports.
+
+Doing it is a choice, not a formality. Main then stops behaving as a checkout without wtm:
+whoever reads that `.env`, or starts the stack from it, depends on the proxy being up. Two
+moments make it worth doing — right after switching a project to `names`, and after
+`wtm run proxy install`, which drops the `:11080` from the origins already written. Going
+back takes three steps, `addressing` being a project setting with no per-worktree scope: set
+`addressing = "ports"`, run `wtm env main`, then set `names` again — main stays on ports until
+a `wtm env main` says otherwise. And `wtm create` from main is unaffected either way: a copied
+value carrying main's segment is recognised and rewound to the new worktree's.
+
 Two base ports must not differ by a **multiple of the block**, or two worktrees end up on
 the same one — `3000` and `3010` are refused when `run.toml` is read, naming both sides,
 which is the last moment the problem is still explainable. Neighbouring ports are fine:

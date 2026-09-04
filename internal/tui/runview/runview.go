@@ -28,6 +28,11 @@ type Params struct {
 	// the Sink it is given. Nil for a view that only reads what is already
 	// running. Cancelling the context ends the reporting, never the jobs.
 	Start runlogs.StartFunc
+	// Warnings are what the run has to say about the addresses it publishes,
+	// shown in the notice band. They belong to the view rather than to the
+	// scrollback under it: a reader who only sees them on the way out has
+	// already followed the URL they qualify.
+	Warnings []string
 	// Open hands a job's URL to the desktop. Nil leaves the open key without an
 	// object, which is what a surface that cannot open a browser installs.
 	Open OpenFunc
@@ -101,6 +106,8 @@ type Model struct {
 	following bool
 	// dismissed hides the abort report; the outcome it was built from stays.
 	dismissed bool
+	// warnings are the notice band's last resort — see Params.Warnings.
+	warnings []string
 
 	runCtx context.Context
 	cancel context.CancelFunc
@@ -109,14 +116,15 @@ type Model struct {
 func New(params Params) Model {
 	ctx, cancel := context.WithCancel(context.Background())
 	return Model{
-		board:   params.Board,
-		wantJob: params.Job,
-		profile: params.Profile,
-		panes:   newPaneStore(PaneSize{}),
-		msgs:    make(chan tea.Msg, domain.RunViewMsgBuffer),
-		start:   params.Start,
-		open:    params.Open,
-		started: params.Start != nil,
+		board:    params.Board,
+		wantJob:  params.Job,
+		warnings: params.Warnings,
+		profile:  params.Profile,
+		panes:    newPaneStore(PaneSize{}),
+		msgs:     make(chan tea.Msg, domain.RunViewMsgBuffer),
+		start:    params.Start,
+		open:     params.Open,
+		started:  params.Start != nil,
 		// A run feeds panes from its own goroutine, so the clock has to be
 		// running before the first chunk lands.
 		ticking:   params.Start != nil,

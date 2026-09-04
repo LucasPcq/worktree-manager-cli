@@ -213,7 +213,7 @@ func PortEntriesFor(params PortEntriesForParams) []domain.PortEntry {
 		for _, name := range sortedPortNames(job.Ports) {
 			entries = append(entries, domain.PortEntry{Job: job.Name, Name: name, Base: job.Ports[name]})
 		}
-		if fromCompose[job.Name] || ListeningPortName(job) != "" {
+		if fromCompose[job.Name] || PublishablePortName(job) != "" {
 			continue
 		}
 		name := freePortName(job.Name, taken)

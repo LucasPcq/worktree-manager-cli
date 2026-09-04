@@ -35,6 +35,10 @@ type Params struct {
 	// ProxyPort is where the run proxy serves the jobs' names. Zero leaves them
 	// on their own ports.
 	ProxyPort int
+	// PortAddressed says this worktree's .env still spells its addresses as
+	// ports. The names are published all the same, but nothing behind them
+	// answers on one yet, so the board hands out the ports that do.
+	PortAddressed bool
 	// ProbeBudget is how long the port check may dial for; zero or NoProbe skips
 	// it entirely.
 	ProbeBudget time.Duration
@@ -42,18 +46,19 @@ type Params struct {
 }
 
 type Seam struct {
-	service    runlogs.Service
-	board      runlogs.Board
-	workDir    string
-	worktree   string
-	logDir     string
-	env        map[string]string
-	prober     runlogs.Prober
-	project    string
-	proxyPort  int
-	projectDir string
-	jobs       []domain.JobConfig
-	declared   []domain.JobConfig
+	service       runlogs.Service
+	board         runlogs.Board
+	workDir       string
+	worktree      string
+	logDir        string
+	env           map[string]string
+	prober        runlogs.Prober
+	project       string
+	proxyPort     int
+	portAddressed bool
+	projectDir    string
+	jobs          []domain.JobConfig
+	declared      []domain.JobConfig
 }
 
 func Open(params Params) Seam {
@@ -75,16 +80,17 @@ func Open(params Params) Seam {
 			LogDir:    logDir,
 			Addresses: boardAddresses(boardAddressParams{Params: params, Env: env}),
 		}),
-		workDir:    params.WorkDir,
-		worktree:   branch,
-		logDir:     logDir,
-		env:        env,
-		jobs:       params.Jobs,
-		declared:   params.Declared,
-		prober:     newProber(params.ProbeBudget, params.NoProbe),
-		project:    filepath.Base(params.ProjectDir),
-		proxyPort:  params.ProxyPort,
-		projectDir: params.ProjectDir,
+		workDir:       params.WorkDir,
+		worktree:      branch,
+		logDir:        logDir,
+		env:           env,
+		jobs:          params.Jobs,
+		declared:      params.Declared,
+		prober:        newProber(params.ProbeBudget, params.NoProbe),
+		project:       filepath.Base(params.ProjectDir),
+		proxyPort:     params.ProxyPort,
+		portAddressed: params.PortAddressed,
+		projectDir:    params.ProjectDir,
 	}
 }
 
@@ -112,18 +118,19 @@ func (s Seam) Starter(params StartParams) runlogs.StartFunc {
 
 func (s Seam) run(ctx context.Context, sink runlogs.Sink, params StartParams) (runlogs.Outcome, error) {
 	return runlogs.Run(ctx, runlogs.RunParams{
-		BaseOwners: s.baseOwners(),
-		Service:    s.service,
-		Sink:       sink,
-		Jobs:       params.Jobs,
-		Profile:    params.Profile,
-		WorkDir:    s.workDir,
-		Worktree:   s.worktree,
-		LogDir:     s.logDir,
-		Env:        s.env,
-		Prober:     s.prober,
-		Project:    s.project,
-		ProxyPort:  s.proxyPort,
+		BaseOwners:    s.baseOwners(),
+		Service:       s.service,
+		Sink:          sink,
+		Jobs:          params.Jobs,
+		Profile:       params.Profile,
+		WorkDir:       s.workDir,
+		Worktree:      s.worktree,
+		LogDir:        s.logDir,
+		Env:           s.env,
+		Prober:        s.prober,
+		Project:       s.project,
+		ProxyPort:     s.proxyPort,
+		PortAddressed: s.portAddressed,
 	})
 }
 
@@ -176,12 +183,16 @@ type boardAddressParams struct {
 // proxy's port; every surface then reads the same figures off the board rather
 // than deriving its own.
 func boardAddresses(params boardAddressParams) map[string]domain.JobAddress {
+	publicPort := params.Params.ProxyPort
+	if params.Params.PortAddressed {
+		publicPort = 0
+	}
 	return rules.WorktreeJobAddresses(rules.WorktreeJobAddressesParams{
 		Config:     domain.RunConfig{Jobs: params.Params.Jobs},
 		PortOffset: rules.PortOffsetFromEnv(params.Env),
 		Worktree:   params.Env[domain.EnvWorktree],
 		Project:    filepath.Base(params.Params.ProjectDir),
-		PublicPort: params.Params.ProxyPort,
+		PublicPort: publicPort,
 	})
 }
 
@@ -258,6 +269,10 @@ type SequenceParams struct {
 	// a line belongs to at all.
 	Worktrees []string
 	Start     runlogs.StartFunc
+	// Warnings are what the run has to say about the addresses it publishes.
+	// The flow reads them; each surface renders them once, where it can be seen
+	// — a band inside the view, a callout beside a stream.
+	Warnings []string
 	// Inline says the run blocks until it ends — a task, whose output belongs to
 	// the scrollback rather than to a screen given back when it exits. It is the
 	// flow that knows, because it is the flow that resolved the job.

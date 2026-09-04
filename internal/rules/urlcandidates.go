@@ -73,11 +73,9 @@ func ListeningPortName(job domain.JobConfig) string {
 // the URL question, not the wiring one: a job declaring exactly one port is
 // published on it, because a single declaration is what the job answers on.
 //
-// The two readings are deliberately apart. A job whose only port is a DB_PORT
-// is still offered a PORT of its own by the wizard — ListeningPortName stays
-// strict for that — while here the same job is offered a url it can uncheck.
-// Being strict in both places is what left every Vite front-end, declaring
-// VITE_PORT and nothing else, with no name at all.
+// Being strict here is what left every Vite front-end, declaring VITE_PORT and
+// nothing else, with no name at all. The ports step reads it the same way: a
+// job holding a single port is not asked for a second one.
 func PublishablePortName(job domain.JobConfig) string {
 	if name := ListeningPortName(job); name != "" {
 		return name

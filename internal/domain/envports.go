@@ -132,3 +132,11 @@ func (p EnvPortPlan) Anomalies() []EnvPortEntry {
 	}
 	return out
 }
+
+// RunAddresses is where each worktree's jobs answer, plus what has to be said
+// about the answer: a worktree whose .env was never settled on the names it
+// publishes is served its ports, and Notes is the line saying so.
+type RunAddresses struct {
+	ByBranch map[string]map[string]JobAddress
+	Notes    map[string]string
+}

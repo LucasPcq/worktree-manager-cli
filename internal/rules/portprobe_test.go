@@ -223,20 +223,21 @@ func TestPortEntriesForNeProposePasUnDoublonSurLaFormeDerivee(t *testing.T) {
 	}
 }
 
-// Un job qui ne déclare qu'un port qu'il compose n'a rien dit de ce qu'il
+// Un job qui ne déclare que des ports qu'il compose n'a rien dit de ce qu'il
 // écoute : l'entrée vide reste sa seule façon de le déclarer.
 func TestPortEntriesForProposeEncoreUneEntreeAUnJobQuiNecouteRien(t *testing.T) {
 	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
-		{Name: "api", Kind: domain.JobKindService, Ports: map[string]int{"DB_PORT": 5432}},
+		{Name: "api", Kind: domain.JobKindService, Ports: map[string]int{"DB_PORT": 5432, "REDIS_PORT": 6379}},
 	}}
 
 	got := rules.PortEntriesFor(rules.PortEntriesForParams{Config: cfg})
 
 	want := []domain.PortEntry{
 		{Job: "api", Name: "DB_PORT", Base: 5432},
+		{Job: "api", Name: "REDIS_PORT", Base: 6379},
 		{Job: "api", Name: domain.PortNameDefault},
 	}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Errorf("entrées = %+v, want %+v", got, want)
 	}
 }

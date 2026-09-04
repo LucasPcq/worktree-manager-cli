@@ -9,8 +9,10 @@ import (
 type RunBoardParams struct {
 	Config domain.RunConfig
 	Jobs   []domain.JobInfo
-	// Addresses is branch → job → where it answers.
+	// Addresses is branch → job → where it answers, and Notes what has to be
+	// said about them, by branch.
 	Addresses map[string]map[string]domain.JobAddress
+	Notes     map[string]string
 	Statuses  []domain.WorktreeStatus
 	Now       time.Time
 }
@@ -20,6 +22,9 @@ type RunWorktreeBlock struct {
 	Path   string
 	Up     int
 	Rows   []domain.DetailRow
+	// Note is what has to be said about this worktree's addresses, empty when
+	// its .env answers on what its jobs publish.
+	Note string
 }
 
 // RunBoard is what the daemon holds up, worktree by worktree. Unlike the detail
@@ -50,6 +55,7 @@ func RunBoard(params RunBoardParams) []RunWorktreeBlock {
 		}
 		blocks = append(blocks, RunWorktreeBlock{
 			Branch: status.Branch, Path: status.Path, Up: len(rows), Rows: rows,
+			Note: params.Notes[status.Branch],
 		})
 	}
 	return blocks
@@ -72,6 +78,14 @@ func ServicesRows(blocks []RunWorktreeBlock) []domain.ServicesRow {
 			rows = append(rows, domain.ServicesRow{
 				Kind: domain.ServicesRowJob, Branch: block.Branch, Path: block.Path, Job: job,
 			})
+		}
+		if block.Note != "" {
+			rows = append(rows,
+				domain.ServicesRow{Kind: domain.ServicesRowGap},
+				domain.ServicesRow{
+					Kind: domain.ServicesRowNote, Branch: block.Branch, Path: block.Path, Note: block.Note,
+				},
+			)
 		}
 	}
 	return rows

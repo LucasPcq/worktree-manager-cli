@@ -193,7 +193,12 @@ func foldEnvPortEntry(into, next domain.EnvPortEntry) domain.EnvPortEntry {
 	if next.Status == domain.EnvPortStatusRewrite {
 		into.NewValue = next.NewValue
 		into.Status = domain.EnvPortStatusRewrite
-		into.Addressing = next.Addressing
+		// One key may take an origin from one job and a bare port from another.
+		// The value is addressed by name as soon as either link writes one, and
+		// reading the last link alone hid the origin behind the port.
+		if next.Addressing == domain.AddressingNames {
+			into.Addressing = next.Addressing
+		}
 		return into
 	}
 	if into.Status == domain.EnvPortStatusRewrite {

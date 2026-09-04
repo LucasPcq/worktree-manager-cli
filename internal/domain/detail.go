@@ -100,6 +100,12 @@ const (
 	// DetailCellNote is a standalone muted body line inside a rowed section —
 	// the "… N more" fold, which is not a job and has no columns to align on.
 	DetailCellNote DetailCellKind = "note"
+	// DetailCellGap is a row that draws a blank line. A section's height is its
+	// row count, so air inside one is a row like any other.
+	DetailCellGap DetailCellKind = "gap"
+	// DetailCellWarn is a note that has to be seen: it takes a blank line above
+	// it and the warning colour, where a plain note is a muted aside.
+	DetailCellWarn DetailCellKind = "warn"
 )
 
 type DetailCell struct {
@@ -139,6 +145,9 @@ const (
 	ServicesRowHeader ServicesRowKind = "header"
 	ServicesRowJob    ServicesRowKind = "job"
 	ServicesRowGap    ServicesRowKind = "gap"
+	// ServicesRowNote closes a worktree's block with what has to be said about
+	// the addresses above it.
+	ServicesRowNote ServicesRowKind = "note"
 )
 
 // ServicesRow is one drawn line of the Services tab. The tab is a flat list
@@ -152,6 +161,8 @@ type ServicesRow struct {
 	Up int
 	// Job is the row's own line, zero on a header and on a gap.
 	Job DetailRow
+	// Note closes a block; empty on every other kind.
+	Note string
 }
 
 // DetailSectionDropOrder is the order sections give up their place when the

@@ -10,6 +10,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/flow/run/addressing"
 	"github.com/LucasPcq/wtm/internal/flow/run/seam"
 	"github.com/LucasPcq/wtm/internal/flow/run/target"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
@@ -243,21 +244,24 @@ func (f *upFlow) start(answers flow.Answers) (Outcome, error) {
 		return Outcome{}, err
 	}
 
+	addresses := addressing.Read(addressing.Params{Context: f.ctx, WorkDirs: workDirs})
 	set := seam.OpenSet(seam.SetParams{
-		ProjectDir:  f.ctx.ProjectDir,
-		StateDir:    f.ctx.StateDir,
-		WorkDirs:    workDirs,
-		Jobs:        profile.Jobs,
-		Declared:    f.request.Config.Jobs,
-		ProbeBudget: rules.PortProbeBudget(f.request.Config),
-		NoProbe:     f.request.NoProbe,
-		ProxyPort:   rules.ProxyPort(f.ctx.Config.Global),
+		ProjectDir:    f.ctx.ProjectDir,
+		StateDir:      f.ctx.StateDir,
+		WorkDirs:      workDirs,
+		Jobs:          profile.Jobs,
+		Declared:      f.request.Config.Jobs,
+		PortAddressed: addresses.PortAddressed,
+		ProbeBudget:   rules.PortProbeBudget(f.request.Config),
+		NoProbe:       f.request.NoProbe,
+		ProxyPort:     rules.ProxyPort(f.ctx.Config.Global),
 	})
 
 	results, err := f.presenter.Sequence(seam.SequenceParams{
 		Board:     set.Board(),
 		Profile:   profile.Name,
 		Worktrees: set.Worktrees(),
+		Warnings:  addresses.Warnings,
 		Start:     set.Starter(seam.StartParams{Profile: profile.Name, Jobs: profile.Jobs}),
 	})
 	if err != nil {

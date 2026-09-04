@@ -111,12 +111,14 @@ func buildRunParams(params buildParams) dashboard.RunParams {
 		// The public port is dialed here rather than once at startup: the loader
 		// already runs off the UI goroutine, and a daemon started after the
 		// dashboard was opened must not leave every address unpublished.
-		AddressLoader: func(request dashboard.AddressRequest) map[string]map[string]domain.JobAddress {
+		AddressLoader: func(request dashboard.AddressRequest) domain.RunAddresses {
 			return worktree.RunAddressesFor(worktree.RunAddressesForParams{
 				ProjectDir: result.ProjectDir,
 				StateDir:   result.StateDir,
 				RunConfig:  request.Config,
 				Branches:   request.Branches,
+				EnvFiles:   result.Config.Project.Env.Files,
+				Global:     result.Config.Global,
 				ProxyPort:  process.PublicProxyPort(rules.ProxyPort(result.Config.Global)),
 			})
 		},

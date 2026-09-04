@@ -112,3 +112,42 @@ func TestServicesRowsPutsNoGapBeforeTheFirstBlock(t *testing.T) {
 		t.Errorf("rows = %+v, want a header then its job, with no leading gap", rows)
 	}
 }
+
+// The Services tab is where a reader picks a URL to open, so what has to be
+// said about those URLs closes the block that lists them.
+func TestServicesRowsClosesABlockOnWhatItHasToSay(t *testing.T) {
+	rows := ServicesRows([]RunWorktreeBlock{{
+		Branch: "main", Path: "/wt/main", Up: 1,
+		Rows: []domain.DetailRow{{Key: "web"}},
+		Note: "main answers on its ports",
+	}})
+
+	want := []domain.ServicesRowKind{
+		domain.ServicesRowHeader, domain.ServicesRowJob,
+		domain.ServicesRowGap, domain.ServicesRowNote,
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("rows = %d, want %d — one row per drawn line", len(rows), len(want))
+	}
+	for index, kind := range want {
+		if rows[index].Kind != kind {
+			t.Fatalf("row %d = %q, want %q", index, rows[index].Kind, kind)
+		}
+	}
+	if rows[3].Note != "main answers on its ports" || rows[3].Branch != "main" {
+		t.Errorf("note row = %+v, want the line and the worktree it belongs to", rows[3])
+	}
+}
+
+func TestRunBoardCarriesEachWorktreesNote(t *testing.T) {
+	blocks := RunBoard(RunBoardParams{
+		Config:   domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web", Kind: domain.JobKindService}}},
+		Jobs:     []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/wt/main"}},
+		Statuses: []domain.WorktreeStatus{{Branch: "main", Path: "/wt/main"}},
+		Notes:    map[string]string{"main": "main answers on its ports"},
+	})
+
+	if len(blocks) != 1 || blocks[0].Note != "main answers on its ports" {
+		t.Errorf("blocks = %+v, want the note of the worktree they describe", blocks)
+	}
+}

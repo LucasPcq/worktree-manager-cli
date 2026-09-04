@@ -597,6 +597,21 @@ and **experimental**: the global `wtm init` does not configure it.
   ports are written whatever the project asked for, and the pass says so in one notice.
   **Under `names`, the named URL is the only working entrance** — the raw `localhost:<port>`
   sends an `Origin` the API no longer accepts, so always read the address from `run url`.
+- **The main checkout is never provisioned, so under `names` its `.env` still holds ports.**
+  wtm writes a worktree's `.env` at creation and on `wtm env`; nothing writes main's. Its jobs
+  are still published under names, so a cross-origin call made through them is refused until
+  `wtm env main` aligns it — the positional takes the main checkout like any other worktree.
+  **The address every surface hands out follows the `.env`, not the setting**: while the file
+  spells ports, `run up`, `run url`, `run open`, the run view and the `wtm ui` panel all give
+  `http://localhost:<port>` — the entrance the app actually answers on — and the named URL
+  comes back once `wtm env <worktree>` settles the file. The route is registered either way,
+  so nothing restarts. One line says why: a band in the run view, a callout beside a stream,
+  a note under the RUN rows in `wtm ui`. Only keys declared as `[[env_port]]` links are seen,
+  so silence means nothing **linked** is out of step. A `.env` already on names whose port
+  went stale keeps its names and is told they are out of step. Aligning main is a **choice**: it stops behaving as a
+  checkout without wtm, and going back means `addressing = "ports"` → `wtm env main` → `names`
+  again, `addressing` having no per-worktree scope. Same applies to a linked worktree whose
+  port pass was declined.
 - Two base ports must not differ by a multiple of the block, or two worktrees land on the
   same port: `3000` and `3010` are refused **when run.toml is read** (with both sides named),
   while `5434`/`5435`/`5436` are fine — a uniform offset preserves the gaps. Raise
