@@ -53,6 +53,11 @@ type RunParams struct {
 	// LogsLoader reads back a job's persisted output for the detail panel's
 	// logs view. Injected like JobsLoader, so a test never opens a real board.
 	LogsLoader func(logsRequest) ([]string, error)
+	// Version is the running wtm version and UpgradeLatest the newer release the
+	// last passive check found, or "" when there is none. Both are resolved by
+	// the command layer: the dashboard renders them, it decides nothing.
+	Version       string
+	UpgradeLatest string
 }
 
 // OutputLineMsg appends one line to the bottom output panel. Every phase of a
@@ -200,6 +205,9 @@ type Model struct {
 
 	detailOpen bool
 	showHelp   bool
+	// helpScroll is the first visible body row of the reference overlay. It only
+	// ever leaves zero on a screen too short to hold the whole reference.
+	helpScroll int
 
 	// servicesLogs says the Services tab's body is the logs view rather than its
 	// list. The logs view is one component with two hosts, so which host is
@@ -710,15 +718,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateModal(msg)
 	}
 
-	// The overlay documents "q · ctrl+c quit", so it must not swallow them.
 	if m.showHelp {
-		if key == keyQuit || key == keyInterrupt {
-			return m, tea.Quit
-		}
-		if key == keyHelp || key == keyEscape {
-			m.showHelp = false
-		}
-		return m, nil
+		return m.helpKey(key)
 	}
 
 	// An open menu takes the keys it uses and lets every other one through, after
@@ -762,7 +763,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case keyInterrupt, keyQuit:
 		return m, tea.Quit
 	case keyHelp:
-		m.showHelp = true
+		m.showHelp, m.helpScroll = true, 0
 	case keyRefresh:
 		return m.refresh()
 	case keyNew:
@@ -777,6 +778,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.openLogsTab()
 	case keyOpenAddress:
 		return m.openSelectedAddress()
+	case keyFastForward:
+		selected, ok := m.selected()
+		if !ok {
+			return m, nil
+		}
+		return m.startFastForward(selected.Branch)
 
 	case keyToggleOutput:
 		m.outputExpanded = !m.outputExpanded
@@ -862,7 +869,7 @@ func (m Model) inZone(id string, msg tea.MouseMsg) bool {
 
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.showHelp {
-		return m, nil
+		return m.helpMouse(msg)
 	}
 	if m.modal.open {
 		return m.modalMouse(msg)

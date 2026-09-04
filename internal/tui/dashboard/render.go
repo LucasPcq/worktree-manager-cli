@@ -139,10 +139,11 @@ func (m Model) renderCompactHeader(layout domain.DashboardLayout) string {
 // the layout only selects this when all six rows fit.
 func (m Model) renderTallHeader(layout domain.DashboardLayout) string {
 	width := layout.Tabs.Width
+	room := max(width-lipgloss.Width(styles.DashboardWordmark.Render(domain.DashboardWordmarkLines[0]))-lipgloss.Width(domain.DashboardWordmarkGap), 0)
 	context := [3]string{
 		m.headerRepoLine(),
 		m.headerBaseActiveLine(),
-		m.headerCountLine(),
+		m.headerCountLine(room),
 	}
 
 	lines := make([]string, 0, domain.DashboardHeaderTallHeight)
@@ -199,18 +200,81 @@ func (m Model) headerBaseActiveLine() string {
 // Built from plain text rather than countLabel/fetchedLabel: those carry the
 // compact header's own padding and styling, which would break this row's
 // alignment with the two above it.
-func (m Model) headerCountLine() string {
-	parts := make([]string, 0, 2)
-	if count := m.countText(); count != "" {
-		parts = append(parts, count)
+// The row is hard-truncated by wordmarkRow, so it degrades itself instead of
+// being cut mid-word: fetched goes first (it comes back on `r`), then the count,
+// leaving the version and its call to action — the one thing here the reader has
+// to act on — standing longest.
+func (m Model) headerCountLine(room int) string {
+	version, action := rules.DashboardVersionSegments(rules.NewerVersionParams{
+		Current: m.params.Version,
+		Latest:  m.params.UpgradeLatest,
+	})
+
+	for _, variant := range []struct{ count, fetched, action bool }{
+		{true, true, true},
+		{true, false, true},
+		{false, false, true},
+		{true, true, false},
+		{true, false, false},
+		{false, false, false},
+	} {
+		line := m.countLineVariant(countLineParams{
+			Count:      variant.count,
+			Fetched:    variant.fetched,
+			Version:    version,
+			Action:     action,
+			WithAction: variant.action,
+		})
+		if line == "" || lipgloss.Width(line) <= room {
+			return line
+		}
 	}
-	if fetched := m.fetchedText(); fetched != "" {
-		parts = append(parts, fetched)
+
+	return ""
+}
+
+type countLineParams struct {
+	Count      bool
+	Fetched    bool
+	Version    string
+	Action     string
+	WithAction bool
+}
+
+// The muted segments and the call to action are styled apart on purpose: an
+// available upgrade has to read as actionable, not as one more context crumb —
+// hence the signature accent it shares with the wordmark and the add button.
+func (m Model) countLineVariant(params countLineParams) string {
+	muted := make([]string, 0, 3)
+	if params.Count {
+		if count := m.countText(); count != "" {
+			muted = append(muted, count)
+		}
 	}
-	if len(parts) == 0 {
-		return ""
+	if params.Fetched {
+		if fetched := m.fetchedText(); fetched != "" {
+			muted = append(muted, fetched)
+		}
 	}
-	return styles.DashboardContext.Render(strings.Join(parts, domain.DashboardContextSep))
+	if params.Version != "" {
+		muted = append(muted, params.Version)
+	}
+
+	line := ""
+	if len(muted) > 0 {
+		line = styles.DashboardContext.Render(strings.Join(muted, domain.DashboardContextSep))
+	}
+
+	if !params.WithAction || params.Action == "" {
+		return line
+	}
+
+	action := styles.DashboardUpgrade.Render(params.Action)
+	if line == "" {
+		return action
+	}
+
+	return line + styles.DashboardContext.Render(domain.DashboardContextSep) + action
 }
 
 // renderTabBar draws the tab row shared by both header variants: each tab
@@ -248,20 +312,33 @@ func (m Model) renderTabBar(width int, right func(room int) string) (bar string,
 // does not fit is dropped rather than cut.
 func (m Model) renderContextLine(width int) string {
 	wordmark := styles.DashboardWordmark.Render(domain.DashboardWordmark)
-	fetched := m.fetchedLabel()
+	version, action := rules.DashboardVersionSegments(rules.NewerVersionParams{
+		Current: m.params.Version,
+		Latest:  m.params.UpgradeLatest,
+	})
 
-	for _, variant := range []struct{ repo, base, active, fetched bool }{
-		{true, true, true, true},
-		{true, true, true, false},
-		{true, true, false, false},
-		{true, false, false, false},
-		{false, false, false, false},
+	// Same drop order as the tall header's third row, so the two variants of the
+	// header agree on what matters: fetched, then the count-side context, and the
+	// call to action outlives both.
+	for _, variant := range []struct{ repo, base, active, fetched, action, version bool }{
+		{true, true, true, true, true, true},
+		{true, true, true, false, true, true},
+		{true, true, false, false, true, true},
+		{true, false, false, false, true, true},
+		{true, true, true, true, false, true},
+		{true, true, true, false, false, true},
+		{true, true, false, false, false, true},
+		{true, false, false, false, false, true},
+		{true, false, false, false, false, false},
+		{false, false, false, false, false, false},
 	} {
 		left := wordmark + m.contextLeft(contextLeftParams{Repo: variant.repo, Base: variant.base, Active: variant.active})
-		right := ""
-		if variant.fetched {
-			right = fetched
-		}
+		right := m.countLineVariant(countLineParams{
+			Fetched:    variant.fetched,
+			Version:    versionIf(version, variant.version),
+			Action:     action,
+			WithAction: variant.action,
+		})
 		if line, ok := fitContextLine(left, right, width); ok {
 			return line
 		}
@@ -270,6 +347,13 @@ func (m Model) renderContextLine(width int) string {
 	// did not fit either, nothing will — the line goes empty rather than
 	// overflow the width it was given.
 	return ""
+}
+
+func versionIf(version string, keep bool) string {
+	if !keep {
+		return ""
+	}
+	return version
 }
 
 type contextLeftParams struct {
@@ -313,15 +397,6 @@ func (m Model) fetchedText() string {
 	}
 	age := rules.RelativeAge(rules.RelativeAgeParams{At: m.fetchedAt, Now: now})
 	return fmt.Sprintf(domain.DashboardFetchedFmt, age)
-}
-
-// fetchedLabel is fetchedText styled for the compact header's context line.
-func (m Model) fetchedLabel() string {
-	text := m.fetchedText()
-	if text == "" {
-		return ""
-	}
-	return styles.DashboardContext.Render(text)
 }
 
 // fitContextLine lays the left cluster and the right notice on one row of the
@@ -518,66 +593,6 @@ func (m Model) renderHelpBar(layout domain.DashboardLayout) string {
 		hint = domain.DashboardHelpNarrow
 	}
 	return styles.DashboardHelp.Render(truncate(hint, max(layout.Help.Width-paddingWidth, 0)))
-}
-
-// helpBox is the key and mouse reference: every clickable zone paired with the
-// key that does the same thing. Like the other overlays it is a box pasted over
-// the frame, sized on its own content.
-func (m Model) helpBox() (string, domain.Rect) {
-	rows := [][2]string{
-		{"↑↓ · j k", "select a worktree (or click a row)"},
-		{"g · G", "first · last worktree"},
-		{"pgup · pgdown", "page through the list"},
-		{"wheel", "scroll the list or the output panel"},
-		{"n", "new worktree (or click + new)"},
-		{"m", "actions on the selected worktree (or right-click a row)"},
-		{"a", "actions on several worktrees (or click ⋯ actions)"},
-		{"tab · shift+tab", "switch view (or click a tab)"},
-		{"enter · →", "open the detail (narrow terminals)"},
-		{"esc · ←", "close the detail"},
-		{"p", "open the pull request in a browser (or click its line)"},
-		{"L", "open the panel's LOGS tab (or click it)"},
-		{"←→", "switch job while the LOGS tab is up"},
-		{"u", "open the selected job's address"},
-		{"o", "fold/unfold the output panel (or click its header)"},
-		{"shift+↑ · shift+↓", "scroll the output panel"},
-		{"r", "refresh worktrees and pull requests"},
-		{"?", "close this help"},
-		{"q · ctrl+c", "quit"},
-	}
-
-	textWidth := helpTextWidth(rows, m.width)
-	if textWidth <= 0 {
-		return "", domain.Rect{}
-	}
-
-	lines := make([]string, 0, len(rows)+2)
-	lines = append(lines, styles.DashboardModalTitle.Render(truncate(domain.DashboardHelpTitle, textWidth)), "")
-	for _, row := range rows {
-		lines = append(lines, truncate(styles.DashboardLabel.Render(pad(row[0], helpKeyWidth))+
-			styles.DashboardValue.Render(row[1]), textWidth))
-	}
-
-	box := styles.DashboardModal.Width(textWidth + modalPadding).Render(strings.Join(lines, "\n"))
-	return box, rules.CenterRect(rules.CenterRectParams{
-		Width:        lipgloss.Width(box),
-		Height:       lipgloss.Height(box),
-		ScreenWidth:  m.width,
-		ScreenHeight: m.height,
-	})
-}
-
-// helpKeyWidth is the column the descriptions line up on.
-const helpKeyWidth = 18
-
-// helpTextWidth sizes the box on its longest row, then keeps it inside the
-// screen: an overlay is pasted whole, so it must never need trimming.
-func helpTextWidth(rows [][2]string, screenWidth int) int {
-	widest := lipgloss.Width(domain.DashboardHelpTitle)
-	for _, row := range rows {
-		widest = max(widest, helpKeyWidth+lipgloss.Width(row[1]))
-	}
-	return min(widest, screenWidth-domain.DashboardModalChrome-modalPadding)
 }
 
 // A body is assembled by counting entries as rows, and an entry carrying its own

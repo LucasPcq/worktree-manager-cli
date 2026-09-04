@@ -7,6 +7,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	cleanflow "github.com/LucasPcq/wtm/internal/flow/clean"
 	createflow "github.com/LucasPcq/wtm/internal/flow/create"
+	ffflow "github.com/LucasPcq/wtm/internal/flow/fastforward"
 	pruneflow "github.com/LucasPcq/wtm/internal/flow/prune"
 	reparentflow "github.com/LucasPcq/wtm/internal/flow/reparent"
 	syncflow "github.com/LucasPcq/wtm/internal/flow/sync"
@@ -193,4 +194,24 @@ func reparentSyncHint(results []domain.ReparentResult) string {
 		return fmt.Sprintf(domain.ReparentSyncHintFmt, results[0].Branch)
 	}
 	return domain.ReparentSyncHintBare
+}
+
+type ffPresenter struct {
+	shared.CLIPresenter
+}
+
+func (p ffPresenter) FastForwarded(outcome ffflow.Outcome) error {
+	if p.Format == domain.OutputJSON {
+		return output.WriteFastForwardJSON(p.Cmd.OutOrStdout(), outcome.Results)
+	}
+	if outcome.Empty {
+		output.Frame(p.Cmd.OutOrStdout(), func() {
+			output.Message(p.Cmd.OutOrStdout(), domain.FastForwardNothingToDo)
+		})
+		return nil
+	}
+	output.Frame(p.Cmd.OutOrStdout(), func() {
+		output.FormatFastForwardResults(p.Cmd.OutOrStdout(), outcome.Results)
+	})
+	return nil
 }

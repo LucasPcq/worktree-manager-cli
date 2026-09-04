@@ -55,6 +55,8 @@ type prunedMsg struct{}
 // every row's state against its parent and its remote is stale.
 type syncedMsg struct{}
 
+type fastForwardedMsg struct{}
+
 // listenCmd delivers the next message a flow goroutine posted. Update re-arms it
 // on every flowMsg, so there is exactly one reader on the channel at all times.
 func listenCmd(msgs <-chan tea.Msg) tea.Cmd {

@@ -209,8 +209,14 @@ func (m SelectListModel) updateFilter(msg tea.KeyMsg) SelectListModel {
 	return m
 }
 
-// View renders the list with full-row highlight on the selected item.
+// View renders the list with full-row highlight on the selected item. A list
+// with no item at all renders nothing: it is a body still being filled (a step
+// loading behind a spinner), not a filter that matched nothing.
 func (m SelectListModel) View() string {
+	if len(m.items) == 0 {
+		return ""
+	}
+
 	var b strings.Builder
 
 	b.WriteString(renderFilterPrompt(filterPromptParams{query: m.filter, active: m.filtering}))

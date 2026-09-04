@@ -28,10 +28,10 @@ it. Install and authenticate it to unlock GitHub features: [cli.github.com](http
 brew install LucasPcq/tap/wtm
 ```
 
-**Download binary** — grab the latest [release](https://github.com/LucasPcq/worktree-manager-cli/releases), extract, and move it onto your `PATH`:
+**Download binary** — grab the latest [release](https://github.com/LucasPcq/wtm/releases), extract, and move it onto your `PATH`:
 
 ```bash
-tar -xzf worktree-manager-cli_*_darwin_arm64.tar.gz   # or _darwin_amd64 / _linux_amd64
+tar -xzf wtm_*_darwin_arm64.tar.gz   # or _darwin_amd64 / _linux_amd64
 sudo mv wtm /usr/local/bin/
 ```
 
@@ -39,6 +39,26 @@ sudo mv wtm /usr/local/bin/
 
 ```bash
 go install github.com/LucasPcq/wtm@latest
+```
+
+### Updating
+
+```bash
+wtm upgrade          # update to the latest release
+wtm upgrade --check  # see what's available without installing
+```
+
+`wtm upgrade` detects how wtm was installed: a standalone binary is replaced in
+place after its checksum is verified, a Homebrew or `go install` binary is handed
+to that tool. It updates the CLI itself — for your worktrees, that's `wtm sync`.
+
+wtm also checks for new releases at most once a day and prints a notice on stderr.
+It stays silent in CI, without a TTY, and under `--output json`. Disable it with
+`WTM_NO_UPDATE_CHECK=1`, or in `~/.config/wtm/config.toml`:
+
+```toml
+[update]
+check = false
 ```
 
 ## Quick Start
@@ -125,6 +145,7 @@ Full flags live in `wtm <command> --help` and [`docs/`](docs/wtm.md). Overview:
 
 | Command | Purpose |
 |---|---|
+| [`fast-forward`](docs/wtm_fast-forward.md) | Advance worktree branches to `origin/<branch>` — no rebase, no merge |
 | [`sync`](docs/wtm_sync.md) | Rebase selected worktrees onto their parent, in cascade |
 | [`reparent`](docs/wtm_reparent.md) | Change the parent a worktree is rebased onto |
 
@@ -162,6 +183,7 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 | [`config`](docs/wtm_config.md) | Inspect or edit the project config |
 | [`agents`](docs/wtm_agents.md) | Install the `using-wtm` skill for LLM agents |
 | [`schema`](docs/wtm_schema.md) | Extract the bundled JSON Schemas |
+| [`upgrade`](docs/wtm_upgrade.md) | Update wtm itself to the latest release |
 
 ## Machine-readable output
 

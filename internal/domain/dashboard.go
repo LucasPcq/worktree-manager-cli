@@ -39,3 +39,41 @@ type DashboardLayout struct {
 	ServicesRows int
 	OutputLines  int
 }
+
+// HelpEntry is one row of the key and mouse reference: what to press, and what
+// pressing it does.
+type HelpEntry struct {
+	Keys string
+	Text string
+}
+
+// HelpSection groups entries under a title of its own.
+type HelpSection struct {
+	Title   string
+	Entries []HelpEntry
+}
+
+// HelpBand is one row of sections in the reference overlay: a single section in
+// the narrow layout, two side by side in the wide one. Sections in a band are
+// drawn to the same height so the next band starts on one line in every column.
+type HelpBand []HelpSection
+
+// HelpLayout is the resolved geometry of the reference overlay. Nothing here is
+// styled or rendered: the columns are already chosen, so the renderer only
+// stacks and pads.
+type HelpLayout struct {
+	Bands []HelpBand
+	// KeyWidth, TextWidth and ColumnWidth are indexed by column, so a column is
+	// sized on what it actually carries rather than on the widest row of the
+	// whole overlay.
+	KeyWidth    []int
+	TextWidth   []int
+	ColumnWidth []int
+	// Inner is the text width inside the box's border and padding.
+	Inner int
+	// ContentRows is what the bands render to, BodyRows how many of those the
+	// screen leaves room for, and Scrollable reports that the two differ.
+	ContentRows int
+	BodyRows    int
+	Scrollable  bool
+}

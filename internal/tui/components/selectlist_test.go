@@ -113,3 +113,21 @@ func TestSelectListIgnoresAnUnknownStart(t *testing.T) {
 		t.Errorf("value = %q, want the first item when the start is unknown", got)
 	}
 }
+
+// "No matches" answers a filter. A list still waiting for its items has no
+// filter to answer, and saying it matched nothing reads as a failed run.
+func TestSelectListRendersNothingWhileItHasNoItem(t *testing.T) {
+	m := NewSelectList(NewSelectListParams{Title: "Review & confirm"})
+
+	if got := m.View(); got != "" {
+		t.Errorf("view = %q, want an empty body until the items arrive", got)
+	}
+}
+
+func TestSelectListStillReportsAFilterThatMatchesNothing(t *testing.T) {
+	m := slFilterTo(newTestSelectList(), "zzz")
+
+	if !strings.Contains(m.View(), "No matches") {
+		t.Errorf("a filter matching nothing must say so:\n%s", m.View())
+	}
+}

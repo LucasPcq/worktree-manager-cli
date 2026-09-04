@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/LucasPcq/worktree-manager-cli/main/schemas/global.schema.json",
+  "$id": "https://raw.githubusercontent.com/LucasPcq/wtm/main/schemas/global.schema.json",
   "title": "wtm global config",
   "description": "Schema for ~/.config/wtm/config.toml — per-user defaults applied across all projects.",
   "type": "object",
@@ -35,6 +35,16 @@
         "enabled": {
           "type": "boolean",
           "description": "Absent means on. Set to false to switch the proxy off: jobs keep their own ports, and every URL wtm prints falls back to `http://localhost:<port>`."
+        }
+      }
+    },
+    "update": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "type": "boolean",
+          "description": "Whether wtm checks GitHub for a newer release at most once a day and prints a notice on stderr. Absent means on; set to false to disable it. WTM_NO_UPDATE_CHECK=1 disables it for a single run."
         }
       }
     }

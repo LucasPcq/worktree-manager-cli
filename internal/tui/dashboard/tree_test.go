@@ -175,8 +175,8 @@ func TestTheMainWorktreeOffersOnlyTheBaseRefreshFromTheTree(t *testing.T) {
 	model = update(model, treeMsg{rows: rules.FlattenForest(sampleForest())})
 
 	items := menuActions(model.menuItems())
-	if items[0].action != menuRefreshBase {
-		t.Errorf("menu = %+v, want the base refresh first on the main worktree", items)
+	if items[0].action != menuFastForward {
+		t.Errorf("menu = %+v, want the base fast-forward first on the main worktree", items)
 	}
 }
 

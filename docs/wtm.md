@@ -21,6 +21,7 @@ wtm [flags]
 * [wtm create](wtm_create.md)	 - Create a new worktree
 * [wtm env](wtm_env.md)	 - Reconcile a worktree's .env against its template and value sources
 * [wtm extract](wtm_extract.md)	 - Move uncommitted changes to another worktree
+* [wtm fast-forward](wtm_fast-forward.md)	 - Advance worktree branches to their origin counterpart
 * [wtm go](wtm_go.md)	 - Switch to a worktree
 * [wtm init](wtm_init.md)	 - Initialize wtm configuration
 * [wtm list](wtm_list.md)	 - List all worktrees
@@ -34,4 +35,5 @@ wtm [flags]
 * [wtm sync](wtm_sync.md)	 - Rebase selected worktrees onto their parent, in cascade
 * [wtm tree](wtm_tree.md)	 - Show the worktree forest (parent → child)
 * [wtm ui](wtm_ui.md)	 - Open the worktree dashboard
+* [wtm upgrade](wtm_upgrade.md)	 - Update wtm to the latest release
 

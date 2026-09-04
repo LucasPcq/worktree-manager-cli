@@ -461,3 +461,101 @@ func TestSelectRendersTheBadgesAStepDeclares(t *testing.T) {
 		}
 	}
 }
+
+// A conditional step used to be replaced by a plain choice list whatever its
+// kind, which left sync's `--dry-run`-gated recap with no options at all: the
+// wizard showed "No matches" instead of the cascade it was about to run.
+func TestAConditionalLoadedRecapKeepsItsLoad(t *testing.T) {
+	step := loadedRecap("r")
+	step.Skip = func(flow.Answers) (bool, string) { return false, "" }
+
+	plan, err := build(flow.Session{Steps: []flow.Step{selectStep("a", "one"), step}})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	recap := plan.steps[1]
+	if !recap.Recap {
+		t.Error("a conditional recap must still read as a recap")
+	}
+	if recap.Build == nil || recap.AutoSkip == nil {
+		t.Fatal("a conditional recap must still decide on entry")
+	}
+
+	wizard := components.NewWizardWithParams(components.WizardParams{Steps: plan.steps})
+	prev := plan.steps[:1]
+	wizard.UpdateStepModel(1, func(any) any { return recap.Build(prev) })
+	if recap.AutoSkip(wizard) {
+		t.Fatal("the step must be shown when its Skip says so")
+	}
+	if recap.OnEnter == nil {
+		t.Fatal("a conditional recap must still fire its load on entry")
+	}
+
+	handle := plan.handler()
+	cmd, handled := handle(&wizard, recap.OnEnter(prev)())
+	if !handled {
+		t.Fatal("the load request must be handled")
+	}
+	for _, sub := range cmd().(tea.BatchMsg) {
+		if done, ok := sub().(loadDoneMsg); ok {
+			handle(&wizard, done)
+		}
+	}
+
+	view := wizard.Steps()[1].Model.(components.SelectListModel).View()
+	if !strings.Contains(view, "Yes, do it") {
+		t.Errorf("a conditional recap must show its loaded content:\n%s", view)
+	}
+	if !strings.Contains(view, domain.WizardCancelLabel) {
+		t.Errorf("a conditional recap must keep its cancel row:\n%s", view)
+	}
+}
+
+func TestAConditionalRecapIsStillSkipped(t *testing.T) {
+	step := loadedRecap("r")
+	step.Skip = func(flow.Answers) (bool, string) { return true, "previewing only" }
+
+	plan, err := build(flow.Session{Steps: []flow.Step{selectStep("a", "one"), step}})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	recap := plan.steps[1]
+	recap.Build(plan.steps[:1])
+	if !recap.AutoSkip(components.WizardModel{}) {
+		t.Fatal("a recap its flow skips must not be shown")
+	}
+	if got := recap.SkipReason(); got != "previewing only" {
+		t.Errorf("reason = %q, want the flow's own", got)
+	}
+}
+
+// A conditional step is drawn by choiceStep, which only knows how to draw a
+// select. Any other kind would be silently downgraded to a picker — the shape
+// the recap bug had — so it is refused instead.
+func TestBuildRefusesAConditionalStepItCannotGate(t *testing.T) {
+	step := multiSelectStep("b", "one")
+	step.Skip = func(flow.Answers) (bool, string) { return false, "" }
+
+	_, err := build(flow.Session{Steps: []flow.Step{selectStep("a", "one"), step}})
+	if err == nil {
+		t.Fatal("a conditional multi-select must be refused rather than drawn as a picker")
+	}
+	if !strings.Contains(err.Error(), "b") {
+		t.Errorf("error %q should name the step", err)
+	}
+}
+
+// The refusal is about what choiceStep can draw, so a conditional step landing
+// first — decided up front, then rendered by its own kind — stays fine.
+func TestAConditionalFirstStepKeepsItsOwnKind(t *testing.T) {
+	step := multiSelectStep("a", "one")
+	step.Skip = func(flow.Answers) (bool, string) { return false, "" }
+
+	plan, err := build(flow.Session{Steps: []flow.Step{step, recapStep("r")}})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if _, ok := plan.steps[0].Model.(components.MultiSelectModel); !ok {
+		t.Errorf("model = %T, want a MultiSelectModel", plan.steps[0].Model)
+	}
+}

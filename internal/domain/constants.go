@@ -3,12 +3,18 @@ package domain
 
 import "time"
 
+// VersionDev is what Version holds when nothing stamped it: a binary built from
+// a source tree. It is the sentinel the upgrade path classifies on, and it must
+// stay separate from Version — a released binary carries its own number there,
+// so comparing against Version itself would call every release a source build.
+const VersionDev = "dev"
+
 // Version is the build this binary was cut from, stamped at link time by
 // .goreleaser.yaml. It is a var rather than a const precisely so ldflags can
 // reach it, and it must stay the single stamped symbol: the run daemon compares
 // it across the socket, so a second one stamped elsewhere would let a client and
 // its daemon disagree about which build each is.
-var Version = "dev"
+var Version = VersionDev
 
 const (
 	// AppName is the canonical name of the CLI binary.
@@ -1272,6 +1278,9 @@ const (
 	CmdTree         = "tree"
 	CmdPrune        = "prune"
 	CmdEnv          = "env"
+	// CmdFastForwardAlias keeps the frequent gesture short to type.
+	CmdFastForward      = "fast-forward"
+	CmdFastForwardAlias = "ff"
 
 	// MinWizardListHeight is the minimum number of rows reserved for a wizard
 	// step's scrollable list. Completed-step summaries are bounded so they never
@@ -1830,6 +1839,47 @@ const (
 	// (e.g. a cycle in the parent chain).
 	SyncPlanFailedFmt = "Failed to build sync plan: %w"
 
+	// FastForward* are the fast-forward flow's labels, shared by both surfaces.
+	FastForwardWizardErrLabel   = "fast-forward wizard"
+	FastForwardSelectionTitle   = "Select worktrees to fast-forward"
+	FastForwardConfirmTitle     = "Fast-forward from origin"
+	FastForwardCheckLoading     = "Checking branches against origin"
+	FastForwardStage            = "Fast-forwarding"
+	FastForwardOption           = "Yes, fast-forward"
+	FastForwardAnywayOption     = "Fast-forward anyway"
+	FastForwardSelectAtLeastOne = "select at least one worktree"
+	FastForwardNothingToDo      = "No worktrees to fast-forward."
+	FastForwardWarnDirty        = "uncommitted changes."
+	FastForwardBlockerDirty     = "dirty"
+	// FastForwardSelectionRequiredFmt names the flag a run with no picker is
+	// missing, rather than falling back to one. Verbs: --all, --yes, --output, json.
+	FastForwardSelectionRequiredFmt = "specify one or more worktrees, or pass --%s (no interactive picker under --%s, without a terminal, or in --%s %s mode)"
+	// FastForwardForceHintFmt refuses a dirty worktree by naming the flag that
+	// lifts it: --yes is the confirmation axis and never lifts a refusal.
+	// Verbs: branch, reason, --force.
+	FastForwardForceHintFmt = "%s has %s Use --%s to fast-forward anyway"
+	// FastForwardLabel* say in a few words what became of one branch
+	// (rules.FastForwardStatusLabel).
+	FastForwardLabelUpToDate = "already up to date"
+	FastForwardLabelAdvanced = "fast-forwarded from origin"
+	FastForwardLabelDiverged = "diverged"
+	FastForwardLabelNoRemote = "no origin counterpart"
+	FastForwardLabelFailed   = "failed"
+	// FastForwardDivergedHintFmt names the gesture that does handle a divergence:
+	// this one never rewrites a branch carrying local commits. Verbs: branch,
+	// ahead, behind, branch.
+	FastForwardDivergedHintFmt = "%s has diverged from origin (%d ahead, %d behind) — run `wtm sync %s`"
+	FastForwardNoRemoteFmt     = "%s has no origin counterpart"
+	// FastForwardPlanFmt, FastForwardUpToDateFmt, FastForwardResultFmt and
+	// FastForwardFailedFmt are the per-branch lines: what will happen, and what did.
+	// The arrow points at the branch that moves, the way the sync plan renders
+	// "branch ← parent": here the branch receives what origin already carries.
+	FastForwardPlanFmt     = "%s ← origin/%s (%s)"
+	FastForwardUpToDateFmt = "%s is already up to date"
+	FastForwardResultFmt   = "%s: %s"
+	FastForwardFailedFmt   = "%s: failed — %s"
+	FastForwardHeader      = "Fast-forward"
+
 	// Source-reconciliation and env-fallback prompts shared by the create and
 	// extract flows — used both by the in-wizard confirmation steps and the
 	// standalone confirms on the non-interactive --from path. Format verbs:
@@ -2125,6 +2175,10 @@ const (
 	OpKindRunStart = "run-start"
 	OpKindRunStop  = "run-stop"
 
+	// OpKindFastForward names a run that advances branches to their origin
+	// counterpart and nothing else.
+	OpKindFastForward = "fast-forward"
+
 	// CmdUI is the full-screen dashboard command.
 	CmdUI = "ui"
 
@@ -2237,8 +2291,14 @@ const (
 	// DashboardNeverFetched is its own wording rather than an empty age: a
 	// repository that has never fetched is the most stale case there is, and
 	// saying nothing about its age would read as "fetched recently".
-	DashboardContextSep      = " · "
-	DashboardFetchedFmt      = "fetched %s"
+	DashboardContextSep = " · "
+	DashboardFetchedFmt = "fetched %s"
+	// DashboardVersionFmt renders the running version, always shown.
+	// DashboardUpgradeFmt is appended to it when a newer release is known — it
+	// carries the command because a badge that only says a version exists leaves
+	// the reader to guess what to do with it.
+	DashboardVersionFmt      = "v%s"
+	DashboardUpgradeFmt      = "→ %s · run wtm upgrade"
 	DashboardNeverFetched    = "never fetched"
 	DashboardActiveGlyph     = "●"
 	DashboardBaseFmt         = "base %s"
@@ -2322,6 +2382,63 @@ const (
 	// zone is listed there with its keyboard equivalent.
 	DashboardHelpTitle = "Keys & mouse"
 
+	// DashboardHelpSection* name the reference's groups. The mouse is a group of
+	// its own rather than a suffix on every key: it is the same information, and
+	// folded into the prose it doubled the width of every row.
+	DashboardHelpSectionNav   = "NAV"
+	DashboardHelpSectionAct   = "ACT"
+	DashboardHelpSectionRun   = "RUN"
+	DashboardHelpSectionMouse = "MOUSE"
+	DashboardHelpSectionView  = "VIEW"
+
+	DashboardHelpKeysSelect      = "↑↓  j k"
+	DashboardHelpKeysEnds        = "g  G"
+	DashboardHelpKeysPage        = "pgup pgdown"
+	DashboardHelpKeysTab         = "tab shift+tab"
+	DashboardHelpKeysOpenDetail  = "enter → l"
+	DashboardHelpKeysCloseDetail = "esc ← h"
+	DashboardHelpKeysOutputMove  = "shift+↑↓"
+	DashboardHelpKeysClick       = "click"
+	DashboardHelpKeysRightClick  = "right-click"
+	DashboardHelpKeysWheel       = "wheel"
+	DashboardHelpKeysJobSwitch   = "←→"
+
+	DashboardHelpTextSelect      = "select a worktree"
+	DashboardHelpTextEnds        = "first · last"
+	DashboardHelpTextPage        = "page the list"
+	DashboardHelpTextTab         = "switch view"
+	DashboardHelpTextOpenDetail  = "open the detail"
+	DashboardHelpTextCloseDetail = "close the detail"
+	DashboardHelpTextNew         = "new worktree"
+	DashboardHelpTextMenu        = "actions on this worktree"
+	DashboardHelpTextActions     = "actions on several"
+	DashboardHelpTextFastForward = "fast-forward from origin"
+	DashboardHelpTextOpenPR      = "open the pull request"
+	DashboardHelpTextRunLogs     = "open the LOGS tab"
+	DashboardHelpTextJobSwitch   = "switch job in LOGS"
+	DashboardHelpTextOpenAddress = "open the job's address"
+	DashboardHelpTextOutput      = "fold/unfold the output"
+	DashboardHelpTextOutputMove  = "scroll the output"
+	DashboardHelpTextRefresh     = "refresh worktrees / PRs"
+	DashboardHelpTextClick       = "select · activate"
+	DashboardHelpTextRightClick  = "actions on a row"
+	DashboardHelpTextWheel       = "scroll list / output"
+
+	// DashboardHelpHint closes the overlay, DashboardHelpHintScroll replaces it
+	// when the reference is taller than the screen and has to be scrolled.
+	DashboardHelpHint       = "? or esc  close     q  quit"
+	DashboardHelpHintScroll = "↑↓  scroll     ? or esc  close     q  quit"
+
+	// DashboardHelpKeyGap separates the key column from the text it names, and
+	// DashboardHelpColumnGap the two columns of the wide layout.
+	DashboardHelpKeyGap    = 2
+	DashboardHelpColumnGap = 4
+	// DashboardHelpChrome is what the overlay spends around its bands: the title
+	// and its rule, then the rule and the hint closing it. DashboardHelpFrame is
+	// what the box itself spends: two border columns and two padding columns.
+	DashboardHelpChrome = 4
+	DashboardHelpFrame  = 4
+
 	// DashboardAddLabel is the list panel's header button, KeyNew its keyboard
 	// equivalent. The long form is used wherever the panel is wide enough.
 	DashboardAddLabel     = "+ New"
@@ -2351,9 +2468,12 @@ const (
 	// It arrives with the row and its descendants checked; the selection stays the
 	// user's to change.
 	DashboardMenuSync = "Sync this worktree"
-	// DashboardMenuRefreshBase is the only entry the base row offers: it hangs off
-	// nothing, so there is no rebase to run on it — only its own fast-forward.
-	DashboardMenuRefreshBase = "Refresh base branch"
+	// DashboardMenuFastForward leads every row menu, base row included: it is the
+	// least destructive action a row offers, and the most frequent.
+	DashboardMenuFastForward = "Fast-forward from origin"
+	// DashboardMenuFastForwardAll is the same gesture over a selection the user
+	// makes inside the run, next to the batch sync and reparent.
+	DashboardMenuFastForwardAll = "Fast-forward worktrees"
 	// DashboardMenuSyncAll rebases every worktree at once. It arrives with the ones
 	// a cascade would skip left unchecked — they stay listed, with the tag saying
 	// why.
@@ -2387,8 +2507,11 @@ const (
 	DashboardSyncTitle          = "Sync worktrees"
 	// DashboardSyncRowTitle heads the same run started from a row: a modal that
 	// renamed the entry the user just picked reads as a different action.
-	DashboardSyncRowTitle     = "Sync this worktree"
-	DashboardRefreshBaseTitle = "Refresh base branch"
+	DashboardSyncRowTitle = "Sync this worktree"
+	// DashboardFastForwardTitle heads the run started from a row, and
+	// DashboardFastForwardAllTitle the one started from the global menu.
+	DashboardFastForwardTitle    = "Fast-forward from origin"
+	DashboardFastForwardAllTitle = "Fast-forward worktrees"
 	// DashboardSync*Fmt report a finished cascade in the output panel, one line per
 	// branch it touched. Verbs: branch, then what became of it.
 	DashboardSyncStepFmt   = "%s — %s"
@@ -2509,6 +2632,9 @@ const (
 	// detail panel's PR line is also clickable; the key is what makes the action
 	// reachable without a mouse and over a plain ssh terminal.
 	KeyOpenPR = "p"
+	// KeyFastForward advances the selected worktree's branch to its origin
+	// counterpart, the keyboard way into the row menu's first entry.
+	KeyFastForward = "f"
 
 	// KeyOpenURL opens the selected job's URL in a browser.
 	KeyOpenURL = "o"
@@ -2711,3 +2837,61 @@ var DashboardServicesEmptyRows = [][2]string{
 	{"wtm run start --job", "a single job"},
 	{"m on a worktree", "the same two, from its menu"},
 }
+
+// Self-update: the release source, the install methods it can act on, and the
+// policy knobs of the passive update check.
+const (
+	RepoOwner = "LucasPcq"
+	RepoName  = "wtm"
+
+	ModulePath  = "github.com/LucasPcq/wtm"
+	BrewFormula = "LucasPcq/tap/wtm"
+
+	ReleaseAPIBase = "https://api.github.com/repos/" + RepoOwner + "/" + RepoName + "/releases"
+
+	// ChecksumsFileName is the SHA256 manifest goreleaser publishes with every release.
+	ChecksumsFileName = "checksums.txt"
+
+	// GlobalStateFile holds wtm-written state next to the user config. Kept separate
+	// from config.toml: the CLI must never rewrite a file the user hand-edits.
+	GlobalStateFile = "state.json"
+
+	UpdateCheckTTL     = 24 * time.Hour
+	UpdateCheckTimeout = 2 * time.Second
+	UpdateNoticeWait   = 300 * time.Millisecond
+	DownloadTimeout    = 60 * time.Second
+
+	EnvNoUpdateCheck = "WTM_NO_UPDATE_CHECK"
+	EnvCI            = "CI"
+	EnvGitHubActions = "GITHUB_ACTIONS"
+
+	// CmdUpgrade is the self-update command name. The five that follow already
+	// exist as literals in their command files and are centralized here because
+	// the update-check exclusion list needs to name them.
+	CmdUpgrade    = "upgrade"
+	CmdShellInit  = "shell-init"
+	CmdResolve    = "resolve"
+	CmdCompletion = "completion"
+	CmdSchema     = "schema"
+
+	// CmdShellComp and CmdShellCompNoDesc mirror cobra.ShellCompRequestCmd and
+	// ShellCompNoDescRequestCmd, the hidden commands a shell invokes on Tab.
+	CmdShellComp       = "__complete"
+	CmdShellCompNoDesc = "__completeNoDesc"
+
+	// FlagCheck (the read-only report) is shared with `wtm env`.
+	FlagVersionPin = "version"
+
+	// ExitCodeUpgradeUnsupported marks an upgrade that cannot proceed on this
+	// install: built from source, or the binary is not writable.
+	ExitCodeUpgradeUnsupported = 17
+
+	// UpgradeConfirmPrompt keeps a space before the question mark, unlike every
+	// other prompt here: it ends on a version number, and "0.26.1?" reads as part
+	// of the number rather than as a question.
+	UpgradeConfirmPrompt = "Update %s %s → %s ?"
+
+	UpgradeJSONNeedsYes   = "--output json requires --yes or --check (the confirmation prompt cannot run in JSON mode)"
+	UpgradeSourceHint     = "this binary was built from source — run `git pull && make install` instead"
+	UpgradePinUnsupported = "--version only applies to a standalone binary; pin the version through your package manager instead"
+)
