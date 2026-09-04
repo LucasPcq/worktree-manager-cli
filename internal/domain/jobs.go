@@ -215,6 +215,22 @@ type JobActionResult struct {
 	URL string `json:"url,omitempty"`
 }
 
+// WorktreeRunResult is one worktree's half of a run over several of them. A run
+// over a single worktree does not use it: the shape follows the arity, so one
+// worktree still answers with the bare array of job results every run command
+// emits (LUC-198).
+type WorktreeRunResult struct {
+	// Worktree is the branch, Path where it is — the daemon's key, and what a
+	// caller needs to act on that worktree afterwards.
+	Worktree string `json:"worktree"`
+	Path     string `json:"path"`
+	Profile  string `json:"profile,omitempty"`
+	// Aborted says this worktree stopped short. The others carry on regardless,
+	// so it is read per worktree and never for the run as a whole.
+	Aborted bool              `json:"aborted"`
+	Jobs    []JobActionResult `json:"jobs"`
+}
+
 // LogRecord is one sanitized line of a job's output, as persisted in that job's
 // log file.
 type LogRecord struct {

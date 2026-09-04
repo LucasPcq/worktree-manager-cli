@@ -110,6 +110,23 @@ func (l *worktreeList) get() ([]domain.GitWorktree, error) {
 	return l.worktrees, l.err
 }
 
+// branchesOf names a set of worktrees the way a recap shows them, capped so a
+// wide selection does not overflow the line.
+func (l *worktreeList) branchesOf(paths []string) string {
+	if len(paths) == 0 {
+		return domain.SummaryNone
+	}
+	names := make([]string, 0, len(paths))
+	for _, path := range paths {
+		names = append(names, l.branchOf(path))
+	}
+	const maxNames = 5
+	if len(names) <= maxNames {
+		return strings.Join(names, domain.RunURLListSep)
+	}
+	return strings.Join(names[:maxNames], domain.RunURLListSep) + fmt.Sprintf(" +%d", len(names)-maxNames)
+}
+
 func (l *worktreeList) branchOf(path string) string {
 	worktrees, err := l.get()
 	if err != nil {
@@ -136,6 +153,58 @@ func Named(params ResolveParams) (*Resolved, error) {
 	return &resolved, nil
 }
 
+type ResolveAllParams struct {
+	ProjectDir string
+	// Queries are the positionals as they were typed, in that order.
+	Queries []string
+}
+
+// NamedAll resolves every positional, and reports nil when there was none. A
+// query matching nothing or several worktrees refuses the whole run: acting on
+// part of what was asked for would be worse than not acting.
+func NamedAll(params ResolveAllParams) ([]Resolved, error) {
+	if len(params.Queries) == 0 {
+		return nil, nil
+	}
+	resolved := make([]Resolved, 0, len(params.Queries))
+	for _, query := range params.Queries {
+		one, err := Resolve(ResolveParams{ProjectDir: params.ProjectDir, Query: query})
+		if err != nil {
+			return nil, err
+		}
+		resolved = append(resolved, one)
+	}
+	return resolved, nil
+}
+
+// Dirs is where a set of named worktrees are, in the order they were named.
+func Dirs(resolved []Resolved) []string {
+	dirs := make([]string, 0, len(resolved))
+	for _, one := range resolved {
+		dirs = append(dirs, one.Dir)
+	}
+	return dirs
+}
+
+type WorkDirsParams struct {
+	Answers flow.Answers
+	Named   []Resolved
+	Cwd     string
+}
+
+// WorkDirs is the set of worktrees a run acts on: what the step answered, else
+// the positionals, else where the command was launched. It is WorkDir's
+// cumulative form, and answers a set of one wherever that one is all there is.
+func WorkDirs(params WorkDirsParams) []string {
+	if answered := params.Answers.Values(KeyWorktree); len(answered) > 0 {
+		return answered
+	}
+	if len(params.Named) > 0 {
+		return Dirs(params.Named)
+	}
+	return []string{Root(params.Cwd)}
+}
+
 type WorkDirParams struct {
 	Answers flow.Answers
 	Named   *Resolved
@@ -155,9 +224,12 @@ func WorkDir(params WorkDirParams) string {
 }
 
 type PresetParams struct {
-	Named   *Resolved
-	Job     string
-	Profile string
+	Named *Resolved
+	// Worktrees are the paths a cumulative command's positionals named. It is the
+	// set form of Named, and the two are never both set.
+	Worktrees []string
+	Job       string
+	Profile   string
 }
 
 // Presets carry what the flags and the positional already answered. A preset
@@ -168,5 +240,5 @@ func Presets(params PresetParams) flow.Answers {
 	if params.Named != nil {
 		values[KeyWorktree] = params.Named.Dir
 	}
-	return flow.NewAnswers(values)
+	return flow.NewAnswers(values).WithValues(KeyWorktree, params.Worktrees)
 }

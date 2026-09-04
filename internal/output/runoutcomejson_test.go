@@ -73,3 +73,58 @@ func TestRunOutcomeJSONOmitsPortsWhenNothingWasProbed(t *testing.T) {
 		t.Errorf("a run with no probe must not emit an empty field:\n%s", buf.String())
 	}
 }
+
+// The shape follows the arity (LUC-198): one worktree keeps the bare array of
+// job results an agent already parses, byte for byte.
+func TestRunOutcomesJSONOfOneWorktreeIsTheArrayItAlwaysWas(t *testing.T) {
+	outcome := runlogs.Outcome{
+		WorkDir: "/work/main",
+		Results: []domain.JobActionResult{{Name: "web", Status: domain.JobActionStarted}},
+	}
+
+	var one, many bytes.Buffer
+	if err := output.WriteRunOutcomeJSON(&one, outcome); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := output.WriteRunOutcomesJSON(&many, runlogs.Outcomes{outcome}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if one.String() != many.String() {
+		t.Errorf("a run over one worktree changed shape:\n%s\nwant\n%s", many.String(), one.String())
+	}
+}
+
+func TestRunOutcomesJSONOfSeveralWorktreesNamesEachOne(t *testing.T) {
+	var buf bytes.Buffer
+	err := output.WriteRunOutcomesJSON(&buf, runlogs.Outcomes{
+		{
+			WorkDir: "/work/main", Worktree: "main", Profile: "dev",
+			Results: []domain.JobActionResult{{Name: "web", Status: domain.JobActionStarted}},
+		},
+		{
+			WorkDir: "/work/feature", Worktree: "feature", Profile: "dev",
+			Failed:  "web",
+			Results: []domain.JobActionResult{{Name: "web", Status: domain.JobActionError}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	var documents []domain.WorktreeRunResult
+	if err := json.Unmarshal(buf.Bytes(), &documents); err != nil {
+		t.Fatalf("decode %s: %v", buf.String(), err)
+	}
+	if len(documents) != 2 {
+		t.Fatalf("documents = %d, want one per worktree", len(documents))
+	}
+	if documents[0].Worktree != "main" || documents[0].Path != "/work/main" || documents[0].Aborted {
+		t.Errorf("first document = %+v", documents[0])
+	}
+	if documents[1].Worktree != "feature" || !documents[1].Aborted {
+		t.Errorf("second document = %+v, want the aborted worktree named as such", documents[1])
+	}
+	if len(documents[1].Jobs) != 1 || documents[1].Jobs[0].Name != "web" {
+		t.Errorf("second document's jobs = %+v", documents[1].Jobs)
+	}
+}

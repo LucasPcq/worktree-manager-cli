@@ -20,6 +20,10 @@ type RunPrinterParams struct {
 	// Hyperlinks turns a job's URL into an OSC-8 link. Off for a pipe, a JSON
 	// run, or anything that would only show the escape sequence.
 	Hyperlinks bool
+	// Worktrees are the worktrees the run covers. More than one makes every line
+	// name where it came from: N sequences interleave on one stream, and two jobs
+	// called `web` are otherwise the same line twice.
+	Worktrees []string
 }
 
 // RunPrinter renders a profile's start sequence as lines on the terminal the
@@ -30,7 +34,10 @@ type RunPrinter struct {
 	err        io.Writer
 	profile    string
 	hyperlinks bool
+	multi      bool
+	worktrees  int
 	printed    bool
+	readied    bool
 }
 
 func NewRunPrinter(params RunPrinterParams) *RunPrinter {
@@ -39,6 +46,8 @@ func NewRunPrinter(params RunPrinterParams) *RunPrinter {
 		err:        params.Err,
 		profile:    params.Profile,
 		hyperlinks: params.Hyperlinks,
+		multi:      len(params.Worktrees) > 1,
+		worktrees:  len(params.Worktrees),
 	}
 }
 
@@ -49,16 +58,16 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 			Blank(p.out)
 		}
 		if !p.printed && p.profile != "" {
-			Message(p.out, styles.Bold.Render(fmt.Sprintf(domain.RunStreamProfileFmt, p.profile)))
+			Message(p.out, styles.Bold.Render(p.heading()))
 			Blank(p.out)
 		}
 		p.printed = true
-		Loading(p.out, fmt.Sprintf(domain.RunStreamStepFmt, event.Step, event.Steps, event.Job))
+		Loading(p.out, p.qualify(fmt.Sprintf(domain.RunStreamStepFmt, event.Step, event.Steps, event.Job), event.Worktree))
 	case runlogs.PhaseOutput:
 		_, _ = p.out.Write(event.Chunk)
 	case runlogs.PhaseStarted:
 		if event.AlreadyRunning {
-			Success(p.out, fmt.Sprintf(domain.RunStreamAlreadyFmt, event.Job))
+			Success(p.out, p.qualify(fmt.Sprintf(domain.RunStreamAlreadyFmt, event.Job), event.Worktree))
 			return
 		}
 		Success(p.out, p.jobLine(jobLineParams{Format: domain.RunStreamStartedFmt, Event: event}))
@@ -66,7 +75,7 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 	case runlogs.PhaseDone:
 		Success(p.out, p.jobLine(jobLineParams{Format: domain.RunStreamDoneFmt, Event: event}))
 	case runlogs.PhaseFailed:
-		Error(p.err, event.Reason)
+		Error(p.err, p.qualify(event.Reason, event.Worktree))
 	case runlogs.PhaseNotice:
 		Blank(p.err)
 		Callout(p.err, domain.ProxyUnavailableTitle, []string{event.Notice})
@@ -79,6 +88,25 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 	}
 }
 
+// qualify names the worktree a line came from, and leaves it out above a single
+// one — where naming it would only repeat what the command was told.
+func (p *RunPrinter) qualify(line, worktree string) string {
+	if !p.multi || worktree == "" {
+		return line
+	}
+	return fmt.Sprintf(domain.RunStreamWorktreeFmt, line, worktree)
+}
+
+// heading names the run: its profile, and how many worktrees it covers when
+// that is more than one.
+func (p *RunPrinter) heading() string {
+	profile := fmt.Sprintf(domain.RunStreamProfileFmt, p.profile)
+	if !p.multi {
+		return profile
+	}
+	return fmt.Sprintf(domain.RunStreamWorktreeFmt, profile, fmt.Sprintf(domain.RunStreamWorktreesFmt, p.worktrees))
+}
+
 type jobLineParams struct {
 	Format string
 	Event  runlogs.Event
@@ -86,7 +114,7 @@ type jobLineParams struct {
 
 func (p *RunPrinter) jobLine(params jobLineParams) string {
 	return JobLine(JobLineParams{
-		Label:      fmt.Sprintf(params.Format, params.Event.Job),
+		Label:      p.qualify(fmt.Sprintf(params.Format, params.Event.Job), params.Event.Worktree),
 		Ports:      params.Event.Ports,
 		URL:        params.Event.URL,
 		Hyperlinks: p.hyperlinks,
@@ -151,7 +179,7 @@ func (p *RunPrinter) probed(probes []domain.PortProbe) {
 // output already streamed past — this says what is left, not why.
 func (p *RunPrinter) aborted(outcome runlogs.Outcome) {
 	Blank(p.err)
-	Warning(p.err, fmt.Sprintf(domain.RunAbortStepFmt, outcome.FailedStep, outcome.Steps, outcome.Failed))
+	Warning(p.err, p.qualify(fmt.Sprintf(domain.RunAbortStepFmt, outcome.FailedStep, outcome.Steps, outcome.Failed), outcome.Worktree))
 
 	if len(outcome.Started) > 0 {
 		InfoLine(p.err, domain.RunAbortRunningLabel, joinJobNames(outcome.Started))
@@ -164,10 +192,14 @@ func (p *RunPrinter) aborted(outcome runlogs.Outcome) {
 	Loading(p.err, domain.RunAbortHint)
 }
 
+// ready closes the run with the hint on what to do next. N worktrees each end
+// their own sequence, and the hint is about the run rather than about any of
+// them, so it is printed once however many reported.
 func (p *RunPrinter) ready(outcome runlogs.Outcome) {
-	if len(outcome.Started) == 0 {
+	if len(outcome.Started) == 0 || p.readied {
 		return
 	}
+	p.readied = true
 	Blank(p.out)
 	Loading(p.out, domain.RunStreamNextHint)
 }
@@ -179,6 +211,32 @@ func (p *RunPrinter) ready(outcome runlogs.Outcome) {
 // 1") does not say why.
 func WriteRunOutcomeJSON(w io.Writer, outcome runlogs.Outcome) error {
 	return WriteJobResultsJSON(w, RunOutcomeResults(outcome))
+}
+
+// WriteRunOutcomesJSON writes what a run over one or more worktrees did. The
+// shape follows the arity (LUC-198): one worktree answers with the bare array
+// of job results, exactly as it always has, and several answer with one
+// document each — the only way two jobs called `web` can be told apart.
+func WriteRunOutcomesJSON(w io.Writer, outcomes runlogs.Outcomes) error {
+	if len(outcomes) <= 1 {
+		return WriteRunOutcomeJSON(w, outcomes.One())
+	}
+
+	documents := make([]domain.WorktreeRunResult, 0, len(outcomes))
+	for _, outcome := range outcomes {
+		results := RunOutcomeResults(outcome)
+		if results == nil {
+			results = []domain.JobActionResult{}
+		}
+		documents = append(documents, domain.WorktreeRunResult{
+			Worktree: outcome.Worktree,
+			Path:     outcome.WorkDir,
+			Profile:  outcome.Profile,
+			Aborted:  outcome.Aborted(),
+			Jobs:     results,
+		})
+	}
+	return encodeJSON(w, documents)
 }
 
 // RunOutcomeResults is what a run concluded, one entry per job it reached: the

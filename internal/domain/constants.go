@@ -1558,7 +1558,13 @@ const (
 	// left running.
 	RunStreamProfileFmt = "Profile %s"
 	RunStreamStepFmt    = "[%d/%d] %s"
-	RunStreamStartedFmt = "%s started"
+	// RunStreamWorktreeFmt qualifies a line with the worktree it came from, and
+	// RunStreamWorktreesFmt heads a run covering several. Both are only ever used
+	// above one worktree: a single-worktree run says nothing about where it is,
+	// because there is nowhere else it could be.
+	RunStreamWorktreeFmt  = "%s · %s"
+	RunStreamWorktreesFmt = "%d worktrees"
+	RunStreamStartedFmt   = "%s started"
 	// RunPortsSuffixFmt qualifies a name with the ports behind it — the line
 	// announcing a started job, and the recap of what a job gained.
 	// RunPortEntryFmt is one of those ports.
@@ -1588,6 +1594,11 @@ const (
 	// RunWorktreeJobsFmt annotates a worktree with what the daemon's index says
 	// is up in it, which is what makes the picker a view rather than a toll.
 	RunWorktreeJobsFmt = "%d running"
+	// RunWorktreesPickerTitle heads the cumulative form of that picker, and
+	// RunWorktreeSelectAtLeastOne refuses an empty set: a run with no worktree is
+	// a run with nothing to do, not a run on all of them.
+	RunWorktreesPickerTitle     = "Select worktrees"
+	RunWorktreeSelectAtLeastOne = "select at least one worktree"
 
 	// RunJobPickerTitle heads the job picker `run start` and `run stop` open;
 	// naming the job is required on every other path.

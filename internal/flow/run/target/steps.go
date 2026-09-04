@@ -1,6 +1,7 @@
 package target
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -79,6 +80,98 @@ func worktreeOptions(worktrees []domain.GitWorktree, params WorktreeParams) []fl
 			badges = append(badges, flow.Badge{Text: domain.RunWorktreeCurrent})
 		}
 		options = append(options, flow.Option{Label: wt.Branch, Value: wt.Path, Badges: badges})
+	}
+	return options
+}
+
+type WorktreesParams struct {
+	ProjectDir string
+	// Current is the worktree the command was launched from, as git spells it:
+	// the row the cursor opens on, and the whole answer when nobody can be asked.
+	Current string
+	// Selected are the worktrees the positionals already named, pre-checked in
+	// the list so a typed selection can be widened rather than retyped.
+	Selected []string
+	// Running counts the jobs each worktree has up. Empty leaves the badges off.
+	Running map[string]int
+}
+
+// WorktreesStep asks which worktrees the command acts on — the cumulative form
+// of WorktreeStep, for the commands that can address several at once. It skips
+// and resolves exactly as the single one does: a repository holding one
+// worktree asks nothing, and a run that cannot ask acts on the current one.
+func WorktreesStep(params WorktreesParams) flow.Step {
+	list := &worktreeList{projectDir: params.ProjectDir}
+	params.Current = Root(params.Current)
+
+	return flow.Step{
+		Kind:  flow.StepMultiSelect,
+		Key:   KeyWorktree,
+		Label: domain.RunWorktreeStepName,
+		Skip: func(flow.Answers) (bool, string) {
+			worktrees, err := list.get()
+			if err != nil {
+				return true, domain.RunWorktreeUnreadable
+			}
+			if len(worktrees) <= 1 {
+				return true, domain.RunWorktreeOnlyOne
+			}
+			return false, ""
+		},
+		Build: func(flow.Answers) (flow.StepContent, error) {
+			worktrees, err := list.get()
+			if err != nil {
+				return flow.StepContent{}, fmt.Errorf("list worktrees: %w", err)
+			}
+			return flow.StepContent{
+				Title:       domain.RunWorktreesPickerTitle,
+				Description: domain.MultiSelectHint,
+				Options:     worktreesOptions(worktrees, params),
+				Start:       params.Current,
+			}, nil
+		},
+		ValidateSet: func(values []string) error {
+			if len(values) == 0 {
+				return errors.New(domain.RunWorktreeSelectAtLeastOne)
+			}
+			return nil
+		},
+		Resolve: func(flow.Answers) (flow.Answer, error) {
+			return flow.Answer{Values: []string{params.Current}}, nil
+		},
+		Summarize: func(answer flow.Answer) string { return list.branchesOf(answer.Values) },
+	}
+}
+
+func worktreesOptions(worktrees []domain.GitWorktree, params WorktreesParams) []flow.Option {
+	selected := make(map[string]bool, len(params.Selected))
+	for _, dir := range params.Selected {
+		selected[dir] = true
+	}
+	// Nothing named means the current worktree is what the run would act on
+	// anyway, so it opens checked rather than leaving an empty list to arm.
+	if len(selected) == 0 {
+		selected[params.Current] = true
+	}
+
+	options := make([]flow.Option, 0, len(worktrees))
+	for _, wt := range worktrees {
+		var badges []flow.Badge
+		if count := params.Running[wt.Path]; count > 0 {
+			badges = append(badges, flow.Badge{
+				Text: fmt.Sprintf(domain.RunWorktreeJobsFmt, count),
+				Tone: domain.ToneSuccess,
+			})
+		}
+		if wt.Path == params.Current {
+			badges = append(badges, flow.Badge{Text: domain.RunWorktreeCurrent})
+		}
+		options = append(options, flow.Option{
+			Label:    wt.Branch,
+			Value:    wt.Path,
+			Selected: selected[wt.Path],
+			Badges:   badges,
+		})
 	}
 	return options
 }

@@ -154,3 +154,52 @@ func TestWriteRunOutcomeJSONLeavesASuccessfulRunAlone(t *testing.T) {
 		t.Errorf("a successful run carries failure fields:\n%s", buf.String())
 	}
 }
+
+// N sequences interleave on one stream, so every line has to say where it came
+// from — two jobs called `web` are otherwise the same line twice.
+func TestRunPrinterNamesTheWorktreeAboveSeveralOfThem(t *testing.T) {
+	var out, errOut bytes.Buffer
+	printer := NewRunPrinter(RunPrinterParams{
+		Out: &out, Err: &errOut,
+		Profile:   "dev",
+		Worktrees: []string{"main", "feature"},
+	})
+
+	printer.Emit(runlogs.Event{Phase: runlogs.PhaseStarting, Job: "web", Worktree: "main", Step: 1, Steps: 1})
+	printer.Emit(runlogs.Event{Phase: runlogs.PhaseStarted, Job: "web", Worktree: "main", Step: 1, Steps: 1})
+	printer.Emit(runlogs.Event{Phase: runlogs.PhaseStarting, Job: "web", Worktree: "feature", Step: 1, Steps: 1})
+	printer.Emit(runlogs.Event{Phase: runlogs.PhaseStarted, Job: "web", Worktree: "feature", Step: 1, Steps: 1})
+
+	stdout := out.String()
+	for _, want := range []string{"2 worktrees", "[1/1] web · main", "web started · main", "[1/1] web · feature", "web started · feature"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout is missing %q\n--- stdout ---\n%s", want, stdout)
+		}
+	}
+}
+
+// Above a single worktree, naming it would only repeat what the command was told.
+func TestRunPrinterSaysNothingAboutASingleWorktree(t *testing.T) {
+	var out, errOut bytes.Buffer
+	printer := NewRunPrinter(RunPrinterParams{Out: &out, Err: &errOut, Worktrees: []string{"main"}})
+
+	printer.Emit(runlogs.Event{Phase: runlogs.PhaseStarted, Job: "web", Worktree: "main", Step: 1, Steps: 1})
+
+	if strings.Contains(out.String(), "main") {
+		t.Errorf("stdout named the only worktree there is:\n%s", out.String())
+	}
+}
+
+// The hint is about the run, not about any one worktree, so N of them reporting
+// ready must not print it N times.
+func TestRunPrinterClosesTheRunOnce(t *testing.T) {
+	var out, errOut bytes.Buffer
+	printer := NewRunPrinter(RunPrinterParams{Out: &out, Err: &errOut, Worktrees: []string{"main", "feature"}})
+
+	printer.Emit(runlogs.Event{Phase: runlogs.PhaseReady, Outcome: runlogs.Outcome{Worktree: "main", Started: []string{"web"}}})
+	printer.Emit(runlogs.Event{Phase: runlogs.PhaseReady, Outcome: runlogs.Outcome{Worktree: "feature", Started: []string{"web"}}})
+
+	if got := strings.Count(out.String(), domain.RunStreamNextHint); got != 1 {
+		t.Errorf("the hint was printed %d times, want once", got)
+	}
+}
