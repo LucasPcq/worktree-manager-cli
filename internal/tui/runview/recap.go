@@ -69,6 +69,11 @@ func (m Model) recap() string {
 		lines = append(lines, fmt.Sprintf(domain.RunViewRecapProfileFmt, m.profile))
 	}
 	for _, outcome := range m.sequence.outcomes {
+		// Each worktree's account is a block of its own. Run together they read as
+		// one list of jobs, which is exactly what the heading is there to deny.
+		if m.multi() && len(lines) > 0 {
+			lines = append(lines, "")
+		}
 		lines = append(lines, m.recapBlock(outcome)...)
 	}
 

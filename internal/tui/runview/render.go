@@ -147,6 +147,10 @@ func (m Model) renderJobRows(params jobRowsParams) []string {
 		if len(rendered) == params.Rows {
 			break
 		}
+		if row.Spacer {
+			rendered = append(rendered, "")
+			continue
+		}
 		if row.Header != "" {
 			rendered = append(rendered, styles.Muted.Render(truncate(row.Header, params.Width)))
 			continue

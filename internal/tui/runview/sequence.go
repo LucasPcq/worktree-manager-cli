@@ -221,17 +221,22 @@ func (m Model) report() []string {
 	}
 
 	lines := []string{domain.RunViewAbortTitle}
-	for _, outcome := range aborted {
+	for index, outcome := range aborted {
+		if index > 0 {
+			lines = append(lines, "")
+		}
 		lines = append(lines, m.abortLines(outcome)...)
 	}
 	return append(lines, domain.RunViewAbortDismiss)
 }
 
 func (m Model) abortLines(outcome runlogs.Outcome) []string {
-	lines := []string{m.qualify(
-		fmt.Sprintf(domain.RunViewAbortFailedFmt, outcome.FailedStep, outcome.Steps, outcome.Failed,
-			m.sequence.reasons[outcome.WorkDir]),
-		outcome.Worktree,
+	// The worktree qualifies the job, not the whole line: the reason trails it and
+	// can run long, and a name at the far end of it is a name nobody reads.
+	lines := []string{fmt.Sprintf(domain.RunViewAbortFailedFmt,
+		outcome.FailedStep, outcome.Steps,
+		m.qualify(outcome.Failed, outcome.Worktree),
+		m.sequence.reasons[outcome.WorkDir],
 	)}
 	if len(outcome.Started) > 0 {
 		lines = append(lines, fmt.Sprintf(domain.RunViewAbortRunningFmt, joinJobs(outcome.Started)))

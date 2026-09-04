@@ -34,15 +34,19 @@ func multiModel(t *testing.T) Model {
 func TestTheListGroupsJobsUnderTheirWorktree(t *testing.T) {
 	rows := multiModel(t).rows()
 
-	if len(rows) != 5 {
-		t.Fatalf("rows = %d, want three jobs under two headings", len(rows))
+	if len(rows) != 6 {
+		t.Fatalf("rows = %d, want three jobs under two headings, the groups set apart", len(rows))
 	}
-	if rows[0].Header != "main" || rows[3].Header != "feature" {
-		t.Fatalf("headings landed at %q and %q", rows[0].Header, rows[3].Header)
+	if rows[0].Header != "main" || rows[4].Header != "feature" {
+		t.Fatalf("headings landed at %q and %q", rows[0].Header, rows[4].Header)
 	}
-	for _, index := range []int{1, 2, 4} {
-		if rows[index].Header != "" {
-			t.Errorf("row %d is a heading, want a job", index)
+	// A blank line sets the second group off from the first, and only the second.
+	if !rows[3].Spacer {
+		t.Errorf("row 3 = %+v, want the groups set apart", rows[3])
+	}
+	for _, index := range []int{1, 2, 5} {
+		if rows[index].Header != "" || rows[index].Spacer {
+			t.Errorf("row %d is not a job row: %+v", index, rows[index])
 		}
 	}
 }
@@ -202,4 +206,66 @@ func TestFollowingTheRunKeepsThePaneOfAWorktreeStillStarting(t *testing.T) {
 	if got := ansi.Strip(entry.pane.Render()); !strings.Contains(got, "listening on 8119") {
 		t.Errorf("pane = %q, want what the run had written kept", got)
 	}
+}
+
+// Two accounts run together read as one list of jobs, which is exactly what the
+// heading is there to deny.
+func TestTheRecapSetsEachWorktreesBlockApart(t *testing.T) {
+	model := multiModel(t)
+	model.started = true
+	model.profile = "dev"
+	model.sequence.record(runlogs.Outcome{
+		WorkDir: "/work/main", Worktree: "main", Steps: 1, Started: []string{"web"},
+	})
+	model.sequence.record(runlogs.Outcome{
+		WorkDir: "/work/feature", Worktree: "feature", Steps: 1, Started: []string{"web"},
+	})
+
+	if !blankLineBetween(recapLines(model), "main", "feature") {
+		t.Errorf("the two blocks run together:\n%s", ansi.Strip(model.recap()))
+	}
+}
+
+// A single worktree keeps the recap it has always had, blank lines included.
+func TestTheRecapOfOneWorktreeIsUnchanged(t *testing.T) {
+	h := newHarness(t, harnessParams{Views: []runlogs.JobView{running("web")}})
+	h.model.started = true
+	h.model.profile = "dev"
+	h.model.sequence.record(runlogs.Outcome{Steps: 1, Started: []string{"web"}})
+
+	if blankLineBetween(recapLines(h.model), "Profile:", "Running:") {
+		t.Errorf("a single worktree gained a blank line it never had:\n%s", ansi.Strip(h.model.recap()))
+	}
+}
+
+// recapLines is the recap without the box the styles draw around it: what the
+// reader sees as content, one line each.
+func recapLines(model Model) []string {
+	var lines []string
+	for _, line := range strings.Split(ansi.Strip(model.recap()), "\n") {
+		lines = append(lines, strings.TrimSpace(strings.ReplaceAll(line, "\u2503", "")))
+	}
+	return lines
+}
+
+func blankLineBetween(lines []string, first, second string) bool {
+	from, to := -1, -1
+	for index, line := range lines {
+		if from < 0 && strings.HasPrefix(line, first) {
+			from = index
+		}
+		if from >= 0 && index > from && strings.HasPrefix(line, second) {
+			to = index
+			break
+		}
+	}
+	if from < 0 || to < 0 {
+		return false
+	}
+	for _, line := range lines[from+1 : to] {
+		if line == "" {
+			return true
+		}
+	}
+	return false
 }

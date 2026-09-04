@@ -7,8 +7,10 @@ import (
 // sidebarRow is one line of the job list. Above several worktrees the list is
 // two levels deep — a heading, then that worktree's jobs — rather than flat
 // with a worktree column: the sidebar is narrow, and a column would be the
-// first thing truncated. Exactly one of the two fields is set.
+// first thing truncated. A Spacer sets one group off from the next; otherwise
+// exactly one of the two remaining fields is set.
 type sidebarRow struct {
+	Spacer bool
 	Header string
 	View   runlogs.JobView
 }
@@ -30,6 +32,12 @@ func (m Model) rows() []sidebarRow {
 	current := ""
 	for _, view := range visible {
 		if view.WorkDir != current {
+			// A blank line before every group but the first: two headings with only
+			// their jobs between them read as one list, which is what the second
+			// level exists to stop.
+			if current != "" {
+				rows = append(rows, sidebarRow{Spacer: true})
+			}
 			current = view.WorkDir
 			rows = append(rows, sidebarRow{Header: headingOf(view)})
 		}
@@ -51,7 +59,10 @@ func headingOf(view runlogs.JobView) string {
 // is what the sidebar's scroll offset is measured against.
 func selectedRowIndex(rows []sidebarRow, selected jobKey) int {
 	for index, row := range rows {
-		if row.Header == "" && viewKey(row.View) == selected {
+		if row.Spacer || row.Header != "" {
+			continue
+		}
+		if viewKey(row.View) == selected {
 			return index
 		}
 	}
