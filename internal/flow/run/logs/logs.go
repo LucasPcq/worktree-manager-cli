@@ -15,8 +15,8 @@ import (
 )
 
 type Request struct {
-	Worktree string
-	Cwd      string
+	Worktrees []string
+	Cwd       string
 	// Job narrows the output to one of them; empty takes every job the worktree
 	// has. Unlike `run start`, there is a safe default here — all of them — so it
 	// is never required.
@@ -25,8 +25,10 @@ type Request struct {
 }
 
 type Outcome struct {
-	WorkDir string
-	Aborted bool
+	// WorkDirs are the worktrees whose jobs the surface was shown, in selection
+	// order.
+	WorkDirs []string
+	Aborted  bool
 }
 
 // ShowParams is what the surface reads from: the worktree's jobs, and which of
@@ -34,6 +36,9 @@ type Outcome struct {
 type ShowParams struct {
 	Board runlogs.Board
 	Job   string
+	// Worktrees names what the board covers, in selection order: a surface reads
+	// its length to know whether to say where a line came from at all.
+	Worktrees []string
 }
 
 type Presenter interface {
@@ -66,12 +71,12 @@ type logsFlow struct {
 	prompter  flow.Prompter
 	presenter Presenter
 
-	named   *target.Resolved
+	named   []target.Resolved
 	running map[string]int
 }
 
 func (f *logsFlow) run() (Outcome, error) {
-	named, err := target.Named(target.ResolveParams{ProjectDir: f.ctx.ProjectDir, Query: f.request.Worktree})
+	named, err := target.NamedAll(target.ResolveAllParams{ProjectDir: f.ctx.ProjectDir, Queries: f.request.Worktrees})
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -90,18 +95,19 @@ func (f *logsFlow) run() (Outcome, error) {
 		return Outcome{}, err
 	}
 
-	workDir := target.WorkDir(target.WorkDirParams{Answers: answers, Named: f.named, Cwd: f.request.Cwd})
-	runSeam := seam.Open(seam.Params{
+	workDirs := target.WorkDirs(target.WorkDirsParams{Answers: answers, Named: f.named, Cwd: f.request.Cwd})
+	set := seam.OpenSet(seam.SetParams{
 		ProjectDir: f.ctx.ProjectDir,
 		StateDir:   f.ctx.StateDir,
-		WorkDir:    workDir,
+		WorkDirs:   workDirs,
 		Jobs:       f.request.Config.Jobs,
 		ProxyPort:  rules.ProxyPort(f.ctx.Config.Global),
 	})
 
-	return Outcome{WorkDir: workDir}, f.presenter.Show(ShowParams{
-		Board: runSeam.Board(),
-		Job:   f.request.Job,
+	return Outcome{WorkDirs: workDirs}, f.presenter.Show(ShowParams{
+		Board:     set.Board(),
+		Job:       f.request.Job,
+		Worktrees: set.Worktrees(),
 	})
 }
 
@@ -128,11 +134,12 @@ func (f *logsFlow) connect() error {
 func (f *logsFlow) session() flow.Session {
 	return flow.Session{
 		ErrLabel: domain.CmdLogs,
-		Presets:  target.Presets(target.PresetParams{Named: f.named, Job: f.request.Job}),
+		Presets:  target.Presets(target.PresetParams{Worktrees: target.Dirs(f.named), Job: f.request.Job}),
 		Steps: []flow.Step{
-			target.WorktreeStep(target.WorktreeParams{
+			target.WorktreesStep(target.WorktreesParams{
 				ProjectDir: f.ctx.ProjectDir,
 				Current:    f.request.Cwd,
+				Selected:   target.Dirs(f.named),
 				Running:    f.running,
 			}),
 		},
@@ -156,12 +163,18 @@ type ViewsParams struct {
 func Views(params ViewsParams) ([]runlogs.JobView, error) {
 	jobs := params.Board.Jobs()
 	if params.Job != "" {
+		// Every worktree's copy of the job, not the first: --job names a job, and
+		// a board covering three worktrees holds three of them.
+		named := make([]runlogs.JobView, 0, len(jobs))
 		for _, view := range jobs {
 			if view.Name == params.Job {
-				return []runlogs.JobView{view}, nil
+				named = append(named, view)
 			}
 		}
-		return nil, fmt.Errorf("%w: %s", domain.ErrJobNotFound, params.Job)
+		if len(named) == 0 {
+			return nil, fmt.Errorf("%w: %s", domain.ErrJobNotFound, params.Job)
+		}
+		return named, nil
 	}
 
 	views := make([]runlogs.JobView, 0, len(jobs))

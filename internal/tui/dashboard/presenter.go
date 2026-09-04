@@ -189,11 +189,12 @@ type runPresenter struct {
 type downPresenter struct{ presenter }
 
 func (p downPresenter) Downed(outcome downflow.Outcome) error {
-	if outcome.NoDaemon || len(outcome.Results) == 0 {
+	stopped := outcome.Stopped()
+	if outcome.NoDaemon || len(stopped) == 0 {
 		p.line(domain.RunNoJobsHere)
 		return nil
 	}
-	for _, result := range outcome.Results {
+	for _, result := range stopped {
 		if result.Status == domain.JobActionError {
 			p.line(fmt.Sprintf("%s: %s", result.Name, result.Message))
 			continue

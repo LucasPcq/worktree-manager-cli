@@ -66,9 +66,9 @@ func TestTheTerminalComesBackWithItsMouse(t *testing.T) {
 	model := Model{}
 
 	next, cmd := model.finishHandoff(handoffDoneMsg{
-		reply:   reply,
+		reply:    reply,
 		outcomes: runlogs.Outcomes{{Steps: 2}},
-		recap:   "web started",
+		recap:    "web started",
 	})
 
 	if cmd == nil {

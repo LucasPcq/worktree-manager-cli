@@ -16,10 +16,10 @@ import (
 // newDownCmd creates the wtm run down subcommand.
 func newDownCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdDown + " [worktree]",
+		Use:   domain.CmdDown + " [worktree...]",
 		Short: "Stop a worktree's running jobs",
 		Long:  "Stop the jobs running in [worktree] — the current one when omitted, picked interactively when there is a terminal.\nWith --profile, stops only that profile's jobs.\nJobs running in other worktrees are never touched.",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  cobra.ArbitraryArgs,
 		RunE:  runDown,
 	}
 	shared.AddProfileFlag(cmd, "Stop only this profile's jobs")
@@ -61,11 +61,11 @@ func runDown(cmd *cobra.Command, args []string) error {
 	outcome, err := downflow.Run(downflow.Params{
 		Context: shared.FlowContext(result),
 		Request: downflow.Request{
-			Worktree: firstArg(args),
-			Cwd:      dir,
-			Profile:  profile,
-			All:      all,
-			Config:   runCfg,
+			Worktrees: args,
+			Cwd:       dir,
+			Profile:   profile,
+			All:       all,
+			Config:    runCfg,
 		},
 		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
 			Interactive: !all && shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
@@ -91,22 +91,28 @@ type downPresenter struct {
 
 func (p downPresenter) Downed(outcome downflow.Outcome) error {
 	if p.Format == domain.OutputJSON {
-		return output.WriteJobResultsJSON(p.Cmd.OutOrStdout(), outcome.Results)
+		return output.WriteWorktreeJobResultsJSON(p.Cmd.OutOrStdout(), outcome.Results)
 	}
 
 	out, errOut := p.Cmd.OutOrStdout(), p.Cmd.ErrOrStderr()
-	if outcome.NoDaemon || len(outcome.Results) == 0 {
+	if outcome.NoDaemon || len(outcome.Stopped()) == 0 {
 		output.Frame(out, func() { output.Message(out, p.nothingRunning(outcome)) })
 		return nil
 	}
 
 	output.FrameStart(out)
-	for _, result := range outcome.Results {
-		if result.Status == domain.JobActionError {
-			output.Error(errOut, fmt.Sprintf("%s: %s", result.Name, result.Message))
-			continue
+	for _, worktree := range outcome.Results {
+		for _, result := range worktree.Jobs {
+			label := result.Name
+			if len(outcome.Results) > 1 && worktree.Worktree != "" {
+				label = fmt.Sprintf(domain.RunStreamWorktreeFmt, label, worktree.Worktree)
+			}
+			if result.Status == domain.JobActionError {
+				output.Error(errOut, fmt.Sprintf("%s: %s", label, result.Message))
+				continue
+			}
+			output.Success(out, fmt.Sprintf(domain.RunStoppedFmt, label))
 		}
-		output.Success(out, fmt.Sprintf(domain.RunStoppedFmt, result.Name))
 	}
 	output.FrameEnd(out)
 	return nil

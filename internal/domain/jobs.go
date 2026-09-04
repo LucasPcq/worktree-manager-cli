@@ -231,6 +231,16 @@ type WorktreeRunResult struct {
 	Jobs    []JobActionResult `json:"jobs"`
 }
 
+// WorktreeJobResults is one worktree's answer to a command that acted on
+// several. Like WorktreeRunResult it only exists above one worktree: a command
+// acting on a single one answers with the bare array of job results it always
+// has (LUC-198).
+type WorktreeJobResults struct {
+	Worktree string            `json:"worktree"`
+	Path     string            `json:"path"`
+	Jobs     []JobActionResult `json:"jobs"`
+}
+
 // LogRecord is one sanitized line of a job's output, as persisted in that job's
 // log file.
 type LogRecord struct {

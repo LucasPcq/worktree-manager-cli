@@ -43,6 +43,26 @@ func WriteJobResultsJSON(w io.Writer, results []domain.JobActionResult) error {
 	return encodeJSON(w, results)
 }
 
+// WriteWorktreeJobResultsJSON writes what a command did across worktrees. The
+// shape follows the arity (LUC-198): one worktree answers with the bare array
+// of job results, several with one document each — the only way two jobs called
+// `web` can be told apart.
+func WriteWorktreeJobResultsJSON(w io.Writer, results []domain.WorktreeJobResults) error {
+	if len(results) <= 1 {
+		var jobs []domain.JobActionResult
+		if len(results) == 1 {
+			jobs = results[0].Jobs
+		}
+		return WriteJobResultsJSON(w, jobs)
+	}
+	for index := range results {
+		if results[index].Jobs == nil {
+			results[index].Jobs = []domain.JobActionResult{}
+		}
+	}
+	return encodeJSON(w, results)
+}
+
 // WriteJobLogsJSON writes the lines `run logs` read back.
 func WriteJobLogsJSON(w io.Writer, entries []domain.JobLogEntry) error {
 	if entries == nil {

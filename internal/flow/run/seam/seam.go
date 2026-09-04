@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/run/target"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/portprobe"
@@ -49,7 +50,7 @@ type Seam struct {
 }
 
 func Open(params Params) Seam {
-	branch := branchOf(params.WorkDir)
+	branch := target.BranchOf(params.WorkDir)
 	logDir := logDirOf(params.StateDir, branch)
 	service := runlogs.NewService(runlogs.ServiceParams{SocketPath: process.SocketPath()})
 	return Seam{
@@ -123,7 +124,7 @@ type LogDirParams struct {
 // never run git; a worktree with no branch, or one git cannot name, persists
 // nothing rather than sharing another's directory.
 func LogDir(params LogDirParams) string {
-	return logDirOf(params.StateDir, branchOf(params.WorkDir))
+	return logDirOf(params.StateDir, target.BranchOf(params.WorkDir))
 }
 
 func logDirOf(stateDir, branch string) string {
@@ -131,17 +132,6 @@ func logDirOf(stateDir, branch string) string {
 		return ""
 	}
 	return rules.WorktreeLogDir(rules.WorktreeLogDirParams{StateDir: stateDir, Branch: branch})
-}
-
-// branchOf names a worktree the way a reader recognises it, and answers empty
-// for one git cannot name — which is what makes such a worktree persist nothing
-// rather than share another's log directory.
-func branchOf(workDir string) string {
-	branch, err := worktree.CurrentBranch(worktree.CurrentBranchParams{Dir: workDir})
-	if err != nil {
-		return ""
-	}
-	return branch
 }
 
 type JobEnvParams struct {

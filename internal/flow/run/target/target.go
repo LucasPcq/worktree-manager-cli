@@ -59,6 +59,17 @@ func Root(dir string) string {
 	return root
 }
 
+// BranchOf names a worktree the way a reader recognises it, and answers empty
+// for one git cannot name — which is what makes such a worktree persist nothing
+// rather than share another's log directory.
+func BranchOf(dir string) string {
+	branch, err := worktree.CurrentBranch(worktree.CurrentBranchParams{Dir: dir})
+	if err != nil {
+		return ""
+	}
+	return branch
+}
+
 // RunningJobs counts what the daemon holds per worktree, and answers nothing
 // when it cannot be reached: the counts decorate a picker, they never gate it.
 func RunningJobs(service runlogs.Service) map[string]int {

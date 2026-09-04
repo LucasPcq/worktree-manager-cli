@@ -14,8 +14,8 @@ import (
 )
 
 type Request struct {
-	Worktree string
-	Cwd      string
+	Worktrees []string
+	Cwd       string
 	// Profile narrows the stop to one profile's jobs. Empty means everything the
 	// worktree has up, which is the command's safe default — so it is never asked.
 	Profile string
@@ -26,10 +26,13 @@ type Request struct {
 }
 
 type Outcome struct {
-	WorkDir string
-	Profile string
-	All     bool
-	Results []domain.JobActionResult
+	// WorkDirs are the worktrees this run emptied, in selection order. Empty
+	// with --all, which is about every repository the daemon knows.
+	WorkDirs []string
+	Profile  string
+	All      bool
+	// Results is one entry per worktree, each holding the jobs it stopped.
+	Results []domain.WorktreeJobResults
 	// NoDaemon says nothing was listening, so nothing was running to stop.
 	NoDaemon bool
 	Aborted  bool
@@ -38,12 +41,24 @@ type Outcome struct {
 // Failed reports a job left standing. Every run command exits non-zero on what
 // it could not do (LUC-198).
 func (o Outcome) Failed() bool {
-	for _, result := range o.Results {
-		if result.Status == domain.JobActionError {
-			return true
+	for _, worktree := range o.Results {
+		for _, result := range worktree.Jobs {
+			if result.Status == domain.JobActionError {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// Stopped is every job this run stopped, across the worktrees. A surface above
+// one worktree reads it as the flat list it has always been.
+func (o Outcome) Stopped() []domain.JobActionResult {
+	var jobs []domain.JobActionResult
+	for _, worktree := range o.Results {
+		jobs = append(jobs, worktree.Jobs...)
+	}
+	return jobs
 }
 
 type Presenter interface {
@@ -84,11 +99,11 @@ type downFlow struct {
 	prompter  flow.Prompter
 	presenter Presenter
 
-	named *target.Resolved
+	named []target.Resolved
 }
 
 func (f *downFlow) run() (Outcome, error) {
-	named, err := target.Named(target.ResolveParams{ProjectDir: f.ctx.ProjectDir, Query: f.request.Worktree})
+	named, err := target.NamedAll(target.ResolveAllParams{ProjectDir: f.ctx.ProjectDir, Queries: f.request.Worktrees})
 	if err != nil {
 		return Outcome{}, err
 	}
@@ -108,10 +123,10 @@ func (f *downFlow) run() (Outcome, error) {
 		All:     f.request.All,
 	}
 	if !f.request.All {
-		outcome.WorkDir = target.WorkDir(target.WorkDirParams{Answers: answers, Named: f.named, Cwd: f.request.Cwd})
+		outcome.WorkDirs = target.WorkDirs(target.WorkDirsParams{Answers: answers, Named: f.named, Cwd: f.request.Cwd})
 	}
 
-	if err := f.wake(outcome.WorkDir); err != nil {
+	if err := f.wake(outcome.WorkDirs); err != nil {
 		return Outcome{}, err
 	}
 	if !process.IsDaemonRunning(process.SocketPath()) {
@@ -131,11 +146,14 @@ func (f *downFlow) run() (Outcome, error) {
 // stopped. A daemon exits once no foreground job is left, so after a reboot —
 // or simply half an hour later — nothing is listening while detached stacks are
 // very much up, and `run down` is exactly the command that must reach them.
-func (f *downFlow) wake(workDir string) error {
+func (f *downFlow) wake(workDirs []string) error {
 	if process.IsDaemonRunning(process.SocketPath()) {
 		return nil
 	}
-	indexed := process.HasIndexedJobs(workDir)
+	indexed := false
+	for _, workDir := range workDirs {
+		indexed = indexed || process.HasIndexedJobs(workDir)
+	}
 	if f.request.All {
 		indexed = process.HasAnyIndexedJob()
 	}
@@ -153,16 +171,55 @@ func (f *downFlow) wake(workDir string) error {
 	})
 }
 
-func (f *downFlow) stop(outcome Outcome) ([]domain.JobActionResult, error) {
-	if outcome.Profile != "" {
-		return f.stopProfile(outcome)
+// stop empties each worktree in turn. Sequentially, unlike `run up`: stopping
+// is a round-trip to the daemon per job rather than a stack coming up, and the
+// daemon is one server — the concurrency would buy nothing and interleave the
+// stages a surface shows.
+func (f *downFlow) stop(outcome Outcome) ([]domain.WorktreeJobResults, error) {
+	if outcome.All {
+		jobs, err := f.stopAll(outcome, "")
+		if err != nil {
+			return nil, err
+		}
+		return []domain.WorktreeJobResults{{Jobs: jobs}}, nil
 	}
-	return f.stopAll(outcome)
+
+	results := make([]domain.WorktreeJobResults, 0, len(outcome.WorkDirs))
+	for _, workDir := range outcome.WorkDirs {
+		jobs, err := f.stopIn(outcome, workDir)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, domain.WorktreeJobResults{
+			Worktree: f.branchOf(workDir),
+			Path:     workDir,
+			Jobs:     jobs,
+		})
+	}
+	return results, nil
+}
+
+func (f *downFlow) stopIn(outcome Outcome, workDir string) ([]domain.JobActionResult, error) {
+	if outcome.Profile != "" {
+		return f.stopProfile(outcome, workDir)
+	}
+	return f.stopAll(outcome, workDir)
+}
+
+// branchOf names a worktree the way a reader recognises it, falling back to the
+// path git could not name.
+func (f *downFlow) branchOf(workDir string) string {
+	for _, named := range f.named {
+		if named.Dir == workDir && named.Branch != "" {
+			return named.Branch
+		}
+	}
+	return target.BranchOf(workDir)
 }
 
 // stopProfile stops the profile's jobs one by one, so a job that refuses is
 // named rather than lost inside a single failure for the whole set.
-func (f *downFlow) stopProfile(outcome Outcome) ([]domain.JobActionResult, error) {
+func (f *downFlow) stopProfile(outcome Outcome, workDir string) ([]domain.JobActionResult, error) {
 	profile, ok := rules.FindProfile(f.request.Config, outcome.Profile)
 	if !ok {
 		return nil, fmt.Errorf("profile %q not found in config", outcome.Profile)
@@ -180,7 +237,7 @@ func (f *downFlow) stopProfile(outcome Outcome) ([]domain.JobActionResult, error
 				resp, sendErr = client.Send(process.Request{
 					Action:  process.ActionStop,
 					Name:    job.Name,
-					WorkDir: outcome.WorkDir,
+					WorkDir: workDir,
 				})
 				return sendErr
 			},
@@ -197,10 +254,10 @@ func (f *downFlow) stopProfile(outcome Outcome) ([]domain.JobActionResult, error
 	return results, nil
 }
 
-func (f *downFlow) stopAll(outcome Outcome) ([]domain.JobActionResult, error) {
+func (f *downFlow) stopAll(outcome Outcome, workDir string) ([]domain.JobActionResult, error) {
 	request := process.Request{Action: process.ActionStopAll}
 	if !outcome.All {
-		request.WorkDir = outcome.WorkDir
+		request.WorkDir = workDir
 	}
 
 	var resp process.Response
@@ -237,11 +294,12 @@ func (f *downFlow) session() flow.Session {
 	}
 	return flow.Session{
 		ErrLabel: domain.CmdDown,
-		Presets:  target.Presets(target.PresetParams{Named: f.named, Profile: f.request.Profile}),
+		Presets:  target.Presets(target.PresetParams{Worktrees: target.Dirs(f.named), Profile: f.request.Profile}),
 		Steps: []flow.Step{
-			target.WorktreeStep(target.WorktreeParams{
+			target.WorktreesStep(target.WorktreesParams{
 				ProjectDir: f.ctx.ProjectDir,
 				Current:    f.request.Cwd,
+				Selected:   target.Dirs(f.named),
 				Running:    f.running(),
 			}),
 		},

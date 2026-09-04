@@ -128,3 +128,40 @@ func TestRunOutcomesJSONOfSeveralWorktreesNamesEachOne(t *testing.T) {
 		t.Errorf("second document's jobs = %+v", documents[1].Jobs)
 	}
 }
+
+func TestWorktreeJobResultsJSONFollowsTheArity(t *testing.T) {
+	jobs := []domain.JobActionResult{{Name: "web", Status: domain.JobActionStopped}}
+
+	var flat, one bytes.Buffer
+	if err := output.WriteJobResultsJSON(&flat, jobs); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	err := output.WriteWorktreeJobResultsJSON(&one, []domain.WorktreeJobResults{
+		{Worktree: "main", Path: "/work/main", Jobs: jobs},
+	})
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if flat.String() != one.String() {
+		t.Errorf("one worktree changed shape:\n%s\nwant\n%s", one.String(), flat.String())
+	}
+
+	var many bytes.Buffer
+	err = output.WriteWorktreeJobResultsJSON(&many, []domain.WorktreeJobResults{
+		{Worktree: "main", Path: "/work/main", Jobs: jobs},
+		{Worktree: "feature", Path: "/work/feature"},
+	})
+	if err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	var documents []domain.WorktreeJobResults
+	if err := json.Unmarshal(many.Bytes(), &documents); err != nil {
+		t.Fatalf("decode %s: %v", many.String(), err)
+	}
+	if len(documents) != 2 || documents[1].Worktree != "feature" {
+		t.Fatalf("documents = %+v, want one per worktree", documents)
+	}
+	if documents[1].Jobs == nil {
+		t.Error("a worktree that stopped nothing came back without a job array")
+	}
+}
