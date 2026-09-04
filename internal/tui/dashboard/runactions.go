@@ -62,7 +62,7 @@ func (m Model) startRunUp(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 
 	params := upflow.Params{
 		Context: m.flowContext(),
-		Request: upflow.Request{Worktree: runWorktree(selected), Cwd: selected.Path, Config: cfg},
+		Request: upflow.Request{Worktrees: []string{runWorktree(selected)}, Cwd: selected.Path, Config: cfg},
 		Prompter: prompter{
 			send:      send,
 			title:     domain.DashboardMenuRunUp,
@@ -131,7 +131,7 @@ func (m Model) stopRunJob(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 
 	params := stopflow.Params{
 		Context: m.flowContext(),
-		Request: stopflow.Request{Worktree: runWorktree(selected), Cwd: selected.Path, Config: cfg},
+		Request: stopflow.Request{Worktrees: []string{runWorktree(selected)}, Cwd: selected.Path, Config: cfg},
 		Prompter: prompter{
 			send:      send,
 			title:     domain.DashboardMenuRunStop,
@@ -164,7 +164,7 @@ func (m Model) startRunDown(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 
 	params := downflow.Params{
 		Context:   m.flowContext(),
-		Request:   downflow.Request{Worktree: runWorktree(selected), Cwd: selected.Path, Config: cfg},
+		Request:   downflow.Request{Worktrees: []string{runWorktree(selected)}, Cwd: selected.Path, Config: cfg},
 		Prompter:  flow.Unattended{},
 		Presenter: downPresenter{presenter: presenter{send: send, id: id}},
 	}

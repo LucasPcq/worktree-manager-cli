@@ -49,8 +49,8 @@ func startedHarness(t *testing.T, params harnessParams, script func(runlogs.Sink
 	model := New(Params{
 		Board: board,
 		Job:   params.Job,
-		Start: func(_ context.Context, emitter runlogs.Sink) (runlogs.Outcome, error) {
-			return script(emitter), nil
+		Start: func(_ context.Context, emitter runlogs.Sink) (runlogs.Outcomes, error) {
+			return runlogs.Outcomes{script(emitter)}, nil
 		},
 	})
 	t.Cleanup(func() { model.panes.closeAll() })
@@ -163,7 +163,7 @@ func TestThePaneTheRunWritesIntoOutlivesTheCursorLeaving(t *testing.T) {
 		Streams: []string{"api"},
 	})
 	h.emit(t, runlogs.Event{Phase: runlogs.PhaseStarting, Job: "migrate", Step: 1, Steps: 2})
-	h.model.panes.write(writeChunkParams{Job: "migrate", Source: sourceSequence, Chunk: []byte("applying 3 migrations\r\n")})
+	h.model.panes.write(writeChunkParams{Key: "migrate", Source: sourceSequence, Chunk: []byte("applying 3 migrations\r\n")})
 
 	h.press(t, namedKey(tea.KeyDown))
 
@@ -197,7 +197,7 @@ func TestRunOutputReachesThePaneAndItsPhasesTheModel(t *testing.T) {
 	if h.model.sequence.active {
 		t.Fatal("the sequence is still reported as running after it concluded")
 	}
-	if got := h.model.sequence.outcome; len(got.Completed) != 1 || got.Completed[0] != "migrate" {
+	if got := h.model.sequence.outcomes.One(); len(got.Completed) != 1 || got.Completed[0] != "migrate" {
 		t.Fatalf("outcome = %+v, want what the run reported", got)
 	}
 }
@@ -208,7 +208,7 @@ func abortedHarness(t *testing.T) *testHarness {
 		Views:   []runlogs.JobView{running("api"), stopped("migrate"), stopped("web")},
 		Streams: []string{"api"},
 	})
-	h.model.panes.writeLines(writeLinesParams{Job: "migrate", Lines: []string{"ERROR relation does not exist"}})
+	h.model.panes.writeLines(writeLinesParams{Key: "migrate", Lines: []string{"ERROR relation does not exist"}})
 	h.model.following = true
 
 	outcome := runlogs.Outcome{
@@ -271,7 +271,7 @@ func TestAbortReportIsDismissed(t *testing.T) {
 		t.Fatal("the rows the report held were not given back to the pane")
 	}
 	assertPaneMatchesLayout(t, h.model, h.model.selected)
-	if !h.model.sequence.outcome.Aborted() {
+	if !h.model.sequence.outcomes.Aborted() {
 		t.Fatal("dismissing the report lost the outcome it was built from")
 	}
 }
@@ -320,7 +320,7 @@ func TestEscBeforeAnAbortDoesNotSilenceTheReport(t *testing.T) {
 	}
 }
 
-func assertPaneMatchesLayout(t *testing.T, model Model, job string) {
+func assertPaneMatchesLayout(t *testing.T, model Model, job jobKey) {
 	t.Helper()
 	entry, held := model.panes.entry(job)
 	if !held {
@@ -420,7 +420,7 @@ func TestDetachCancelsTheReportingOfARun(t *testing.T) {
 func TestSinkGivesUpOnceTheViewIsGone(t *testing.T) {
 	model := New(Params{
 		Board: runlogstest.NewBoard(runlogstest.BoardParams{}),
-		Start: func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
+		Start: func(context.Context, runlogs.Sink) (runlogs.Outcomes, error) { return runlogs.Outcomes{{}}, nil },
 	})
 	emitter := sink{panes: model.panes, msgs: model.msgs, done: model.runCtx.Done()}
 	model.cancel()
@@ -460,7 +460,7 @@ func TestFollowingStopsWhenTheReaderTakesTheCursor(t *testing.T) {
 func TestRedrawClockRunsWhileTheRunDoes(t *testing.T) {
 	model := New(Params{
 		Board: runlogstest.NewBoard(runlogstest.BoardParams{}),
-		Start: func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
+		Start: func(context.Context, runlogs.Sink) (runlogs.Outcomes, error) { return runlogs.Outcomes{{}}, nil },
 	})
 	t.Cleanup(model.cancel)
 
@@ -485,7 +485,7 @@ func TestRedrawClockRunsWhileTheRunDoes(t *testing.T) {
 func TestRedrawClockIsArmedAgainWhenTheSequenceStarts(t *testing.T) {
 	model := New(Params{
 		Board: runlogstest.NewBoard(runlogstest.BoardParams{Views: []runlogs.JobView{stopped("migrate")}}),
-		Start: func(context.Context, runlogs.Sink) (runlogs.Outcome, error) { return runlogs.Outcome{}, nil },
+		Start: func(context.Context, runlogs.Sink) (runlogs.Outcomes, error) { return runlogs.Outcomes{{}}, nil },
 	})
 	t.Cleanup(model.cancel)
 	model = update(model, tea.WindowSizeMsg{Width: testWidth, Height: testHeight})

@@ -9,7 +9,7 @@ With --profile, stops only that profile's jobs.
 Jobs running in other worktrees are never touched.
 
 ```
-wtm run down [worktree] [flags]
+wtm run down [worktree...] [flags]
 ```
 
 ### Options

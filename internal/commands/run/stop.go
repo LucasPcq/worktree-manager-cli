@@ -15,10 +15,10 @@ import (
 // newStopCmd creates the wtm run stop subcommand.
 func newStopCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdStop + " [worktree]",
+		Use:   domain.CmdStop + " [worktree...]",
 		Short: "Stop a single job",
 		Long:  "Stop one running job of [worktree] — the current one when omitted, picked interactively when there is a terminal.\nThe job is named with --job; without it, a fully interactive run offers a picker.",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  cobra.ArbitraryArgs,
 		RunE:  runStop,
 	}
 	shared.AddJobFlag(cmd, "Job to stop (required without a terminal or in --output json mode)")
@@ -53,10 +53,10 @@ func runStop(cmd *cobra.Command, args []string) error {
 	outcome, err := stopflow.Run(stopflow.Params{
 		Context: shared.FlowContext(result),
 		Request: stopflow.Request{
-			Worktree: firstArg(args),
-			Cwd:      dir,
-			Job:      job,
-			Config:   runCfg,
+			Worktrees: args,
+			Cwd:       dir,
+			Job:       job,
+			Config:    runCfg,
 		},
 		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
 			Interactive: shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),

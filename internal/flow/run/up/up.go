@@ -18,9 +18,9 @@ import (
 )
 
 type Request struct {
-	// Worktree is the positional as it was typed; empty leaves the step to ask,
-	// or to answer with the current worktree.
-	Worktree string
+	// Worktrees are the positionals as they were typed; empty leaves the step to
+	// ask, or to answer with the current worktree.
+	Worktrees []string
 	// Cwd is where the command was launched, the worktree step's safe default.
 	Cwd     string
 	Profile string
@@ -34,9 +34,12 @@ type Request struct {
 }
 
 type Outcome struct {
-	WorkDir string
-	Profile string
-	Result  runlogs.Outcome
+	// WorkDirs are the worktrees this run acted on, in selection order.
+	WorkDirs []string
+	Profile  string
+	// Results is one account per worktree. A run over one is a slice of one:
+	// the surfaces read the arity rather than branching on a mode (LUC-198).
+	Results runlogs.Outcomes
 	Aborted bool
 }
 
@@ -78,8 +81,8 @@ type upFlow struct {
 	prompter  flow.Prompter
 	presenter Presenter
 
-	// named is the worktree the positional designated, nil when there was none.
-	named *target.Resolved
+	// named are the worktrees the positionals designated, nil when there were none.
+	named []target.Resolved
 	// jobs and running are one reading of the daemon's index: what runs where,
 	// for the worktree badges and for the concurrency question.
 	jobs    []domain.JobInfo
@@ -88,11 +91,20 @@ type upFlow struct {
 }
 
 func (f *upFlow) run() (Outcome, error) {
-	named, err := target.Named(target.ResolveParams{ProjectDir: f.ctx.ProjectDir, Query: f.request.Worktree})
+	named, err := target.NamedAll(target.ResolveAllParams{ProjectDir: f.ctx.ProjectDir, Queries: f.request.Worktrees})
 	if err != nil {
 		return Outcome{}, err
 	}
 	f.named = named
+
+	// A flag that contradicts itself is not a decision to default: --exclusive
+	// means one stack at a time, and it cannot be applied to a run that brings up
+	// several. Refused here rather than after the wizard so a run that cannot
+	// happen does not wake a daemon first; the picker refuses the same thing at
+	// the tick, through the step's ValidateSet.
+	if f.request.Exclusive && len(named) > 1 {
+		return Outcome{}, domain.ErrExclusiveMultiWorktree
+	}
 
 	if err := f.connect(); err != nil {
 		return Outcome{}, err
@@ -110,6 +122,7 @@ func (f *upFlow) run() (Outcome, error) {
 	if err := f.remember(answers); err != nil {
 		return Outcome{}, err
 	}
+	f.noticeOverridden(answers)
 	if err := f.clearOthers(answers); err != nil {
 		return Outcome{}, err
 	}
@@ -163,6 +176,18 @@ func (f *upFlow) remember(answers flow.Answers) error {
 	return nil
 }
 
+// noticeOverridden says the project's settled answer could not be applied to
+// this run. It is only ever reached where nobody could be asked: the safe
+// default destroys nothing, and a default that goes unsaid is a default nobody
+// can correct.
+func (f *upFlow) noticeOverridden(answers flow.Answers) {
+	if answers.Answered(KeyConcurrency) || !f.decideConcurrency(answers).Contradiction {
+		return
+	}
+	f.presenter.Status(warning(fmt.Sprintf(domain.RunConcurrencyOverriddenFmt,
+		f.request.Config.Concurrency, len(f.workDirs(answers)))))
+}
+
 // clearOthers stops the other worktrees' jobs when that is what was decided.
 // A worktree that refuses to stop is reported and the run carries on: the
 // answer was about this machine's load, not about a dependency.
@@ -209,35 +234,36 @@ func warning(text string) flow.Notice {
 }
 
 func (f *upFlow) start(answers flow.Answers) (Outcome, error) {
-	workDir := f.workDir(answers)
+	workDirs := f.workDirs(answers)
 	profile, err := f.resolveProfile(answers)
 	if err != nil {
 		return Outcome{}, err
 	}
 
-	runSeam := seam.Open(seam.Params{
+	set := seam.OpenSet(seam.SetParams{
 		ProjectDir:  f.ctx.ProjectDir,
 		StateDir:    f.ctx.StateDir,
-		WorkDir:     workDir,
+		WorkDirs:    workDirs,
 		Jobs:        profile.Jobs,
 		ProbeBudget: rules.PortProbeBudget(f.request.Config),
 		NoProbe:     f.request.NoProbe,
 		ProxyPort:   rules.ProxyPort(f.ctx.Config.Global),
 	})
 
-	result, err := f.presenter.Sequence(seam.SequenceParams{
-		Board:   runSeam.Board(),
-		Profile: profile.Name,
-		Start:   runSeam.Starter(seam.StartParams{Profile: profile.Name, Jobs: profile.Jobs}),
+	results, err := f.presenter.Sequence(seam.SequenceParams{
+		Board:     set.Board(),
+		Profile:   profile.Name,
+		Worktrees: set.Worktrees(),
+		Start:     set.Starter(seam.StartParams{Profile: profile.Name, Jobs: profile.Jobs}),
 	})
 	if err != nil {
 		return Outcome{}, err
 	}
 	return Outcome{
-		WorkDir: workDir,
-		Profile: profile.Name,
-		Result:  result,
-		Aborted: result.Aborted(),
+		WorkDirs: workDirs,
+		Profile:  profile.Name,
+		Results:  results,
+		Aborted:  results.Aborted(),
 	}, nil
 }
 

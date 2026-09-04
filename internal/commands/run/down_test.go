@@ -3,8 +3,11 @@ package run
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -73,5 +76,54 @@ func TestRunStopJSONStaysAnObjectWithNoDaemon(t *testing.T) {
 	}
 	if result.Name != "api" || result.Status != domain.JobActionStopped {
 		t.Errorf("result = %+v, want api stopped", result)
+	}
+}
+
+// Stopping a profile and starting it are two halves of one command, and read as
+// two different programs when only one of them has a shape.
+func TestRunDownConcludesInTheSameBoxRunUpDoes(t *testing.T) {
+	setupStartProject(t, &fakeDaemon{})
+	fakeTTY(t, false)
+
+	if _, _, err := runCmd(t, domain.CmdUp, "--"+domain.FlagProfile, "dev", "-d"); err != nil {
+		t.Fatalf("run up: %v", err)
+	}
+	stdout, _, err := runCmd(t, domain.CmdDown, "--"+domain.FlagProfile, "dev")
+	if err != nil {
+		t.Fatalf("run down: %v", err)
+	}
+
+	body := ansi.Strip(stdout)
+	for _, want := range []string{
+		domain.RunViewRecapTitle,
+		fmt.Sprintf(domain.RunViewRecapProfileFmt, "dev"),
+		domain.RunDownRecapUpHint,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("run down is missing %q:\n%s", want, body)
+		}
+	}
+}
+
+// The worktree is named whatever the arity: the run they do most is exactly the
+// one that must not leave them guessing which worktree it emptied.
+func TestRunDownNamesTheWorktreeItEmptied(t *testing.T) {
+	setupStartProject(t, &fakeDaemon{})
+	fakeTTY(t, false)
+
+	if _, _, err := runCmd(t, domain.CmdUp, "--"+domain.FlagProfile, "dev", "-d"); err != nil {
+		t.Fatalf("run up: %v", err)
+	}
+	stdout, _, err := runCmd(t, domain.CmdDown, "--"+domain.FlagProfile, "dev")
+	if err != nil {
+		t.Fatalf("run down: %v", err)
+	}
+
+	body := ansi.Strip(stdout)
+	if !strings.Contains(body, "Stopped:") {
+		t.Errorf("run down never says what it took down:\n%s", body)
+	}
+	if !strings.Contains(body, "api") {
+		t.Errorf("run down does not name the jobs it stopped:\n%s", body)
 	}
 }

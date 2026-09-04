@@ -11,7 +11,14 @@ import (
 )
 
 type JobView struct {
-	Name      string
+	Name string
+	// WorkDir is the worktree the job belongs to, as git spells it — the
+	// daemon's half of its key, and what a merged board routes on. Two worktrees
+	// running the same profile hold two jobs named `web`, and the name alone no
+	// longer identifies either.
+	WorkDir string
+	// Worktree is that worktree's branch, which is what a reader recognises.
+	Worktree  string
 	Kind      domain.JobKind
 	Status    domain.JobStatus
 	StartedAt time.Time
@@ -46,13 +53,18 @@ type Stream interface {
 
 type AttachParams struct {
 	Job string
+	// WorkDir names the worktree the job belongs to. A single-worktree board
+	// ignores it; a merged one routes on it.
+	WorkDir string
 	// Size sizes the job's PTY as the subscription opens. Zero leaves it as it is.
 	Size Size
 }
 
 type HistoryParams struct {
-	Job   string
-	Lines int
+	Job string
+	// WorkDir names the worktree, as in AttachParams.
+	WorkDir string
+	Lines   int
 }
 
 type Board interface {
@@ -150,6 +162,11 @@ type Prober interface {
 type Event struct {
 	Phase Phase
 	Job   string
+	// WorkDir and Worktree name where this step happened. A run over several
+	// worktrees merges their sequences into one Sink, and a surface that cannot
+	// tell two `web` apart cannot report either.
+	WorkDir  string
+	Worktree string
 	// Kind is the job's, carried on PhaseOutput so a surface knows what it is
 	// reading: a task's bytes come off a pipe, with none of the line discipline
 	// a PTY applies on the way out.
@@ -202,4 +219,8 @@ func (noSink) Emit(Event) {}
 // calls this when it is ready to report. Cancelling the context ends the
 // reporting, never the jobs — a view the reader walked away from stops being
 // written to while the daemon keeps running what it started.
-type StartFunc func(context.Context, Sink) (Outcome, error)
+//
+// It answers with one Outcome per worktree it covered. A run over a single
+// worktree is an Outcomes of one rather than a shape of its own: the surfaces
+// read the arity, so there is nothing to branch on here.
+type StartFunc func(context.Context, Sink) (Outcomes, error)

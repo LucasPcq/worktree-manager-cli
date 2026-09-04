@@ -33,10 +33,10 @@ func TestTheDetachedWatcherNeverAsksForTheTerminal(t *testing.T) {
 
 	if _, err := watcher.Sequence(seam.SequenceParams{
 		Profile: "dev",
-		Start: func(_ context.Context, sink runlogs.Sink) (runlogs.Outcome, error) {
+		Start: func(_ context.Context, sink runlogs.Sink) (runlogs.Outcomes, error) {
 			sink.Emit(runlogs.Event{Phase: runlogs.PhaseStarting, Job: "web", Step: 1, Steps: 2})
 			sink.Emit(runlogs.Event{Phase: runlogs.PhaseStarted, Job: "web", URL: "http://web.wtm"})
-			return runlogs.Outcome{}, nil
+			return runlogs.Outcomes{{}}, nil
 		},
 	}); err != nil {
 		t.Fatalf("Sequence: %v", err)
@@ -61,9 +61,9 @@ func TestTheDetachedWatcherReportsAFailedJob(t *testing.T) {
 
 	if _, err := watcher.Sequence(seam.SequenceParams{
 		Job: "web",
-		Start: func(_ context.Context, sink runlogs.Sink) (runlogs.Outcome, error) {
+		Start: func(_ context.Context, sink runlogs.Sink) (runlogs.Outcomes, error) {
 			sink.Emit(runlogs.Event{Phase: runlogs.PhaseFailed, Job: "web", Reason: "port already bound"})
-			return runlogs.Outcome{}, nil
+			return runlogs.Outcomes{{}}, nil
 		},
 	}); err != nil {
 		t.Fatalf("Sequence: %v", err)
@@ -81,9 +81,9 @@ func TestTheDetachedWatcherKeepsRawOutputOffTheOutputPanel(t *testing.T) {
 	watcher := detachedWatcher{send: func(msg tea.Msg) { msgs <- msg }, id: 1}
 
 	if _, err := watcher.Sequence(seam.SequenceParams{
-		Start: func(_ context.Context, sink runlogs.Sink) (runlogs.Outcome, error) {
+		Start: func(_ context.Context, sink runlogs.Sink) (runlogs.Outcomes, error) {
 			sink.Emit(runlogs.Event{Phase: runlogs.PhaseOutput, Job: "web", Chunk: []byte("noisy build log\n")})
-			return runlogs.Outcome{}, nil
+			return runlogs.Outcomes{{}}, nil
 		},
 	}); err != nil {
 		t.Fatalf("Sequence: %v", err)
@@ -98,14 +98,15 @@ func TestTheDetachedWatcherKeepsRawOutputOffTheOutputPanel(t *testing.T) {
 func TestTheDetachedWatcherReturnsTheOutcomeToTheFlow(t *testing.T) {
 	watcher := detachedWatcher{send: func(tea.Msg) {}, id: 1}
 
-	outcome, err := watcher.Sequence(seam.SequenceParams{
-		Start: func(context.Context, runlogs.Sink) (runlogs.Outcome, error) {
-			return runlogs.Outcome{Started: []string{"web"}}, nil
+	outcomes, err := watcher.Sequence(seam.SequenceParams{
+		Start: func(context.Context, runlogs.Sink) (runlogs.Outcomes, error) {
+			return runlogs.Outcomes{runlogs.Outcome{Started: []string{"web"}}}, nil
 		},
 	})
 	if err != nil {
 		t.Fatalf("Sequence: %v", err)
 	}
+	outcome := outcomes.One()
 	if len(outcome.Started) != 1 || outcome.Started[0] != "web" {
 		t.Errorf("outcome = %+v, want what the sequence concluded handed back to the flow", outcome)
 	}

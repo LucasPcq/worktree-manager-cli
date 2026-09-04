@@ -130,9 +130,9 @@ func (m Model) retail() (Model, tea.Cmd) { return m, m.tailLogsCmd() }
 // the worktree is not the same view.
 func (m Model) watchLogsRequest() logsflow.Request {
 	return logsflow.Request{
-		Worktree: m.logsBranch,
-		Cwd:      m.statusFor(m.logsBranch).Path,
-		Job:      m.logsJob,
+		Worktrees: []string{m.logsBranch},
+		Cwd:       m.statusFor(m.logsBranch).Path,
+		Job:       m.logsJob,
 	}
 }
 

@@ -43,6 +43,28 @@ func WriteJobResultsJSON(w io.Writer, results []domain.JobActionResult) error {
 	return encodeJSON(w, results)
 }
 
+// WriteWorktreeJobResultsJSON writes what a command did across worktrees. The
+// shape follows the arity (LUC-198): one worktree answers with the bare array
+// of job results, several with one document each — the only way two jobs called
+// `web` can be told apart.
+func WriteWorktreeJobResultsJSON(w io.Writer, results []domain.WorktreeJobResults) error {
+	if len(results) <= 1 {
+		var jobs []domain.JobActionResult
+		if len(results) == 1 {
+			jobs = results[0].Jobs
+		}
+		return WriteJobResultsJSON(w, jobs)
+	}
+	documents := make([]domain.WorktreeJobResults, len(results))
+	for index, result := range results {
+		if result.Jobs == nil {
+			result.Jobs = []domain.JobActionResult{}
+		}
+		documents[index] = result
+	}
+	return encodeJSON(w, documents)
+}
+
 // WriteJobLogsJSON writes the lines `run logs` read back.
 func WriteJobLogsJSON(w io.Writer, entries []domain.JobLogEntry) error {
 	if entries == nil {
@@ -228,7 +250,10 @@ func FormatRunningJobs(params FormatRunningJobsParams) string {
 	}
 
 	var b strings.Builder
-	header := fmt.Sprintf("%s%-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
+	// Rendered without its line break: a style given a string ending in one sees
+	// two lines and pads the empty second to the width of the first, which lands
+	// as a run of spaces in front of the first job.
+	header := fmt.Sprintf("%s%-*s  %-*s  %-*s  %-*s  %-*s  %s",
 		Indent,
 		nameW, "NAME",
 		kindW, "KIND",
@@ -238,6 +263,7 @@ func FormatRunningJobs(params FormatRunningJobsParams) string {
 		"WORKTREE",
 	)
 	b.WriteString(styles.Muted.Render(header))
+	b.WriteString("\n")
 
 	for i, j := range params.Jobs {
 		status := styleJobStatus(j.Status)

@@ -13,26 +13,21 @@ import (
 // back. Recap is a raw body: the command that opened the view is the one that
 // frames it.
 type Result struct {
-	Recap   string
-	Outcome runlogs.Outcome
+	Recap    string
+	Outcomes runlogs.Outcomes
 }
 
 func (m Model) result() Result {
-	return Result{Recap: m.recap(), Outcome: m.sequence.outcome}
+	return Result{Recap: m.recap(), Outcomes: m.sequence.outcomes}
 }
 
-// recap is the last thing said about a run, on the terminal the view was
-// covering: what it left running, and the two commands that act on it. A view
-// that started nothing — `wtm run logs` — has nothing to conclude.
-func (m Model) recap() string {
-	if !m.started {
-		return ""
-	}
-
-	outcome := m.sequence.outcome
+// recapBlock is one worktree's account of itself. Above a single worktree it
+// reads exactly as it always has: the heading only appears when there is
+// another block it could be confused with.
+func (m Model) recapBlock(outcome runlogs.Outcome) []string {
 	var lines []string
-	if m.profile != "" {
-		lines = append(lines, fmt.Sprintf(domain.RunViewRecapProfileFmt, m.profile))
+	if outcome.Worktree != "" {
+		lines = append(lines, styles.Bold.Render(outcome.Worktree))
 	}
 	if len(outcome.Started) > 0 {
 		lines = append(lines, fmt.Sprintf(domain.RunViewRecapRunningFmt, joinJobs(outcome.Started)))
@@ -49,9 +44,41 @@ func (m Model) recap() string {
 	if len(outcome.Started) == 0 {
 		lines = append(lines, domain.RunViewRecapNoneRunning)
 	}
+	return lines
+}
+
+func (m Model) anythingStarted() bool {
+	for _, outcome := range m.sequence.outcomes {
+		if len(outcome.Started) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// recap is the last thing said about a run, on the terminal the view was
+// covering: what it left running, and the two commands that act on it. A view
+// that started nothing — `wtm run logs` — has nothing to conclude.
+func (m Model) recap() string {
+	if !m.started {
+		return ""
+	}
+
+	var lines []string
+	if m.profile != "" {
+		lines = append(lines, fmt.Sprintf(domain.RunViewRecapProfileFmt, m.profile))
+	}
+	for _, outcome := range m.sequence.outcomes {
+		// Each worktree's account is a block of its own. Run together they read as
+		// one list of jobs, which is exactly what the heading is there to deny.
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, m.recapBlock(outcome)...)
+	}
 
 	hints := []string{styles.Muted.Render(domain.RunViewRecapLogsHint)}
-	if len(outcome.Started) > 0 {
+	if m.anythingStarted() {
 		hints = append(hints, styles.Muted.Render(domain.RunViewRecapDownHint))
 	}
 	body := strings.Join(append(lines, append([]string{""}, hints...)...), "\n")

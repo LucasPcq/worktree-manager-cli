@@ -15,15 +15,14 @@ import (
 	upflow "github.com/LucasPcq/wtm/internal/flow/run/up"
 )
 
-// dispatchParams is an action a picker chose, run in this process. `run ps` and
-// `run list` used to re-exec the binary for it (os.Executable + exec), which is
-// what having no flow layer forced them into: the action lived in another
-// command's runner and there was no other way to reach it.
+// dispatchParams is an action `run list`'s picker chose, run in this process. It
+// used to re-exec the binary for it (os.Executable + exec), which is what having
+// no flow layer forced it into: the action lived in another command's runner and
+// there was no other way to reach it.
 type dispatchParams struct {
 	Cmd *cobra.Command
-	// WorkDir is the worktree the action acts on. `run ps` lists every repository
-	// the daemon knows, so it is not always this one — which is why the config is
-	// loaded from it rather than from the current directory.
+	// WorkDir is the worktree the action acts on, loaded rather than assumed: the
+	// config comes from it and not from the current directory.
 	WorkDir string
 	Job     string
 	Profile string

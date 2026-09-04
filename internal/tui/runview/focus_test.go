@@ -199,7 +199,7 @@ func TestFocusIsNamedInTheFrame(t *testing.T) {
 func TestFocusEndsWithTheStream(t *testing.T) {
 	h := focusedHarness(t, "api")
 
-	h.model = update(h.model, streamEndedMsg{job: "api"})
+	h.model = update(h.model, streamEndedMsg{key: "api"})
 
 	if h.model.focused {
 		t.Fatal("the keyboard was left with a job whose output ended")
@@ -261,7 +261,7 @@ func TestAttachCorrectsASizeTheWindowOutgrew(t *testing.T) {
 
 	stream := runlogstest.NewStream()
 	t.Cleanup(func() { stream.Close() })
-	model, cmd := updateCmd(h.model, attachedMsg{job: "api", stream: stream, size: PaneSize{Cols: 1, Rows: 1}})
+	model, cmd := updateCmd(h.model, attachedMsg{key: "api", stream: stream, size: PaneSize{Cols: 1, Rows: 1}})
 	if cmd == nil {
 		t.Fatal("an attach that opened at a stale size did not correct it")
 	}
@@ -275,7 +275,7 @@ func TestAttachCorrectsASizeTheWindowOutgrew(t *testing.T) {
 
 	sized := runlogstest.NewStream()
 	t.Cleanup(func() { sized.Close() })
-	if _, none := updateCmd(model, attachedMsg{job: "api", stream: sized, size: model.paneSize()}); none != nil {
+	if _, none := updateCmd(model, attachedMsg{key: "api", stream: sized, size: model.paneSize()}); none != nil {
 		t.Fatal("an attach that opened at the right size was corrected anyway")
 	}
 }

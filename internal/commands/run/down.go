@@ -16,10 +16,10 @@ import (
 // newDownCmd creates the wtm run down subcommand.
 func newDownCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdDown + " [worktree]",
+		Use:   domain.CmdDown + " [worktree...]",
 		Short: "Stop a worktree's running jobs",
 		Long:  "Stop the jobs running in [worktree] — the current one when omitted, picked interactively when there is a terminal.\nWith --profile, stops only that profile's jobs.\nJobs running in other worktrees are never touched.",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  cobra.ArbitraryArgs,
 		RunE:  runDown,
 	}
 	shared.AddProfileFlag(cmd, "Stop only this profile's jobs")
@@ -61,11 +61,11 @@ func runDown(cmd *cobra.Command, args []string) error {
 	outcome, err := downflow.Run(downflow.Params{
 		Context: shared.FlowContext(result),
 		Request: downflow.Request{
-			Worktree: firstArg(args),
-			Cwd:      dir,
-			Profile:  profile,
-			All:      all,
-			Config:   runCfg,
+			Worktrees: args,
+			Cwd:       dir,
+			Profile:   profile,
+			All:       all,
+			Config:    runCfg,
 		},
 		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
 			Interactive: !all && shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
@@ -91,25 +91,44 @@ type downPresenter struct {
 
 func (p downPresenter) Downed(outcome downflow.Outcome) error {
 	if p.Format == domain.OutputJSON {
-		return output.WriteJobResultsJSON(p.Cmd.OutOrStdout(), outcome.Results)
+		return output.WriteWorktreeJobResultsJSON(p.Cmd.OutOrStdout(), outcome.Results)
 	}
 
 	out, errOut := p.Cmd.OutOrStdout(), p.Cmd.ErrOrStderr()
-	if outcome.NoDaemon || len(outcome.Results) == 0 {
+	if outcome.NoDaemon || len(outcome.Stopped()) == 0 {
 		output.Frame(out, func() { output.Message(out, p.nothingRunning(outcome)) })
 		return nil
 	}
 
-	output.FrameStart(out)
-	for _, result := range outcome.Results {
-		if result.Status == domain.JobActionError {
-			output.Error(errOut, fmt.Sprintf("%s: %s", result.Name, result.Message))
-			continue
+	// A job left standing is named on stderr as it is refused, so the reason
+	// reaches a reader piping stdout; the recap then accounts for it alongside
+	// what did go down.
+	for _, worktree := range outcome.Results {
+		for _, result := range worktree.Jobs {
+			if result.Status != domain.JobActionError {
+				continue
+			}
+			output.Error(errOut, p.qualify(fmt.Sprintf("%s: %s", result.Name, result.Message), outcome, worktree))
 		}
-		output.Success(out, fmt.Sprintf(domain.RunStoppedFmt, result.Name))
 	}
-	output.FrameEnd(out)
+
+	output.Frame(out, func() {
+		fmt.Fprint(out, output.FormatRunDownRecap(output.RunDownRecapParams{
+			Profile: outcome.Profile,
+			Results: outcome.Results,
+		}))
+	})
 	return nil
+}
+
+// qualify names the worktree at the end of the line, never inside it: `migrate
+// stopped · main` is the sentence `run up` writes, `migrate · main stopped` is
+// the same words in the wrong order.
+func (p downPresenter) qualify(line string, outcome downflow.Outcome, worktree domain.WorktreeJobResults) string {
+	if len(outcome.Results) <= 1 || worktree.Worktree == "" {
+		return line
+	}
+	return fmt.Sprintf(domain.RunStreamWorktreeFmt, line, worktree.Worktree)
 }
 
 func (p downPresenter) nothingRunning(outcome downflow.Outcome) string {

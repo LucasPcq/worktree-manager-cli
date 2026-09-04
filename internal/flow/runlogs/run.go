@@ -10,6 +10,11 @@ import (
 )
 
 type Outcome struct {
+	// WorkDir and Worktree name the worktree this run acted on: its path as git
+	// spells it, and the branch a recap shows. Both are empty for a run whose
+	// caller never said.
+	WorkDir  string
+	Worktree string
 	// Profile names the profile this run started, empty when the caller started
 	// a job list of its own. A surface that cannot say which profile it just
 	// brought up leaves the reader to guess between several (LUC-208).
@@ -48,6 +53,44 @@ func (o Outcome) Aborted() bool { return o.Failed != "" }
 // a surface already has.
 func (o Outcome) Recorded() bool { return o.Steps > 0 || o.Aborted() }
 
+// Outcomes is what a run over several worktrees concluded, one entry per
+// worktree in the order they were selected. A run over one is an Outcomes of
+// one: the surfaces read the arity rather than branching on a mode.
+type Outcomes []Outcome
+
+// Aborted reports that at least one worktree stopped short. The worktrees are
+// isolated by construction, so one aborting says nothing about the others —
+// only about the exit code the command owes its caller.
+func (o Outcomes) Aborted() bool {
+	for _, outcome := range o {
+		if outcome.Aborted() {
+			return true
+		}
+	}
+	return false
+}
+
+// Recorded reports that at least one worktree gave an account of itself, which
+// is what makes a recap worth printing.
+func (o Outcomes) Recorded() bool {
+	for _, outcome := range o {
+		if outcome.Recorded() {
+			return true
+		}
+	}
+	return false
+}
+
+// One is the single outcome of a run over one worktree, and the zero value for
+// any other arity. It is what the surfaces whose shape follows the arity read
+// (LUC-198).
+func (o Outcomes) One() Outcome {
+	if len(o) != 1 {
+		return Outcome{}
+	}
+	return o[0]
+}
+
 type RunParams struct {
 	Service Service
 	Sink    Sink
@@ -56,7 +99,10 @@ type RunParams struct {
 	// Outcome so a recap can name it.
 	Profile string
 	WorkDir string
-	LogDir  string
+	// Worktree is WorkDir's branch, carried through to the Outcome and to every
+	// Event so a merged report can name where a step happened.
+	Worktree string
+	LogDir   string
 	// Env is what every job in this run learns about the worktree it belongs to,
 	// resolved by the surface — the only side that can ask git.
 	Env map[string]string
@@ -96,6 +142,7 @@ func Run(ctx context.Context, params RunParams) (Outcome, error) {
 		jobs:       params.Jobs,
 		profile:    params.Profile,
 		workDir:    params.WorkDir,
+		worktree:   params.Worktree,
 		logDir:     params.LogDir,
 		env:        params.Env,
 		prober:     params.Prober,
@@ -115,15 +162,16 @@ func Run(ctx context.Context, params RunParams) (Outcome, error) {
 }
 
 type runner struct {
-	ctx     context.Context
-	service Service
-	sink    Sink
-	jobs    []domain.JobConfig
-	profile string
-	workDir string
-	logDir  string
-	env     map[string]string
-	prober  Prober
+	ctx      context.Context
+	service  Service
+	sink     Sink
+	jobs     []domain.JobConfig
+	profile  string
+	workDir  string
+	worktree string
+	logDir   string
+	env      map[string]string
+	prober   Prober
 	// project and proxyPort together decide whether a job's URL is its name or
 	// its port; both come from the surface, which is the side that reads config.
 	project    string
@@ -363,11 +411,15 @@ func (r *runner) emit(event Event) {
 		return
 	}
 	event.Steps = len(r.jobs)
+	event.WorkDir = r.workDir
+	event.Worktree = r.worktree
 	r.sink.Emit(event)
 }
 
 func (r *runner) outcome() Outcome {
 	return Outcome{
+		WorkDir:   r.workDir,
+		Worktree:  r.worktree,
 		Profile:   r.profile,
 		Results:   r.results,
 		Started:   r.started,

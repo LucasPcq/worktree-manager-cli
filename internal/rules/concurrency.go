@@ -14,6 +14,10 @@ type ConcurrencyParams struct {
 	// OthersRunning says another worktree has jobs up. Without one there is
 	// nothing to stop, so there is nothing to decide either.
 	OthersRunning bool
+	// Selection is how many worktrees this run starts. More than one contradicts
+	// a settled `exclusive`, which means one stack at a time: bringing up three
+	// is exactly what that answer refused, whether or not anything else is up.
+	Selection int
 }
 
 // ConcurrencyDecision is what a run does about the other worktrees, and whether
@@ -22,12 +26,22 @@ type ConcurrencyParams struct {
 type ConcurrencyDecision struct {
 	Value domain.Concurrency
 	Ask   bool
+	// Contradiction says the question is about a run that contradicts the
+	// project's settled answer, rather than about a project that has never given
+	// one. They are two different questions and have to read as such.
+	Contradiction bool
 }
 
 // DecideConcurrency resolves the flags, then the config, then falls back to
 // leaving the other worktrees alone. Parallel is the safe default in the sense
 // the bypass model means: it is the answer that stops nothing.
 func DecideConcurrency(params ConcurrencyParams) ConcurrencyDecision {
+	// The contradiction outranks everything the config settled: the answer it
+	// holds cannot be applied to this run, so it has to be put to whoever can
+	// answer — and stand aside where nobody can.
+	if contradictsSettledExclusive(params) {
+		return ConcurrencyDecision{Value: domain.ConcurrencyParallel, Ask: true, Contradiction: true}
+	}
 	if !params.OthersRunning {
 		return ConcurrencyDecision{Value: domain.ConcurrencyParallel}
 	}
@@ -41,6 +55,15 @@ func DecideConcurrency(params ConcurrencyParams) ConcurrencyDecision {
 		return ConcurrencyDecision{Value: params.Config}
 	}
 	return ConcurrencyDecision{Value: domain.ConcurrencyParallel, Ask: true}
+}
+
+// contradictsSettledExclusive reports a run that brings up several worktrees
+// against a project that settled on one at a time. A flag settles the run
+// either way, so neither of them leaves a contradiction to resolve.
+func contradictsSettledExclusive(params ConcurrencyParams) bool {
+	return params.Selection > 1 &&
+		params.Config == domain.ConcurrencyExclusive &&
+		!params.Exclusive && !params.Parallel
 }
 
 // ValidateConcurrency refuses a value that is neither of the two. A typo would

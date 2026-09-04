@@ -205,3 +205,138 @@ func badgesByValue(options []flow.Option) map[string]string {
 	}
 	return byValue
 }
+
+func TestWorktreesStepResolvesToTheCurrentWorktreeAsASetOfOne(t *testing.T) {
+	repo := gittest.InitRepo(t)
+
+	step := target.WorktreesStep(target.WorktreesParams{ProjectDir: repo, Current: repo})
+
+	answer, err := step.Resolve(flow.Answers{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(answer.Values) != 1 || answer.Values[0] != target.Root(repo) {
+		t.Errorf("Resolve = %v, want the current worktree alone", answer.Values)
+	}
+}
+
+// Nothing named means the run would act where it stands, so the list opens with
+// that row already checked rather than with an empty set to arm.
+func TestWorktreesStepPrechecksWhatTheRunWouldActOnAnyway(t *testing.T) {
+	repo, second := repoWithSecondWorktree(t)
+
+	step := target.WorktreesStep(target.WorktreesParams{ProjectDir: repo, Current: repo})
+
+	content, err := step.Build(flow.Answers{})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	for _, option := range content.Options {
+		want := option.Value == target.Root(repo)
+		if option.Selected != want {
+			t.Errorf("%q selected = %v, want %v", option.Value, option.Selected, want)
+		}
+	}
+	if second == "" {
+		t.Fatal("the second worktree was never created")
+	}
+}
+
+func TestWorktreesStepPrechecksThePositionalsInstead(t *testing.T) {
+	repo, second := repoWithSecondWorktree(t)
+
+	step := target.WorktreesStep(target.WorktreesParams{
+		ProjectDir: repo,
+		Current:    repo,
+		Selected:   []string{second},
+	})
+
+	content, err := step.Build(flow.Answers{})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	for _, option := range content.Options {
+		want := option.Value == second
+		if option.Selected != want {
+			t.Errorf("%q selected = %v, want only what the positionals named", option.Value, option.Selected)
+		}
+	}
+}
+
+// A run with no worktree is a run with nothing to do, never a run on all of them.
+func TestWorktreesStepRefusesAnEmptySelection(t *testing.T) {
+	repo := gittest.InitRepo(t)
+
+	step := target.WorktreesStep(target.WorktreesParams{ProjectDir: repo, Current: repo})
+
+	if err := step.ValidateSet(nil); err == nil {
+		t.Fatal("an empty selection was accepted")
+	}
+	if err := step.ValidateSet([]string{repo}); err != nil {
+		t.Errorf("ValidateSet: %v", err)
+	}
+}
+
+func TestWorktreesStepSummarizesPathsAsBranches(t *testing.T) {
+	repo, second := repoWithSecondWorktree(t)
+
+	step := target.WorktreesStep(target.WorktreesParams{ProjectDir: repo, Current: repo})
+
+	got := step.Summarize(flow.Answer{Values: []string{target.Root(repo), second}})
+	if !strings.Contains(got, "feature") {
+		t.Errorf("Summarize = %q, want the branch names", got)
+	}
+}
+
+func TestWorkDirsPrefersTheAnswerThenThePositionalsThenTheCwd(t *testing.T) {
+	repo := gittest.InitRepo(t)
+
+	answered := target.WorkDirs(target.WorkDirsParams{
+		Answers: flow.Answers{}.WithValues(target.KeyWorktree, []string{"/a", "/b"}),
+		Named:   []target.Resolved{{Dir: "/named"}},
+		Cwd:     repo,
+	})
+	if len(answered) != 2 || answered[0] != "/a" || answered[1] != "/b" {
+		t.Errorf("WorkDirs = %v, want what the step answered", answered)
+	}
+
+	named := target.WorkDirs(target.WorkDirsParams{
+		Named: []target.Resolved{{Dir: "/named"}, {Dir: "/other"}},
+		Cwd:   repo,
+	})
+	if len(named) != 2 || named[0] != "/named" {
+		t.Errorf("WorkDirs = %v, want the positionals", named)
+	}
+
+	fallback := target.WorkDirs(target.WorkDirsParams{Cwd: repo})
+	if len(fallback) != 1 || fallback[0] != target.Root(repo) {
+		t.Errorf("WorkDirs = %v, want the current worktree alone", fallback)
+	}
+}
+
+// A branch and a path can name the same worktree. Running it twice would race
+// two identical sequences, the second failing on the jobs the first started.
+func TestWorkDirsKeepsOneMentionOfEachWorktree(t *testing.T) {
+	dirs := target.WorkDirs(target.WorkDirsParams{
+		Named: []target.Resolved{{Dir: "/a"}, {Dir: "/b"}, {Dir: "/a"}},
+		Cwd:   "/cwd",
+	})
+
+	if len(dirs) != 2 || dirs[0] != "/a" || dirs[1] != "/b" {
+		t.Errorf("WorkDirs = %v, want each worktree once in the order it was named", dirs)
+	}
+}
+
+// --exclusive stops all but one, so it cannot be applied to a wider selection.
+// The picker refuses at the tick rather than after the recap.
+func TestWorktreesStepRefusesASecondTickForASingleWorktreeRun(t *testing.T) {
+	repo := gittest.InitRepo(t)
+	step := target.WorktreesStep(target.WorktreesParams{ProjectDir: repo, Current: repo, Single: true})
+
+	if err := step.ValidateSet([]string{"/a"}); err != nil {
+		t.Errorf("ValidateSet: %v", err)
+	}
+	if err := step.ValidateSet([]string{"/a", "/b"}); !errors.Is(err, domain.ErrExclusiveMultiWorktree) {
+		t.Errorf("ValidateSet = %v, want the contradiction refused", err)
+	}
+}

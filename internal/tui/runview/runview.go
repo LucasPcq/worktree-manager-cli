@@ -20,6 +20,10 @@ type Params struct {
 	// Profile names what Start brings up, shown in the header and the recap.
 	// Empty for a view that starts nothing, or a run.toml declaring no profile.
 	Profile string
+	// Worktrees are the worktrees Start covers. The view needs the count before
+	// the first event: N sequences end independently, and it is only over when
+	// every one of them has reported.
+	Worktrees []string
 	// Start runs a profile's start sequence while the view is open, reporting to
 	// the Sink it is given. Nil for a view that only reads what is already
 	// running. Cancelling the context ends the reporting, never the jobs.
@@ -52,9 +56,13 @@ type Model struct {
 	height int
 
 	jobs     []runlogs.JobView
-	selected string
-	offset   int
-	err      error
+	selected jobKey
+	// wantJob is the job the view was opened on, by name: the flow that opened it
+	// named a job, not a worktree's copy of one, so it is resolved to a key on the
+	// first listing.
+	wantJob string
+	offset  int
+	err     error
 
 	filtering bool
 	filter    string
@@ -70,7 +78,7 @@ type Model struct {
 
 	// pending is the job whose pane is being filled — an attach or a history
 	// read in flight — so a second one is not started behind it.
-	pending string
+	pending jobKey
 	// ticking reports whether a redraw tick is already scheduled: a pane being
 	// written to is redrawn on a clock, never once per chunk.
 	ticking bool
@@ -96,21 +104,26 @@ type Model struct {
 func New(params Params) Model {
 	ctx, cancel := context.WithCancel(context.Background())
 	return Model{
-		board:    params.Board,
-		selected: params.Job,
-		profile:  params.Profile,
-		panes:    newPaneStore(PaneSize{}),
-		msgs:     make(chan tea.Msg, domain.RunViewMsgBuffer),
-		start:    params.Start,
-		open:     params.Open,
-		started:  params.Start != nil,
+		board:   params.Board,
+		wantJob: params.Job,
+		profile: params.Profile,
+		panes:   newPaneStore(PaneSize{}),
+		msgs:    make(chan tea.Msg, domain.RunViewMsgBuffer),
+		start:   params.Start,
+		open:    params.Open,
+		started: params.Start != nil,
 		// A run feeds panes from its own goroutine, so the clock has to be
 		// running before the first chunk lands.
 		ticking:   params.Start != nil,
 		following: params.Start != nil,
-		sequence:  sequence{states: map[string]domain.JobStep{}},
-		runCtx:    ctx,
-		cancel:    cancel,
+		sequence: sequence{
+			keys:    map[jobKey]bool{},
+			states:  map[jobKey]domain.JobStep{},
+			reasons: map[string]string{},
+			pending: max(len(params.Worktrees), 1),
+		},
+		runCtx: ctx,
+		cancel: cancel,
 	}
 }
 
@@ -154,8 +167,8 @@ func (m Model) startCmd() tea.Cmd {
 	start, ctx := m.start, m.runCtx
 	emitter := sink{panes: m.panes, msgs: m.msgs, done: ctx.Done()}
 	return func() tea.Msg {
-		outcome, err := start(ctx, emitter)
-		return runFinishedMsg{outcome: outcome, err: err}
+		outcomes, err := start(ctx, emitter)
+		return runFinishedMsg{outcomes: outcomes, err: err}
 	}
 }
 
@@ -165,7 +178,7 @@ type jobsMsg struct {
 }
 
 type attachedMsg struct {
-	job    string
+	key    jobKey
 	stream runlogs.Stream
 	// size is what the job's PTY was sized to as the subscription opened, which
 	// the view may have outgrown while the daemon was answering.
@@ -174,15 +187,15 @@ type attachedMsg struct {
 }
 
 type historyMsg struct {
-	job   string
+	key   jobKey
 	lines []string
 	err   error
 }
 
-type streamEndedMsg struct{ job string }
+type streamEndedMsg struct{ key jobKey }
 
 type streamErrMsg struct {
-	job string
+	key jobKey
 	err error
 }
 
@@ -201,7 +214,7 @@ func (m Model) refreshCmd() tea.Cmd {
 }
 
 type attachParams struct {
-	Job  string
+	Key  jobKey
 	Size PaneSize
 }
 
@@ -209,18 +222,19 @@ func (m Model) attachCmd(params attachParams) tea.Cmd {
 	board := m.board
 	return func() tea.Msg {
 		stream, err := board.Attach(runlogs.AttachParams{
-			Job:  params.Job,
-			Size: runlogs.Size{Cols: params.Size.Cols, Rows: params.Size.Rows},
+			Job:     params.Key.job(),
+			WorkDir: params.Key.workDir(),
+			Size:    runlogs.Size{Cols: params.Size.Cols, Rows: params.Size.Rows},
 		})
-		return attachedMsg{job: params.Job, stream: stream, size: params.Size, err: err}
+		return attachedMsg{key: params.Key, stream: stream, size: params.Size, err: err}
 	}
 }
 
-func (m Model) historyCmd(job string) tea.Cmd {
+func (m Model) historyCmd(key jobKey) tea.Cmd {
 	board := m.board
 	return func() tea.Msg {
-		lines, err := board.History(runlogs.HistoryParams{Job: job})
-		return historyMsg{job: job, lines: lines, err: err}
+		lines, err := board.History(runlogs.HistoryParams{Job: key.job(), WorkDir: key.workDir()})
+		return historyMsg{key: key, lines: lines, err: err}
 	}
 }
 
@@ -335,18 +349,25 @@ func (m Model) applyJobs(msg jobsMsg) (Model, tea.Cmd) {
 }
 
 // resolveSelection keeps the cursor on the job it was on for as long as that
-// job is both declared and shown, and falls back to the first one visible.
-func (m Model) resolveSelection() string {
+// job is both declared and shown, and falls back to the first one visible. The
+// name the view was opened on only ever answers once: from then on the cursor
+// belongs to the reader.
+func (m Model) resolveSelection() jobKey {
 	visible := m.visible()
 	for _, view := range visible {
-		if view.Name == m.selected {
+		if viewKey(view) == m.selected {
 			return m.selected
 		}
 	}
 	if len(visible) == 0 {
 		return ""
 	}
-	return visible[0].Name
+	for _, view := range visible {
+		if view.Name == m.wantJob {
+			return viewKey(view)
+		}
+	}
+	return viewKey(visible[0])
 }
 
 // fillSelectedPane binds the selected job to the one thing that can fill its
@@ -355,35 +376,36 @@ func (m Model) resolveSelection() string {
 // output on screen and size its PTY behind the pane that is being read.
 func (m Model) fillSelectedPane() (Model, tea.Cmd) {
 	view, found := m.selectedView()
-	if !found || m.pending == view.Name {
+	key := viewKey(view)
+	if !found || m.pending == key {
 		return m, nil
 	}
 
 	// A job the run is starting is already writing into its pane through the
 	// sequence; attaching would replay what it wrote and show it twice.
-	if m.sequenceHolds(view.Name) {
+	if m.sequenceHolds(key) {
 		return m, nil
 	}
 
-	entry, held := m.panes.entry(view.Name)
+	entry, held := m.panes.entry(key)
 	if view.Attachable {
 		if held && entry.source == sourceLive && entry.stream != nil {
 			return m, nil
 		}
-		m.pending = view.Name
-		return m, m.attachCmd(attachParams{Job: view.Name, Size: m.paneSize()})
+		m.pending = key
+		return m, m.attachCmd(attachParams{Key: key, Size: m.paneSize()})
 	}
 
 	if held {
 		return m, nil
 	}
-	m.pending = view.Name
-	return m, m.historyCmd(view.Name)
+	m.pending = key
+	return m, m.historyCmd(key)
 }
 
-func (m Model) kindOf(job string) domain.JobKind {
+func (m Model) kindOf(key jobKey) domain.JobKind {
 	for _, view := range m.jobs {
-		if view.Name == job {
+		if viewKey(view) == key {
 			return view.Kind
 		}
 	}
@@ -393,18 +415,18 @@ func (m Model) kindOf(job string) domain.JobKind {
 // sequenceHolds reports that the run is writing into the job's pane itself.
 // Those bytes are nowhere else yet: no subscription carries them and the log
 // file is still being written, so the pane is the only copy.
-func (m Model) sequenceHolds(job string) bool {
-	return m.sequence.active && m.sequence.job == job
+func (m Model) sequenceHolds(key jobKey) bool {
+	return m.sequence.active && m.sequence.keys[key]
 }
 
 func (m Model) applyAttached(msg attachedMsg) (Model, tea.Cmd) {
-	if m.pending == msg.job {
+	if m.pending == msg.key {
 		m.pending = ""
 	}
 	// A stream that arrives for a job the cursor has left is closed on the spot:
 	// nothing will read it, and an unread subscription holds the job's output
 	// queue and its PTY size.
-	if msg.job != m.selected {
+	if msg.key != m.selected {
 		if msg.stream != nil {
 			msg.stream.Close()
 		}
@@ -416,14 +438,14 @@ func (m Model) applyAttached(msg attachedMsg) (Model, tea.Cmd) {
 	}
 
 	m.err = nil
-	pane := m.panes.attach(attachPaneParams{Job: msg.job, Stream: msg.stream})
+	pane := m.panes.attach(attachPaneParams{Key: msg.key, Stream: msg.stream})
 	go readStream(readParams{
-		Job:          msg.job,
+		Key:          msg.key,
 		Stream:       msg.stream,
 		Pane:         pane,
 		Msgs:         m.msgs,
 		Done:         m.runCtx.Done(),
-		NormalizeEOL: rules.RunsOnPipe(m.kindOf(msg.job)),
+		NormalizeEOL: rules.RunsOnPipe(m.kindOf(msg.key)),
 	})
 
 	model, tick := m.startTicking()
@@ -439,18 +461,18 @@ func (m Model) applyAttached(msg attachedMsg) (Model, tea.Cmd) {
 // printed, the subscription goes, and so does the keyboard: there is nothing
 // left to type into.
 func (m Model) applyStreamEnded(msg streamEndedMsg) (Model, tea.Cmd) {
-	m.panes.endStream(msg.job)
-	if m.pending == msg.job {
+	m.panes.endStream(msg.key)
+	if m.pending == msg.key {
 		m.pending = ""
 	}
-	if m.selected == msg.job {
+	if m.selected == msg.key {
 		m.focused = false
 	}
 	return m, tea.Batch(m.refreshCmd(), m.listenCmd())
 }
 
 func (m Model) applyHistory(msg historyMsg) (Model, tea.Cmd) {
-	if m.pending == msg.job {
+	if m.pending == msg.key {
 		m.pending = ""
 	}
 	if msg.err != nil {
@@ -458,7 +480,7 @@ func (m Model) applyHistory(msg historyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.err = nil
-	m.panes.writeLines(writeLinesParams{Job: msg.job, Lines: msg.lines})
+	m.panes.writeLines(writeLinesParams{Key: msg.key, Lines: msg.lines})
 	return m, nil
 }
 
@@ -474,7 +496,7 @@ func (m Model) startTicking() (Model, tea.Cmd) {
 }
 
 type writeParams struct {
-	Job    string
+	Key    jobKey
 	Stream runlogs.Stream
 	Bytes  []byte
 }
@@ -484,7 +506,7 @@ type writeParams struct {
 func writeCmd(params writeParams) tea.Cmd {
 	return func() tea.Msg {
 		if err := params.Stream.Write(params.Bytes); err != nil {
-			return streamErrMsg{job: params.Job, err: err}
+			return streamErrMsg{key: params.Key, err: err}
 		}
 		return nil
 	}
@@ -511,7 +533,7 @@ func resizeCmd(params resizeParams) tea.Cmd {
 }
 
 type readParams struct {
-	Job    string
+	Key    jobKey
 	Stream runlogs.Stream
 	Pane   *Pane
 	Msgs   chan<- tea.Msg
@@ -540,9 +562,29 @@ func readStream(params readParams) {
 	// registered for the life of the view: a dead pane redrawn at 30 fps, and a
 	// focus that writes keystrokes into a closed stream.
 	select {
-	case params.Msgs <- streamEndedMsg{job: params.Job}:
+	case params.Msgs <- streamEndedMsg{key: params.Key}:
 	case <-params.Done:
 	}
+}
+
+// worktreeCount is how many worktrees the view covers, which only the header
+// reads: naming a worktree is not gated on there being two. A view opened from a
+// picker shows one the reader chose rather than typed, and leaving it unnamed on
+// the run they do most is where it is missed hardest.
+func (m Model) worktreeCount() int {
+	seen := map[string]bool{}
+	for _, view := range m.jobs {
+		seen[view.WorkDir] = true
+	}
+	return len(seen)
+}
+
+// qualify names the worktree a line belongs to, whenever it has one to name.
+func (m Model) qualify(line, worktree string) string {
+	if worktree == "" {
+		return line
+	}
+	return fmt.Sprintf(domain.RunStreamWorktreeFmt, line, worktree)
 }
 
 func (m Model) visible() []runlogs.JobView {
@@ -557,7 +599,7 @@ func (m Model) visible() []runlogs.JobView {
 
 func (m Model) selectedView() (runlogs.JobView, bool) {
 	for _, view := range m.jobs {
-		if view.Name == m.selected {
+		if viewKey(view) == m.selected {
 			return view, true
 		}
 	}
@@ -566,7 +608,7 @@ func (m Model) selectedView() (runlogs.JobView, bool) {
 
 func (m Model) selectedIndex() int {
 	for index, view := range m.visible() {
-		if view.Name == m.selected {
+		if viewKey(view) == m.selected {
 			return index
 		}
 	}

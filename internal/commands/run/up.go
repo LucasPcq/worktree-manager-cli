@@ -17,9 +17,11 @@ import (
 // newUpCmd creates the wtm run up subcommand.
 func newUpCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdUp + " [worktree]",
+		Use:   domain.CmdUp + " [worktree...]",
 		Short: "Start a profile's jobs",
-		Long: "Start every job in a profile, in declared order, in [worktree] — the current one when omitted, picked interactively when there is a terminal.\n" +
+		Long: "Start every job in a profile, in declared order, in each [worktree] — the current one when omitted, picked interactively when there is a terminal.\n" +
+			"Several worktrees start concurrently and independently: one that aborts leaves the others running,\n" +
+			"and the run exits non-zero if any of them did.\n" +
 			"Without --profile, uses the default profile (or shows a picker if multiple exist).\n" +
 			"Once the jobs are up, each declared port is checked: a port nothing answers on is\n" +
 			"reported rather than announced as bound. It never fails the run — see --no-probe\n" +
@@ -27,14 +29,14 @@ func newUpCmd() *cobra.Command {
 			"Tasks block the profile and abort it on failure; services launch in the background.\n" +
 			"When another worktree is already running jobs, wtm asks once what to do about it and can\n" +
 			"remember the answer as run.toml's `concurrency`; --exclusive and --parallel override it\n" +
-			"for one run.\n" +
+			"for one run. --exclusive is refused on several worktrees, since it stops all but one.\n" +
 			"The run view opens on the jobs as they start; leaving it detaches without stopping them, and -d skips it.",
-		Args: cobra.MaximumNArgs(1),
+		Args: cobra.ArbitraryArgs,
 		RunE: runUp,
 	}
 
 	shared.AddProfileFlag(cmd, "Profile to start (defaults to the default profile, or a picker when several exist)")
-	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop jobs on other worktrees before starting")
+	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop jobs on other worktrees before starting (one worktree only)")
 	cmd.Flags().Bool(domain.FlagParallel, false, "Start without stopping other worktrees")
 	cmd.MarkFlagsMutuallyExclusive(domain.FlagExclusive, domain.FlagParallel)
 	cmd.Flags().BoolP(domain.FlagDetach, "d", false, "Start the jobs and return immediately instead of opening their output")
@@ -78,7 +80,7 @@ func runUp(cmd *cobra.Command, args []string) error {
 	outcome, err := upflow.Run(upflow.Params{
 		Context: shared.FlowContext(result),
 		Request: upflow.Request{
-			Worktree:  firstArg(args),
+			Worktrees: args,
 			Cwd:       dir,
 			Profile:   profile,
 			Exclusive: exclusive,

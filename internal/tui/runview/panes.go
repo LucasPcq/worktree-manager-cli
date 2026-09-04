@@ -37,15 +37,15 @@ type jobPane struct {
 type paneStore struct {
 	mu    sync.Mutex
 	size  PaneSize
-	panes map[string]*jobPane
+	panes map[jobKey]*jobPane
 }
 
 func newPaneStore(size PaneSize) *paneStore {
-	return &paneStore{size: size, panes: map[string]*jobPane{}}
+	return &paneStore{size: size, panes: map[jobKey]*jobPane{}}
 }
 
 type openPaneParams struct {
-	Job    string
+	Key    jobKey
 	Source paneSource
 }
 
@@ -59,24 +59,24 @@ func (s *paneStore) open(params openPaneParams) *Pane {
 
 func (s *paneStore) entryLocked(params openPaneParams) *jobPane {
 	s.openLocked(params)
-	return s.panes[params.Job]
+	return s.panes[params.Key]
 }
 
 func (s *paneStore) openLocked(params openPaneParams) *Pane {
-	if entry, held := s.panes[params.Job]; held && entry.source == params.Source {
+	if entry, held := s.panes[params.Key]; held && entry.source == params.Source {
 		return entry.pane
 	}
 	// A pane being replaced may still be subscribed to its job; dropping it
 	// without closing that would leave the job feeding a pane nobody reads.
-	s.closeStreamLocked(params.Job)
+	s.closeStreamLocked(params.Key)
 
 	pane := NewPane(PaneParams{Size: s.size})
-	s.panes[params.Job] = &jobPane{pane: pane, source: params.Source}
+	s.panes[params.Key] = &jobPane{pane: pane, source: params.Source}
 	return pane
 }
 
 type writeChunkParams struct {
-	Job    string
+	Key    jobKey
 	Source paneSource
 	Chunk  []byte
 	// NormalizeEOL terminates the chunk's bare LFs the way a PTY would. A job
@@ -88,7 +88,7 @@ type writeChunkParams struct {
 
 func (s *paneStore) write(params writeChunkParams) {
 	s.mu.Lock()
-	entry := s.entryLocked(openPaneParams{Job: params.Job, Source: params.Source})
+	entry := s.entryLocked(openPaneParams{Key: params.Key, Source: params.Source})
 	chunk := params.Chunk
 	if params.NormalizeEOL {
 		normalized := rules.NormalizeEOL(rules.NormalizeEOLParams{Chunk: chunk, PendingCR: entry.pendingCR})
@@ -101,12 +101,12 @@ func (s *paneStore) write(params writeChunkParams) {
 }
 
 type writeLinesParams struct {
-	Job   string
+	Key   jobKey
 	Lines []string
 }
 
 func (s *paneStore) writeLines(params writeLinesParams) {
-	pane := s.open(openPaneParams{Job: params.Job, Source: sourceHistory})
+	pane := s.open(openPaneParams{Key: params.Key, Source: sourceHistory})
 	for _, line := range params.Lines {
 		pane.Write([]byte(line + "\r\n"))
 	}
@@ -118,15 +118,15 @@ func (s *paneStore) writeLines(params writeLinesParams) {
 func (s *paneStore) attach(params attachPaneParams) *Pane {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.closeStreamLocked(params.Job)
+	s.closeStreamLocked(params.Key)
 
 	pane := NewPane(PaneParams{Size: s.size})
-	s.panes[params.Job] = &jobPane{pane: pane, source: sourceLive, stream: params.Stream}
+	s.panes[params.Key] = &jobPane{pane: pane, source: sourceLive, stream: params.Stream}
 	return pane
 }
 
 type attachPaneParams struct {
-	Job    string
+	Key    jobKey
 	Stream runlogs.Stream
 }
 
@@ -137,7 +137,7 @@ type attachPaneParams struct {
 // stopped one's log file is read back in one call. The one pane worth keeping
 // is the one a run is writing into right now, which the caller keeps for
 // itself: nothing replays that yet.
-func (s *paneStore) release(job string) {
+func (s *paneStore) release(job jobKey) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, held := s.panes[job]; !held {
@@ -150,13 +150,13 @@ func (s *paneStore) release(job string) {
 // endStream drops a subscription whose job stopped writing, keeping the pane:
 // what the job printed before it went is the last thing worth reading, and the
 // log file has nothing more to add to it.
-func (s *paneStore) endStream(job string) {
+func (s *paneStore) endStream(job jobKey) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.closeStreamLocked(job)
 }
 
-func (s *paneStore) closeStreamLocked(job string) {
+func (s *paneStore) closeStreamLocked(job jobKey) {
 	entry, held := s.panes[job]
 	if !held || entry.stream == nil {
 		return
@@ -171,10 +171,10 @@ func (s *paneStore) closeAll() {
 	for job := range s.panes {
 		s.closeStreamLocked(job)
 	}
-	s.panes = map[string]*jobPane{}
+	s.panes = map[jobKey]*jobPane{}
 }
 
-func (s *paneStore) entry(job string) (jobPane, bool) {
+func (s *paneStore) entry(job jobKey) (jobPane, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	held, ok := s.panes[job]
@@ -186,7 +186,7 @@ func (s *paneStore) entry(job string) (jobPane, bool) {
 
 // stream is the subscription a surface writes to, present only while the job is
 // attached.
-func (s *paneStore) stream(job string) runlogs.Stream {
+func (s *paneStore) stream(job jobKey) runlogs.Stream {
 	entry, ok := s.entry(job)
 	if !ok {
 		return nil

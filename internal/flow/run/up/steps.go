@@ -30,12 +30,16 @@ const (
 func (f *upFlow) session() flow.Session {
 	return flow.Session{
 		ErrLabel: domain.CmdUp,
-		Presets:  target.Presets(target.PresetParams{Named: f.named, Profile: f.request.Profile}),
+		Presets:  target.Presets(target.PresetParams{Worktrees: target.Dirs(f.named), Profile: f.request.Profile}),
 		Steps: []flow.Step{
-			target.WorktreeStep(target.WorktreeParams{
+			target.WorktreesStep(target.WorktreesParams{
 				ProjectDir: f.ctx.ProjectDir,
 				Current:    f.request.Cwd,
+				Selected:   target.Dirs(f.named),
 				Running:    f.running,
+				// --exclusive stops all but one, so it cannot be applied to a wider
+				// selection. Refused as the box is ticked rather than after the recap.
+				Single: f.request.Exclusive,
 			}),
 			target.ProfileStep(target.ProfileParams{
 				Profiles: f.request.Config.Profiles,
@@ -61,6 +65,9 @@ func (f *upFlow) concurrencyStep() flow.Step {
 			return true, f.skipReason(answers)
 		},
 		Build: func(answers flow.Answers) (flow.StepContent, error) {
+			if f.decideConcurrency(answers).Contradiction {
+				return f.contradictionContent(answers), nil
+			}
 			return flow.StepContent{
 				Title:       domain.RunConcurrencyTitle,
 				Description: fmt.Sprintf(domain.RunConcurrencyDescFmt, f.othersSummary(answers)),
@@ -79,6 +86,23 @@ func (f *upFlow) concurrencyStep() flow.Step {
 			return flow.Answer{Value: string(f.decideConcurrency(answers).Value)}, nil
 		},
 		Summarize: func(answer flow.Answer) string { return string(concurrencyOf(answer.Value)) },
+	}
+}
+
+// contradictionContent is the question a run contradicting the project's settled
+// answer asks. Both ways out start every worktree that was selected: the run is
+// what the user just asked for, and `exclusive` is what cannot be applied to it.
+// Only the second one changes the setting — which is the whole reason this is a
+// question rather than a notice.
+func (f *upFlow) contradictionContent(answers flow.Answers) flow.StepContent {
+	return flow.StepContent{
+		Title: domain.RunConcurrencyContradictionTitle,
+		Description: fmt.Sprintf(domain.RunConcurrencyContradictionDescFmt,
+			f.request.Config.Concurrency, len(f.workDirs(answers))),
+		Options: []flow.Option{
+			{Label: domain.RunConcurrencyContradictionOnce, Value: answerParallel},
+			{Label: domain.RunConcurrencyContradictionAlways, Value: answerParallelAlways},
+		},
 	}
 }
 
@@ -128,6 +152,7 @@ func (f *upFlow) decideConcurrency(answers flow.Answers) rules.ConcurrencyDecisi
 		Parallel:      f.request.Parallel,
 		Config:        f.request.Config.Concurrency,
 		OthersRunning: f.othersRunning(answers),
+		Selection:     len(f.workDirs(answers)),
 	})
 }
 
@@ -137,11 +162,18 @@ func (f *upFlow) othersRunning(answers flow.Answers) bool {
 	return len(f.otherWorktrees(answers)) > 0
 }
 
+// otherWorktrees is what runs outside this run's selection. Measured against the
+// whole selection, never against one of them: `run up A B` must not offer to
+// stop B's own jobs on A's behalf.
 func (f *upFlow) otherWorktrees(answers flow.Answers) map[string][]string {
-	targetDir := f.workDir(answers)
+	selected := make(map[string]bool)
+	for _, dir := range f.workDirs(answers) {
+		selected[dir] = true
+	}
+
 	others := make(map[string][]string)
 	for _, job := range f.jobs {
-		if !rules.IsJobUp(job.Status) || job.WorkDir == targetDir {
+		if !rules.IsJobUp(job.Status) || selected[job.WorkDir] {
 			continue
 		}
 		others[job.WorkDir] = append(others[job.WorkDir], job.Name)
@@ -166,10 +198,10 @@ func (f *upFlow) othersSummary(answers flow.Answers) string {
 	return strings.Join(lines, domain.RunURLListSep)
 }
 
-// workDir is the worktree this run acts on, as git spells it — the daemon's key
-// for every job it is about to start.
-func (f *upFlow) workDir(answers flow.Answers) string {
-	return target.WorkDir(target.WorkDirParams{Answers: answers, Named: f.named, Cwd: f.request.Cwd})
+// workDirs are the worktrees this run acts on, as git spells them — the
+// daemon's keys for every job it is about to start.
+func (f *upFlow) workDirs(answers flow.Answers) []string {
+	return target.WorkDirs(target.WorkDirsParams{Answers: answers, Named: f.named, Cwd: f.request.Cwd})
 }
 
 func (f *upFlow) defaultProfile() string {

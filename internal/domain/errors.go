@@ -191,6 +191,12 @@ var (
 	// the flag rather than falling back to a picker.
 	ErrJobRequired = errors.New("specify --job (no interactive picker without a terminal or in --output json mode)")
 
+	// ErrExclusiveMultiWorktree refuses a flag that contradicts itself: exclusive
+	// means one stack at a time, and the run was told to bring up several. Unlike
+	// the setting, a flag leaves nothing to put to anyone — it was typed for this
+	// run, against what the same command line asked for.
+	ErrExclusiveMultiWorktree = errors.New("--exclusive cannot start several worktrees: it stops all but one")
+
 	// ErrNoJobsDeclared is a job step with nothing to offer: the question cannot
 	// be asked, and the answer is to declare a job rather than to pick one.
 	ErrNoJobsDeclared = errors.New("no jobs declared in run.toml")

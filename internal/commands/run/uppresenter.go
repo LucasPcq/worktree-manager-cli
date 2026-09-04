@@ -21,14 +21,15 @@ type upPresenter struct {
 	detach bool
 }
 
-func (p upPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcome, error) {
+func (p upPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcomes, error) {
 	switch rules.DecideRunSurface(rules.RunSurfaceParams{Detach: p.detach, TTY: isTTY(), Format: p.Format}) {
 	case domain.RunSurfaceView:
 		return showRunView(viewParams{
-			Cmd:     p.Cmd,
-			Board:   params.Board,
-			Profile: params.Profile,
-			Start:   params.Start,
+			Cmd:       p.Cmd,
+			Board:     params.Board,
+			Profile:   params.Profile,
+			Worktrees: params.Worktrees,
+			Start:     params.Start,
 		})
 	case domain.RunSurfaceMachine:
 		return runForMachine(streamParams{Cmd: p.Cmd, Start: params.Start})
@@ -36,6 +37,7 @@ func (p upPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcome, erro
 		return runOnStream(streamParams{
 			Cmd:        p.Cmd,
 			Profile:    params.Profile,
+			Worktrees:  params.Worktrees,
 			Start:      params.Start,
 			Hyperlinks: p.Human && isTTY(),
 		})
@@ -61,7 +63,7 @@ type startPresenter struct {
 	detach bool
 }
 
-func (p startPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcome, error) {
+func (p startPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcomes, error) {
 	surface := rules.DecideRunSurface(rules.RunSurfaceParams{
 		Inline: params.Inline,
 		Detach: p.detach,
@@ -83,15 +85,15 @@ func (p startPresenter) Sequence(params seam.SequenceParams) (runlogs.Outcome, e
 // the success (LUC-198). A failed job writing nothing at all left a machine
 // reader with an exit code and no cause, which is exactly what the `output`
 // field of `run up`'s array exists to avoid.
-func (p startPresenter) machine(params seam.SequenceParams) (runlogs.Outcome, error) {
-	outcome, err := params.Start(p.Cmd.Context(), nil)
+func (p startPresenter) machine(params seam.SequenceParams) (runlogs.Outcomes, error) {
+	outcomes, err := params.Start(p.Cmd.Context(), nil)
 	if err != nil {
-		return outcome, err
+		return outcomes, err
 	}
-	return outcome, output.WriteJobResultJSON(p.Cmd.OutOrStdout(), jobResult(jobResultParams{
+	return outcomes, output.WriteJobResultJSON(p.Cmd.OutOrStdout(), jobResult(jobResultParams{
 		Job:     params.Job,
 		Inline:  params.Inline,
-		Outcome: outcome,
+		Outcome: outcomes.One(),
 	}))
 }
 
@@ -124,19 +126,40 @@ type stopPresenter struct {
 
 func (p stopPresenter) Stopped(outcome stopflow.Outcome) error {
 	if p.Format == domain.OutputJSON {
-		// An object like every other answer this command gives: the shape follows
-		// the arity of the command, never the branch it happened to take
-		// (LUC-198). Nothing was running, so the job is stopped either way.
-		return output.WriteJobResultJSON(p.Cmd.OutOrStdout(), domain.JobActionResult{
-			Name:   outcome.Job,
-			Status: domain.JobActionStopped,
-		})
+		return p.machine(outcome)
 	}
 	out := p.Cmd.OutOrStdout()
 	if outcome.NoDaemon {
 		output.Frame(out, func() { output.Message(out, domain.RunNoJobsRunning) })
 		return nil
 	}
-	output.Frame(out, func() { output.Success(out, fmt.Sprintf(domain.RunStoppedFmt, outcome.Job)) })
+	output.Frame(out, func() {
+		for _, worktree := range outcome.Results {
+			output.Success(out, p.qualify(fmt.Sprintf(domain.RunStoppedFmt, outcome.Job), outcome, worktree))
+		}
+	})
 	return nil
+}
+
+// machine answers with an object for the one job the command names, and with a
+// document per worktree once it names the same job in several: the shape
+// follows the arity, never the branch the command happened to take (LUC-198).
+// Nothing was running is not a branch — the job is stopped either way.
+func (p stopPresenter) machine(outcome stopflow.Outcome) error {
+	if len(outcome.Results) > 1 {
+		return output.WriteWorktreeJobResultsJSON(p.Cmd.OutOrStdout(), outcome.Results)
+	}
+	return output.WriteJobResultJSON(p.Cmd.OutOrStdout(), domain.JobActionResult{
+		Name:   outcome.Job,
+		Status: domain.JobActionStopped,
+	})
+}
+
+// qualify names the worktree at the end of the line, the way every other run
+// surface does.
+func (p stopPresenter) qualify(line string, outcome stopflow.Outcome, worktree domain.WorktreeJobResults) string {
+	if len(outcome.Results) <= 1 || worktree.Worktree == "" {
+		return line
+	}
+	return fmt.Sprintf(domain.RunStreamWorktreeFmt, line, worktree.Worktree)
 }

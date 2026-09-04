@@ -181,8 +181,8 @@ func TestAOneOffAnswerIsNotRemembered(t *testing.T) {
 // hand-over to a surface belongs to the run, not to a question.
 type presenterOnly struct{ *flowtest.Recorder }
 
-func (presenterOnly) Sequence(seam.SequenceParams) (runlogs.Outcome, error) {
-	return runlogs.Outcome{}, nil
+func (presenterOnly) Sequence(seam.SequenceParams) (runlogs.Outcomes, error) {
+	return runlogs.Outcomes{{}}, nil
 }
 
 // The regression that shipped: Skip short-circuits Resolve, so a settled step
@@ -230,5 +230,108 @@ func TestAnAnsweredConcurrencyOutranksTheFallback(t *testing.T) {
 
 	if got := f.concurrency(answers); got != domain.ConcurrencyExclusive {
 		t.Errorf("concurrency = %q, want the answer that was actually given", got)
+	}
+}
+
+// The setting says one stack at a time and the run brings up three. It is a
+// guard rail, not an ambush: the contradiction is one the user just created.
+func TestASettledExclusiveIsPutBackToTheUserOnAMultiWorktreeRun(t *testing.T) {
+	f := flowWith(Request{Config: domain.RunConfig{Concurrency: domain.ConcurrencyExclusive}}, nil)
+	answers := flow.Answers{}.WithValues("run.worktree", []string{here, "/wt/other"})
+
+	step := concurrencyStepOf(f)
+	if skip, reason := step.Skip(answers); skip {
+		t.Fatalf("the step was skipped (%q) although the run contradicts the setting", reason)
+	}
+
+	content, err := step.Build(answers)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if content.Title != domain.RunConcurrencyContradictionTitle {
+		t.Errorf("title = %q, want the contradiction asked as its own question", content.Title)
+	}
+	// Both ways out start every worktree that was selected: the run is what was
+	// just asked for, and exclusive is what cannot be applied to it.
+	for _, option := range content.Options {
+		if concurrencyOf(option.Value) != domain.ConcurrencyParallel {
+			t.Errorf("option %q resolves to %q, want every way out to start them all",
+				option.Label, concurrencyOf(option.Value))
+		}
+	}
+}
+
+// A single-worktree run against the same setting is not a contradiction: it is
+// exactly what the setting asked for.
+func TestASettledExclusiveStandsOnASingleWorktreeRun(t *testing.T) {
+	f := flowWith(Request{Config: domain.RunConfig{Concurrency: domain.ConcurrencyExclusive}}, running(here, "/wt/other"))
+	answers := flow.Answers{}.WithValues("run.worktree", []string{here})
+
+	if skip, reason := concurrencyStepOf(f).Skip(answers); !skip || reason != domain.RunConcurrencySkipSettled {
+		t.Errorf("Skip = (%v, %q), want the settled answer to stand", skip, reason)
+	}
+	if got := f.concurrency(answers); got != domain.ConcurrencyExclusive {
+		t.Errorf("concurrency = %q, want the setting applied", got)
+	}
+}
+
+// Where nobody can be asked, the safe default destroys nothing.
+func TestAnUnattendedContradictionStopsNothing(t *testing.T) {
+	f := flowWith(Request{Config: domain.RunConfig{Concurrency: domain.ConcurrencyExclusive}}, running("/wt/other"))
+	answers := flow.Answers{}.WithValues("run.worktree", []string{here, "/wt/second"})
+
+	answer, err := concurrencyStepOf(f).Resolve(answers)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if concurrencyOf(answer.Value) != domain.ConcurrencyParallel {
+		t.Errorf("Resolve = %q, want the answer that stops nothing", answer.Value)
+	}
+}
+
+// `run up A B` must not offer to stop B's own jobs on A's behalf.
+func TestTheOtherWorktreesAreMeasuredAgainstTheWholeSelection(t *testing.T) {
+	f := flowWith(Request{}, running(here, "/wt/second"))
+	answers := flow.Answers{}.WithValues("run.worktree", []string{here, "/wt/second"})
+
+	if others := f.otherWorktrees(answers); len(others) != 0 {
+		t.Errorf("others = %v, want nothing outside the selection", others)
+	}
+}
+
+// A default that goes unsaid is a default nobody can correct.
+func TestTheUnattendedContradictionIsAnnounced(t *testing.T) {
+	recorder := &flowtest.Recorder{}
+	f := &upFlow{
+		request:   Request{Cwd: here, Config: domain.RunConfig{Concurrency: domain.ConcurrencyExclusive}},
+		presenter: presenterOnly{recorder},
+	}
+	answers := flow.Answers{}.WithValues("run.worktree", []string{here, "/wt/second"})
+
+	f.noticeOverridden(answers)
+
+	if len(recorder.Statuses) != 1 {
+		t.Fatalf("statuses = %v, want the setting's suspension announced once", recorder.Statuses)
+	}
+	if !strings.Contains(recorder.Statuses[0].Text, string(domain.ConcurrencyExclusive)) {
+		t.Errorf("status = %q, want it to name the setting it set aside", recorder.Statuses[0].Text)
+	}
+}
+
+// Someone answered, so there is nothing to announce in their place.
+func TestAnAnsweredContradictionIsNotAnnounced(t *testing.T) {
+	recorder := &flowtest.Recorder{}
+	f := &upFlow{
+		request:   Request{Cwd: here, Config: domain.RunConfig{Concurrency: domain.ConcurrencyExclusive}},
+		presenter: presenterOnly{recorder},
+	}
+	answers := flow.Answers{}.
+		WithValues("run.worktree", []string{here, "/wt/second"}).
+		With(KeyConcurrency, flow.Answer{Value: answerParallel, Asked: true})
+
+	f.noticeOverridden(answers)
+
+	if len(recorder.Statuses) != 0 {
+		t.Errorf("statuses = %v, want nothing said over an answer someone gave", recorder.Statuses)
 	}
 }

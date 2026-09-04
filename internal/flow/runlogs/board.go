@@ -13,7 +13,10 @@ type BoardParams struct {
 	// Jobs are the worktree's declared jobs, in the order a surface lists them.
 	Jobs    []domain.JobConfig
 	WorkDir string
-	LogDir  string
+	// Worktree is WorkDir's branch, what a merged board shows above this
+	// worktree's rows.
+	Worktree string
+	LogDir   string
 }
 
 // NewBoard builds the surface's view of a worktree's jobs. It reads nothing
@@ -21,18 +24,20 @@ type BoardParams struct {
 // nobody has started yet is still a job to show.
 func NewBoard(params BoardParams) Board {
 	return &board{
-		service: params.Service,
-		jobs:    params.Jobs,
-		workDir: params.WorkDir,
-		logDir:  params.LogDir,
+		service:  params.Service,
+		jobs:     params.Jobs,
+		workDir:  params.WorkDir,
+		worktree: params.Worktree,
+		logDir:   params.LogDir,
 	}
 }
 
 type board struct {
-	service Service
-	jobs    []domain.JobConfig
-	workDir string
-	logDir  string
+	service  Service
+	jobs     []domain.JobConfig
+	workDir  string
+	worktree string
+	logDir   string
 
 	// mu guards live, which a surface refreshes off the goroutine that renders it.
 	mu        sync.RWMutex
@@ -74,7 +79,7 @@ func (b *board) Jobs() []JobView {
 	views := make([]JobView, 0, len(b.jobs))
 	for _, job := range b.jobs {
 		declared[job.Name] = true
-		views = append(views, declaredView(job, live[job.Name]))
+		views = append(views, b.own(declaredView(job, live[job.Name])))
 	}
 
 	// A job the daemon holds but run.toml no longer declares is still running:
@@ -83,9 +88,17 @@ func (b *board) Jobs() []JobView {
 		if declared[name] {
 			continue
 		}
-		views = append(views, undeclaredView(live[name]))
+		views = append(views, b.own(undeclaredView(live[name])))
 	}
 	return views
+}
+
+// own stamps a view with the worktree it came from, which is what lets a merged
+// board tell two jobs of the same name apart.
+func (b *board) own(view JobView) JobView {
+	view.WorkDir = b.workDir
+	view.Worktree = b.worktree
+	return view
 }
 
 func (b *board) Attach(params AttachParams) (Stream, error) {

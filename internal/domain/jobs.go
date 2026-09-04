@@ -215,6 +215,32 @@ type JobActionResult struct {
 	URL string `json:"url,omitempty"`
 }
 
+// WorktreeRunResult is one worktree's half of a run over several of them. A run
+// over a single worktree does not use it: the shape follows the arity, so one
+// worktree still answers with the bare array of job results every run command
+// emits (LUC-198).
+type WorktreeRunResult struct {
+	// Worktree is the branch, Path where it is — the daemon's key, and what a
+	// caller needs to act on that worktree afterwards.
+	Worktree string `json:"worktree"`
+	Path     string `json:"path"`
+	Profile  string `json:"profile,omitempty"`
+	// Aborted says this worktree stopped short. The others carry on regardless,
+	// so it is read per worktree and never for the run as a whole.
+	Aborted bool              `json:"aborted"`
+	Jobs    []JobActionResult `json:"jobs"`
+}
+
+// WorktreeJobResults is one worktree's answer to a command that acted on
+// several. Like WorktreeRunResult it only exists above one worktree: a command
+// acting on a single one answers with the bare array of job results it always
+// has (LUC-198).
+type WorktreeJobResults struct {
+	Worktree string            `json:"worktree"`
+	Path     string            `json:"path"`
+	Jobs     []JobActionResult `json:"jobs"`
+}
+
 // LogRecord is one sanitized line of a job's output, as persisted in that job's
 // log file.
 type LogRecord struct {
@@ -226,9 +252,13 @@ type LogRecord struct {
 // is absent on a line written before this format, or by a sink that could not
 // stamp it: the text is still worth handing over.
 type JobLogEntry struct {
-	Job  string `json:"job"`
-	At   string `json:"at,omitempty"`
-	Text string `json:"text"`
+	Job string `json:"job"`
+	// Worktree names where the line came from, and is absent above a single
+	// worktree — where the caller already knows. Without it the lines of two jobs
+	// called `web` are one indistinguishable stream (LUC-216).
+	Worktree string `json:"worktree,omitempty"`
+	At       string `json:"at,omitempty"`
+	Text     string `json:"text"`
 }
 
 // RunSurface names who shows a run's jobs: the full-screen view, a stream of

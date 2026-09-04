@@ -20,17 +20,17 @@ type handoffMsg struct {
 }
 
 type handoffReply struct {
-	outcome runlogs.Outcome
-	err     error
+	outcomes runlogs.Outcomes
+	err      error
 }
 
 // handoffDoneMsg carries what the run view concluded back onto the UI goroutine,
 // once bubbletea has restored the terminal.
 type handoffDoneMsg struct {
-	reply   chan<- handoffReply
-	outcome runlogs.Outcome
-	recap   string
-	err     error
+	reply    chan<- handoffReply
+	outcomes runlogs.Outcomes
+	recap    string
+	err      error
 }
 
 // handoff is the tea.ExecCommand that runs the view. bubbletea releases the
@@ -53,13 +53,14 @@ func (h *handoff) SetStderr(io.Writer)   {}
 
 func (h *handoff) Run() error {
 	result, err := runview.Run(runview.Params{
-		Board:   h.params.Board,
-		Job:     h.params.Job,
-		Profile: h.params.Profile,
-		Start:   h.params.Start,
-		Open:    integration.OpenURL,
-		In:      h.in,
-		Out:     h.out,
+		Board:     h.params.Board,
+		Job:       h.params.Job,
+		Profile:   h.params.Profile,
+		Worktrees: h.params.Worktrees,
+		Start:     h.params.Start,
+		Open:      integration.OpenURL,
+		In:        h.in,
+		Out:       h.out,
 	})
 	if err != nil {
 		return err
@@ -76,10 +77,10 @@ func handoffCmd(msg handoffMsg) tea.Cmd {
 	cmd := &handoff{params: msg.params}
 	return tea.Exec(cmd, func(err error) tea.Msg {
 		return handoffDoneMsg{
-			reply:   msg.reply,
-			outcome: cmd.result.Outcome,
-			recap:   cmd.result.Recap,
-			err:     err,
+			reply:    msg.reply,
+			outcomes: cmd.result.Outcomes,
+			recap:    cmd.result.Recap,
+			err:      err,
 		}
 	})
 }
@@ -90,11 +91,11 @@ type watcher struct {
 	send func(tea.Msg)
 }
 
-func (w watcher) Sequence(params seam.SequenceParams) (runlogs.Outcome, error) {
+func (w watcher) Sequence(params seam.SequenceParams) (runlogs.Outcomes, error) {
 	reply := make(chan handoffReply, 1)
 	w.send(handoffMsg{params: params, reply: reply})
 	answered := <-reply
-	return answered.outcome, answered.err
+	return answered.outcomes, answered.err
 }
 
 // finishHandoff unblocks the flow that gave the terminal away, and asks for the
@@ -104,6 +105,6 @@ func (m Model) finishHandoff(msg handoffDoneMsg) (Model, tea.Cmd) {
 	if msg.recap != "" {
 		m = m.appendOutput(OutputLineMsg{Text: msg.recap})
 	}
-	msg.reply <- handoffReply{outcome: msg.outcome, err: msg.err}
+	msg.reply <- handoffReply{outcomes: msg.outcomes, err: msg.err}
 	return m, tea.EnableMouseCellMotion
 }

@@ -96,10 +96,14 @@ func (m Model) renderHeader(layout domain.RunViewLayout) string {
 }
 
 func (m Model) headerTitle() string {
-	if m.profile == "" {
-		return domain.RunViewHeaderTitle
+	title := domain.RunViewHeaderTitle
+	if m.profile != "" {
+		title = fmt.Sprintf(domain.RunViewHeaderProfileFmt, m.profile)
 	}
-	return fmt.Sprintf(domain.RunViewHeaderProfileFmt, m.profile)
+	if count := m.worktreeCount(); count > 1 {
+		return fmt.Sprintf(domain.RunStreamWorktreeFmt, title, fmt.Sprintf(domain.RunStreamWorktreesFmt, count))
+	}
+	return title
 }
 
 func (m Model) runningCount() int {
@@ -116,7 +120,7 @@ func (m Model) renderSidebar(layout domain.RunViewLayout) string {
 	width := layout.Sidebar.Width - domain.RunViewBorderWidth
 	textWidth := width - 2
 	lines := append(
-		[]string{styles.Muted.Render(domain.RunViewJobsTitle)},
+		[]string{styles.Muted.Render(domain.RunViewJobsTitle), ""},
 		m.renderJobRows(jobRowsParams{Width: textWidth, Rows: layout.SidebarRows})...,
 	)
 
@@ -132,20 +136,33 @@ type jobRowsParams struct {
 }
 
 func (m Model) renderJobRows(params jobRowsParams) []string {
-	visible := m.visible()
-	if len(visible) == 0 {
+	all := m.rows()
+	if len(all) == 0 {
 		return []string{styles.Muted.Render(truncate(m.emptyMessage(), params.Width))}
 	}
 
 	now := time.Now()
-	rows := make([]string, 0, params.Rows)
-	for _, view := range visible[min(m.offset, len(visible)):] {
-		if len(rows) == params.Rows {
+	rendered := make([]string, 0, params.Rows)
+	// The pinned heading costs the row it occupies: a group whose name has
+	// scrolled away is worth more than the job that would have taken its place.
+	if sticky := stickyHeader(all, m.offset); sticky != "" {
+		rendered = append(rendered, styles.Muted.Render(truncate(sticky, params.Width)))
+	}
+	for _, row := range all[min(m.offset, len(all)):] {
+		if len(rendered) == params.Rows {
 			break
 		}
-		rows = append(rows, m.renderJobRow(jobRowParams{View: view, Width: params.Width, Now: now}))
+		if row.Spacer {
+			rendered = append(rendered, "")
+			continue
+		}
+		if row.Header != "" {
+			rendered = append(rendered, styles.Muted.Render(truncate(row.Header, params.Width)))
+			continue
+		}
+		rendered = append(rendered, m.renderJobRow(jobRowParams{View: row.View, Width: params.Width, Now: now}))
 	}
-	return rows
+	return rendered
 }
 
 type jobRowParams struct {
@@ -155,8 +172,8 @@ type jobRowParams struct {
 }
 
 func (m Model) renderJobRow(params jobRowParams) string {
-	cursor, name := " ", params.View.Name
-	if params.View.Name == m.selected {
+	cursor, name := " ", m.indent()+params.View.Name
+	if viewKey(params.View) == m.selected {
 		cursor, name = styles.RunViewJobSelected.Render(domain.RunViewCursorMark), styles.RunViewJobSelected.Render(name)
 	}
 	uptime := rules.JobUptime(rules.JobUptimeParams{
@@ -172,7 +189,7 @@ func (m Model) renderJobRow(params jobRowParams) string {
 }
 
 func (m Model) jobMark(view runlogs.JobView) string {
-	step, tracked := m.sequence.states[view.Name]
+	step, tracked := m.sequence.states[viewKey(view)]
 	return renderMark(rules.JobMark(rules.JobMarkParams{Status: view.Status, Step: step, Tracked: tracked}))
 }
 
@@ -223,12 +240,12 @@ func (m Model) renderPaneTitle(params paneTitleParams) string {
 	}
 	status := rules.LabelWithPorts(rules.LabelWithPortsParams{
 		Label: string(params.View.Status),
-		Ports: m.sequence.ports[params.View.Name],
+		Ports: m.sequence.ports[viewKey(params.View)],
 	})
-	if url := m.sequence.urls[params.View.Name]; url != "" {
+	if url := m.sequence.urls[viewKey(params.View)]; url != "" {
 		status += domain.RunViewSeparator + url
 	}
-	left := styles.Bold.Render(params.View.Name) + styles.Muted.Render(domain.RunViewSeparator+status)
+	left := styles.Bold.Render(m.qualify(params.View.Name, params.View.Worktree)) + styles.Muted.Render(domain.RunViewSeparator+status)
 	return spread(spreadParams{Left: left, Right: styles.Muted.Render(m.paneOrigin(params.View)), Width: params.Width})
 }
 
@@ -238,7 +255,7 @@ func (m Model) paneOrigin(view runlogs.JobView) string {
 	if m.focused {
 		return domain.RunViewFocusLabel
 	}
-	entry, held := m.panes.entry(view.Name)
+	entry, held := m.panes.entry(viewKey(view))
 	if !held {
 		return ""
 	}
@@ -262,7 +279,7 @@ func (m Model) renderPaneBody(params paneBodyParams) []string {
 		return []string{styles.Muted.Render(truncate(m.emptyMessage(), params.Layout.PaneCols))}
 	}
 
-	entry, held := m.panes.entry(params.View.Name)
+	entry, held := m.panes.entry(viewKey(params.View))
 	if !held {
 		return []string{styles.Muted.Render(m.placeholder(params.View))}
 	}

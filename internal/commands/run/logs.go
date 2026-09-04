@@ -22,14 +22,14 @@ import (
 // newLogsCmd creates the wtm run logs subcommand.
 func newLogsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   domain.CmdLogs + " [worktree]",
+		Use:   domain.CmdLogs + " [worktree...]",
 		Short: "Attach to a job's output",
 		Long: "Open the run view on [worktree]'s jobs — the current worktree when omitted, picked interactively when there is a terminal.\n" +
 			"--job focuses one of them; without it, every job is shown.\n" +
 			"Leaving the view detaches; the jobs keep running.\n" +
 			"Without a terminal, every job's output is written as prefixed lines instead.\n" +
 			fmt.Sprintf("--output json replays each job's last %d lines as [{job, at, text}], grouped by job, and never attaches.", domain.JobLogTailLines),
-		Args: cobra.MaximumNArgs(1),
+		Args: cobra.ArbitraryArgs,
 		RunE: runLogs,
 	}
 	shared.AddJobFlag(cmd, "Focus a single job instead of showing them all")
@@ -64,10 +64,10 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	outcome, err := logsflow.Run(logsflow.Params{
 		Context: shared.FlowContext(result),
 		Request: logsflow.Request{
-			Worktree: firstArg(args),
-			Cwd:      dir,
-			Job:      job,
-			Config:   runCfg,
+			Worktrees: args,
+			Cwd:       dir,
+			Job:       job,
+			Config:    runCfg,
 		},
 		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
 			Interactive: shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
@@ -91,12 +91,12 @@ type logsPresenter struct {
 }
 
 func (p logsPresenter) Show(show logsflow.ShowParams) error {
-	params := jobLinesParams{Cmd: p.Cmd, Board: show.Board, Job: show.Job}
+	params := jobLinesParams{Cmd: p.Cmd, Board: show.Board, Job: show.Job, Worktrees: show.Worktrees}
 	switch rules.DecideRunSurface(rules.RunSurfaceParams{TTY: isTTY(), Format: p.Format}) {
 	case domain.RunSurfaceView:
 		// `run logs` starts nothing, so the view has no outcome to conclude from:
 		// it only ever reports what was already running.
-		_, err := showRunView(viewParams{Cmd: p.Cmd, Board: show.Board, Job: show.Job})
+		_, err := showRunView(viewParams{Cmd: p.Cmd, Board: show.Board, Job: show.Job, Worktrees: show.Worktrees})
 		return err
 	case domain.RunSurfaceMachine:
 		return writeJobLogsJSON(params)
@@ -118,6 +118,19 @@ type jobLinesParams struct {
 	Board runlogs.Board
 	// Job narrows the output to one job; empty takes every job the worktree has.
 	Job string
+	// Worktrees are what the board covers: more than one makes each prefix name
+	// where its lines came from.
+	Worktrees []string
+}
+
+// prefixOf labels a job's lines, naming its worktree only above several of
+// them — two jobs called `web` are otherwise the same prefix twice.
+func (p jobLinesParams) prefixOf(view runlogs.JobView, index int) string {
+	label := view.Name
+	if len(p.Worktrees) > 1 && view.Worktree != "" {
+		label = fmt.Sprintf(domain.RunStreamWorktreeFmt, label, view.Worktree)
+	}
+	return jobColors[index%len(jobColors)](fmt.Sprintf(domain.RunLogsPrefixFmt, label))
 }
 
 // writeJobLogsJSON is `run logs --output json`: what each job persisted, as one
@@ -135,7 +148,7 @@ func writeJobLogsJSON(params jobLinesParams) error {
 
 	entries := []domain.JobLogEntry{}
 	for _, view := range views {
-		lines, historyErr := params.Board.History(runlogs.HistoryParams{Job: view.Name})
+		lines, historyErr := params.Board.History(runlogs.HistoryParams{Job: view.Name, WorkDir: view.WorkDir})
 		if historyErr != nil {
 			// One unreadable file is not the whole document: the other jobs still
 			// have something to hand over, and stdout stays a clean document
@@ -144,7 +157,11 @@ func writeJobLogsJSON(params jobLinesParams) error {
 			continue
 		}
 		for _, line := range lines {
-			entries = append(entries, rules.ParseLogLine(rules.ParseLogLineParams{Job: view.Name, Line: line}))
+			entry := rules.ParseLogLine(rules.ParseLogLineParams{Job: view.Name, Line: line})
+			if len(params.Worktrees) > 1 {
+				entry.Worktree = view.Worktree
+			}
+			entries = append(entries, entry)
 		}
 	}
 	return output.WriteJobLogsJSON(params.Cmd.OutOrStdout(), entries)
@@ -174,10 +191,10 @@ func writeJobLines(params jobLinesParams) error {
 	var wg sync.WaitGroup
 
 	for i, view := range views {
-		prefix := jobColors[i%len(jobColors)](fmt.Sprintf(domain.RunLogsPrefixFmt, view.Name))
+		prefix := params.prefixOf(view, i)
 
 		if !view.Attachable {
-			lines, historyErr := params.Board.History(runlogs.HistoryParams{Job: view.Name})
+			lines, historyErr := params.Board.History(runlogs.HistoryParams{Job: view.Name, WorkDir: view.WorkDir})
 			if historyErr != nil {
 				output.Error(params.Cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", view.Name, historyErr))
 				continue
@@ -188,7 +205,7 @@ func writeJobLines(params jobLinesParams) error {
 			continue
 		}
 
-		stream, attachErr := params.Board.Attach(runlogs.AttachParams{Job: view.Name})
+		stream, attachErr := params.Board.Attach(runlogs.AttachParams{Job: view.Name, WorkDir: view.WorkDir})
 		if attachErr != nil {
 			output.Error(params.Cmd.ErrOrStderr(), fmt.Sprintf("%s: %v", view.Name, attachErr))
 			continue

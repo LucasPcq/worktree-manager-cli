@@ -341,8 +341,8 @@ func TestEnterHandsRunviewTheJobOnScreen(t *testing.T) {
 	if request.Job != "api" {
 		t.Errorf("Job = %q, want runview opened on the job on screen, not on the whole worktree", request.Job)
 	}
-	if request.Worktree != "a" {
-		t.Errorf("Worktree = %q, want a", request.Worktree)
+	if len(request.Worktrees) != 1 || request.Worktrees[0] != "a" {
+		t.Errorf("Worktrees = %v, want a", request.Worktrees)
 	}
 }
 

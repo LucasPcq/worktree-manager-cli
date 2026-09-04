@@ -11,7 +11,7 @@ Without a terminal, every job's output is written as prefixed lines instead.
 --output json replays each job's last 1000 lines as [{job, at, text}], grouped by job, and never attaches.
 
 ```
-wtm run logs [worktree] [flags]
+wtm run logs [worktree...] [flags]
 ```
 
 ### Options

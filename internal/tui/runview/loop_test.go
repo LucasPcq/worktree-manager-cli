@@ -127,13 +127,13 @@ func TestTheModelKeepsHearingFromARunPastTheMailbox(t *testing.T) {
 		Board: runlogstest.NewBoard(runlogstest.BoardParams{
 			Views: []runlogs.JobView{stopped("migrate")},
 		}),
-		Start: func(_ context.Context, emitter runlogs.Sink) (runlogs.Outcome, error) {
+		Start: func(_ context.Context, emitter runlogs.Sink) (runlogs.Outcomes, error) {
 			defer close(finished)
 			for step := 1; step <= steps; step++ {
 				emitter.Emit(runlogs.Event{Phase: runlogs.PhaseStarting, Job: "migrate", Step: step, Steps: steps})
 				emitter.Emit(runlogs.Event{Phase: runlogs.PhaseDone, Job: "migrate", Step: step, Steps: steps})
 			}
-			return runlogs.Outcome{Steps: steps}, nil
+			return runlogs.Outcomes{runlogs.Outcome{Steps: steps}}, nil
 		},
 	})
 

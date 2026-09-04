@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
@@ -236,4 +238,32 @@ func TestWriteRunningJobsJSON_OmitsURLForAJobThatPublishesNone(t *testing.T) {
 	if value, present := payloads[1]["url"]; present {
 		t.Errorf("url = %v, want no key at all on a job that publishes none", value)
 	}
+}
+
+// A style given a string that ends in a line break sees two lines and pads the
+// empty second one to the width of the first — a run of spaces landing in front
+// of the first job.
+func TestRunningJobsTableAlignsItsFirstRowWithTheRest(t *testing.T) {
+	table := FormatRunningJobs(FormatRunningJobsParams{
+		Jobs: []domain.JobInfo{
+			{Name: "api", Kind: domain.JobKindService, Status: domain.JobStatusRunning, PID: 4211, WorkDir: "/w/main"},
+			{Name: "web", Kind: domain.JobKindService, Status: domain.JobStatusRunning, PID: 4212, WorkDir: "/w/feat-a"},
+		},
+		Now: time.Now(),
+	})
+
+	lines := strings.Split(strings.TrimRight(ansi.Strip(table), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("table has %d lines, want a header and one row per job:\n%s", len(lines), table)
+	}
+	for index, line := range lines[1:] {
+		if indentOf(line) != indentOf(lines[0]) {
+			t.Errorf("row %d starts at column %d, the header at %d:\n%s",
+				index, indentOf(line), indentOf(lines[0]), table)
+		}
+	}
+}
+
+func indentOf(line string) int {
+	return len(line) - len(strings.TrimLeft(line, " "))
 }
