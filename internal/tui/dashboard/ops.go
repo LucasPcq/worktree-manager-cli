@@ -2,16 +2,17 @@ package dashboard
 
 import "github.com/LucasPcq/wtm/internal/flow"
 
-// operation is a flow the dashboard started and has not seen finish. Its target
-// is the worktree it works on, known only once the session naming it is
-// answered. stage is the presenter's latest Stage/HookPhase message — what the
-// list shows in place of a locked row's state pill.
+// operation is a flow the dashboard started and has not seen finish. Its
+// targets are the worktrees it works on, known only once the session naming
+// them is answered — several since the run flows became cumulative. stage is
+// the presenter's latest Stage/HookPhase message — what the list shows in place
+// of a locked row's state pill.
 type operation struct {
-	id     int
-	kind   string
-	mode   flow.Mode
-	target string
-	stage  string
+	id      int
+	kind    string
+	mode    flow.Mode
+	targets []string
+	stage   string
 }
 
 // operations is what the dashboard has in flight. A run declares how it holds the
@@ -29,11 +30,11 @@ func (o operations) begin(op operation) (operations, int) {
 	return o, op.id
 }
 
-func (o operations) retarget(id int, target string) operations {
+func (o operations) retarget(id int, targets []string) operations {
 	running := append([]operation(nil), o.running...)
 	for index := range running {
 		if running[index].id == id {
-			running[index].target = target
+			running[index].targets = targets
 		}
 	}
 	o.running = running
@@ -60,8 +61,10 @@ func (o operations) holding(target string) (operation, bool) {
 		return operation{}, false
 	}
 	for _, op := range o.running {
-		if op.target == target {
-			return op, true
+		for _, held := range op.targets {
+			if held == target {
+				return op, true
+			}
 		}
 	}
 	return operation{}, false

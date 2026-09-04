@@ -242,7 +242,7 @@ func TestTheMenuStartsAReparentOnTheSelectedWorktree(t *testing.T) {
 	if len(started.ops.running) != 1 || started.ops.running[0].kind != domain.OpKindReparent {
 		t.Fatalf("running = %+v, want the reparent run recorded", started.ops.running)
 	}
-	if got := started.ops.running[0].target; got != "b" {
+	if got := started.ops.running[0].firstTarget(); got != "b" {
 		t.Errorf("target = %q, want the worktree the menu was opened on", got)
 	}
 }
@@ -260,7 +260,7 @@ func TestTheReparentEntryIsNotMarkedDangerous(t *testing.T) {
 // Every entry acts on the same worktree, so one run holding it disables them all.
 func TestARunHoldingTheWorktreeDisablesEveryEntry(t *testing.T) {
 	model := newTestModel(t, testWidth, testHeight, "a", "b")
-	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindCreate, target: "a"})
+	model.ops, _ = model.ops.begin(operation{kind: domain.OpKindCreate, targets: []string{"a"}})
 
 	for _, item := range menuActions(model.menuItems()) {
 		if item.disabled == "" {
@@ -413,7 +413,7 @@ func TestTheActionsMenuStartsThePruneRun(t *testing.T) {
 	}
 	// It holds the whole surface and names no target: several worktrees go, so
 	// there is no single one to lock.
-	if got := started.ops.running[0]; got.mode != flow.ModeBlocking || got.target != "" {
+	if got := started.ops.running[0]; got.mode != flow.ModeBlocking || got.firstTarget() != "" {
 		t.Errorf("operation = %+v, want a blocking run with no target", got)
 	}
 }

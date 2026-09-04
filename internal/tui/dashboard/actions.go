@@ -324,11 +324,28 @@ type beginParams struct {
 	Target string
 }
 
+func targetsOf(target string) []string {
+	if target == "" {
+		return nil
+	}
+	return []string{target}
+}
+
+// firstTarget names the worktree an operation is reported against. A run over
+// several is still one line of output, and the first is the one the surface
+// selected.
+func (o operation) firstTarget() string {
+	if len(o.targets) == 0 {
+		return ""
+	}
+	return o.targets[0]
+}
+
 // beginOp records the run and opens the output panel: a run whose output is
 // folded away is one the user cannot follow.
 func (m Model) beginOp(params beginParams) (Model, int) {
 	declared := params.Operation
-	ops, id := m.ops.begin(operation{kind: declared.Kind, mode: declared.Mode, target: params.Target})
+	ops, id := m.ops.begin(operation{kind: declared.Kind, mode: declared.Mode, targets: targetsOf(params.Target)})
 	m.ops = ops
 	m.outputExpanded = true
 	return m.reflow(), id
@@ -340,7 +357,7 @@ func (m Model) beginOp(params beginParams) (Model, int) {
 func (m Model) finishOp(msg opDoneMsg) (Model, tea.Cmd) {
 	op, _ := m.ops.byID(msg.id)
 	m.ops = m.ops.end(msg.id)
-	m, detailCmd := m.invalidateDetail(op.target)
+	m, detailCmd := m.invalidateDetail(op.firstTarget())
 	// A run that just started or stopped jobs changes what the badges and the
 	// RUN section say, and waiting for the next poll to notice is what made a
 	// finished run look like nothing had happened.
@@ -359,7 +376,7 @@ func (m Model) finishOp(msg opDoneMsg) (Model, tea.Cmd) {
 	// The privileged removal prompts for a password on the terminal this surface
 	// is holding, so it is never offered here — the way to it is named instead.
 	if errors.Is(msg.err, domain.ErrWorktreeRemoveFailed) {
-		return m.appendOutput(OutputLineMsg{Text: fmt.Sprintf(domain.DashboardPrivilegedHintFmt, op.target)}), detailCmd
+		return m.appendOutput(OutputLineMsg{Text: fmt.Sprintf(domain.DashboardPrivilegedHintFmt, op.firstTarget())}), detailCmd
 	}
 	return m, detailCmd
 }
@@ -375,7 +392,7 @@ func (m Model) applyFlow(msg tea.Msg) (Model, tea.Cmd) {
 	case OutputLineMsg:
 		return m.appendOutput(msg), nil
 	case opTargetMsg:
-		m.ops = m.ops.retarget(msg.id, msg.target)
+		m.ops = m.ops.retarget(msg.id, msg.targets)
 		return m, nil
 	case opStageMsg:
 		m.ops = m.ops.stage(msg.id, msg.stage)

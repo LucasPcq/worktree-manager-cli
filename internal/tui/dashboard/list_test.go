@@ -22,7 +22,7 @@ func lockOperation(t *testing.T, model Model, branch, stage string) Model {
 		t.Fatal("the create run did not start")
 	}
 	id := model.ops.running[0].id
-	model, _ = model.applyFlow(opTargetMsg{id: id, target: branch})
+	model, _ = model.applyFlow(opTargetMsg{id: id, targets: []string{branch}})
 	model, _ = model.applyFlow(opStageMsg{id: id, stage: stage})
 	if _, held := model.ops.holding(branch); !held {
 		t.Fatalf("the run does not hold %q", branch)

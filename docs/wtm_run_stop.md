@@ -8,7 +8,7 @@ Stop one running job of [worktree] — the current one when omitted, picked inte
 The job is named with --job; without it, a fully interactive run offers a picker.
 
 ```
-wtm run stop [worktree] [flags]
+wtm run stop [worktree...] [flags]
 ```
 
 ### Options

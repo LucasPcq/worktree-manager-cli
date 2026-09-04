@@ -28,8 +28,8 @@ type opDoneMsg struct {
 // opTargetMsg names the worktree a run holds, as soon as its answers say which
 // one it is.
 type opTargetMsg struct {
-	id     int
-	target string
+	id      int
+	targets []string
 }
 
 // opStageMsg carries a run's latest Stage/HookPhase message, the way the list
@@ -80,7 +80,10 @@ func (p prompter) Ask(session flow.Session) (flow.Answers, error) {
 	p.send(promptMsg{title: p.title, shape: p.shape, session: session, reply: reply})
 	answered := <-reply
 	if answered.err == nil && p.targetKey != "" {
-		p.send(opTargetMsg{id: p.opID, target: answered.answers.Value(p.targetKey)})
+		// Values, never Value: a cumulative step answers with a set, and reading
+		// it as a single value would silently release the lock on every worktree
+		// the run is about to touch.
+		p.send(opTargetMsg{id: p.opID, targets: answered.answers.Values(p.targetKey)})
 	}
 	return answered.answers, answered.err
 }

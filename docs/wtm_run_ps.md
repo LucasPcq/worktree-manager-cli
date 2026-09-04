@@ -5,7 +5,10 @@ List currently running jobs
 ### Synopsis
 
 Show the jobs managed by the background daemon (name, kind, status, PID, uptime, worktree).
-In a TTY, offers an interactive picker with stop/logs/restart actions.
+It lists every repository the daemon knows, so it works from anywhere — inside a
+run-initialized repository or not.
+To act on those jobs, open the run view with `wtm run logs`, which covers as many
+worktrees as you select.
 
 ```
 wtm run ps [flags]
@@ -16,7 +19,6 @@ wtm run ps [flags]
 ```
   -h, --help            help for ps
       --output string   Output format: text or json (default "text")
-  -y, --yes             Skip the interactive picker; print the table instead
 ```
 
 ### SEE ALSO

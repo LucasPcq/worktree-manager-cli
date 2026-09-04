@@ -137,10 +137,10 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 | Command | Purpose |
 |---|---|
 | [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts, pre-fill ports, publish URLs, link .env keys) |
-| [`run up`](docs/wtm_run_up.md) / [`down`](docs/wtm_run_down.md) | Start / stop a profile's jobs (`up` attaches, `-d` detaches) |
+| [`run up`](docs/wtm_run_up.md) / [`down`](docs/wtm_run_down.md) | Start / stop a profile's jobs on one or more worktrees (`up` attaches, `-d` detaches) |
 | [`run start`](docs/wtm_run_start.md) / [`stop`](docs/wtm_run_stop.md) | Start / stop a single job (`start` attaches, `-d` detaches) |
-| [`run ps`](docs/wtm_run_ps.md) / [`list`](docs/wtm_run_list.md) | Running jobs / declared jobs + profiles |
-| [`run logs`](docs/wtm_run_logs.md) | Reopen the run view on this worktree's jobs |
+| [`run ps`](docs/wtm_run_ps.md) / [`list`](docs/wtm_run_list.md) | Running jobs, every repository / declared jobs + profiles |
+| [`run logs`](docs/wtm_run_logs.md) | Reopen the run view on one or more worktrees' jobs |
 | [`run url`](docs/wtm_run_url.md) / [`open`](docs/wtm_run_open.md) | Print / open where a job answers in this worktree |
 | [`run export`](docs/wtm_run_export.md) / [`import`](docs/wtm_run_import.md) | Share a job layout between machines |
 | [`run job`](docs/wtm_run_job.md) / [`profile`](docs/wtm_run_profile.md) | Add / remove / edit jobs and profiles |
@@ -268,10 +268,12 @@ expands from the job's environment. POSIX `sh` is used on every machine, never y
 interactive shell, so a shared `run.toml` behaves the same everywhere.
 
 Two worktrees can run their stacks side by side — each has its own ports and resource
-names. The first time `wtm run up` finds another worktree's jobs running it asks what to
-do about it, and can write the answer as `concurrency = "parallel" | "exclusive"` at the
-top of the file so it never asks again. `--parallel` and `--exclusive` override it for a
-single run.
+names — and `wtm run up feat-a feat-b` brings up as many as you name at once, each
+independent of the others. The first time `wtm run up` finds another worktree's jobs
+running it asks what to do about the machine's load, and can write the answer as
+`concurrency = "parallel" | "exclusive"` at the top of the file so it never asks again.
+`--parallel` and `--exclusive` override it for a single run; `--exclusive` is refused on
+several worktrees, since it stops all but one.
 
 ```toml
 [[job]]

@@ -53,7 +53,11 @@ self-documenting:
    arity, the exit code follows the success.** A command acting on N jobs (`run up`,
    `run down`, `run logs`) gives an array, one acting on a single job (`run start`,
    `run stop`, `run job *`) gives an object — always that shape, whatever branch the
-   command took — and any of them exits non-zero when what it attempted failed. A command
+   command took — and any of them exits non-zero when what it attempted failed.
+   The worktree axis obeys the same rule: `run up`, `run down` and `run stop` on **one**
+   worktree keep the flat array of job results they have always given; on **several** they
+   give one document per worktree, `{worktree, path, profile?, aborted?, jobs: [...]}`, in
+   the order you named them. So branch on the shape only if you passed several worktrees. A command
    that got far enough to have per-job results writes its **whole** document and *then*
    exits non-zero (`run up`, `run down`: read the array, the `status: "error"` entries say
    which job); one that failed before that (no such job, daemon refused, config invalid)
@@ -95,7 +99,7 @@ self-documenting:
 | Worktree **forest** (parent→child + which need sync) | `wtm tree --output json` |
 | Open PRs | `gh pr list --json number,title,headRefName,state,isDraft,url` |
 | Declared jobs + profiles | `wtm run list --output json` |
-| Jobs running right now (+ `started_at`, `exit_code`, `url`) | `wtm run ps --output json` |
+| Jobs running right now, every repo (+ `started_at`, `exit_code`, `url`, `work_dir`) | `wtm run ps --output json` |
 | Where a job answers in a worktree | `wtm run url [worktree] --output json` |
 | What serves the named URLs (bind port, public port, redirection) | `wtm run proxy status --output json` |
 | What a `run up` started, with each job's `url` | `wtm run up -d --output json` |
@@ -324,6 +328,11 @@ and **experimental**: the global `wtm init` does not configure it.
   worktree, and it never opens a picker on your paths (no TTY, or `--output json`). Name it
   to act on another worktree of the same repo without moving. The job or profile is a
   **flag**: `--job <name>`, `--profile <name>`.
+- **`run up`, `run down`, `run stop` and `run logs` take several worktrees**:
+  `run up feat-a feat-b -d`. They start concurrently and independently — one that aborts
+  leaves the others running, and the command exits non-zero if any did. `run start` stays
+  single-worktree. Above one worktree the JSON changes shape (see the arity rule below) and
+  every human line names the worktree it came from.
 - `run up [worktree] --profile <name>` / `run down [worktree]` — start / stop a profile.
   `run start [worktree] --job <name>` / `run stop [worktree] --job <name>` — one job.
   `--job` is **required** on `start`/`stop` on your paths: without a terminal there is no
@@ -334,12 +343,17 @@ and **experimental**: the global `wtm init` does not configure it.
   smaller than the profile means the profile itself is short, never that wtm dropped
   something.
 - **Another worktree already running jobs is not a conflict.** Each worktree has its own
-  ports and resource names, so stacks cohabit. `run up` asks about it once, and only on a
-  terminal; on your paths (no TTY, `--output json`, or `--yes`) it resolves to leaving the
-  others running and stops nothing. Force either way for one run with `--exclusive` (stop
-  them first) or `--parallel`; the two are mutually exclusive. A project can settle it for
-  good with `concurrency = "parallel" | "exclusive"` in `run.toml`, which is what the
-  question's "always" answers write.
+  ports and resource names, so stacks cohabit; the question is about machine load, not
+  about ports. `run up` asks about it once, and only on a terminal; on your paths (no TTY,
+  `--output json`, or `--yes`) it resolves to leaving the others running and stops nothing.
+  Force either way for one run with `--exclusive` (stop them first) or `--parallel`; the two
+  are mutually exclusive. A project can settle it for good with
+  `concurrency = "parallel" | "exclusive"` in `run.toml`, which is what the question's
+  "always" answers write.
+- **`--exclusive` and several worktrees contradict each other**, since it stops all but
+  one: `run up a b --exclusive` errors. Where the project settled on `exclusive` and the run
+  starts several anyway, your paths take the safe default — everything starts, nothing else
+  is stopped — and a notice says the setting was set aside.
 - **`--yes` is on every `run` command** and is the confirmation axis: it runs unattended,
   never opens a picker, and resolves each question to its documented safe default. Where
   there is no safe default it errors naming the flag — `run start --yes` and `run stop
@@ -392,6 +406,10 @@ and **experimental**: the global `wtm init` does not configure it.
   simply relaunches the launcher rather than refusing "already running". `running` is a
   foreground service the daemon holds a terminal for, `crashed` one whose process died,
   `stopped` one that was stopped.
+- **`run ps` is the one global listing**, and the only `run` command that works from
+  anywhere: it lists what the daemon holds across every repository, so it needs neither a
+  run-initialized repo nor a worktree. It only ever lists — to act on those jobs, open the
+  run view with `run logs`, which covers as many worktrees as you name.
 - **The daemon survives nothing, and that is by design.** It exits ~30 s after the last
   *foreground* job, and detached services keep running without it. It records what it
   started in `~/.config/wtm/jobs.json`, so the next daemon picks those back up: after a

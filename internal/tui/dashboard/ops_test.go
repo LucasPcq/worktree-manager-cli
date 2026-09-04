@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow"
 )
 
 // creating puts a background create in flight and lets it name its target, the
@@ -18,7 +19,7 @@ func creating(t *testing.T, model Model, branch string) Model {
 	if cmd == nil {
 		t.Fatal("the create run did not start")
 	}
-	model, _ = model.applyFlow(opTargetMsg{id: model.ops.running[0].id, target: branch})
+	model, _ = model.applyFlow(opTargetMsg{id: model.ops.running[0].id, targets: []string{branch}})
 	if _, held := model.ops.holding(branch); !held {
 		t.Fatalf("the run does not hold %q", branch)
 	}
@@ -141,4 +142,20 @@ func lastOutput(model Model) string {
 		return ""
 	}
 	return model.outputLines[len(model.outputLines)-1]
+}
+
+// A run over several worktrees locks every one of them: reading a cumulative
+// answer as a single value would release the lock on all but the first.
+func TestARunHoldsEveryWorktreeItActsOn(t *testing.T) {
+	ops, id := operations{}.begin(operation{kind: domain.OpKindRunUp, mode: flow.ModeBackground})
+	ops = ops.retarget(id, []string{"a", "b"})
+
+	for _, branch := range []string{"a", "b"} {
+		if _, held := ops.holding(branch); !held {
+			t.Errorf("%q is not held by the run acting on it", branch)
+		}
+	}
+	if _, held := ops.holding("c"); held {
+		t.Error("a worktree outside the run reads as held")
+	}
 }
