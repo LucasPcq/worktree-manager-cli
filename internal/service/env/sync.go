@@ -50,6 +50,11 @@ type computedFile struct {
 	parentFallback bool
 	child          []domain.EnvLine
 	diff           domain.EnvDiff
+	// unresolvable marks a configured file that exists nowhere: not in the
+	// worktree, in no value source, and with no template to scaffold from. A
+	// fresh project has no source either, but it does have a template — this is
+	// a config.toml entry pointing at nothing.
+	unresolvable bool
 }
 
 // ComputeEnvParams holds the inputs to compute a worktree's env drift, without any
@@ -257,6 +262,7 @@ func fileResult(paths envPaths, c computedFile, applied bool) domain.EnvFileResu
 		Applied:        applied,
 		ParentBranch:   parentBranch,
 		ParentFallback: c.parentFallback,
+		Unresolvable:   c.unresolvable,
 	}
 }
 
@@ -293,6 +299,7 @@ func computeFile(paths envPaths, f domain.EnvFile) (computedFile, error) {
 		parentFallback: fallback,
 		child:          child,
 		diff:           diff,
+		unresolvable:   child == nil && template == nil && parent == nil && main == nil,
 	}, nil
 }
 

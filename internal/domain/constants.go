@@ -97,7 +97,12 @@ const (
 	// EnvSourceLabelNone is shown when the strategy's value source has no .env file at
 	// all (and no fallback either) — nothing to sync from, so keys come from the
 	// template as placeholders. Typical on a fresh project before any .env is created.
-	EnvSourceLabelNone = "template (no .env to sync from)"
+	EnvPortLinkTwiceFmt = "env_port %s in %s follows %s twice — a key may follow several ports, never the same one"
+	EnvSourceLabelNone  = "template (no .env to sync from)"
+	// EnvFileUnresolvableFmt names a configured file the repository does not
+	// have anywhere. Nothing can fill it, so the fix is in config.toml.
+	EnvUnresolvableSummaryFmt = "%d configured .env file(s) exist nowhere — fix [env] in config.toml."
+	EnvFileUnresolvableFmt    = "%s exists nowhere — no value, no template. Remove it from [env] in config.toml, or add the file."
 
 	// Tokens recognized by the .env content parser (internal/rules/env_parse.go).
 	EnvCommentPrefix = "#"
@@ -160,6 +165,13 @@ const (
 	// PortOffsetBlock is the default spacing between two worktrees' ports, used
 	// when run.toml does not set one.
 	PortOffsetBlock = 10
+
+	// JobSettleWindow is how long a run waits for a service it just started to
+	// fail before it concludes. A process that cannot bind its port exits within
+	// instants; the window only exists because the spawn call returns first.
+	// JobSettleInterval paces the poll.
+	JobSettleWindow   = 800 * time.Millisecond
+	JobSettleInterval = 100 * time.Millisecond
 
 	// PortProbeTimeout is how long `run up` waits for a declared port to answer
 	// before reporting it silent. Generous on purpose: the poll returns as soon
@@ -466,10 +478,55 @@ const (
 	// The port probe report: what `run up` observed on the ports a job declared.
 	// It states what was seen, never what is at fault — wtm can tell that
 	// nothing answers, not why.
-	PortProbeTitle     = "Ports declared but not bound"
-	PortProbeSilentFmt = "%s · nothing is listening on %s=%d"
-	PortProbeBaseFmt   = "  but %d is listening — the base port"
-	PortProbeBaseHint  = "  the command ran, but the variable did not reach it"
+	// EnvScanLoading and ExtractScanLoading cover the pre-scan both commands run
+	// before their first screen: on a repo with many worktrees it is seconds of
+	// git work, and silence reads as a hang.
+	EnvScanLoading     = "Scanning worktrees for .env drift…"
+	ExtractScanLoading = "Scanning worktrees for changes…"
+
+	// Import* are what `run import` says once run.toml has been replaced. The
+	// .env hint is there because the write reconciles nothing: the values a job
+	// reads still hold whatever the previous config left them at.
+	ImportEmptyMessage = "run.toml replaced by an empty configuration."
+	ImportJobsFmt      = "%d job(s): %s"
+	ImportProfilesFmt  = "%d profile(s): %s"
+	ImportEnvPortsFmt  = "%d .env port link(s)"
+	ImportEnvHint      = "Run `wtm env` to reconcile the .env files against this configuration."
+
+	ImportNeedsYesFmt    = "replacing run.toml is destructive: pass --%s to confirm it without a prompt"
+	ImportDeclined       = "run.toml left unchanged."
+	ImportConfirmTitle   = "Replace run.toml?"
+	ImportConfirmDescFmt = "The payload replaces the whole file: %d job(s), %d profile(s). What run.toml holds today is lost."
+
+	// RunStreamCrashedFmt corrects a job announced as started that the daemon
+	// found gone at the end of the sequence.
+	RunStreamCrashedCodeFmt = "%s, exit %d"
+	RunStreamCrashedFmt     = "%s exited right after starting (%s) — see `wtm run logs --job %[1]s`"
+
+	// CalloutChrome is what a callout spends outside its text: the left margin,
+	// the two borders and the horizontal padding. CalloutMaxWidth stops a short
+	// notice from being stretched across a very wide window.
+	CalloutChrome   = 8
+	CalloutMaxWidth = 96
+
+	// RunListURLMark follows the ports of a job published under a name.
+	RunListURLMark = " ↗"
+
+	PortProbeTitle = "Ports declared but not bound"
+	// ProbeSilence* offers to stop repeating a warning that is true and will
+	// stay true: the command binds the base port because it never reads the
+	// variable, which is a decision to take once rather than a line to reread at
+	// every run.
+	ProbeSilenceTitle   = "Stop reporting these ports?"
+	ProbeSilenceDescFmt = "%s declared a port nothing answered on, and no other worktree holds it — the command binds the base port instead of the one it was given. Silencing writes probe = false in run.toml for these jobs; fixing the command means passing --port ${PORT} to it."
+	ProbeSilencedFmt    = "probe = false written for %s"
+	PortProbeSilentFmt  = "%s · nothing is listening on %s=%d"
+	PortProbeBaseFmt    = "  but %d is listening — the base port"
+	PortProbeBaseHint   = "  the command ran, but the variable did not reach it"
+	// PortProbeBaseHeldFmt replaces the two lines above when the same job is up
+	// in another worktree. It states what wtm knows — a neighbour is running it —
+	// rather than what it cannot see, which socket belongs to whom.
+	PortProbeBaseHeldFmt = "  %d is listening, and this job is also up in %s"
 
 	// PortProbeHostV4 and PortProbeHostV6 are both dialed: a service bound to
 	// ::1 only would otherwise read as silent.
@@ -500,7 +557,7 @@ const (
 	EnvPortHeaderFollows = "FOLLOWS"
 	EnvPortHeaderPort    = "PORT"
 	EnvPortHeaderBecomes = "BECOMES"
-	EnvPortMoveFmt       = "%d → %d"
+	EnvPortMoveFmt       = "%s → %s"
 	// EnvPortMoveOrigin replaces the port move on a row that writes a whole
 	// origin: there is no before-and-after number to show, the value column
 	// carries the change on its own.
@@ -677,7 +734,6 @@ const (
 	FlagYes        = "yes"
 	FlagAll        = "all"
 	FlagGlobal     = "global"
-	FlagReplace    = "replace"
 	FlagMine       = "mine"
 	FlagReview     = "review"
 	FlagCmd        = "cmd"
@@ -1204,6 +1260,7 @@ const (
 	JobActionStopped = "stopped"
 	JobActionDone    = "done"
 	JobActionError   = "error"
+	JobActionCrashed = "crashed"
 	JobActionAdded   = "added"
 	JobActionRemoved = "removed"
 	// JobRemovedProfilesFmt and JobRemovedEnvPortsFmt report what a removal
@@ -1441,19 +1498,29 @@ const (
 	// allowed to take rows from it.
 	RunViewMinBodyRows = 3
 
+	// RunViewMarginCols holds the view off the terminal's edges, RunViewGutterCols
+	// separates the two panels, and RunViewGapRows are the blank rows under the
+	// header and above the help. All four are dropped on a frame too small to
+	// afford them: air is the first thing to give up when there is none.
+	RunViewMarginCols = 2
+	RunViewGutterCols = 1
+	RunViewGapRows    = 2
+	// RunViewMinAiredCols is the width below which the margin and the gutter are
+	// not taken: on a narrow terminal every column belongs to the output.
+	RunViewMinAiredCols = 60
+
 	// RunViewMinPanelCols and RunViewMinPanelRows are the smallest a bordered
 	// panel can be and still hold a cell of what it frames.
 	RunViewMinPanelCols = 3
 	RunViewMinPanelRows = 3
 
 	// RunViewBorderWidth is what a panel's border costs it in columns, and
-	// RunViewPanelChrome what the border and the title row together cost it in
-	// rows.
-	RunViewBorderWidth = 2
-	RunViewPanelChrome = 3
-	// RunViewSidebarChrome is the same plus the blank line under the list's title:
-	// the jobs need setting off from the heading, and a row the layout does not
-	// know about is a row the panel overflows by.
+	// RunViewPanelChrome what the border, the title row and the blank line under
+	// it cost in rows. Both panels spend the same: the output needs setting off
+	// from the job's name the way the jobs need it from theirs, and a row the
+	// layout does not know about is a row the panel overflows by.
+	RunViewBorderWidth   = 2
+	RunViewPanelChrome   = 4
 	RunViewSidebarChrome = 4
 
 	// RunViewMsgBuffer sizes the channel the stream readers post on, and
@@ -1500,14 +1567,14 @@ const (
 	RunViewPaneLiveLabel    = "live"
 	RunViewPaneScrollFmt    = "scrolled %d lines back"
 
-	// RunViewHeaderTitle names the view and RunViewRunningFmt counts what it is
-	// showing.
-	RunViewHeaderTitle = "wtm run"
-	// RunViewHeaderProfileFmt names the profile the run brought up, next to the
-	// view's own title: several profiles share this screen and nothing else on
-	// it says which one was started.
-	RunViewHeaderProfileFmt = "wtm run · %s"
-	RunViewRunningFmt       = "%d/%d running"
+	// RunViewRunningFmt counts what the view is showing, at the far end of the
+	// help row. The view carries no header of its own: a row spent naming the
+	// tool one is already inside is a row of output.
+	// RunViewTitleIndent sets the pane's title off its border, the way the
+	// sidebar's padding sets off its own. Only the title moves: the body below it
+	// is the emulator's, column for column.
+	RunViewTitleIndent = 1
+	RunViewRunningFmt  = "%d/%d running"
 
 	// RunViewHelpBrowse and RunViewHelpFilter are the footer's key reminders,
 	// one per mode the keyboard can be in.
@@ -1558,10 +1625,14 @@ const (
 	RunViewRecapRunningFmt    = "Running:      %s"
 	RunViewRecapCompletedFmt  = "Completed:    %s"
 	RunViewRecapFailedFmt     = "Failed:       %s"
+	RunViewRecapCrashedFmt    = "Exited:       %s"
 	RunViewRecapNotStartedFmt = "Not started:  %s"
 	RunViewRecapNoneRunning   = "No job left running."
-	RunViewRecapLogsHint      = "wtm run logs  — reopen this view"
-	RunViewRecapDownHint      = "wtm run down  — stop the jobs"
+	// RunViewRecapAddressFmt lists where a started job answers. Reading the recap
+	// is the moment one goes looking for it.
+	RunViewRecapAddressFmt = "  %s  %s"
+	RunViewRecapLogsHint   = "wtm run logs  — reopen this view"
+	RunViewRecapDownHint   = "wtm run down  — stop the jobs"
 	// RunDownRecap* are the same recap seen from the other side: `run down` says
 	// what it took down where `run up` says what it left standing, in the same box
 	// and with the same labels. The two are halves of one command and used to
@@ -1625,11 +1696,14 @@ const (
 
 	// RunProfilePicker* head the profile step, and the Run*StepName label each
 	// question in the wizard's breadcrumb.
-	RunProfilePickerTitle = "Select profile"
-	RunProfilePickerDesc  = "Which profile to start?"
-	RunWorktreeStepName   = "Worktree"
-	RunJobStepName        = "Job"
-	RunProfileStepName    = "Profile"
+	RunProfilePickerTitle = "Select profiles"
+	RunProfilePickerDesc  = "Which profiles to start? A job named by several starts once."
+	// RunProfileOptionFmt keeps a profile's row to its name and a count: spelling
+	// out eight job names made the list unreadable in the repos that have them.
+	RunProfileOptionFmt = "%s · %d jobs"
+	RunWorktreeStepName = "Worktree"
+	RunJobStepName      = "Job"
+	RunProfileStepName  = "Profile"
 
 	// Run*Skip reasons say why a target step was never asked. A step that cannot
 	// list the worktrees is skipped rather than failed: acting where you stand is
@@ -1675,11 +1749,12 @@ const (
 
 	// RunStoppingOthers and RunStoppedOtherFmt report the worktrees an exclusive
 	// run cleared before starting.
-	RunStoppingOthers     = "Stopping the other worktrees' jobs…"
-	RunStoppedOtherFmt    = "Stopped jobs in %s"
-	RunStopOtherFailFmt   = "stop jobs in %s: %s"
-	RunWorktreeUnreadable = "worktrees could not be listed"
-	RunProfileNoChoice    = "no other profile to choose from"
+	RunStoppingOthers          = "Stopping the other worktrees' jobs…"
+	RunStoppedOtherFmt         = "Stopped jobs in %s"
+	RunStopOtherFailFmt        = "stop jobs in %s: %s"
+	RunWorktreeUnreadable      = "worktrees could not be listed"
+	RunProfileNoChoice         = "no other profile to choose from"
+	RunProfileSelectAtLeastOne = "select at least one profile"
 
 	// RunURLSuffixSep sets a job's URL apart from the line announcing it, far
 	// enough that a terminal-detected link does not swallow the ports before it.
@@ -2590,6 +2665,20 @@ const (
 	// DashboardLogsLines is how far back the detail panel's logs view reads. It
 	// is a glance, not a session: runview is what scrolls.
 	DashboardLogsLines = 200
+	// DashboardLogsNoAddress fills the address row for a job that declares no
+	// port. The row is kept whatever the job, so it says why it is empty rather
+	// than leaving a hole where an address usually is.
+	DashboardLogsNoAddress = "no port declared — this job answers nowhere"
+
+	// DashboardLogsHead is what the logs view spends above its body: the row the
+	// address sits on, kept whether or not the job publishes one, and the blank
+	// row under it. A panel whose body moves as jobs are walked is a panel the
+	// eye has to find again on every keystroke.
+	DashboardLogsHead = 2
+	// DashboardLogsColumnOffset drops the job column by the pane's border row,
+	// so a job in the list sits level with the job the pane names.
+	DashboardLogsColumnOffset = 1
+
 	// DashboardLogsChrome is what the logs view spends under its tail: the blank
 	// line and the key reminder.
 	DashboardLogsChrome = 2
@@ -2598,7 +2687,7 @@ const (
 	// live one.
 	DetailLogsHeaderFmt = "%s · %s"
 	DetailJobUpLabel    = "up"
-	DashboardLogsHint   = "←→ job    esc detail    ↵ full session"
+	DashboardLogsHint   = "↑↓ job    esc detail    ↵ full session"
 	// DashboardLogs* tell apart the three ways the logs view can have nothing to
 	// show: the answer differs, so the message does.
 	DashboardLogsNoModule     = "This project runs nothing"
@@ -2607,12 +2696,13 @@ const (
 	DashboardLogsNeverRanHint = "start it with `wtm run start --job`, or from the worktree's menu"
 	DashboardLogsQuiet        = "Nothing logged yet"
 	DashboardLogsQuietHint    = "the job is up and has written nothing so far"
-	// DashboardLogsJobGap separates two job chips on the logs view's selection
-	// line. Three spaces: two read as a column gap inside one chip.
-	DashboardLogsJobGap = "   "
-	// DashboardLogsMore* mark a selection line showing only part of its jobs.
-	DashboardLogsMoreBefore = "‹ "
-	DashboardLogsMoreAfter  = " ›"
+	// DashboardLogsJobGap separates the job column from the tail it labels.
+	DashboardLogsJobGap = " "
+	// DashboardLogsJobColumnMax caps that column: past it a long job name eats
+	// the output it is there to label. DashboardLogsTailMin is the other end —
+	// below it the log is unreadable and the column is dropped instead.
+	DashboardLogsJobColumnMax = 22
+	DashboardLogsTailMin      = 20
 
 	// KeyNew opens the new-worktree wizard, the keyboard equivalent of the list
 	// header's add button.

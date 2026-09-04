@@ -8,11 +8,26 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 )
 
-// IsSharedJob says whether a job serves every profile. A job whose cwd is the
-// repository root — a compose stack, a root script — is infrastructure the
-// packages sit on, so starting one package alone still needs it.
+// IsSharedJob says whether a job serves every profile: a compose stack the
+// packages sit on, a migration every one of them needs. Starting a single
+// package still needs those, so they enter every profile.
+//
+// A foreground service at the root is not one of them. It is a fan-out — a
+// `turbo run dev` starting the packages itself — and adding it to a per-package
+// profile starts the whole repository beside the one package that profile
+// names, twice over on the same ports. It gets a profile of its own instead.
 func IsSharedJob(job domain.JobConfig) bool {
+	return IsRootJob(job) && (job.Kind != domain.JobKindService || IsDetached(job))
+}
+
+// IsRootJob says the job runs at the repository root rather than in a package.
+func IsRootJob(job domain.JobConfig) bool {
 	return job.Cwd == "" || job.Cwd == domain.ProfileRootCwd
+}
+
+// IsFanOutJob is a root job that starts packages itself.
+func IsFanOutJob(job domain.JobConfig) bool {
+	return IsRootJob(job) && !IsSharedJob(job)
 }
 
 type ProposeProfilesParams struct {
@@ -38,12 +53,16 @@ func ProposeProfiles(params ProposeProfilesParams) []domain.ProfileConfig {
 		return nil
 	}
 
-	var shared []domain.JobConfig
+	var shared, fanOut []domain.JobConfig
 	var dirs []string
 	byDir := map[string][]domain.JobConfig{}
 	for _, job := range params.Config.Jobs {
 		if IsSharedJob(job) {
 			shared = append(shared, job)
+			continue
+		}
+		if IsFanOutJob(job) {
+			fanOut = append(fanOut, job)
 			continue
 		}
 		if _, seen := byDir[job.Cwd]; !seen {
@@ -52,11 +71,20 @@ func ProposeProfiles(params ProposeProfilesParams) []domain.ProfileConfig {
 		byDir[job.Cwd] = append(byDir[job.Cwd], job)
 	}
 
+	// The global profile takes the packages, not the fan-outs that start them:
+	// holding both would start every app twice, on the same ports. A repo with
+	// no package job keeps its fan-outs — they are all it has.
+	globalJobs := params.Config.Jobs
+	if len(dirs) > 0 && len(fanOut) > 0 {
+		globalJobs = withoutJobs(globalJobs, fanOut)
+	}
 	global := domain.ProfileConfig{
 		Name:    domain.ProfileAllName,
-		Jobs:    JobNames(TasksFirst(params.Config.Jobs)),
+		Jobs:    JobNames(TasksFirst(globalJobs)),
 		Default: true,
 	}
+	// With no package to tell apart, everything is the global profile and a
+	// fan-out has nothing to be distinguished from.
 	if len(dirs) <= 1 || len(dirs) > domain.ProfileProposalMaxPackages {
 		return []domain.ProfileConfig{global}
 	}
@@ -71,7 +99,36 @@ func ProposeProfiles(params ProposeProfilesParams) []domain.ProfileConfig {
 			Jobs: JobNames(TasksFirst(combined)),
 		})
 	}
-	return append(profiles, global)
+	return append(append(profiles, fanOutProfiles(shared, fanOut)...), global)
+}
+
+func withoutJobs(jobs, drop []domain.JobConfig) []domain.JobConfig {
+	dropped := make(map[string]bool, len(drop))
+	for _, job := range drop {
+		dropped[job.Name] = true
+	}
+	kept := make([]domain.JobConfig, 0, len(jobs))
+	for _, job := range jobs {
+		if !dropped[job.Name] {
+			kept = append(kept, job)
+		}
+	}
+	return kept
+}
+
+// fanOutProfiles gives every root fan-out a profile of its own, on top of what
+// the packages share: it is a way to start the repository, so it is a profile,
+// not a passenger in everyone else's.
+func fanOutProfiles(shared, fanOut []domain.JobConfig) []domain.ProfileConfig {
+	profiles := make([]domain.ProfileConfig, 0, len(fanOut))
+	for _, job := range fanOut {
+		combined := append(append([]domain.JobConfig{}, shared...), job)
+		profiles = append(profiles, domain.ProfileConfig{
+			Name: job.Name,
+			Jobs: JobNames(TasksFirst(combined)),
+		})
+	}
+	return profiles
 }
 
 // ProfileNamesForDirs names one profile per package directory, keyed by that

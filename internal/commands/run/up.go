@@ -35,7 +35,7 @@ func newUpCmd() *cobra.Command {
 		RunE: runUp,
 	}
 
-	shared.AddProfileFlag(cmd, "Profile to start (defaults to the default profile, or a picker when several exist)")
+	shared.AddProfilesFlag(cmd, "Profiles to start; repeatable. A job several of them name starts once. Defaults to the default profile, or a picker when several exist")
 	cmd.Flags().Bool(domain.FlagExclusive, false, "Stop jobs on other worktrees before starting (one worktree only)")
 	cmd.Flags().Bool(domain.FlagParallel, false, "Start without stopping other worktrees")
 	cmd.MarkFlagsMutuallyExclusive(domain.FlagExclusive, domain.FlagParallel)
@@ -75,14 +75,14 @@ func runUp(cmd *cobra.Command, args []string) error {
 	exclusive, _ := cmd.Flags().GetBool(domain.FlagExclusive)
 	parallel, _ := cmd.Flags().GetBool(domain.FlagParallel)
 	noProbe, _ := cmd.Flags().GetBool(domain.FlagNoProbe)
-	profile, _ := cmd.Flags().GetString(domain.FlagProfile)
+	profiles, _ := cmd.Flags().GetStringSlice(domain.FlagProfile)
 
 	outcome, err := upflow.Run(upflow.Params{
 		Context: shared.FlowContext(result),
 		Request: upflow.Request{
 			Worktrees: args,
 			Cwd:       dir,
-			Profile:   profile,
+			Profiles:  profiles,
 			Exclusive: exclusive,
 			Parallel:  parallel,
 			NoProbe:   noProbe,

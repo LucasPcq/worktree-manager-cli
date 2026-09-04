@@ -22,6 +22,11 @@ type PortProbe struct {
 	// otherwise, and always zero on the main checkout, where base and resolved
 	// are the same port and there is nothing to tell apart.
 	BaseListening int `json:"base_listening,omitempty"`
+	// BaseOwner is the worktree bound to that base port, when one is. The main
+	// checkout is the only worktree whose offset is zero, so the only one that
+	// can hold a base port — and when it does, the silent resolved port says
+	// nothing about this job's own command.
+	BaseOwner string `json:"base_owner,omitempty"`
 }
 
 // PortEntry is one declared port as a surface shows it: the job it belongs to,

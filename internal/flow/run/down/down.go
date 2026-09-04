@@ -177,11 +177,11 @@ func (f *downFlow) wake(workDirs []string) error {
 // stages a surface shows.
 func (f *downFlow) stop(outcome Outcome) ([]domain.WorktreeJobResults, error) {
 	if outcome.All {
-		jobs, err := f.stopAll(outcome, "")
+		stopped, err := f.stopEverywhere(outcome)
 		if err != nil {
 			return nil, err
 		}
-		return []domain.WorktreeJobResults{{Jobs: jobs}}, nil
+		return stopped, nil
 	}
 
 	results := make([]domain.WorktreeJobResults, 0, len(outcome.WorkDirs))
@@ -254,7 +254,52 @@ func (f *downFlow) stopProfile(outcome Outcome, workDir string) ([]domain.JobAct
 	return results, nil
 }
 
+// stopEverywhere groups what --all took down by the worktree it came from,
+// like the per-worktree path already did. Flattened, a machine holding the same
+// profile up in three worktrees answered with each job name three times over
+// and no way to tell them apart.
+func (f *downFlow) stopEverywhere(outcome Outcome) ([]domain.WorktreeJobResults, error) {
+	jobs, err := f.stoppedJobs(outcome, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var order []string
+	byDir := map[string][]domain.JobActionResult{}
+	for _, job := range jobs {
+		if _, seen := byDir[job.WorkDir]; !seen {
+			order = append(order, job.WorkDir)
+		}
+		byDir[job.WorkDir] = append(byDir[job.WorkDir],
+			domain.JobActionResult{Name: job.Name, Status: domain.JobActionStopped})
+	}
+
+	results := make([]domain.WorktreeJobResults, 0, len(order))
+	for _, workDir := range order {
+		results = append(results, domain.WorktreeJobResults{
+			Worktree: f.branchOf(workDir),
+			Path:     workDir,
+			Jobs:     byDir[workDir],
+		})
+	}
+	return results, nil
+}
+
 func (f *downFlow) stopAll(outcome Outcome, workDir string) ([]domain.JobActionResult, error) {
+	jobs, err := f.stoppedJobs(outcome, workDir)
+	if err != nil {
+		return nil, err
+	}
+	stopped := make([]domain.JobActionResult, 0, len(jobs))
+	for _, job := range jobs {
+		stopped = append(stopped, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStopped})
+	}
+	return stopped, nil
+}
+
+// stoppedJobs asks the daemon to stop, and answers with what it reported —
+// each job still carrying the worktree it belonged to.
+func (f *downFlow) stoppedJobs(outcome Outcome, workDir string) ([]domain.JobInfo, error) {
 	request := process.Request{Action: process.ActionStopAll}
 	if !outcome.All {
 		request.WorkDir = workDir
@@ -274,12 +319,7 @@ func (f *downFlow) stopAll(outcome Outcome, workDir string) ([]domain.JobActionR
 	if resp.Status == process.StatusError {
 		return nil, fmt.Errorf("stop all: %s", resp.Message)
 	}
-
-	stopped := make([]domain.JobActionResult, 0, len(resp.Jobs))
-	for _, job := range resp.Jobs {
-		stopped = append(stopped, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStopped})
-	}
-	return stopped, nil
+	return resp.Jobs, nil
 }
 
 func client() *process.Client { return process.NewClient(process.SocketPath()) }
@@ -294,7 +334,7 @@ func (f *downFlow) session() flow.Session {
 	}
 	return flow.Session{
 		ErrLabel: domain.CmdDown,
-		Presets:  target.Presets(target.PresetParams{Worktrees: target.Dirs(f.named), Profile: f.request.Profile}),
+		Presets:  target.Presets(target.PresetParams{Worktrees: target.Dirs(f.named), Profiles: target.OneProfile(f.request.Profile)}),
 		Steps: []flow.Step{
 			target.WorktreesStep(target.WorktreesParams{
 				ProjectDir: f.ctx.ProjectDir,

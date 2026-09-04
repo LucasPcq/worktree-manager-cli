@@ -28,18 +28,46 @@ func findProfile(t *testing.T, profiles []domain.ProfileConfig, name string) dom
 }
 
 var (
-	composeJob = domain.JobConfig{Name: "docker-compose", Kind: domain.JobKindService, Cwd: "."}
+	composeJob = domain.JobConfig{Name: "docker-compose", Kind: domain.JobKindService, Cwd: ".", Stop: "docker compose down"}
 	apiJob     = domain.JobConfig{Name: "api-dev", Kind: domain.JobKindService, Cwd: "apps/api"}
 	webJob     = domain.JobConfig{Name: "web-dev", Kind: domain.JobKindService, Cwd: "apps/web"}
 	lintJob    = domain.JobConfig{Name: "lint", Kind: domain.JobKindTask, Cwd: "."}
+	fanOutJob  = domain.JobConfig{Name: "dev:all", Kind: domain.JobKindService, Cwd: "."}
 )
 
 func TestIsSharedJob(t *testing.T) {
 	if !rules.IsSharedJob(composeJob) {
-		t.Error("un job à la racine est de l'infra partagée")
+		t.Error("une stack détachée à la racine est de l'infra partagée")
+	}
+	if !rules.IsSharedJob(lintJob) {
+		t.Error("une task à la racine est une étape que tout profil doit franchir")
 	}
 	if rules.IsSharedJob(apiJob) {
 		t.Error("un job dans un package n'est pas partagé")
+	}
+	if rules.IsSharedJob(fanOutJob) {
+		t.Error("un service au premier plan à la racine démarre les packages lui-même")
+	}
+}
+
+// Un `turbo run dev` à la racine démarre déjà tous les packages : l'ajouter au
+// profil d'un package démarre tout le dépôt à côté de ce package, deux fois sur
+// les mêmes ports. Il a son propre profil.
+func TestProposeProfilesGivesAFanOutItsOwnProfile(t *testing.T) {
+	profiles := rules.ProposeProfiles(rules.ProposeProfilesParams{
+		Config: domain.RunConfig{Jobs: []domain.JobConfig{composeJob, fanOutJob, apiJob, webJob}},
+	})
+
+	api := findProfile(t, profiles, "api")
+	for _, job := range api.Jobs {
+		if job == fanOutJob.Name {
+			t.Errorf("api = %v, want the fan-out left out", api.Jobs)
+		}
+	}
+
+	own := findProfile(t, profiles, fanOutJob.Name)
+	if len(own.Jobs) != 2 || own.Jobs[1] != fanOutJob.Name {
+		t.Errorf("%s = %v, want the shared infra then the fan-out", fanOutJob.Name, own.Jobs)
 	}
 }
 

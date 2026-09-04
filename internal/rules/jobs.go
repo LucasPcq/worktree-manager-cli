@@ -111,10 +111,29 @@ func FilterToProfile(cfg domain.RunConfig, name string) (domain.RunConfig, error
 	if !ok {
 		return domain.RunConfig{}, fmt.Errorf("profile %q not found", name)
 	}
-	return domain.RunConfig{
-		Jobs:     ProfileJobs(cfg, p),
-		Profiles: []domain.ProfileConfig{p},
-	}, nil
+
+	// The config is copied whole before being narrowed: rebuilding it field by
+	// field silently dropped every project-wide setting, the [[env_port]] links
+	// included.
+	out := cfg
+	out.Jobs = ProfileJobs(cfg, p)
+	out.Profiles = []domain.ProfileConfig{p}
+
+	kept := make(map[string]bool, len(out.Jobs))
+	for _, job := range out.Jobs {
+		kept[job.Name] = true
+	}
+	// A link to a job the filter dropped would not survive ValidateRun on the
+	// other side of an import.
+	links := make([]domain.EnvPortLink, 0, len(cfg.EnvPorts))
+	for _, link := range cfg.EnvPorts {
+		if kept[link.Job] {
+			links = append(links, link)
+		}
+	}
+	out.EnvPorts = links
+
+	return out, nil
 }
 
 // FindExistingDefaultProfile returns the name of the profile currently marked

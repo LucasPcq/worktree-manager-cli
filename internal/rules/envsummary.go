@@ -17,7 +17,24 @@ type EnvSummary struct {
 // counted alongside the files because it writes to the same .env: a run that
 // shifted a port and changed nothing else has written changes, and saying "no
 // changes written" there is not a wording problem, it is a false report.
+// EnvUnresolvableFiles names the configured files that exist nowhere.
+func EnvUnresolvableFiles(result domain.EnvSyncResult) []string {
+	var names []string
+	for _, file := range result.Files {
+		if file.Unresolvable {
+			names = append(names, file.Target)
+		}
+	}
+	return names
+}
+
 func EnvOutcomeSummary(result domain.EnvSyncResult) EnvSummary {
+	// A file the repository does not have anywhere is never "no drift": nothing
+	// is missing from it because nothing can ever be in it, and the fix is in
+	// config.toml rather than in any worktree.
+	if unresolvable := EnvUnresolvableFiles(result); len(unresolvable) > 0 {
+		return EnvSummary{Text: fmt.Sprintf(domain.EnvUnresolvableSummaryFmt, len(unresolvable))}
+	}
 	if result.Check {
 		if result.HasDrift() {
 			return EnvSummary{Text: domain.EnvCheckDriftMessage}

@@ -83,6 +83,8 @@ func (p *RunPrinter) Emit(event runlogs.Event) {
 		Callout(p.err, domain.ProxyUnavailableTitle, []string{event.Notice})
 	case runlogs.PhaseProbed:
 		p.probed(event.Probes)
+	case runlogs.PhaseCrashed:
+		p.crashed(event)
 	case runlogs.PhaseAborted:
 		p.aborted(event.Outcome)
 	case runlogs.PhaseReady:
@@ -163,6 +165,18 @@ func (p *RunPrinter) devOrigins(fixes []domain.DevOriginFix) {
 	}
 	Blank(p.err)
 	Callout(p.err, domain.DevOriginsTitle, lines)
+}
+
+// crashed corrects a job this run already announced as started. The daemon
+// accepts a spawn, not a life: a service binding a busy port is accepted and
+// gone a moment later, and a ✓ over a dead process is the one line that must
+// never stand.
+func (p *RunPrinter) crashed(event runlogs.Event) {
+	reason := event.Reason
+	if event.ExitCode != nil {
+		reason = fmt.Sprintf(domain.RunStreamCrashedCodeFmt, reason, *event.ExitCode)
+	}
+	Warning(p.err, p.qualify(fmt.Sprintf(domain.RunStreamCrashedFmt, event.Job, reason), event.Worktree))
 }
 
 // probed reports only what the check could not confirm: a port that answered

@@ -20,19 +20,12 @@ type BuildScriptJobsParams struct {
 // Job names are "<pkgName>-<scriptName>" for workspace scripts, "<scriptName>" for root.
 // Duplicate base names are disambiguated with a counter suffix ("-2", "-3", …).
 func BuildScriptJobs(params BuildScriptJobsParams) domain.RunConfig {
+	names := scriptJobNames(params.Scripts)
+
 	jobs := make([]domain.JobConfig, 0, len(params.Scripts))
-	counts := map[string]int{}
-
-	for _, s := range params.Scripts {
-		base := scriptJobName(s)
-		counts[base]++
-		name := base
-		if counts[base] > 1 {
-			name = fmt.Sprintf("%s-%d", base, counts[base])
-		}
-
+	for i, s := range params.Scripts {
 		jobs = append(jobs, domain.JobConfig{
-			Name: name,
+			Name: names[i],
 			Kind: scriptKind(s),
 			Cmd:  ScriptJobCmd(params.PackageManager, s.Name),
 			Cwd:  ScriptJobCwd(s.Workspace),
@@ -40,6 +33,50 @@ func BuildScriptJobs(params BuildScriptJobsParams) domain.RunConfig {
 	}
 
 	return domain.RunConfig{Jobs: jobs}
+}
+
+// scriptJobNames names every script, disambiguating a collision by what
+// actually tells the two apart. A monorepo holding apps/crm/admin and
+// apps/shop/admin gives both packages the name `admin`, and a counter turned
+// that into `admin-dev` and `admin-dev-2` — a suffix that says nothing, on
+// whichever of the two happened to be second. The directory above the package
+// is the thing a reader recognises, so it goes in front; the counter remains
+// only for a collision even that cannot separate.
+func scriptJobNames(scripts []domain.PackageScript) []string {
+	bases := make([]string, len(scripts))
+	shared := map[string]int{}
+	for i, s := range scripts {
+		bases[i] = scriptJobName(s)
+		shared[bases[i]]++
+	}
+
+	names := make([]string, len(scripts))
+	counts := map[string]int{}
+	for i, s := range scripts {
+		name := bases[i]
+		if shared[name] > 1 {
+			if parent := workspaceParent(s.Workspace); parent != "" {
+				name = parent + "-" + name
+			}
+		}
+		counts[name]++
+		if counts[name] > 1 {
+			name = fmt.Sprintf("%s-%d", name, counts[name])
+		}
+		names[i] = name
+	}
+	return names
+}
+
+// workspaceParent is the directory holding the package — `crm` for
+// apps/crm/admin. Empty for a package sitting directly under its root, where
+// there is nothing extra to say.
+func workspaceParent(workspace string) string {
+	parts := strings.Split(filepath.ToSlash(filepath.Clean(workspace)), "/")
+	if len(parts) < 3 {
+		return ""
+	}
+	return parts[len(parts)-2]
 }
 
 // ScriptJobCmd is the run.toml command emitted for a package script:

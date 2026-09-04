@@ -176,7 +176,9 @@ func writeJobLines(params jobLinesParams) error {
 		return fmt.Errorf("list jobs: %w", err)
 	}
 
-	views, err := logsflow.Views(logsflow.ViewsParams{Board: params.Board, Job: params.Job})
+	// Persisted, like the JSON path: a job that crashed has no stream to attach
+	// to, and dropping it here hid the very failure one opens the logs for.
+	views, err := logsflow.Views(logsflow.ViewsParams{Board: params.Board, Job: params.Job, Persisted: true})
 	if err != nil {
 		return err
 	}
@@ -189,6 +191,7 @@ func writeJobLines(params jobLinesParams) error {
 	output.FrameStart(out)
 	writer := &lineWriter{out: out}
 	var wg sync.WaitGroup
+	attached := false
 
 	for i, view := range views {
 		prefix := params.prefixOf(view, i)
@@ -211,6 +214,7 @@ func writeJobLines(params jobLinesParams) error {
 			continue
 		}
 
+		attached = true
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -223,6 +227,11 @@ func writeJobLines(params jobLinesParams) error {
 	}
 
 	wg.Wait()
+	// A worktree whose jobs are all down and none of which ever wrote a line has
+	// nothing to show; saying so beats an empty frame.
+	if !attached && !writer.wrote {
+		output.Message(out, domain.RunLogsNoJobs)
+	}
 	output.FrameEnd(out)
 	return nil
 }
@@ -230,13 +239,15 @@ func writeJobLines(params jobLinesParams) error {
 // lineWriter serializes the lines several jobs write at once: without it two
 // prefixes and two lines interleave inside one row.
 type lineWriter struct {
-	mu  sync.Mutex
-	out io.Writer
+	mu    sync.Mutex
+	out   io.Writer
+	wrote bool
 }
 
 func (w *lineWriter) write(prefix string, line string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.wrote = true
 	fmt.Fprintf(w.out, "%s%s %s\n", output.Indent, prefix, line)
 }
 

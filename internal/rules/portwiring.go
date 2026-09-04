@@ -27,7 +27,7 @@ func JobsMissingPortRef(params JobsMissingPortRefParams) []domain.JobCmdFix {
 
 	var fixes []domain.JobCmdFix
 	for _, job := range params.Config.Jobs {
-		if !ShouldProbeJob(job.Kind, job.Ports) || exempt[job.Name] {
+		if !ShouldProbeJob(ShouldProbeJobParams{Kind: job.Kind, Ports: job.Ports, Probe: job.Probe}) || exempt[job.Name] {
 			continue
 		}
 		var missing []string
@@ -64,6 +64,48 @@ func PortVarsMissingFrom(fix domain.JobCmdFix) []string {
 }
 
 func cmdMentions(cmd, name string) bool { return strings.Contains(cmd, name) }
+
+type JobsReadingTheirEnvParams struct {
+	Config domain.RunConfig
+	// ScansByDir is what each directory's .env files declare, keyed by the
+	// directory a job's cwd names.
+	ScansByDir map[string]domain.EnvPortScan
+}
+
+// JobsReadingTheirEnv names the jobs whose every declared port was read from
+// their own .env. Such a job demonstrably reads that variable — the value came
+// from the file the job itself loads — so the command is not the channel and
+// grepping it for the name proves nothing.
+//
+// Without this, a repository of well-behaved apps was told all of them were
+// broken: a Vite config reading process.env.VITE_PORT, a server reading PORT
+// from its env module, are the normal 12-factor case, and none of them names
+// the variable on the command line.
+func JobsReadingTheirEnv(params JobsReadingTheirEnvParams) []string {
+	var names []string
+	for _, job := range params.Config.Jobs {
+		if len(job.Ports) == 0 {
+			continue
+		}
+		scan, found := params.ScansByDir[ScriptJobCwd(job.Cwd)]
+		if !found {
+			continue
+		}
+		if declaredInScan(job, scan) {
+			names = append(names, job.Name)
+		}
+	}
+	return names
+}
+
+func declaredInScan(job domain.JobConfig, scan domain.EnvPortScan) bool {
+	for name, base := range job.Ports {
+		if scanned, ok := scan.Ports[name]; !ok || scanned != base {
+			return false
+		}
+	}
+	return true
+}
 
 type ComposeJobsParams struct {
 	Config domain.RunConfig

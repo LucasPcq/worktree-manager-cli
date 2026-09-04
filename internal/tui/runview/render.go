@@ -21,17 +21,51 @@ func (m Model) View() string {
 	if m.height <= 0 || m.width <= 0 {
 		return ""
 	}
+	if m.preview {
+		return strings.Join(fit(m.renderPreview(layout), m.height), "\n")
+	}
 
 	lines := make([]string, 0, m.height)
-	if layout.Header.Height > 0 {
-		lines = append(lines, m.renderHeader(layout))
-	}
+	lines = append(lines, blankRows(layout.GapRows)...)
 	lines = append(lines, m.renderNotice(layout)...)
 	lines = append(lines, m.renderBody(layout)...)
+	lines = append(lines, blankRows(layout.GapRows)...)
 	if layout.Help.Height > 0 {
 		lines = append(lines, m.renderHelp(layout))
 	}
-	return strings.Join(fit(lines, m.height), "\n")
+	return strings.Join(indent(fit(lines, m.height), layout.MarginCols), "\n")
+}
+
+func blankRows(n int) []string {
+	if n <= 0 {
+		return nil
+	}
+	return make([]string, n)
+}
+
+// indent holds every row off the terminal's left edge. It is applied once, to
+// the finished frame, rather than by each panel: a margin every renderer has to
+// remember is a margin one of them forgets.
+func indent(lines []string, margin int) []string {
+	if margin <= 0 {
+		return lines
+	}
+	pad := strings.Repeat(" ", margin)
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		out[i] = pad + line
+	}
+	return out
+}
+
+// renderPreview is the hosted frame: the selected job's pane, filling the rect
+// its host gave it. No header, no help, no list — the host draws its own, and
+// the pane is the whole reason the preview exists.
+func (m Model) renderPreview(layout domain.RunViewLayout) []string {
+	if layout.Pane.Height < domain.RunViewMinPanelRows || layout.Pane.Width < domain.RunViewMinPanelCols {
+		return make([]string, max(layout.Pane.Height, 0))
+	}
+	return fit(strings.Split(m.renderPanePanel(layout), "\n"), layout.Pane.Height)
 }
 
 // renderNotice draws the abort report as a band under the header. It takes rows
@@ -70,40 +104,12 @@ func (m Model) renderBody(layout domain.RunViewLayout) []string {
 
 	body := m.renderPanePanel(layout)
 	if layout.SidebarVisible {
-		body = lipgloss.JoinHorizontal(lipgloss.Top, m.renderSidebar(layout), body)
+		// Plain spaces rather than a styled block: a gutter carries no colour, and
+		// a lipgloss.Style may only be instantiated in styles/.
+		gutter := strings.Repeat(" ", max(layout.GutterCols, 0))
+		body = lipgloss.JoinHorizontal(lipgloss.Top, m.renderSidebar(layout), gutter, body)
 	}
 	return fit(strings.Split(body, "\n"), layout.Pane.Height)
-}
-
-func (m Model) renderHeader(layout domain.RunViewLayout) string {
-	if layout.Header.Height <= 0 {
-		return ""
-	}
-
-	left := styles.Bold.Render(m.headerTitle())
-	right := styles.Muted.Render(fmt.Sprintf(domain.RunViewRunningFmt, m.runningCount(), len(m.jobs)))
-	if m.sequence.active {
-		right = styles.Primary.Render(fmt.Sprintf(domain.RunViewStepFmt,
-			m.sequence.step, m.sequence.steps, m.sequence.job))
-	}
-	if m.notice != "" {
-		right = styles.Warning.Render(truncate(m.notice, layout.Header.Width))
-	}
-	if m.err != nil {
-		right = styles.DangerText.Render(truncate(m.err.Error(), layout.Header.Width))
-	}
-	return spread(spreadParams{Left: left, Right: right, Width: layout.Header.Width})
-}
-
-func (m Model) headerTitle() string {
-	title := domain.RunViewHeaderTitle
-	if m.profile != "" {
-		title = fmt.Sprintf(domain.RunViewHeaderProfileFmt, m.profile)
-	}
-	if count := m.worktreeCount(); count > 1 {
-		return fmt.Sprintf(domain.RunStreamWorktreeFmt, title, fmt.Sprintf(domain.RunStreamWorktreesFmt, count))
-	}
-	return title
 }
 
 func (m Model) runningCount() int {
@@ -212,7 +218,20 @@ func renderMark(mark domain.JobMark) string {
 
 func (m Model) renderPanePanel(layout domain.RunViewLayout) string {
 	view, found := m.selectedView()
-	lines := append([]string{m.renderPaneTitle(paneTitleParams{View: view, Found: found, Width: layout.PaneCols})},
+	// The title is indented like the sidebar's, the body is not: every column
+	// inside this border is one the emulator was sized for, and shifting the
+	// output would misalign whatever the job draws.
+	title := m.renderPaneTitle(paneTitleParams{
+		View:  view,
+		Found: found,
+		Width: max(layout.PaneCols-2*domain.RunViewTitleIndent, 0),
+	})
+	if title != "" {
+		title = strings.Repeat(" ", domain.RunViewTitleIndent) + title
+	}
+	// A blank row under the title, as the sidebar has under its own: the first
+	// line a job writes is not a continuation of its name.
+	lines := append([]string{title, ""},
 		m.renderPaneBody(paneBodyParams{View: view, Found: found, Layout: layout})...)
 
 	return m.paneStyle().
@@ -238,15 +257,31 @@ func (m Model) renderPaneTitle(params paneTitleParams) string {
 	if !params.Found {
 		return ""
 	}
-	status := rules.LabelWithPorts(rules.LabelWithPortsParams{
-		Label: string(params.View.Status),
-		Ports: m.sequence.ports[viewKey(params.View)],
-	})
-	if url := m.sequence.urls[viewKey(params.View)]; url != "" {
-		status += domain.RunViewSeparator + url
-	}
+	status := m.statusWithAddress(params.View)
 	left := styles.Bold.Render(m.qualify(params.View.Name, params.View.Worktree)) + styles.Muted.Render(domain.RunViewSeparator+status)
 	return spread(spreadParams{Left: left, Right: styles.Muted.Render(m.paneOrigin(params.View)), Width: params.Width})
+}
+
+// statusWithAddress states where the job answers next to its status, preferring
+// what this run observed to what the config predicts. Only `run up` has a
+// sequence; `run logs` opens the same view with nothing started, and it used to
+// show no address at all — the one difference between the two views.
+func (m Model) statusWithAddress(view runlogs.JobView) string {
+	key := viewKey(view)
+	label := string(view.Status)
+
+	if ports := m.sequence.ports[key]; len(ports) > 0 {
+		status := rules.LabelWithPorts(rules.LabelWithPortsParams{Label: label, Ports: ports})
+		if url := m.sequence.urls[key]; url != "" {
+			status += domain.RunViewSeparator + url
+		}
+		return status
+	}
+
+	if address := rules.JobAddressText(view.Address); address != "" {
+		return label + domain.RunViewSeparator + address
+	}
+	return label
 }
 
 // paneOrigin says what the pane is showing: the job as it prints, the log file
@@ -276,18 +311,27 @@ type paneBodyParams struct {
 
 func (m Model) renderPaneBody(params paneBodyParams) []string {
 	if !params.Found {
-		return []string{styles.Muted.Render(truncate(m.emptyMessage(), params.Layout.PaneCols))}
+		return paneNote(m.emptyMessage(), params.Layout.PaneCols)
 	}
 
 	entry, held := m.panes.entry(viewKey(params.View))
 	if !held {
-		return []string{styles.Muted.Render(m.placeholder(params.View))}
+		return paneNote(m.placeholder(params.View), params.Layout.PaneCols)
 	}
 	rendered := entry.pane.Render()
 	if strings.TrimSpace(ansi.Strip(rendered)) == "" {
-		return []string{styles.Muted.Render(m.placeholderFor(params.View, entry))}
+		return paneNote(m.placeholderFor(params.View, entry), params.Layout.PaneCols)
 	}
 	return strings.Split(rendered, "\n")
+}
+
+// paneNote is what the pane shows in place of output — a job with nothing to
+// say yet, a view with no job at all. It is the view speaking rather than a
+// job, so it is indented like the title above it; the emulator's own lines
+// never are.
+func paneNote(text string, width int) []string {
+	pad := strings.Repeat(" ", domain.RunViewTitleIndent)
+	return []string{pad + styles.Muted.Render(truncate(text, max(width-domain.RunViewTitleIndent, 0)))}
 }
 
 func (m Model) placeholderFor(view runlogs.JobView, entry jobPane) string {
@@ -327,7 +371,50 @@ func (m Model) renderHelp(layout domain.RunViewLayout) string {
 	if m.filter != "" {
 		help = fmt.Sprintf(domain.RunViewFilterHintFmt, m.filter) + domain.RunViewSeparator + help
 	}
-	return styles.HelpBar.Render(truncate(help, layout.Help.Width))
+	// The run's state rides the help row rather than a header of its own: it is
+	// one short string, and a row spent on it is a row of output. The hint gives
+	// way to it whole segments at a time — a hint cut mid-word reads as a bug in
+	// the hint.
+	status := m.renderStatus(layout.Help.Width)
+	room := max(layout.Help.Width-ansi.StringWidth(status)-1, 0)
+	return spread(spreadParams{
+		Left: styles.HelpBar.Render(rules.ClipSegments(rules.ClipSegmentsParams{
+			Text:  help,
+			Sep:   domain.RunViewSeparator,
+			Width: room,
+		})),
+		Right: status,
+		Width: layout.Help.Width,
+	})
+}
+
+// runningLabel counts what is up, and how many worktrees it is spread over when
+// that is more than one — the arity is what tells two jobs of the same name
+// apart, and the view no longer has a header to say it in.
+func (m Model) runningLabel() string {
+	running := fmt.Sprintf(domain.RunViewRunningFmt, m.runningCount(), len(m.jobs))
+	if count := m.worktreeCount(); count > 1 {
+		return fmt.Sprintf(domain.RunStreamWorktreesFmt, count) + domain.RunViewSeparator + running
+	}
+	return running
+}
+
+// renderStatus is what the view has to say about itself, from the least urgent
+// to the most: how much of it is up, which step a run has reached, a refusal it
+// answered with, the error that ended it.
+func (m Model) renderStatus(width int) string {
+	status := styles.Muted.Render(m.runningLabel())
+	if m.sequence.active {
+		status = styles.Primary.Render(fmt.Sprintf(domain.RunViewStepFmt,
+			m.sequence.step, m.sequence.steps, m.sequence.job))
+	}
+	if m.notice != "" {
+		status = styles.Warning.Render(truncate(m.notice, width))
+	}
+	if m.err != nil {
+		status = styles.DangerText.Render(truncate(m.err.Error(), width))
+	}
+	return status
 }
 
 type spreadParams struct {
@@ -336,14 +423,22 @@ type spreadParams struct {
 	Width int
 }
 
-// spread puts Right flush against the far edge, and drops it whole rather than
-// cutting through it when the row is too narrow to hold both.
+// spread puts Right flush against the far edge and keeps it whole, cutting into
+// Left when the row cannot hold both: Right is the shorter and the more urgent
+// of the two — a state, a marker, a refusal — and dropping it to fit a hint that
+// says the same thing on every frame is the wrong half to lose. A row too narrow
+// for Right alone keeps Left instead, since something has to be shown.
 func spread(params spreadParams) string {
-	left := truncate(params.Left, params.Width)
-	gap := params.Width - ansi.StringWidth(left) - ansi.StringWidth(params.Right)
-	if gap < 1 {
-		return left
+	rightWidth := ansi.StringWidth(params.Right)
+	if rightWidth == 0 {
+		return truncate(params.Left, params.Width)
 	}
+	if rightWidth >= params.Width {
+		return truncate(params.Left, params.Width)
+	}
+
+	left := truncate(params.Left, max(params.Width-rightWidth-1, 0))
+	gap := params.Width - ansi.StringWidth(left) - rightWidth
 	return left + strings.Repeat(" ", gap) + params.Right
 }
 

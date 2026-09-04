@@ -302,9 +302,12 @@ func validateEnvPortLinks(cfg domain.RunConfig) []string {
 			errs = append(errs, envPortLinkError(bases, link))
 		}
 
-		pair := domain.EnvPortLink{File: link.File, Key: link.Key}
+		// A key may follow several ports — an origin list names one per
+		// front-end — but never the same one twice: that is a line written by
+		// hand two times, and the second moves nothing the first did not.
+		pair := domain.EnvPortLink{File: link.File, Key: link.Key, Job: link.Job, Port: link.Port}
 		if seen[pair] {
-			errs = append(errs, fmt.Sprintf("env_port %s in %s is declared twice — a key can only follow one port", link.Key, link.File))
+			errs = append(errs, fmt.Sprintf(domain.EnvPortLinkTwiceFmt, link.Key, link.File, link.Port))
 		}
 		seen[pair] = true
 	}

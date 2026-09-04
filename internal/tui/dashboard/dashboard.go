@@ -14,11 +14,13 @@ import (
 	zone "github.com/lrstanley/bubblezone"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/runconfig"
 	"github.com/LucasPcq/wtm/internal/service/runjobs"
 	"github.com/LucasPcq/wtm/internal/service/worktree"
 	"github.com/LucasPcq/wtm/internal/tui/components"
+	"github.com/LucasPcq/wtm/internal/tui/runview"
 	"github.com/LucasPcq/wtm/internal/tui/worktreepicker"
 )
 
@@ -53,6 +55,9 @@ type RunParams struct {
 	// LogsLoader reads back a job's persisted output for the detail panel's
 	// logs view. Injected like JobsLoader, so a test never opens a real board.
 	LogsLoader func(logsRequest) ([]string, error)
+	// BoardLoader opens the board a live preview attaches through. Nil leaves the
+	// panel on LogsLoader's persisted tail, which is what a test installs.
+	BoardLoader func(logsRequest) runlogs.Board
 	// Version is the running wtm version and UpgradeLatest the newer release the
 	// last passive check found, or "" when there is none. Both are resolved by
 	// the command layer: the dashboard renders them, it decides nothing.
@@ -209,11 +214,6 @@ type Model struct {
 	// ever leaves zero on a screen too short to hold the whole reference.
 	helpScroll int
 
-	// servicesLogs says the Services tab's body is the logs view rather than its
-	// list. The logs view is one component with two hosts, so which host is
-	// showing it is state of that host.
-	servicesLogs bool
-
 	// panelTab is which of the right-hand panel's two tabs is showing.
 	panelTab int
 
@@ -223,6 +223,13 @@ type Model struct {
 	logsJob    string
 	logsLines  []string
 	logsErr    error
+	// preview is the run view hosted inside the panel: the same renderer and the
+	// same live stream `run logs` uses, at a panel's size. It reads no key — the
+	// panel owns the navigation, and everything one could act on belongs to the
+	// full view, which is what enter opens. previewOn says one is held, since a
+	// zero Model is indistinguishable from a live one.
+	preview   runview.Model
+	previewOn bool
 
 	// details caches the last detail loaded per branch, invalidated (never
 	// emptied) by the poll and by a finished operation, so the panel keeps
@@ -386,7 +393,22 @@ func (m Model) layout() domain.DashboardLayout {
 	})
 }
 
+// Update answers a message, then sizes the hosted preview to whatever layout
+// that left behind. The sizing is done here, once, rather than at each place a
+// panel opens or a tab changes: the output panel alone is toggled from a key, a
+// click and the start of an operation, and a preview sized at one geometry while
+// drawn at another shows the wrong rows.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	model, ok := next.(Model)
+	if !ok {
+		return next, cmd
+	}
+	sized, sizeCmd := model.sizePreview(model.layout())
+	return sized, tea.Batch(cmd, sizeCmd)
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -520,7 +542,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateModal(msg)
 	}
 
-	return m, nil
+	// Anything left belongs to the hosted preview: its own chunks, its redraw
+	// clock, its board refreshes. It is the only sub-model with commands of its
+	// own, and it never sees a key or a mouse event — those are handled above,
+	// and acting on a job is what the full view is for.
+	return m.updatePreview(msg)
+}
+
+func (m Model) updatePreview(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if !m.previewOn {
+		return m, nil
+	}
+	preview, cmd := m.preview.Update(msg)
+	next, ok := preview.(runview.Model)
+	if !ok {
+		return m, cmd
+	}
+	m.preview = next
+	return m, cmd
 }
 
 // withDetailTrigger folds a detail-reload check onto whatever a key or mouse
@@ -746,14 +785,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.logsOpen() {
 		switch key {
 		case keyEscape:
-			if m.servicesLogs {
-				return m.closeServiceLogs().reflow(), nil
-			}
 			return m.closePanelLogs().reflow(), nil
-		case keyLeft, keyVimLeft:
-			return m.stepLogsJob(-1).retail()
-		case keyRight, keyVimRight:
-			return m.stepLogsJob(1).retail()
+		// The jobs list down the side, so up and down walk it. The arrows it
+		// answered when it was a row still work: a reader who learnt them there
+		// does not have to learn them again.
+		case keyUp, keyVimUp, keyLeft, keyVimLeft:
+			return m.stepLogsJob(-1).retailAndPreview()
+		case keyDown, keyVimDown, keyRight, keyVimRight:
+			return m.stepLogsJob(1).retailAndPreview()
 		case keyEnter:
 			return m.watchLogs()
 		}
@@ -810,7 +849,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.scrollOutput(1), nil
 	case keyEnter, keyRight, keyVimRight:
 		if m.tab == tabServices && key == keyEnter {
-			return m.openServiceLogs()
+			return m.watchServiceLogs()
 		}
 		if layout.Narrow {
 			m.detailOpen = true
@@ -833,7 +872,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) selectTab(index int) (Model, tea.Cmd) {
 	// The logs view belongs to the tab it is drawn in: left open across a tab
 	// change it kept esc and enter while showing nothing.
-	m = m.closePanelLogs().closeServiceLogs()
+	m = m.closePanelLogs()
 	width := m.layout().Tabs.Width
 	from := tabStart(width, m.tab)
 	m.tab = index

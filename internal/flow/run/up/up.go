@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
@@ -22,8 +23,10 @@ type Request struct {
 	// ask, or to answer with the current worktree.
 	Worktrees []string
 	// Cwd is where the command was launched, the worktree step's safe default.
-	Cwd     string
-	Profile string
+	Cwd string
+	// Profiles are the profiles to start, in the order they were named. A job
+	// several of them list starts once.
+	Profiles []string
 	// Exclusive and Parallel override the project's standing preference for one
 	// run. They are the concurrency step's Resolve, not a second axis.
 	Exclusive bool
@@ -245,6 +248,7 @@ func (f *upFlow) start(answers flow.Answers) (Outcome, error) {
 		StateDir:    f.ctx.StateDir,
 		WorkDirs:    workDirs,
 		Jobs:        profile.Jobs,
+		Declared:    f.request.Config.Jobs,
 		ProbeBudget: rules.PortProbeBudget(f.request.Config),
 		NoProbe:     f.request.NoProbe,
 		ProxyPort:   rules.ProxyPort(f.ctx.Config.Global),
@@ -259,6 +263,11 @@ func (f *upFlow) start(answers flow.Answers) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
+
+	if err := f.offerToSilenceProbes(results); err != nil {
+		return Outcome{}, err
+	}
+
 	return Outcome{
 		WorkDirs: workDirs,
 		Profile:  profile.Name,
@@ -267,17 +276,59 @@ func (f *upFlow) start(answers flow.Answers) (Outcome, error) {
 	}, nil
 }
 
+// offerToSilenceProbes asks once about the warnings that will otherwise come
+// back identical at every run: a job binding the base port because its command
+// never reads the variable. A warning about a port another worktree holds is
+// not offered — there is nothing to acknowledge, the run said whose it is.
+func (f *upFlow) offerToSilenceProbes(results runlogs.Outcomes) error {
+	// Never after an abort: the reader stopped the run or a job failed, and the
+	// question to answer then is why — not whether to hear less about it.
+	if !f.prompter.Interactive() || results.Aborted() {
+		return nil
+	}
+
+	var probes []domain.PortProbe
+	for _, outcome := range results {
+		probes = append(probes, outcome.Probes...)
+	}
+	names := rules.JobsToSilence(rules.JobsToSilenceParams{Probes: probes, Jobs: f.request.Config.Jobs})
+	if len(names) == 0 {
+		return nil
+	}
+
+	proceed, err := f.prompter.Confirm(flow.ConfirmParams{
+		Title:       domain.ProbeSilenceTitle,
+		Description: fmt.Sprintf(domain.ProbeSilenceDescFmt, strings.Join(names, domain.CmdListVarSep)),
+		DefaultYes:  false,
+	})
+	if err != nil || !proceed {
+		return nil
+	}
+
+	cfg := rules.SilenceProbes(rules.SilenceProbesParams{Config: f.request.Config, Jobs: names})
+	if err := runconfig.Save(runconfig.SaveParams{StateDir: f.ctx.StateDir, Config: cfg}); err != nil {
+		return fmt.Errorf("silence port probes: %w", err)
+	}
+	f.request.Config = cfg
+	f.presenter.Status(flow.Notice{
+		Kind: flow.NoticeMessage,
+		Text: fmt.Sprintf(domain.ProbeSilencedFmt, strings.Join(names, domain.CmdListVarSep)),
+	})
+	return nil
+}
+
 // resolvedProfile is what this run settled on: a name for it and the jobs it
 // starts. The name is empty for a config declaring no profile at all — dropping
 // it left `run up` unable to say which of several it had brought up (LUC-208).
+// Over several profiles it names them all, which is what the recap reads back.
 type resolvedProfile struct {
 	Name string
 	Jobs []domain.JobConfig
 }
 
 func (f *upFlow) resolveProfile(answers flow.Answers) (resolvedProfile, error) {
-	name := answers.Value(target.KeyProfile)
-	if name == "" {
+	names := answers.Values(target.KeyProfile)
+	if len(names) == 0 {
 		profile, ok := rules.DefaultProfile(f.request.Config)
 		if !ok {
 			return resolvedProfile{Jobs: rules.JobsWithoutProfile(f.request.Config)}, nil
@@ -285,11 +336,40 @@ func (f *upFlow) resolveProfile(answers flow.Answers) (resolvedProfile, error) {
 		return f.profileRun(profile), nil
 	}
 
-	profile, ok := rules.FindProfile(f.request.Config, name)
-	if !ok {
-		return resolvedProfile{}, fmt.Errorf("profile %q not found in config", name)
+	profiles := make([]domain.ProfileConfig, 0, len(names))
+	for _, name := range names {
+		profile, ok := rules.FindProfile(f.request.Config, name)
+		if !ok {
+			return resolvedProfile{}, fmt.Errorf("profile %q not found in config", name)
+		}
+		profiles = append(profiles, profile)
 	}
-	return f.profileRun(profile), nil
+	return f.profilesRun(profiles), nil
+}
+
+// profilesRun is the union of what the chosen profiles name, in the order they
+// were chosen. A job two of them list is started once: the second mention is
+// the same process, and starting it twice would be the collision the whole
+// module exists to prevent.
+func (f *upFlow) profilesRun(profiles []domain.ProfileConfig) resolvedProfile {
+	if len(profiles) == 1 {
+		return f.profileRun(profiles[0])
+	}
+
+	names := make([]string, 0, len(profiles))
+	seen := map[string]bool{}
+	var jobs []domain.JobConfig
+	for _, profile := range profiles {
+		names = append(names, profile.Name)
+		for _, job := range rules.ProfileJobs(f.request.Config, profile) {
+			if seen[job.Name] {
+				continue
+			}
+			seen[job.Name] = true
+			jobs = append(jobs, job)
+		}
+	}
+	return resolvedProfile{Name: strings.Join(names, domain.CmdListVarSep), Jobs: jobs}
 }
 
 func (f *upFlow) profileRun(profile domain.ProfileConfig) resolvedProfile {

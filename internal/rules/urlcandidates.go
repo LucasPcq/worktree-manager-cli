@@ -46,13 +46,18 @@ func publishablePortOf(job domain.JobConfig) string {
 	if job.Kind != domain.JobKindService {
 		return ""
 	}
-	return ListeningPortName(job)
+	return PublishablePortName(job)
 }
 
 // ListeningPortName is the port a job binds, as opposed to the ones it dials.
-// Only two names carry that meaning, and they are the two freePortName writes:
-// PORT for the first service to claim it, <JOB>_PORT for the ones after. A
-// DB_PORT or a REDIS_PORT on the same job is an address it connects to.
+//
+// A name settles it when there is one: PORT for the first service to claim it,
+// <JOB>_PORT for the ones after — the two freePortName writes. Otherwise a job
+// declaring exactly one port binds that port: a DB_PORT and a REDIS_PORT on the
+// same job are addresses it connects to, but a single declaration is what the
+// job answers on. Without that last reading a Vite app declaring VITE_PORT
+// published nothing, and the front-ends — the ones a human opens in a browser —
+// were the only jobs left without a name.
 func ListeningPortName(job domain.JobConfig) string {
 	if _, ok := job.Ports[domain.PortNameDefault]; ok {
 		return domain.PortNameDefault
@@ -60,6 +65,28 @@ func ListeningPortName(job domain.JobConfig) string {
 	derived := EnvVarNameFor(job.Name) + "_" + domain.PortNameDefault
 	if _, ok := job.Ports[derived]; ok {
 		return derived
+	}
+	return ""
+}
+
+// PublishablePortName is which port a job would be published under. It answers
+// the URL question, not the wiring one: a job declaring exactly one port is
+// published on it, because a single declaration is what the job answers on.
+//
+// The two readings are deliberately apart. A job whose only port is a DB_PORT
+// is still offered a PORT of its own by the wizard — ListeningPortName stays
+// strict for that — while here the same job is offered a url it can uncheck.
+// Being strict in both places is what left every Vite front-end, declaring
+// VITE_PORT and nothing else, with no name at all.
+func PublishablePortName(job domain.JobConfig) string {
+	if name := ListeningPortName(job); name != "" {
+		return name
+	}
+	if len(job.Ports) != 1 {
+		return ""
+	}
+	for name := range job.Ports {
+		return name
 	}
 	return ""
 }

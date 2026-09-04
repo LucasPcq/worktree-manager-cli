@@ -14,24 +14,27 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
+	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
-// newImportCmd creates the wtm run import subcommand.
 func newImportCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdImport + " [file]",
-		Short: "Import a JSON run config into run.toml",
-		Long: `Read a JSON run config payload from a file (or stdin) and merge it into run.toml.
+		Short: "Replace run.toml with a JSON run config",
+		Long: `Read a JSON run config payload from a file (or stdin) and make it the run.toml.
 
 Pass "-" or omit the argument to read from stdin.
 
-By default, new jobs and profiles are appended; duplicates are skipped with a warning.
-Use --replace --force to overwrite the file entirely.`,
+The payload replaces the whole file — jobs, profiles, .env port links and
+project settings alike. The run is confirmed before anything is written; pass
+--yes to run unattended.
+
+Nothing is reconciled after the write: run wtm env to settle the .env files
+against the new configuration.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: runImport,
 	}
-	cmd.Flags().Bool(domain.FlagReplace, false, "Overwrite run.toml entirely (requires --force)")
-	cmd.Flags().Bool(domain.FlagForce, false, "Confirm destructive --replace")
+	shared.AddYesFlag(cmd, "Replace run.toml without confirming")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
@@ -47,12 +50,10 @@ func runImport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	replace, _ := cmd.Flags().GetBool(domain.FlagReplace)
-	force, _ := cmd.Flags().GetBool(domain.FlagForce)
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-
-	if replace && !force {
-		return fmt.Errorf("--replace is destructive: pass --force to confirm")
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
+	if format == domain.OutputJSON && !yes {
+		return fmt.Errorf("--%s %s requires --%s", domain.FlagOutput, domain.OutputJSON, domain.FlagYes)
 	}
 
 	data, err := readImportSource(args)
@@ -64,42 +65,67 @@ func runImport(cmd *cobra.Command, args []string) error {
 	if err := json.Unmarshal(data, &incoming); err != nil {
 		return fmt.Errorf("parse JSON: %w", err)
 	}
-
-	_, errs := rules.ValidateRun(incoming)
-	if len(errs) > 0 {
+	if _, errs := rules.ValidateRun(incoming); len(errs) > 0 {
 		return fmt.Errorf("invalid run config:\n  %s", strings.Join(errs, "\n  "))
 	}
 
-	if replace {
-		return writeAndReport(cmd, result.StateDir, incoming, rules.MergeResult{}, format, true)
+	// Replacing run.toml is destructive, so it is never the default of a run that
+	// cannot be asked — a piped payload included, where stdin carries the config
+	// and there is nothing left to prompt on.
+	interactive := shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}) &&
+		!readsStdin(args)
+	if !interactive && !yes {
+		return fmt.Errorf(domain.ImportNeedsYesFmt, domain.FlagYes)
 	}
 
-	existing, err := config.LoadRun(result.StateDir)
-	if err != nil {
-		return fmt.Errorf("load existing run config: %w", err)
+	if !confirmImport(confirmImportParams{Interactive: interactive, Incoming: incoming}) {
+		output.Frame(cmd.OutOrStdout(), func() {
+			output.Message(cmd.OutOrStdout(), domain.ImportDeclined)
+		})
+		return nil
 	}
 
-	merged, mergeResult := rules.MergeRunConfigs(existing, incoming)
-	return writeAndReport(cmd, result.StateDir, merged, mergeResult, format, false)
-}
-
-func writeAndReport(cmd *cobra.Command, stateDir string, cfg domain.RunConfig, mergeResult rules.MergeResult, format string, replace bool) error {
 	if err := config.WriteRun(config.WriteRunParams{
-		StateDir: stateDir,
-		Config:   cfg,
+		StateDir: result.StateDir,
+		Config:   incoming,
 		Force:    true,
 	}); err != nil {
 		return fmt.Errorf("write run config: %w", err)
 	}
 
-	ir := output.ImportResult{
-		Added:   mergeResult.Added,
-		Skipped: mergeResult.Skipped,
+	return reportImport(cmd, incoming, format)
+}
+
+type confirmImportParams struct {
+	Interactive bool
+	Incoming    domain.RunConfig
+}
+
+// confirmImport reads Esc as a refusal, like every other standalone confirm in
+// the CLI does.
+func confirmImport(params confirmImportParams) bool {
+	if !params.Interactive {
+		return true
 	}
-	if replace {
-		for _, j := range cfg.Jobs {
-			ir.Added = append(ir.Added, j.Name)
-		}
+	confirmed, _ := components.RunStandaloneConfirm(components.NewConfirm(components.NewConfirmParams{
+		Title: domain.ImportConfirmTitle,
+		Description: fmt.Sprintf(domain.ImportConfirmDescFmt,
+			len(params.Incoming.Jobs), len(params.Incoming.Profiles)),
+		DefaultYes: false,
+	}))
+	return confirmed
+}
+
+// readsStdin says the payload comes from the same stream a prompt would read.
+func readsStdin(args []string) bool { return len(args) == 0 || args[0] == "-" }
+
+func reportImport(cmd *cobra.Command, cfg domain.RunConfig, format string) error {
+	ir := output.ImportResult{EnvPorts: len(cfg.EnvPorts)}
+	for _, job := range cfg.Jobs {
+		ir.Jobs = append(ir.Jobs, job.Name)
+	}
+	for _, profile := range cfg.Profiles {
+		ir.Profiles = append(ir.Profiles, profile.Name)
 	}
 
 	if format == domain.OutputJSON {

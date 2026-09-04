@@ -243,3 +243,63 @@ func TestEnvPortsWrittenLinesNamesTheSourceFile(t *testing.T) {
 		t.Errorf("lines = %v, want %v", lines, want)
 	}
 }
+
+// A root .env holds the compose stack's ports. Every script sharing that
+// directory used to claim them, and the collision resolver then kept whichever
+// copy it saw last — leaving `docker compose`, the job that actually binds
+// them, with none. Reproduced on a real monorepo.
+func TestScriptPortsNeverClaimWhatAnotherJobAlreadyBinds(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{
+			Name: "docker-compose", Kind: domain.JobKindService, Cwd: ".",
+			Cmd:   "docker compose -f docker-compose.yml up -d",
+			Ports: map[string]int{"POSTGRES_PORT": 5432, "REDIS_PORT": 6379},
+		},
+		{Name: "dev:shop", Kind: domain.JobKindService, Cwd: ".", Cmd: "pnpm run dev:shop"},
+	}}
+
+	got := BackfillScriptPorts(BackfillScriptPortsParams{
+		Config:         cfg,
+		PackageManager: domain.PkgManagerPnpm,
+		Scripts:        []domain.PackageScript{{Name: "dev:shop", Kind: domain.JobKindService}},
+		ScansByDir: map[string]domain.EnvPortScan{
+			".": {Ports: map[string]int{"POSTGRES_PORT": 5432, "REDIS_PORT": 6379}},
+		},
+	})
+
+	for _, job := range got.Config.Jobs {
+		if job.Name != "dev:shop" {
+			continue
+		}
+		if len(job.Ports) != 0 {
+			t.Errorf("dev:shop claimed %v, want none: those ports are the compose job's", job.Ports)
+		}
+	}
+	for _, job := range got.Config.Jobs {
+		if job.Name == "docker-compose" && len(job.Ports) != 2 {
+			t.Errorf("docker-compose = %v, want its two ports kept", job.Ports)
+		}
+	}
+}
+
+// The same variable at two different bases is two ports, and each app keeps its
+// own: the rule is about a port, not about a name.
+func TestScriptPortsKeepTheSameNameAtADifferentBase(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "crm-api", Kind: domain.JobKindService, Cwd: "apps/crm/api", Cmd: "pnpm run dev", Ports: map[string]int{"PORT": 4002}},
+		{Name: "shop-api", Kind: domain.JobKindService, Cwd: "apps/shop/api", Cmd: "pnpm run dev"},
+	}}
+
+	got := BackfillScriptPorts(BackfillScriptPortsParams{
+		Config:         cfg,
+		PackageManager: domain.PkgManagerPnpm,
+		Scripts:        []domain.PackageScript{{Name: "dev", Kind: domain.JobKindService, Workspace: "apps/shop/api"}},
+		ScansByDir:     map[string]domain.EnvPortScan{"apps/shop/api": {Ports: map[string]int{"PORT": 4001}}},
+	})
+
+	for _, job := range got.Config.Jobs {
+		if job.Name == "shop-api" && job.Ports["PORT"] != 4001 {
+			t.Errorf("shop-api PORT = %v, want 4001 kept alongside crm-api's 4002", job.Ports)
+		}
+	}
+}

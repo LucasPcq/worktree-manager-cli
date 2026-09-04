@@ -150,6 +150,8 @@ internal/
   flow/                       ← the flow of each command, surface-independent (see below):
                                 the vocabulary (Step, Session, Prompter, Presenter)
     decide/                   ←   branch/env decisions shared by the create-like flows
+    envports/                 ←   settling a fresh .env's host ports onto the ones the
+                                  worktree binds — shared by `create` and `extract`
     create/                   ←   `wtm create`: the run (create.go) + its questions (steps.go)
     clean/                    ←   `wtm clean`: the run (clean.go) + its questions (steps.go)
     reparent/                 ←   `wtm reparent`: the run (reparent.go) + its questions (steps.go)
@@ -354,7 +356,13 @@ itself: `rules.DeselectedJobs` never reaches a job written by `run job add`, bec
 a job matches no detected script or compose file. Removal goes through `rules.RemoveJob`,
 the one place that also strips profile entries and `[[env_port]]` links.
 
-## 10. Validate before commit
+## 10. Commit messages in English
+
+Every commit message — subject and body — is written in **English**, whatever language
+the conversation that produced the change was held in. The repository, its code, its
+comments and its docs are in English; the history is read alongside them.
+
+## 11. Validate before commit
 
 Run the **`build-validator`** subagent at the end of every development session
 or before any commit. It checks compilation, vet, static analysis, and tests.

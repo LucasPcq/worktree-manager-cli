@@ -100,9 +100,6 @@ func (m Model) servicesBody(layout domain.DashboardLayout) []string {
 		return nil
 	}
 
-	if m.servicesLogs {
-		return m.logsViewBody(logsViewParams{Width: width, Height: panelBodyHeight(layout.List)})
-	}
 	if len(m.services) == 0 {
 		return m.servicesEmptyLines(width)
 	}
@@ -143,23 +140,17 @@ func (m Model) servicesBody(layout domain.DashboardLayout) []string {
 	return lines
 }
 
-// openServiceLogs turns the tab's body into the logs view, on the job under the
-// cursor. Full width: the addresses are why this tab has it, and a log line is
-// no narrower than an address.
-func (m Model) openServiceLogs() (Model, tea.Cmd) {
+// watchServiceLogs opens the full run view on the job under the cursor. The tab
+// used to turn its own body into a smaller logs view first, which meant two
+// keystrokes and a second stop on the way to the same place: the overview is
+// what this tab is for, and a job picked out of it is a job one wants to read.
+func (m Model) watchServiceLogs() (Model, tea.Cmd) {
 	row, ok := m.selectedService()
 	if !ok {
 		return m, nil
 	}
-	m.servicesLogs = true
 	m.logsBranch, m.logsJob = row.Branch, row.Job.Key
-	m.logsLines, m.logsErr = nil, nil
-	return m, m.tailLogsCmd()
-}
-
-func (m Model) closeServiceLogs() Model {
-	m.servicesLogs = false
-	return m.forgetHiddenLogs()
+	return m.watchLogs()
 }
 
 // servicesJobLine marks the row under the cursor the way a list row is marked:
@@ -197,11 +188,12 @@ func (m Model) servicesEmptyLines(width int) []string {
 	return lines
 }
 
-// clickServiceRow answers a click on a Services job row, with the same rule the
-// detail panel follows: the address cell opens the address, the rest of the row
-// opens that job's logs.
+// clickServiceRow answers a click on a Services job row. Only the address cell
+// acts: a click anywhere else moves the cursor and no further. Opening a log is
+// a full change of view, and the rows are close enough together that clicking
+// one by accident was the common case — enter does it deliberately.
 func (m Model) clickServiceRow(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
-	if m.tab != tabServices || m.servicesLogs {
+	if m.tab != tabServices {
 		return m, nil, false
 	}
 	for index, row := range m.services {
@@ -216,8 +208,7 @@ func (m Model) clickServiceRow(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 			continue
 		}
 		m.servicesCursor = index
-		model, cmd := m.reflow().openServiceLogs()
-		return model, cmd, true
+		return m.reflow(), nil, true
 	}
 	return m, nil, false
 }

@@ -159,7 +159,7 @@ func TestRunExportProfileNotFound(t *testing.T) {
 	}
 }
 
-func TestRunImportMerge(t *testing.T) {
+func TestRunImportKeepsNothingFromTheExistingConfig(t *testing.T) {
 	dir := setupTestProject(t)
 	writeRunTOML(t, dir, domain.RunConfig{
 		Jobs: []domain.JobConfig{
@@ -171,64 +171,20 @@ func TestRunImportMerge(t *testing.T) {
 	payloadPath := filepath.Join(t.TempDir(), "layout.json")
 	os.WriteFile(payloadPath, []byte(payload), 0o644)
 
-	stdout, _, err := runCmd(t, domain.CmdImport, payloadPath, "--output", domain.OutputJSON)
+	stdout, _, err := runCmd(t, domain.CmdImport, payloadPath, "--output", domain.OutputJSON, "--"+domain.FlagYes)
 	if err != nil {
 		t.Fatalf("run import: %v", err)
 	}
-
 	if !strings.Contains(stdout, `"build"`) {
-		t.Errorf("expected 'build' in added, got: %s", stdout)
+		t.Errorf("expected 'build' in the reported jobs, got: %s", stdout)
 	}
 
 	cfg, err := config.LoadRun(dir)
 	if err != nil {
 		t.Fatalf("load run: %v", err)
 	}
-	if len(cfg.Jobs) != 2 {
-		t.Errorf("expected 2 jobs after merge, got %d: %+v", len(cfg.Jobs), cfg.Jobs)
-	}
-}
-
-func TestRunImportMergeSkipsDuplicate(t *testing.T) {
-	dir := setupTestProject(t)
-	writeRunTOML(t, dir, domain.RunConfig{
-		Jobs: []domain.JobConfig{
-			{Name: "dev", Kind: domain.JobKindService, Cmd: "pnpm dev"},
-		},
-	})
-
-	payload := `{"job":[{"name":"dev","kind":"service","cmd":"pnpm dev"}],"profile":[]}`
-	payloadPath := filepath.Join(t.TempDir(), "layout.json")
-	os.WriteFile(payloadPath, []byte(payload), 0o644)
-
-	stdout, _, err := runCmd(t, domain.CmdImport, payloadPath, "--output", domain.OutputJSON)
-	if err != nil {
-		t.Fatalf("run import: %v", err)
-	}
-
-	if !strings.Contains(stdout, `"dev"`) {
-		t.Errorf("expected 'dev' in skipped, got: %s", stdout)
-	}
-}
-
-func TestRunImportReplaceRequiresForce(t *testing.T) {
-	dir := setupTestProject(t)
-	writeRunTOML(t, dir, domain.RunConfig{
-		Jobs: []domain.JobConfig{
-			{Name: "dev", Kind: domain.JobKindService, Cmd: "pnpm dev"},
-		},
-	})
-
-	payload := `{"job":[{"name":"new","kind":"task","cmd":"echo hi"}],"profile":[]}`
-	payloadPath := filepath.Join(t.TempDir(), "layout.json")
-	os.WriteFile(payloadPath, []byte(payload), 0o644)
-
-	_, _, err := runCmd(t, domain.CmdImport, payloadPath, "--replace")
-	if err == nil {
-		t.Fatal("expected error for --replace without --force")
-	}
-	if !strings.Contains(err.Error(), "--force") {
-		t.Errorf("expected error to mention --force, got %v", err)
+	if len(cfg.Jobs) != 1 || cfg.Jobs[0].Name != "build" {
+		t.Errorf("import must replace, not merge: %+v", cfg.Jobs)
 	}
 }
 
@@ -257,7 +213,7 @@ func TestRunExportImportRoundtrip(t *testing.T) {
 
 	os.Remove(filepath.Join(dir, domain.RunFileName))
 
-	_, _, err = runCmd(t, domain.CmdImport, layoutPath)
+	_, _, err = runCmd(t, domain.CmdImport, layoutPath, "--"+domain.FlagYes)
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}

@@ -91,6 +91,11 @@ type Model struct {
 	// worth printing on the way out.
 	started  bool
 	sequence sequence
+	// preview drops everything a hosted view has no room for — the header, the
+	// help bar, the job list — and leaves only the pane. It is the same renderer
+	// and the same live stream the full view uses, at a panel's size, and it
+	// takes no key: acting on a job is what opening the full view is for.
+	preview bool
 	// following keeps the cursor on the job the sequence is acting on, until the
 	// reader takes it themselves.
 	following bool
@@ -127,12 +132,64 @@ func New(params Params) Model {
 	}
 }
 
+// PreviewParams builds the hosted form of the view.
+type PreviewParams struct {
+	Board runlogs.Board
+	// Job is the job to show. A host changes it with ShowJob as its own cursor
+	// moves; the preview never chooses one.
+	Job string
+}
+
+// NewPreview is the view as a panel holds it: one job's pane, live, with no
+// chrome of its own and no keys. The host owns the navigation, and everything
+// the reader might act on — focus, filter, scrollback, opening a url — belongs
+// to the full view, which is what enter is for.
+func NewPreview(params PreviewParams) Model {
+	model := New(Params{Board: params.Board, Job: params.Job})
+	model.preview = true
+	return model
+}
+
+// ShowJob points the preview at another job. It is how a host's cursor reaches
+// a view that reads no keys of its own.
+func (m Model) ShowJob(job string) (Model, tea.Cmd) {
+	if job == "" || job == m.selected.job() {
+		return m, nil
+	}
+	m.wantJob = job
+	for _, view := range m.jobs {
+		if view.Name == job {
+			return m.setSelection(viewKey(view))
+		}
+	}
+	return m, nil
+}
+
+// SetSize is how a host sizes a preview: the full view learns its size from the
+// terminal, a hosted one from whatever panel is holding it.
+func (m Model) SetSize(width, height int) (Model, tea.Cmd) {
+	if width == m.width && height == m.height {
+		return m, nil
+	}
+	m.width, m.height = width, height
+	return m.applySize()
+}
+
+// Close releases the panes and the streams behind them. A host that drops a
+// preview without calling it leaks a subscription per job it ever showed.
+func (m Model) Close() {
+	m.cancel()
+	m.panes.closeAll()
+}
+
 // Run opens the view on the alternate screen and returns what to say once it is
 // given back. Leaving it detaches: the jobs it was showing keep running, and a
 // start sequence it was reporting on carries on without a reader.
 func Run(params Params) (Result, error) {
 	model := New(params)
-	options := []tea.ProgramOption{tea.WithAltScreen()}
+	// Mouse tracking, or the wheel falls through to the host terminal and writes
+	// escape sequences over the view instead of scrolling the pane.
+	options := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion()}
 	if params.In != nil {
 		options = append(options, tea.WithInput(params.In))
 	}
@@ -268,7 +325,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applySize()
 
 	case tea.KeyMsg:
+		// A hosted preview reads no key: the panel holding it owns the same
+		// arrows, and acting on a job is what opening the full view is for. The
+		// refusal lives here rather than in the host, so a second host cannot
+		// forget it.
+		if m.preview {
+			return m, nil
+		}
 		return m.handleKey(msg)
+
+	case tea.MouseMsg:
+		if m.preview {
+			return m, nil
+		}
+		return m.handleMouse(msg)
 
 	case jobsMsg:
 		return m.applyJobs(msg)
@@ -336,6 +406,9 @@ func (m Model) paneSize() PaneSize {
 }
 
 func (m Model) layout() domain.RunViewLayout {
+	if m.preview {
+		return rules.PreviewLayout(rules.PreviewLayoutParams{Width: m.width, Height: m.height})
+	}
 	return rules.ComputeRunViewLayout(rules.RunViewLayoutParams{
 		Width:       m.width,
 		Height:      m.height,

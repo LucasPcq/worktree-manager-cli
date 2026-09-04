@@ -19,7 +19,9 @@ type SetParams struct {
 	// Jobs are what the board lists, shared by every worktree in the set:
 	// run.toml lives in the common git dir, so the worktrees of a repository
 	// declare the same jobs and the same profiles.
-	Jobs        []domain.JobConfig
+	Jobs []domain.JobConfig
+	// Declared is every job run.toml holds; see Params.Declared.
+	Declared    []domain.JobConfig
 	ProxyPort   int
 	ProbeBudget time.Duration
 	NoProbe     bool
@@ -40,6 +42,7 @@ func OpenSet(params SetParams) Set {
 			StateDir:    params.StateDir,
 			WorkDir:     workDir,
 			Jobs:        params.Jobs,
+			Declared:    params.Declared,
 			ProxyPort:   params.ProxyPort,
 			ProbeBudget: params.ProbeBudget,
 			NoProbe:     params.NoProbe,

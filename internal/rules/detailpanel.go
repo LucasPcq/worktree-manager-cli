@@ -132,16 +132,18 @@ func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 
 	changesBudget, activityBudget := listBudgets(wantChanges, wantActivity)
 
+	run := runSectionParams{
+		Jobs:      params.RunConfig.Jobs,
+		Infos:     params.Jobs,
+		Addresses: params.Addresses,
+		WorkDir:   params.Status.Path,
+		Budget:    domain.DashboardDetailJobs,
+		Now:       params.Now,
+	}
+
 	sections := make([]domain.DetailSection, 0, 5)
 	if len(params.RunConfig.Jobs) > 0 {
-		sections = append(sections, runSection(runSectionParams{
-			Jobs:      params.RunConfig.Jobs,
-			Infos:     params.Jobs,
-			Addresses: params.Addresses,
-			WorkDir:   params.Status.Path,
-			Budget:    domain.DashboardDetailJobs,
-			Now:       params.Now,
-		}))
+		sections = append(sections, runSection(run))
 	}
 	if review != nil {
 		sections = append(sections, *review)
@@ -157,7 +159,44 @@ func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 			Diff: params.Detail.BranchDiff, DiffFailure: diffErr,
 		}))
 	}
-	return append(sections, links)
+	sections = append(sections, links)
+	if len(params.RunConfig.Jobs) == 0 {
+		return sections
+	}
+	return growRunSection(growRunParams{Sections: sections, Run: run, Height: params.Height})
+}
+
+type growRunParams struct {
+	Sections []domain.DetailSection
+	Run      runSectionParams
+	Height   int
+}
+
+// growRunSection spends the panel's leftover rows on RUN. The other lists keep
+// a fixed cap because what they could show is unbounded — a worktree has any
+// number of commits and changed files — but the jobs are a closed list the
+// panel exists to show, and folding one away under twenty blank rows hides the
+// address the reader came for. It only ever grows: a panel with no room left
+// keeps the section it already had.
+func growRunSection(params growRunParams) []domain.DetailSection {
+	slack := params.Height - sectionsHeight(params.Sections)
+	if slack <= 0 {
+		return params.Sections
+	}
+
+	grown := params.Run
+	grown.Budget = min(params.Run.Budget+slack, len(params.Run.Jobs))
+	if grown.Budget <= params.Run.Budget {
+		return params.Sections
+	}
+
+	for index, section := range params.Sections {
+		if section.Key == domain.DetailSectionRun {
+			params.Sections[index] = runSection(grown)
+			break
+		}
+	}
+	return params.Sections
 }
 
 // familyFailure reads a family's failure out of Failures without ever
@@ -522,6 +561,36 @@ func dropLowestPriority(sections []domain.DetailSection) []domain.DetailSection 
 	return nil
 }
 
+// jobsByBudgetPriority puts the jobs that are up first when the section cannot
+// show them all. A running job carries an address and an uptime; a stopped one
+// carries neither, so folding it away costs the reader nothing — while folding
+// a running one buried the very URL the panel is read for. Declared order is
+// kept inside each group, and untouched when everything fits.
+type jobsByBudgetPriorityParams struct {
+	Jobs    []domain.JobConfig
+	Up      map[string]domain.JobInfo
+	Folding bool
+}
+
+func jobsByBudgetPriority(params jobsByBudgetPriorityParams) []domain.JobConfig {
+	if !params.Folding {
+		return params.Jobs
+	}
+
+	ordered := make([]domain.JobConfig, 0, len(params.Jobs))
+	for _, job := range params.Jobs {
+		if _, running := params.Up[job.Name]; running {
+			ordered = append(ordered, job)
+		}
+	}
+	for _, job := range params.Jobs {
+		if _, running := params.Up[job.Name]; !running {
+			ordered = append(ordered, job)
+		}
+	}
+	return ordered
+}
+
 type runSectionParams struct {
 	Jobs      []domain.JobConfig
 	Infos     []domain.JobInfo
@@ -538,10 +607,15 @@ type runSectionParams struct {
 func runSection(params runSectionParams) domain.DetailSection {
 	infos := upJobsByName(params.Infos, params.WorkDir)
 	shown, folded := splitBudget(len(params.Jobs), params.Budget)
+	ordered := jobsByBudgetPriority(jobsByBudgetPriorityParams{
+		Jobs:    params.Jobs,
+		Up:      infos,
+		Folding: folded > 0,
+	})
 
 	up := 0
 	rows := make([]domain.DetailRow, 0, shown)
-	for index, job := range params.Jobs {
+	for index, job := range ordered {
 		info, running := infos[job.Name]
 		// Counted over the declared jobs, not over the daemon's index: a job
 		// dropped from run.toml while still up has no row here, and a header
@@ -599,7 +673,7 @@ func jobRow(params jobRowParams) domain.DetailRow {
 		return domain.DetailRow{Key: params.Job.Name, Cells: cells}
 	}
 
-	if address := jobAddressText(params.Address); address != "" {
+	if address := JobAddressText(params.Address); address != "" {
 		cells = append(cells, domain.DetailCell{Kind: domain.DetailCellAddress, Text: address})
 	}
 	if uptime := JobUptime(JobUptimeParams{Job: params.Info, Now: params.Now}); uptime != "" {
@@ -608,10 +682,11 @@ func jobRow(params jobRowParams) domain.DetailRow {
 	return domain.DetailRow{Key: params.Job.Name, Cells: cells, Up: true, URL: params.Address.URL}
 }
 
-// jobAddressText is the url when the job publishes one, its ports otherwise —
+// JobAddressText is the url when the job publishes one, its ports otherwise —
 // never both: a url already carries the port, and printing the two is the same
-// fact twice, which is what made the section read as columns of noise.
-func jobAddressText(address domain.JobAddress) string {
+// fact twice, which is what made the section read as columns of noise. Shared
+// with the run view, so a job reads the same in every surface.
+func JobAddressText(address domain.JobAddress) string {
 	if address.URL != "" {
 		return address.URL
 	}

@@ -56,14 +56,30 @@ const (
 	EnvPortStatusSecureScheme EnvPortStatus = "secure_scheme"
 )
 
+// EnvPortMove is one port a key follows: what it is declared at, and what this
+// worktree binds it to.
+type EnvPortMove struct {
+	// Port names the declaration the move follows, so a key following two jobs
+	// says which is which.
+	Port     string `json:"port"`
+	Job      string `json:"job"`
+	Base     int    `json:"base"`
+	Resolved int    `json:"resolved"`
+}
+
 // EnvPortEntry is one link resolved against the worktree's offset and the value
 // currently in the file. NewValue is meaningful only for EnvPortStatusRewrite.
 type EnvPortEntry struct {
-	File     string `json:"file"`
-	Key      string `json:"key"`
-	Port     string `json:"port"`
-	Base     int    `json:"base"`
-	Resolved int    `json:"resolved"`
+	File string `json:"file"`
+	Key  string `json:"key"`
+	Port string `json:"port"`
+	// Base and Resolved are the first port the key follows. A value holding a
+	// list of origins follows several — Moves carries them all, this pair its
+	// first, which is every reading written before a key could follow more than
+	// one.
+	Base     int           `json:"base"`
+	Resolved int           `json:"resolved"`
+	Moves    []EnvPortMove `json:"moves,omitempty"`
 	// Addressing is how this one entry was resolved, not what the project asked
 	// for: a project on AddressingNames still resolves its bare-port links by
 	// port, and the table has to render the two differently.

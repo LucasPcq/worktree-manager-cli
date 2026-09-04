@@ -786,11 +786,11 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (steps 
 			return components.NewCmdList(components.NewCmdListParams{
 				Title:       domain.CmdListStepTitle,
 				Description: domain.CmdListStepDesc,
-				Fixes:       cmdFixesFor(settled(prev), prev, docker),
+				Fixes:       cmdFixesFor(cmdFixesParams{Config: settled(prev), Steps: prev, Docker: docker, EnvScans: params.EnvScans}),
 			})
 		},
 		AutoSkip: func(w components.WizardModel) bool {
-			if len(cmdFixesFor(settled(w.Steps()), w.Steps(), docker)) > 0 {
+			if len(cmdFixesFor(cmdFixesParams{Config: settled(w.Steps()), Steps: w.Steps(), Docker: docker, EnvScans: params.EnvScans})) > 0 {
 				return false
 			}
 			cmdSkipReason = domain.SkipReasonCommandsRead
@@ -967,13 +967,27 @@ func urlStep(prev []components.Step, at int) (components.MultiSelectModel, bool)
 	return ms, ok
 }
 
-// cmdFixesFor exempts the compose jobs: a stack reads its ports from the file
-// wtm templated, never from the command that starts it.
-func cmdFixesFor(cfg domain.RunConfig, prev []components.Step, docker int) []domain.JobCmdFix {
+// cmdFixesFor exempts two kinds of job. A compose stack reads its ports from
+// the file wtm templated, never from the command that starts it; and a job
+// whose ports were read from its own .env already reads them, which is why the
+// value was there to detect.
+func cmdFixesFor(params cmdFixesParams) []domain.JobCmdFix {
 	return rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
-		Config: cfg,
-		Exempt: composeJobsIn(cfg, prev, docker),
+		Config: params.Config,
+		Exempt: append(
+			composeJobsIn(params.Config, params.Steps, params.Docker),
+			rules.JobsReadingTheirEnv(rules.JobsReadingTheirEnvParams{
+				Config:     params.Config,
+				ScansByDir: params.EnvScans,
+			})...),
 	})
+}
+
+type cmdFixesParams struct {
+	Config   domain.RunConfig
+	Steps    []components.Step
+	Docker   int
+	EnvScans map[string]domain.EnvPortScan
 }
 
 func selectedComposeFiles(prev []components.Step, docker int) []string {

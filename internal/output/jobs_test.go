@@ -83,15 +83,14 @@ func TestWriteRunConfigJSON_Roundtrip(t *testing.T) {
 
 func TestWriteImportResultText(t *testing.T) {
 	var buf bytes.Buffer
-	result := ImportResult{
-		Added:   []string{"dev", "build"},
-		Skipped: []string{"old"},
-	}
-
-	WriteImportResultText(&buf, result)
+	WriteImportResultText(&buf, ImportResult{
+		Jobs:     []string{"web", "api"},
+		Profiles: []string{"front"},
+		EnvPorts: 2,
+	})
 
 	out := buf.String()
-	for _, want := range []string{"Imported dev", "Imported build", "old already present"} {
+	for _, want := range []string{"web", "api", "front", "2"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected %q in output: %q", want, out)
 		}
@@ -100,9 +99,11 @@ func TestWriteImportResultText(t *testing.T) {
 
 func TestWriteImportResultJSON(t *testing.T) {
 	var buf bytes.Buffer
-	result := ImportResult{Added: []string{"a"}, Skipped: []string{"b"}}
-
-	if err := WriteImportResultJSON(&buf, result); err != nil {
+	if err := WriteImportResultJSON(&buf, ImportResult{
+		Jobs:     []string{"web", "api"},
+		Profiles: []string{"front"},
+		EnvPorts: 2,
+	}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -110,16 +111,33 @@ func TestWriteImportResultJSON(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(got.Added) != 1 || got.Added[0] != "a" {
-		t.Errorf("expected Added=[a], got %v", got.Added)
+	if len(got.Jobs) != 2 || got.Jobs[0] != "web" || got.Profiles[0] != "front" || got.EnvPorts != 2 {
+		t.Errorf("round-trip lost content: %+v", got)
+	}
+	for _, key := range []string{`"jobs"`, `"profiles"`, `"env_ports"`} {
+		if !strings.Contains(buf.String(), key) {
+			t.Errorf("payload %s misses %s", buf.String(), key)
+		}
 	}
 }
 
-func TestWriteImportResultText_NothingToImport(t *testing.T) {
+// Empty slices must reach a caller as [], never null: an agent iterating the
+// field would break on null.
+func TestWriteImportResultJSONNeverEmitsNull(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteImportResultJSON(&buf, ImportResult{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(buf.String(), "null") {
+		t.Errorf("payload %s carries null", buf.String())
+	}
+}
+
+func TestWriteImportResultTextEmptyConfig(t *testing.T) {
 	var buf bytes.Buffer
 	WriteImportResultText(&buf, ImportResult{})
-	if !strings.Contains(buf.String(), "Nothing to import") {
-		t.Errorf("expected nothing-to-import message: %q", buf.String())
+	if buf.Len() == 0 {
+		t.Error("an empty payload still replaced the file: it must say so")
 	}
 }
 
@@ -266,4 +284,28 @@ func TestRunningJobsTableAlignsItsFirstRowWithTheRest(t *testing.T) {
 
 func indentOf(line string) int {
 	return len(line) - len(strings.TrimLeft(line, " "))
+}
+
+// The declared ports come last and unaligned: a compose stack declaring seven
+// of them used to push every command off the screen.
+func TestFormatRunConfigShowsDeclaredPortsAfterTheCommand(t *testing.T) {
+	out := ansi.Strip(FormatRunConfig(domain.RunConfig{
+		Jobs: []domain.JobConfig{
+			{Name: "web", Kind: domain.JobKindService, Cmd: "pnpm run dev",
+				Ports: map[string]int{"VITE_PORT": 5173}, URL: &domain.JobURLConfig{Port: "VITE_PORT"}},
+			{Name: "worker", Kind: domain.JobKindService, Cmd: "pnpm run worker"},
+		},
+	}))
+
+	if !strings.Contains(out, "VITE_PORT=5173") {
+		t.Errorf("output does not name the declared port:\n%s", out)
+	}
+	if !strings.Contains(out, domain.RunListURLMark) {
+		t.Errorf("output does not mark the published job:\n%s", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "worker") && strings.HasSuffix(line, " ") {
+			t.Errorf("a job with no port left trailing padding: %q", line)
+		}
+	}
 }

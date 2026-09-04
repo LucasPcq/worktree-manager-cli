@@ -3,6 +3,7 @@ package runlogs
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/rules"
@@ -43,6 +44,10 @@ type Outcome struct {
 	// Probes is what the port check observed, empty when no Prober was installed
 	// or when the sequence aborted before there was anything to check.
 	Probes []domain.PortProbe
+	// Crashed are the jobs that were accepted and had died before the sequence
+	// ended. They are not an abort — the run went on — but they are the one
+	// thing a "started" line must never be printed over.
+	Crashed []domain.JobExit
 }
 
 func (o Outcome) Aborted() bool { return o.Failed != "" }
@@ -118,6 +123,11 @@ type RunParams struct {
 	// NextConfig reads a job's next.config.*, so the run can say what a Next
 	// project is missing before its own name reaches it. Nil skips the check.
 	NextConfig NextConfigLookup
+	// BaseOwners names the worktree bound to a base port, so a silent resolved
+	// port is not blamed on a command that read its variable fine. The run does
+	// not build it: it reads neither the repository's config nor the daemon's
+	// index across worktrees.
+	BaseOwners map[int]string
 }
 
 // Run starts a profile's jobs in their declared order and reports each step to
@@ -149,6 +159,7 @@ func Run(ctx context.Context, params RunParams) (Outcome, error) {
 		project:    params.Project,
 		proxyPort:  params.ProxyPort,
 		nextConfig: params.NextConfig,
+		baseOwners: params.BaseOwners,
 	}
 	if r.nextConfig == nil {
 		r.nextConfig = func(job domain.JobConfig) (string, string) {
@@ -177,6 +188,7 @@ type runner struct {
 	project    string
 	proxyPort  int
 	nextConfig NextConfigLookup
+	baseOwners map[int]string
 	// servedPort is what the daemon answered its proxy is really on, and
 	// noticedProxy records that the run has already explained a refusal — the
 	// fact belongs to the run, not to each job that would repeat it.
@@ -192,6 +204,9 @@ type runner struct {
 	// captured is what the job being started has written so far, kept only until
 	// the next job starts: an abort is the one moment it has to be readable.
 	captured []byte
+	// crashed are the jobs the daemon accepted and that were gone by the end of
+	// the sequence.
+	crashed []domain.JobExit
 }
 
 func (r *runner) run() Outcome {
@@ -251,18 +266,158 @@ func (r *runner) run() Outcome {
 
 		r.started = append(r.started, job.Name)
 		r.results = append(r.results, domain.JobActionResult{Name: job.Name, Status: domain.JobActionStarted, URL: r.jobURL(jobURLParams{Job: job, Ports: result.Ports, Host: host})})
-		if rules.ShouldProbeJob(job.Kind, result.Ports) {
+		if rules.ShouldProbeJob(rules.ShouldProbeJobParams{Kind: job.Kind, Ports: result.Ports, Probe: job.Probe}) {
 			r.probeTargets = append(r.probeTargets, probeTarget{job: job.Name, resolved: result.Ports})
 		}
 		r.emit(Event{Phase: PhaseStarted, Job: job.Name, Step: i + 1, AlreadyRunning: alreadyRunning, Ports: result.Ports, URL: r.jobURL(jobURLParams{Job: job, Ports: result.Ports, Host: host}), DevOrigins: r.devOrigins(job, host)})
 	}
 
+	// The probe dials first because its wait is also the time a job needs to die:
+	// a service that binds a busy port is accepted, and only exits once it has
+	// tried. The daemon is asked for the truth after that wait, and a job found
+	// gone has its own port report withdrawn — an exit code says more than a
+	// silent port ever could.
 	probes := r.probe()
+	r.settleStarted()
+	probes = r.reportProbes(probes)
 
 	outcome := r.outcome()
 	outcome.Probes = probes
 	r.emit(Event{Phase: PhaseReady, Outcome: outcome})
 	return outcome
+}
+
+// awaitExits reads the daemon's view of this worktree, waiting a moment for a
+// service to fail if nothing else has waited yet. A process that cannot bind
+// its port exits within instants of being spawned, but not before the call that
+// spawned it returns — and a run whose probe was switched off has otherwise
+// nothing between the two.
+func (r *runner) awaitExits() (map[string]domain.JobInfo, bool) {
+	deadline := time.Now().Add(r.settleWindow())
+	for {
+		live, err := r.liveJobs()
+		if err != nil {
+			return nil, false
+		}
+		// A daemon that knows none of these jobs has nothing to settle, and
+		// waiting on it would only delay the run.
+		if r.anyExited(live) || !r.anyKnown(live) || !time.Now().Before(deadline) {
+			return live, true
+		}
+		select {
+		case <-r.ctx.Done():
+			return live, true
+		case <-time.After(domain.JobSettleInterval):
+		}
+	}
+}
+
+// settleWindow is nothing at all when the port check has already waited: the
+// jobs have had their time, and asking for more would delay every healthy run.
+func (r *runner) settleWindow() time.Duration {
+	if r.prober != nil && len(r.probeTargets) > 0 {
+		return 0
+	}
+	return domain.JobSettleWindow
+}
+
+func (r *runner) liveJobs() (map[string]domain.JobInfo, error) {
+	infos, err := r.service.List(r.workDir)
+	if err != nil {
+		return nil, err
+	}
+	live := make(map[string]domain.JobInfo, len(infos))
+	for _, info := range infos {
+		if info.WorkDir == r.workDir {
+			live[info.Name] = info
+		}
+	}
+	return live, nil
+}
+
+func (r *runner) anyKnown(live map[string]domain.JobInfo) bool {
+	for _, name := range r.started {
+		if _, known := live[name]; known {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *runner) anyExited(live map[string]domain.JobInfo) bool {
+	for _, name := range r.started {
+		info, known := live[name]
+		if known && !rules.IsJobUp(info.Status) {
+			return true
+		}
+	}
+	return false
+}
+
+// reportProbes says what the check found, once it is known which jobs are still
+// there to be said anything about.
+func (r *runner) reportProbes(probes []domain.PortProbe) []domain.PortProbe {
+	gone := make(map[string]bool, len(r.crashed))
+	for _, exit := range r.crashed {
+		gone[exit.Job] = true
+	}
+
+	kept := make([]domain.PortProbe, 0, len(probes))
+	byJob := map[string][]domain.PortProbe{}
+	order := make([]string, 0, len(probes))
+	for _, probe := range probes {
+		if gone[probe.Job] {
+			continue
+		}
+		if _, seen := byJob[probe.Job]; !seen {
+			order = append(order, probe.Job)
+		}
+		byJob[probe.Job] = append(byJob[probe.Job], probe)
+		kept = append(kept, probe)
+	}
+	for _, job := range order {
+		r.emit(Event{Phase: PhaseProbed, Job: job, Probes: byJob[job]})
+	}
+	return kept
+}
+
+// settleStarted re-reads the daemon's view of the jobs this run started. The
+// daemon answers a spawn, not a life: a service that binds a busy port is
+// accepted and dead a moment later, and the run used to conclude "started" over
+// a process that had already exited. What is no longer up is moved out of
+// Started and its port is no longer probed — its exit code says more than any
+// port ever could.
+func (r *runner) settleStarted() {
+	if len(r.started) == 0 {
+		return
+	}
+	live, found := r.awaitExits()
+	if !found {
+		return
+	}
+
+	started := make([]string, 0, len(r.started))
+	for _, name := range r.started {
+		info, known := live[name]
+		if !known || rules.IsJobUp(info.Status) {
+			started = append(started, name)
+			continue
+		}
+		r.crashed = append(r.crashed, domain.JobExit{Job: name, Status: info.Status, ExitCode: info.ExitCode})
+		r.markCrashed(name)
+		r.emit(Event{Phase: PhaseCrashed, Job: name, Reason: string(info.Status), ExitCode: info.ExitCode})
+	}
+	r.started = started
+}
+
+// markCrashed corrects the result this run already recorded for the job.
+func (r *runner) markCrashed(name string) {
+	for i := range r.results {
+		if r.results[i].Name == name {
+			r.results[i].Status = domain.JobActionCrashed
+			return
+		}
+	}
 }
 
 // devOrigins is only ever asked when the proxy actually serves the job: under
@@ -341,12 +496,12 @@ func (r *runner) probe() []domain.PortProbe {
 	var probes []domain.PortProbe
 	for _, target := range r.probeTargets {
 		found := rules.DiagnosePortProbes(rules.DiagnosePortProbesParams{
-			Job:       target.job,
-			Resolved:  target.resolved,
-			Listening: listening,
-			Offset:    offset,
+			Job:        target.job,
+			Resolved:   target.resolved,
+			Listening:  listening,
+			Offset:     offset,
+			BaseOwners: r.baseOwners,
 		})
-		r.emit(Event{Phase: PhaseProbed, Job: target.job, Probes: found})
 		probes = append(probes, found...)
 	}
 	return probes
@@ -424,6 +579,7 @@ func (r *runner) outcome() Outcome {
 		Results:   r.results,
 		Started:   r.started,
 		Completed: r.completed,
+		Crashed:   r.crashed,
 		Steps:     len(r.jobs),
 	}
 }

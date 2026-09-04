@@ -13,6 +13,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
+	"github.com/LucasPcq/wtm/internal/tui/runview"
 )
 
 // logsRequest is what a tail needs and the dashboard has to supply: the daemon
@@ -34,6 +35,21 @@ type logsTailMsg struct {
 type LogsLoaderParams struct {
 	ProjectDir string
 	StateDir   string
+}
+
+// DefaultBoardLoader opens the worktree's board, which is what a live preview
+// attaches through. NoProbe: nothing is being started here, so there is no port
+// to wait for.
+func DefaultBoardLoader(params LogsLoaderParams) func(logsRequest) runlogs.Board {
+	return func(req logsRequest) runlogs.Board {
+		return seam.Open(seam.Params{
+			ProjectDir: params.ProjectDir,
+			StateDir:   params.StateDir,
+			WorkDir:    req.WorkDir,
+			Jobs:       req.Jobs,
+			NoProbe:    true,
+		}).Board()
+	}
 }
 
 // DefaultLogsLoader reads back what a job persisted, whether or not it still
@@ -61,8 +77,11 @@ func DefaultLogsLoader(params LogsLoaderParams) func(logsRequest) ([]string, err
 // Services tab that is its own body: arming the right-hand panel there left an
 // invisible view holding esc, enter and the arrows.
 func (m Model) openLogsTab() (Model, tea.Cmd) {
+	// From the Services tab the panel is not drawn at all: arming it there left
+	// an invisible view holding esc, enter and the arrows. The tab opens the full
+	// run view on the job under its cursor instead.
 	if m.tab == tabServices {
-		return m.openServiceLogs()
+		return m.watchServiceLogs()
 	}
 	return m.openLogsTabOn("")
 }
@@ -81,7 +100,8 @@ func (m Model) openLogsTabOn(job string) (Model, tea.Cmd) {
 		m.logsJob = m.firstLogsJob()
 	}
 	m.logsLines, m.logsErr = nil, nil
-	return m, m.tailLogsCmd()
+	model, previewCmd := m.openPreview()
+	return model, tea.Batch(model.tailLogsCmd(), previewCmd)
 }
 
 // firstLogsJob is where the view opens: what is up, else the first declared
@@ -108,10 +128,81 @@ func (m Model) closePanelLogs() Model {
 	return m.forgetHiddenLogs()
 }
 
+// openPreview holds a run view at the panel's size, on the job the panel is
+// showing. Without a BoardLoader — a test, a surface with no daemon — the panel
+// keeps its persisted tail and nothing else changes.
+func (m Model) openPreview() (Model, tea.Cmd) {
+	if m.params.BoardLoader == nil || !m.logsOpen() || m.logsJob == "" {
+		return m, nil
+	}
+	m = m.closePreview()
+
+	board := m.params.BoardLoader(logsRequest{
+		WorkDir: m.statusFor(m.logsBranch).Path,
+		Jobs:    m.runConfig.Jobs,
+	})
+	if board == nil {
+		return m, nil
+	}
+
+	m.preview = runview.NewPreview(runview.PreviewParams{Board: board, Job: m.logsJob})
+	m.previewOn = true
+
+	// Init is what asks the board for its jobs and opens the stream: a preview
+	// whose commands are never run shows an empty pane for ever.
+	model, sizeCmd := m.sizePreview(m.layout())
+	return model, tea.Batch(model.preview.Init(), sizeCmd)
+}
+
+// closePreview releases the stream the panel was holding. A panel closed
+// without it leaks one subscription per job it ever showed.
+func (m Model) closePreview() Model {
+	if !m.previewOn {
+		return m
+	}
+	m.preview.Close()
+	m.preview, m.previewOn = runview.Model{}, false
+	return m
+}
+
+// showPreviewJob follows the panel's own cursor. The preview reads no key: the
+// panel says which job, and everything one could act on belongs to the full
+// view.
+func (m Model) showPreviewJob() (Model, tea.Cmd) {
+	if !m.previewOn {
+		return m, nil
+	}
+	preview, cmd := m.preview.ShowJob(m.logsJob)
+	m.preview = preview
+	return m, cmd
+}
+
+// sizePreview gives the preview exactly the rows and columns the panel draws
+// it into.
+func (m Model) sizePreview(layout domain.DashboardLayout) (Model, tea.Cmd) {
+	if !m.previewOn {
+		return m, nil
+	}
+	tail := m.logsTailRect(m.logsHostRect(layout))
+	preview, cmd := m.preview.SetSize(tail.Width, tail.Height)
+	m.preview = preview
+	return m, cmd
+}
+
+// logsHostRect is the room the logs view has: the right-hand panel, under its
+// LOGS tab.
+func (m Model) logsHostRect(layout domain.DashboardLayout) logsViewParams {
+	return logsViewParams{
+		Width:  layout.Detail.Width - borderWidth - paddingWidth,
+		Height: tabbedPanelBodyHeight(layout.Detail),
+	}
+}
+
 func (m Model) forgetHiddenLogs() Model {
 	if m.logsOpen() {
 		return m
 	}
+	m = m.closePreview()
 	m.logsBranch, m.logsJob = "", ""
 	m.logsLines, m.logsErr = nil, nil
 	return m
@@ -121,9 +212,14 @@ func (m Model) forgetHiddenLogs() Model {
 // or as the Services tab's body. The keys it owns follow the view, not a host,
 // and it is open even with no job to show — esc has to get back out of an
 // empty view too.
-func (m Model) logsOpen() bool { return m.panelTab == panelLogs || m.servicesLogs }
+func (m Model) logsOpen() bool { return m.panelTab == panelLogs }
 
-func (m Model) retail() (Model, tea.Cmd) { return m, m.tailLogsCmd() }
+// retailAndPreview follows a job change on both readings: the persisted tail
+// the panel falls back to, and the live preview when one is held.
+func (m Model) retailAndPreview() (Model, tea.Cmd) {
+	model, previewCmd := m.showPreviewJob()
+	return model, tea.Batch(model.tailLogsCmd(), previewCmd)
+}
 
 // watchLogsRequest is what enter hands runview: the job on screen, never the
 // whole worktree. A view opened on one job that comes back showing every job of
@@ -137,7 +233,9 @@ func (m Model) watchLogsRequest() logsflow.Request {
 }
 
 func (m Model) tailLogsCmd() tea.Cmd {
-	if m.params.LogsLoader == nil || !m.logsOpen() {
+	// A live preview reads the same output from the daemon: re-reading the log
+	// file behind it would be a disk read per job change for lines nothing shows.
+	if m.params.LogsLoader == nil || !m.logsOpen() || m.previewOn {
 		return nil
 	}
 	load, branch, job := m.params.LogsLoader, m.logsBranch, m.logsJob
@@ -200,50 +298,72 @@ func (m Model) clickLogsJob(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 // persisted, which is exactly what one looks for after a crash.
 func (m Model) logsJobs() []domain.JobConfig { return m.runConfig.Jobs }
 
-// logsJobsLine heads the logs view: the jobs to switch between, and where the
-// current one answers.
-func (m Model) logsJobsLine(width int) string {
-	// Cut to its own budget before it is styled and marked: spread clips the
-	// segments it is handed, and a cut through a zone marker breaks that zone
-	// silently — the same discipline the RUN rows follow.
-	address := truncate(m.logsAddress().URL, max(width/2, 0))
-	rendered := ""
-	if address != "" {
-		rendered = m.marks().Mark(logsURLZone(), styles.DashboardURL.Render(address))
+// logsAddressLine heads the logs view with where the job on screen answers. It
+// gets a line of its own rather than a corner of the selection row: the address
+// is the thing one opens the view to copy.
+func (m Model) logsAddressLine(width int) string {
+	address := m.logsAddress()
+	if text := rules.JobAddressText(address); text != "" {
+		// Only a url is a zone: a click has to lead somewhere, and a list of ports
+		// leads nowhere.
+		if address.URL == "" {
+			return styles.DashboardRowMeta.Render(truncate(text, width))
+		}
+		return m.marks().Mark(logsURLZone(), styles.DashboardURL.Render(truncate(text, width)))
 	}
-	return spread(m.logsJobChips(max(width-lipgloss.Width(rendered)-1, 0)), rendered, width)
-}
 
-// logsJobChips shows what fits around the current job, with a mark on each side
-// that has more. A wrapping row would change the header's height from one
-// worktree to the next, and the tail would start somewhere new each time.
-func (m Model) logsJobChips(budget int) string {
-	jobs := m.logsJobs()
-	if len(jobs) == 0 {
+	// A job that declares no port has no address to show, and the row is kept
+	// anyway to hold the body still. Saying so beats a hole: it is the same
+	// finding `run init` reports, at the moment one wonders where to reach the
+	// job.
+	if m.logsJob == "" {
 		return ""
 	}
+	return styles.DashboardRowMeta.Render(truncate(domain.DashboardLogsNoAddress, width))
+}
 
-	window := rules.LogsJobWindow(rules.LogsJobWindowParams{
+type logsJobColumnParams struct {
+	Width int
+	Rows  int
+}
+
+// logsJobColumn lists the jobs down the side of their output. It was a row of
+// chips windowed to the width, which on a worktree with ten jobs hid most of
+// them behind ‹ › marks and made reaching one a traversal. A column scrolls the
+// way every other list in the dashboard does.
+func (m Model) logsJobColumn(params logsJobColumnParams) []string {
+	jobs := m.logsJobs()
+	if len(jobs) == 0 || params.Width <= 0 || params.Rows <= 0 {
+		return nil
+	}
+
+	// A live preview spends its first row on the pane's border and its second on
+	// the job's name, so the column starts one row down and its highlighted job
+	// sits level with the job the pane names. The persisted tail has no border,
+	// and starts level with its first line.
+	offset := 0
+	if m.previewOn {
+		offset = domain.DashboardLogsColumnOffset
+	}
+	listRows := max(params.Rows-offset, 0)
+	window := rules.LogsJobColumn(rules.LogsJobColumnParams{
 		Jobs:    jobNames(jobs),
 		Current: m.logsJob,
-		Budget:  budget,
-		Gap:     lipgloss.Width(domain.DashboardLogsJobGap),
-		Marks:   lipgloss.Width(domain.DashboardLogsMoreBefore),
+		Rows:    listRows,
 	})
 
-	chips := make([]string, 0, window.End-window.Start)
+	rows := make([]string, 0, params.Rows)
+	for range offset {
+		rows = append(rows, strings.Repeat(" ", params.Width))
+	}
 	for _, job := range jobs[window.Start:window.End] {
-		chips = append(chips, m.marks().Mark(logsJobZone(job.Name), m.logsJobChip(job)))
+		chip := truncate(m.logsJobChip(job), params.Width)
+		rows = append(rows, m.marks().Mark(logsJobZone(job.Name), pad(chip, params.Width)))
 	}
-	line := strings.Join(chips, domain.DashboardLogsJobGap)
-
-	if window.Start > 0 {
-		line = styles.DashboardRowMeta.Render(domain.DashboardLogsMoreBefore) + line
+	for len(rows) < params.Rows {
+		rows = append(rows, strings.Repeat(" ", params.Width))
 	}
-	if window.End < len(jobs) {
-		line += styles.DashboardRowMeta.Render(domain.DashboardLogsMoreAfter)
-	}
-	return line
+	return rows
 }
 
 func jobNames(jobs []domain.JobConfig) []string {
@@ -282,8 +402,8 @@ func (m Model) logsAddress() domain.JobAddress {
 	return m.addresses[m.logsBranch][m.logsJob]
 }
 
-// stepLogsJob walks the selection line, clamped at both ends: the line is a row
-// of chips, not a carousel, so an end that wraps would lose the reader.
+// stepLogsJob walks the job column, clamped at both ends: it is a list, not a
+// carousel, so an end that wraps would lose the reader.
 func (m Model) stepLogsJob(delta int) Model {
 	jobs := m.logsJobs()
 	if len(jobs) == 0 {
@@ -310,6 +430,30 @@ type logsViewParams struct {
 	Height int
 }
 
+// logsTailRect is the room left to a job's output once the address, the hint
+// and the job column have taken theirs. The renderer draws into it and the
+// preview is sized to it: an emulator fed at one size and drawn at another
+// shows the wrong rows.
+func (m Model) logsTailRect(params logsViewParams) logsViewParams {
+	gap := lipgloss.Width(domain.DashboardLogsJobGap)
+	colWidth := rules.LogsJobColumnWidth(rules.LogsJobColumnWidthParams{
+		Names:   jobNames(m.logsJobs()),
+		Total:   params.Width,
+		Glyph:   lipgloss.Width(domain.DetailJobUpGlyph + domain.DetailGlyphGap),
+		Gap:     gap,
+		Max:     domain.DashboardLogsJobColumnMax,
+		TailMin: domain.DashboardLogsTailMin,
+	})
+	width := params.Width
+	if colWidth > 0 {
+		width = params.Width - colWidth - gap
+	}
+	return logsViewParams{
+		Width:  max(width, 0),
+		Height: max(params.Height-domain.DashboardLogsHead-domain.DashboardLogsChrome, 0),
+	}
+}
+
 // logsViewBody is the logs view wherever it is hosted: the right-hand panel
 // under its LOGS tab, and the Services tab at full width. One component, two
 // hosts — the alternative was writing "show a tail" twice. The newest lines are
@@ -320,23 +464,58 @@ func (m Model) logsViewBody(params logsViewParams) []string {
 		return nil
 	}
 
-	// No rule under the selection line: the tab bar already draws one two rows
-	// above, and a second so close reads as a box rather than as a separation.
-	// A project with no job has no line to draw at all.
-	head := []string{}
-	if len(m.logsJobs()) > 0 {
-		head = append(head, m.logsJobsLine(params.Width), "")
-	}
+	// The address keeps its row whether or not the job publishes one: a panel
+	// whose body moves up and down as jobs are walked is a panel the eye has to
+	// find again on every keystroke. No rule under it — the tab bar already
+	// draws one two rows above, and a second so close reads as a box.
+	head := []string{m.logsAddressLine(params.Width), ""}
 	hint := styles.DashboardRowMeta.Render(truncate(domain.DashboardLogsHint, params.Width))
-	budget := max(params.Height-len(head)-domain.DashboardLogsChrome, 0)
+	tail := m.logsTailRect(params)
+	budget := tail.Height
+	colWidth := max(params.Width-tail.Width-lipgloss.Width(domain.DashboardLogsJobGap), 0)
+	if tail.Width == params.Width {
+		colWidth = 0
+	}
 
 	// Padded to its whole budget so the hint sits on the panel's last row: a
 	// reminder that follows the tail lands somewhere new on every job.
-	body := m.logsTailLines(logsTailParams{Budget: budget, Width: params.Width})
+	body := m.logsBodyLines(tail)
 	for len(body) < budget {
 		body = append(body, "")
 	}
-	return append(append(head, body...), "", hint)
+
+	return append(append(head, m.logsRows(logsRowsParams{
+		Column: m.logsJobColumn(logsJobColumnParams{Width: colWidth, Rows: budget}),
+		Tail:   body,
+		Gap:    domain.DashboardLogsJobGap,
+		Width:  params.Width,
+	})...), "", hint)
+}
+
+type logsRowsParams struct {
+	Column []string
+	Tail   []string
+	Gap    string
+	Width  int
+}
+
+// logsRows lays the job column beside the tail it labels. A body too narrow for
+// a column has none, and the tail then takes the whole width.
+func (m Model) logsRows(params logsRowsParams) []string {
+	if len(params.Column) == 0 {
+		return params.Tail
+	}
+	// Rows are padded to the panel's width so the column keeps one edge down the
+	// whole body rather than ending wherever the shortest log line does.
+	rows := make([]string, 0, len(params.Tail))
+	for index, line := range params.Tail {
+		left := ""
+		if index < len(params.Column) {
+			left = params.Column[index]
+		}
+		rows = append(rows, pad(left+params.Gap+line, params.Width))
+	}
+	return rows
 }
 
 func (m Model) logsBody(layout domain.DashboardLayout) []string {
@@ -349,6 +528,17 @@ func (m Model) logsBody(layout domain.DashboardLayout) []string {
 type logsTailParams struct {
 	Budget int
 	Width  int
+}
+
+// logsBodyLines is the job's output as the panel shows it: the live preview
+// when one is held — the same renderer and the same stream `run logs` uses —
+// and the persisted tail otherwise, which is what a surface with no board falls
+// back to.
+func (m Model) logsBodyLines(tail logsViewParams) []string {
+	if m.previewOn {
+		return strings.Split(m.preview.View(), "\n")
+	}
+	return m.logsTailLines(logsTailParams{Budget: tail.Height, Width: tail.Width})
 }
 
 func (m Model) logsTailLines(params logsTailParams) []string {

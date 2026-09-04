@@ -52,12 +52,22 @@ func runURL(cmd *cobra.Command, args []string) error {
 	}
 	entries := ctx.publishedIn(resolved.Dir)
 
+	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
+
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
 	if format == domain.OutputJSON {
+		// --job narrows the document as it narrows the line: a caller asking for
+		// one job's address must not have to find it in an array.
+		if jobName != "" {
+			entry, err := pickPublished(entries, jobName)
+			if err != nil {
+				return err
+			}
+			entries = []domain.JobURLEntry{entry}
+		}
 		return output.WriteJobURLsJSON(cmd.OutOrStdout(), entries)
 	}
 
-	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
 	entry, err := pickPublished(entries, jobName)
 	if err != nil {
 		return err

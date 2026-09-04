@@ -1,10 +1,14 @@
 package output
 
 import (
+	"os"
+
 	"fmt"
+	"golang.org/x/term"
 	"io"
 	"strings"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -94,8 +98,23 @@ func HooksSection(w io.Writer, title string) {
 // the outer vertical padding.
 func Callout(w io.Writer, title string, lines []string) {
 	rows := append([]string{styles.CalloutTitle.Render(title)}, lines...)
-	box := styles.Callout.Render(strings.Join(rows, "\n"))
+	// Bounded to the terminal: a box grows to its longest line, and one line
+	// naming eight jobs made a 178-column frame that wrapped into mush on any
+	// normal window.
+	box := styles.Callout.Width(calloutWidth()).Render(strings.Join(rows, "\n"))
 	fmt.Fprintf(w, "%s\n", box)
+}
+
+// calloutWidth is what a callout's body may fill: the terminal less the box's
+// own margin, border and padding, capped so a very wide window does not
+// stretch a short notice across it. Zero when there is no terminal to measure —
+// a pipe or a test — which leaves the box at its content's width, as before.
+func calloutWidth() int {
+	cols, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || cols <= 0 {
+		return 0
+	}
+	return min(cols-domain.CalloutChrome, domain.CalloutMaxWidth)
 }
 
 // Section prints a bold title above indented lines, with no frame. It is what a

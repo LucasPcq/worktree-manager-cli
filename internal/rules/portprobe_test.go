@@ -1,6 +1,7 @@
 package rules_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -110,17 +111,17 @@ func TestDiagnosePortProbesIsOrdered(t *testing.T) {
 
 func TestPortsToProbe(t *testing.T) {
 	t.Run("un service qui déclare des ports est sondé", func(t *testing.T) {
-		if !rules.ShouldProbeJob(domain.JobKindService, map[string]int{"PORT": 3000}) {
+		if !rules.ShouldProbeJob(rules.ShouldProbeJobParams{Kind: domain.JobKindService, Ports: map[string]int{"PORT": 3000}}) {
 			t.Error("a service declaring ports must be probed")
 		}
 	})
 	t.Run("une task n'écoute pas", func(t *testing.T) {
-		if rules.ShouldProbeJob(domain.JobKindTask, map[string]int{"PORT": 3000}) {
+		if rules.ShouldProbeJob(rules.ShouldProbeJobParams{Kind: domain.JobKindTask, Ports: map[string]int{"PORT": 3000}}) {
 			t.Error("a task must never be probed")
 		}
 	})
 	t.Run("un service sans port déclaré n'a rien à vérifier", func(t *testing.T) {
-		if rules.ShouldProbeJob(domain.JobKindService, nil) {
+		if rules.ShouldProbeJob(rules.ShouldProbeJobParams{Kind: domain.JobKindService}) {
 			t.Error("a service declaring no port must not be probed")
 		}
 	})
@@ -237,5 +238,132 @@ func TestPortEntriesForProposeEncoreUneEntreeAUnJobQuiNecouteRien(t *testing.T) 
 	}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
 		t.Errorf("entrées = %+v, want %+v", got, want)
+	}
+}
+
+func TestDiagnoseNamesTheWorktreeHoldingTheBasePort(t *testing.T) {
+	probes := rules.DiagnosePortProbes(rules.DiagnosePortProbesParams{
+		Job:        "web",
+		Resolved:   map[string]int{"PORT": 3010},
+		Listening:  map[int]bool{3000: true},
+		Offset:     10,
+		BaseOwners: map[int]string{3000: "main"},
+	})
+
+	if len(probes) != 1 {
+		t.Fatalf("got %d probes, want 1", len(probes))
+	}
+	if probes[0].BaseListening != 3000 {
+		t.Errorf("BaseListening = %d, want 3000", probes[0].BaseListening)
+	}
+	if probes[0].BaseOwner != "main" {
+		t.Errorf("BaseOwner = %q, want %q", probes[0].BaseOwner, "main")
+	}
+
+	for _, line := range rules.PortProbeLines(probes) {
+		if strings.Contains(line, domain.PortProbeBaseHint) {
+			t.Errorf("a port held by another worktree must not blame the command: %q", line)
+		}
+	}
+}
+
+func TestDiagnoseStillBlamesTheVariableWhenNobodyOwnsTheBase(t *testing.T) {
+	probes := rules.DiagnosePortProbes(rules.DiagnosePortProbesParams{
+		Job:       "web",
+		Resolved:  map[string]int{"PORT": 3010},
+		Listening: map[int]bool{3000: true},
+		Offset:    10,
+	})
+
+	joined := strings.Join(rules.PortProbeLines(probes), "\n")
+	if !strings.Contains(joined, domain.PortProbeBaseHint) {
+		t.Errorf("lines = %q, want the unchanged hint", joined)
+	}
+}
+
+func TestShouldProbeJobHonoursTheJobsOwnAnswer(t *testing.T) {
+	off, on := false, true
+	ports := map[string]int{"PORT": 3000}
+
+	cases := []struct {
+		name  string
+		probe *bool
+		want  bool
+	}{
+		{name: "unset probes", probe: nil, want: true},
+		{name: "explicit true probes", probe: &on, want: true},
+		{name: "explicit false does not", probe: &off, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := rules.ShouldProbeJob(rules.ShouldProbeJobParams{
+				Kind:  domain.JobKindService,
+				Ports: ports,
+				Probe: tc.probe,
+			})
+			if got != tc.want {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestJobsToSilenceKeepsOnlyTheRepeatableWarnings(t *testing.T) {
+	off := false
+	got := rules.JobsToSilence(rules.JobsToSilenceParams{
+		Probes: []domain.PortProbe{
+			{Job: "web", Status: domain.PortSilent, BaseListening: 3000},
+			{Job: "web", Status: domain.PortSilent, BaseListening: 3001},
+			{Job: "api", Status: domain.PortSilent, BaseListening: 4000, BaseOwner: "main"},
+			{Job: "db", Status: domain.PortListening},
+			{Job: "worker", Status: domain.PortSilent, BaseListening: 5000},
+		},
+		Jobs: []domain.JobConfig{
+			{Name: "web"},
+			{Name: "api"},
+			{Name: "db"},
+			{Name: "worker", Probe: &off},
+		},
+	})
+
+	if len(got) != 1 || got[0] != "web" {
+		t.Errorf("got %v, want [web]: api is held by another worktree, db answers, worker already opted out", got)
+	}
+}
+
+// A port silent with nothing on its base is a job that never came up — a crash,
+// a build too slow for the budget. Offering to silence that would switch the
+// check off in the one case it exists for.
+func TestJobsToSilenceIgnoresAJobThatSimplyNeverCameUp(t *testing.T) {
+	got := rules.JobsToSilence(rules.JobsToSilenceParams{
+		Probes: []domain.PortProbe{{Job: "web", Status: domain.PortSilent}},
+		Jobs:   []domain.JobConfig{{Name: "web"}},
+	})
+
+	if len(got) != 0 {
+		t.Errorf("got %v, want nothing offered", got)
+	}
+}
+
+func TestSilenceProbesTouchesOnlyTheNamedJobs(t *testing.T) {
+	cfg := domain.RunConfig{
+		PortOffsetBlock: 50,
+		Jobs:            []domain.JobConfig{{Name: "web"}, {Name: "api"}},
+		EnvPorts:        []domain.EnvPortLink{{File: ".env", Key: "WEB_PORT", Job: "web", Port: "PORT"}},
+	}
+
+	got := rules.SilenceProbes(rules.SilenceProbesParams{Config: cfg, Jobs: []string{"web"}})
+
+	if got.Jobs[0].Probe == nil || *got.Jobs[0].Probe {
+		t.Errorf("web: Probe = %v, want false", got.Jobs[0].Probe)
+	}
+	if got.Jobs[1].Probe != nil {
+		t.Errorf("api: Probe = %v, want untouched", got.Jobs[1].Probe)
+	}
+	if got.PortOffsetBlock != 50 || len(got.EnvPorts) != 1 {
+		t.Errorf("the rest of the config was rebuilt instead of copied: %+v", got)
+	}
+	if cfg.Jobs[0].Probe != nil {
+		t.Error("input mutated")
 	}
 }

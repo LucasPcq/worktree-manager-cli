@@ -147,7 +147,19 @@ func envPortMove(e domain.EnvPortEntry) string {
 	if e.Addressing == domain.AddressingNames {
 		return domain.EnvPortMoveOrigin
 	}
-	return fmt.Sprintf(domain.EnvPortMoveFmt, e.Base, e.Resolved)
+	if len(e.Moves) <= 1 {
+		return fmt.Sprintf(domain.EnvPortMoveFmt, strconv.Itoa(e.Base), strconv.Itoa(e.Resolved))
+	}
+	// One row per key, the ports grouped: the key is what the reader recognises
+	// in their file, and a value rewritten once is one fact.
+	bases := make([]string, 0, len(e.Moves))
+	resolved := make([]string, 0, len(e.Moves))
+	for _, move := range e.Moves {
+		bases = append(bases, strconv.Itoa(move.Base))
+		resolved = append(resolved, strconv.Itoa(move.Resolved))
+	}
+	return fmt.Sprintf(domain.EnvPortMoveFmt,
+		strings.Join(bases, domain.CmdListVarSep), strings.Join(resolved, domain.CmdListVarSep))
 }
 
 func envPortColumnWidths(entries []domain.EnvPortEntry) (key, port, move int) {

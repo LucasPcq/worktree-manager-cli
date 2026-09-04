@@ -88,37 +88,42 @@ func WritePRCheckoutJSON(w io.Writer, payload PRCheckoutJSON) error {
 	return encodeJSON(w, payload)
 }
 
-// ImportResult describes the outcome of a wtm run import operation.
+// ImportResult is what run.toml holds after an import. The command replaces the
+// file wholesale, so there is nothing added and nothing skipped to report —
+// only what now stands.
 type ImportResult struct {
-	Added   []string `json:"added"`
-	Skipped []string `json:"skipped"`
+	Jobs     []string `json:"jobs"`
+	Profiles []string `json:"profiles"`
+	EnvPorts int      `json:"env_ports"`
 }
 
 // WriteImportResultJSON writes the import result as JSON.
 func WriteImportResultJSON(w io.Writer, result ImportResult) error {
-	if result.Added == nil {
-		result.Added = []string{}
+	if result.Jobs == nil {
+		result.Jobs = []string{}
 	}
-	if result.Skipped == nil {
-		result.Skipped = []string{}
+	if result.Profiles == nil {
+		result.Profiles = []string{}
 	}
 	return encodeJSON(w, result)
 }
 
-// WriteImportResultText writes the import result as human-readable status lines,
-// using the shared icon vocabulary: ✓ for imported jobs, = for duplicates left
-// untouched. It emits a raw body; the caller's frame owns the outer padding.
+// WriteImportResultText emits a raw body; the caller's frame owns the outer
+// padding.
 func WriteImportResultText(w io.Writer, result ImportResult) {
-	if len(result.Added) == 0 && len(result.Skipped) == 0 {
-		Message(w, "Nothing to import.")
+	if len(result.Jobs) == 0 && len(result.Profiles) == 0 {
+		Message(w, domain.ImportEmptyMessage)
 		return
 	}
-	for _, name := range result.Added {
-		Success(w, fmt.Sprintf("Imported %s", name))
+	Success(w, fmt.Sprintf(domain.ImportJobsFmt, len(result.Jobs), strings.Join(result.Jobs, domain.CmdListVarSep)))
+	if len(result.Profiles) > 0 {
+		Success(w, fmt.Sprintf(domain.ImportProfilesFmt, len(result.Profiles), strings.Join(result.Profiles, domain.CmdListVarSep)))
 	}
-	for _, name := range result.Skipped {
-		Unchanged(w, fmt.Sprintf("%s already present", name))
+	if result.EnvPorts > 0 {
+		Success(w, fmt.Sprintf(domain.ImportEnvPortsFmt, result.EnvPorts))
 	}
+	Blank(w)
+	Message(w, domain.ImportEnvHint)
 }
 
 // WriteRunConfigJSON writes the JSON payload for `run list`.
@@ -157,6 +162,20 @@ func WriteRunningJobsJSON(w io.Writer, jobs []domain.JobInfo) error {
 }
 
 // FormatRunConfig renders jobs + profiles as two aligned text tables.
+// jobPortsCell is what a job declares, in the NAME=PORT form the rest of the
+// CLI reads and writes, with a mark on the one it publishes a url under.
+func jobPortsCell(job domain.JobConfig) string {
+	entries := rules.PortEntries(job.Ports)
+	if len(entries) == 0 {
+		return ""
+	}
+	cell := strings.Join(entries, " ")
+	if job.URL != nil {
+		cell += domain.RunListURLMark
+	}
+	return cell
+}
+
 func FormatRunConfig(cfg domain.RunConfig) string {
 	var b strings.Builder
 
@@ -187,7 +206,7 @@ func FormatRunConfig(cfg domain.RunConfig) string {
 		b.WriteString(Indent)
 		b.WriteString(styles.Bold.Render("JOBS"))
 		b.WriteString("\n")
-		nameWidth, kindWidth := 0, 0
+		nameWidth, kindWidth, cmdWidth := 0, 0, 0
 		for _, j := range cfg.Jobs {
 			if len(j.Name) > nameWidth {
 				nameWidth = len(j.Name)
@@ -195,11 +214,19 @@ func FormatRunConfig(cfg domain.RunConfig) string {
 			if len(string(j.Kind)) > kindWidth {
 				kindWidth = len(string(j.Kind))
 			}
+			if width := len(j.Cmd); width > cmdWidth {
+				cmdWidth = width
+			}
 		}
 		for _, j := range cfg.Jobs {
-			cmd := styles.Muted.Render(j.Cmd)
 			kind := styles.Muted.Render(fmt.Sprintf("%-*s", kindWidth, string(j.Kind)))
-			b.WriteString(fmt.Sprintf("%s%-*s  %s  %s\n", Indent, nameWidth, j.Name, kind, cmd))
+			cmd := styles.Muted.Render(fmt.Sprintf("%-*s", cmdWidth, j.Cmd))
+			// The declared ports last, and unaligned: a compose stack declaring
+			// seven of them would otherwise push every command off the screen.
+			// They are the bases as written, not the resolved ones — each worktree
+			// shifts them by its own offset.
+			ports := styles.DashboardValue.Render(jobPortsCell(j))
+			b.WriteString(strings.TrimRight(fmt.Sprintf("%s%-*s  %s  %s  %s", Indent, nameWidth, j.Name, kind, cmd, ports), " ") + "\n")
 		}
 	}
 

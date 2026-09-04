@@ -80,11 +80,35 @@ func AddProfileFlag(cmd *cobra.Command, usage string) {
 	cmd.Flags().String(domain.FlagProfile, "", usage)
 }
 
+// AddProfilesFlag is the same axis where several profiles make sense at once —
+// `run up` starting two products' stacks in one go.
+func AddProfilesFlag(cmd *cobra.Command, usage string) {
+	cmd.Flags().StringSlice(domain.FlagProfile, nil, usage)
+}
+
 // AddYesFlag adds the confirmation axis. It is the only thing that turns prompts
 // off; --force, where a command has one, is the safety axis and implies nothing
 // here.
 func AddYesFlag(cmd *cobra.Command, usage string) {
 	cmd.Flags().BoolP(domain.FlagYes, "y", false, usage)
+}
+
+// AddNoPromptFlags registers the two spellings `run init` accepts for one axis:
+// --yes, which every other mutation command uses, and the older
+// --non-interactive it shipped with. NoPrompt reads whichever was passed.
+//
+// `wtm init` is deliberately not on this: there --yes is already the
+// confirmation of a re-init, a different question from whether to prompt at
+// all, and folding the two would answer one with the other.
+func AddNoPromptFlags(cmd *cobra.Command, usage string) {
+	AddYesFlag(cmd, usage)
+	cmd.Flags().Bool(domain.FlagNonInteractive, false, usage)
+}
+
+func NoPrompt(cmd *cobra.Command) bool {
+	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
+	nonInteractive, _ := cmd.Flags().GetBool(domain.FlagNonInteractive)
+	return yes || nonInteractive
 }
 
 // Unattended folds --yes into the prompt-capability gate: a human format, on a
