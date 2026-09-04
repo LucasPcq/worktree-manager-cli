@@ -16,25 +16,73 @@ import (
 // are runlogs' answers, carried here as they are emitted.
 type sequence struct {
 	active bool
-	job    string
-	step   int
-	steps  int
-	states map[string]domain.JobStep
+	// key is the job being acted on and job its name, the second only for a
+	// header that has no room for a path.
+	key  jobKey
+	job  string
+	step int
+	// pending counts the worktrees that have not concluded yet. One of them
+	// ending says nothing about the others, so the sequence is over only when
+	// every one has reported.
+	pending int
+	steps   int
+	states  map[jobKey]domain.JobStep
 	// ports is what each job bound as it started, kept for the pane title: the
 	// run is the only moment the daemon reports them.
-	ports map[string]map[string]int
+	ports map[jobKey]map[string]int
 	// urls is where each job answers, kept for the same reason as ports: the run
 	// is the only moment it is reported.
-	urls map[string]string
+	urls map[jobKey]string
 	// devOrigins are the config lines the started jobs are missing, collected as
 	// they are reported so the recap can name them all at once.
 	devOrigins []domain.DevOriginFix
 	// notices are the facts the run reported about itself rather than about one
 	// of its jobs — a proxy that could not bind, so far.
 	notices []string
-	// reason is what the daemon answered for the job that ended the sequence.
-	reason  string
-	outcome runlogs.Outcome
+	// reasons are what the daemon answered for the job that ended each worktree's
+	// sequence, keyed by worktree: N of them abort independently, and one
+	// reason for the lot would name the last failure for every one.
+	reasons map[string]string
+	// outcomes are what the sequences concluded, one per worktree in the order
+	// they reported. A run over several worktrees ends several times, and the
+	// last to finish must not be the only one with an account of itself.
+	outcomes runlogs.Outcomes
+}
+
+// record keeps what a worktree concluded, replacing the account it had given
+// before. A worktree that reported nothing does not erase one that did.
+func (s *sequence) record(outcome runlogs.Outcome) {
+	if !outcome.Recorded() {
+		return
+	}
+	for index := range s.outcomes {
+		if s.outcomes[index].WorkDir == outcome.WorkDir {
+			s.outcomes[index] = outcome
+			return
+		}
+	}
+	s.outcomes = append(s.outcomes, outcome)
+}
+
+// aborted is the worktrees that stopped short, in the order they reported.
+func (s sequence) aborted() runlogs.Outcomes {
+	var aborted runlogs.Outcomes
+	for _, outcome := range s.outcomes {
+		if outcome.Aborted() {
+			aborted = append(aborted, outcome)
+		}
+	}
+	return aborted
+}
+
+// probes is every worktree's port verdicts, gathered: the check is per job, and
+// a job's name alone does not say which worktree silenced its port.
+func (s sequence) probes() []domain.PortProbe {
+	var probes []domain.PortProbe
+	for _, outcome := range s.outcomes {
+		probes = append(probes, outcome.Probes...)
+	}
+	return probes
 }
 
 type eventMsg struct{ event runlogs.Event }
@@ -60,7 +108,7 @@ type sink struct {
 func (s sink) Emit(event runlogs.Event) {
 	if event.Phase == runlogs.PhaseOutput {
 		s.panes.write(writeChunkParams{
-			Job:          event.Job,
+			Key:          eventKey(event),
 			Source:       sourceSequence,
 			Chunk:        event.Chunk,
 			NormalizeEOL: rules.RunsOnPipe(event.Kind),
@@ -81,22 +129,26 @@ func (m Model) applyEvent(msg eventMsg) (Model, tea.Cmd) {
 	switch event.Phase {
 	case runlogs.PhaseStarting:
 		m.sequence.active = true
-		m.sequence.job, m.sequence.step = event.Job, event.Step
-		m.sequence.states[event.Job] = domain.JobStepStarting
+		m.sequence.key, m.sequence.job, m.sequence.step = eventKey(event), event.Job, event.Step
+		m.sequence.states[eventKey(event)] = domain.JobStepStarting
 	case runlogs.PhaseStarted:
-		m.sequence.states[event.Job], m.sequence.job = domain.JobStepStarted, ""
+		m.sequence.states[eventKey(event)], m.sequence.key, m.sequence.job = domain.JobStepStarted, "", ""
 		m.sequence.remember(event)
 	case runlogs.PhaseDone:
-		m.sequence.states[event.Job], m.sequence.job = domain.JobStepDone, ""
+		m.sequence.states[eventKey(event)], m.sequence.key, m.sequence.job = domain.JobStepDone, "", ""
 		m.sequence.remember(event)
 	case runlogs.PhaseFailed:
-		m.sequence.states[event.Job], m.sequence.job = domain.JobStepFailed, ""
-		m.sequence.reason = event.Reason
+		m.sequence.states[eventKey(event)], m.sequence.key, m.sequence.job = domain.JobStepFailed, "", ""
+		m.sequence.reasons[event.WorkDir] = event.Reason
 	case runlogs.PhaseNotice:
 		m.sequence.notices = append(m.sequence.notices, event.Notice)
 	case runlogs.PhaseAborted, runlogs.PhaseReady:
-		m.sequence.active, m.sequence.job = false, ""
-		m.sequence.outcome = event.Outcome
+		// One worktree ending says nothing about the others: the sequence is over
+		// when every one of them has reported.
+		m.sequence.key, m.sequence.job = "", ""
+		m.sequence.record(event.Outcome)
+		m.sequence.pending = max(m.sequence.pending-1, 0)
+		m.sequence.active = m.sequence.pending > 0
 	}
 
 	model, cmd := m.followSequence(event)
@@ -115,10 +167,10 @@ func (m Model) applyEvent(msg eventMsg) (Model, tea.Cmd) {
 // followSequence puts the job the sequence is acting on in front of the reader,
 // until the reader takes the cursor themselves.
 func (m Model) followSequence(event runlogs.Event) (Model, tea.Cmd) {
-	if !m.following || event.Job == "" || event.Job == m.selected {
+	if !m.following || event.Job == "" || eventKey(event) == m.selected {
 		return m.fillSelectedPane()
 	}
-	return m.setSelection(event.Job)
+	return m.setSelection(eventKey(event))
 }
 
 // applyRunFinished records what the run ended with. The error is the run's own,
@@ -127,8 +179,8 @@ func (m Model) followSequence(event runlogs.Event) (Model, tea.Cmd) {
 func (m Model) applyRunFinished(msg runFinishedMsg) (Model, tea.Cmd) {
 	noticeLines := len(m.report())
 	m.sequence.active = false
-	if outcome := msg.outcomes.One(); outcome.Recorded() {
-		m.sequence.outcome = outcome
+	for _, outcome := range msg.outcomes {
+		m.sequence.record(outcome)
 	}
 	if msg.err != nil && m.runCtx.Err() == nil {
 		m.err = msg.err
@@ -139,37 +191,48 @@ func (m Model) applyRunFinished(msg runFinishedMsg) (Model, tea.Cmd) {
 
 // report is the notice area: what the run has to say once it has stopped
 // moving. An abort outranks a silent port — a profile that never finished is
-// the bigger news, and both at once would bury it. It is built from the outcome
-// rather than from a running tally, which is what keeps it true after a detach.
+// the bigger news, and both at once would bury it. It is built from the
+// outcomes rather than from a running tally, which is what keeps it true after
+// a detach, and every worktree that aborted is named: they abort
+// independently, so reporting one would hide the rest.
 func (m Model) report() []string {
-	outcome := m.sequence.outcome
 	if m.dismissed {
 		return nil
 	}
-	if !outcome.Aborted() {
+	aborted := m.sequence.aborted()
+	if len(aborted) == 0 {
 		return m.probeReport()
 	}
 
-	lines := []string{
-		domain.RunViewAbortTitle,
-		fmt.Sprintf(domain.RunViewAbortFailedFmt, outcome.FailedStep, outcome.Steps, outcome.Failed, m.sequence.reason),
+	lines := []string{domain.RunViewAbortTitle}
+	for _, outcome := range aborted {
+		lines = append(lines, m.abortLines(outcome)...)
 	}
+	return append(lines, domain.RunViewAbortDismiss)
+}
+
+func (m Model) abortLines(outcome runlogs.Outcome) []string {
+	lines := []string{m.qualify(
+		fmt.Sprintf(domain.RunViewAbortFailedFmt, outcome.FailedStep, outcome.Steps, outcome.Failed,
+			m.sequence.reasons[outcome.WorkDir]),
+		outcome.Worktree,
+	)}
 	if len(outcome.Started) > 0 {
 		lines = append(lines, fmt.Sprintf(domain.RunViewAbortRunningFmt, joinJobs(outcome.Started)))
 	}
 	if len(outcome.NotStarted) > 0 {
 		lines = append(lines, fmt.Sprintf(domain.RunViewAbortNotStartedFmt, joinJobs(outcome.NotStarted)))
 	}
-	return append(lines, domain.RunViewAbortDismiss)
+	return lines
 }
 
 // probeReport names the declared ports nothing answered on, once the sequence
 // is over. A run still starting has nothing to conclude yet.
 func (m Model) probeReport() []string {
-	if m.sequence.active || !m.sequence.outcome.Recorded() {
+	if m.sequence.active || !m.sequence.outcomes.Recorded() {
 		return nil
 	}
-	lines := rules.PortProbeLines(m.sequence.outcome.Probes)
+	lines := rules.PortProbeLines(m.sequence.probes())
 	if len(lines) == 0 {
 		return m.devOriginsReport()
 	}
@@ -207,9 +270,9 @@ func joinJobs(jobs []string) string {
 func (s *sequence) remember(event runlogs.Event) {
 	if len(event.Ports) > 0 {
 		if s.ports == nil {
-			s.ports = map[string]map[string]int{}
+			s.ports = map[jobKey]map[string]int{}
 		}
-		s.ports[event.Job] = event.Ports
+		s.ports[eventKey(event)] = event.Ports
 	}
 	s.devOrigins = append(s.devOrigins, event.DevOrigins...)
 
@@ -217,7 +280,7 @@ func (s *sequence) remember(event runlogs.Event) {
 		return
 	}
 	if s.urls == nil {
-		s.urls = map[string]string{}
+		s.urls = map[jobKey]string{}
 	}
-	s.urls[event.Job] = event.URL
+	s.urls[eventKey(event)] = event.URL
 }

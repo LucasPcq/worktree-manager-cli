@@ -10,7 +10,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 )
 
-func renderedLines(t *testing.T, store *paneStore, job string) []string {
+func renderedLines(t *testing.T, store *paneStore, job jobKey) []string {
 	t.Helper()
 	entry, held := store.entry(job)
 	if !held {

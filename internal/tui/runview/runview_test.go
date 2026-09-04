@@ -124,7 +124,7 @@ func (h *testHarness) press(t *testing.T, msg tea.KeyMsg) {
 
 // waitForPane blocks until the job's pane shows the text, which a reader
 // goroutine writes into it off the render loop.
-func (h *testHarness) waitForPane(t *testing.T, job, want string) {
+func (h *testHarness) waitForPane(t *testing.T, job jobKey, want string) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -302,7 +302,7 @@ func TestAttachForAJobTheCursorLeftIsClosed(t *testing.T) {
 	h.press(t, namedKey(tea.KeyDown))
 
 	late := runlogstest.NewStream()
-	h.model = update(h.model, attachedMsg{job: "api", stream: late})
+	h.model = update(h.model, attachedMsg{key: "api", stream: late})
 
 	if !late.Closed() {
 		t.Fatal("a stream that arrived for a job the cursor left was kept open")
@@ -554,7 +554,7 @@ func TestStreamEndIsNotLostWhenTheMailboxIsFull(t *testing.T) {
 	go func() {
 		defer close(returned)
 		readStream(readParams{
-			Job:    "api",
+			Key:    "api",
 			Stream: stream,
 			Pane:   NewPane(PaneParams{}),
 			Msgs:   msgs,
@@ -593,7 +593,7 @@ func TestStreamReaderGivesUpOnceTheViewIsGone(t *testing.T) {
 	go func() {
 		defer close(returned)
 		readStream(readParams{
-			Job:    "api",
+			Key:    "api",
 			Stream: stream,
 			Pane:   NewPane(PaneParams{}),
 			Msgs:   make(chan tea.Msg),

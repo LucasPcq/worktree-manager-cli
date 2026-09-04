@@ -9,7 +9,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/testutil/runlogstest"
 )
 
-func paneText(t *testing.T, store *paneStore, job string) string {
+func paneText(t *testing.T, store *paneStore, job jobKey) string {
 	t.Helper()
 	entry, held := store.entry(job)
 	if !held {
@@ -23,11 +23,11 @@ func paneText(t *testing.T, store *paneStore, job string) string {
 // filled from the log file would show that history twice.
 func TestPaneStoreRebuildsWhenTheSourceChanges(t *testing.T) {
 	store := newPaneStore(PaneSize{Cols: 40, Rows: 5})
-	store.writeLines(writeLinesParams{Job: "api", Lines: []string{"from the log file"}})
+	store.writeLines(writeLinesParams{Key: "api", Lines: []string{"from the log file"}})
 
 	stream := runlogstest.NewStream()
 	t.Cleanup(func() { stream.Close() })
-	pane := store.attach(attachPaneParams{Job: "api", Stream: stream})
+	pane := store.attach(attachPaneParams{Key: "api", Stream: stream})
 	pane.Write([]byte("from the stream\r\n"))
 
 	text := paneText(t, store, "api")
@@ -44,9 +44,9 @@ func TestPaneStoreRebuildsWhenTheSourceChanges(t *testing.T) {
 func TestPaneStoreRebuildsWhenTheLogFileTakesOver(t *testing.T) {
 	store := newPaneStore(PaneSize{Cols: 40, Rows: 5})
 	stream := runlogstest.NewStream()
-	store.attach(attachPaneParams{Job: "api", Stream: stream}).Write([]byte("from the stream\r\n"))
+	store.attach(attachPaneParams{Key: "api", Stream: stream}).Write([]byte("from the stream\r\n"))
 
-	store.writeLines(writeLinesParams{Job: "api", Lines: []string{"from the log file"}})
+	store.writeLines(writeLinesParams{Key: "api", Lines: []string{"from the log file"}})
 
 	text := paneText(t, store, "api")
 	if strings.Contains(text, "from the stream") {
@@ -62,8 +62,8 @@ func TestPaneStoreRebuildsWhenTheLogFileTakesOver(t *testing.T) {
 
 func TestPaneStoreKeepsAppendingWhileTheSourceHolds(t *testing.T) {
 	store := newPaneStore(PaneSize{Cols: 40, Rows: 5})
-	store.writeLines(writeLinesParams{Job: "api", Lines: []string{"first"}})
-	store.writeLines(writeLinesParams{Job: "api", Lines: []string{"second"}})
+	store.writeLines(writeLinesParams{Key: "api", Lines: []string{"first"}})
+	store.writeLines(writeLinesParams{Key: "api", Lines: []string{"second"}})
 
 	text := paneText(t, store, "api")
 	if !strings.Contains(text, "first") || !strings.Contains(text, "second") {
@@ -74,8 +74,8 @@ func TestPaneStoreKeepsAppendingWhileTheSourceHolds(t *testing.T) {
 func TestPaneStoreReleaseDropsThePaneWhateverFedIt(t *testing.T) {
 	store := newPaneStore(PaneSize{Cols: 40, Rows: 5})
 	stream := runlogstest.NewStream()
-	store.attach(attachPaneParams{Job: "api", Stream: stream})
-	store.writeLines(writeLinesParams{Job: "migrate", Lines: []string{"done"}})
+	store.attach(attachPaneParams{Key: "api", Stream: stream})
+	store.writeLines(writeLinesParams{Key: "migrate", Lines: []string{"done"}})
 
 	store.release("api")
 	if _, held := store.entry("api"); held {
@@ -97,8 +97,8 @@ func TestPaneStoreAttachReplacesAnEarlierSubscription(t *testing.T) {
 	second := runlogstest.NewStream()
 	t.Cleanup(func() { second.Close() })
 
-	store.attach(attachPaneParams{Job: "api", Stream: first})
-	store.attach(attachPaneParams{Job: "api", Stream: second})
+	store.attach(attachPaneParams{Key: "api", Stream: first})
+	store.attach(attachPaneParams{Key: "api", Stream: second})
 
 	if !first.Closed() {
 		t.Fatal("a second attach left the first subscription open: the job would be read twice")
@@ -114,8 +114,8 @@ func TestPaneStoreResizeReportsOnlyTheStreamsThatMoved(t *testing.T) {
 	store := newPaneStore(PaneSize{Cols: 40, Rows: 5})
 	stream := runlogstest.NewStream()
 	t.Cleanup(func() { stream.Close() })
-	store.attach(attachPaneParams{Job: "api", Stream: stream})
-	store.writeLines(writeLinesParams{Job: "migrate", Lines: []string{"done"}})
+	store.attach(attachPaneParams{Key: "api", Stream: stream})
+	store.writeLines(writeLinesParams{Key: "migrate", Lines: []string{"done"}})
 
 	changed := store.resize(PaneSize{Cols: 80, Rows: 10})
 	if len(changed) != 1 || changed[0] != stream {
@@ -133,8 +133,8 @@ func TestPaneStoreResizeReportsOnlyTheStreamsThatMoved(t *testing.T) {
 func TestPaneStoreCloseAllEndsEverySubscription(t *testing.T) {
 	store := newPaneStore(PaneSize{Cols: 40, Rows: 5})
 	first, second := runlogstest.NewStream(), runlogstest.NewStream()
-	store.attach(attachPaneParams{Job: "api", Stream: first})
-	store.attach(attachPaneParams{Job: "web", Stream: second})
+	store.attach(attachPaneParams{Key: "api", Stream: first})
+	store.attach(attachPaneParams{Key: "web", Stream: second})
 
 	store.closeAll()
 

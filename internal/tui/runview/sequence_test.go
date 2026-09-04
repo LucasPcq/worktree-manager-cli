@@ -163,7 +163,7 @@ func TestThePaneTheRunWritesIntoOutlivesTheCursorLeaving(t *testing.T) {
 		Streams: []string{"api"},
 	})
 	h.emit(t, runlogs.Event{Phase: runlogs.PhaseStarting, Job: "migrate", Step: 1, Steps: 2})
-	h.model.panes.write(writeChunkParams{Job: "migrate", Source: sourceSequence, Chunk: []byte("applying 3 migrations\r\n")})
+	h.model.panes.write(writeChunkParams{Key: "migrate", Source: sourceSequence, Chunk: []byte("applying 3 migrations\r\n")})
 
 	h.press(t, namedKey(tea.KeyDown))
 
@@ -197,7 +197,7 @@ func TestRunOutputReachesThePaneAndItsPhasesTheModel(t *testing.T) {
 	if h.model.sequence.active {
 		t.Fatal("the sequence is still reported as running after it concluded")
 	}
-	if got := h.model.sequence.outcome; len(got.Completed) != 1 || got.Completed[0] != "migrate" {
+	if got := h.model.sequence.outcomes.One(); len(got.Completed) != 1 || got.Completed[0] != "migrate" {
 		t.Fatalf("outcome = %+v, want what the run reported", got)
 	}
 }
@@ -208,7 +208,7 @@ func abortedHarness(t *testing.T) *testHarness {
 		Views:   []runlogs.JobView{running("api"), stopped("migrate"), stopped("web")},
 		Streams: []string{"api"},
 	})
-	h.model.panes.writeLines(writeLinesParams{Job: "migrate", Lines: []string{"ERROR relation does not exist"}})
+	h.model.panes.writeLines(writeLinesParams{Key: "migrate", Lines: []string{"ERROR relation does not exist"}})
 	h.model.following = true
 
 	outcome := runlogs.Outcome{
@@ -271,7 +271,7 @@ func TestAbortReportIsDismissed(t *testing.T) {
 		t.Fatal("the rows the report held were not given back to the pane")
 	}
 	assertPaneMatchesLayout(t, h.model, h.model.selected)
-	if !h.model.sequence.outcome.Aborted() {
+	if !h.model.sequence.outcomes.Aborted() {
 		t.Fatal("dismissing the report lost the outcome it was built from")
 	}
 }
@@ -320,7 +320,7 @@ func TestEscBeforeAnAbortDoesNotSilenceTheReport(t *testing.T) {
 	}
 }
 
-func assertPaneMatchesLayout(t *testing.T, model Model, job string) {
+func assertPaneMatchesLayout(t *testing.T, model Model, job jobKey) {
 	t.Helper()
 	entry, held := model.panes.entry(job)
 	if !held {

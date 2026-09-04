@@ -81,14 +81,14 @@ func (m Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if len(encoded) == 0 {
 		return m, nil
 	}
-	return m, writeCmd(writeParams{Job: m.selected, Stream: stream, Bytes: encoded})
+	return m, writeCmd(writeParams{Key: m.selected, Stream: stream, Bytes: encoded})
 }
 
 // focus is refused for a pane the job is not behind: a log file has no stdin,
 // and a keystroke silently going nowhere reads as a frozen terminal.
 func (m Model) focus() (tea.Model, tea.Cmd) {
 	if m.panes.stream(m.selected) == nil {
-		m.notice = fmt.Sprintf(domain.RunViewNotAttachableFmt, m.selected)
+		m.notice = fmt.Sprintf(domain.RunViewNotAttachableFmt, m.selected.job())
 		return m, nil
 	}
 	m.focused, m.notice, m.lastExitKey = true, "", time.Time{}
@@ -177,22 +177,26 @@ func (m Model) move(delta int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	index := rules.ClampIndex(m.selectedIndex()+delta, len(visible))
-	return m.setSelection(visible[index].Name)
+	return m.setSelection(viewKey(visible[index]))
 }
 
 // setSelection moves the cursor and releases the pane it leaves behind: only
 // the selected job holds a subscription, so the one being left has to give its
 // own up before the next is opened.
-func (m Model) setSelection(name string) (Model, tea.Cmd) {
-	if name != m.selected {
+func (m Model) setSelection(key jobKey) (Model, tea.Cmd) {
+	if key != m.selected {
 		if !m.sequenceHolds(m.selected) {
 			m.panes.release(m.selected)
 		}
-		m.selected, m.focused = name, false
+		m.selected, m.focused = key, false
 	}
+	// The offset is measured over rows rather than over jobs: a worktree heading
+	// takes a row of the sidebar like any other, and counting jobs alone would
+	// scroll the last one out of the panel it was measured to fit.
+	rows := m.rows()
 	m.offset = rules.DashboardScrollOffset(rules.DashboardScrollParams{
-		Cursor:  m.selectedIndex(),
-		Total:   len(m.visible()),
+		Cursor:  selectedRowIndex(rows, m.selected),
+		Total:   len(rows),
 		Visible: m.layout().SidebarRows,
 		Offset:  m.offset,
 	})

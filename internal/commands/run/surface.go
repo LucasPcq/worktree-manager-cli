@@ -24,11 +24,12 @@ var isTTY = func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 var showRunView = openRunView
 
 type viewParams struct {
-	Cmd     *cobra.Command
-	Board   runlogs.Board
-	Job     string
-	Profile string
-	Start   runlogs.StartFunc
+	Cmd       *cobra.Command
+	Board     runlogs.Board
+	Job       string
+	Profile   string
+	Worktrees []string
+	Start     runlogs.StartFunc
 }
 
 // openRunView hands the terminal to the full-screen view and frames what it
@@ -38,11 +39,12 @@ type viewParams struct {
 // is what turns it into an exit code.
 func openRunView(params viewParams) (runlogs.Outcomes, error) {
 	result, err := runview.Run(runview.Params{
-		Board:   params.Board,
-		Job:     params.Job,
-		Profile: params.Profile,
-		Start:   params.Start,
-		Open:    integration.OpenURL,
+		Board:     params.Board,
+		Job:       params.Job,
+		Profile:   params.Profile,
+		Worktrees: params.Worktrees,
+		Start:     params.Start,
+		Open:      integration.OpenURL,
 	})
 	if err != nil {
 		return nil, err
@@ -56,9 +58,10 @@ func openRunView(params viewParams) (runlogs.Outcomes, error) {
 }
 
 type streamParams struct {
-	Cmd     *cobra.Command
-	Profile string
-	Start   runlogs.StartFunc
+	Cmd       *cobra.Command
+	Profile   string
+	Worktrees []string
+	Start     runlogs.StartFunc
 	// Hyperlinks says whether a job's URL may be wrapped in an OSC-8 sequence.
 	Hyperlinks bool
 }
@@ -74,6 +77,7 @@ func runOnStream(params streamParams) (runlogs.Outcomes, error) {
 		Out:        out,
 		Err:        errOut,
 		Profile:    params.Profile,
+		Worktrees:  params.Worktrees,
 		Hyperlinks: params.Hyperlinks,
 	}))
 	if err != nil {
@@ -97,7 +101,7 @@ func runForMachine(params streamParams) (runlogs.Outcomes, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := output.WriteRunOutcomeJSON(params.Cmd.OutOrStdout(), outcomes.One()); err != nil {
+	if err := output.WriteRunOutcomesJSON(params.Cmd.OutOrStdout(), outcomes); err != nil {
 		return nil, err
 	}
 	return outcomes, nil
