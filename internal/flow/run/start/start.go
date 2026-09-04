@@ -7,6 +7,7 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/flow/run/addressing"
 	"github.com/LucasPcq/wtm/internal/flow/run/seam"
 	"github.com/LucasPcq/wtm/internal/flow/run/target"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
@@ -104,10 +105,12 @@ func (f *startFlow) run() (Outcome, error) {
 		Named:   f.named,
 		Cwd:     f.request.Cwd,
 	})
+	addresses := addressing.Read(addressing.Params{Context: f.ctx, WorkDirs: []string{workDir}})
 	runSeam := seam.Open(seam.Params{
-		ProjectDir: f.ctx.ProjectDir,
-		StateDir:   f.ctx.StateDir,
-		WorkDir:    workDir,
+		ProjectDir:    f.ctx.ProjectDir,
+		StateDir:      f.ctx.StateDir,
+		WorkDir:       workDir,
+		PortAddressed: addresses.PortAddressed[workDir],
 		// The board lists every declared job, not just this one: starting a job is
 		// no reason to hide the ones already up beside it.
 		Jobs:      f.request.Config.Jobs,
@@ -115,10 +118,11 @@ func (f *startFlow) run() (Outcome, error) {
 	})
 
 	result, err := f.presenter.Sequence(seam.SequenceParams{
-		Board:  runSeam.Board(),
-		Job:    job.Name,
-		Inline: job.Kind == domain.JobKindTask,
-		Start:  runSeam.Starter(seam.StartParams{Jobs: []domain.JobConfig{job}}),
+		Board:    runSeam.Board(),
+		Job:      job.Name,
+		Inline:   job.Kind == domain.JobKindTask,
+		Warnings: addresses.Warnings,
+		Start:    runSeam.Starter(seam.StartParams{Jobs: []domain.JobConfig{job}}),
 	})
 	if err != nil {
 		return Outcome{}, err

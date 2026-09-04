@@ -824,3 +824,51 @@ func TestRunSectionFoldsStoppedJobsBeforeRunningOnes(t *testing.T) {
 		t.Errorf("first row = %q, want the running job kept when the rest is folded", got)
 	}
 }
+
+// The panel hands out the ports of a worktree whose .env was never settled on
+// the names it publishes. Without a word under the rows, that worktree simply
+// looks like the one without named URLs.
+func TestRunSectionCarriesWhatHasToBeSaidAboutItsAddresses(t *testing.T) {
+	note := "main answers on its ports — `wtm env main` switches it"
+	sections := DetailSections(DetailSectionsParams{
+		Status:      domain.WorktreeStatus{Branch: "main", Path: "/wt/main"},
+		RunConfig:   domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web", Kind: domain.JobKindService}}},
+		AddressNote: note,
+	})
+
+	for _, section := range sections {
+		if section.Key != domain.DetailSectionRun {
+			continue
+		}
+		rows := section.Rows
+		last, air := rows[len(rows)-1], rows[len(rows)-2]
+		if last.Cells[0].Kind != domain.DetailCellWarn || last.Cells[0].Text != note {
+			t.Fatalf("last RUN row = %+v, want the note under the jobs", last)
+		}
+		// One row draws one line, so the air above it is a row of its own —
+		// counting it any other way overflows the panel by a line.
+		if air.Cells[0].Kind != domain.DetailCellGap {
+			t.Errorf("row above the note = %+v, want the blank line setting it apart", air)
+		}
+		return
+	}
+	t.Fatal("no RUN section at all")
+}
+
+func TestRunSectionSaysNothingWhenTheAddressesAreSettled(t *testing.T) {
+	sections := DetailSections(DetailSectionsParams{
+		Status:    domain.WorktreeStatus{Branch: "main", Path: "/wt/main"},
+		RunConfig: domain.RunConfig{Jobs: []domain.JobConfig{{Name: "web", Kind: domain.JobKindService}}},
+	})
+
+	for _, section := range sections {
+		if section.Key != domain.DetailSectionRun {
+			continue
+		}
+		for _, row := range section.Rows {
+			if row.Cells[0].Kind == domain.DetailCellWarn || row.Cells[0].Kind == domain.DetailCellGap {
+				t.Errorf("a settled worktree got a note anyway: %+v", row)
+			}
+		}
+	}
+}

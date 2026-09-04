@@ -251,7 +251,7 @@ func (m Model) abortLines(outcome runlogs.Outcome) []string {
 // is over. A run still starting has nothing to conclude yet.
 func (m Model) probeReport() []string {
 	if m.sequence.active || !m.sequence.outcomes.Recorded() {
-		return nil
+		return m.addressingReport()
 	}
 	lines := rules.PortProbeLines(m.sequence.probes())
 	if len(lines) == 0 {
@@ -278,9 +278,20 @@ func (m Model) devOriginsReport() []string {
 // has to say about itself once no job has anything more urgent.
 func (m Model) noticeReport() []string {
 	if len(m.sequence.notices) == 0 {
-		return nil
+		return m.addressingReport()
 	}
 	lines := append([]string{domain.ProxyUnavailableTitle}, m.sequence.notices...)
+	return append(lines, domain.RunViewAbortDismiss)
+}
+
+// addressingReport is the tail of the chain: a fact about the addresses the
+// view is publishing, which no run has to happen for. It is the only band
+// `run logs` can show, since nothing there ever starts.
+func (m Model) addressingReport() []string {
+	if len(m.warnings) == 0 {
+		return nil
+	}
+	lines := append([]string{domain.AddressingDriftTitle}, m.warnings...)
 	return append(lines, domain.RunViewAbortDismiss)
 }
 

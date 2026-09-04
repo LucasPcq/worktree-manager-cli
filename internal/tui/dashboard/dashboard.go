@@ -51,7 +51,7 @@ type RunParams struct {
 	// given worktrees that already have a job up: BranchEnv allocates an ordinal
 	// the first time it is asked for one. It takes the run.toml the poll already
 	// read, so the file is not read twice a poll.
-	AddressLoader func(request AddressRequest) map[string]map[string]domain.JobAddress
+	AddressLoader func(request AddressRequest) domain.RunAddresses
 	// LogsLoader reads back a job's persisted output for the detail panel's
 	// logs view. Injected like JobsLoader, so a test never opens a real board.
 	LogsLoader func(logsRequest) ([]string, error)
@@ -100,6 +100,10 @@ type AddressRequest struct {
 // the one that knows enough to ask.
 type addressesMsg struct {
 	addresses map[string]map[string]domain.JobAddress
+	// notes is what has to be said about an address, keyed by branch: a
+	// worktree served its ports because its .env was never settled on the names
+	// it publishes says so, or the reader wonders why it alone has no name.
+	notes map[string]string
 }
 
 type jobsMsg struct {
@@ -185,6 +189,9 @@ type Model struct {
 	// branch → job. It follows the poll, like jobs: an address is a property of
 	// the worktree's port offset, and two sources for it would diverge.
 	addresses map[string]map[string]domain.JobAddress
+	// addressNotes is one line per worktree whose .env is unsettled; see
+	// addressesMsg.
+	addressNotes map[string]string
 	// board is what the daemon holds up, per worktree. Rebuilt when the jobs,
 	// the worktrees or the addresses land — never in the renderer, which asked
 	// for it six times a frame with a different time.Now() each time.
@@ -436,7 +443,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return model, tea.Batch(animCmd, detailCmd, next.firstAddressesCmd())
 
 	case addressesMsg:
-		m.addresses = msg.addresses
+		m.addresses, m.addressNotes = msg.addresses, msg.notes
 		return m.withBoard(), nil
 
 	case prsMsg:
@@ -1151,6 +1158,7 @@ func (m Model) withBoard() Model {
 		Config:    m.runConfig,
 		Jobs:      m.jobs,
 		Addresses: m.addresses,
+		Notes:     m.addressNotes,
 		Statuses:  m.statuses,
 		Now:       time.Now(),
 	})
@@ -1193,7 +1201,10 @@ func (m Model) resolveAddressesCmd() tea.Cmd {
 		return nil
 	}
 	load, request := m.params.AddressLoader, AddressRequest{Branches: branches, Config: m.runConfig}
-	return func() tea.Msg { return addressesMsg{addresses: load(request)} }
+	return func() tea.Msg {
+		answer := load(request)
+		return addressesMsg{addresses: answer.ByBranch, notes: answer.Notes}
+	}
 }
 
 func (m Model) jobsLoader() func(bool) ([]domain.JobInfo, bool) {

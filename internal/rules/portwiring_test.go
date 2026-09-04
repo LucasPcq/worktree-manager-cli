@@ -158,21 +158,20 @@ func TestPortEntriesForSeparatesTwoUndeclaredServices(t *testing.T) {
 	}
 }
 
-func TestPortEntriesForOffersAListeningPortToAServiceThatOnlyDeclaredADependency(t *testing.T) {
-	// DB_PORT is the port of something the job talks to, not the one it binds.
-	// wtm cannot tell the direction apart, so it stops short of concluding and
-	// offers the row the user alone can fill.
+func TestPortEntriesForOffersAListeningPortToAServiceThatOnlyDeclaredDependencies(t *testing.T) {
+	// Several ports on one job are addresses it talks to, none of which it can
+	// be concluded to bind, so the row the user alone can fill is still offered.
 	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
-		{Name: "api-dev", Kind: domain.JobKindService, Cwd: "apps/api", Ports: map[string]int{"DB_PORT": 9999}},
+		{Name: "api-dev", Kind: domain.JobKindService, Cwd: "apps/api", Ports: map[string]int{"DB_PORT": 9999, "REDIS_PORT": 6379}},
 	}}
 
 	got := PortEntriesFor(PortEntriesForParams{Config: cfg})
 
-	if len(got) != 2 {
-		t.Fatalf("expected DB_PORT plus an offered row, got %+v", got)
+	if len(got) != 3 {
+		t.Fatalf("expected both dialled ports plus an offered row, got %+v", got)
 	}
-	if got[1].Name != domain.PortNameDefault || got[1].Base != 0 {
-		t.Errorf("offered row = %+v, want an empty PORT", got[1])
+	if got[2].Name != domain.PortNameDefault || got[2].Base != 0 {
+		t.Errorf("offered row = %+v, want an empty PORT", got[2])
 	}
 }
 
@@ -229,5 +228,35 @@ func TestPortEntriesForDerivesAReadableNameWhenPortIsTaken(t *testing.T) {
 
 	if got := PortEntriesFor(PortEntriesForParams{Config: cfg})[1].Name; got != "WEB_DEV_PORT" {
 		t.Errorf("name = %q, want WEB_DEV_PORT", got)
+	}
+}
+
+// The counterpart of the test above, pinned because it reverses what the ports
+// step used to do: a lone DB_PORT is now read as the port the job answers on,
+// like any other single declaration, and no empty row is offered beside it.
+func TestPortEntriesForReadsALoneDependencyPortAsTheOneItBinds(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "api-dev", Kind: domain.JobKindService, Cwd: "apps/api", Ports: map[string]int{"DB_PORT": 9999}},
+	}}
+
+	if got := PortEntriesFor(PortEntriesForParams{Config: cfg}); len(got) != 1 {
+		t.Errorf("entries = %+v, want the single declaration alone", got)
+	}
+}
+
+func TestPortEntriesForTrustsAServicesOnlyPort(t *testing.T) {
+	// A Vite front-end declares VITE_PORT and nothing else: that is the port it
+	// answers on, so offering a second one duplicated every front-end row.
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "web-dev", Kind: domain.JobKindService, Cwd: "apps/web", Ports: map[string]int{"VITE_PORT": 5173}},
+	}}
+
+	got := PortEntriesFor(PortEntriesForParams{Config: cfg})
+
+	if len(got) != 1 {
+		t.Fatalf("expected VITE_PORT alone, got %+v", got)
+	}
+	if got[0].Name != "VITE_PORT" || got[0].Base != 5173 {
+		t.Errorf("entry = %+v, want the declared VITE_PORT", got[0])
 	}
 }

@@ -57,6 +57,7 @@ func (h *handoff) Run() error {
 		Job:       h.params.Job,
 		Profile:   h.params.Profile,
 		Worktrees: h.params.Worktrees,
+		Warnings:  h.params.Warnings,
 		Start:     h.params.Start,
 		Open:      integration.OpenURL,
 		In:        h.in,

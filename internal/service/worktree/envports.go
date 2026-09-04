@@ -76,6 +76,18 @@ func ResolveEnvPorts(params ResolveEnvPortsParams) (envsvc.EnvPortsParams, error
 	}, nil
 }
 
+// EnvPortPlanFor is the [[env_port]] pass this worktree would get, computed and
+// not applied. A surface handing out named URLs reads it to know whether the
+// .env behind them answers on those names yet; `wtm env` computes the very same
+// plan before writing it, so the two can never disagree.
+func EnvPortPlanFor(params ResolveEnvPortsParams) (domain.EnvPortPlan, error) {
+	resolved, err := ResolveEnvPorts(params)
+	if err != nil || resolved.Empty() {
+		return domain.EnvPortPlan{}, err
+	}
+	return envsvc.ComputeEnvPorts(resolved)
+}
+
 func jobsByName(cfg domain.RunConfig) map[string]domain.JobConfig {
 	byName := make(map[string]domain.JobConfig, len(cfg.Jobs))
 	for _, job := range cfg.Jobs {

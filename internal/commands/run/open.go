@@ -75,5 +75,10 @@ func runOpen(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Not under --raw, which opens the job's own port: the .env answers that one
+	// whatever the addressing says.
+	if ctx.proxyPort > 0 && rules.IsHumanFormat(format) {
+		noticeAddressingDrift(cmd, ctx.config, resolved.Dir)
+	}
 	return openInBrowser(entry.URL)
 }

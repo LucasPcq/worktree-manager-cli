@@ -93,7 +93,13 @@ func runImport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write run config: %w", err)
 	}
 
-	return reportImport(cmd, incoming, format)
+	if err := reportImport(cmd, incoming, format); err != nil {
+		return err
+	}
+	if rules.IsHumanFormat(format) {
+		noticeAddressingDrift(cmd, result, result.ProjectDir)
+	}
+	return nil
 }
 
 type confirmImportParams struct {

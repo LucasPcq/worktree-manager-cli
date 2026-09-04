@@ -121,6 +121,8 @@ func (m Model) servicesBody(layout domain.DashboardLayout) []string {
 		switch row.Kind {
 		case domain.ServicesRowGap:
 			lines = append(lines, "")
+		case domain.ServicesRowNote:
+			lines = append(lines, warnLine(warnLineParams{Text: row.Note, Width: width}))
 		case domain.ServicesRowHeader:
 			lines = append(lines, spread(
 				styles.DashboardRowName.Render(row.Branch),

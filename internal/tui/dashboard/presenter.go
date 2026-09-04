@@ -226,7 +226,7 @@ type logsPresenter struct {
 }
 
 func (p logsPresenter) Show(show logsflow.ShowParams) error {
-	_, err := p.Sequence(seam.SequenceParams{Board: show.Board, Job: show.Job})
+	_, err := p.Sequence(seam.SequenceParams{Board: show.Board, Job: show.Job, Warnings: show.Warnings})
 	return err
 }
 

@@ -89,6 +89,9 @@ type DetailSectionsParams struct {
 	// Detail: an address is a property of the worktree's offset, and the two
 	// must not be able to disagree.
 	Addresses map[string]domain.JobAddress
+	// AddressNote is what has to be said about those addresses, empty when the
+	// worktree's .env answers on the names its jobs publish.
+	AddressNote string
 	// DetailLoaded is false on the very first render for a branch, before its
 	// WorktreeDetail has ever landed (§8 state 3). CHANGES and ACTIVITY — the
 	// two sections that depend on Detail — render a single "loading…"
@@ -133,12 +136,13 @@ func DetailSections(params DetailSectionsParams) []domain.DetailSection {
 	changesBudget, activityBudget := listBudgets(wantChanges, wantActivity)
 
 	run := runSectionParams{
-		Jobs:      params.RunConfig.Jobs,
-		Infos:     params.Jobs,
-		Addresses: params.Addresses,
-		WorkDir:   params.Status.Path,
-		Budget:    domain.DashboardDetailJobs,
-		Now:       params.Now,
+		Jobs:        params.RunConfig.Jobs,
+		Infos:       params.Jobs,
+		Addresses:   params.Addresses,
+		AddressNote: params.AddressNote,
+		WorkDir:     params.Status.Path,
+		Budget:      domain.DashboardDetailJobs,
+		Now:         params.Now,
 	}
 
 	sections := make([]domain.DetailSection, 0, 5)
@@ -592,12 +596,13 @@ func jobsByBudgetPriority(params jobsByBudgetPriorityParams) []domain.JobConfig 
 }
 
 type runSectionParams struct {
-	Jobs      []domain.JobConfig
-	Infos     []domain.JobInfo
-	Addresses map[string]domain.JobAddress
-	WorkDir   string
-	Budget    int
-	Now       time.Time
+	Jobs        []domain.JobConfig
+	Infos       []domain.JobInfo
+	Addresses   map[string]domain.JobAddress
+	AddressNote string
+	WorkDir     string
+	Budget      int
+	Now         time.Time
 }
 
 // runSection is one row per declared job, not per running one: a job that is
@@ -638,6 +643,14 @@ func runSection(params runSectionParams) domain.DetailSection {
 		rows = append(rows, domain.DetailRow{Cells: []domain.DetailCell{{
 			Kind: domain.DetailCellNote, Text: fmt.Sprintf(domain.DetailMoreFmt, folded),
 		}}})
+	}
+	// Under the rows rather than beside one: it is the worktree that is
+	// unsettled, and repeating it on every address would drown the addresses.
+	if params.AddressNote != "" {
+		rows = append(rows,
+			domain.DetailRow{Cells: []domain.DetailCell{{Kind: domain.DetailCellGap}}},
+			domain.DetailRow{Cells: []domain.DetailCell{{Kind: domain.DetailCellWarn, Text: params.AddressNote}}},
+		)
 	}
 
 	return domain.DetailSection{

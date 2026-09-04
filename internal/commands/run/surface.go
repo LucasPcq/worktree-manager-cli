@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow/runlogs"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/service/integration"
@@ -29,6 +30,7 @@ type viewParams struct {
 	Job       string
 	Profile   string
 	Worktrees []string
+	Warnings  []string
 	Start     runlogs.StartFunc
 }
 
@@ -43,6 +45,7 @@ func openRunView(params viewParams) (runlogs.Outcomes, error) {
 		Job:       params.Job,
 		Profile:   params.Profile,
 		Worktrees: params.Worktrees,
+		Warnings:  params.Warnings,
 		Start:     params.Start,
 		Open:      integration.OpenURL,
 	})
@@ -61,6 +64,7 @@ type streamParams struct {
 	Cmd       *cobra.Command
 	Profile   string
 	Worktrees []string
+	Warnings  []string
 	Start     runlogs.StartFunc
 	// Hyperlinks says whether a job's URL may be wrapped in an OSC-8 sequence.
 	Hyperlinks bool
@@ -89,6 +93,11 @@ func runOnStream(params streamParams) (runlogs.Outcomes, error) {
 		return outcomes, nil
 	}
 	output.FrameEnd(out)
+	// A stream has no band to hold it, so the warning follows the lines it
+	// qualifies rather than sitting above them.
+	if len(params.Warnings) > 0 {
+		output.Callout(errOut, domain.AddressingDriftTitle, params.Warnings)
+	}
 	return outcomes, nil
 }
 

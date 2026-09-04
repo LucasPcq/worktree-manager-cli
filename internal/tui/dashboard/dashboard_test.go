@@ -651,9 +651,11 @@ func TestJobsPollOnlyAsksAddressesForWorktreesThatHaveSomethingUp(t *testing.T) 
 				{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"},
 			}, true
 		},
-		AddressLoader: func(request AddressRequest) map[string]map[string]domain.JobAddress {
+		AddressLoader: func(request AddressRequest) domain.RunAddresses {
 			asked <- request.Branches
-			return map[string]map[string]domain.JobAddress{"a": {"web": {URL: "http://web.wtm"}}}
+			return domain.RunAddresses{
+				ByBranch: map[string]map[string]domain.JobAddress{"a": {"web": {URL: "http://web.wtm"}}},
+			}
 		},
 	})
 	t.Cleanup(model.Close)
@@ -688,9 +690,9 @@ func TestJobsPollAsksNoAddressWhenNothingIsUp(t *testing.T) {
 	called := false
 	model := New(RunParams{
 		JobsLoader: func(bool) ([]domain.JobInfo, bool) { return nil, true },
-		AddressLoader: func(AddressRequest) map[string]map[string]domain.JobAddress {
+		AddressLoader: func(AddressRequest) domain.RunAddresses {
 			called = true
-			return nil
+			return domain.RunAddresses{}
 		},
 	})
 	t.Cleanup(model.Close)
@@ -714,11 +716,13 @@ func TestAddressesLandEvenWhenTheJobsLoadRacesTheWorktrees(t *testing.T) {
 		JobsLoader: func(bool) ([]domain.JobInfo, bool) {
 			return []domain.JobInfo{{Name: "web", Status: domain.JobStatusRunning, WorkDir: "/tmp/a"}}, true
 		},
-		AddressLoader: func(request AddressRequest) map[string]map[string]domain.JobAddress {
+		AddressLoader: func(request AddressRequest) domain.RunAddresses {
 			if len(request.Branches) != 1 || request.Branches[0] != "a" {
 				t.Errorf("branches = %v, want the worktree that has a job up", request.Branches)
 			}
-			return map[string]map[string]domain.JobAddress{"a": {"web": {URL: "http://web.wtm"}}}
+			return domain.RunAddresses{
+				ByBranch: map[string]map[string]domain.JobAddress{"a": {"web": {URL: "http://web.wtm"}}},
+			}
 		},
 	})
 	t.Cleanup(model.Close)

@@ -120,6 +120,9 @@ type RunParams struct {
 	// ProxyPort is where the proxy serves those routes. Zero means it is off,
 	// and a job's URL is then its own address.
 	ProxyPort int
+	// PortAddressed says this worktree's .env still spells its addresses as
+	// ports; see runner.portAddressed.
+	PortAddressed bool
 	// NextConfig reads a job's next.config.*, so the run can say what a Next
 	// project is missing before its own name reaches it. Nil skips the check.
 	NextConfig NextConfigLookup
@@ -146,20 +149,21 @@ func Run(ctx context.Context, params RunParams) (Outcome, error) {
 	}
 
 	r := &runner{
-		ctx:        ctx,
-		service:    params.Service,
-		sink:       params.Sink,
-		jobs:       params.Jobs,
-		profile:    params.Profile,
-		workDir:    params.WorkDir,
-		worktree:   params.Worktree,
-		logDir:     params.LogDir,
-		env:        params.Env,
-		prober:     params.Prober,
-		project:    params.Project,
-		proxyPort:  params.ProxyPort,
-		nextConfig: params.NextConfig,
-		baseOwners: params.BaseOwners,
+		ctx:           ctx,
+		service:       params.Service,
+		sink:          params.Sink,
+		jobs:          params.Jobs,
+		profile:       params.Profile,
+		workDir:       params.WorkDir,
+		worktree:      params.Worktree,
+		logDir:        params.LogDir,
+		env:           params.Env,
+		prober:        params.Prober,
+		project:       params.Project,
+		proxyPort:     params.ProxyPort,
+		portAddressed: params.PortAddressed,
+		nextConfig:    params.NextConfig,
+		baseOwners:    params.BaseOwners,
 	}
 	if r.nextConfig == nil {
 		r.nextConfig = func(job domain.JobConfig) (string, string) {
@@ -185,10 +189,14 @@ type runner struct {
 	prober   Prober
 	// project and proxyPort together decide whether a job's URL is its name or
 	// its port; both come from the surface, which is the side that reads config.
-	project    string
-	proxyPort  int
-	nextConfig NextConfigLookup
-	baseOwners map[int]string
+	project   string
+	proxyPort int
+	// portAddressed says this worktree's .env still spells its addresses as
+	// ports, so a started job is announced under the port it binds. The route is
+	// registered all the same: the name works the moment `wtm env` settles it.
+	portAddressed bool
+	nextConfig    NextConfigLookup
+	baseOwners    map[int]string
 	// servedPort is what the daemon answered its proxy is really on, and
 	// noticedProxy records that the run has already explained a refusal — the
 	// fact belongs to the run, not to each job that would repeat it.
@@ -446,11 +454,15 @@ type jobURLParams struct {
 // jobURL answers with the port the daemon says it is really serving, never the
 // one this run asked for: a name nothing serves is worse than a port.
 func (r *runner) jobURL(params jobURLParams) string {
+	publicPort := r.servedPort
+	if r.portAddressed {
+		publicPort = 0
+	}
 	return rules.JobURL(rules.JobURLParams{
 		Job:        params.Job,
 		Ports:      params.Ports,
 		Host:       params.Host,
-		PublicPort: r.servedPort,
+		PublicPort: publicPort,
 	})
 }
 

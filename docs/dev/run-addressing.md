@@ -110,6 +110,52 @@ Under `names`, **the named URL becomes the only working entrance.** Opening
 `wtm run url` and `wtm run open` hand out the right link; a bookmark on the raw port
 stops working. That is the cost of having two worktrees stay logged in at the same time.
 
+## The main checkout is not a special case
+
+The spec that introduced `names` said the main checkout stays on ports. **No code enforces
+that, and none should.** Nothing in the port pass tests the ordinal, the base branch, or
+whether a checkout is the main one: `worktree.List` comes from `git worktree list`, which
+includes it, so `wtm env main` is accepted and writes named origins like anywhere else. The
+port substitution is the identity there (offset 0); the origin rewrite is not — it replaces
+an authority, which has nothing to do with the offset.
+
+What "main stays on ports" really means is that **no command provisions it**: `create` and
+`extract` write the new worktree, and there is no such event for main. That is a gap in the
+lifecycle, not a guard in the code — so the answer is a warning, not a refusal.
+
+`rules.PendingOriginRewrites` counts what a `wtm env` on a worktree would still move onto a
+named origin, `rules.AddressingDriftLine`/`Lines` phrase it, `worktree.EnvPortPlanFor`
+computes the plan without applying it (the same one `wtm env` writes, so the two cannot
+disagree), and `flow/run/addressing` is what the run flows read. They hand the lines to the
+**surface**, which renders them once where they can be seen: a band in the run view, a callout
+beside a stream, nothing at all on a machine run. A notice printed after the view reaches a
+reader who has already followed the URL.
+
+Two things the count is deliberately not. It is not "the .env holds ports": a value already
+carrying a named origin whose public port went stale — every worktree, the moment
+`proxy install` moves 11080 to 80 — is pending too, and equally broken, which is why the
+wording says *out of step* rather than naming ports. And it is not "the app is broken": wtm
+sees only the keys declared as `[[env_port]]` links, and cannot know whether the app makes a
+cross-origin call at all. The reading names
+no worktree in particular: a linked worktree whose port pass was declined is in the same
+state, and main is only the one that is there by construction.
+
+Do not add a main-shaped condition here.
+
+**The address a surface hands out follows the `.env`, not the setting.** While the file spells
+ports, the port *is* the working entrance — both sides of a cross-origin call agree on it —
+and the published name is the one nothing behind it answers on. So `rules.AddressedByPort`
+zeroes the public port for that worktree and `rules.JobURL` falls back to
+`http://localhost:<port>`, in the board, in `run url`, in the start sequence's line and in the
+dashboard's loader alike. The route is still registered with the proxy: settling the file with
+`wtm env` is enough to get the name back, with nothing to restart.
+
+That is deliberately not "hide what is broken". It is the same reading in both directions —
+what the `.env` says is where the app answers — which is why `AddressedByPort` looks at the
+value the file holds and not at the plan's verdict: a value already on a **stale named origin**
+keeps its names and is only told they are out of step. Sending it back to ports would take away
+what the file actually says.
+
 ## Related
 
 - `internal/rules/envorigins.go` — the whole origin surgery, pure and testable

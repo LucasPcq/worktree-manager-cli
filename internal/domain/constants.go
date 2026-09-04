@@ -343,6 +343,18 @@ const (
 	ProxyInstallHintCmd    = "`wtm run proxy install` serves them on port 80 so the port disappears from the URL"
 	ProxyInstallHintNoPlat = "Dropping that port is not implemented on this platform yet"
 
+	// A worktree whose .env still addresses ports while the project publishes
+	// named URLs. Nothing writes the main checkout's .env, so it is the standing
+	// case, but the wording names no worktree in particular: a linked one whose
+	// port pass was declined is in the same state.
+	// AddressingDriftGlyph heads the line inside a panel, where a callout's box
+	// is not there to say the same thing.
+	AddressingDriftGlyph = "⚠ "
+	AddressingDriftTitle = "Published names, unsettled .env"
+	AddressingPortedFmt  = "%s answers on its ports: its .env was never settled on the names it publishes — `wtm env %s` switches it"
+	AddressingDriftFmt   = "%s: its .env is out of step with the addresses it publishes — `wtm env %s` settles it"
+	AddressingDriftWhy   = "A cross-origin call is refused whenever the browser's origin and the .env disagree"
+
 	// ProxyPortCollisionFmt is the one collision a job cannot see coming: the
 	// daemon already holds the port by the time the job tries to bind it.
 	ProxyPortCollisionFmt   = "port %s (job %q, base %d) reaches the run proxy's port %d after %d worktree(s) — that job will fail to bind there; move the base, or set [proxy] port in " + GlobalConfigLabel

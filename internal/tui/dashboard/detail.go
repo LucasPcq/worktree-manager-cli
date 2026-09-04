@@ -71,6 +71,7 @@ func (m Model) detailBody(layout domain.DashboardLayout) []string {
 		RunConfig:     m.runConfig,
 		Jobs:          m.jobs,
 		Addresses:     m.addresses[status.Branch],
+		AddressNote:   m.addressNotes[status.Branch],
 		Height:        budget,
 	})
 	return m.appendSections(lines, sections, width, stale, pr)
@@ -182,7 +183,10 @@ type detailSectionsInput struct {
 	RunConfig domain.RunConfig
 	Jobs      []domain.JobInfo
 	Addresses map[string]domain.JobAddress
-	Height    int
+	// AddressNote is what has to be said about those addresses, empty when the
+	// worktree's .env answers on what its jobs publish.
+	AddressNote string
+	Height      int
 }
 
 // Which sections exist, their order and their placeholder lines are rules/'s
@@ -197,6 +201,7 @@ func (m Model) detailSections(input detailSectionsInput) []domain.DetailSection 
 		RunConfig:     input.RunConfig,
 		Jobs:          input.Jobs,
 		Addresses:     input.Addresses,
+		AddressNote:   input.AddressNote,
 		Parent:        input.Parent,
 		Height:        input.Height,
 		Now:           time.Now(),
@@ -275,6 +280,14 @@ func sectionRowLines(params sectionRowLinesParams) []string {
 				indent+truncate(note, max(params.Width-len(indent), 0))))
 			continue
 		}
+		if warn := cellText(row, domain.DetailCellWarn); warn != "" {
+			lines = append(lines, warnLine(warnLineParams{Text: warn, Width: params.Width, Stale: params.Stale}))
+			continue
+		}
+		if hasCell(row, domain.DetailCellGap) {
+			lines = append(lines, "")
+			continue
+		}
 		meta := rowMetaCell(row, params.Stale)
 		lines = append(lines, spread(rowLeft(rowLeftParams{
 			Row:         row,
@@ -285,6 +298,30 @@ func sectionRowLines(params sectionRowLinesParams) []string {
 		}), meta, params.Width))
 	}
 	return lines
+}
+
+type warnLineParams struct {
+	Text  string
+	Width int
+	Stale bool
+}
+
+// warnLine is the one line a panel gives to something it has to be sure is
+// read: the glyph and the warning colour set it apart from the muted asides it
+// sits under, and the caller puts the blank line above it.
+func hasCell(row domain.DetailRow, kind domain.DetailCellKind) bool {
+	for _, cell := range row.Cells {
+		if cell.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func warnLine(params warnLineParams) string {
+	indent := domain.DetailListIndent + domain.AddressingDriftGlyph
+	return styleText(params.Stale, styles.Warning,
+		indent+truncate(params.Text, max(params.Width-lipgloss.Width(indent), 0)))
 }
 
 type rowLeftParams struct {
