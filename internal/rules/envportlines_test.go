@@ -154,24 +154,3 @@ func TestEnvPortLinkLinesEmpty(t *testing.T) {
 		t.Errorf("EnvPortLinkLines() = %v, want none", lines)
 	}
 }
-
-// The table belongs inside the confirmation, between the question and the
-// answers. Rendered as a block above the prompt it reads as a report of
-// something already done — the opposite of what is being asked.
-func TestEnvPortPromptDescriptionCarriesOffsetThenTable(t *testing.T) {
-	got := EnvPortPromptDescription(samplePlan(t))
-
-	lines := strings.Split(got, "\n")
-	if !strings.Contains(lines[0], "+10") {
-		t.Errorf("first line = %q, want it to state the offset", lines[0])
-	}
-	if lines[1] != "" {
-		t.Errorf("second line = %q, want a blank separating the note from the table", lines[1])
-	}
-	if !strings.Contains(got, "DATABASE_URL") || !strings.Contains(got, "5432 → 5442") {
-		t.Errorf("description is missing the table:\n%s", got)
-	}
-	if strings.Contains(got, "motdepasse") {
-		t.Errorf("description leaked a password:\n%s", got)
-	}
-}

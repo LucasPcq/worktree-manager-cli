@@ -362,3 +362,39 @@ func TestWorktreesStepRefusesASecondTickForASingleWorktreeRun(t *testing.T) {
 		t.Errorf("ValidateSet = %v, want the contradiction refused", err)
 	}
 }
+
+// A surface that already knows a likely answer offers it, and the step opens
+// with those ticked instead of the current worktree. It is only a proposal: the
+// selection stays the user's, and nothing is preset.
+func TestWorktreesStepOpensOnWhatTheSurfacePrechecked(t *testing.T) {
+	repo, second := repoWithSecondWorktree(t)
+
+	step := target.WorktreesStep(target.WorktreesParams{
+		ProjectDir: repo,
+		Current:    repo,
+		Selected:   target.Preselected(target.PreselectedParams{Precheck: []string{second}}),
+	})
+
+	content, err := step.Build(flow.Answers{})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	for _, option := range content.Options {
+		if want := option.Value == second; option.Selected != want {
+			t.Errorf("%q selected = %v, want %v — the precheck answers, not the cwd", option.Value, option.Selected, want)
+		}
+	}
+}
+
+// The positionals outrank the proposal: what the command was told beats what the
+// surface guessed.
+func TestPreselectedPrefersThePositionals(t *testing.T) {
+	got := target.Preselected(target.PreselectedParams{
+		Named:    []target.Resolved{{Dir: "/named"}},
+		Precheck: []string{"/guessed"},
+	})
+
+	if len(got) != 1 || got[0] != "/named" {
+		t.Errorf("Preselected = %v, want the positionals", got)
+	}
+}

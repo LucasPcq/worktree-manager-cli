@@ -141,7 +141,7 @@ func (f *createFlow) run() (Outcome, error) {
 			Context:      f.ctx,
 			Branch:       branchName,
 			WorktreePath: result.Path,
-			Prompter:     f.prompter,
+			Rewrite:      answers.Value(KeyEnvPorts) != portsKeep,
 			Presenter:    f.presenter,
 		}); portErr != nil {
 			return Outcome{}, portErr

@@ -31,6 +31,9 @@ const (
 	menuRunDown
 	menuRunStop
 	menuRunLogs
+	menuRunUpAll
+	menuRunDownAll
+	menuRunLogsAll
 )
 
 // menuEntryKind separates what the menu offers from what it only says. A
@@ -84,10 +87,12 @@ func (m Model) worktreeMenuItems() []menuItem {
 	}
 
 	items := worktreeActions(selected)
-	// The Running tab does not speak of git, and it lists no worktree to
+	// The Services tab does not speak of git, and it lists no worktree to
 	// destroy: its blocks answer for what runs, so only the run block applies.
+	// Its cursor is on a job, so the stop names that one rather than reopening a
+	// picker over it.
 	if m.tab == tabServices {
-		items = runActions()[1:]
+		items = runActions(domain.DashboardMenuRunStopThis)[1:]
 	}
 	caption, busy := m.busyCaption(selected.Branch)
 	if !busy {
@@ -112,7 +117,7 @@ func disableActions(items []menuItem, caption string) []menuItem {
 // has neither a parent to be moved to nor a rebase to run: all it can do is
 // catch up with its own remote — the same entry every other row leads with.
 func worktreeActions(selected domain.WorktreeStatus) []menuItem {
-	items := append(gitActions(selected), runActions()...)
+	items := append(gitActions(selected), runActions(domain.DashboardMenuRunStop)...)
 	if selected.IsParent {
 		return items
 	}
@@ -146,17 +151,21 @@ func gitActions(selected domain.WorktreeStatus) []menuItem {
 }
 
 // runActions are the run module's, offered on every row including the base one:
-// the main checkout runs jobs like any other worktree. No rule inside the
-// block — the order groups them, and a second level of rule in an already
-// sectioned menu reads as noise.
-func runActions() []menuItem {
+// the main checkout runs jobs like any other worktree. The block is ruled by
+// grain — what acts on the whole worktree, then what acts on one job, then the
+// view over both — because the flat order alternated between the two and read
+// as five unrelated verbs. stopJob is the label of the job stop, which the
+// Services tab words for the job its cursor already designates.
+func runActions(stopJob string) []menuItem {
 	return []menuItem{
 		{kind: menuEntrySeparator},
 		{kind: menuEntryHeading, label: domain.DashboardMenuSectionRun},
 		{label: domain.DashboardMenuRunUp, action: menuRunUp},
-		{label: domain.DashboardMenuRunStart, action: menuRunStart},
 		{label: domain.DashboardMenuRunDown, action: menuRunDown},
-		{label: domain.DashboardMenuRunStop, action: menuRunStop},
+		{kind: menuEntrySeparator},
+		{label: domain.DashboardMenuRunStart, action: menuRunStart},
+		{label: stopJob, action: menuRunStop},
+		{kind: menuEntrySeparator},
 		{label: domain.DashboardMenuRunLogs, action: menuRunLogs},
 	}
 }
@@ -169,6 +178,12 @@ func (m Model) globalMenuItems() []menuItem {
 		{label: domain.DashboardMenuFastForwardAll, action: menuFastForwardAll},
 		{label: domain.DashboardMenuReparentBatch, action: menuReparentBatch},
 		{label: domain.DashboardMenuSyncAll, action: menuSyncAll},
+		{kind: menuEntrySeparator},
+		{kind: menuEntryHeading, label: domain.DashboardMenuSectionRun},
+		{label: domain.DashboardMenuRunUpAll, action: menuRunUpAll},
+		{label: domain.DashboardMenuRunDownAll, action: menuRunDownAll},
+		{kind: menuEntrySeparator},
+		{label: domain.DashboardMenuRunLogsAll, action: menuRunLogsAll},
 		{kind: menuEntrySeparator},
 		{label: domain.DashboardMenuPrune, action: menuPrune, danger: true},
 	}
@@ -283,6 +298,12 @@ func (m Model) activateMenu(index int) (Model, tea.Cmd) {
 		return m.startSyncAll()
 	case menuFastForwardAll:
 		return m.startFastForwardAll()
+	case menuRunUpAll:
+		return m.startRunUpAll()
+	case menuRunDownAll:
+		return m.startRunDownAll()
+	case menuRunLogsAll:
+		return m.startRunLogsAll()
 	case menuReparent:
 		return m.startReparent(selected.Branch)
 	case menuDelete:

@@ -1045,11 +1045,22 @@ func (m Model) menuMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // rightClick opens the context menu on the row it lands on, selecting it first:
 // a menu that acted on another row than the one under the pointer would be a trap.
 func (m Model) rightClick(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	model, hit := m.clickRow(msg)
+	model, hit := m.selectRow(msg)
 	if !hit {
 		return m, nil
 	}
 	return model.openMenu(domain.Rect{X: msg.X, Y: msg.Y}), nil
+}
+
+// selectRow puts the cursor on the row under the pointer, whichever tab is
+// showing. The Services tab reaches it here rather than through clickRow, which
+// leaves those rows to clickServiceRow: the left button selects and then opens,
+// and a bare selection there would pre-empt the opening.
+func (m Model) selectRow(msg tea.MouseMsg) (Model, bool) {
+	if m.tab == tabServices {
+		return m.selectServiceRow(msg)
+	}
+	return m.clickRow(msg)
 }
 
 // modalMouse only ever resolves the modal's own rows: the frame behind it is

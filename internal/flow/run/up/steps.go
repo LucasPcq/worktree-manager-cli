@@ -35,7 +35,7 @@ func (f *upFlow) session() flow.Session {
 			target.WorktreesStep(target.WorktreesParams{
 				ProjectDir: f.ctx.ProjectDir,
 				Current:    f.request.Cwd,
-				Selected:   target.Dirs(f.named),
+				Selected:   target.Preselected(target.PreselectedParams{Named: f.named, Precheck: f.request.Precheck}),
 				Running:    f.running,
 				// --exclusive stops all but one, so it cannot be applied to a wider
 				// selection. Refused as the box is ticked rather than after the recap.

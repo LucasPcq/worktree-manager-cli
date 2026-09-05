@@ -18,6 +18,7 @@ const (
 	stepBranchName = "Branch name"
 	stepSourceName = "Source branch"
 	stepEnvName    = "Env strategy"
+	stepEnvPorts   = domain.CreateEnvPortsStepName
 	stepSourceUpd  = "Source update"
 	stepConfirm    = "Confirm & create"
 )
@@ -26,6 +27,8 @@ const (
 const (
 	sourceFastForward = "ff"
 	sourceKeep        = "keep"
+	portsAdjust       = "adjust"
+	portsKeep         = "keep-ports"
 	createConfirm     = "create"
 )
 
@@ -77,6 +80,10 @@ type WizardParams struct {
 	// which case EnvOverride carries the chosen strategy.
 	IncludeEnv  bool
 	EnvOverride string
+	// IncludeEnvPorts shows the env-ports step, false for a project that links no
+	// .env value to a port — there is then nothing to move. It is the command
+	// layer that reads run.toml, so the TUI stays free of config loading.
+	IncludeEnvPorts bool
 	// SourceUpdate, when set, decides the source-update step: given the worktree's
 	// branch and its source it offers a fast-forward (behind-only) or reports a
 	// diverged branch as a ⚠ recap line. Injected by the command layer so the TUI
@@ -105,6 +112,10 @@ type WizardResult struct {
 	// checked out as-is rather than created — the host recap uses it to say so
 	// instead of a misleading "from <source>".
 	Reused bool
+	// AdjustEnvPorts is the answer to the env-ports step, and true wherever the
+	// step was never asked: leaving a .env pointing at another worktree's services
+	// does not make the run safer, it makes it useless.
+	AdjustEnvPorts bool
 }
 
 // CreateFlow is the create sub-flow (branch/source/source-update steps) ready to
@@ -140,6 +151,9 @@ func CreateSteps(params WizardParams, enabled func(steps []components.Step) bool
 	}
 	if params.IncludeEnv {
 		steps = append(steps, gateStep(envStep(params.ConfigStrategy), enabled))
+	}
+	if params.IncludeEnvPorts {
+		steps = append(steps, gateStep(envPortsStep(), enabled))
 	}
 	// The source-update fast-forward: a ChoiceStep whenever a step precedes it (it
 	// cannot be a first step), else — source fixed by --from and branch fixed by
@@ -196,6 +210,7 @@ func ReadCreateResult(steps []components.Step, params WizardParams) WizardResult
 		EnvFromOverride:   resolveEnv(steps, params),
 		FastForwardBranch: fastForwardBranch(steps, params),
 		Reused:            reusesBranch(steps, params),
+		AdjustEnvPorts:    adjustsEnvPorts(steps, params),
 	}
 	if child, ok := stepModelByName(steps, stepBranchName).(components.TextInputModel); ok {
 		result.BranchName = child.Value()
@@ -247,6 +262,24 @@ func sourceStep(params sourceStepParams) components.Step {
 		Build:      sourceList,
 		CanRefresh: true,
 		Summary:    components.SelectSummary,
+	}
+}
+
+// envPortsStep mirrors internal/flow/create's, per the duplication note above: a
+// .env copied from another worktree carries that worktree's ports, and the run
+// that provisions it is where moving them is decided — not after the fact.
+func envPortsStep() components.Step {
+	return components.Step{
+		Name: stepEnvPorts,
+		Model: components.NewSelectList(components.NewSelectListParams{
+			Title:       stepEnvPorts,
+			Description: domain.CreateEnvPortsStepDescription,
+			Items: []components.SelectItem{
+				{Label: domain.EnvPortsOptionAdjust, Value: portsAdjust},
+				{Label: domain.EnvPortsOptionKeep, Value: portsKeep},
+			},
+		}),
+		Summary: components.SelectSummary,
 	}
 }
 
@@ -371,6 +404,25 @@ func resolveEnv(steps []components.Step, params WizardParams) string {
 	return stepValueByName(steps, stepEnvName)
 }
 
+// EnvPortsRecapLine is the env-ports line a host wizard adds to its own recap,
+// and false where the step was never posed. A step that is asked and then absent
+// from the recap is exactly what the recap-completeness rule forbids.
+func EnvPortsRecapLine(steps []components.Step, params WizardParams) (string, bool) {
+	if !params.IncludeEnvPorts {
+		return "", false
+	}
+	return domain.RecapFieldEnvPorts + envPortsSummary(adjustsEnvPorts(steps, params)), true
+}
+
+// adjustsEnvPorts reads the env-ports answer, and answers true for a wizard that
+// never posed the step.
+func adjustsEnvPorts(steps []components.Step, params WizardParams) bool {
+	if !params.IncludeEnvPorts {
+		return true
+	}
+	return stepValueByName(steps, stepEnvPorts) != portsKeep
+}
+
 // buildCreateRecap recaps the selections with ⚠ lines for a diverged source and
 // the env fallback, using the same deciders the steps did.
 func buildCreateRecap(prev []components.Step, params WizardParams) string {
@@ -409,6 +461,9 @@ func buildCreateRecap(prev []components.Step, params WizardParams) string {
 		sourceField+sourceLabel,
 		"Env:     "+envLabel,
 	)
+	if line, shown := EnvPortsRecapLine(prev, params); shown {
+		lines = append(lines, line)
+	}
 	if ffBranch != "" && ffBranch != source {
 		lines = append(lines, fmt.Sprintf(domain.RecapUpdateFastForward, ffBranch))
 	}
@@ -452,6 +507,13 @@ func extractResult(final components.WizardModel, params WizardParams) (WizardRes
 		return WizardResult{}, domain.ErrUserAborted
 	}
 	return ReadCreateResult(steps, params), nil
+}
+
+func envPortsSummary(adjust bool) string {
+	if adjust {
+		return domain.EnvPortsSummaryAdjust
+	}
+	return domain.EnvPortsSummaryKeep
 }
 
 func stepIndexByName(steps []components.Step, name string) int {

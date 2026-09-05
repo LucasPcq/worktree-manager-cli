@@ -158,3 +158,87 @@ func TestStartingAProfileFromTheDashboardNeverAsksForTheTerminal(t *testing.T) {
 		}
 	}
 }
+
+// Three worktrees starting into one panel are nine indistinguishable lines
+// unless each says where it came from. Same rule as the CLI: named above
+// several, left out above one.
+func TestTheDetachedWatcherNamesTheWorktreeAboveSeveralOfThem(t *testing.T) {
+	msgs := make(chan tea.Msg, 32)
+	watcher := detachedWatcher{send: func(msg tea.Msg) { msgs <- msg }, id: 1}
+
+	if _, err := watcher.Sequence(seam.SequenceParams{
+		Profile:   "dev",
+		Worktrees: []string{"feat-a", "feat-b"},
+		Start: func(_ context.Context, sink runlogs.Sink) (runlogs.Outcomes, error) {
+			sink.Emit(runlogs.Event{Phase: runlogs.PhaseStarted, Job: "web", Worktree: "feat-a"})
+			sink.Emit(runlogs.Event{Phase: runlogs.PhaseDone, Job: "web", Worktree: "feat-b"})
+			return runlogs.Outcomes{{}}, nil
+		},
+	}); err != nil {
+		t.Fatalf("Sequence: %v", err)
+	}
+
+	body := strings.Join(mustLines(t, msgs), "\n")
+	if !strings.Contains(body, "feat-a") || !strings.Contains(body, "feat-b") {
+		t.Errorf("output = %q, want each line to name the worktree it came from", body)
+	}
+}
+
+func TestTheDetachedWatcherSaysNothingAboutASingleWorktree(t *testing.T) {
+	msgs := make(chan tea.Msg, 32)
+	watcher := detachedWatcher{send: func(msg tea.Msg) { msgs <- msg }, id: 1}
+
+	if _, err := watcher.Sequence(seam.SequenceParams{
+		Profile:   "dev",
+		Worktrees: []string{"feat-a"},
+		Start: func(_ context.Context, sink runlogs.Sink) (runlogs.Outcomes, error) {
+			sink.Emit(runlogs.Event{Phase: runlogs.PhaseStarted, Job: "web", Worktree: "feat-a"})
+			return runlogs.Outcomes{{}}, nil
+		},
+	}); err != nil {
+		t.Fatalf("Sequence: %v", err)
+	}
+
+	if body := strings.Join(mustLines(t, msgs), "\n"); strings.Contains(body, "feat-a") {
+		t.Errorf("output = %q, want the worktree left out: naming it repeats what was just ticked", body)
+	}
+}
+
+// The stage a locked row shows is posted against the worktree it came from: a
+// run holding three rows would otherwise write the same text on all three.
+func TestTheDetachedWatcherPostsItsStageAgainstItsWorktree(t *testing.T) {
+	msgs := make(chan tea.Msg, 32)
+	watcher := detachedWatcher{send: func(msg tea.Msg) { msgs <- msg }, id: 7}
+
+	if _, err := watcher.Sequence(seam.SequenceParams{
+		Worktrees: []string{"feat-a", "feat-b"},
+		Start: func(_ context.Context, sink runlogs.Sink) (runlogs.Outcomes, error) {
+			sink.Emit(runlogs.Event{Phase: runlogs.PhaseStarting, Job: "web", Worktree: "feat-b", Step: 1, Steps: 2})
+			return runlogs.Outcomes{{}}, nil
+		},
+	}); err != nil {
+		t.Fatalf("Sequence: %v", err)
+	}
+
+	close(msgs)
+	for msg := range msgs {
+		stage, ok := msg.(opStageMsg)
+		if !ok {
+			continue
+		}
+		if stage.target != "feat-b" {
+			t.Errorf("stage target = %q, want the worktree the step happened in", stage.target)
+		}
+		return
+	}
+	t.Fatal("no stage was posted")
+}
+
+func mustLines(t *testing.T, msgs chan tea.Msg) []string {
+	t.Helper()
+	lines, _ := drain(msgs)
+	if len(lines) == 0 {
+		t.Fatal("nothing was reported")
+	}
+	return lines
+}

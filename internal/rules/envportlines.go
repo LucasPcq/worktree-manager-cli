@@ -225,27 +225,6 @@ func portLabel(link domain.EnvPortLink) string {
 	return link.Job + domain.EnvPortJobSeparator + link.Port
 }
 
-// EnvPortPromptDescription is the table as a confirmation shows it: inside the
-// question, between it and the answers. Printed as a block above the prompt it
-// reads as a report of something already done, which is the opposite of what is
-// being asked.
-func EnvPortPromptDescription(plan domain.EnvPortPlan) string {
-	lines := append([]string{fmt.Sprintf(domain.EnvPortOffsetNoteFmt, plan.Offset), ""}, EnvPortTableLines(plan)...)
-	return strings.Join(lines, "\n")
-}
-
-// EnvPortsConfirmTitle asks about what the pass will actually write. A value
-// taking an address is not "moved to this worktree's ports", and a mixed plan
-// is named by the thing the reader would not expect.
-func EnvPortsConfirmTitle(plan domain.EnvPortPlan) string {
-	for _, e := range EnvPortRewrites(plan) {
-		if e.Addressing == domain.AddressingNames {
-			return domain.EnvPortsOriginConfirmPrompt
-		}
-	}
-	return domain.EnvPortsConfirmPrompt
-}
-
 // EnvPortNotice is one thing a surface says beside the table: a title and the
 // single line explaining it. Two of them exist, and neither repeats per key —
 // they are properties of the machine, not of a value.

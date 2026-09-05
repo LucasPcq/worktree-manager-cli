@@ -169,6 +169,8 @@ Two consequences worth keeping:
 
 The cross-file check has to live outside `config.LoadRun`: that loader only ever sees `run.toml` and validates what `run.toml` can answer for alone. Whether a link names a configured env target needs `.wtm.toml` too, so `rules.ValidateEnvPortTargets` is called where both are in hand — `service/worktree.ResolveEnvPorts`.
 
+**Where the question is put, on a worktree being created.** `internal/flow/envports.Settle` runs after `worktree.Create` — it needs the files to exist — but it does not *decide* there. It used to: a confirmation raised once the worktree was already on disk, past the point where answering no leaves anything but a `.env` pointing at another worktree's services. The decision is now a step of the run that provisions those files (`create.KeyEnvPorts`, and its mirror in `tui/newwt` for `extract`), skipped whole when `envports.Linked` reports that nothing follows a port. The step says what it will do rather than showing what changes — which values move is only knowable once the files are there — and `Settle` reports the table then, applying or not according to `Params.Rewrite`. `wtm env` keeps its own question: there the values are the user's own, edited in a worktree that has been alive for a while, and rewriting them is a real decision rather than a consequence of what was just asked for.
+
 ## What is migrated, and what is not
 
 | Command | Flow lives in | Surfaces |

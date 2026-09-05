@@ -296,6 +296,16 @@ why the dashboard's prompter posts an `opTargetMsg` as soon as the session retur
 The CLI ignores all of it: one run, one terminal. `internal/tui/dashboard/ops.go` is
 where it is enforced, once, instead of at every action site.
 
+Two things the run flows made necessary there, both invisible while a run held one
+worktree (LUC-218). The answers a `run` session hands back are **paths** — the
+daemon's half of a job's key — where every reader of an operation (the row, the
+refusal, the detail) speaks **branches**: the translation happens once, on receipt of
+`opTargetMsg` (`rules.BranchesForPaths`), and a worktree git cannot name keeps its
+path rather than losing its lock. And an operation holds a **stage per worktree**
+(`operation.stages`, posted with the worktree the event came from): one string per
+operation showed the last event received on every row it held, whichever worktree it
+came from.
+
 ## Command flow diagrams
 
 ### `wtm create` (delivered)
@@ -751,6 +761,14 @@ the `Parent branches` question exists to rescue after the fact. Pre-checking the
 removes it instead of asking about it. Descendants are left out: dragging them in
 makes the same entry mean one worktree from a leaf and four from a root, an asymmetry
 no label lets you predict.
+
+The run module's batch entries (`Start profiles`, `Stop worktrees`, `View logs`) split
+it the same way: a **start** is about where you are, so it passes no precheck at all —
+`target.WorktreesStep` already opens with the current worktree ticked — while a
+**stop** and a **view** are about what is standing, and pass the worktrees the board
+holds something up in (`rules.RunningWorktreeDirs`). `Stop worktrees` is also the one
+place `run down` asks anything: from a row there is nothing to ask, stopping everything
+there being the safe default, and from the global menu there is no row to answer for it.
 
 `Sync worktrees` (`⋯ Actions`) pre-checks everything except `dirty` and `rebasing`
 worktrees, which stay listed and tagged, one keystroke from being included — a

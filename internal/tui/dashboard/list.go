@@ -68,7 +68,8 @@ func (m Model) renderRow(index, width int) []string {
 	metaPlain, metaColored := m.rowMeta(status, false), m.rowMeta(status, true)
 	if op, locked := m.ops.holding(status.Branch); locked {
 		pillText, pillRendered = m.spinner.View(), m.spinner.View()
-		metaPlain, metaColored = op.stage, op.stage
+		stage := op.stageFor(status.Branch)
+		metaPlain, metaColored = stage, stage
 	}
 
 	badge := m.runningBadge(status)

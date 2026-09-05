@@ -18,6 +18,10 @@ import (
 type Request struct {
 	Worktrees []string
 	Cwd       string
+	// Precheck is what arrives ticked when the worktree step IS asked, as
+	// worktree roots git spells them. A surface that already knows a likely
+	// answer offers it; the selection stays exact.
+	Precheck []string
 	// Job narrows the output to one of them; empty takes every job the worktree
 	// has. Unlike `run start`, there is a safe default here — all of them — so it
 	// is never required.
@@ -146,7 +150,7 @@ func (f *logsFlow) session() flow.Session {
 			target.WorktreesStep(target.WorktreesParams{
 				ProjectDir: f.ctx.ProjectDir,
 				Current:    f.request.Cwd,
-				Selected:   target.Dirs(f.named),
+				Selected:   target.Preselected(target.PreselectedParams{Named: f.named, Precheck: f.request.Precheck}),
 				Running:    f.running,
 			}),
 		},

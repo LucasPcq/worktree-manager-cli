@@ -105,3 +105,35 @@ func JobsUpIn(jobs []domain.JobInfo, workDirs []string) []string {
 	}
 	return names
 }
+
+type BranchesForPathsParams struct {
+	Paths    []string
+	Statuses []domain.WorktreeStatus
+}
+
+// BranchesForPaths names worktrees the way a surface keyed on branches
+// recognises them. The run flows answer with paths — the daemon's half of a
+// job's key — and a path reaches no row: what is not named stays as it is, so a
+// detached worktree keeps holding its lock under the only identity it has.
+func BranchesForPaths(params BranchesForPathsParams) []string {
+	named := make([]string, 0, len(params.Paths))
+	for _, path := range params.Paths {
+		named = append(named, BranchForPath(BranchForPathParams{Path: path, Statuses: params.Statuses}))
+	}
+	return named
+}
+
+type BranchForPathParams struct {
+	Path     string
+	Statuses []domain.WorktreeStatus
+}
+
+// BranchForPath is BranchesForPaths over one worktree.
+func BranchForPath(params BranchForPathParams) string {
+	for _, status := range params.Statuses {
+		if status.Path == params.Path && status.Branch != "" {
+			return status.Branch
+		}
+	}
+	return params.Path
+}

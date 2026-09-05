@@ -556,11 +556,6 @@ const (
 	EnvOwnedKeyLineFmt = "%s → %s"
 
 	EnvPortOffsetPrefix = "offset +"
-	// EnvPortOffsetNoteFmt orients the reader of the confirmation, whose title
-	// already says what is being asked.
-	// Neutral on purpose: the same table carries values that take a port and
-	// values that take an address, and both follow this worktree.
-	EnvPortOffsetNoteFmt = "This worktree's offset is +%d — the values below follow it."
 	// EnvPortTableRowFmt aligns key, port name, the port move, and the value the
 	// key lands on — the only column that can be long, and the only one elided.
 	EnvPortTableRowFmt = "%s  %s  %s  %s"
@@ -602,8 +597,6 @@ const (
 	// than what it wanted, since the value is the thing the reader must fix.
 	EnvPortReasonForeignHostFmt = "points at %s, which no job here serves"
 	EnvPortReasonSecureScheme   = "https — the run proxy serves plain HTTP"
-	EnvPortsConfirmPrompt       = "Update these .env values to this worktree's ports?"
-	EnvPortsOriginConfirmPrompt = "Update these .env values to this worktree's addresses?"
 
 	// The trailing verdict of `wtm env`.
 	EnvCheckDriftMessage = "Read-only check — run `wtm env` to reconcile."
@@ -2231,11 +2224,27 @@ const (
 	// recap line blank.
 	EnvSummaryConfigDefault = "config default"
 
+	// The env-ports step: asked while the worktree is still being described,
+	// because the values it settles are a consequence of the .env this very run
+	// provisions. It says what it will do rather than showing the table — which
+	// values change is only knowable once the files exist, and the run reports
+	// them then.
+	CreateEnvPortsStepName        = "Env ports"
+	CreateEnvPortsStepDescription = "The .env files are copied with the ports of the worktree they come from. wtm can move the values run.toml links to a port onto the ones this worktree binds."
+	EnvPortsOptionAdjust          = "Adjust them to this worktree"
+	EnvPortsOptionKeep            = "Leave the copied values as they are"
+	EnvPortsSummaryAdjust         = "adjusted to this worktree"
+	EnvPortsSummaryKeep           = "left as copied"
+	// EnvPortsStepUnlinked is why the step is not asked: with no [[env_port]]
+	// link, no value follows a port and there is nothing to move.
+	EnvPortsStepUnlinked = "no .env value is linked to a port"
+
 	// RecapField* are the aligned labels of the create recap body.
 	RecapFieldBranch       = "Branch:  "
 	RecapFieldSource       = "Source:  "
 	RecapFieldParent       = "Parent:  "
 	RecapFieldEnv          = "Env:     "
+	RecapFieldEnvPorts     = "Ports:   "
 	RecapFastForwardSuffix = " (fast-forward to origin)"
 	WarningPrefix          = "⚠ "
 	WizardErrLabel         = "wizard"
@@ -2763,12 +2772,24 @@ const (
 	// DashboardMenuRun* drive the run module from a row. They are offered on the
 	// base row too: the main checkout runs jobs like any other worktree. A
 	// profile and a job are two different requests, so they are two different
-	// entries.
+	// entries, and the block groups them by grain rather than by verb — what an
+	// entry acts on is what a reader picks it by.
 	DashboardMenuRunUp    = "Start profile"
 	DashboardMenuRunStart = "Start a job"
-	DashboardMenuRunDown  = "Stop everything"
+	DashboardMenuRunDown  = "Stop this worktree"
 	DashboardMenuRunStop  = "Stop a job"
 	DashboardMenuRunLogs  = "View logs"
+	// DashboardMenuRunStopThis stops the job a surface already designates — the
+	// Services tab, whose cursor is on one. Asking again which job is the
+	// question the positional-subject rule exists to not ask.
+	DashboardMenuRunStopThis = "Stop this job"
+	// DashboardMenuRun*All are the same gestures over a selection the user makes
+	// inside the run, which is why they live in the global menu: a context menu
+	// hangs off one worktree. The plural is the whole difference, as it already
+	// is between DashboardMenuSync and DashboardMenuSyncAll.
+	DashboardMenuRunUpAll   = "Start profiles"
+	DashboardMenuRunDownAll = "Stop worktrees"
+	DashboardMenuRunLogsAll = "View logs"
 	// DashboardMenuSection* head the blocks of a context menu. A block is what
 	// tells "move this worktree" and "start its services" apart at a glance.
 	DashboardMenuSectionGit = "GIT"
@@ -2794,6 +2815,11 @@ const (
 	// DashboardFastForwardAllTitle the one started from the global menu.
 	DashboardFastForwardTitle    = "Fast-forward from origin"
 	DashboardFastForwardAllTitle = "Fast-forward worktrees"
+	// DashboardRun*AllTitle head the batch runs started from the global menu. A
+	// modal renaming the entry the user just picked reads as a different action,
+	// so each title is its entry.
+	DashboardRunUpAllTitle   = "Start profiles"
+	DashboardRunDownAllTitle = "Stop worktrees"
 	// DashboardSync*Fmt report a finished cascade in the output panel, one line per
 	// branch it touched. Verbs: branch, then what became of it.
 	DashboardSyncStepFmt   = "%s — %s"

@@ -159,3 +159,72 @@ func TestARunHoldsEveryWorktreeItActsOn(t *testing.T) {
 		t.Error("a worktree outside the run reads as held")
 	}
 }
+
+// The run flows answer with paths — the daemon's half of a job's key — and every
+// reader of an operation speaks branches. Without the translation the lock is
+// released the moment the recap is answered, on a run that has not even started.
+func TestARunRetargetedByPathKeepsHoldingItsRow(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "feat")
+	model, cmd := updateCmd(model, key(domain.KeyNew))
+	if cmd == nil {
+		t.Fatal("the create run did not start")
+	}
+	id := model.ops.running[0].id
+
+	model, _ = model.applyFlow(opTargetMsg{id: id, targets: []string{"/tmp/feat"}})
+
+	if _, held := model.ops.holding("feat"); !held {
+		t.Fatalf("targets = %v, want the row's branch: a path reaches no row", model.ops.running[0].targets)
+	}
+}
+
+// A worktree git cannot name is left as it is: the path is the only identity it
+// has, and dropping it would release the lock instead of moving it.
+func TestARunOnAnUnnamedWorktreeKeepsItsPath(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	model, _ = updateCmd(model, key(domain.KeyNew))
+	id := model.ops.running[0].id
+
+	model, _ = model.applyFlow(opTargetMsg{id: id, targets: []string{"/tmp/detached"}})
+
+	if _, held := model.ops.holding("/tmp/detached"); !held {
+		t.Errorf("targets = %v, want the path kept", model.ops.running[0].targets)
+	}
+}
+
+// A run over several worktrees posts a stage per worktree. One string per
+// operation would show the last event received on every row it holds, whichever
+// worktree it came from — three locked rows lying in chorus.
+func TestEachHeldWorktreeShowsItsOwnStage(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model, _ = updateCmd(model, key(domain.KeyNew))
+	id := model.ops.running[0].id
+	model, _ = model.applyFlow(opTargetMsg{id: id, targets: []string{"a", "b"}})
+
+	model, _ = model.applyFlow(opStageMsg{id: id, target: "a", stage: "starting web (1/2)"})
+	model, _ = model.applyFlow(opStageMsg{id: id, target: "b", stage: "migrate finished"})
+
+	op, _ := model.ops.byID(id)
+	if got := op.stageFor("a"); got != "starting web (1/2)" {
+		t.Errorf("stage of a = %q, want its own", got)
+	}
+	if got := op.stageFor("b"); got != "migrate finished" {
+		t.Errorf("stage of b = %q, want its own", got)
+	}
+}
+
+// A flow acting on a single worktree says nothing about which one, and every row
+// it holds shows what it did say.
+func TestAStageNamingNoWorktreeShowsOnEveryHeldRow(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model, _ = updateCmd(model, key(domain.KeyNew))
+	id := model.ops.running[0].id
+	model, _ = model.applyFlow(opTargetMsg{id: id, targets: []string{"a", "b"}})
+
+	model, _ = model.applyFlow(opStageMsg{id: id, stage: "Rebasing"})
+
+	op, _ := model.ops.byID(id)
+	if op.stageFor("a") != "Rebasing" || op.stageFor("b") != "Rebasing" {
+		t.Errorf("stages = %v, want the run's own message on both rows", op.stages)
+	}
+}

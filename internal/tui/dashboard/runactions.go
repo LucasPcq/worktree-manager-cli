@@ -10,6 +10,7 @@ import (
 	startflow "github.com/LucasPcq/wtm/internal/flow/run/start"
 	stopflow "github.com/LucasPcq/wtm/internal/flow/run/stop"
 	upflow "github.com/LucasPcq/wtm/internal/flow/run/up"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/integration"
 	"github.com/LucasPcq/wtm/internal/service/runconfig"
 )
@@ -18,14 +19,20 @@ import (
 // run.toml, which the flows take as a business input rather than reading
 // themselves.
 func (m Model) runRequest(selected domain.WorktreeStatus) (domain.RunConfig, bool) {
+	if selected.Path == "" {
+		return domain.RunConfig{}, false
+	}
+	return m.loadRunConfig()
+}
+
+// loadRunConfig is the same, for a run the user aims at worktrees it has yet to
+// pick: there is no row to read, only a project that has a run module or has not.
+func (m Model) loadRunConfig() (domain.RunConfig, bool) {
 	cfg, err := runconfig.Load(m.params.StateDir)
 	if err != nil {
 		return domain.RunConfig{}, false
 	}
 	if len(cfg.Jobs) == 0 {
-		return domain.RunConfig{}, false
-	}
-	if selected.Path == "" {
 		return domain.RunConfig{}, false
 	}
 	return cfg, true
@@ -42,30 +49,69 @@ func (m Model) runRequest(selected domain.WorktreeStatus) (domain.RunConfig, boo
 // and names nothing — the flow then falls back to Cwd, which is this same row.
 func runWorktree(selected domain.WorktreeStatus) string { return selected.Branch }
 
+// runningWorktrees are the worktrees the daemon holds something up in, as git
+// spells them. They are what a stop and a view arrive with ticked: those two
+// gestures are about what is standing, where a start is about where you are.
+func (m Model) runningWorktrees() []string { return rules.RunningWorktreeDirs(m.board) }
+
+type runUpParams struct {
+	Title string
+	// Global marks the gesture made on no row, which is what makes the flow ask
+	// which worktrees it acts on.
+	Global bool
+	// Row is the worktree the gesture was made on, when it was made on one:
+	// nothing may start jobs in a worktree another run is holding.
+	Row domain.WorktreeStatus
+	// Worktrees fixes the selection; Precheck only says what arrives ticked.
+	Worktrees []string
+	Precheck  []string
+}
+
 // startRunUp brings a worktree's default profile up, detached: the surface is
 // given back and the progress goes to the output panel and to the held row's
 // stage. Starting three worktrees in a row is the case this serves, and each
 // one used to cost an open and an exit of the run view. Watching is what the
 // LOGS tab is for.
 func (m Model) startRunUp(selected domain.WorktreeStatus) (Model, tea.Cmd) {
-	if reason, refused := m.busyReason(selected.Branch); refused {
+	return m.runUp(runUpParams{
+		Title:     domain.DashboardMenuRunUp,
+		Row:       selected,
+		Worktrees: []string{runWorktree(selected)},
+	})
+}
+
+// startRunUpAll fixes no worktree, so the flow asks which ones — the picker the
+// modal already renders for `sync`, with the "N running" badge per worktree that
+// the list does not show. It arrives with the worktree the shell is in ticked,
+// which the step does on its own: a start is about where you are.
+func (m Model) startRunUpAll() (Model, tea.Cmd) {
+	return m.runUp(runUpParams{Title: domain.DashboardRunUpAllTitle, Global: true})
+}
+
+func (m Model) runUp(params runUpParams) (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(params.Row.Branch); refused {
 		return m.refuse(reason), nil
 	}
-	cfg, ok := m.runRequest(selected)
+	cfg, ok := m.runConfigFor(runConfigParams{Row: params.Row, Global: params.Global})
 	if !ok {
 		return m.refuse(domain.DashboardRunNotConfigured), nil
 	}
 
 	declared := upflow.Operation()
-	m, id := m.beginOp(beginParams{Operation: declared, Target: selected.Branch})
+	m, id := m.beginOp(beginParams{Operation: declared, Target: params.Row.Branch})
 	send := m.sender()
 
-	params := upflow.Params{
+	flowParams := upflow.Params{
 		Context: m.flowContext(),
-		Request: upflow.Request{Worktrees: []string{runWorktree(selected)}, Cwd: selected.Path, Config: cfg},
+		Request: upflow.Request{
+			Worktrees: params.Worktrees,
+			Precheck:  params.Precheck,
+			Cwd:       m.cwdFor(params.Row),
+			Config:    cfg,
+		},
 		Prompter: prompter{
 			send:      send,
-			title:     domain.DashboardMenuRunUp,
+			title:     params.Title,
 			shape:     modalStepper,
 			opID:      id,
 			targetKey: declared.TargetKey,
@@ -74,7 +120,7 @@ func (m Model) startRunUp(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-		_, err := upflow.Run(params)
+		_, err := upflow.Run(flowParams)
 		return opDoneMsg{id: id, err: err}
 	})
 }
@@ -114,8 +160,10 @@ func (m Model) startRunJob(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 	})
 }
 
-// stopRunJob stops one job the user names. Nothing is attached to, so no view
-// opens: what became of the job is reported in the output panel.
+// stopRunJob stops one job. Nothing is attached to, so no view opens: what
+// became of the job is reported in the output panel. The job is the one the
+// surface designates — the Services tab has a cursor on one — and only a surface
+// designating none opens the picker.
 func (m Model) stopRunJob(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 	if reason, refused := m.busyReason(selected.Branch); refused {
 		return m.refuse(reason), nil
@@ -128,13 +176,23 @@ func (m Model) stopRunJob(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 	declared := stopflow.Operation()
 	m, id := m.beginOp(beginParams{Operation: declared, Target: selected.Branch})
 	send := m.sender()
+	title := domain.DashboardMenuRunStop
+	job := m.designatedJob()
+	if job != "" {
+		title = domain.DashboardMenuRunStopThis
+	}
 
 	params := stopflow.Params{
 		Context: m.flowContext(),
-		Request: stopflow.Request{Worktrees: []string{runWorktree(selected)}, Cwd: selected.Path, Config: cfg},
+		Request: stopflow.Request{
+			Worktrees: []string{runWorktree(selected)},
+			Cwd:       selected.Path,
+			Job:       job,
+			Config:    cfg,
+		},
 		Prompter: prompter{
 			send:      send,
-			title:     domain.DashboardMenuRunStop,
+			title:     title,
 			shape:     modalStepper,
 			opID:      id,
 			targetKey: declared.TargetKey,
@@ -148,31 +206,137 @@ func (m Model) stopRunJob(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 	})
 }
 
+// designatedJob is the job the surface already points at, empty where it points
+// at none. Only the Services tab does: its cursor walks job rows, and asking
+// again which job is the question a designated subject exists to not ask.
+func (m Model) designatedJob() string {
+	if m.tab != tabServices {
+		return ""
+	}
+	row, ok := m.selectedService()
+	if !ok {
+		return ""
+	}
+	return row.Job.Key
+}
+
+type runDownParams struct {
+	Title string
+	// Row is the worktree the gesture was made on, when it was made on one.
+	Row domain.WorktreeStatus
+	// Worktrees fixes the selection; Precheck only says what arrives ticked.
+	Worktrees []string
+	Precheck  []string
+	// Ask installs the modal, for a run that has no row to act on. From a row
+	// there is nothing to ask: stopping everything there is the safe default.
+	Ask bool
+}
+
 // startRunDown stops what the worktree has running. It asks nothing — stopping
 // everything here is the command's safe default — so the modal never opens.
 func (m Model) startRunDown(selected domain.WorktreeStatus) (Model, tea.Cmd) {
-	if reason, refused := m.busyReason(selected.Branch); refused {
+	return m.runDown(runDownParams{
+		Row:       selected,
+		Worktrees: []string{runWorktree(selected)},
+	})
+}
+
+// startRunDownAll designates no worktree, so it has to ask which ones — the one
+// thing the row gesture never does. It arrives with the worktrees that have
+// something up ticked: a stop is about what is standing.
+func (m Model) startRunDownAll() (Model, tea.Cmd) {
+	return m.runDown(runDownParams{
+		Title:    domain.DashboardRunDownAllTitle,
+		Precheck: m.runningWorktrees(),
+		Ask:      true,
+	})
+}
+
+func (m Model) runDown(params runDownParams) (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(params.Row.Branch); refused {
 		return m.refuse(reason), nil
 	}
-	cfg, ok := m.runRequest(selected)
+	cfg, ok := m.runConfigFor(runConfigParams{Row: params.Row, Global: params.Ask})
 	if !ok {
 		return m.refuse(domain.DashboardRunNotConfigured), nil
 	}
 
-	m, id := m.beginOp(beginParams{Operation: downflow.Operation(), Target: selected.Branch})
+	declared := downflow.Operation()
+	m, id := m.beginOp(beginParams{Operation: declared, Target: params.Row.Branch})
 	send := m.sender()
 
-	params := downflow.Params{
-		Context:   m.flowContext(),
-		Request:   downflow.Request{Worktrees: []string{runWorktree(selected)}, Cwd: selected.Path, Config: cfg},
-		Prompter:  flow.Unattended{},
+	flowParams := downflow.Params{
+		Context: m.flowContext(),
+		Request: downflow.Request{
+			Worktrees: params.Worktrees,
+			Precheck:  params.Precheck,
+			Cwd:       m.cwdFor(params.Row),
+			Config:    cfg,
+		},
+		Prompter: m.runPrompter(runPrompterParams{
+			Ask:       params.Ask,
+			Title:     params.Title,
+			OpID:      id,
+			TargetKey: declared.TargetKey,
+			Send:      send,
+		}),
 		Presenter: downPresenter{presenter: presenter{send: send, id: id}},
 	}
 
 	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-		_, err := downflow.Run(params)
+		_, err := downflow.Run(flowParams)
 		return opDoneMsg{id: id, err: err}
 	})
+}
+
+type runPrompterParams struct {
+	Ask       bool
+	Title     string
+	OpID      int
+	TargetKey string
+	Send      func(tea.Msg)
+}
+
+// runPrompter picks which of the two seams a run installs: the modal for a run
+// whose subject is still to be chosen, and the unattended one for a run a row
+// has already answered for.
+func (m Model) runPrompter(params runPrompterParams) flow.Prompter {
+	if !params.Ask {
+		return flow.Unattended{}
+	}
+	return prompter{
+		send:      params.Send,
+		title:     params.Title,
+		shape:     modalStepper,
+		opID:      params.OpID,
+		targetKey: params.TargetKey,
+	}
+}
+
+type runConfigParams struct {
+	Row domain.WorktreeStatus
+	// Global marks a gesture made on no row: there is no worktree to read, only
+	// a project that has a run module or has not. A row gesture keeps refusing a
+	// row that designates no worktree.
+	Global bool
+}
+
+// runConfigFor reads run.toml for a gesture made on a row, or made on none.
+func (m Model) runConfigFor(params runConfigParams) (domain.RunConfig, bool) {
+	if params.Global {
+		return m.loadRunConfig()
+	}
+	return m.runRequest(params.Row)
+}
+
+// cwdFor is the worktree step's safe default: the row the gesture was made on,
+// else the directory the shell was in when it launched `wtm ui` — which is what
+// the picker marks as current.
+func (m Model) cwdFor(row domain.WorktreeStatus) string {
+	if row.Path != "" {
+		return row.Path
+	}
+	return m.params.Cwd
 }
 
 // watchLogs hands the terminal to the run view, on the job the logs view is
@@ -180,31 +344,60 @@ func (m Model) startRunDown(selected domain.WorktreeStatus) (Model, tea.Cmd) {
 // full session is what it is for.
 func (m Model) watchLogs() (Model, tea.Cmd) {
 	selected := m.statusFor(m.logsBranch)
-	if reason, refused := m.busyReason(selected.Branch); refused {
+	request := m.watchLogsRequest()
+	return m.runLogs(runLogsParams{Row: selected, Request: request})
+}
+
+// startRunLogsAll opens the same view over worktrees the user picks, which is
+// what R10 built the two-level list for: one group header per worktree, its jobs
+// indented under it. It arrives with the worktrees that have something up ticked.
+func (m Model) startRunLogsAll() (Model, tea.Cmd) {
+	return m.runLogs(runLogsParams{
+		Title:   domain.DashboardMenuRunLogsAll,
+		Request: logsflow.Request{Precheck: m.runningWorktrees(), Cwd: m.params.Cwd},
+		Ask:     true,
+	})
+}
+
+type runLogsParams struct {
+	Title string
+	// Row is the worktree the gesture was made on, when it was made on one.
+	Row     domain.WorktreeStatus
+	Request logsflow.Request
+	// Ask installs the modal, for a view whose worktrees are still to be picked.
+	Ask bool
+}
+
+func (m Model) runLogs(params runLogsParams) (Model, tea.Cmd) {
+	if reason, refused := m.busyReason(params.Row.Branch); refused {
 		return m.refuse(reason), nil
 	}
-	cfg, ok := m.runRequest(selected)
+	cfg, ok := m.runConfigFor(runConfigParams{Row: params.Row, Global: params.Ask})
 	if !ok {
 		return m.refuse(domain.DashboardRunNotConfigured), nil
 	}
 
-	request := m.watchLogsRequest()
+	request := params.Request
 	request.Config = cfg
 
-	m, id := m.beginOp(beginParams{
-		Operation: flow.Operation{Kind: domain.OpKindRunLogs, Mode: flow.ModeBlocking},
-	})
+	declared := flow.Operation{Kind: domain.OpKindRunLogs, Mode: flow.ModeBlocking}
+	m, id := m.beginOp(beginParams{Operation: declared})
 	send := m.sender()
 
-	params := logsflow.Params{
-		Context:   m.flowContext(),
-		Request:   request,
-		Prompter:  flow.Unattended{},
+	flowParams := logsflow.Params{
+		Context: m.flowContext(),
+		Request: request,
+		Prompter: m.runPrompter(runPrompterParams{
+			Ask:   params.Ask,
+			Title: params.Title,
+			OpID:  id,
+			Send:  send,
+		}),
 		Presenter: logsPresenter{presenter: presenter{send: send, id: id}, watcher: watcher{send: send}},
 	}
 
 	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-		_, err := logsflow.Run(params)
+		_, err := logsflow.Run(flowParams)
 		return opDoneMsg{id: id, err: err}
 	})
 }

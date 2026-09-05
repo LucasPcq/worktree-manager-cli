@@ -214,3 +214,17 @@ func (m Model) clickServiceRow(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 	}
 	return m, nil, false
 }
+
+// selectServiceRow puts the cursor on the job row under the pointer, and says
+// whether there was one. It is what the right button needs: the menu acts on the
+// job it was opened over, and a menu acting on another row would be a trap.
+func (m Model) selectServiceRow(msg tea.MouseMsg) (Model, bool) {
+	for index, row := range m.services {
+		if row.Kind != domain.ServicesRowJob || !m.inZone(servicesRowZone(index), msg) {
+			continue
+		}
+		m.servicesCursor = index
+		return m.reflow(), true
+	}
+	return m, false
+}

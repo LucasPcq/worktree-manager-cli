@@ -102,7 +102,7 @@ func newModal(params modalParams) (modal, tea.Cmd) {
 	}
 	if params.Shape == modalForm {
 		mo.loading = domain.DashboardModalPreparing
-		return mo, buildFormCmd(mo.session, mo.chosen, mo.generation)
+		return mo, buildFormCmd(buildFormParams{Session: mo.session, Chosen: mo.chosen, Title: mo.title, Generation: mo.generation})
 	}
 	return mo.advance()
 }
@@ -177,7 +177,7 @@ func (mo modal) show(step flow.Step, content flow.StepContent) (modal, tea.Cmd) 
 	case flow.StepRecap:
 		// A recap is a confirmation, so it is drawn with the buttons every other
 		// confirmation uses rather than as one more list to pick from.
-		mo.rows, _ = formSection(formSectionParams{Step: step, Content: content, Answers: mo.answers, Chosen: mo.answers})
+		mo.rows, _ = formSection(formSectionParams{Step: step, Content: content, Answers: mo.answers, Chosen: mo.answers, Title: mo.title})
 		mo.focus = clampFocus(mo.rows, 0)
 		return mo, nil
 	case flow.StepSelect:

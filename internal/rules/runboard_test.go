@@ -151,3 +151,16 @@ func TestRunBoardCarriesEachWorktreesNote(t *testing.T) {
 		t.Errorf("blocks = %+v, want the note of the worktree they describe", blocks)
 	}
 }
+
+// A stop or a view over several worktrees is about what is standing: the board
+// already knows which those are.
+func TestRunningWorktreeDirsNamesTheBlocksThatRun(t *testing.T) {
+	blocks := []RunWorktreeBlock{
+		{Branch: "a", Path: "/wt/a", Up: 2},
+		{Branch: "b", Path: "/wt/b", Up: 1},
+	}
+
+	if got := RunningWorktreeDirs(blocks); len(got) != 2 || got[0] != "/wt/a" || got[1] != "/wt/b" {
+		t.Errorf("RunningWorktreeDirs = %v, want one entry per block, as git spells it", got)
+	}
+}
