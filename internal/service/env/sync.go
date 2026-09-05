@@ -148,7 +148,7 @@ func ApplyEnvSync(params ApplyEnvSyncParams) (domain.EnvSyncResult, error) {
 		files = append(files, fileResult(paths, c, applied))
 	}
 
-	ports, err := settleEnvPorts(params.Ports, !params.SkipPortRewrite)
+	ports, err := settleEnvPorts(settleEnvPortsParams{Ports: params.Ports, Write: !params.SkipPortRewrite, Owned: true})
 	if err != nil {
 		return domain.EnvSyncResult{}, err
 	}
@@ -218,7 +218,7 @@ func SyncEnv(params SyncEnvParams) (domain.EnvSyncResult, error) {
 	// The ports come last, on files that are now reconciled: the value sources
 	// carry another worktree's port, so applying the offset before the merge
 	// would only see it overwritten.
-	ports, err := settleEnvPorts(params.Ports, !params.Check)
+	ports, err := settleEnvPorts(settleEnvPortsParams{Ports: params.Ports, Write: !params.Check, Owned: !params.Check})
 	if err != nil {
 		return domain.EnvSyncResult{}, err
 	}
@@ -232,18 +232,32 @@ func SyncEnv(params SyncEnvParams) (domain.EnvSyncResult, error) {
 	}, nil
 }
 
+type settleEnvPortsParams struct {
+	Ports EnvPortsParams
+	// Write is the port pass itself. Owned says the worktree identity may still
+	// be written when that pass is not: declining the port rewrite is an answer
+	// about ports, and which worktree this is was never one of the questions.
+	// Both are false on a --check run, which writes nothing at all.
+	Write bool
+	Owned bool
+}
+
 // settleEnvPorts applies the worktree's offset to the linked values, or merely
 // resolves what it would do when the caller is reporting rather than writing —
 // a --check run, or one where the user declined the pass. Either way the links
 // still feed the diff's comparison, which is why they are never simply dropped.
-func settleEnvPorts(params EnvPortsParams, write bool) (domain.EnvPortPlan, error) {
-	if params.Empty() {
+func settleEnvPorts(params settleEnvPortsParams) (domain.EnvPortPlan, error) {
+	if params.Ports.Empty() {
 		return domain.EnvPortPlan{}, nil
 	}
-	if !write {
-		return ComputeEnvPorts(params)
+	if !params.Write {
+		plan, err := ComputeEnvPorts(params.Ports)
+		if err != nil || !params.Owned {
+			return plan, err
+		}
+		return plan, ApplyOwnedEnv(params.Ports)
 	}
-	plan, err := ApplyEnvPorts(params)
+	plan, err := ApplyEnvPorts(params.Ports)
 	plan.Applied = err == nil
 	return plan, err
 }

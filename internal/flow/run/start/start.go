@@ -4,6 +4,7 @@ package start
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
@@ -71,7 +72,10 @@ type startFlow struct {
 	prompter  flow.Prompter
 	presenter Presenter
 
-	named   *target.Resolved
+	named *target.Resolved
+	// jobs is one reading of the daemon's index; running is its per-worktree
+	// tally, which the picker shows.
+	jobs    []domain.JobInfo
 	running map[string]int
 }
 
@@ -105,6 +109,16 @@ func (f *startFlow) run() (Outcome, error) {
 		Named:   f.named,
 		Cwd:     f.request.Cwd,
 	})
+	// Refused rather than started: a runner and one of its own children are the
+	// same process twice on the same port, whether the other one was asked for
+	// in this gesture or is already up.
+	if conflicts := rules.StartConflicts(rules.StartConflictsParams{
+		Config:   f.request.Config,
+		Starting: append([]string{job.Name}, rules.JobsUpIn(f.jobs, []string{workDir})...),
+	}); len(conflicts) > 0 {
+		return Outcome{}, fmt.Errorf("%s:\n%s", domain.JobConflictTitle, strings.Join(rules.JobConflictLines(conflicts), "\n"))
+	}
+
 	addresses := addressing.Read(addressing.Params{Context: f.ctx, WorkDirs: []string{workDir}})
 	runSeam := seam.Open(seam.Params{
 		ProjectDir:    f.ctx.ProjectDir,
@@ -122,7 +136,7 @@ func (f *startFlow) run() (Outcome, error) {
 		Job:      job.Name,
 		Inline:   job.Kind == domain.JobKindTask,
 		Warnings: addresses.Warnings,
-		Start:    runSeam.Starter(seam.StartParams{Jobs: []domain.JobConfig{job}}),
+		Start:    runSeam.Starter(seam.StartParams{Jobs: rules.JobsWithEffectivePorts(f.request.Config, []domain.JobConfig{job})}),
 	})
 	if err != nil {
 		return Outcome{}, err
@@ -142,7 +156,11 @@ func (f *startFlow) connect() error {
 			}); err != nil {
 				return fmt.Errorf("ensure daemon: %w", err)
 			}
-			f.running = target.RunningJobs(runlogs.NewService(runlogs.ServiceParams{SocketPath: process.SocketPath()}))
+			// A daemon that cannot list is not a reason to refuse the run: the
+			// counts decorate a picker, and the guard below only ever adds to
+			// what this gesture already names.
+			f.jobs, _ = runlogs.NewService(runlogs.ServiceParams{SocketPath: process.SocketPath()}).List("")
+			f.running = rules.RunningJobsByWorktree(f.jobs)
 			return nil
 		},
 	})

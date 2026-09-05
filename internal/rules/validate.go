@@ -168,6 +168,7 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 		}
 	}
 
+	errs = append(errs, validateJobRelations(cfg, jobNames)...)
 	errs = append(errs, ValidateRunPorts(cfg)...)
 	errs = append(errs, ValidateAddressing(cfg)...)
 	errs = append(errs, ValidateConcurrency(cfg)...)
@@ -199,6 +200,77 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 	}
 
 	return warnings, errs
+}
+
+// validateJobRelations checks what a job says about the other jobs and about
+// its own ports: a runner names jobs that exist and is not one of them, and a
+// service either declares ports or says it binds none — never both.
+func validateJobRelations(cfg domain.RunConfig, jobNames map[string]bool) []string {
+	var errs []string
+	for _, job := range cfg.Jobs {
+		if job.BindsNoPort && len(job.Ports) > 0 {
+			errs = append(errs, fmt.Sprintf("job %q: binds_no_port contradicts the %d port(s) it declares", job.Name, len(job.Ports)))
+		}
+		if job.BindsNoPort && job.Kind == domain.JobKindTask {
+			errs = append(errs, fmt.Sprintf("job %q: binds_no_port says nothing about a task, which binds nothing by nature", job.Name))
+		}
+
+		seen := map[string]bool{}
+		for _, ref := range job.Runs {
+			if ref == job.Name {
+				errs = append(errs, fmt.Sprintf("job %q: runs itself", job.Name))
+				continue
+			}
+			if !jobNames[ref] {
+				errs = append(errs, fmt.Sprintf("job %q: runs unknown job %q", job.Name, ref))
+				continue
+			}
+			if seen[ref] {
+				errs = append(errs, fmt.Sprintf("job %q: runs %q twice", job.Name, ref))
+			}
+			seen[ref] = true
+		}
+	}
+	errs = append(errs, runnerCycles(cfg)...)
+	return errs
+}
+
+// runnerCycles refuses a runner reachable from itself. Two jobs each declaring
+// they run the other would make every rule that walks the relation — the ports
+// a runner inherits, the jobs it locks out — recurse forever.
+func runnerCycles(cfg domain.RunConfig) []string {
+	runs := make(map[string][]string, len(cfg.Jobs))
+	for _, job := range cfg.Jobs {
+		runs[job.Name] = job.Runs
+	}
+
+	var errs []string
+	for _, job := range cfg.Jobs {
+		if len(job.Runs) == 0 {
+			continue
+		}
+		seen := map[string]bool{job.Name: true}
+		var queue []string
+		for _, ref := range job.Runs {
+			if ref != job.Name {
+				queue = append(queue, runs[ref]...)
+			}
+		}
+		for len(queue) > 0 {
+			ref := queue[0]
+			queue = queue[1:]
+			if ref == job.Name {
+				errs = append(errs, fmt.Sprintf("job %q: runs itself through %s", job.Name, strings.Join(job.Runs, ", ")))
+				break
+			}
+			if seen[ref] {
+				continue
+			}
+			seen[ref] = true
+			queue = append(queue, runs[ref]...)
+		}
+	}
+	return errs
 }
 
 // ValidateRunPorts checks what only run.toml can answer for: whether the

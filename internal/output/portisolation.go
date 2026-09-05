@@ -30,3 +30,15 @@ func PortIsolationReport(w io.Writer, params PortIsolationReportParams) {
 	Blank(w)
 	Callout(w, domain.PortIsolationTitle, lines)
 }
+
+// PortCommandOnlyReport names the jobs whose port only travels through the
+// command wtm plays. It is a note, not the alert above: they are isolated, and
+// only while wtm is the one starting them.
+func PortCommandOnlyReport(w io.Writer, jobs []string) {
+	lines := rules.PortCommandOnlyLines(jobs)
+	if len(lines) == 0 {
+		return
+	}
+	Blank(w)
+	Callout(w, domain.PortCommandOnlyTitle, lines)
+}

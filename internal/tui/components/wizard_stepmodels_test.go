@@ -29,6 +29,8 @@ func everyStepModel() []Step {
 		{Name: "kinds", Model: NewKindList(NewKindListParams{Title: "t", Description: desc, Entries: []domain.JobKindChoice{{Label: "root / build", Cmd: "turbo run build", Name: "build", Kind: domain.JobKindTask}}})},
 		{Name: "cmds", Model: NewCmdList(NewCmdListParams{Title: "t", Description: desc, Fixes: []domain.JobCmdFix{{Job: "web", Cmd: "vite", Vars: []string{"PORT"}}}})},
 		{Name: "profiles", Model: NewProfileList(NewProfileListParams{Title: "t", Description: desc, Profiles: []domain.ProfileConfig{{Name: "all"}}})},
+		{Name: "routes", Model: NewRouteList(NewRouteListParams{Title: "t", Description: desc, Rows: []domain.PortRouteRow{{Job: "web", Port: "PORT", Base: 3000, File: ".env"}}})},
+		{Name: "runners", Model: NewRunnerList(NewRunnerListParams{Title: "t", Description: desc, Choices: []domain.JobRunnerChoice{{Job: "web", Label: "web  apps/web", Options: []string{"", "dev"}}}})},
 	}
 }
 

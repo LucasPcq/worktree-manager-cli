@@ -88,3 +88,28 @@ func TestRecapJobLinesMarksAPublishedJob(t *testing.T) {
 		t.Errorf("ligne mailhog = %q, want aucun suffixe", lines[1])
 	}
 }
+
+func TestRecapJobLinesSayWhyAServiceHasNoPort(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "dev:crm", Kind: domain.JobKindService, Cmd: "pnpm run dev:crm", Runs: []string{"crm-web-dev", "crm-api-dev"}},
+		{Name: "ui-watch", Kind: domain.JobKindService, Cmd: "tsc --watch", BindsNoPort: true},
+		{Name: "forgotten", Kind: domain.JobKindService, Cmd: "vite"},
+		{Name: "crm-web-dev", Kind: domain.JobKindService, Cmd: "vite", Ports: map[string]int{"VITE_PORT": 5175}},
+		{Name: "crm-api-dev", Kind: domain.JobKindService, Cmd: "tsx", Ports: map[string]int{"PORT": 4002}},
+	}}
+
+	lines := RecapJobLines(cfg)
+
+	if !strings.Contains(lines[0], "runs crm-web-dev") {
+		t.Errorf("a runner says what it starts: %q", lines[0])
+	}
+	if strings.Contains(lines[0], domain.RecapNoPort) {
+		t.Errorf("and is not warned about: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], domain.RecapBindsNoPort) || strings.Contains(lines[1], domain.RecapNoPort) {
+		t.Errorf("a service that answered is not warned about either: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], domain.RecapNoPort) {
+		t.Errorf("one that answered nothing still is: %q", lines[2])
+	}
+}

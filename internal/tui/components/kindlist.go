@@ -118,7 +118,9 @@ func (m KindListModel) kindColumn() int {
 	return PrintableWidth(styles.Indent) + longest + domain.KindListGap
 }
 
-func (m KindListModel) helpHint() string { return domain.KindListHelp }
+func (m KindListModel) helpActions() []string { return []string{domain.HelpSetKind} }
+
+func (m KindListModel) helpModal() string { return "" }
 
 // renderRow lays the job out on the left and its two kinds on the right, padded
 // apart so the kinds line up into a column the eye can scan.

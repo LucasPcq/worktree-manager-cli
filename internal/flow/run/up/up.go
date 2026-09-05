@@ -244,6 +244,16 @@ func (f *upFlow) start(answers flow.Answers) (Outcome, error) {
 		return Outcome{}, err
 	}
 
+	// Refused rather than started: a runner and one of its own children are the
+	// same process twice on the same port, and the second one to bind fails in a
+	// way that names neither.
+	if conflicts := rules.StartConflicts(rules.StartConflictsParams{
+		Config:   f.request.Config,
+		Starting: append(rules.JobNames(profile.Jobs), rules.JobsUpIn(f.jobs, workDirs)...),
+	}); len(conflicts) > 0 {
+		return Outcome{}, fmt.Errorf("%s:\n%s", domain.JobConflictTitle, strings.Join(rules.JobConflictLines(conflicts), "\n"))
+	}
+
 	addresses := addressing.Read(addressing.Params{Context: f.ctx, WorkDirs: workDirs})
 	set := seam.OpenSet(seam.SetParams{
 		ProjectDir:    f.ctx.ProjectDir,
@@ -262,7 +272,7 @@ func (f *upFlow) start(answers flow.Answers) (Outcome, error) {
 		Profile:   profile.Name,
 		Worktrees: set.Worktrees(),
 		Warnings:  addresses.Warnings,
-		Start:     set.Starter(seam.StartParams{Profile: profile.Name, Jobs: profile.Jobs}),
+		Start:     set.Starter(seam.StartParams{Profile: profile.Name, Jobs: rules.JobsWithEffectivePorts(f.request.Config, profile.Jobs)}),
 	})
 	if err != nil {
 		return Outcome{}, err

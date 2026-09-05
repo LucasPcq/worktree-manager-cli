@@ -233,3 +233,46 @@ func TestURLItemsLaissentDecocheUnJobDepublie(t *testing.T) {
 		t.Errorf("item[1] = %+v, want api coché", items[1])
 	}
 }
+
+// A job whose .env already carries its port is exempt from the command step —
+// unless the reader moved it onto its command, which is the only way that move
+// can be acted on.
+func TestCmdFixesFollowTheRouteAnswerOverTheDetection(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{{
+		Name: "web", Kind: domain.JobKindService, Cmd: "pnpm run dev",
+		Cwd: "apps/web", Ports: map[string]int{"VITE_PORT": 5173},
+	}}}
+	scans := map[string]domain.EnvPortScan{"apps/web": {
+		Ports:       map[string]int{"VITE_PORT": 5173},
+		SourceByVar: map[string]string{"VITE_PORT": "apps/web/.env"},
+	}}
+
+	onEnv := cmdFixesFor(cmdFixesParams{Config: cfg, Docker: -1, EnvScans: scans, Routes: map[domain.PortRef]domain.PortRoute{
+		{Job: "web", Name: "VITE_PORT"}: domain.PortRouteEnv,
+	}})
+	if len(onEnv) != 0 {
+		t.Fatalf("a job on the .env route has nothing to fix on its command: %+v", onEnv)
+	}
+
+	onCommand := cmdFixesFor(cmdFixesParams{Config: cfg, Docker: -1, EnvScans: scans, Routes: map[domain.PortRef]domain.PortRoute{
+		{Job: "web", Name: "VITE_PORT"}: domain.PortRouteCommand,
+	}})
+	if len(onCommand) != 1 || onCommand[0].Job != "web" {
+		t.Fatalf("the reader moved it onto its command, so the command must be offered: %+v", onCommand)
+	}
+}
+
+func TestCmdFixesFallBackToTheDetectionWhenTheRouteStepNeverRan(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{{
+		Name: "web", Kind: domain.JobKindService, Cmd: "pnpm run dev",
+		Cwd: "apps/web", Ports: map[string]int{"VITE_PORT": 5173},
+	}}}
+
+	fixes := cmdFixesFor(cmdFixesParams{Config: cfg, Docker: -1, EnvScans: map[string]domain.EnvPortScan{"apps/web": {
+		Ports:       map[string]int{"VITE_PORT": 5173},
+		SourceByVar: map[string]string{"VITE_PORT": "apps/web/.env"},
+	}}})
+	if len(fixes) != 0 {
+		t.Fatalf("with no route answer the detection still speaks: %+v", fixes)
+	}
+}

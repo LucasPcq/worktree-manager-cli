@@ -92,3 +92,12 @@ func EnvPortLinksReport(w io.Writer, links []domain.EnvPortLink, bases map[domai
 	Blank(w)
 	Section(w, domain.EnvPortsLinkedTitle, rules.EnvPortLinkLines(links, bases))
 }
+
+// PortKeysReport names the ports a run just wrote into the project's env files.
+func PortKeysReport(w io.Writer, writes []domain.PortKeyWrite) {
+	if len(writes) == 0 {
+		return
+	}
+	Blank(w)
+	Section(w, domain.PortKeysTitle, rules.PortKeyLines(writes))
+}

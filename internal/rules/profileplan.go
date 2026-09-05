@@ -200,6 +200,13 @@ type ApplyInitAnswersParams struct {
 	// profile instead of leaving the proposal standing.
 	ProfilesAsked bool
 	Cmds          []domain.JobCmdFix
+	// Runners is the relation the runner step settled, applied before anything
+	// else: whether a service binds a port of its own is read against it.
+	Runners []domain.JobRunnerChoice
+	// Addressing is the mode the step settled, and AddressingAsked says it ran:
+	// a run that never asked leaves the file's own value standing.
+	Addressing      domain.Addressing
+	AddressingAsked bool
 	// URLs and URLsAsked are the URLs step's answer, resolved here rather than
 	// by the caller: a job only becomes publishable once its port is applied,
 	// which is what this function has just done.
@@ -214,13 +221,19 @@ type ApplyInitAnswersParams struct {
 // config about to be written. Neither is inferred: a port the user corrected
 // and a split they composed outrank what detection proposed.
 func ApplyInitAnswers(params ApplyInitAnswersParams) domain.RunConfig {
-	cfg := params.Config
-	cfg.Jobs = make([]domain.JobConfig, len(params.Config.Jobs))
-	copy(cfg.Jobs, params.Config.Jobs)
+	cfg := ApplyRunnerChoices(ApplyRunnerChoicesParams{Config: params.Config, Choices: params.Runners})
+	jobs := make([]domain.JobConfig, len(cfg.Jobs))
+	copy(jobs, cfg.Jobs)
+	cfg.Jobs = jobs
 
 	// A zero base is an answer too: the user was offered the port and declined
 	// it. Writing it would declare a port nothing binds.
 	for _, entry := range params.Ports {
+		for i, job := range cfg.Jobs {
+			if job.Name == entry.Job && len(job.Ports) == 0 {
+				cfg.Jobs[i].BindsNoPort = entry.BindsNone
+			}
+		}
 		if entry.Base <= 0 {
 			continue
 		}
@@ -254,6 +267,10 @@ func ApplyInitAnswers(params ApplyInitAnswersParams) domain.RunConfig {
 			}
 			cfg.Jobs[i].URL = publishedURL(job.URL, choice)
 		}
+	}
+
+	if params.AddressingAsked && params.Addressing != "" {
+		cfg.Addressing = params.Addressing
 	}
 
 	if params.ProfilesAsked || len(params.Profiles) > 0 {

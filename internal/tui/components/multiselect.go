@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -357,9 +358,15 @@ func (m MultiSelectModel) visibleHeight() int {
 	return max(1, m.height-filterOverhead(m.filtering, m.filter))
 }
 
-// filterHelpHint returns the footer shown while the filter input is active.
-func (m MultiSelectModel) filterHelpHint() string {
-	return "  type to filter • enter apply • esc back"
+func (m MultiSelectModel) helpActions() []string {
+	return []string{domain.HelpToggle, domain.HelpAll, domain.HelpFilter}
+}
+
+func (m MultiSelectModel) helpModal() string {
+	if m.filtering {
+		return domain.FilterHelp
+	}
+	return ""
 }
 
 func (m *MultiSelectModel) clampOffset() {

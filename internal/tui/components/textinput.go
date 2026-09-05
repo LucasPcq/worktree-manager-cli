@@ -113,6 +113,13 @@ func (m TextInputModel) Update(msg tea.Msg) (TextInputModel, tea.Cmd) {
 }
 
 // View renders the prompt-style input.
+// A text input has no rows, so the bar must not offer to move between them.
+func (m TextInputModel) helpActions() []string { return nil }
+
+func (m TextInputModel) helpModal() string { return "" }
+
+func (m TextInputModel) helpRowless() bool { return true }
+
 func (m TextInputModel) View() string {
 	var b strings.Builder
 

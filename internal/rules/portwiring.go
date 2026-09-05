@@ -156,3 +156,77 @@ func PortIsolationLines(params PortIsolationLinesParams) []string {
 	}
 	return append(lines, "", domain.PortIsolationHint)
 }
+
+type JobsIsolatedByCommandParams struct {
+	Config     domain.RunConfig
+	Exempt     []string
+	ScansByDir map[string]domain.EnvPortScan
+}
+
+// JobsIsolatedByCommand names the services whose ports reach them through their
+// command line and nowhere else. They are isolated — while wtm plays that
+// command. Their reader launching them directly gets the base port, which is
+// the whole cost of that route and the one thing the report has to say.
+func JobsIsolatedByCommand(params JobsIsolatedByCommandParams) []string {
+	exempt := make(map[string]bool, len(params.Exempt))
+	for _, name := range params.Exempt {
+		exempt[name] = true
+	}
+	for _, name := range JobsReadingTheirEnv(JobsReadingTheirEnvParams{Config: params.Config, ScansByDir: params.ScansByDir}) {
+		exempt[name] = true
+	}
+
+	var names []string
+	for _, job := range params.Config.Jobs {
+		if exempt[job.Name] || !ShouldProbeJob(ShouldProbeJobParams{Kind: job.Kind, Ports: job.Ports, Probe: job.Probe}) {
+			continue
+		}
+		if len(PortVarsMissingFrom(domain.JobCmdFix{Cmd: job.Cmd, Vars: sortedPortNames(job.Ports)})) == 0 {
+			names = append(names, job.Name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// PortCommandOnlyLines is the note those jobs get: what they are, and the one
+// thing that would isolate them either way.
+func PortCommandOnlyLines(jobs []string) []string {
+	if len(jobs) == 0 {
+		return nil
+	}
+
+	width := 0
+	for _, job := range jobs {
+		width = max(width, len([]rune(job)))
+	}
+
+	lines := make([]string, 0, len(jobs)+2)
+	for _, job := range jobs {
+		lines = append(lines, fmt.Sprintf(domain.PortCommandOnlyLineFmt, pad(job, width), domain.PortCommandOnlyReason))
+	}
+	return append(lines, "", domain.PortCommandOnlyHint)
+}
+
+func CmdFixWidths(fixes []domain.JobCmdFix) (job, vars int) {
+	for _, fix := range fixes {
+		job = max(job, len([]rune(fix.Job)))
+		vars = max(vars, len([]rune(CmdFixVars(fix))))
+	}
+	return job, vars
+}
+
+// CmdFixVars re-reads the command as it stands, so a row that has been amended
+// stops naming the variable it was flagged for and the list reads as a
+// checklist.
+func CmdFixVars(fix domain.JobCmdFix) string {
+	missing := PortVarsMissingFrom(fix)
+	if len(missing) == 0 {
+		return domain.CmdListReferenced
+	}
+	return strings.Join(missing, domain.CmdListVarSep)
+}
+
+func CmdFixLabel(fix domain.JobCmdFix, jobWidth, varsWidth int) string {
+	return fmt.Sprintf(domain.CmdListEntryFmt, pad(fix.Job, jobWidth), pad(CmdFixVars(fix), varsWidth), fix.Cmd)
+}

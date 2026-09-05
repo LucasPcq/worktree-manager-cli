@@ -83,3 +83,25 @@ func samePorts(before, after map[string]int) bool {
 	}
 	return true
 }
+
+// JobsUpIn names the jobs already running in any of these worktrees. A start
+// has to weigh them alongside what it is about to start: a runner started a
+// moment ago holds its children just as surely as one started in the same
+// gesture.
+func JobsUpIn(jobs []domain.JobInfo, workDirs []string) []string {
+	wanted := make(map[string]bool, len(workDirs))
+	for _, dir := range workDirs {
+		wanted[dir] = true
+	}
+
+	var names []string
+	seen := map[string]bool{}
+	for _, job := range jobs {
+		if !IsJobUp(job.Status) || !wanted[job.WorkDir] || seen[job.Name] {
+			continue
+		}
+		seen[job.Name] = true
+		names = append(names, job.Name)
+	}
+	return names
+}

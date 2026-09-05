@@ -106,6 +106,11 @@ A few ideas explain how the commands fit together:
   middle branch merges.
 - **Env provisioning** — on `create`, wtm copies `.env` files into the new worktree using
   a **strategy** (`example` / `main` / `parent`). See [Env strategies](#env-strategies).
+- **A worktree's ports live in its `.env`** — that is what makes isolation hold when you
+  start something yourself. wtm shifts the ports those files carry (see
+  [Ports hard-coded in a `.env`](#ports-hard-coded-in-a-env)) and writes
+  `COMPOSE_PROJECT_NAME` into the file each compose stack reads, so a `docker compose up`
+  or a `pnpm dev` typed in a worktree is isolated with no wtm process involved.
 - **Shell integration** — `go` changes your current directory, which a child process can't
   do for its parent shell. `eval "$(wtm shell-init)"` installs a shell function that makes
   it work. Without it, use [`resolve`](docs/wtm_resolve.md) to get a path.
@@ -157,7 +162,7 @@ no longer touches services). Until then, run commands stop with a hint pointing 
 
 | Command | Purpose |
 |---|---|
-| [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts, pre-fill ports, publish URLs, link .env keys) |
+| [`run init`](docs/wtm_run_init.md) | Set up run.toml (detect docker-compose + scripts, pre-fill ports, publish URLs, write and link .env keys) |
 | [`run up`](docs/wtm_run_up.md) / [`down`](docs/wtm_run_down.md) | Start / stop a profile's jobs on one or more worktrees (`up` attaches, `-d` detaches) |
 | [`run start`](docs/wtm_run_start.md) / [`stop`](docs/wtm_run_stop.md) | Start / stop a single job (`start` attaches, `-d` detaches) |
 | [`run ps`](docs/wtm_run_ps.md) / [`list`](docs/wtm_run_list.md) | Running jobs, every repository / declared jobs + profiles |
@@ -434,10 +439,14 @@ predates declarative ports without overwriting one you set by hand.
 Dev servers are pre-filled the same way, from the env files next to their `package.json` —
 a `PORT` or `*_PORT` entry in `.env.local`, `.env`, or a committed `.env.example`. Each
 job takes the file in its own directory, so in a monorepo every package keeps its own port.
-wtm declares the port and nothing else: it never edits your `.env` and never rewrites a
-command. Checking that the command reads the variable is yours to do — `next dev` and most
-node servers read `PORT` from the environment, while a CLI that only takes a flag needs
-`--cmd 'pnpm dev --port ${PORT}'`. The port it declares is also the base the `[[env_port]]`
+wtm declares the port and never rewrites a command. Where the job *reads* that port is a
+question the wizard puts, job by job: from its own `.env` — wtm writes `KEY=<base>` there
+and in the committed template, and your config reads it (`server.port:
+Number(process.env.VITE_PORT)`) — or from the command, `--cmd 'pnpm dev --port ${PORT}'`.
+The `.env` route is the pre-filled answer because it is the only one that still holds when
+you start the app yourself; the command route isolates what `wtm run` starts and nothing
+else, which the final report says in as many words. `--write-port-keys` takes the first
+route for every job without asking. The port it declares is also the base the `[[env_port]]`
 links below follow, so a `.env` holding both `PORT=5173` and a `VITE_API_URL` pointing at
 it ends up with the two shifted together.
 

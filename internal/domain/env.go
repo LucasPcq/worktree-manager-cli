@@ -31,3 +31,12 @@ type EnvPortScan struct {
 	Ports       map[string]int
 	SourceByVar map[string]string
 }
+
+// EnvOwnedEntry is one wtm-owned key as it lands in a worktree's .env. Changed
+// says the file did not already hold that value.
+type EnvOwnedEntry struct {
+	File    string `json:"file"`
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	Changed bool   `json:"changed"`
+}

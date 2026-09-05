@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
@@ -258,5 +259,83 @@ func TestPortEntriesForTrustsAServicesOnlyPort(t *testing.T) {
 	}
 	if got[0].Name != "VITE_PORT" || got[0].Base != 5173 {
 		t.Errorf("entry = %+v, want the declared VITE_PORT", got[0])
+	}
+}
+
+func commandOnlyConfig() domain.RunConfig {
+	return domain.RunConfig{Jobs: []domain.JobConfig{{
+		Name:  "web",
+		Kind:  domain.JobKindService,
+		Cmd:   "pnpm dev --port ${PORT}",
+		Ports: map[string]int{"PORT": 3000},
+	}}}
+}
+
+func TestJobsIsolatedByCommandNamesAJobWhoseCommandCarriesItsPort(t *testing.T) {
+	jobs := JobsIsolatedByCommand(JobsIsolatedByCommandParams{Config: commandOnlyConfig()})
+
+	if len(jobs) != 1 || jobs[0] != "web" {
+		t.Fatalf("got %+v, want [web]", jobs)
+	}
+}
+
+func TestJobsIsolatedByCommandIgnoresAJobReadingItsEnv(t *testing.T) {
+	jobs := JobsIsolatedByCommand(JobsIsolatedByCommandParams{
+		Config:     commandOnlyConfig(),
+		ScansByDir: map[string]domain.EnvPortScan{".": {Ports: map[string]int{"PORT": 3000}}},
+	})
+
+	if len(jobs) != 0 {
+		t.Fatalf("its .env carries the port, so nothing is lost by hand: %+v", jobs)
+	}
+}
+
+func TestJobsIsolatedByCommandIgnoresAJobWhoseCommandSaysNothing(t *testing.T) {
+	cfg := commandOnlyConfig()
+	cfg.Jobs[0].Cmd = "pnpm dev"
+
+	if jobs := JobsIsolatedByCommand(JobsIsolatedByCommandParams{Config: cfg}); len(jobs) != 0 {
+		t.Fatalf("that job is the alert's business, not this one's: %+v", jobs)
+	}
+}
+
+func TestJobsIsolatedByCommandIgnoresAnExemptJob(t *testing.T) {
+	jobs := JobsIsolatedByCommand(JobsIsolatedByCommandParams{Config: commandOnlyConfig(), Exempt: []string{"web"}})
+
+	if len(jobs) != 0 {
+		t.Fatalf("got %+v", jobs)
+	}
+}
+
+func TestPortCommandOnlyLinesSayWhatTheRouteCosts(t *testing.T) {
+	lines := PortCommandOnlyLines([]string{"web"})
+
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, domain.PortCommandOnlyReason) {
+		t.Fatalf("got %q", joined)
+	}
+	if !strings.Contains(joined, domain.PortCommandOnlyHint) {
+		t.Fatalf("the note must name the way out: %q", joined)
+	}
+}
+
+func TestPortCommandOnlyLinesStaySilentWithNoSuchJob(t *testing.T) {
+	if lines := PortCommandOnlyLines(nil); len(lines) != 0 {
+		t.Fatalf("got %q", lines)
+	}
+}
+
+func TestCmdFixLabelsAlignTheirColumns(t *testing.T) {
+	fixes := []domain.JobCmdFix{
+		{Job: "crm-admin-dev", Cmd: "pnpm run dev", Vars: []string{"VITE_PORT"}},
+		{Job: "api", Cmd: "node server.js", Vars: []string{"PORT"}},
+	}
+
+	jobWidth, varsWidth := CmdFixWidths(fixes)
+	first := CmdFixLabel(fixes[0], jobWidth, varsWidth)
+	second := CmdFixLabel(fixes[1], jobWidth, varsWidth)
+
+	if strings.Index(first, "pnpm run dev") != strings.Index(second, "node server.js") {
+		t.Fatalf("the command column must start at the same offset:\n%q\n%q", first, second)
 	}
 }

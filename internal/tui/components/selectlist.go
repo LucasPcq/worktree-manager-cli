@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -441,9 +442,19 @@ func (m SelectListModel) visibleHeight() int {
 	return max(1, m.height-filterOverhead(m.filtering, m.filter))
 }
 
-// filterHelpHint returns the footer shown while the filter input is active.
+func (m SelectListModel) helpActions() []string { return []string{domain.HelpFilter} }
+
+func (m SelectListModel) helpModal() string {
+	if m.filtering {
+		return m.filterHelpHint()
+	}
+	return ""
+}
+
+// filterHelpHint is also read by the standalone list outside the wizard, which
+// has no help bar of its own to compose.
 func (m SelectListModel) filterHelpHint() string {
-	return "  type to filter • enter select • esc back"
+	return domain.FilterSelectHelp
 }
 
 func (m *SelectListModel) clampOffset() {

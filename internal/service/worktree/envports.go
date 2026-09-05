@@ -36,8 +36,28 @@ func ResolveEnvPorts(params ResolveEnvPortsParams) (envsvc.EnvPortsParams, error
 	if err != nil {
 		return envsvc.EnvPortsParams{}, err
 	}
+
+	// Resolved from the branch and the repository alone: this value is written to
+	// a file, so it must not inherit the COMPOSE_PROJECT_NAME the calling process
+	// happens to carry — a `wtm env` run from inside another worktree, or from a
+	// job, would stamp that worktree's name into this one's .env.
+	owned := rules.OwnedEnvWrites(rules.OwnedEnvWritesParams{
+		Config:   cfg,
+		EnvFiles: params.EnvFiles,
+		Values: map[string]string{domain.EnvComposeProjectName: rules.ComposeProjectName(rules.ComposeProjectNameParams{
+			Project:  filepath.Base(params.ProjectDir),
+			Worktree: rules.WorktreeSlug(params.Branch),
+		})},
+	})
+
+	// The identity needs neither an ordinal nor an offset, so a project with no
+	// link resolves without asking git anything — EnsureOrdinal writes, and this
+	// function is on the read path of every address wtm hands out.
 	if len(cfg.EnvPorts) == 0 {
-		return envsvc.EnvPortsParams{}, nil
+		if len(owned) == 0 {
+			return envsvc.EnvPortsParams{}, nil
+		}
+		return envsvc.EnvPortsParams{WorktreePath: params.WorktreePath, Owned: owned}, nil
 	}
 
 	if errs := rules.ValidateEnvPortTargets(cfg.EnvPorts, params.EnvFiles); len(errs) > 0 {
@@ -63,6 +83,7 @@ func ResolveEnvPorts(params ResolveEnvPortsParams) (envsvc.EnvPortsParams, error
 	return envsvc.EnvPortsParams{
 		WorktreePath: params.WorktreePath,
 		Links:        cfg.EnvPorts,
+		Owned:        owned,
 		Bases:        rules.EnvPortBases(cfg),
 		Offset:       offset,
 		Block:        rules.EffectivePortOffsetBlock(cfg),

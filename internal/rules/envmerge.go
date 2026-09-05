@@ -112,6 +112,13 @@ func classifyKey(params classifyKeyParams) domain.EnvKeyDiff {
 
 	if inChild {
 		diff.CurrentValue = childLine.Value
+		// A key wtm derives from the worktree differs from every source by
+		// construction. Absent from the child it is missing like any other, and
+		// the owned pass writes it.
+		if IsOwnedEnvKey(k) {
+			diff.Status = domain.EnvKeyResolved
+			return diff
+		}
 		if !expected {
 			diff.Status = domain.EnvKeyOrphan
 			return diff

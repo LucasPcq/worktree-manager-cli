@@ -32,7 +32,10 @@ const (
 	stepPorts          = "ports"
 	stepURLs           = "urls"
 	stepCmds           = "cmds"
+	stepPortRoute      = "port_route"
+	stepRuns           = "runs"
 	stepEnvLink        = "env_link"
+	stepAddressing     = "addressing"
 	stepRecap          = "recap"
 	stepProfiles       = "profiles"
 	stepScripts        = "scripts"
@@ -125,6 +128,7 @@ func RunServicesWizard(params ServicesWizardParams) (domain.InitProjectAnswers, 
 		PatchCompose: params.PatchCompose,
 		EnvScans:     params.EnvScans,
 		EnvLines:     params.EnvLines,
+		EnvFiles:     params.EnvFiles,
 	})
 
 	if len(s.steps) == 0 {
@@ -164,6 +168,10 @@ type ServicesWizardParams struct {
 	// EnvLines is the project's env files read once, so the link step can match
 	// them against a config still being composed.
 	EnvLines map[string][]domain.EnvLine
+	// EnvFiles are the value targets the project provisions, which is what says
+	// where a port key would be written — and whether that file exists as a
+	// target at all.
+	EnvFiles []domain.EnvFile
 }
 
 // SectionWizardParams holds inputs for RunSectionWizard.
@@ -674,11 +682,14 @@ func scriptKindChoices(p scriptKindChoicesParams) []domain.JobKindChoice {
 
 // scriptLabel names a script by its package, the way the selection step does.
 func scriptLabel(script domain.PackageScript) string {
-	scope := domain.ScriptScopeRoot
-	if script.Workspace != "" {
-		scope = script.Workspace
+	return fmt.Sprintf(domain.ScriptLabelFmt, scriptScope(script), script.Name)
+}
+
+func scriptScope(script domain.PackageScript) string {
+	if script.Workspace == "" {
+		return domain.ScriptScopeRoot
 	}
-	return fmt.Sprintf(domain.ScriptLabelFmt, scope, script.Name)
+	return script.Workspace
 }
 
 func kindListSummary(model any) string {
@@ -732,6 +743,30 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (steps 
 		})
 	}
 
+	// Declared before the ports step, which reads its answer: a service whose
+	// children hold the ports is not a service that forgot to declare one.
+	s.add(stepRuns, components.Step{
+		Name: domain.RunnerListStepName,
+		Build: func(prev []components.Step) any {
+			return components.NewRunnerList(components.NewRunnerListParams{
+				Title:       domain.RunnerListStepTitle,
+				Description: domain.RunnerListStepDesc,
+				Choices:     runnerChoicesFor(resolved(prev).Config, prev, docker),
+			})
+		},
+		AutoSkip: func(w components.WizardModel) bool {
+			return len(runnerChoicesFor(resolved(w.Steps()).Config, w.Steps(), docker)) == 0
+		},
+		SkipReason: func() string { return domain.SkipReasonNoRunnerCandidate },
+		Summary:    runnerListSummary,
+		Callout:    true,
+	})
+
+	runners := s.at(stepRuns)
+	withRunners := func(prev []components.Step) domain.RunConfig {
+		return rules.ApplyRunnerChoices(rules.ApplyRunnerChoicesParams{Config: resolved(prev).Config, Choices: runnerChoicesOf(prev, runners)})
+	}
+
 	portsSkipReason := ""
 	s.add(stepPorts, components.Step{
 		Name: domain.PortListStepName,
@@ -739,11 +774,11 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (steps 
 			return components.NewPortList(components.NewPortListParams{
 				Title:       domain.PortListStepTitle,
 				Description: domain.PortListStepDesc,
-				Entries:     portEntriesFor(resolved(prev).Config, prev, docker),
+				Entries:     portEntriesFor(withRunners(prev), prev, docker),
 			})
 		},
 		AutoSkip: func(w components.WizardModel) bool {
-			cfg := resolved(w.Steps()).Config
+			cfg := withRunners(w.Steps())
 			if len(portEntriesFor(cfg, w.Steps(), docker)) > 0 {
 				return false
 			}
@@ -758,7 +793,7 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (steps 
 	ports := s.at(stepPorts)
 	settled := func(prev []components.Step) domain.RunConfig {
 		return rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
-			Config: resolved(prev).Config,
+			Config: withRunners(prev),
 			Ports:  portEntriesOf(prev, ports),
 		})
 	}
@@ -768,7 +803,7 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (steps 
 	steps.Written = func(prev []components.Step) domain.RunConfig {
 		outcome := resolved(prev)
 		return rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
-			Config:        outcome.Config,
+			Config:        withRunners(prev),
 			Ports:         portEntriesOf(prev, ports),
 			Cmds:          cmdFixesOf(prev, s.at(stepCmds)),
 			Profiles:      profilesOf(prev, s.at(stepProfiles)),
@@ -780,17 +815,36 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (steps 
 	}
 
 	cmdSkipReason := ""
+	// Declared before the commands step, which it narrows: a job routed to its
+	// own .env has nothing left to fix on its command line.
+	s.add(stepPortRoute, components.Step{
+		Name: domain.RouteListStepName,
+		Build: func(prev []components.Step) any {
+			return components.NewRouteList(components.NewRouteListParams{
+				Title:       domain.RouteListStepTitle,
+				Description: domain.RouteListStepDesc,
+				Rows:        portRouteRows(portRouteParams{Config: settled(prev), Steps: prev, Docker: docker, EnvScans: params.EnvScans, EnvFiles: params.EnvFiles}),
+			})
+		},
+		AutoSkip: func(w components.WizardModel) bool {
+			return len(portRouteRows(portRouteParams{Config: settled(w.Steps()), Steps: w.Steps(), Docker: docker, EnvScans: params.EnvScans, EnvFiles: params.EnvFiles})) == 0
+		},
+		SkipReason: func() string { return domain.SkipReasonNoPortedJob },
+		Summary:    routeListSummary,
+		Callout:    true,
+	})
+
 	s.add(stepCmds, components.Step{
 		Name: domain.CmdListStepName,
 		Build: func(prev []components.Step) any {
 			return components.NewCmdList(components.NewCmdListParams{
 				Title:       domain.CmdListStepTitle,
 				Description: domain.CmdListStepDesc,
-				Fixes:       cmdFixesFor(cmdFixesParams{Config: settled(prev), Steps: prev, Docker: docker, EnvScans: params.EnvScans}),
+				Fixes:       cmdFixesFor(cmdFixesParams{Config: settled(prev), Steps: prev, Docker: docker, EnvScans: params.EnvScans, Routes: portRoutesOf(prev, s.at(stepPortRoute))}),
 			})
 		},
 		AutoSkip: func(w components.WizardModel) bool {
-			if len(cmdFixesFor(cmdFixesParams{Config: settled(w.Steps()), Steps: w.Steps(), Docker: docker, EnvScans: params.EnvScans})) > 0 {
+			if len(cmdFixesFor(cmdFixesParams{Config: settled(w.Steps()), Steps: w.Steps(), Docker: docker, EnvScans: params.EnvScans, Routes: portRoutesOf(w.Steps(), s.at(stepPortRoute))})) > 0 {
 				return false
 			}
 			cmdSkipReason = domain.SkipReasonCommandsRead
@@ -817,6 +871,25 @@ func addPortsAndProfilesSteps(s *stepSet, params addServicesStepsParams) (steps 
 		},
 		SkipReason: func() string { return domain.SkipReasonNoListeningPort },
 		Summary:    urlListSummary,
+		Callout:    true,
+	})
+
+	// Declared right after the urls: the reader has just said which jobs get a
+	// name, and this is what those names cost.
+	s.add(stepAddressing, components.Step{
+		Name: domain.AddressingStepName,
+		Build: func(prev []components.Step) any {
+			return components.NewSelectList(components.NewSelectListParams{
+				Title:       domain.AddressingStepTitle,
+				Description: domain.AddressingStepDesc,
+				Items:       addressingItems(rules.AddressingChoices(rules.EffectiveAddressing(steps.Written(prev)))),
+			})
+		},
+		AutoSkip: func(w components.WizardModel) bool {
+			return !rules.AnyJobPublishesAName(steps.Written(w.Steps()))
+		},
+		SkipReason: func() string { return domain.SkipReasonNoName },
+		Summary:    selectListSummary,
 		Callout:    true,
 	})
 
@@ -931,10 +1004,15 @@ func portEntriesOf(prev []components.Step, at int) []domain.PortEntry {
 // on the reader unchecking a line, not on a run that fails.
 func urlItemsFor(cfg domain.RunConfig, newJobs []string) []components.MultiSelectItem {
 	candidates := rules.URLCandidatesFor(rules.URLCandidatesForParams{Config: cfg, NewJobs: newJobs})
+	width := 0
+	for _, candidate := range candidates {
+		width = max(width, len([]rune(candidate.Job)))
+	}
+
 	items := make([]components.MultiSelectItem, 0, len(candidates))
 	for _, candidate := range candidates {
 		items = append(items, components.MultiSelectItem{
-			Label:    fmt.Sprintf(domain.URLListEntryFmt, candidate.Job, candidate.Port),
+			Label:    fmt.Sprintf(domain.URLListEntryFmt, rules.Pad(candidate.Job, width), candidate.Port),
 			Value:    candidate.Job,
 			Selected: candidate.Publish,
 		})
@@ -972,15 +1050,21 @@ func urlStep(prev []components.Step, at int) (components.MultiSelectModel, bool)
 // whose ports were read from its own .env already reads them, which is why the
 // value was there to detect.
 func cmdFixesFor(params cmdFixesParams) []domain.JobCmdFix {
-	return rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
-		Config: params.Config,
-		Exempt: append(
-			composeJobsIn(params.Config, params.Steps, params.Docker),
-			rules.JobsReadingTheirEnv(rules.JobsReadingTheirEnvParams{
-				Config:     params.Config,
-				ScansByDir: params.EnvScans,
-			})...),
-	})
+	exempt := composeJobsIn(params.Config, params.Steps, params.Docker)
+
+	// Once the route step has answered, the answer outranks the detection: a job
+	// whose .env already carries its port but that the reader moved onto its
+	// command must be offered that command, or the move has no way to happen.
+	if params.Routes != nil {
+		exempt = append(exempt, rules.JobsOnEnvRoute(rules.JobsOnEnvRouteParams{Config: params.Config, Routes: params.Routes})...)
+		return rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{Config: params.Config, Exempt: exempt})
+	}
+
+	exempt = append(exempt, rules.JobsReadingTheirEnv(rules.JobsReadingTheirEnvParams{
+		Config:     params.Config,
+		ScansByDir: params.EnvScans,
+	})...)
+	return rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{Config: params.Config, Exempt: exempt})
 }
 
 type cmdFixesParams struct {
@@ -988,6 +1072,103 @@ type cmdFixesParams struct {
 	Steps    []components.Step
 	Docker   int
 	EnvScans map[string]domain.EnvPortScan
+	// Routes is the answer of the step before this one: a job whose every port
+	// is read from its own .env has nothing to fix on its command line.
+	Routes map[domain.PortRef]domain.PortRoute
+}
+
+type portRouteParams struct {
+	Config   domain.RunConfig
+	Steps    []components.Step
+	Docker   int
+	EnvScans map[string]domain.EnvPortScan
+	EnvFiles []domain.EnvFile
+}
+
+// portRouteRows lists every service declaring a port, compose stacks excepted —
+// they read theirs from the file wtm templated. The complete list is the point:
+// a re-init shows what each job settled on, pre-filled, rather than only what is
+// still unresolved.
+func portRouteRows(params portRouteParams) []domain.PortRouteRow {
+	return rules.PortRouteRows(rules.PortRouteRowsParams{
+		Config:      params.Config,
+		ComposeJobs: composeJobsIn(params.Config, params.Steps, params.Docker),
+		ScansByDir:  params.EnvScans,
+		EnvFiles:    params.EnvFiles,
+	})
+}
+
+func runnerChoicesFor(cfg domain.RunConfig, prev []components.Step, docker int) []domain.JobRunnerChoice {
+	return rules.RunnerChoices(rules.RunnerChoicesParams{
+		Config:      cfg,
+		ComposeJobs: composeJobsIn(cfg, prev, docker),
+	})
+}
+
+func runnerChoicesOf(prev []components.Step, at int) []domain.JobRunnerChoice {
+	if at < 0 || at >= len(prev) {
+		return nil
+	}
+	rl, ok := prev[at].Model.(components.RunnerListModel)
+	if !ok {
+		return nil
+	}
+	return rl.Choices()
+}
+
+func runnerListSummary(model any) string {
+	rl, ok := model.(components.RunnerListModel)
+	if !ok {
+		return ""
+	}
+	if len(rl.Choices()) == 0 {
+		return domain.RecapNotAsked
+	}
+	attached := 0
+	for _, choice := range rl.Choices() {
+		if choice.Runner != "" {
+			attached++
+		}
+	}
+	return fmt.Sprintf(domain.RunnerListSummaryFmt, attached, len(rl.Choices()))
+}
+
+// addressingItems renders the two modes the rule ordered. Which one comes
+// first is a decision, and it is made in rules/.
+func addressingItems(modes []domain.Addressing) []components.SelectItem {
+	items := make([]components.SelectItem, 0, len(modes))
+	for _, mode := range modes {
+		items = append(items, components.SelectItem{Label: rules.AddressingLabel(mode), Value: string(mode)})
+	}
+	return items
+}
+
+func portRoutesOf(prev []components.Step, at int) map[domain.PortRef]domain.PortRoute {
+	if at < 0 || at >= len(prev) {
+		return nil
+	}
+	rl, ok := prev[at].Model.(components.RouteListModel)
+	if !ok {
+		return nil
+	}
+	return rl.Routes()
+}
+
+func routeListSummary(model any) string {
+	rl, ok := model.(components.RouteListModel)
+	if !ok {
+		return ""
+	}
+	if len(rl.Rows()) == 0 {
+		return domain.RecapNotAsked
+	}
+	env := 0
+	for _, row := range rl.Rows() {
+		if row.Route == domain.PortRouteEnv {
+			env++
+		}
+	}
+	return fmt.Sprintf(domain.RouteListSummaryFmt, env, len(rl.Rows())-env)
 }
 
 func selectedComposeFiles(prev []components.Step, docker int) []string {
@@ -1032,13 +1213,16 @@ func portListSummary(model any) string {
 	if !ok {
 		return ""
 	}
-	declared := 0
+	declared, answered := 0, 0
 	for _, entry := range pl.Entries() {
-		if entry.Base > 0 {
+		switch {
+		case entry.Base > 0:
 			declared++
+		case entry.BindsNone:
+			answered++
 		}
 	}
-	if undeclared := len(pl.Entries()) - declared; undeclared > 0 {
+	if undeclared := len(pl.Entries()) - declared - answered; undeclared > 0 {
 		return fmt.Sprintf(domain.PortListSummaryUndeclaredFmt, declared, undeclared)
 	}
 	return fmt.Sprintf(domain.PortListSummaryFmt, declared)
@@ -1066,14 +1250,16 @@ type scriptItemsParams struct {
 // an inventory instead of a configuration.
 func scriptItems(params scriptItemsParams) []components.MultiSelectItem {
 	pm := string(params.PackageManager)
+	width := 0
+	for _, script := range params.Scripts {
+		width = max(width, len([]rune(scriptScope(script)+domain.ScriptLabelSep+script.Name)))
+	}
+
 	items := make([]components.MultiSelectItem, 0, len(params.Scripts))
 	for i, script := range params.Scripts {
-		scope := domain.ScriptScopeRoot
-		if script.Workspace != "" {
-			scope = script.Workspace
-		}
+		name := rules.Pad(scriptScope(script)+domain.ScriptLabelSep+script.Name, width)
 		items = append(items, components.MultiSelectItem{
-			Label: fmt.Sprintf(domain.ScriptItemLabelFmt, scope, script.Name, pm, script.Name),
+			Label: fmt.Sprintf(domain.ScriptItemLabelFmt, name, pm, script.Name),
 			Value: strconv.Itoa(i),
 			Selected: prefillSelected(params.Prefill,
 				params.Prefill != nil && params.Prefill.ScriptIndices[i],
@@ -1090,6 +1276,7 @@ type addServicesStepsParams struct {
 	PatchCompose bool
 	EnvScans     map[string]domain.EnvPortScan
 	EnvLines     map[string][]domain.EnvLine
+	EnvFiles     []domain.EnvFile
 }
 
 func addServicesSteps(s *stepSet, params addServicesStepsParams) (steps servicesSteps) {
@@ -1117,7 +1304,7 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) (steps services
 			Name: domain.ScriptsStepName,
 			Model: components.NewMultiSelect(components.NewMultiSelectParams{
 				Title:       domain.ScriptsStepTitle,
-				Description: domain.ScriptsStepDesc,
+				Description: rules.ScriptsStepDescription(detection.PackageScripts),
 				Items: scriptItems(scriptItemsParams{
 					Scripts:        detection.PackageScripts,
 					PackageManager: detection.PackageManager,
@@ -1139,6 +1326,7 @@ func addServicesSteps(s *stepSet, params addServicesStepsParams) (steps services
 		Existing:  params.Existing,
 		EnvScans:  params.EnvScans,
 		EnvLines:  params.EnvLines,
+		EnvFiles:  params.EnvFiles,
 	})
 
 	addComposePatchStep(s, addComposePatchStepParams{
@@ -1285,6 +1473,21 @@ func extractProjectAnswers(final components.WizardModel, detection domain.InitDe
 		if m, ok := steps[i].Model.(components.ProfileListModel); ok {
 			answers.Profiles = m.Profiles()
 			answers.ProfilesAsked = true
+		}
+	}
+	if i := at(stepRuns); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.RunnerListModel); ok {
+			answers.Runners = m.Choices()
+		}
+	}
+	if i := at(stepAddressing); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.SelectListModel); ok {
+			answers.AddressingAsked, answers.Addressing = true, domain.Addressing(m.Value())
+		}
+	}
+	if i := at(stepPortRoute); i >= 0 && !final.Skipped(i) {
+		if m, ok := steps[i].Model.(components.RouteListModel); ok {
+			answers.PortRoutesAsked, answers.PortRoutes = true, m.Routes()
 		}
 	}
 	if i := at(stepCmds); i >= 0 && !final.Skipped(i) {

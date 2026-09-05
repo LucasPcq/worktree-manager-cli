@@ -69,6 +69,16 @@ type JobConfig struct {
 	// Probe gates the port check for this job. Nil means the default, which is
 	// to check: a job only opts out after its reader was asked and said so.
 	Probe *bool `toml:"probe,omitempty" json:"probe,omitempty"`
+	// BindsNoPort says this service listens on nothing by design — a build in
+	// watch mode, a worker, or a runner whose children hold the ports. Silence
+	// says the same thing as "not settled yet", and wtm reads silence as an
+	// oversight; this is how a reader answers it once.
+	BindsNoPort bool `toml:"binds_no_port,omitempty" json:"binds_no_port,omitempty"`
+	// Runs names the declared jobs this one starts itself — `turbo run dev`
+	// against a filter, a compose stack of several apps, any single process
+	// that fans out. wtm learns nothing about the runner from it: the relation
+	// is declared, never inferred from the command.
+	Runs []string `toml:"runs,omitempty" json:"runs,omitempty"`
 }
 
 // JobURLEntry is one published job as a surface reports it: the job's name and
@@ -327,4 +337,22 @@ type DaemonStatus struct {
 	ProxyPort     int    `json:"proxy_port,omitempty"`
 	Foreground    int    `json:"foreground_jobs"`
 	Detached      int    `json:"detached_jobs"`
+}
+
+// JobConflict is a job that would be started twice at once: on its own, and by
+// the runner that declares it in `runs`.
+type JobConflict struct {
+	Job    string
+	Runner string
+}
+
+// JobRunnerChoice is one job and the runner that starts it, empty for none.
+// Options carries the answers the step can cycle through, the empty one first:
+// no relation is the default, because guessing which command fans out into
+// which jobs is the one thing wtm refuses to infer.
+type JobRunnerChoice struct {
+	Job     string
+	Label   string
+	Runner  string
+	Options []string
 }

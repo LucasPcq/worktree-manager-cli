@@ -340,3 +340,64 @@ func TestValidateRunNeighbouringBasesAccepted(t *testing.T) {
 		t.Fatalf("bases a single unit apart never collide under a uniform offset, got %v", errs)
 	}
 }
+
+func runnerConfig(runs ...string) domain.RunConfig {
+	return domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "dev:crm", Kind: domain.JobKindService, Cmd: "pnpm run dev:crm", Runs: runs},
+		{Name: "crm-web-dev", Kind: domain.JobKindService, Cmd: "pnpm run dev", Ports: map[string]int{"VITE_PORT": 5175}},
+	}}
+}
+
+func TestValidateRunAcceptsARunnerNamingItsChildren(t *testing.T) {
+	if _, errs := ValidateRun(runnerConfig("crm-web-dev")); len(errs) != 0 {
+		t.Fatalf("got %v", errs)
+	}
+}
+
+func TestValidateRunRefusesARunnerNamingAnUnknownJob(t *testing.T) {
+	_, errs := ValidateRun(runnerConfig("nope"))
+
+	if len(errs) != 1 || !strings.Contains(errs[0], "runs unknown job") {
+		t.Fatalf("got %v", errs)
+	}
+}
+
+func TestValidateRunRefusesARunnerNamingItself(t *testing.T) {
+	_, errs := ValidateRun(runnerConfig("dev:crm"))
+
+	if len(errs) != 1 || !strings.Contains(errs[0], "runs itself") {
+		t.Fatalf("got %v", errs)
+	}
+}
+
+func TestValidateRunRefusesACycleOfRunners(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "a", Kind: domain.JobKindService, Cmd: "x", Runs: []string{"b"}},
+		{Name: "b", Kind: domain.JobKindService, Cmd: "y", Runs: []string{"a"}},
+	}}
+
+	if _, errs := ValidateRun(cfg); len(errs) == 0 {
+		t.Fatal("a runner reachable from itself makes every walk of the relation recurse forever")
+	}
+}
+
+func TestValidateRunRefusesBindsNoPortOnAJobDeclaringOne(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "web", Kind: domain.JobKindService, Cmd: "x", Ports: map[string]int{"PORT": 3000}, BindsNoPort: true},
+	}}
+
+	_, errs := ValidateRun(cfg)
+	if len(errs) != 1 || !strings.Contains(errs[0], "contradicts") {
+		t.Fatalf("got %v", errs)
+	}
+}
+
+func TestValidateRunRefusesBindsNoPortOnATask(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "migrate", Kind: domain.JobKindTask, Cmd: "x", BindsNoPort: true},
+	}}
+
+	if _, errs := ValidateRun(cfg); len(errs) != 1 {
+		t.Fatalf("got %v", errs)
+	}
+}

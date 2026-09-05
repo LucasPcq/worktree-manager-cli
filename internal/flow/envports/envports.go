@@ -47,8 +47,12 @@ func Settle(params Params) error {
 	for _, notice := range rules.EnvPortNotices(plan) {
 		params.Presenter.Status(flow.Notice{Kind: flow.NoticeWarning, Text: notice.Title, Lines: []string{notice.Line}})
 	}
+	if owned := rules.OwnedEnvLines(plan); len(owned) > 0 {
+		params.Presenter.Status(flow.Notice{Kind: flow.NoticeMessage, Text: domain.EnvOwnedKeysTitle, Lines: owned})
+	}
+
 	if len(plan.Rewrites()) == 0 {
-		return nil
+		return envsvc.ApplyOwnedEnv(resolved)
 	}
 
 	// Asked, the table lives inside the question; applied without asking, it is a
@@ -60,7 +64,7 @@ func Settle(params Params) error {
 			DefaultYes:  true,
 		})
 		if confirmErr != nil || !proceed {
-			return nil
+			return envsvc.ApplyOwnedEnv(resolved)
 		}
 	} else {
 		params.Presenter.Status(flow.Notice{
