@@ -1,13 +1,9 @@
 package run
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
 
-	"github.com/LucasPcq/wtm/internal/commands/shared"
-	"github.com/LucasPcq/wtm/internal/config"
+	"github.com/LucasPcq/wtm/internal/commands/run/runctx"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
@@ -26,32 +22,18 @@ func newExportCmd() *cobra.Command {
 }
 
 func runExport(cmd *cobra.Command, _ []string) error {
-	dir, err := os.Getwd()
+	ctx, err := runctx.Open(runctx.OpenParams{Cmd: cmd})
 	if err != nil {
-		return fmt.Errorf("get working directory: %w", err)
-	}
-
-	result, err := shared.LoadConfig(cmd, dir)
-	if err != nil {
-		return err
-	}
-
-	runCfg, err := config.LoadRun(result.StateDir)
-	if err != nil {
-		return fmt.Errorf("load run config: %w", err)
-	}
-
-	if err := shared.RequireRunInitialized(runCfg); err != nil {
 		return err
 	}
 
 	profile, _ := cmd.Flags().GetString(domain.FlagProfile)
 	if profile != "" {
-		runCfg, err = rules.FilterToProfile(runCfg, profile)
+		ctx.Run, err = rules.FilterToProfile(ctx.Run, profile)
 		if err != nil {
 			return err
 		}
 	}
 
-	return output.WriteRunConfigJSON(cmd.OutOrStdout(), runCfg)
+	return output.WriteRunConfigJSON(cmd.OutOrStdout(), ctx.Run)
 }

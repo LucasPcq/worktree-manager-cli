@@ -83,7 +83,7 @@ func TestDiffEnvAddModeNeverConflicts(t *testing.T) {
 	if e.CurrentValue != "localValue" {
 		t.Errorf("CurrentValue = %q, want localValue", e.CurrentValue)
 	}
-	if diff.HasStatus(domain.EnvKeyConflict) {
+	if EnvDiffHasStatus(EnvDiffFilter{Diff: diff, Status: domain.EnvKeyConflict}) {
 		t.Errorf("add mode must never classify a conflict")
 	}
 }
@@ -275,7 +275,7 @@ func TestDiffEnvIgnoresThePortOffsetBetweenWorktrees(t *testing.T) {
 		PortBlock:  10,
 	})
 
-	if diff.HasStatus(domain.EnvKeyConflict) {
+	if EnvDiffHasStatus(EnvDiffFilter{Diff: diff, Status: domain.EnvKeyConflict}) {
 		t.Errorf("DiffEnv() reported a conflict for a value differing only by the offset: %+v", diff.Entries)
 	}
 }
@@ -289,7 +289,7 @@ func TestDiffEnvStillReportsARealConflictOnALinkedKey(t *testing.T) {
 		PortBlock:  10,
 	})
 
-	if !diff.HasStatus(domain.EnvKeyConflict) {
+	if !EnvDiffHasStatus(EnvDiffFilter{Diff: diff, Status: domain.EnvKeyConflict}) {
 		t.Errorf("DiffEnv() hid a password conflict behind the port reduction: %+v", diff.Entries)
 	}
 }
@@ -303,7 +303,7 @@ func TestDiffEnvComparesUnlinkedKeysVerbatim(t *testing.T) {
 		PortBlock:  10,
 	})
 
-	if !diff.HasStatus(domain.EnvKeyConflict) {
+	if !EnvDiffHasStatus(EnvDiffFilter{Diff: diff, Status: domain.EnvKeyConflict}) {
 		t.Errorf("DiffEnv() reduced a key no link follows: %+v", diff.Entries)
 	}
 }
@@ -325,7 +325,7 @@ func TestDiffEnvIgnoresTheAddressingBetweenMainAndAWorktree(t *testing.T) {
 		PortBlock:  10,
 	})
 
-	if diff.HasStatus(domain.EnvKeyConflict) {
+	if EnvDiffHasStatus(EnvDiffFilter{Diff: diff, Status: domain.EnvKeyConflict}) {
 		t.Errorf("DiffEnv() reported a conflict between a port and its own address: %+v", diff.Entries)
 	}
 }
@@ -343,7 +343,7 @@ func TestDiffEnvIgnoresTheWorktreeSegmentBetweenTwoWorktrees(t *testing.T) {
 		PortBlock: 10,
 	})
 
-	if diff.HasStatus(domain.EnvKeyConflict) {
+	if EnvDiffHasStatus(EnvDiffFilter{Diff: diff, Status: domain.EnvKeyConflict}) {
 		t.Errorf("DiffEnv() reported a conflict between two worktrees' routes: %+v", diff.Entries)
 	}
 }
@@ -361,7 +361,7 @@ func TestDiffEnvStillReportsAConflictBetweenTwoJobsRoutes(t *testing.T) {
 		PortBlock: 10,
 	})
 
-	if !diff.HasStatus(domain.EnvKeyConflict) {
+	if !EnvDiffHasStatus(EnvDiffFilter{Diff: diff, Status: domain.EnvKeyConflict}) {
 		t.Errorf("DiffEnv() hid a route pointing at another job: %+v", diff.Entries)
 	}
 }

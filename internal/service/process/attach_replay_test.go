@@ -2,11 +2,12 @@ package process
 
 import (
 	"encoding/json"
-	"github.com/LucasPcq/wtm/internal/domain"
 	"io"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/LucasPcq/wtm/internal/domain"
 
 	"github.com/LucasPcq/wtm/internal/testutil/socktest"
 )

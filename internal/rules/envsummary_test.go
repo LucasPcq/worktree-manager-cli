@@ -28,7 +28,7 @@ func planWithRewrites(t *testing.T, n int) domain.EnvPortPlan {
 		Offset: 10,
 		Lines:  map[string][]domain.EnvLine{".env": ParseEnv(content.String())},
 	})
-	if got := len(plan.Rewrites()); got != n {
+	if got := len(EnvPortRewrites(plan)); got != n {
 		t.Fatalf("planWithRewrites(%d) produced %d rewrites", n, got)
 	}
 	plan.Applied = true

@@ -1,13 +1,10 @@
 package run
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/commands/run/runctx"
 	"github.com/LucasPcq/wtm/internal/commands/shared"
-	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	stopflow "github.com/LucasPcq/wtm/internal/flow/run/stop"
 )
@@ -28,40 +25,23 @@ func newStopCmd() *cobra.Command {
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
-	dir, err := os.Getwd()
+	ctx, err := runctx.Open(runctx.OpenParams{Cmd: cmd})
 	if err != nil {
-		return fmt.Errorf("get working directory: %w", err)
-	}
-
-	result, err := shared.LoadConfig(cmd, dir)
-	if err != nil {
-		return err
-	}
-
-	runCfg, err := config.LoadRun(result.StateDir)
-	if err != nil {
-		return fmt.Errorf("load run config: %w", err)
-	}
-	if err := shared.RequireRunInitialized(runCfg); err != nil {
 		return err
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	job, _ := cmd.Flags().GetString(domain.FlagJob)
 
 	outcome, err := stopflow.Run(stopflow.Params{
-		Context: shared.FlowContext(result),
+		Context: ctx.FlowContext(),
 		Request: stopflow.Request{
 			Worktrees: args,
-			Cwd:       dir,
+			Cwd:       ctx.Dir,
 			Job:       job,
-			Config:    runCfg,
+			Config:    ctx.Run,
 		},
-		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
-			Interactive: shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
-			Stderr:      true,
-		}),
+		Prompter:  ctx.Prompter(ctx.Interactive),
 		Presenter: stopPresenter{CLIPresenter: shared.NewPresenter(cmd, format)},
 	})
 	if err != nil {

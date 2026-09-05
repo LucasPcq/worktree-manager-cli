@@ -9,6 +9,10 @@ type RemoveJobEffect struct {
 	Profiles        []string
 	EmptiedProfiles []string
 	EnvPorts        []string
+	// Runners are the jobs whose `runs` named this one. A runner left pointing
+	// at a job that no longer exists fails validation, so the removal that
+	// leaves it behind cannot be written at all.
+	Runners []string
 }
 
 // RemoveJob takes a job out of a config along with everything that named it. A
@@ -52,6 +56,30 @@ func RemoveJob(cfg domain.RunConfig, name string) (domain.RunConfig, RemoveJobEf
 		}
 		profile.Jobs = jobs
 		out.Profiles = append(out.Profiles, profile)
+	}
+
+	// A job is named in three places, not two: the profiles that start it, the
+	// env_port links that follow its ports, and the `runs` list of a runner that
+	// starts it itself. Missing the third made such a job unremovable — the
+	// removal was refused by the validator it had just invalidated.
+	for i, job := range out.Jobs {
+		kept := make([]string, 0, len(job.Runs))
+		named := false
+		for _, child := range job.Runs {
+			if child == name {
+				named = true
+				continue
+			}
+			kept = append(kept, child)
+		}
+		if !named {
+			continue
+		}
+		effect.Runners = append(effect.Runners, job.Name)
+		out.Jobs[i].Runs = kept
+		if len(kept) == 0 {
+			out.Jobs[i].Runs = nil
+		}
 	}
 
 	out.EnvPorts = make([]domain.EnvPortLink, 0, len(cfg.EnvPorts))

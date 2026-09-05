@@ -203,8 +203,8 @@ func TestPlanEnvPortsNamesReportsRefusals(t *testing.T) {
 	if e := entryFor(t, plan, "VITE_API_URL"); e.Status != domain.EnvPortStatusForeignHost {
 		t.Fatalf("a foreign host must be reported, got %q", e.Status)
 	}
-	if len(plan.Anomalies()) != 2 {
-		t.Fatalf("both refusals must reach the report, got %d", len(plan.Anomalies()))
+	if len(rules.EnvPortAnomalies(plan)) != 2 {
+		t.Fatalf("both refusals must reach the report, got %d", len(rules.EnvPortAnomalies(plan)))
 	}
 }
 

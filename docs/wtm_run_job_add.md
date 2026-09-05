@@ -6,8 +6,9 @@ Add a job to run.toml
 
 Append a job to <git-common-dir>/wtm/run.toml.
 
-Pass --cmd (and optionally --kind, --stop, --cwd, --port, --url-port) for non-interactive use.
-Without --cmd, prompts interactively for each field.
+Every flag pre-fills the corresponding question, so the form opens on what was
+already given. --yes skips the questions altogether: [name] and --cmd are then
+required, and every other field falls back to its documented default.
 
 --cmd and --stop are /bin/sh lines: quotes, && and ${VAR} behave as in a terminal,
 so a declared port can be passed as a flag — --cmd 'pnpm dev --port ${PORT}'.
@@ -19,7 +20,7 @@ wtm run job add [name] [flags]
 ### Options
 
 ```
-      --cmd string         Command to run, as a /bin/sh line (skips wizard when set with name)
+      --cmd string         Command to run, as a /bin/sh line
       --cwd string         Working directory (relative to project root)
   -h, --help               help for add
       --kind string        Job kind: service or task (default "service")
@@ -28,6 +29,7 @@ wtm run job add [name] [flags]
       --stop string        Stop command, as a /bin/sh line (services only)
       --url-host string    Host segment to publish under, defaulting to the job's name
       --url-port string    Publish this declared port under a name (e.g. --url-port PORT)
+  -y, --yes                Skip all prompts; [name] and --cmd are then required
 ```
 
 ### SEE ALSO

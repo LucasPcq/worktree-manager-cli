@@ -177,7 +177,7 @@ func recapStep(params recapStepParams) components.Step {
 // worktree with no port to move keeps the single plain confirmation.
 func recapActions(plan domain.EnvPortPlan) []components.SelectItem {
 	apply := components.SelectItem{Label: domain.EnvApplyActionLabel, Value: applyAction}
-	if len(plan.Rewrites()) == 0 {
+	if len(rules.EnvPortRewrites(plan)) == 0 {
 		return []components.SelectItem{apply}
 	}
 	return []components.SelectItem{
@@ -211,9 +211,9 @@ func driftBadge(files []domain.EnvFileResult) components.Badge {
 func actionableCount(files []domain.EnvFileResult) int {
 	n := 0
 	for _, f := range files {
-		n += len(f.Diff.ByStatus(domain.EnvKeyConflict)) +
-			len(f.Diff.ByStatus(domain.EnvKeyMissing)) +
-			len(f.Diff.ByStatus(domain.EnvKeyOrphan))
+		n += len(rules.EnvKeysWithStatus(rules.EnvDiffFilter{Diff: f.Diff, Status: domain.EnvKeyConflict})) +
+			len(rules.EnvKeysWithStatus(rules.EnvDiffFilter{Diff: f.Diff, Status: domain.EnvKeyMissing})) +
+			len(rules.EnvKeysWithStatus(rules.EnvDiffFilter{Diff: f.Diff, Status: domain.EnvKeyOrphan}))
 	}
 	return n
 }

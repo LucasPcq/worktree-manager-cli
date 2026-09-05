@@ -94,13 +94,8 @@ func Open(params Params) Seam {
 	}
 }
 
-func (s Seam) Board() runlogs.Board     { return s.board }
-func (s Seam) Worktree() string         { return s.worktree }
-func (s Seam) Service() runlogs.Service { return s.service }
-func (s Seam) Env() map[string]string   { return s.env }
-func (s Seam) LogDir() string           { return s.logDir }
-func (s Seam) Project() string          { return s.project }
-func (s Seam) ProxyPort() int           { return s.proxyPort }
+func (s Seam) Board() runlogs.Board { return s.board }
+func (s Seam) Worktree() string     { return s.worktree }
 
 type StartParams struct {
 	Profile string

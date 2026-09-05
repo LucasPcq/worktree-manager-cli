@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 func writePortsFile(t *testing.T, dir, name, content string) {
@@ -41,8 +42,8 @@ func TestApplyEnvPortsWritesEveryLinkedFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyEnvPorts() error = %v", err)
 	}
-	if len(plan.Rewrites()) != 2 {
-		t.Fatalf("plan rewrote %d values, want 2: %+v", len(plan.Rewrites()), plan.Entries)
+	if len(rules.EnvPortRewrites(plan)) != 2 {
+		t.Fatalf("plan rewrote %d values, want 2: %+v", len(rules.EnvPortRewrites(plan)), plan.Entries)
 	}
 
 	if got, want := readFile(t, filepath.Join(dir, ".env")), "# db\nDATABASE_URL=postgres://u:pw@localhost:5442/app\nOTHER=keep\n"; got != want {
@@ -78,7 +79,7 @@ func TestComputeEnvPortsReportsAMissingFile(t *testing.T) {
 		t.Fatalf("ComputeEnvPorts() error = %v", err)
 	}
 
-	anomalies := plan.Anomalies()
+	anomalies := rules.EnvPortAnomalies(plan)
 	if len(anomalies) != 1 || anomalies[0].Key != "VITE_API_URL" || anomalies[0].Status != domain.EnvPortStatusMissingKey {
 		t.Errorf("Anomalies() = %+v, want the link into the absent file", anomalies)
 	}

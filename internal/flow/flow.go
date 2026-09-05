@@ -27,6 +27,10 @@ const (
 	// StepMultiSelect asks for a set rather than a value; its answer is carried by
 	// Answer.Values.
 	StepMultiSelect
+	// StepReorder asks for an order rather than a selection: its options are
+	// already the answer, and what the step collects is the sequence they end up
+	// in. Its answer is carried by Answer.Values, like a multi-select's.
+	StepReorder
 )
 
 type Option struct {
@@ -64,6 +68,10 @@ type StepContent struct {
 	// Blockers are the refusals the step folds into its Description, named one by
 	// one for a surface that can have each of them lifted separately.
 	Blockers []Blocker
+	// Default pre-fills a StepText. It is content rather than a static field
+	// because what a step opens on can depend on the answers before it — the job
+	// picked one step earlier is what an edit form is filled from.
+	Default string
 	// ExcludeBranches drops candidates from a StepBranchSelect by name. A step
 	// narrows this way rather than by handing over a list, so the background
 	// refresh stays authoritative on what exists — the exclusion is applied on top
@@ -86,6 +94,7 @@ type Step struct {
 	Description string
 	Options     []Option
 
+	Default  string
 	Branches []domain.BranchCandidate
 	Pinned   string
 	Refresh  func() []domain.BranchCandidate
@@ -104,7 +113,10 @@ type Step struct {
 	Resolve func(Answers) (Answer, error)
 
 	Summarize func(Answer) string
-	Flag      string
+	// Flag names what an unattended run should pass instead. Arg says the same
+	// thing for a step answered by a positional, which has no flag to name.
+	Flag string
+	Arg  bool
 }
 
 // Mode is how long a flow holds the surface that runs it. A background flow gives
@@ -133,8 +145,8 @@ type Session struct {
 
 type Answer struct {
 	Value string
-	// Values is the answer of a StepMultiSelect step; every other kind leaves it
-	// nil and answers with Value.
+	// Values is the answer of a StepMultiSelect or StepReorder step; every other
+	// kind leaves it nil and answers with Value.
 	Values     []string
 	Skipped    bool
 	SkipReason string
@@ -278,10 +290,13 @@ func (n Notice) IsAbort() bool {
 }
 
 func requiredErr(step Step) error {
-	if step.Flag == "" {
-		return fmt.Errorf(domain.FlowStepRequiredFmt, step.Label)
+	switch {
+	case step.Flag != "":
+		return fmt.Errorf(domain.FlowStepRequiredFlagFmt, step.Label, step.Flag)
+	case step.Arg:
+		return fmt.Errorf(domain.FlowStepRequiredArgFmt, step.Label)
 	}
-	return fmt.Errorf(domain.FlowStepRequiredFlagFmt, step.Label, step.Flag)
+	return fmt.Errorf(domain.FlowStepRequiredFmt, step.Label)
 }
 
 // ResolveSymlinks canonicalizes a path when it still exists, and hands it back

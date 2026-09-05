@@ -41,10 +41,10 @@ Prefer short variable declarations (`:=`) for values that do not change.
 Use `var` only for zero-value initialization or package-level declarations.
 If a block requires reassigning a variable, extract it into a function.
 
-## 2. Structs for 2+ parameters
+## 2. Structs for 2+ inputs
 
-Any function or method that accepts 2 or more related inputs must take a single
-struct argument. Always initialize structs with named fields.
+Any function or method that accepts 2 or more of its own inputs must take a
+single struct argument. Always initialize structs with named fields.
 
 ```go
 // ❌
@@ -57,6 +57,38 @@ type ConnectParams struct {
 }
 func Connect(params ConnectParams) error
 ```
+
+**"Its own inputs" excludes what the function carries rather than reads.** A
+destination, a cancellation, a test handle, the command being wired — `io.Writer`,
+`context.Context`, `testing.TB`, `*cobra.Command` — are plumbing every reader
+already knows, and folding them into a struct hides them instead of naming them.
+`output.Warning(w, text)` is the rule respected, not broken; so is a method whose
+receiver is the subject and whose single parameter is the question asked of it.
+
+The hazard the rule is about is precise, and worth naming so the rule is applied
+where it bites rather than everywhere:
+
+- **Misorderable neighbours.** `RenameJobRefs(cfg, from, to)` — two `string`s the
+  compiler will happily let you swap, silently renaming the wrong way round. Two
+  parameters of the same type are the strongest case for a struct, whatever the
+  count.
+- **A list that grew.** Four inputs are already unreadable at the call site, and a
+  fifth is added without anyone noticing that a caller passed them in the wrong
+  order. This is why every service and flow entry point in the tree takes
+  `<Name>Params`.
+
+A symmetric pair is the counter-case: `differ(a, b string)`, `MergeRunConfigs(a,
+b)`, `ClampIndex(index, length int)` — where the two are peers and the order is
+the meaning, a struct adds ceremony and removes nothing.
+
+**This is a review rule, not a lint rule, and deliberately so.** It was measured
+before being left out of `make lint` (see section 11): 546 functions in the tree
+take 2 or more non-carrier inputs, 17 take 4 or more. A gate at 2 would fire on
+most of `output/`; a gate at 4 still fires on a syscall wrapper whose arity *is*
+the ABI, and on list widgets whose `renderRow` gains nothing from a struct. A
+count cannot tell a related pair from a carrier pair, and encoding a rule that
+cannot is worse than holding it in review — it teaches people to work around the
+linter. Apply it when you see one of the two hazards above.
 
 ## 3. Shared types — no duplication
 
@@ -143,6 +175,8 @@ delete the ones that restate the code — in the same change.
 cmd/                          ← entry points, cobra setup only
 internal/
   commands/                   ← flag wiring, delegates to flow/service (zero business logic)
+    run/crud/                 ←   the preamble `run job` and `run profile` share: config,
+                                  run.toml, the opt-in guard, and the two seams
     ui/                       ←   `wtm ui`: refuses JSON and a missing TTY, then hands off to tui/dashboard
   domain/                     ← types, errors, constants only (no methods, no functions)
   rules/                      ← pure functions (stdlib + domain only, no I/O)
@@ -160,11 +194,15 @@ internal/
     runlogs/                  ←   the jobs a surface shows (`Board`), their live streams,
                                   and the profile start sequence (reports events, not steps)
     run/                      ←   the `run` module's flows, mirroring its command tree:
-      target/                 ←     the questions they share (worktree, job, profile)
+      target/                 ←     the questions they share (worktree, job, profile,
+                                    and the published-url step `run open` asks)
+      urls/                   ←     where every address the module hands out is computed
       seam/                   ←     the daemon as a flow uses it: board, env, log dir,
                                     port prober, and the start sequence a surface drives
       up/ down/ start/        ←     one package per command, as everywhere else
-      stop/ logs/
+      stop/ logs/ open/ url/
+      list/                   ←     `run list`: which entry was picked and what to do to it
+      job/ profile/           ←     CRUD on run.toml's declarations, one package per group
   service/                    ← impure orchestration only (git exec, I/O, hooks):
     worktree/                 ←   git worktree operations (create, list, remove)
     env/                      ←   .env provisioning (create) + drift reconciliation (`wtm env`, sync.go)
@@ -263,9 +301,12 @@ rather than at every action site.
 Adding a kind means teaching every surface to render it: `flowui` refuses an unknown
 kind rather than guessing. Test doubles for the two seams live in
 `internal/testutil/flowtest`. `create`, `clean`, `reparent`, `prune`, `sync` and the
-`run` module's seven commands (`up`, `down`, `start`, `stop`, `logs`, `ps`, `list`) are
-migrated; `extract`, `run open`, `run url` and `run job`/`run profile` still drive their
-wizard packages directly, so `tui/newwt` and `tui/runpicker` stay until they follow.
+whole `run` module are migrated — `up`, `down`, `start`, `stop`, `logs`, `list`, `open`,
+`url` and the eight `run job` / `run profile` commands (`ps` asks nothing, so it is not a
+flow). **Four mutation commands are still out: `extract` (LUC-182), `checkout`,
+`relocate` and `env`**, each driving its service straight from its runner. They are
+listed in `.archlint-migrating`, which reports them on every `make lint` and may only
+shrink — `tui/newwt` stays until `extract` follows.
 
 A **non-mutating mode** (`prune --dry-run`) belongs in the `Request`, not in the runner:
 it changes what the run does, not how it reads. The flow returns its `Outcome` before
@@ -282,7 +323,7 @@ inspects state, orders service calls or gates a picker on `interactive` beyond c
 the Prompter has put the flow in the wrong layer, and a service closure injected into a
 `tui/` package is the same mistake in its older form. The developer reference is
 `docs/dev/` (`flow-layer.md`, `adding-a-mutation-command.md`); the import rule above is
-checked mechanically by the `build-validator` subagent.
+checked mechanically by `make lint` (`tools/archlint`, rule `layers`).
 
 **How a command designates a worktree (LUC-211).** One rule, no exception: **the subject is
 positional, and a worktree that is not the subject is a flag named after its role.**
@@ -364,8 +405,72 @@ comments and its docs are in English; the history is read alongside them.
 
 ## 11. Validate before commit
 
-Run the **`build-validator`** subagent at the end of every development session
-or before any commit. It checks compilation, vet, static analysis, and tests.
+`make lint` is the mechanical half of this file. It is not a formality: every
+rule in it exists because a reviewer would otherwise have to hold section 9 in
+their head on every PR, and the ones nobody holds are the ones that drift.
+
+```
+make lint     # fmt + vet + arch + dead + staticcheck — all gating
+make test     # go test ./... -race -count=1
+make dupl     # clone report, informative only
+```
+
+| Check | Catches | Why staticcheck cannot |
+| -- | -- | -- |
+| `fmt` | unformatted files | it is not a formatter, and this fails rather than rewrites: a formatting fix belongs in the commit that caused it |
+| `vet` | the stdlib's own suspicions | — |
+| `arch` (`tools/archlint`) | the layer graph of section 9, the `styles/` monopoly on `lipgloss.Style`, type assertions without comma-ok, a command that reads the interactive gate without offering `--yes`, and a worktree-mutating command that skips `flow/` | it checks a package against itself, and knows nothing about this project's layers |
+| `dead` (`deadcode`) | functions no path reaches, **test paths included** | it reports the unused *within* a package; a function exported and called by nobody is invisible to it |
+| `staticcheck` | the rest | — |
+
+**`tools/archlint` is where a new architectural rule goes.** Its `layers` table
+is section 9's dependency graph written once, so a new dependency between two
+layers is a deliberate edit to that table rather than something that lands
+unnoticed. Adding a rule there is cheaper than adding a paragraph here, and it
+is the only kind of rule that survives.
+
+The exceptions to `dead` live in `.deadcode-ignore`, one regex per line **with
+its reason** — reachable by a route the analysis cannot follow (a method
+satisfying an interface asserted on an `any`, so far). Anything unlisted fails.
+
+`.archlint-migrating` is the same idea for what predates a rule: `<rule> <path
+regex>` lines that report as `(migrating)` without failing. **It may only
+shrink.** A new entry is a decision to take knowingly and belongs in a ticket,
+never a way to get a commit past the linter.
+
+`make dupl` is deliberately outside `lint`: a clone is a judgement call. Two
+parallel families over unrelated types — `flow/run/job` and `flow/run/profile` —
+read better duplicated than behind a generic, so the report informs a review
+rather than gating one.
+
+**Considered and left out, so it is not re-proposed:**
+
+| Rule | Measured | Why not |
+| -- | -- | -- |
+| Section 2, structs for 2+ inputs | 546 functions at 2+ non-carrier inputs, 17 at 4+ | A count cannot tell a related pair from a carrier pair. A gate at 2 fires on most of `output/`; one at 4 still fires on a syscall wrapper whose arity is the ABI. It stays a review rule |
+| Section 8, comment density | — | The ceiling is met as easily by deleting the comments that earn their place as the ones that do not, so the number measures the wrong thing. The rule itself needs rethinking before anything can check it |
+
+A rule belongs in `make lint` when breaking it breaks something — a layer, a
+refusal, a surface that can no longer run a flow. A rule about how code reads
+belongs in review, and writing it down here is how it survives.
+
+### The gates are enforced, not remembered
+
+`.claude/hooks/pre-commit-gates.sh` runs `make lint` and the tidy check on every
+`git commit`, as a `PreToolUse` hook, and blocks the commit when either fails.
+It exists because saying "run the checks before every commit" was not enough:
+this repository shipped a stale `go.sum` after the checks had been run once,
+earlier in a session, and treated as still true six commits later. A hook cannot
+forget, and it reads the same Makefile a human does — which is the whole reason
+the gates were moved there.
+
+It deliberately does **not** run the tests: at ~70s that is a gate people
+disable, and the CI already runs them. `WTM_SKIP_GATES=1 git commit …` gets past
+it for the case where the gate is itself wrong.
+
+Run the **`build-validator`** subagent at the end of every development session,
+and before a commit that changes anything the hook does not cover — it adds the
+test suite with `-race`, dependency hygiene, and the duplication report.
 
 ```
 → Invoke build-validator before marking any task done.

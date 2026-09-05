@@ -1,12 +1,10 @@
 package run
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/commands/run/runctx"
 	"github.com/LucasPcq/wtm/internal/commands/shared"
-	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	downflow "github.com/LucasPcq/wtm/internal/flow/run/down"
 	logsflow "github.com/LucasPcq/wtm/internal/flow/run/logs"
@@ -30,28 +28,13 @@ type dispatchParams struct {
 	Format  string
 }
 
-// dispatchTarget is the configuration of the repository the picked job belongs to.
-type dispatchTarget struct {
-	config shared.ConfigResult
-	run    domain.RunConfig
-}
-
-func (p dispatchParams) target() (dispatchTarget, error) {
-	result, err := shared.LoadConfig(p.Cmd, p.WorkDir)
-	if err != nil {
-		return dispatchTarget{}, err
-	}
-	runCfg, err := config.LoadRun(result.StateDir)
-	if err != nil {
-		return dispatchTarget{}, fmt.Errorf("load run config: %w", err)
-	}
-	return dispatchTarget{config: result, run: runCfg}, nil
-}
-
-// prompter answers nothing: the picker already chose, so re-asking would let the
-// reader undo the action they just picked.
-func (p dispatchParams) prompter() shared.FlowPrompterParams {
-	return shared.FlowPrompterParams{Interactive: false, Stderr: true}
+// Every dispatch installs a prompter that answers nothing: the picker already
+// chose, so re-asking would let the reader undo the action they just picked.
+//
+// target is the configuration of the repository the picked entry belongs to.
+// The guard is not re-run: the listing this came from already passed it.
+func (p dispatchParams) target() (runctx.Context, error) {
+	return runctx.Open(runctx.OpenParams{Cmd: p.Cmd, Dir: p.WorkDir, SkipGuard: true})
 }
 
 func (p dispatchParams) dispatchStop() error {
@@ -60,9 +43,9 @@ func (p dispatchParams) dispatchStop() error {
 		return err
 	}
 	_, err = stopflow.Run(stopflow.Params{
-		Context:   shared.FlowContext(t.config),
-		Request:   stopflow.Request{Cwd: p.WorkDir, Job: p.Job, Config: t.run},
-		Prompter:  shared.FlowPrompter(p.prompter()),
+		Context:   t.FlowContext(),
+		Request:   stopflow.Request{Cwd: p.WorkDir, Job: p.Job, Config: t.Run},
+		Prompter:  t.Prompter(false),
 		Presenter: stopPresenter{CLIPresenter: shared.NewPresenter(p.Cmd, p.Format)},
 	})
 	return err
@@ -74,9 +57,9 @@ func (p dispatchParams) dispatchStart() error {
 		return err
 	}
 	outcome, err := startflow.Run(startflow.Params{
-		Context:   shared.FlowContext(t.config),
-		Request:   startflow.Request{Cwd: p.WorkDir, Job: p.Job, Config: t.run},
-		Prompter:  shared.FlowPrompter(p.prompter()),
+		Context:   t.FlowContext(),
+		Request:   startflow.Request{Cwd: p.WorkDir, Job: p.Job, Config: t.Run},
+		Prompter:  t.Prompter(false),
 		Presenter: startPresenter{CLIPresenter: shared.NewPresenter(p.Cmd, p.Format)},
 	})
 	if err != nil {
@@ -94,9 +77,9 @@ func (p dispatchParams) dispatchLogs() error {
 		return err
 	}
 	_, err = logsflow.Run(logsflow.Params{
-		Context:   shared.FlowContext(t.config),
-		Request:   logsflow.Request{Cwd: p.WorkDir, Job: p.Job, Config: t.run},
-		Prompter:  shared.FlowPrompter(p.prompter()),
+		Context:   t.FlowContext(),
+		Request:   logsflow.Request{Cwd: p.WorkDir, Job: p.Job, Config: t.Run},
+		Prompter:  t.Prompter(false),
 		Presenter: logsPresenter{CLIPresenter: shared.NewPresenter(p.Cmd, p.Format)},
 	})
 	return err
@@ -108,11 +91,11 @@ func (p dispatchParams) dispatchUp() error {
 		return err
 	}
 	outcome, err := upflow.Run(upflow.Params{
-		Context: shared.FlowContext(t.config),
-		Request: upflow.Request{Cwd: p.WorkDir, Profiles: target.OneProfile(p.Profile), Config: t.run},
+		Context: t.FlowContext(),
+		Request: upflow.Request{Cwd: p.WorkDir, Profiles: target.OneProfile(p.Profile), Config: t.Run},
 		// The picker asked its question already; the concurrency one it did not,
 		// so it resolves to leaving the other worktrees alone.
-		Prompter:  shared.FlowPrompter(p.prompter()),
+		Prompter:  t.Prompter(false),
 		Presenter: upPresenter{CLIPresenter: shared.NewPresenter(p.Cmd, p.Format)},
 	})
 	if err != nil {
@@ -127,9 +110,9 @@ func (p dispatchParams) dispatchDown(all bool) error {
 		return err
 	}
 	outcome, err := downflow.Run(downflow.Params{
-		Context:   shared.FlowContext(t.config),
-		Request:   downflow.Request{Cwd: p.WorkDir, Profile: p.Profile, All: all, Config: t.run},
-		Prompter:  shared.FlowPrompter(p.prompter()),
+		Context:   t.FlowContext(),
+		Request:   downflow.Request{Cwd: p.WorkDir, Profile: p.Profile, All: all, Config: t.Run},
+		Prompter:  t.Prompter(false),
 		Presenter: downPresenter{CLIPresenter: shared.NewPresenter(p.Cmd, p.Format)},
 	})
 	if err != nil {

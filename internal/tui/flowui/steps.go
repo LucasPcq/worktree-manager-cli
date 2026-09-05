@@ -39,65 +39,61 @@ func (p *plan) componentStep(step flow.Step, conditional bool) (components.Step,
 	}
 	switch step.Kind {
 	case flow.StepText:
-		return p.textStep(step), nil
+		return p.contentStep(step, func(content flow.StepContent) any { return textInput(step, content) })
 	case flow.StepSelect:
-		return p.selectStep(step)
+		return p.contentStep(step, func(content flow.StepContent) any { return selectList(content) })
 	case flow.StepBranchSelect:
 		return p.branchStep(step)
 	case flow.StepMultiSelect:
-		return p.multiSelectStep(step)
+		return p.contentStep(step, func(content flow.StepContent) any { return multiSelect(step, content) })
+	case flow.StepReorder:
+		return p.contentStep(step, func(content flow.StepContent) any { return reorderList(content) })
 	case flow.StepRecap:
 		return p.recapStep(step), nil
 	}
 	return components.Step{}, unsupportedKindErr(step)
 }
 
-func (p *plan) textStep(step flow.Step) components.Step {
-	return components.Step{
-		Name: step.Label,
-		Model: components.NewTextInput(components.NewTextInputParams{
-			Title:       step.Title,
-			Description: step.Description,
-			Validate:    step.Validate,
-		}),
-		Summary: summaryFor(step),
-	}
-}
-
-func (p *plan) selectStep(step flow.Step) (components.Step, error) {
+// contentStep is every kind whose whole model is rebuilt from its content: the
+// four differ only in which widget they hand that content to.
+func (p *plan) contentStep(step flow.Step, model func(flow.StepContent) any) (components.Step, error) {
 	content, err := p.content(step, p.known())
 	if err != nil {
 		return components.Step{}, err
 	}
 	built := components.Step{
 		Name:    step.Label,
-		Model:   selectList(content),
+		Model:   model(content),
 		Summary: summaryFor(step),
 	}
 	if step.Build != nil {
-		built.Build = func(prev []components.Step) any {
-			return selectList(p.rebuild(step, prev))
-		}
+		built.Build = func(prev []components.Step) any { return model(p.rebuild(step, prev)) }
 	}
 	return built, nil
 }
 
-func (p *plan) multiSelectStep(step flow.Step) (components.Step, error) {
-	content, err := p.content(step, p.known())
-	if err != nil {
-		return components.Step{}, err
-	}
-	built := components.Step{
-		Name:    step.Label,
-		Model:   multiSelect(step, content),
-		Summary: summaryFor(step),
-	}
-	if step.Build != nil {
-		built.Build = func(prev []components.Step) any {
-			return multiSelect(step, p.rebuild(step, prev))
+func textInput(step flow.Step, content flow.StepContent) components.TextInputModel {
+	return components.NewTextInput(components.NewTextInputParams{
+		Title:       content.Title,
+		Description: content.Description,
+		Default:     content.Default,
+		Validate:    step.Validate,
+	})
+}
+
+func reorderList(content flow.StepContent) components.ReorderListModel {
+	items := make([]components.ReorderItem, 0, len(content.Options))
+	for _, option := range content.Options {
+		if option.Separator {
+			continue
 		}
+		items = append(items, components.ReorderItem{Label: option.Label, Value: option.Value})
 	}
-	return built, nil
+	return components.NewReorderList(components.NewReorderListParams{
+		Title:       content.Title,
+		Description: content.Description,
+		Items:       items,
+	})
 }
 
 func multiSelect(step flow.Step, content flow.StepContent) components.MultiSelectModel {
@@ -337,7 +333,7 @@ func combine(handlers ...components.WizardMsgHandler) components.WizardMsgHandle
 // content merges what a step declares statically with what it derives from the
 // answers, so a Build only returns the parts that change.
 func (p *plan) content(step flow.Step, answers flow.Answers) (flow.StepContent, error) {
-	content := flow.StepContent{Title: step.Title, Description: step.Description, Options: step.Options}
+	content := flow.StepContent{Title: step.Title, Description: step.Description, Options: step.Options, Default: step.Default}
 	if step.Build == nil {
 		return content, nil
 	}
@@ -353,6 +349,9 @@ func (p *plan) content(step flow.Step, answers flow.Answers) (flow.StepContent, 
 	}
 	if len(built.Options) > 0 {
 		content.Options = built.Options
+	}
+	if built.Default != "" {
+		content.Default = built.Default
 	}
 	return content, nil
 }
@@ -426,6 +425,8 @@ func summaryFor(step flow.Step) func(any) string {
 			return components.TextSummary
 		case flow.StepMultiSelect:
 			return components.MultiSelectSummary(domain.SummaryNone)
+		case flow.StepReorder:
+			return components.ReorderSummary
 		}
 		return components.SelectSummary
 	}

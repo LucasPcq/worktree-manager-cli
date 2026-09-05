@@ -570,3 +570,36 @@ func TestAConditionalFirstStepKeepsItsOwnKind(t *testing.T) {
 		t.Errorf("model = %T, want a MultiSelectModel", plan.steps[0].Model)
 	}
 }
+
+// Every step kind the wizard can draw must be readable back. A kind rendered
+// but not read answers empty, and the flow writes the absence as if it were the
+// answer — which is how a profile came out with no jobs.
+func TestEveryDrawableKindIsReadBack(t *testing.T) {
+	kinds := []struct {
+		kind  flow.StepKind
+		model any
+		want  func(flow.Answer) bool
+	}{
+		{flow.StepText, components.NewTextInput(components.NewTextInputParams{Default: "x"}), func(a flow.Answer) bool { return a.Value == "x" }},
+		{flow.StepSelect, components.NewSelectList(components.NewSelectListParams{
+			Items: []components.SelectItem{{Label: "a", Value: "a"}},
+		}), func(a flow.Answer) bool { return a.Value == "a" }},
+		{flow.StepMultiSelect, components.NewMultiSelect(components.NewMultiSelectParams{
+			Items: []components.MultiSelectItem{{Label: "a", Value: "a", Selected: true}},
+		}), func(a flow.Answer) bool { return len(a.Values) == 1 }},
+		{flow.StepReorder, components.NewReorderList(components.NewReorderListParams{
+			Items: []components.ReorderItem{{Label: "a", Value: "a"}},
+		}), func(a flow.Answer) bool { return len(a.Values) == 1 }},
+	}
+
+	for _, tc := range kinds {
+		answer := answerOf(tc.kind, tc.model)
+		if !answer.Asked {
+			t.Errorf("kind %d is drawn but never read back: the flow would take the empty answer for a real one", tc.kind)
+			continue
+		}
+		if !tc.want(answer) {
+			t.Errorf("kind %d read back as %+v", tc.kind, answer)
+		}
+	}
+}

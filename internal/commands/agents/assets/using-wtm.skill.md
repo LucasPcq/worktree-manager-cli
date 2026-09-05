@@ -398,11 +398,13 @@ and **experimental**: the global `wtm init` does not configure it.
   one: `run up a b --exclusive` errors. Where the project settled on `exclusive` and the run
   starts several anyway, your paths take the safe default — everything starts, nothing else
   is stopped — and a notice says the setting was set aside.
-- **`--yes` is on every `run` command** and is the confirmation axis: it runs unattended,
+- **`--yes` is on every `run` command**, `run job`/`run profile`/`run list`/`run open`
+  included (`run url` alone has none — it asks nothing), and is the confirmation axis: it runs unattended,
   never opens a picker, and resolves each question to its documented safe default. Where
   there is no safe default it errors naming the flag — `run start --yes` and `run stop
   --yes` require `--job`. There is no `--force` in the run module: nothing here refuses for
-  safety, so there is nothing to lift.
+  safety, so there is nothing to lift — except `run job rm --force`, which lets a job go
+  along with the profile references that name it.
 - `run up` and `run start --job <service>` **attach by default**: on a terminal they open the
   full-screen run view. Always pass **`-d`** (or `--output json`, which never opens it) —
   `-d` starts the jobs and returns immediately, which is the behaviour you want. A `task`
@@ -412,10 +414,16 @@ and **experimental**: the global `wtm init` does not configure it.
   composes: `curl "$(wtm run url --job web)/health"`. **A job only has a URL if `run.toml` declares one**
   (`url = { port = "PORT" }` on that job, naming one of its own declared ports) — `wtm run
   init` declares it for the services it detects, and `run job add --url-port` for the rest.
+  `run open --output json` writes the address it opened, in the same one-element array
+  shape `run url --output json --job <name>` gives you.
   `--output json` lists every published job as `[{job, url}]` and never picks for you.
   In text mode, one published job needs no `--job`; **several and no `--job` is an error,
   never a picker** — name the job. `run url` never opens a picker on either axis, so it is
-  always safe inside `$(…)`. `run open [worktree] --job <name>` opens the same URL in a
+  always safe inside `$(…)`. **Backing out of a prompt exits non-zero** on every mutating
+  `run` command (`up`, `down`, `start`, `stop`, `job add|edit|rm`, `profile add|edit|rm`,
+  `open`) — an aborted run did not do what was asked. The two listings, `run list` and
+  `run job|profile list`, exit 0 instead: nothing was asked for.
+  `run open [worktree] --job <name>` opens the same URL in a
   browser; it may offer a picker, but only in a fully interactive run, so **always name
   the job**.
 - **The URL is a name, not a port.** With the proxy on (the default), a published job
@@ -484,8 +492,18 @@ and **experimental**: the global `wtm init` does not configure it.
   confirm on — a piped payload included — it refuses rather than replacing silently, and
   `--output json` requires `--yes` too. Nothing is reconciled afterwards —
   tell the user to run `wtm env` if the `.env` values must follow.
-- `run job` and `run profile` are fully agent-drivable with flags — `add`, `rm` and
-  `edit` alike. No wizard is ever needed, and none opens as long as a flag is passed.
+- **`run job rm <name> --force`** takes the job out along with everything that named it:
+  the profiles that started it, the `[[env_port]]` links that followed its ports, and the
+  `runs` list of any job that started it itself. Each is reported on its own line, so you
+  can tell the user what went with it.
+- `run job` and `run profile` are fully agent-drivable with flags — `add`, `rm`, `edit`
+  and `list` alike — and they take **`--yes`** like every other mutating command. Passing a
+  flag pre-fills the matching question; **`--yes` is what skips the questions**, so drive
+  them as `wtm run job add web --cmd '…' --yes`. Without a TTY (your usual case) they are
+  already unattended and `--yes` changes nothing, but pass it anyway: it is the one axis
+  that is true on every surface. Under `--yes`, a field with no flag and no safe default
+  errors naming it — `run job add --yes` needs the name argument and `--cmd`,
+  `run profile add --yes` needs the name argument and `--jobs`.
 - `run job edit <name>` **patches**: a flag left out keeps that field, so
   `run job edit api --cmd '…'` changes the command alone and leaves kind, stop, cwd,
   ports and url intact (the job also keeps its position in the file). An explicit empty
@@ -494,14 +512,16 @@ and **experimental**: the global `wtm init` does not configure it.
   into the declared ports (repeatable, so one entry changes without rewriting the
   others) and `--port-clear` empties the table. `--name` renames and rewrites what names the
   job elsewhere in the file — the profiles that start it and the `[[env_port]]` links
-  that follow its ports. With no such flag it opens the wizard, so **always pass
-  at least one flag**; without a TTY it errors instead, and a missing job argument
-  errors rather than opening a picker.
+  that follow its ports. With no such flag it opens the form, so **always pass
+  at least one flag**; under `--yes` or without a TTY it errors naming the flags it
+  could have taken, and a missing job argument errors rather than opening a picker.
+  The form never touches `runs`, `binds_no_port` or `probe` — the first two are
+  flag-only, the third has no flag at all — and all three are kept as they are.
 - `run profile edit <name>` patches the same way: `--name` renames, `--jobs` replaces
   the list (its order is the start order, so give it in full), `--default` /
   `--default=false` hands the default over or takes it away. Same rules as above: a flag
-  left out keeps the field, no flag opens the wizard, and no TTY means an error rather
-  than a picker.
+  left out keeps the field, no flag opens the form, and `--yes` or no TTY means an error
+  rather than a picker.
 - Every job — and every `on_create` / `on_clean` hook — runs with the worktree's identity
   in its environment, so parallel worktrees do not fight over the same resources:
   `WTM_BRANCH` (the branch verbatim), `WTM_WORKTREE` (its slug, safe as a Docker project

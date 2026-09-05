@@ -4,9 +4,10 @@ import (
 	"os"
 
 	"fmt"
-	"golang.org/x/term"
 	"io"
 	"strings"
+
+	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/styles"

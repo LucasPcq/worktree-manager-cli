@@ -195,7 +195,7 @@ func readLinkedFiles(params EnvPortsParams) (map[string][]domain.EnvLine, error)
 func rewrittenFiles(plan domain.EnvPortPlan) []string {
 	var files []string
 	seen := map[string]bool{}
-	for _, entry := range plan.Rewrites() {
+	for _, entry := range rules.EnvPortRewrites(plan) {
 		if seen[entry.File] {
 			continue
 		}

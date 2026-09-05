@@ -210,6 +210,10 @@ func answerOf(kind flow.StepKind, model any) flow.Answer {
 		if list, ok := model.(components.MultiSelectModel); ok {
 			return flow.Answer{Values: list.Values(), Asked: true}
 		}
+	case flow.StepReorder:
+		if list, ok := model.(components.ReorderListModel); ok {
+			return flow.Answer{Values: list.Values(), Asked: true}
+		}
 	}
 	return flow.Answer{}
 }

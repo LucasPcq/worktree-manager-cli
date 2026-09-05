@@ -53,6 +53,22 @@ func JobURL(params JobURLParams) string {
 	return JobOrigin(JobOriginParams{Host: params.Host, PublicPort: params.PublicPort, DirectPort: port})
 }
 
+type JobURLFlagsParams struct {
+	// Port and Host are the --url-port / --url-host pair as they were typed.
+	Port string
+	Host string
+}
+
+// JobURLFromFlags reads the pair as the one line ParseJobURL takes, so a flag
+// and a form answer are validated by the same rule — and refuses a host with
+// nothing to publish under it, which would otherwise be silently dropped.
+func JobURLFromFlags(params JobURLFlagsParams) (*domain.JobURLConfig, error) {
+	if params.Port == "" && params.Host != "" {
+		return nil, fmt.Errorf(domain.RunJobURLHostOrphan, domain.FlagURLHost, domain.FlagURLPort)
+	}
+	return ParseJobURL(strings.TrimSpace(params.Port + " " + params.Host))
+}
+
 // ParseJobURL reads the `url` a wizard step or a flag pair expresses as one
 // line: the port name to publish, optionally followed by the host to publish it
 // under. Blank means the job publishes nothing.

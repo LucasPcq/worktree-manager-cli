@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow/run/target"
 	"github.com/LucasPcq/wtm/internal/infra"
 	"github.com/LucasPcq/wtm/internal/service/process"
 )
@@ -82,25 +83,16 @@ func TestNamedAndCurrentWorktreeAgreeOnTheKey(t *testing.T) {
 	worktreePath := addWorktree(t, os.Getenv("WTM_PROJECT_DIR"), "feat/same")
 	projectDir := os.Getenv("WTM_PROJECT_DIR")
 
-	named, err := resolveInputs(inputsParams{
-		Args:       []string{"feat/same"},
-		Cwd:        projectDir,
-		ProjectDir: projectDir,
-	})
+	resolved, err := target.Named(target.ResolveParams{ProjectDir: projectDir, Query: "feat/same"})
 	if err != nil {
 		t.Fatalf("resolve named: %v", err)
 	}
+	named := target.WorkDir(target.WorkDirParams{Named: resolved, Cwd: projectDir})
 
 	enterWorktree(t, worktreePath)
-	current, err := resolveInputs(inputsParams{
-		Cwd:        worktreePath,
-		ProjectDir: projectDir,
-	})
-	if err != nil {
-		t.Fatalf("resolve current: %v", err)
-	}
+	current := target.WorkDir(target.WorkDirParams{Cwd: worktreePath})
 
-	if named.Dir != current.Dir {
-		t.Errorf("naming the worktree gives %q, standing in it gives %q — the daemon would see two jobs", named.Dir, current.Dir)
+	if named != current {
+		t.Errorf("naming the worktree gives %q, standing in it gives %q — the daemon would see two jobs", named, current)
 	}
 }
