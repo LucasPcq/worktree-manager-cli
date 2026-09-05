@@ -16,6 +16,10 @@ import (
 type Request struct {
 	Worktrees []string
 	Cwd       string
+	// Precheck is what arrives ticked when the worktree step IS asked, as
+	// worktree roots git spells them. A surface that already knows a likely
+	// answer offers it; the selection stays exact.
+	Precheck []string
 	// Profile narrows the stop to one profile's jobs. Empty means everything the
 	// worktree has up, which is the command's safe default — so it is never asked.
 	Profile string
@@ -339,7 +343,7 @@ func (f *downFlow) session() flow.Session {
 			target.WorktreesStep(target.WorktreesParams{
 				ProjectDir: f.ctx.ProjectDir,
 				Current:    f.request.Cwd,
-				Selected:   target.Dirs(f.named),
+				Selected:   target.Preselected(target.PreselectedParams{Named: f.named, Precheck: f.request.Precheck}),
 				Running:    f.running(),
 			}),
 		},

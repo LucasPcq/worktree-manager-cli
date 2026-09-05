@@ -414,3 +414,64 @@ func TestClickingAServiceRowAwayFromItsAddressOnlyMovesTheCursor(t *testing.T) {
 		t.Errorf("servicesCursor = %d, want the clicked row 4", next.servicesCursor)
 	}
 }
+
+// The right button never reached these rows: clickRow leaves them to
+// clickServiceRow, and the menu had no path from the mouse at all.
+func TestRightClickOnAServiceRowOpensTheMenuOnIt(t *testing.T) {
+	model := servicesModel(t, "a", "b")
+	renderAndWait(t, model, zoneServices)
+
+	x, y, index := serviceJobRow(t, model, "b")
+	next, _ := updateCmd(model, rightClick(x, y))
+
+	if !next.menuOpen {
+		t.Fatal("the right button opened no menu on the Services tab")
+	}
+	if next.servicesCursor != index {
+		t.Errorf("cursor = %d, want the row under the pointer (%d): a menu acting elsewhere is a trap", next.servicesCursor, index)
+	}
+	selected, ok := next.selected()
+	if !ok || selected.Branch != "b" {
+		t.Errorf("subject = %+v, want the worktree of the job clicked", selected)
+	}
+}
+
+// The cursor is on a job, so the stop names that one. Reopening a picker over a
+// row that already designates a job is the question a designated subject exists
+// to not ask.
+func TestTheServicesMenuStopsTheJobUnderTheCursor(t *testing.T) {
+	model := servicesModel(t, "a")
+
+	items := model.menuItems()
+	index := menuIndexOf(t, model, menuRunStop)
+	if items[index].label != domain.DashboardMenuRunStopThis {
+		t.Errorf("label = %q, want %q", items[index].label, domain.DashboardMenuRunStopThis)
+	}
+	if got := model.designatedJob(); got != "web" {
+		t.Errorf("designated job = %q, want the one under the cursor", got)
+	}
+}
+
+// Elsewhere no job is designated, so the picker is what names it.
+func TestNoJobIsDesignatedOffTheServicesTab(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a")
+	if got := model.designatedJob(); got != "" {
+		t.Errorf("designated job = %q, want none: the list designates a worktree, not a job", got)
+	}
+}
+
+func serviceJobRow(t *testing.T, model Model, branch string) (x, y, index int) {
+	t.Helper()
+	for index, row := range model.services {
+		if row.Kind != domain.ServicesRowJob || row.Branch != branch {
+			continue
+		}
+		zone := model.zones.Get(servicesRowZone(index))
+		if zone.IsZero() {
+			t.Fatalf("the row of %q was not drawn", branch)
+		}
+		return zone.StartX + 1, zone.StartY, index
+	}
+	t.Fatalf("no job row for %q", branch)
+	return 0, 0, 0
+}

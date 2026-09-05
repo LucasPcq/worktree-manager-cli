@@ -327,6 +327,16 @@ func (m Model) worktreeNodes() []domain.WorktreeNode {
 	return rules.WorktreeNodes(rules.WorktreeNodesParams{Statuses: m.statuses, Parents: m.parents})
 }
 
+// branchFor names a worktree the list would recognise. A run names the worktree
+// an event came from by its branch, and falls back to its path for one git
+// cannot name; empty stays empty — that is a run speaking of no worktree at all.
+func (m Model) branchFor(target string) string {
+	if target == "" {
+		return ""
+	}
+	return rules.BranchForPath(rules.BranchForPathParams{Path: target, Statuses: m.statuses})
+}
+
 // busyReason states why nothing may act on a worktree right now: a run already
 // holds it, or one holds the whole dashboard. This is where the mode a flow
 // declares is enforced — once, rather than at every action site.
@@ -434,10 +444,16 @@ func (m Model) applyFlow(msg tea.Msg) (Model, tea.Cmd) {
 	case OutputLineMsg:
 		return m.appendOutput(msg), nil
 	case opTargetMsg:
-		m.ops = m.ops.retarget(msg.id, msg.targets)
+		// The run answers with paths — the daemon's half of a job's key — and the
+		// list, the refusals and the detail all speak branches. The translation
+		// happens here, where the paths enter, rather than at every reader.
+		m.ops = m.ops.retarget(msg.id, rules.BranchesForPaths(rules.BranchesForPathsParams{
+			Paths:    msg.targets,
+			Statuses: m.statuses,
+		}))
 		return m, nil
 	case opStageMsg:
-		m.ops = m.ops.stage(msg.id, msg.stage)
+		m.ops = m.ops.stage(stageParams{ID: msg.id, Target: m.branchFor(msg.target), Stage: msg.stage})
 		return m, nil
 	case createdMsg:
 		m.selectBranch = msg.branch

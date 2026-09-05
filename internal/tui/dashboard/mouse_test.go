@@ -522,18 +522,22 @@ func functionsMentioning(body, needle string) []string {
 
 // mouseHandlerCallees is handleMouse itself plus every method it calls, one
 // level deep — enough to catch a helper that was written and never wired.
+// mouseHandlerCallees closes over what handleMouse can reach, not only what it
+// calls itself: a lookup one hop further down — the right button's own row
+// selection, say — is just as reachable, and a direct-callees-only walk would
+// call it inert.
 func mouseHandlerCallees(t *testing.T, sources map[string]string) map[string]bool {
 	t.Helper()
 	reachable := map[string]bool{"handleMouse": true}
-	for _, body := range sources {
-		decls := regexp.MustCompile(`(?m)^func \([^)]*\) (handleMouse)\(`).FindAllStringSubmatchIndex(body, -1)
-		for _, decl := range decls {
-			end := len(body)
-			if next := strings.Index(body[decl[1]:], "\n}\n"); next >= 0 {
-				end = decl[1] + next
-			}
-			for _, call := range regexp.MustCompile(`m\.([a-z][A-Za-z0-9]*)\(`).FindAllStringSubmatch(body[decl[0]:end], -1) {
-				reachable[call[1]] = true
+	for grew := true; grew; {
+		grew = false
+		for name := range reachable {
+			for _, called := range callsMadeBy(sources, name) {
+				if reachable[called] {
+					continue
+				}
+				reachable[called] = true
+				grew = true
 			}
 		}
 	}
@@ -541,4 +545,21 @@ func mouseHandlerCallees(t *testing.T, sources map[string]string) map[string]boo
 		t.Fatal("handleMouse was not found, this test is checking nothing")
 	}
 	return reachable
+}
+
+func callsMadeBy(sources map[string]string, name string) []string {
+	var called []string
+	for _, body := range sources {
+		decls := regexp.MustCompile(`(?m)^func \([^)]*\) `+name+`\(`).FindAllStringSubmatchIndex(body, -1)
+		for _, decl := range decls {
+			end := len(body)
+			if next := strings.Index(body[decl[1]:], "\n}\n"); next >= 0 {
+				end = decl[1] + next
+			}
+			for _, call := range regexp.MustCompile(`m\.([a-z][A-Za-z0-9]*)\(`).FindAllStringSubmatch(body[decl[0]:end], -1) {
+				called = append(called, call[1])
+			}
+		}
+	}
+	return called
 }

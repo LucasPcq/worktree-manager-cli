@@ -33,10 +33,12 @@ type opTargetMsg struct {
 }
 
 // opStageMsg carries a run's latest Stage/HookPhase message, the way the list
-// shows what a locked row is doing instead of its state pill.
+// shows what a locked row is doing instead of its state pill. target names the
+// worktree it came from, empty for a run that speaks of none.
 type opStageMsg struct {
-	id    int
-	stage string
+	id     int
+	target string
+	stage  string
 }
 
 type createdMsg struct{ branch string }

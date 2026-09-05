@@ -1,8 +1,10 @@
 package newwt
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/tui/components"
 )
 
@@ -54,5 +56,40 @@ func TestCreateStepsSourceRefreshWiring(t *testing.T) {
 	fixed := CreateSteps(WizardParams{IncludeBranch: true, Source: "main"}, nil)
 	if fixed.InitCmd != nil || fixed.OnMsg != nil {
 		t.Error("expected no branch-refresh wiring when the source is fixed")
+	}
+}
+
+// extract embeds this sub-flow, so the env-ports question has to read the same
+// there as it does in `wtm create` — same step, same prose, same recap line.
+func TestEnvPortsStepMirrorsTheCreateFlow(t *testing.T) {
+	subflow := CreateSteps(WizardParams{IncludeEnvPorts: true}, nil)
+
+	var found bool
+	for _, step := range subflow.Steps {
+		if step.Name == domain.CreateEnvPortsStepName {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the sub-flow declares no env-ports step")
+	}
+
+	if steps := CreateSteps(WizardParams{}, nil).Steps; len(steps) != len(subflow.Steps)-1 {
+		t.Errorf("a project that links no .env value to a port must not be asked")
+	}
+}
+
+// The answer defaults to adjusting wherever the step was never posed: a .env
+// left pointing at another worktree's services is not the safer outcome.
+func TestEnvPortsDefaultsToAdjustingWhenNeverAsked(t *testing.T) {
+	if !adjustsEnvPorts(nil, WizardParams{}) {
+		t.Error("a wizard that never posed the step must still adjust the ports")
+	}
+	if _, shown := EnvPortsRecapLine(nil, WizardParams{}); shown {
+		t.Error("a step that was never posed must not take a recap line")
+	}
+	line, shown := EnvPortsRecapLine(nil, WizardParams{IncludeEnvPorts: true})
+	if !shown || !strings.Contains(line, domain.EnvPortsSummaryAdjust) {
+		t.Errorf("recap line = %q (shown=%v), want the answer named", line, shown)
 	}
 }

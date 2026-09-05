@@ -8,6 +8,7 @@ import (
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
 	"github.com/LucasPcq/wtm/internal/flow/decide"
+	"github.com/LucasPcq/wtm/internal/flow/envports"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/branch"
 )
@@ -16,11 +17,14 @@ const (
 	KeyBranch       = "create.branch"
 	KeySource       = "create.source"
 	KeyEnv          = "create.env"
+	KeyEnvPorts     = "create.env_ports"
 	KeySourceUpdate = "create.source_update"
 	KeyRecap        = "create.recap"
 )
 
 const (
+	portsAdjust       = "adjust"
+	portsKeep         = "keep-ports"
 	updateFastForward = "ff"
 	updateKeep        = "keep"
 	confirmCreate     = "create"
@@ -50,6 +54,7 @@ func (f *createFlow) session() flow.Session {
 			f.branchStep(),
 			f.sourceStep(),
 			f.envStep(),
+			f.envPortsStep(),
 			f.sourceUpdateStep(),
 			f.recapStep(),
 		},
@@ -142,6 +147,50 @@ func envSummary(answer flow.Answer) string {
 		return answer.Value
 	}
 	return domain.EnvSummaryConfigDefault
+}
+
+// envPortsStep is asked here rather than after the worktree exists: the values it
+// settles are a consequence of the .env this very run provisions, so it is one
+// confirmation among the others instead of a second one, put to the user past
+// the point where saying no leaves anything but a broken .env.
+//
+// It says what it will do rather than showing what changes: which values move is
+// only knowable once the files are there, and the run reports them then.
+func (f *createFlow) envPortsStep() flow.Step {
+	// Read once, as the session is built: Skip is called again on every step the
+	// wizard advances through or steps back over, and run.toml does not change
+	// under a run that is being answered.
+	linked := envports.Linked(f.ctx)
+	return flow.Step{
+		Kind:        flow.StepSelect,
+		Key:         KeyEnvPorts,
+		Label:       domain.CreateEnvPortsStepName,
+		Title:       domain.CreateEnvPortsStepName,
+		Description: domain.CreateEnvPortsStepDescription,
+		Skip: func(flow.Answers) (bool, string) {
+			if linked {
+				return false, ""
+			}
+			return true, domain.EnvPortsStepUnlinked
+		},
+		Options: []flow.Option{
+			{Label: domain.EnvPortsOptionAdjust, Value: portsAdjust},
+			{Label: domain.EnvPortsOptionKeep, Value: portsKeep},
+		},
+		// Leaving a .env pointing at another worktree's services does not make the
+		// run safer, it makes it useless: adjusting is the safe default.
+		Resolve: func(flow.Answers) (flow.Answer, error) {
+			return flow.Answer{Value: portsAdjust}, nil
+		},
+		Summarize: envPortsSummary,
+	}
+}
+
+func envPortsSummary(answer flow.Answer) string {
+	if answer.Value == portsKeep {
+		return domain.EnvPortsSummaryKeep
+	}
+	return domain.EnvPortsSummaryAdjust
 }
 
 // sourceUpdateStep applies only to a behind-only branch; a diverged one is not a
@@ -249,6 +298,9 @@ func (f *createFlow) recap(answers flow.Answers) string {
 		lines = append(lines, domain.RecapFieldBranch+branchLabel)
 	}
 	lines = append(lines, sourceField+sourceLabel, domain.RecapFieldEnv+envLabel)
+	if ports := answers.Value(KeyEnvPorts); ports != "" {
+		lines = append(lines, domain.RecapFieldEnvPorts+envPortsSummary(flow.Answer{Value: ports}))
+	}
 	if ffBranch != "" && ffBranch != source {
 		lines = append(lines, fmt.Sprintf(domain.RecapUpdateFastForward, ffBranch))
 	}

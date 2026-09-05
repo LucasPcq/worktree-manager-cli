@@ -188,6 +188,23 @@ func NamedAll(params ResolveAllParams) ([]Resolved, error) {
 	return resolved, nil
 }
 
+type PreselectedParams struct {
+	Named []Resolved
+	// Precheck is what a surface already knowing a likely answer offers, as
+	// worktree roots git spells: it only arrives ticked, and never presets the
+	// step — the selection stays exact.
+	Precheck []string
+}
+
+// Preselected is what the worktree step opens with ticked: the positionals when
+// there are any, else what the surface proposed.
+func Preselected(params PreselectedParams) []string {
+	if len(params.Named) > 0 {
+		return Dirs(params.Named)
+	}
+	return params.Precheck
+}
+
 // Dirs is where a set of named worktrees are, in the order they were named.
 func Dirs(resolved []Resolved) []string {
 	dirs := make([]string, 0, len(resolved))

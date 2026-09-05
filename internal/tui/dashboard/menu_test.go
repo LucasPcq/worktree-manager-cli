@@ -456,7 +456,7 @@ func TestTheBaseRowOffersTheBaseRefreshAlone(t *testing.T) {
 	if items[0].label != domain.DashboardMenuFastForward {
 		t.Errorf("label = %q, want the fast-forward named", items[0].label)
 	}
-	if got := actionsOf(items); got != "7,9,10,11,12,13" {
+	if got := actionsOf(items); got != "7,9,11,10,12,13" {
 		t.Errorf("actions = %s, want the fast-forward followed by the run entries", got)
 	}
 }
@@ -676,6 +676,53 @@ func TestRunMenuLabelsCarryNoEllipsis(t *testing.T) {
 	} {
 		if strings.Contains(label, "…") {
 			t.Errorf("label %q keeps an ellipsis", label)
+		}
+	}
+}
+
+// The run module's batch gestures sit where the git ones already do: a context
+// menu hangs off one worktree, and these act on worktrees picked inside the run.
+func TestTheActionsMenuOffersTheBatchRunGestures(t *testing.T) {
+	model := newTestModel(t, testWidth, testHeight, "a", "b")
+	model = update(model, key(domain.KeyActions))
+
+	for action, label := range map[menuAction]string{
+		menuRunUpAll:   domain.DashboardMenuRunUpAll,
+		menuRunDownAll: domain.DashboardMenuRunDownAll,
+		menuRunLogsAll: domain.DashboardMenuRunLogsAll,
+	} {
+		item := model.menuItems()[menuIndexOf(t, model, action)]
+		if item.label != label {
+			t.Errorf("label = %q, want %q", item.label, label)
+		}
+		if item.danger {
+			t.Errorf("%q is marked dangerous, want not: starting and stopping services destroys nothing", label)
+		}
+	}
+}
+
+// The block reads by grain: what acts on the whole worktree, then what acts on
+// one job, then the view over both. The flat order alternated between the two.
+func TestTheRunBlockIsRuledByGrain(t *testing.T) {
+	items := runActions(domain.DashboardMenuRunStop)
+
+	var order []menuAction
+	rules := 0
+	for _, item := range items {
+		if item.kind == menuEntrySeparator {
+			rules++
+		}
+		if item.kind == menuEntryAction {
+			order = append(order, item.action)
+		}
+	}
+	if rules != 3 {
+		t.Errorf("rules = %d, want the leading one plus the two the grains are split on", rules)
+	}
+	want := []menuAction{menuRunUp, menuRunDown, menuRunStart, menuRunStop, menuRunLogs}
+	for index, action := range want {
+		if order[index] != action {
+			t.Fatalf("order = %v, want the worktree grain before the job grain: %v", order, want)
 		}
 	}
 }

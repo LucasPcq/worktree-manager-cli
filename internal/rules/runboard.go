@@ -90,3 +90,17 @@ func ServicesRows(blocks []RunWorktreeBlock) []domain.ServicesRow {
 	}
 	return rows
 }
+
+// RunningWorktreeDirs are the worktrees a board holds something up in, as git
+// spells them. It is what a stop or a view over several arrives ticked with:
+// those gestures are about what is standing, not about where you are.
+func RunningWorktreeDirs(blocks []RunWorktreeBlock) []string {
+	dirs := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		if block.Path == "" {
+			continue
+		}
+		dirs = append(dirs, block.Path)
+	}
+	return dirs
+}

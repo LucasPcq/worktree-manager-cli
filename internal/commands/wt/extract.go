@@ -574,7 +574,10 @@ func extractCreateParams(cfg shared.ConfigResult, sourceBranch string) newpicker
 		DefaultBranch:  defaultParent(defaultParentParams{cfg: cfg, sourceBranch: sourceBranch}),
 		ConfigStrategy: cfg.Config.Project.Env.Strategy,
 		IncludeBranch:  true,
-		Target:         target,
+		// Asked only where something follows a port; the TUI is handed the answer,
+		// never the config it comes from.
+		IncludeEnvPorts: envports.Linked(shared.FlowContext(cfg)),
+		Target:          target,
 		SourceUpdate: func(up newpicker.SourceUpdateParams) newpicker.SourceUpdatePrompt {
 			if up.Source == "" {
 				return newpicker.SourceUpdatePrompt{}
@@ -645,13 +648,16 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 		} else if ffFlag, _ := params.cmd.Flags().GetBool(domain.FlagFF); ffFlag {
 			_ = branch.FastForwardIfBehind(branch.BranchParams{ProjectDir: params.cfg.ProjectDir, Branch: ffSubjectBranch})
 		}
+		// --to fully resolves the target, so it poses no wizard and no env-ports
+		// step: the safe default answers for it.
 		return createTarget(createTargetParams{
-			cmd:         params.cmd,
-			showHeader:  params.human,
-			cfg:         params.cfg,
-			branch:      toFlag,
-			fromBranch:  fromBranch,
-			interactive: params.interactive,
+			cmd:            params.cmd,
+			showHeader:     params.human,
+			cfg:            params.cfg,
+			branch:         toFlag,
+			fromBranch:     fromBranch,
+			adjustEnvPorts: true,
+			interactive:    params.interactive,
 		})
 	}
 
@@ -674,12 +680,13 @@ func resolveTarget(params resolveTargetParams) (extractTarget, error) {
 		return extractTarget{}, domain.ErrUserAborted
 	}
 	return createTarget(createTargetParams{
-		cmd:         params.cmd,
-		showHeader:  params.human,
-		cfg:         params.cfg,
-		branch:      params.create.BranchName,
-		fromBranch:  params.create.FromBranch,
-		interactive: params.interactive,
+		cmd:            params.cmd,
+		showHeader:     params.human,
+		cfg:            params.cfg,
+		branch:         params.create.BranchName,
+		fromBranch:     params.create.FromBranch,
+		adjustEnvPorts: params.create.AdjustEnvPorts,
+		interactive:    params.interactive,
 	})
 }
 
@@ -706,12 +713,16 @@ func defaultParent(params defaultParentParams) string {
 }
 
 type createTargetParams struct {
-	cmd         *cobra.Command
-	showHeader  bool
-	cfg         shared.ConfigResult
-	branch      string
-	fromBranch  string
-	interactive bool
+	cmd        *cobra.Command
+	showHeader bool
+	cfg        shared.ConfigResult
+	branch     string
+	fromBranch string
+	// adjustEnvPorts is the wizard's answer to the env-ports step, true wherever
+	// it was never posed — a .env left pointing at another worktree's services is
+	// not the safer outcome.
+	adjustEnvPorts bool
+	interactive    bool
 }
 
 func createTarget(params createTargetParams) (extractTarget, error) {
@@ -734,7 +745,7 @@ func createTarget(params createTargetParams) (extractTarget, error) {
 		Context:      shared.FlowContext(params.cfg),
 		Branch:       res.Branch,
 		WorktreePath: res.Path,
-		Prompter:     shared.FlowPrompter(shared.FlowPrompterParams{Interactive: params.interactive}),
+		Rewrite:      params.adjustEnvPorts,
 		Presenter:    shared.NewPresenter(params.cmd, format),
 	}); err != nil {
 		return extractTarget{}, err

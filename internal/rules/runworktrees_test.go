@@ -54,3 +54,26 @@ func TestBranchesWithJobsUpNamesOnlyWhatRuns(t *testing.T) {
 		t.Errorf("branches = %v, want them sorted so two polls ask for the same thing", branches)
 	}
 }
+
+// The run flows answer with paths, and every surface keyed on branches has to be
+// able to recognise what they answered.
+func TestBranchesForPathsNamesWhatTheStatusesKnow(t *testing.T) {
+	statuses := []domain.WorktreeStatus{
+		{Branch: "main", Path: "/wt/main"},
+		{Branch: "feat", Path: "/wt/feat"},
+	}
+
+	named := BranchesForPaths(BranchesForPathsParams{
+		Paths:    []string{"/wt/feat", "/wt/unknown"},
+		Statuses: statuses,
+	})
+
+	if len(named) != 2 || named[0] != "feat" {
+		t.Fatalf("named = %v, want the branch of the path that is known", named)
+	}
+	// A worktree nothing names keeps the only identity it has: dropping it would
+	// release its lock instead of moving it.
+	if named[1] != "/wt/unknown" {
+		t.Errorf("named = %v, want the unknown path left as it is", named)
+	}
+}

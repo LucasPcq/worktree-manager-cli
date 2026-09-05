@@ -121,8 +121,8 @@ func TestSessionAsksOnlyWhatIsMissing(t *testing.T) {
 			t.Errorf("step %q should be left to be asked", key)
 		}
 	}
-	if len(bare.Steps) != 5 {
-		t.Errorf("declared %d steps, want branch, source, env, source update and recap", len(bare.Steps))
+	if len(bare.Steps) != 6 {
+		t.Errorf("declared %d steps, want branch, source, env, env ports, source update and recap", len(bare.Steps))
 	}
 }
 
@@ -340,5 +340,76 @@ func TestFastForwardSubjectIsSharedWithTheOtherFlows(t *testing.T) {
 		Branch:     "feat/x",
 	}); got != "feat/x" {
 		t.Errorf("subject = %q, want the reused branch", got)
+	}
+}
+
+// The .env values a worktree is provisioned with are a consequence of the run
+// that provisions it, so the question belongs to that run — not to a second
+// confirmation put after the worktree exists, where saying no leaves a .env
+// pointing at another worktree's services.
+func TestEnvPortsIsAskedBeforeTheWorktreeExists(t *testing.T) {
+	f := newFlow(t, Request{}, nil)
+	session := f.session()
+
+	var found bool
+	for index, step := range session.Steps {
+		if step.Key != KeyEnvPorts {
+			continue
+		}
+		found = true
+		if step.Key == session.Steps[len(session.Steps)-1].Key {
+			t.Error("the env-ports step is the recap, want it asked before it")
+		}
+		if index == 0 {
+			t.Error("the env-ports step leads the session, want it after what it depends on")
+		}
+	}
+	if !found {
+		t.Fatal("the session declares no env-ports step")
+	}
+}
+
+// Nothing follows a port in this project, so there is nothing to move and no
+// question to put.
+func TestEnvPortsIsNotAskedWithoutLinks(t *testing.T) {
+	step := newFlow(t, Request{}, nil).envPortsStep()
+
+	skip, reason := step.Skip(flow.Answers{})
+	if !skip {
+		t.Fatal("the step was posed for a project that links no .env value to a port")
+	}
+	if reason != domain.EnvPortsStepUnlinked {
+		t.Errorf("reason = %q, want %q", reason, domain.EnvPortsStepUnlinked)
+	}
+}
+
+// Leaving a .env pointing at another worktree's services does not make the run
+// safer, it makes it useless — which is why the unattended answer adjusts.
+func TestEnvPortsResolvesToAdjusting(t *testing.T) {
+	answer, err := newFlow(t, Request{}, nil).envPortsStep().Resolve(flow.Answers{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if answer.Value != portsAdjust {
+		t.Errorf("Resolve = %q, want the values adjusted", answer.Value)
+	}
+}
+
+// A step that is asked and then absent from the recap is what the
+// recap-completeness rule forbids.
+func TestRecapNamesTheEnvPortsDecision(t *testing.T) {
+	f := newFlow(t, Request{}, nil)
+
+	recap := f.recap(answers(map[string]string{
+		KeyBranch: "feat/x", KeySource: "main", KeyEnvPorts: portsKeep,
+	}))
+	if !strings.Contains(recap, domain.EnvPortsSummaryKeep) {
+		t.Errorf("recap = %q, want the env-ports answer named", recap)
+	}
+
+	// Not asked, not recapped: a project with no link never saw the question.
+	silent := f.recap(answers(map[string]string{KeyBranch: "feat/x", KeySource: "main"}))
+	if strings.Contains(silent, domain.RecapFieldEnvPorts) {
+		t.Errorf("recap = %q, want no line for a step that was never posed", silent)
 	}
 }

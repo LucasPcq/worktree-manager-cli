@@ -208,17 +208,6 @@ func TestPlanEnvPortsNamesReportsRefusals(t *testing.T) {
 	}
 }
 
-func TestEnvPortsConfirmTitle(t *testing.T) {
-	named := planFixture(domain.AddressingNames, 10080, portedValues)
-	if rules.EnvPortsConfirmTitle(named) != domain.EnvPortsOriginConfirmPrompt {
-		t.Fatal("a plan writing addresses must not ask about ports")
-	}
-	ports := planFixture(domain.AddressingPorts, 10080, portedValues)
-	if rules.EnvPortsConfirmTitle(ports) != domain.EnvPortsConfirmPrompt {
-		t.Fatal("a plan writing only ports keeps the port question")
-	}
-}
-
 func TestEnvPortNotices(t *testing.T) {
 	cases := []struct {
 		name  string

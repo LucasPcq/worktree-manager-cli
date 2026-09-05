@@ -25,6 +25,10 @@ type Request struct {
 	Worktrees []string
 	// Cwd is where the command was launched, the worktree step's safe default.
 	Cwd string
+	// Precheck is what arrives ticked when the worktree step IS asked, as
+	// worktree roots git spells them. A surface that already knows a likely
+	// answer offers it; the selection stays exact.
+	Precheck []string
 	// Profiles are the profiles to start, in the order they were named. A job
 	// several of them list starts once.
 	Profiles []string
