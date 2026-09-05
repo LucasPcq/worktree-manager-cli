@@ -1330,10 +1330,146 @@ const (
 	JobRemovedProfilesFmt = "Stripped from profile(s): %s"
 	JobRemovedEmptiedFmt  = "Removed profile(s) left with no job: %s"
 	JobRemovedEnvPortsFmt = "Unlinked .env key(s): %s"
+	JobRemovedRunnersFmt  = "No longer started by: %s"
 	// RunInitJobsRemovedFmt reports what the unchecking dropped, next to what
 	// the same run added.
 	RunInitJobsRemovedFmt = "Jobs removed (unchecked): %s"
 	JobActionUpdated      = "updated"
+
+	// RunCRUD* is the vocabulary of `run job` and `run profile` — the questions
+	// they ask and the wording of their answers. They live here rather than
+	// beside the steps for the reason every other label does: two surfaces render
+	// the same session, and a step that spells its own title cannot be one of
+	// them.
+	RunCRUDNameStepName    = "Name"
+	RunCRUDActionStepName  = "Action"
+	RunCRUDActionTitleFmt  = "Action for %s"
+	RunCRUDActionEdit      = "Edit"
+	RunCRUDActionRemove    = "Remove"
+	RunCRUDActionEditValue = "edit"
+	RunCRUDActionRmValue   = "rm"
+
+	// RunCRUDNeedsArgFmt refuses a CRUD command that has nobody to pick in front
+	// of. The subject is a positional here, not a flag, so the standard step
+	// refusal would name a --job that does not exist on these commands.
+	RunCRUDNeedsArgFmt = "%s needs the %s to act on as an argument: there is no picker under --yes, without a terminal, or in --output json mode"
+
+	RunJobPickerTitleEdit   = "Edit which job?"
+	RunJobPickerTitleRemove = "Remove which job?"
+	RunJobPickerTitleChoose = "Choose a job"
+	RunJobOptionFmt         = "%s — %s"
+
+	RunJobNameTitle         = "Job name"
+	RunJobNameDesc          = "Unique identifier for this job"
+	RunJobCmdLabel          = "Command"
+	RunJobCmdTitle          = "Command"
+	RunJobCmdDesc           = "A /bin/sh line — quotes, && and ${VAR} all work (e.g. pnpm dev --port ${PORT})."
+	RunJobKindLabel         = "Kind"
+	RunJobKindTitle         = "Job kind"
+	RunJobKindDesc          = "service = long-running, task = one-shot"
+	RunJobKindServiceOption = "service — long-running (e.g. dev server)"
+	RunJobKindTaskOption    = "task — one-shot (e.g. build, migrate)"
+	RunJobStopLabel         = "Stop"
+	RunJobStopTitle         = "Stop command"
+	RunJobStopDesc          = "Optional. Services only — leave blank for default SIGTERM, or set for detached pattern (e.g. docker compose down)."
+	RunJobCwdLabel          = "Cwd"
+	RunJobCwdTitle          = "Working directory"
+	RunJobCwdDesc           = "Optional. Relative to project root."
+	RunJobPortsLabel        = "Ports"
+	RunJobPortsTitle        = "Base ports"
+	RunJobPortsDesc         = "Optional. NAME=PORT, space-separated (e.g. PORT=3000 DB_PORT=5432). Each worktree gets the base plus its own offset."
+	RunJobURLLabel          = "URL"
+	RunJobURLTitle          = "Published URL"
+	RunJobURLDesc           = "Optional. Name one of the ports above to give this job its own hostname, plus an optional host (e.g. PORT, or PORT api.app-1). Leave blank for a job that does not speak HTTP."
+
+	// RunJob*Summary stand in for an answer nobody gave, so a recap line never
+	// reads as blank.
+	RunJobStopSummaryNone  = "(none)"
+	RunJobCwdSummaryRoot   = "(project root)"
+	RunJobPortsSummaryNone = "(none)"
+	RunJobURLSummaryNone   = "(not published)"
+
+	RunJobURLHostOrphan = "--%s names the host but nothing is published — add --%s"
+	RunJobURLNoneFmt    = "job %q publishes no url — these do: %s"
+	// RunJobNameSpacesFmt refuses whitespace in a name that is also the daemon's
+	// key for the job, the value of --job, and the identity of a TOML table.
+	RunJobNameSpacesFmt = "job %q: a job name cannot contain whitespace — it is what --job takes and what the daemon keys on"
+	RunJobNameSpaces    = "a job name cannot contain whitespace"
+	RunJobNameRequired  = "job name is required"
+	RunJobCmdRequired   = "command is required"
+	RunJobExistsFmt     = "job %q already exists"
+	RunJobNotFoundFmt   = "job %q not found"
+	RunJobNothingToEdit = "edit has nothing to change — pass --%s, --%s, --%s, --%s, --%s, --%s, --%s, --%s, --%s, --%s or --%s"
+	// RunJobReferenced* is the safety refusal of a removal that would drag other
+	// declarations with it. The flag lifts it up front; a run with someone to ask
+	// lifts it by answering, which is the only way `run job list` can remove such
+	// a job at all — it has no --force of its own.
+	RunJobReferencedFmt     = "job %q is referenced by profile(s): %s — pass --%s to strip those references"
+	RunJobReferencedTitle   = "Remove a job other declarations name?"
+	RunJobReferencedDescFmt = "%q is named by: %s."
+	RunJobReferencedYes     = "Remove it and strip the references"
+	RunJobReferencedNo      = "Keep it"
+	RunJobAddedFmt          = "Added job %q"
+	RunJobUpdatedFmt        = "Updated job %q"
+	RunJobRemovedFmt        = "Removed job %q"
+
+	// RunList* is `run list`'s two questions: an entry of run.toml, then what to
+	// do to it. The kind travels with the name because the two lists share one
+	// picker, and it decides which actions the second question offers.
+	RunListKindProfile      = "profile"
+	RunListKindJob          = "job"
+	RunListKindSep          = ":"
+	RunListPickerTitle      = "Jobs & profiles"
+	RunListEntryStepName    = "Entry"
+	RunListActionUp         = "up"
+	RunListActionDown       = "down"
+	RunListActionStart      = "start"
+	RunListActionStop       = "stop"
+	RunListActionLogs       = "logs"
+	RunListActionUpLabel    = "Up — start the profile"
+	RunListActionDownLabel  = "Down — stop the profile"
+	RunListActionStartLabel = "Start"
+	RunListActionStopLabel  = "Stop"
+	RunListActionLogsLabel  = "Logs"
+	RunListProfileJobsFmt   = "%d jobs"
+
+	RunProfilePickerTitleEdit   = "Edit which profile?"
+	RunProfilePickerTitleRemove = "Remove which profile?"
+	RunProfilePickerTitleChoose = "Choose a profile"
+	RunProfileListOptionFmt     = "%s — %s"
+	RunProfileDefaultBadge      = "default"
+
+	RunProfileNameTitle    = "Profile name"
+	RunProfileNameDesc     = "Unique identifier for this profile"
+	RunProfileJobsLabel    = "Jobs"
+	RunProfileJobsTitle    = "Jobs"
+	RunProfileJobsDesc     = "Select jobs to include — space toggles, enter confirms"
+	RunProfileJobOptionFmt = "%s (%s)"
+	RunProfileJobsRequired = "select at least one job"
+	RunProfileOrderLabel   = "Order"
+	RunProfileOrderTitle   = "Order"
+	RunProfileOrderDesc    = "Reorder execution order — shift+↑/↓ to move, enter to confirm"
+	RunProfileDefaultLabel = "Default"
+	RunProfileDefaultTitle = "Default profile?"
+	RunProfileDefaultDesc  = "Mark this profile as default. Only one profile can be the default."
+	// RunProfileDefaultTakenFmt says which profile the answer would take the
+	// default away from, since only one can hold it.
+	RunProfileDefaultTakenFmt = "Profile %q is currently default — confirming yes will replace it."
+	RunProfileDefaultYes      = "Yes — make this the default profile"
+	RunProfileDefaultNo       = "No"
+	RunProfileYesValue        = "yes"
+	RunProfileNoValue         = "no"
+
+	RunProfileNameSpacesFmt = "profile %q: a profile name cannot contain whitespace — it is what --profile takes"
+	RunProfileNameSpaces    = "a profile name cannot contain whitespace"
+	RunProfileNameRequired  = "profile name is required"
+	RunProfileExistsFmt     = "profile %q already exists"
+	RunProfileNotFoundFmt   = "profile %q not found"
+	RunProfileNoJobsYet     = "cannot define a profile: no jobs declared yet — add a job first"
+	RunProfileNothingToEdit = "edit has nothing to change — pass --%s, --%s or --%s"
+	RunProfileAddedFmt      = "Added profile %q"
+	RunProfileUpdatedFmt    = "Updated profile %q"
+	RunProfileRemovedFmt    = "Removed profile %q"
 
 	// MetaFileName is the metadata file created per worktree inside
 	// <state-dir>/worktrees/<branch>/.
@@ -1817,6 +1953,11 @@ const (
 	RunWorktreeUnreadable      = "worktrees could not be listed"
 	RunProfileNoChoice         = "no other profile to choose from"
 	RunProfileSelectAtLeastOne = "select at least one profile"
+	// RunURLNoChoice covers both ends of the same absence: no job publishes a
+	// url, or a single one does and is therefore the answer rather than a
+	// question. Which of the two it was is said by the error that follows when
+	// it is the first.
+	RunURLNoChoice = "no other published job to choose from"
 
 	// RunURLSuffixSep sets a job's URL apart from the line announcing it, far
 	// enough that a terminal-detected link does not swallow the ports before it.
@@ -2067,6 +2208,10 @@ const (
 	// asked (step label, flag name).
 	FlowStepRequiredFmt     = "%s is required and cannot be asked in this mode"
 	FlowStepRequiredFlagFmt = "%s is required and cannot be asked in this mode: pass --%s"
+	// FlowStepRequiredArgFmt is the same refusal for a step whose answer is a
+	// positional: naming a flag that does not exist would send the reader looking
+	// for it.
+	FlowStepRequiredArgFmt = "%s is required and cannot be asked in this mode: pass it as an argument"
 
 	// The create flow (internal/flow/create): step prose, option labels, recap
 	// fields and refusals. Format verbs: %s branch, %s env strategy, %s flag name.
@@ -2682,9 +2827,12 @@ const (
 	// DashboardStepperMultiHint is the multi-select footer, worded like the CLI
 	// wizard's so the same controls read the same on both surfaces.
 	DashboardStepperMultiHint = "↑↓ move · space toggle · a all · / filter · enter confirm · esc back"
-	DashboardStepperRowsHint  = "↑↓ move · enter confirm · esc back"
-	DashboardFormHint         = "↑↓ move · space toggle · enter confirm · esc cancel"
-	DashboardConfirmHint      = "↑↓ move · enter confirm · esc cancel"
+	// DashboardStepperReorderHint is the same footer for a step whose options are
+	// already the answer and whose question is the order they end up in.
+	DashboardStepperReorderHint = "↑↓ move · shift+↑↓ reorder · enter confirm · esc back"
+	DashboardStepperRowsHint    = "↑↓ move · enter confirm · esc back"
+	DashboardFormHint           = "↑↓ move · space toggle · enter confirm · esc cancel"
+	DashboardConfirmHint        = "↑↓ move · enter confirm · esc cancel"
 
 	// DashboardUnsupportedStepFmt refuses a step kind no modal can draw, rather
 	// than guessing a widget for it (step key, kind).

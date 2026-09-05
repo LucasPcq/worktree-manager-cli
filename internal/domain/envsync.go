@@ -36,27 +36,3 @@ type EnvSyncResult struct {
 	// reported even under Check, where nothing was written.
 	Ports EnvPortPlan `json:"ports,omitzero"`
 }
-
-// HasDrift reports whether the worktree is not fully reconciled: a key needing
-// attention (missing, conflicting, orphaned) in any file, or a linked value still
-// carrying another worktree's port. Leaving the ports out would let `--check`
-// answer "no drift" about a worktree whose .env points at the wrong services.
-func (r EnvSyncResult) HasDrift() bool {
-	for _, f := range r.Files {
-		if f.Diff.HasStatus(EnvKeyMissing) || f.Diff.HasStatus(EnvKeyConflict) || f.Diff.HasStatus(EnvKeyOrphan) {
-			return true
-		}
-	}
-	return len(r.Ports.Rewrites()) > 0
-}
-
-// AppliedFiles counts the env files whose reconciled content was written back.
-func (r EnvSyncResult) AppliedFiles() int {
-	n := 0
-	for _, f := range r.Files {
-		if f.Applied {
-			n++
-		}
-	}
-	return n
-}

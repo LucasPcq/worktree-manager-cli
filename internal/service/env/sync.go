@@ -405,7 +405,7 @@ func fileAbsentLabel(branch, target string) string {
 func flagResolution(params SyncEnvParams, diff domain.EnvDiff) EnvResolution {
 	decisions := make(map[string]domain.EnvConflictDecision)
 	if params.OnConflict == domain.EnvDecisionOverwrite {
-		for _, e := range diff.ByStatus(domain.EnvKeyConflict) {
+		for _, e := range rules.EnvKeysWithStatus(rules.EnvDiffFilter{Diff: diff, Status: domain.EnvKeyConflict}) {
 			decisions[e.Key] = domain.EnvDecisionOverwrite
 		}
 	}

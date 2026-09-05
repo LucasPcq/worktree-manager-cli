@@ -2,12 +2,11 @@ package run
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/commands/run/runctx"
 	"github.com/LucasPcq/wtm/internal/commands/shared"
-	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	downflow "github.com/LucasPcq/wtm/internal/flow/run/down"
 	"github.com/LucasPcq/wtm/internal/output"
@@ -31,7 +30,6 @@ func newDownCmd() *cobra.Command {
 
 func runDown(cmd *cobra.Command, args []string) error {
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	all, _ := cmd.Flags().GetBool(domain.FlagAll)
 	profile, _ := cmd.Flags().GetString(domain.FlagProfile)
 
@@ -41,36 +39,21 @@ func runDown(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--%s cannot be combined with a worktree or --%s", domain.FlagAll, domain.FlagProfile)
 	}
 
-	dir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("get working directory: %w", err)
-	}
-	if err := shared.GuardRunInitialized(dir); err != nil {
-		return err
-	}
-
-	result, err := shared.LoadConfig(cmd, dir)
+	ctx, err := runctx.Open(runctx.OpenParams{Cmd: cmd})
 	if err != nil {
 		return err
-	}
-	runCfg, err := config.LoadRun(result.StateDir)
-	if err != nil {
-		return fmt.Errorf("load run config: %w", err)
 	}
 
 	outcome, err := downflow.Run(downflow.Params{
-		Context: shared.FlowContext(result),
+		Context: ctx.FlowContext(),
 		Request: downflow.Request{
 			Worktrees: args,
-			Cwd:       dir,
+			Cwd:       ctx.Dir,
 			Profile:   profile,
 			All:       all,
-			Config:    runCfg,
+			Config:    ctx.Run,
 		},
-		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
-			Interactive: !all && shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
-			Stderr:      true,
-		}),
+		Prompter:  ctx.Prompter(!all && ctx.Interactive),
 		Presenter: downPresenter{CLIPresenter: shared.NewPresenter(cmd, format)},
 	})
 	if err != nil {

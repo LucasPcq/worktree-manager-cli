@@ -80,3 +80,52 @@ func TestRemoveJobNeModifiePasLaConfigDentree(t *testing.T) {
 		t.Errorf("jobs du profil d'entrée = %v, want inchangés", cfg.Profiles[0].Jobs)
 	}
 }
+
+// A job is named in three places, and a runner's `runs` is the third. Leaving it
+// behind made the removal fail the very validation it had just invalidated, so
+// a job any runner started could not be removed at all.
+func TestRemoveJobStripsTheRunnersThatStartedIt(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "dev", Kind: domain.JobKindService, Cmd: "turbo run dev", Runs: []string{"api", "web"}},
+		{Name: "api", Kind: domain.JobKindService, Cmd: "pnpm --filter api dev"},
+		{Name: "web", Kind: domain.JobKindService, Cmd: "pnpm --filter web dev"},
+	}}
+
+	out, effect := rules.RemoveJob(cfg, "api")
+
+	if len(effect.Runners) != 1 || effect.Runners[0] != "dev" {
+		t.Fatalf("runners = %v, want the runner that named it", effect.Runners)
+	}
+	runner, ok := rules.FindJob(out, "dev")
+	if !ok {
+		t.Fatal("the runner itself was removed")
+	}
+	if len(runner.Runs) != 1 || runner.Runs[0] != "web" {
+		t.Errorf("runs = %v, want the removed job stripped and the rest kept", runner.Runs)
+	}
+	if _, errs := rules.ValidateRun(out); len(errs) > 0 {
+		t.Errorf("the config a removal produced does not validate: %v", errs)
+	}
+}
+
+// A runner left with nothing to start keeps its own declaration: it is a job in
+// its own right, unlike a profile that starts nothing.
+func TestRemoveJobLeavesARunnerWithNoChildrenStanding(t *testing.T) {
+	cfg := domain.RunConfig{Jobs: []domain.JobConfig{
+		{Name: "dev", Kind: domain.JobKindService, Cmd: "turbo run dev", Runs: []string{"api"}},
+		{Name: "api", Kind: domain.JobKindService, Cmd: "pnpm --filter api dev"},
+	}}
+
+	out, _ := rules.RemoveJob(cfg, "api")
+
+	runner, ok := rules.FindJob(out, "dev")
+	if !ok {
+		t.Fatal("the runner was removed along with its only child")
+	}
+	if runner.Runs != nil {
+		t.Errorf("runs = %v, want it dropped rather than left empty", runner.Runs)
+	}
+	if _, errs := rules.ValidateRun(out); len(errs) > 0 {
+		t.Errorf("validation: %v", errs)
+	}
+}

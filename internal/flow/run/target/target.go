@@ -250,6 +250,38 @@ func WorkDir(params WorkDirParams) string {
 	return Root(params.Cwd)
 }
 
+type PickOneParams struct {
+	Prompter flow.Prompter
+	// Step is the picker to run when the positional did not answer.
+	Step  flow.Step
+	Given string
+	// Subject names what the argument would have carried and Label the command
+	// asking for it. The refusal is worded here rather than left to the step
+	// because these commands take their subject positionally, so the step's own
+	// message would name a flag they do not have.
+	Subject string
+	Label   string
+}
+
+// PickOne answers "which one" without asking when the positional already did,
+// and refuses rather than guessing when nobody can be asked.
+func PickOne(params PickOneParams) (string, error) {
+	if params.Given != "" {
+		return params.Given, nil
+	}
+	if !params.Prompter.Interactive() {
+		return "", fmt.Errorf(domain.RunCRUDNeedsArgFmt, params.Label, params.Subject)
+	}
+	answers, err := params.Prompter.Ask(flow.Session{
+		ErrLabel: params.Label,
+		Steps:    []flow.Step{params.Step},
+	})
+	if err != nil {
+		return "", err
+	}
+	return answers.Value(params.Step.Key), nil
+}
+
 type PresetParams struct {
 	Named *Resolved
 	// Worktrees are the paths a cumulative command's positionals named. It is the

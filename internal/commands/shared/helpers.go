@@ -136,18 +136,3 @@ func RequireRunInitialized(cfg domain.RunConfig) error {
 	}
 	return fmt.Errorf("%w\n%s", domain.ErrRunNotInitialized, domain.ExperimentalRunNotice)
 }
-
-// GuardRunInitialized resolves the state dir, loads run.toml, and enforces the
-// run-module guard in a single call — for commands that don't otherwise need the
-// loaded config in hand (ps, down, logs).
-func GuardRunInitialized(dir string) error {
-	stateDir, err := StateDir(dir)
-	if err != nil {
-		return err
-	}
-	cfg, err := config.LoadRun(stateDir)
-	if err != nil {
-		return fmt.Errorf("load run config: %w", err)
-	}
-	return RequireRunInitialized(cfg)
-}

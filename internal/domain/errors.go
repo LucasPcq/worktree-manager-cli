@@ -201,6 +201,10 @@ var (
 	// be asked, and the answer is to declare a job rather than to pick one.
 	ErrNoJobsDeclared = errors.New("no jobs declared in run.toml")
 
+	// ErrNoProfilesDeclared is ErrNoJobsDeclared's counterpart for the profile
+	// axis: a picker with nothing in it is not a question.
+	ErrNoProfilesDeclared = errors.New("no profiles declared in run.toml")
+
 	// ErrProxyNoListeners means launchd started the forwarder without handing it
 	// the sockets it exists to serve.
 	ErrProxyNoListeners = errors.New("launchd started the port-80 forwarder with no listening socket")

@@ -6,7 +6,8 @@ Remove a profile from run.toml
 
 Remove a profile from <git-common-dir>/wtm/run.toml.
 
-Without an argument, prompts to pick from the existing profiles.
+Without an argument, prompts to pick from the existing profiles; under --yes
+the argument is required.
 Jobs referenced by the profile are left untouched.
 
 ```
@@ -18,6 +19,7 @@ wtm run profile rm [name] [flags]
 ```
   -h, --help            help for rm
       --output string   Output format: text or json (default "text")
+  -y, --yes             Skip the picker; [name] is then required
 ```
 
 ### SEE ALSO

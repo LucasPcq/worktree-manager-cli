@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 )
@@ -146,6 +147,9 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 			errs = append(errs, "job with empty name")
 			continue
 		}
+		if strings.ContainsFunc(j.Name, unicode.IsSpace) {
+			errs = append(errs, fmt.Sprintf(domain.RunJobNameSpacesFmt, j.Name))
+		}
 		if jobNames[j.Name] {
 			errs = append(errs, fmt.Sprintf("duplicate job name %q — names must be unique across the file", j.Name))
 		}
@@ -179,6 +183,9 @@ func ValidateRun(cfg domain.RunConfig) (warnings []string, errs []string) {
 		if p.Name == "" {
 			errs = append(errs, "profile with empty name")
 			continue
+		}
+		if strings.ContainsFunc(p.Name, unicode.IsSpace) {
+			errs = append(errs, fmt.Sprintf(domain.RunProfileNameSpacesFmt, p.Name))
 		}
 		if seenProfiles[p.Name] {
 			errs = append(errs, fmt.Sprintf("duplicate profile name %q — names must be unique across the file", p.Name))

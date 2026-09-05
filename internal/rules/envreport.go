@@ -39,9 +39,9 @@ type EnvKeyRowsParams struct {
 func EnvKeyRows(params EnvKeyRowsParams) []domain.EnvKeyRow {
 	f := params.File
 	added := resolvedEnvAdds(f.Diff)
-	conflicts := f.Diff.ByStatus(domain.EnvKeyConflict)
-	missing := f.Diff.ByStatus(domain.EnvKeyMissing)
-	orphans := f.Diff.ByStatus(domain.EnvKeyOrphan)
+	conflicts := EnvKeysWithStatus(EnvDiffFilter{Diff: f.Diff, Status: domain.EnvKeyConflict})
+	missing := EnvKeysWithStatus(EnvDiffFilter{Diff: f.Diff, Status: domain.EnvKeyMissing})
+	orphans := EnvKeysWithStatus(EnvDiffFilter{Diff: f.Diff, Status: domain.EnvKeyOrphan})
 
 	width := 0
 	for _, group := range [][]domain.EnvKeyDiff{added, conflicts, missing, orphans} {
@@ -100,7 +100,7 @@ func EnvFileVerdict(hasPorts bool) string {
 // showing.
 func resolvedEnvAdds(d domain.EnvDiff) []domain.EnvKeyDiff {
 	out := make([]domain.EnvKeyDiff, 0)
-	for _, e := range d.ByStatus(domain.EnvKeyResolved) {
+	for _, e := range EnvKeysWithStatus(EnvDiffFilter{Diff: d, Status: domain.EnvKeyResolved}) {
 		if e.CurrentValue == "" && e.ResolvedValue != "" {
 			out = append(out, e)
 		}

@@ -3,9 +3,11 @@ package target
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/flow"
+	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 type WorktreeParams struct {
@@ -187,6 +189,13 @@ type JobParams struct {
 	// Flag is what an unattended run is told to pass, since there is no safe
 	// default for "which job": naming one is the whole request.
 	Flag string
+	// Title heads the picker, empty meaning "which job to act on". The CRUD
+	// commands say what they are about to do to it instead, because that is what
+	// the reader is deciding.
+	Title string
+	// Detail puts a job's command beside its name, for a reader choosing which
+	// declaration to edit rather than which service to run.
+	Detail bool
 }
 
 // JobStep asks which job to act on. It has no Resolve: a run that cannot ask is
@@ -202,21 +211,131 @@ func JobStep(params JobParams) flow.Step {
 				return flow.StepContent{}, domain.ErrNoJobsDeclared
 			}
 			return flow.StepContent{
-				Title:   domain.RunJobPickerTitle,
-				Options: jobOptions(params.Jobs),
+				Title:   pickerTitle(params.Title, domain.RunJobPickerTitle),
+				Options: jobOptions(params),
 			}, nil
 		},
 	}
 }
 
-func jobOptions(jobs []domain.JobConfig) []flow.Option {
-	options := make([]flow.Option, 0, len(jobs))
-	for _, job := range jobs {
+func pickerTitle(title, fallback string) string {
+	if title == "" {
+		return fallback
+	}
+	return title
+}
+
+func jobOptions(params JobParams) []flow.Option {
+	options := make([]flow.Option, 0, len(params.Jobs))
+	for _, job := range params.Jobs {
 		var badges []flow.Badge
 		if job.Kind != "" {
 			badges = append(badges, flow.Badge{Text: string(job.Kind)})
 		}
-		options = append(options, flow.Option{Label: job.Name, Value: job.Name, Badges: badges})
+		label := job.Name
+		if params.Detail && job.Cmd != "" {
+			label = fmt.Sprintf(domain.RunJobOptionFmt, job.Name, job.Cmd)
+		}
+		options = append(options, flow.Option{Label: label, Value: job.Name, Badges: badges})
+	}
+	return options
+}
+
+type URLParams struct {
+	// Published lists the jobs reachable by name in one worktree. It is a
+	// function of the worktree rather than a list because a job's address
+	// follows its worktree's ordinal: built once, it would show the ports of
+	// wherever the command was launched instead of those of the worktree
+	// answered one step earlier.
+	Published func(workDir string) []domain.JobURLEntry
+	Named     *Resolved
+	Cwd       string
+	Flag      string
+}
+
+// URLStep asks which published job to act on. A worktree publishing one job or
+// none asks nothing — a single address is the answer, not a question — and a run
+// that cannot ask is refused with the jobs it could have meant, rather than with
+// the generic "pass --job": naming them is what makes the refusal actionable.
+func URLStep(params URLParams) flow.Step {
+	published := func(answers flow.Answers) []domain.JobURLEntry {
+		return params.Published(WorkDir(WorkDirParams{Answers: answers, Named: params.Named, Cwd: params.Cwd}))
+	}
+
+	return flow.Step{
+		Kind:  flow.StepSelect,
+		Key:   KeyJob,
+		Label: domain.RunJobStepName,
+		Flag:  params.Flag,
+		Skip: func(answers flow.Answers) (bool, string) {
+			if len(published(answers)) < 2 {
+				return true, domain.RunURLNoChoice
+			}
+			return false, ""
+		},
+		Build: func(answers flow.Answers) (flow.StepContent, error) {
+			return flow.StepContent{
+				Title:   domain.RunURLPickerTitle,
+				Options: urlOptions(published(answers)),
+			}, nil
+		},
+		Resolve: func(answers flow.Answers) (flow.Answer, error) {
+			return flow.Answer{}, fmt.Errorf("%w — %s", domain.ErrJobAmbiguous, rules.PublishedJobNames(published(answers)))
+		},
+	}
+}
+
+func urlOptions(entries []domain.JobURLEntry) []flow.Option {
+	options := make([]flow.Option, 0, len(entries))
+	for _, entry := range entries {
+		options = append(options, flow.Option{
+			Label:  entry.Job,
+			Value:  entry.Job,
+			Badges: []flow.Badge{{Text: entry.URL}},
+		})
+	}
+	return options
+}
+
+type ProfilePickParams struct {
+	Profiles []domain.ProfileConfig
+	Flag     string
+	Title    string
+}
+
+// ProfilePickStep asks which profile to act on — the single-valued form of
+// ProfileStep, for the commands that edit one declaration rather than start a
+// set of them. Like JobStep it has no Resolve: naming it is the whole request.
+func ProfilePickStep(params ProfilePickParams) flow.Step {
+	return flow.Step{
+		Kind:  flow.StepSelect,
+		Key:   KeyProfile,
+		Label: domain.RunProfileStepName,
+		Flag:  params.Flag,
+		Build: func(flow.Answers) (flow.StepContent, error) {
+			if len(params.Profiles) == 0 {
+				return flow.StepContent{}, domain.ErrNoProfilesDeclared
+			}
+			return flow.StepContent{
+				Title:   pickerTitle(params.Title, domain.RunProfilePickerTitle),
+				Options: profilePickOptions(params.Profiles),
+			}, nil
+		},
+	}
+}
+
+func profilePickOptions(profiles []domain.ProfileConfig) []flow.Option {
+	options := make([]flow.Option, 0, len(profiles))
+	for _, profile := range profiles {
+		var badges []flow.Badge
+		if profile.Default {
+			badges = append(badges, flow.Badge{Text: domain.RunProfileDefaultBadge, Tone: domain.ToneSuccess})
+		}
+		label := profile.Name
+		if len(profile.Jobs) > 0 {
+			label = fmt.Sprintf(domain.RunProfileListOptionFmt, profile.Name, strings.Join(profile.Jobs, domain.RunURLListSep))
+		}
+		options = append(options, flow.Option{Label: label, Value: profile.Name, Badges: badges})
 	}
 	return options
 }

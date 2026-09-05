@@ -1,13 +1,10 @@
 package run
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/commands/run/runctx"
 	"github.com/LucasPcq/wtm/internal/commands/shared"
-	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	startflow "github.com/LucasPcq/wtm/internal/flow/run/start"
 )
@@ -33,41 +30,24 @@ func newStartCmd() *cobra.Command {
 }
 
 func runStart(cmd *cobra.Command, args []string) error {
-	dir, err := os.Getwd()
+	ctx, err := runctx.Open(runctx.OpenParams{Cmd: cmd})
 	if err != nil {
-		return fmt.Errorf("get working directory: %w", err)
-	}
-
-	result, err := shared.LoadConfig(cmd, dir)
-	if err != nil {
-		return err
-	}
-
-	runCfg, err := config.LoadRun(result.StateDir)
-	if err != nil {
-		return fmt.Errorf("load run config: %w", err)
-	}
-	if err := shared.RequireRunInitialized(runCfg); err != nil {
 		return err
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
 	job, _ := cmd.Flags().GetString(domain.FlagJob)
 
 	outcome, err := startflow.Run(startflow.Params{
-		Context: shared.FlowContext(result),
+		Context: ctx.FlowContext(),
 		Request: startflow.Request{
-			Worktree: firstArg(args),
-			Cwd:      dir,
+			Worktree: runctx.FirstArg(args),
+			Cwd:      ctx.Dir,
 			Job:      job,
-			Config:   runCfg,
+			Config:   ctx.Run,
 		},
-		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
-			Interactive: shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
-			Stderr:      true,
-		}),
+		Prompter:  ctx.Prompter(ctx.Interactive),
 		Presenter: startPresenter{CLIPresenter: shared.NewPresenter(cmd, format), detach: detach},
 	})
 	if err != nil {

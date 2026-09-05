@@ -32,7 +32,7 @@ func EnvPortsReport(w io.Writer, plan domain.EnvPortPlan, check bool) {
 	// did not happen. A --check run is a preview, so it keeps its table.
 	declined := len(rows) > 0 && !plan.Applied && !check
 	if declined {
-		Unchanged(w, fmt.Sprintf(domain.EnvPortsLeftAloneFmt, len(plan.Rewrites())))
+		Unchanged(w, fmt.Sprintf(domain.EnvPortsLeftAloneFmt, len(rules.EnvPortRewrites(plan))))
 		printEnvPortAnomalies(w, anomalies)
 		printEnvPortNotices(w, notices, false)
 		return

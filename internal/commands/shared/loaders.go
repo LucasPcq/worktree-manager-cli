@@ -2,16 +2,11 @@ package shared
 
 import (
 	"errors"
+
 	"github.com/LucasPcq/wtm/internal/domain"
 	ghservice "github.com/LucasPcq/wtm/internal/service/github"
 	"github.com/LucasPcq/wtm/internal/service/runjobs"
 )
-
-// LoadPRsGraceful fetches open PRs for the project, returning nil on error.
-func LoadPRsGraceful(projectDir string) []domain.PRInfo {
-	prs, _ := LoadPRs(projectDir)
-	return prs
-}
 
 // LoadPRs fetches open PRs for the project and reports the GitHub CLI
 // connection status, distinguishing "no PRs" from "gh unavailable" so callers

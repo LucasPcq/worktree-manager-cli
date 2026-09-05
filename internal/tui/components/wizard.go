@@ -189,18 +189,6 @@ func (m *WizardModel) UpdateStepModel(stepIdx int, fn func(model any) any) {
 	m.steps[stepIdx].Model = fn(m.steps[stepIdx].Model)
 }
 
-// NewWizardAtStep creates a wizard positioned on the given step, with all prior
-// steps treated as already completed (their summaries show in the breadcrumb and
-// back navigation reaches them). Used to re-enter a flow without redoing earlier
-// answers. An out-of-range start falls back to the first step.
-func NewWizardAtStep(steps []Step, start int) WizardModel {
-	m := NewWizard(steps)
-	if start > 0 && start < len(steps) {
-		m.current = start
-	}
-	return m
-}
-
 // Done returns true when all steps have been completed.
 func (m WizardModel) Done() bool { return m.done }
 
@@ -564,7 +552,12 @@ func (m WizardModel) helpLine() string {
 }
 
 // rowless is a step with nothing to move between: it takes typing, not a cursor.
+// The assertion below names its one implementation — the step models are held
+// as `any`, so without it nothing ties the method to the interface, for a
+// reader or for a reachability analysis.
 type rowless interface{ helpRowless() bool }
+
+var _ rowless = TextInputModel{}
 
 // doneRower is a step whose last row confirms it. The word for enter follows:
 // on such a step enter acts on the row under the cursor, everywhere else it

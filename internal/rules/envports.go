@@ -648,7 +648,7 @@ func sortedPortRefs(bases map[domain.PortRef]int) []domain.PortRef {
 
 // EnvPortPlanTouches reports whether a plan rewrites anything in one env target.
 func EnvPortPlanTouches(plan domain.EnvPortPlan, target string) bool {
-	for _, e := range plan.Rewrites() {
+	for _, e := range EnvPortRewrites(plan) {
 		if e.File == target {
 			return true
 		}

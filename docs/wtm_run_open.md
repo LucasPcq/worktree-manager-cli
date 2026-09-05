@@ -4,7 +4,7 @@ Open a job's URL in the browser
 
 ### Synopsis
 
-Hand a job's URL to the desktop's own opener. [worktree] defaults to the current one, and is picked interactively when there is a terminal. Naming the job with --job is required outside a fully interactive run — a picker never runs under a pipe or --output json.
+Hand a job's URL to the desktop's own opener. [worktree] defaults to the current one, and is picked interactively when there is a terminal. Naming the job with --job is required outside a fully interactive run — a picker never runs under a pipe, under --yes or in --output json mode.
 
 ```
 wtm run open [worktree] [flags]
@@ -17,6 +17,7 @@ wtm run open [worktree] [flags]
       --job string      Job whose URL to open (required outside a fully interactive run)
       --output string   Output format: text or json (default "text")
       --raw             Open the direct http://localhost:<port> address
+  -y, --yes             Skip the pickers; --job is then required when several jobs publish a url
 ```
 
 ### SEE ALSO

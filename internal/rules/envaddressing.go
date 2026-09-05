@@ -12,7 +12,7 @@ import (
 // only answers on that origin once its .env says so.
 func PendingOriginRewrites(plan domain.EnvPortPlan) int {
 	pending := 0
-	for _, entry := range plan.Rewrites() {
+	for _, entry := range EnvPortRewrites(plan) {
 		if entry.Addressing == domain.AddressingNames {
 			pending++
 		}
@@ -29,7 +29,7 @@ func PendingOriginRewrites(plan domain.EnvPortPlan) int {
 // A value already carrying a named origin is not that, even a stale one: the
 // .env has moved to names, and only its port has to catch up.
 func AddressedByPort(plan domain.EnvPortPlan) bool {
-	for _, entry := range plan.Rewrites() {
+	for _, entry := range EnvPortRewrites(plan) {
 		if entry.Addressing == domain.AddressingNames && hasLoopbackOrigin(entry.CurrentValue) {
 			return true
 		}

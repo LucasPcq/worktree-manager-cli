@@ -7,7 +7,6 @@ import (
 
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/infra"
-	"github.com/LucasPcq/wtm/internal/rules"
 )
 
 // EnvStateDir overrides the resolved state directory; useful for tests and CI.
@@ -24,20 +23,4 @@ func StateDir(dir string) (string, error) {
 		return "", fmt.Errorf("resolve state dir: %w", err)
 	}
 	return filepath.Join(commonDir, domain.StateDirName), nil
-}
-
-// WorktreeStateDirParams holds inputs for resolving a per-worktree state dir.
-type WorktreeStateDirParams struct {
-	Dir    string
-	Branch string
-}
-
-// WorktreeStateDir returns <state-dir>/worktrees/<encoded-branch>/, where the
-// branch name is URL-path-escaped so slashes don't create nested directories.
-func WorktreeStateDir(params WorktreeStateDirParams) (string, error) {
-	state, err := StateDir(params.Dir)
-	if err != nil {
-		return "", err
-	}
-	return rules.WorktreeMetaDir(state, params.Branch), nil
 }

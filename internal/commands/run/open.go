@@ -1,13 +1,13 @@
 package run
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/commands/run/runctx"
 	"github.com/LucasPcq/wtm/internal/commands/shared"
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/flow"
+	openflow "github.com/LucasPcq/wtm/internal/flow/run/open"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/integration"
 )
@@ -16,69 +16,66 @@ import (
 // without a browser window appearing.
 var openInBrowser = integration.OpenURL
 
-func askableURLs(entries []domain.JobURLEntry) []domain.JobURLEntry {
-	if len(entries) < 2 {
-		return nil
-	}
-	return entries
-}
-
 func newOpenCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   domain.CmdOpen + " [worktree]",
 		Short: "Open a job's URL in the browser",
-		Long:  "Hand a job's URL to the desktop's own opener. [worktree] defaults to the current one, and is picked interactively when there is a terminal. Naming the job with --job is required outside a fully interactive run — a picker never runs under a pipe or --output json.",
+		Long:  "Hand a job's URL to the desktop's own opener. [worktree] defaults to the current one, and is picked interactively when there is a terminal. Naming the job with --job is required outside a fully interactive run — a picker never runs under a pipe, under --yes or in --output json mode.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE:  runOpen,
 	}
 	shared.AddJobFlag(cmd, "Job whose URL to open (required outside a fully interactive run)")
 	cmd.Flags().Bool(domain.FlagRaw, false, "Open the direct http://localhost:<port> address")
+	shared.AddYesFlag(cmd, "Skip the pickers; --job is then required when several jobs publish a url")
 	shared.AddOutputFlag(cmd)
 	return cmd
 }
 
 func runOpen(cmd *cobra.Command, args []string) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("get working directory: %w", err)
-	}
-
-	ctx, err := loadURLContext(cmd, cwd)
+	ctx, err := runctx.Open(runctx.OpenParams{Cmd: cmd})
 	if err != nil {
 		return err
 	}
 
-	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	jobName, _ := cmd.Flags().GetString(domain.FlagJob)
+	raw, _ := cmd.Flags().GetBool(domain.FlagRaw)
+	job, _ := cmd.Flags().GetString(domain.FlagJob)
 
-	resolved, err := resolveInputs(inputsParams{
-		Args:        args,
-		Cwd:         cwd,
-		ProjectDir:  ctx.config.ProjectDir,
-		Interactive: isTTY() && rules.IsHumanFormat(format),
-		Pick:        true,
-		Second: secondAxis{
-			Given: jobName,
-			// A single published job is the answer, not a question.
-			URLs: askableURLs(ctx.publishedIn(worktreeRoot(cwd))),
-			// The addresses depend on the worktree picked one step earlier, so the
-			// list is rebuilt rather than shown with the ports of wherever the
-			// command was launched.
-			ResolveURLs: ctx.publishedIn,
+	outcome, err := openflow.Run(openflow.Params{
+		Context: ctx.FlowContext(),
+		Request: openflow.Request{
+			Worktree: runctx.FirstArg(args),
+			Cwd:      ctx.Dir,
+			Job:      job,
+			Raw:      raw,
+			Config:   ctx.Run,
 		},
+		Prompter:  ctx.Prompter(ctx.Interactive),
+		Presenter: openPresenter{CLIPresenter: ctx.CLI(cmd)},
+		Open:      openInBrowser,
 	})
 	if err != nil {
 		return err
 	}
+	if outcome.Aborted {
+		return domain.ErrAborted
+	}
+	// The shape follows the format, as it does for `run url`: a caller asking
+	// for a document gets the address that was opened, not an empty stdout.
+	if ctx.Format == domain.OutputJSON {
+		return outputJobURL(cmd, outcome.Entry)
+	}
+	return nil
+}
 
-	entry, err := pickPublished(ctx.publishedIn(resolved.Dir), resolved.Second)
-	if err != nil {
-		return err
+// openPresenter keeps the addressing warning out of a machine run: a caller
+// asking for JSON asked for a document, not for prose on stderr.
+type openPresenter struct {
+	shared.CLIPresenter
+}
+
+func (p openPresenter) Status(notice flow.Notice) {
+	if !rules.IsHumanFormat(p.Format) {
+		return
 	}
-	// Not under --raw, which opens the job's own port: the .env answers that one
-	// whatever the addressing says.
-	if ctx.proxyPort > 0 && rules.IsHumanFormat(format) {
-		noticeAddressingDrift(cmd, ctx.config, resolved.Dir)
-	}
-	return openInBrowser(entry.URL)
+	p.CLIPresenter.Status(notice)
 }

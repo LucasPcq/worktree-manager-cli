@@ -2,12 +2,11 @@ package run
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/LucasPcq/wtm/internal/commands/run/runctx"
 	"github.com/LucasPcq/wtm/internal/commands/shared"
-	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	upflow "github.com/LucasPcq/wtm/internal/flow/run/up"
 	"github.com/LucasPcq/wtm/internal/output"
@@ -48,29 +47,15 @@ func newUpCmd() *cobra.Command {
 }
 
 func runUp(cmd *cobra.Command, args []string) error {
-	dir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("get working directory: %w", err)
-	}
-
-	result, err := shared.LoadConfig(cmd, dir)
+	ctx, err := runctx.Open(runctx.OpenParams{Cmd: cmd})
 	if err != nil {
 		return err
 	}
-
-	runCfg, err := config.LoadRun(result.StateDir)
-	if err != nil {
-		return fmt.Errorf("load run config: %w", err)
-	}
-	if err := shared.RequireRunInitialized(runCfg); err != nil {
-		return err
-	}
-	if err := reportRunConfig(cmd, runCfg); err != nil {
+	if err := reportRunConfig(cmd, ctx.Run); err != nil {
 		return err
 	}
 
 	format, _ := cmd.Flags().GetString(domain.FlagOutput)
-	yes, _ := cmd.Flags().GetBool(domain.FlagYes)
 	detach, _ := cmd.Flags().GetBool(domain.FlagDetach)
 	exclusive, _ := cmd.Flags().GetBool(domain.FlagExclusive)
 	parallel, _ := cmd.Flags().GetBool(domain.FlagParallel)
@@ -78,22 +63,19 @@ func runUp(cmd *cobra.Command, args []string) error {
 	profiles, _ := cmd.Flags().GetStringSlice(domain.FlagProfile)
 
 	outcome, err := upflow.Run(upflow.Params{
-		Context: shared.FlowContext(result),
+		Context: ctx.FlowContext(),
 		Request: upflow.Request{
 			Worktrees: args,
-			Cwd:       dir,
+			Cwd:       ctx.Dir,
 			Profiles:  profiles,
 			Exclusive: exclusive,
 			Parallel:  parallel,
 			NoProbe:   noProbe,
-			Config:    runCfg,
+			Config:    ctx.Run,
 		},
 		// The run wizard may be reached through the shell wrapper, which
 		// consumes stdout.
-		Prompter: shared.FlowPrompter(shared.FlowPrompterParams{
-			Interactive: shared.Interactive(shared.UnattendedParams{TTY: isTTY(), Format: format, Yes: yes}),
-			Stderr:      true,
-		}),
+		Prompter:  ctx.Prompter(ctx.Interactive),
 		Presenter: upPresenter{CLIPresenter: shared.NewPresenter(cmd, format), detach: detach},
 	})
 	if err != nil {

@@ -27,7 +27,7 @@ import (
 // elided, which is not only about width — a DATABASE_URL printed whole puts a
 // password on screen.
 func EnvPortTableLines(plan domain.EnvPortPlan) []string {
-	entries := plan.Rewrites()
+	entries := EnvPortRewrites(plan)
 	if len(entries) == 0 {
 		return nil
 	}
@@ -103,7 +103,7 @@ func widestLine(lines []string) int {
 // that never matches is a mistake in run.toml, and the user can only fix the one
 // they can see.
 func EnvPortAnomalyLines(plan domain.EnvPortPlan) []string {
-	entries := plan.Anomalies()
+	entries := EnvPortAnomalies(plan)
 	if len(entries) == 0 {
 		return nil
 	}
@@ -238,7 +238,7 @@ func EnvPortPromptDescription(plan domain.EnvPortPlan) string {
 // taking an address is not "moved to this worktree's ports", and a mixed plan
 // is named by the thing the reader would not expect.
 func EnvPortsConfirmTitle(plan domain.EnvPortPlan) string {
-	for _, e := range plan.Rewrites() {
+	for _, e := range EnvPortRewrites(plan) {
 		if e.Addressing == domain.AddressingNames {
 			return domain.EnvPortsOriginConfirmPrompt
 		}

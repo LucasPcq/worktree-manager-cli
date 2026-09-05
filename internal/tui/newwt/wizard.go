@@ -262,47 +262,6 @@ func envStep(strategy domain.EnvStrategy) components.Step {
 	}
 }
 
-// RunWizard displays the interactive wizard for wtm new.
-// When IncludeBranch is true, the first step prompts for a branch name.
-// Returns ErrUserAborted on Ctrl+C or Esc at the first step, or when the user
-// declines a hard confirmation (diverged source, or the env fallback).
-func RunWizard(params WizardParams) (WizardResult, error) {
-	flow := CreateSteps(params, nil)
-
-	// The final recap: always last, recaps the selections with ⚠ lines for a
-	// diverged source and the env fallback, and offers "Yes, create worktree" then
-	// the constant "No, cancel" — the single cancellation point.
-	steps := append(flow.Steps, components.RecapStep(components.RecapStepParams{
-		Name: stepConfirm,
-		Build: func(prev []components.Step) components.RecapContent {
-			return components.RecapContent{
-				Description: buildCreateRecap(prev, params),
-				Actions: []components.SelectItem{
-					{Label: "Yes, create worktree", Value: createConfirm},
-				},
-			}
-		},
-	}))
-
-	wp := components.WizardParams{
-		Steps:       steps,
-		InitCmd:     flow.InitCmd,
-		OnMsg:       flow.OnMsg,
-		LoadingText: flow.LoadingText,
-		Loading:     flow.InitCmd != nil,
-	}
-	finalModel, err := tea.NewProgram(components.NewWizardWithParams(wp)).Run()
-	if err != nil {
-		return WizardResult{}, fmt.Errorf("wizard: %w", err)
-	}
-
-	final, ok := finalModel.(components.WizardModel)
-	if !ok || final.Aborted() {
-		return WizardResult{}, domain.ErrUserAborted
-	}
-	return extractResult(final, params)
-}
-
 // sourceUpdateItems are the fast-forward-vs-keep options, shared by the ChoiceStep
 // (picked source) and concrete (fixed source) variants. The branch is named in the
 // label because the offer targets the source for a new branch and the worktree's

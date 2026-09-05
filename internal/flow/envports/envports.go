@@ -51,7 +51,7 @@ func Settle(params Params) error {
 		params.Presenter.Status(flow.Notice{Kind: flow.NoticeMessage, Text: domain.EnvOwnedKeysTitle, Lines: owned})
 	}
 
-	if len(plan.Rewrites()) == 0 {
+	if len(rules.EnvPortRewrites(plan)) == 0 {
 		return envsvc.ApplyOwnedEnv(resolved)
 	}
 

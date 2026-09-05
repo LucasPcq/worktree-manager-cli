@@ -30,15 +30,21 @@ is implemented yet.
 | `wtm prune` | migrated — `internal/flow/prune` |
 | `wtm sync` | migrated — `internal/flow/sync` |
 | `wtm run up\|down\|start\|stop\|logs` | migrated — `internal/flow/run/<cmd>`, over the questions in `internal/flow/run/target` and the daemon binding in `internal/flow/run/seam` (LUC-193) |
-| `wtm run ps\|list` | migrated in the sense that matters: their pickers now call those flows in this process instead of re-executing the binary. The pickers themselves stay in `internal/tui/runpicker`, which `run job` and `run profile` also use |
+| `wtm run ps` | not a flow: it reads the daemon's index and prints it, and asks nothing |
+| `wtm run list` | migrated — `internal/flow/run/list` answers which entry was picked and what to do to it; `internal/commands/run/dispatch.go` runs that action through the flow it already has for it (LUC-217) |
+| `wtm run job add\|edit\|rm\|list` | migrated — `internal/flow/run/job` (LUC-217) |
+| `wtm run profile add\|edit\|rm\|list` | migrated — `internal/flow/run/profile` (LUC-217) |
+| `wtm run open`, `wtm run url` | migrated — `internal/flow/run/open` and `internal/flow/run/url`, over `target.URLStep` and the address reader in `internal/flow/run/urls` (LUC-217) |
 | CLI wizard surface | `internal/tui/flowui` |
 | Unattended surface | `flow.Unattended` (in `internal/flow`) |
 | Dashboard surface | `internal/tui/dashboard` (`prompter.go`, `presenter.go`, `ops.go`) |
 | Test doubles | `internal/testutil/flowtest` |
-| `run open`, `run url` | **not migrated** — still resolve their target through `internal/commands/run/target.go` and `internal/tui/runpicker`'s wizard. `run open` needs a URL step whose options depend on the worktree answered one step earlier, which `Step.Build(answers)` supports but nothing declares yet. |
 | `extract` | **not migrated** — still driven by `internal/commands/wt` plus its wizard package (`internal/tui/extract`). The model was validated on paper against it; that is not the same as delivered. Tracked as LUC-182. |
+| `checkout`, `relocate`, `env` | **not migrated** either, which nothing said until `archlint`'s `mutation` rule counted them: all three call their service straight from `internal/commands/`, so no second surface can run them. Listed in `.archlint-migrating`, reported on every `make lint`. |
 | `StepMultiSelect` | exists since `reparent`, which needed it to keep its no-argument picker. Rendered by both surfaces: `flowui`, and the dashboard's modal since its Actions menu runs the batch reparent. Since `prune`, an `Option` can also arrive pre-checked and tagged (`Selected`, `Tag`, `Tone`). `Tone` is a `domain` enum, not a `flow` one, so `components.TagVariantOf` can hold the one mapping onto the palette without the widget library learning about `flow`. |
 | `StepContent.Start` and `Option.Badges` | exist since the run module's worktree step (LUC-193), which opens its cursor on the worktree you are standing in and marks each row with what it is running. Both surfaces render them; `Badges` are the trailing words of a `StepSelect` row, where `Tag` is the leading one of a `StepMultiSelect` row. |
+| `StepText` pre-fill | `StepContent.Default`, since the CRUD forms of `run job` and `run profile` (LUC-217). It is content rather than a static field because what a form opens on can depend on the answers before it. |
+| `StepReorder` | asks for an order rather than a selection, since a profile's job list is its start order (LUC-217). Rendered by `flowui` and by the dashboard's modal. |
 | `seam.Watcher` | the run flows' extra Presenter half. A start sequence cannot be reported through `Stage`: the surface has to be drawing before the first job is asked for, so the surface calls the sequence and hands back its `Outcome`. |
 
 ## The shape of a flow
@@ -215,8 +221,19 @@ type Step struct {
 	Resolve   func(Answers) (Answer, error) // the whole bypass taxonomy, see below
 	Summarize func(Answer) string
 	Flag      string
+	Arg       bool
 }
 ```
+
+`Flag` and `Arg` are the two halves of one thing: what an unattended run should
+have passed. A step answered by a flag names it, a step answered by a positional
+says so, and `requiredErr` words the refusal accordingly — naming a `--job` that
+a command does not have sends the reader looking for it.
+
+**A kind that is drawn must be read back.** `flowui`'s `answerOf` and the
+dashboard's modal each cross the model-per-kind switch once; a kind added to one
+and not the other answers empty, and the flow writes that absence as if it were
+the answer. `TestEveryDrawableKindIsReadBack` pins it.
 
 `StepContent` is the part that may depend on earlier answers — `Title`, `Description`,
 `Options`, and `Blockers`.
@@ -781,6 +798,7 @@ Deliberately open, tracked, and not to be fixed opportunistically:
 | LUC-179 | `clean --force` alone without a TTY skips the safety check — pre-existing, made visible by this design |
 | LUC-180 | `flow.Context` duplicates `shared.ConfigResult` (the latter imports cobra, so it cannot be reused as is) |
 | LUC-182 | `extract` is not migrated; create's step declaration therefore exists twice |
+| — | `internal/flow/run/job` and `internal/flow/run/profile` are the same four entry points over two unrelated config types, so their `Add`/`Edit`/`Remove`/`List` shells read as clones. Sharing them would mean generics over `JobConfig`/`ProfileConfig` for no reader's benefit |
 | LUC-183 | `flow.Step` carries kind-specific fields (`Branches`, `Pinned`, `Refresh`, `Validate`/`ValidateSet`) on every kind. It also means a `StepBranchSelect` reads its candidates from `Step.Branches`, before any answer exists, so it cannot narrow them from an earlier step — `reparent` narrows from what its request already names instead |
 | LUC-184 | Locked worktrees are only taken into account by `relocate`, so "locked" is not among clean's blockers |
 | LUC-188 | `busyReason("")` only sees blocking runs, so a `ModeBackground` run holding a worktree does not stop a `ModeBlocking` run with no target (the batch reparent, `prune`) from acting on it |

@@ -36,15 +36,15 @@ func EnvOutcomeSummary(result domain.EnvSyncResult) EnvSummary {
 		return EnvSummary{Text: fmt.Sprintf(domain.EnvUnresolvableSummaryFmt, len(unresolvable))}
 	}
 	if result.Check {
-		if result.HasDrift() {
+		if EnvHasDrift(result) {
 			return EnvSummary{Text: domain.EnvCheckDriftMessage}
 		}
 		return EnvSummary{Text: domain.EnvCheckCleanMessage, Done: true}
 	}
 
-	files, ports := result.AppliedFiles(), 0
+	files, ports := EnvAppliedFiles(result), 0
 	if result.Ports.Applied {
-		ports = len(result.Ports.Rewrites())
+		ports = len(EnvPortRewrites(result.Ports))
 	}
 	switch {
 	case files == 0 && ports == 0:

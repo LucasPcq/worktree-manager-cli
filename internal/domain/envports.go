@@ -126,30 +126,6 @@ type EnvPortPlan struct {
 	Applied bool `json:"applied"`
 }
 
-// Rewrites returns the entries that would change a value.
-func (p EnvPortPlan) Rewrites() []EnvPortEntry {
-	out := make([]EnvPortEntry, 0, len(p.Entries))
-	for _, e := range p.Entries {
-		if e.Status == EnvPortStatusRewrite {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-// Anomalies returns the entries wtm refuses to act on and reports instead.
-func (p EnvPortPlan) Anomalies() []EnvPortEntry {
-	out := make([]EnvPortEntry, 0, len(p.Entries))
-	for _, e := range p.Entries {
-		switch e.Status {
-		case EnvPortStatusMissingKey, EnvPortStatusNotFound, EnvPortStatusAmbiguous,
-			EnvPortStatusForeignHost, EnvPortStatusSecureScheme:
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
 // RunAddresses is where each worktree's jobs answer, plus what has to be said
 // about the answer: a worktree whose .env was never settled on the names it
 // publishes is served its ports, and Notes is the line saying so.

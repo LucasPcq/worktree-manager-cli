@@ -118,6 +118,8 @@ func (m TextInputModel) helpActions() []string { return nil }
 
 func (m TextInputModel) helpModal() string { return "" }
 
+// helpRowless answers the `rowless` interface of the wizard's help bar: a text
+// input has no rows, so it must not offer to move between them.
 func (m TextInputModel) helpRowless() bool { return true }
 
 func (m TextInputModel) View() string {

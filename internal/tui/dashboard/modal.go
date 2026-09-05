@@ -68,6 +68,7 @@ type modal struct {
 	text    components.TextInputModel
 	list    components.SelectListModel
 	multi   components.MultiSelectModel
+	reorder components.ReorderListModel
 
 	rows   []formRow
 	focus  int
@@ -168,6 +169,7 @@ func (mo modal) show(step flow.Step, content flow.StepContent) (modal, tea.Cmd) 
 		mo.text = components.NewTextInput(components.NewTextInputParams{
 			Title:       content.Title,
 			Description: content.Description,
+			Default:     content.Default,
 			Validate:    step.Validate,
 		})
 		mo.text.SetWidth(mo.bodyWidth())
@@ -190,6 +192,9 @@ func (mo modal) show(step flow.Step, content flow.StepContent) (modal, tea.Cmd) 
 		mo.multi = newMultiSelect(step, mo.reselect(step, content))
 		mo.multi.SetSize(components.SetSizeParams{Width: mo.bodyWidth(), Height: mo.bodyHeight()})
 		return mo, mo.multi.Init()
+	case flow.StepReorder:
+		mo.reorder = newReorderList(content)
+		return mo, mo.reorder.Init()
 	default:
 		return mo.fail(fmt.Errorf(domain.DashboardUnsupportedStepFmt, step.Key, step.Kind))
 	}
@@ -264,6 +269,18 @@ func (mo modal) updateStepper(msg tea.KeyMsg) (modal, tea.Cmd) {
 			return mo.back()
 		case mo.multi.Done():
 			return mo.answerValues(mo.multi.Values())
+		}
+		return mo, cmd
+	}
+
+	if mo.kind == flow.StepReorder {
+		var cmd tea.Cmd
+		mo.reorder, cmd = mo.reorder.Update(msg)
+		switch {
+		case mo.reorder.Aborted():
+			return mo.back()
+		case mo.reorder.Done():
+			return mo.answerValues(mo.reorder.Values())
 		}
 		return mo, cmd
 	}
@@ -489,6 +506,9 @@ func (mo modal) body(zones marker) []string {
 	case mo.kind == flow.StepMultiSelect:
 		lines = append(lines, mo.stepHeader()...)
 		lines = append(lines, strings.Split(mo.multi.View(), "\n")...)
+	case mo.kind == flow.StepReorder:
+		lines = append(lines, mo.stepHeader()...)
+		lines = append(lines, strings.Split(mo.reorder.View(), "\n")...)
 	default:
 		lines = append(lines, mo.stepHeader()...)
 		lines = append(lines, strings.Split(mo.list.View(), "\n")...)
@@ -532,6 +552,25 @@ func (mo modal) hint() string {
 		return domain.DashboardStepperTextHint
 	case mo.kind == flow.StepMultiSelect:
 		return domain.DashboardStepperMultiHint
+	case mo.kind == flow.StepReorder:
+		return domain.DashboardStepperReorderHint
 	}
 	return domain.DashboardStepperHint
+}
+
+// newReorderList draws a step whose options are already the answer: what it
+// collects is the sequence they end up in.
+func newReorderList(content flow.StepContent) components.ReorderListModel {
+	items := make([]components.ReorderItem, 0, len(content.Options))
+	for _, option := range content.Options {
+		if option.Separator {
+			continue
+		}
+		items = append(items, components.ReorderItem{Label: option.Label, Value: option.Value})
+	}
+	return components.NewReorderList(components.NewReorderListParams{
+		Title:       content.Title,
+		Description: content.Description,
+		Items:       items,
+	})
 }
