@@ -18,7 +18,7 @@ func RecapJobLines(cfg domain.RunConfig) []string {
 
 	lines := make([]string, 0, len(cfg.Jobs))
 	for _, job := range cfg.Jobs {
-		line := fmt.Sprintf(domain.RecapJobLineFmt, pad(job.Name, width), recapPorts(job))
+		line := fmt.Sprintf(domain.RecapJobLineFmt, pad(job.Name, width), recapPorts(cfg, job))
 		if job.URL != nil {
 			line += domain.RecapURLSuffix
 		}
@@ -27,12 +27,12 @@ func RecapJobLines(cfg domain.RunConfig) []string {
 	return lines
 }
 
-func recapPorts(job domain.JobConfig) string {
+func recapPorts(cfg domain.RunConfig, job domain.JobConfig) string {
 	if job.Kind != domain.JobKindService {
 		return domain.RecapTask
 	}
 	if len(job.Ports) == 0 {
-		return domain.RecapNoPort
+		return recapPortless(cfg, job)
 	}
 
 	parts := make([]string, 0, len(job.Ports))
@@ -40,6 +40,20 @@ func recapPorts(job domain.JobConfig) string {
 		parts = append(parts, fmt.Sprintf(domain.RecapPortFmt, name, job.Ports[name]))
 	}
 	return strings.Join(parts, domain.RecapPortSep)
+}
+
+// recapPortless says why a service declares no port. Only a service that has no
+// reason is warned about — the others answered the question, and repeating the
+// warning at them is how a recap ends up frightening its reader over a job that
+// is exactly as it should be.
+func recapPortless(cfg domain.RunConfig, job domain.JobConfig) string {
+	if children := RunnerChildren(cfg, job.Name); len(children) > 0 {
+		return fmt.Sprintf(domain.RecapRunsFmt, strings.Join(children, domain.RecapPortSep))
+	}
+	if job.BindsNoPort {
+		return domain.RecapBindsNoPort
+	}
+	return domain.RecapNoPort
 }
 
 // RecapProfileLines is one line per profile: what `run up <name>` will start.

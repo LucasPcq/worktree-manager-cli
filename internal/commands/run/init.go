@@ -11,11 +11,13 @@ import (
 	"golang.org/x/term"
 
 	"github.com/LucasPcq/wtm/internal/commands/shared"
+	"github.com/LucasPcq/wtm/internal/config"
 	"github.com/LucasPcq/wtm/internal/domain"
 	"github.com/LucasPcq/wtm/internal/output"
 	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/service/compose"
 	"github.com/LucasPcq/wtm/internal/service/detect"
+	envsvc "github.com/LucasPcq/wtm/internal/service/env"
 	"github.com/LucasPcq/wtm/internal/service/proxy"
 	"github.com/LucasPcq/wtm/internal/service/runconfig"
 	"github.com/LucasPcq/wtm/internal/tui/components"
@@ -46,6 +48,11 @@ func newInitCmd() *cobra.Command {
 			"by the compose project, so COMPOSE_PROJECT_NAME never reaches it and a second\n" +
 			"worktree collides on it. wtm offers to front them with the project — a renamed\n" +
 			"volume starts empty, its data staying under the name it used to carry.\n\n" +
+			"In a monorepo, a root script that starts several apps at once is asked which\n" +
+			"declared jobs it runs. wtm reads the directory a script sits in, never what its\n" +
+			"command does: the relation is declared, and it is what keeps a runner from being\n" +
+			"reported as a service that forgot its port — and from being started alongside one\n" +
+			"of its own children.\n\n" +
 			"Dev servers get theirs from the env files sitting next to their package.json —\n" +
 			"a PORT (or *_PORT) entry in .env.local, .env, or a committed .env.example. A\n" +
 			"service nothing was found for is offered anyway: declaring its port is what keeps\n" +
@@ -53,6 +60,10 @@ func newInitCmd() *cobra.Command {
 			"wtm injects the variable, it never edits the command. When a command never\n" +
 			"mentions the port it is given, the wizard offers it for editing on the spot\n" +
 			"(`pnpm dev --port ${PORT}`) rather than reporting it once it is too late.\n\n" +
+			"The mode those names are written in is asked too, because it is the one choice\n" +
+			"with a consequence outside wtm: named urls are served by the run proxy, so they\n" +
+			"answer while `wtm run` runs the job and not when you start it yourself. A project\n" +
+			"whose author launches their own dev servers wants ports.\n\n" +
 			"Every service that declares the port it listens on is then offered a name of its\n" +
 			"own — <job>.<worktree>.<repo>.localhost, served by the proxy — so two worktrees\n" +
 			"stop sharing a cookie jar. A port a job only dials (DB_PORT, REDIS_PORT) is never\n" +
@@ -64,6 +75,7 @@ func newInitCmd() *cobra.Command {
 	shared.AddNoPromptFlags(cmd, "Auto-generate from detection; never prompt")
 	cmd.Flags().Bool(domain.FlagPatchCompose, false, "Rewrite the selected compose files' literal host ports and absolute names to read a variable")
 	cmd.Flags().Bool(domain.FlagLinkEnv, false, "Link the .env keys holding a declared port, so each worktree gets its own")
+	cmd.Flags().Bool(domain.FlagWritePortKeys, false, "Write each declared port into the job's .env and its template, so an app launched by hand reads the worktree's port")
 	return cmd
 }
 
@@ -81,6 +93,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 	nonInteractive := shared.NoPrompt(cmd)
 	patchCompose, _ := cmd.Flags().GetBool(domain.FlagPatchCompose)
 	linkEnv, _ := cmd.Flags().GetBool(domain.FlagLinkEnv)
+	writePortKeys, _ := cmd.Flags().GetBool(domain.FlagWritePortKeys)
 	interactive := !nonInteractive && term.IsTerminal(int(os.Stdin.Fd()))
 
 	var detection domain.InitDetectionResult
@@ -119,6 +132,7 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			ProjectDir: res.ProjectDir,
 			Files:      res.Config.Project.Env.Files,
 		}),
+		EnvFiles: res.Config.Project.Env.Files,
 	})
 	if errors.Is(err, domain.ErrUserAborted) {
 		return nil
@@ -182,14 +196,17 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 		})
 	}
 	outcome.Config = rules.ApplyInitAnswers(rules.ApplyInitAnswersParams{
-		Config:        outcome.Config,
-		Ports:         answers.Ports,
-		Profiles:      answers.Profiles,
-		ProfilesAsked: answers.ProfilesAsked,
-		Cmds:          answers.Cmds,
-		URLs:          answers.URLs,
-		URLsAsked:     answers.URLsAsked,
-		NewJobs:       outcome.Merge.Added,
+		Config:          outcome.Config,
+		Runners:         answers.Runners,
+		Addressing:      answers.Addressing,
+		AddressingAsked: answers.AddressingAsked,
+		Ports:           answers.Ports,
+		Profiles:        answers.Profiles,
+		ProfilesAsked:   answers.ProfilesAsked,
+		Cmds:            answers.Cmds,
+		URLs:            answers.URLs,
+		URLsAsked:       answers.URLsAsked,
+		NewJobs:         outcome.Merge.Added,
 	})
 
 	links := resolveEnvPortLinks(resolveEnvPortLinksParams{
@@ -204,6 +221,26 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 	})
 	outcome.Config.EnvPorts = append(outcome.Config.EnvPorts, links...)
 
+	// Writing a committed template is never inferred, exactly as the compose
+	// patching is not: it takes the flag, or the wizard's route answer.
+	var portKeys []domain.PortKeyWrite
+	if writePortKeys || answers.PortRoutesAsked {
+		portKeys = rules.PortKeyWrites(rules.PortKeyWritesParams{
+			Config:     outcome.Config,
+			Ports:      rules.PortRouteEnvPorts(answers),
+			ScansByDir: envScans,
+			EnvFiles:   res.Config.Project.Env.Files,
+		})
+	}
+	writtenKeys, err := envsvc.WritePortKeys(envsvc.WritePortKeysParams{ProjectDir: res.ProjectDir, Writes: portKeys})
+	if err != nil {
+		return err
+	}
+	outcome.Config.EnvPorts = append(outcome.Config.EnvPorts, rules.PortKeyLinks(rules.PortKeyLinksParams{
+		Writes:   portKeys,
+		Existing: outcome.Config.EnvPorts,
+	})...)
+
 	// The rewrites come first: a compose templatized without run.toml behind it
 	// keeps binding its defaults, while a run.toml declaring ports the compose
 	// does not read would announce an isolation that is not there.
@@ -217,6 +254,32 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 	if err := runconfig.Save(runconfig.SaveParams{StateDir: res.StateDir, Config: outcome.Config}); err != nil {
 		return err
 	}
+
+	// Last of the writes: a provisioning target with no link behind it would
+	// have wtm copying a file nothing in run.toml speaks about.
+	addedTargets := rules.PortKeyTargets(rules.PortKeyTargetsParams{
+		Writes:   portKeys,
+		Existing: res.Config.Project.Env.Files,
+	})
+	if len(addedTargets) > 0 {
+		project := res.Config.Project
+		project.Env.Files = append(project.Env.Files, addedTargets...)
+		if err := config.WriteProjectConfig(config.WriteProjectConfigParams{StateDir: res.StateDir, Config: project}); err != nil {
+			return fmt.Errorf("add env targets: %w", err)
+		}
+	}
+	reportedKeys := rules.PortKeysReported(rules.PortKeysReportedParams{
+		Applied: writtenKeys,
+		Writes:  portKeys,
+		Targets: addedTargets,
+	})
+
+	// Re-read after the writes: the two reports below say what is still missing,
+	// and the scan they were computed from predates the keys this run just wrote.
+	envScans = detect.ScanEnvPorts(detect.ScanEnvPortsParams{
+		ProjectDir: res.ProjectDir,
+		Files:      detection.EnvFiles,
+	})
 
 	runPath := filepath.Join(res.StateDir, domain.RunFileName)
 	output.Frame(cmd.OutOrStdout(), func() {
@@ -248,17 +311,23 @@ func runRunInit(cmd *cobra.Command, _ []string) error {
 			Withheld: namePlan.Withheld,
 		})
 		output.EnvPortLinksReport(cmd.OutOrStdout(), links, rules.EnvPortBases(outcome.Config))
+		output.PortKeysReport(cmd.OutOrStdout(), reportedKeys)
 		// Last, and alone in a frame: everything above is what the run did, this
 		// is what it could not do without the reader.
+		composeJobs := rules.ComposeJobsFor(rules.ComposeJobsParams{Config: outcome.Config, Files: answers.DockerComposeFiles})
 		output.PortIsolationReport(cmd.OutOrStdout(), output.PortIsolationReportParams{
 			Unported: rules.ServicesWithoutPorts(outcome.Config),
 			Ignoring: rules.JobsMissingPortRef(rules.JobsMissingPortRefParams{
 				Config: outcome.Config,
-				Exempt: append(
-					rules.ComposeJobsFor(rules.ComposeJobsParams{Config: outcome.Config, Files: answers.DockerComposeFiles}),
+				Exempt: append(composeJobs,
 					rules.JobsReadingTheirEnv(rules.JobsReadingTheirEnvParams{Config: outcome.Config, ScansByDir: envScans})...),
 			}),
 		})
+		output.PortCommandOnlyReport(cmd.OutOrStdout(), rules.JobsIsolatedByCommand(rules.JobsIsolatedByCommandParams{
+			Config:     outcome.Config,
+			Exempt:     composeJobs,
+			ScansByDir: envScans,
+		}))
 		proxyPort := rules.ProxyPort(res.Config.Global)
 		if lines := rules.ProxyPortCollisionLines(rules.ProxyPortCollisions(rules.ProxyPortCollisionsParams{
 			Config:    outcome.Config,
@@ -292,6 +361,7 @@ type resolveServicesParams struct {
 	PatchCompose bool
 	EnvScans     map[string]domain.EnvPortScan
 	EnvLines     map[string][]domain.EnvLine
+	EnvFiles     []domain.EnvFile
 }
 
 // resolveServicesAnswers gathers the services selection either from the wizard
@@ -322,6 +392,7 @@ func resolveServicesAnswers(params resolveServicesParams) (domain.InitProjectAns
 		PatchCompose: params.PatchCompose,
 		EnvScans:     params.EnvScans,
 		EnvLines:     params.EnvLines,
+		EnvFiles:     params.EnvFiles,
 	})
 }
 

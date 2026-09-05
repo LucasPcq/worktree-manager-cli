@@ -174,7 +174,7 @@ func DedupePorts(ports []int) []int {
 func ServicesWithoutPorts(cfg domain.RunConfig) []string {
 	var jobs []string
 	for _, job := range cfg.Jobs {
-		if job.Kind == domain.JobKindService && len(job.Ports) == 0 {
+		if job.Kind == domain.JobKindService && len(job.Ports) == 0 && !JobBindsNothing(cfg, job) {
 			jobs = append(jobs, job.Name)
 		}
 	}
@@ -210,15 +210,27 @@ func PortEntriesFor(params PortEntriesForParams) []domain.PortEntry {
 		if job.Kind != domain.JobKindService {
 			continue
 		}
+		// Only a job declaring nothing can answer "binds none": the pair is a
+		// contradiction run.toml refuses, so offering it elsewhere would be an
+		// answer the write side has to drop.
+		canBindNone := len(job.Ports) == 0
 		for _, name := range sortedPortNames(job.Ports) {
 			entries = append(entries, domain.PortEntry{Job: job.Name, Name: name, Base: job.Ports[name]})
 		}
 		if fromCompose[job.Name] || PublishablePortName(job) != "" {
 			continue
 		}
+		// The row keeps its proposed name even when the answer is "binds no
+		// port": that answer is reversible, and taking it back must not leave
+		// the row with nothing to declare.
 		name := freePortName(job.Name, taken)
 		taken[name] = true
-		entries = append(entries, domain.PortEntry{Job: job.Name, Name: name})
+		entries = append(entries, domain.PortEntry{
+			Job:         job.Name,
+			Name:        name,
+			BindsNone:   canBindNone && JobBindsNothing(params.Config, job),
+			CanBindNone: canBindNone,
+		})
 	}
 	return entries
 }

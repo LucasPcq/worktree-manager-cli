@@ -85,6 +85,19 @@ type InitProjectAnswers struct {
 	ProfilesAsked bool
 	// Cmds is the commands the wizard amended so they read the port wtm injects.
 	Cmds []JobCmdFix
+	// PortRoutes says, job by job, where it reads the port wtm declares for it:
+	// from its own .env, or from the command wtm plays. PortRoutesAsked says the
+	// step ran at all, so a run that never asked writes nothing on its own.
+	PortRoutes      map[PortRef]PortRoute
+	PortRoutesAsked bool
+	// Runners is which root-level service starts each of the others. A run that
+	// never asked carries none, and the write side leaves the relation alone.
+	Runners []JobRunnerChoice
+	// Addressing is what an [[env_port]] link writes, and AddressingAsked says
+	// the question was put: a run that never asked leaves run.toml's own value
+	// standing rather than writing the default over it.
+	Addressing      Addressing
+	AddressingAsked bool
 	// URLs names the jobs the wizard left checked in the URLs step, and
 	// URLsAsked says the step ran at all: unchecking every job withdraws every
 	// url, where a run that never asked leaves the proposal standing.
@@ -98,4 +111,26 @@ type InitProjectAnswers struct {
 	SkipEnv       bool
 	SkipHooks     bool
 	SkipClean     bool
+}
+
+// PortRoute is where a job learns the port it binds. The .env route isolates it
+// under `wtm run` and when its reader launches it themselves; the command route
+// only works while wtm plays the command.
+type PortRoute string
+
+const (
+	PortRouteEnv     PortRoute = "env"
+	PortRouteCommand PortRoute = "command"
+)
+
+// PortRouteRow is one service the route step lists: the port it declares, and
+// the file the .env route would write it into. AddTarget says nothing
+// provisions that file yet, so accepting the route declares it too.
+type PortRouteRow struct {
+	Job       string
+	Port      string
+	Base      int
+	File      string
+	AddTarget bool
+	Route     PortRoute
 }

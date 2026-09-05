@@ -154,3 +154,51 @@ func TestPortListEmptyAnswerLeavesAServiceUndeclared(t *testing.T) {
 		t.Errorf("base = %d, want it left undeclared", got)
 	}
 }
+
+func TestPortListAnswersThatAServiceBindsNothing(t *testing.T) {
+	model := NewPortList(NewPortListParams{Entries: []domain.PortEntry{{Job: "dev:crm", Name: "PORT", CanBindNone: true}}})
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+
+	if !updated.Entries()[0].BindsNone {
+		t.Fatal("n answers the row rather than leaving it open")
+	}
+	if model.Entries()[0].BindsNone {
+		t.Fatal("the wizard rebuilds a step from its entries; the answer must not reach back into them")
+	}
+}
+
+func TestPortListTakesTheAnswerBackAndOffersThePortAgain(t *testing.T) {
+	model := NewPortList(NewPortListParams{Entries: []domain.PortEntry{{Job: "dev:crm", Name: "PORT", BindsNone: true, CanBindNone: true}}})
+
+	answered, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	back, _ := answered.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if back.Entries()[0].BindsNone {
+		t.Fatal("enter on such a row takes the question back")
+	}
+	if back.Entries()[0].Name == "" {
+		t.Fatal("the row must keep something to declare")
+	}
+}
+
+func TestPortListTakesTheAnswerBackWithTheSameKey(t *testing.T) {
+	model := NewPortList(NewPortListParams{Entries: []domain.PortEntry{{Job: "dev:crm", Name: "PORT", CanBindNone: true}}})
+
+	answered, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	back, _ := answered.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+
+	if back.Entries()[0].BindsNone {
+		t.Fatal("the key that answers the row un-answers it")
+	}
+}
+
+func TestPortListRefusesTheAnswerWhereItWouldContradictADeclaredPort(t *testing.T) {
+	model := NewPortList(NewPortListParams{Entries: []domain.PortEntry{{Job: "web", Name: "PORT", Base: 3000}}})
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+
+	if updated.Entries()[0].BindsNone {
+		t.Fatal("run.toml refuses binds_no_port next to a declared port, so the step must not take that answer")
+	}
+}

@@ -140,16 +140,18 @@ func (m CmdListModel) saveEdit() CmdListModel {
 }
 
 func (m CmdListModel) View() string {
+	jobWidth, varsWidth := rules.CmdFixWidths(m.fixes)
+
 	var b strings.Builder
 	for i, fix := range m.fixes {
-		label := fmt.Sprintf(domain.CmdListEntryFmt, fix.Job, stillMissing(fix), fix.Cmd)
+		label := rules.CmdFixLabel(fix, jobWidth, varsWidth)
 		if m.editing && i == m.cursor {
 			label = fmt.Sprintf(domain.CmdListEditFmt, fix.Job, strings.Join(fix.Vars, domain.CmdListVarSep), m.input.View())
 		}
 		m.renderRow(&b, label, i == m.cursor)
 		b.WriteString("\n")
 	}
-	m.renderRow(&b, domain.CmdListDoneRow, m.cursor == m.doneRow())
+	m.renderRow(&b, domain.WizardDoneRow, m.cursor == m.doneRow())
 	if m.err != "" {
 		b.WriteString("\n\n")
 		b.WriteString(errorBanner(m.err))
@@ -157,21 +159,13 @@ func (m CmdListModel) View() string {
 	return b.String()
 }
 
-// stillMissing re-reads the command as it stands, so a row that has been fixed
-// stops naming the variable it was flagged for and the list reads as a checklist.
-func stillMissing(fix domain.JobCmdFix) string {
-	missing := rules.PortVarsMissingFrom(fix)
-	if len(missing) == 0 {
-		return domain.CmdListReferenced
-	}
-	return strings.Join(missing, domain.CmdListVarSep)
-}
+func (m CmdListModel) helpActions() []string { return nil }
 
-func (m CmdListModel) helpHint() string {
+func (m CmdListModel) helpModal() string {
 	if m.editing {
 		return domain.CmdListEditHelp
 	}
-	return domain.CmdListHelp
+	return ""
 }
 
 func (m CmdListModel) renderRow(b *strings.Builder, label string, selected bool) {

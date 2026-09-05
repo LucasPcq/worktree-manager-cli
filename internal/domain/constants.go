@@ -549,7 +549,12 @@ const (
 	FlagNoProbe = "no-probe"
 
 	// The .env port report ([[env_port]] links resolved for one worktree).
-	EnvPortsTitle       = "Env ports"
+	EnvPortsTitle = "Env ports"
+	// EnvOwnedKeysTitle heads the worktree identity a .env carries, and
+	// EnvOwnedKeyLineFmt spells one of its keys.
+	EnvOwnedKeysTitle  = "Worktree identity"
+	EnvOwnedKeyLineFmt = "%s → %s"
+
 	EnvPortOffsetPrefix = "offset +"
 	// EnvPortOffsetNoteFmt orients the reader of the confirmation, whose title
 	// already says what is being asked.
@@ -652,18 +657,45 @@ const (
 	EnvPortJobSeparator  = "."
 	EnvPortLinkSeparator = " · "
 	EnvPortsLinkedTitle  = "Env keys now following a port"
-	EnvLinkStepName      = "Env keys"
-	RecapStepName        = "Review"
-	RecapNotAsked        = "not asked"
-	RecapJobLineFmt      = "%s   %s"
-	RecapRowIndent       = "  "
-	RecapPortFmt         = "%s %d"
-	RecapPortSep         = " · "
-	RecapNoPort          = "⚠ no port declared"
-	RecapTask            = "task"
-	RecapDefaultSuffix   = "   (default)"
-	RecapURLSuffix       = "   (url)"
-	RecapJobsTitle       = "Jobs"
+
+	// PortKeysTitle heads the keys a run has just materialized, and
+	// PortKeyLineFmt spells one: the file it landed in, the key and its base.
+	// PortKeyTargetSuffix marks a file the project did not provision yet.
+	PortKeysTitle       = "Ports written into the env files"
+	PortKeyColumnSep    = "   "
+	PortKeyLineFmt      = "%s" + PortKeyColumnSep + "%s=%d"
+	PortKeyTargetSuffix = "   (+ env target)"
+
+	// The route step: where a job learns the port it binds. The .env route is
+	// the pre-filled answer — it is the only one that also holds when its reader
+	// launches the app themselves.
+	RouteListStepName     = "Port source"
+	RouteListStepTitle    = "Where does each service read its port?"
+	RouteListStepDesc     = "The .env route works whether wtm plays the command or you do — your config reads the key.\nThe command route only isolates what `wtm run` starts."
+	RouteListEntryFmt     = "%s   %s   %s"
+	RouteListPortFmt      = "%s=%d"
+	RouteListEnvPrefix    = ".env → "
+	RouteListEnvFmt       = RouteListEnvPrefix + "%s"
+	RouteListCommand      = "command"
+	RouteListSummaryFmt   = "%d on .env · %d on the command"
+	SkipReasonNoPortedJob = "no service declares a port"
+	EnvLinkStepName       = "Env keys"
+	RecapStepName         = "Review"
+	RecapNotAsked         = "not asked"
+	RecapJobLineFmt       = "%s   %s"
+	RecapRowIndent        = "  "
+	RecapPortFmt          = "%s %d"
+	RecapPortSep          = " · "
+	RecapNoPort           = "⚠ no port declared"
+	// RecapRunsFmt and RecapBindsNoPort are the two answers to "why has this
+	// service no port". A job that has one is not a job that forgot: naming the
+	// reason turns a warning nobody can act on into a line that reads.
+	RecapRunsFmt       = "runs %s"
+	RecapBindsNoPort   = "binds no port"
+	RecapTask          = "task"
+	RecapDefaultSuffix = "   (default)"
+	RecapURLSuffix     = "   (url)"
+	RecapJobsTitle     = "Jobs"
 	// RecapRemovedTitle heads the jobs the unchecking drops. They are absent
 	// from every other section, so this is the only place they can be read
 	// before the write.
@@ -717,7 +749,22 @@ const (
 	PortIsolationNoPort     = "no port declared"
 	PortIsolationIgnoresFmt = "declares %s, but its command never mentions it"
 	PortIsolationHint       = "Declare a port, or reference it in the command: `wtm run job edit <job>`"
-	EnvPortUnreadable       = "%s could not be read: %s"
+
+	// The command route, reported apart from the alert above: such a job IS
+	// isolated, but only while wtm plays its command. Same table shape, a
+	// different verdict — folding it into the alert would say something false.
+	PortCommandOnlyTitle   = "Isolated only while wtm plays the command"
+	PortCommandOnlyLineFmt = "%s   %s"
+	PortCommandOnlyReason  = "launched by hand it binds the base port"
+	PortCommandOnlyHint    = "To isolate it either way: give the port a key in the job's .env and read it from your config — `wtm run init --write-port-keys` writes the key."
+
+	// A runner and one of its own children asked for at once: the same process
+	// twice on the same port. Named rather than started, because wtm is the only
+	// thing that can see it coming.
+	JobConflictTitle   = "These jobs are started twice"
+	JobConflictLineFmt = "%s   already started by %s"
+	JobConflictHint    = "Ask for the runner or its children, not both — `runs` in run.toml says which starts which."
+	EnvPortUnreadable  = "%s could not be read: %s"
 
 	// PortCollisionHorizon is how many worktrees a declared layout is checked
 	// against. Two base ports collide when they differ by a multiple of the
@@ -809,6 +856,9 @@ const (
 	FlagNonInteractive = "non-interactive"
 	FlagPatchCompose   = "patch-compose"
 	FlagLinkEnv        = "link-env"
+	FlagWritePortKeys  = "write-port-keys"
+	FlagRuns           = "runs"
+	FlagBindsNoPort    = "binds-no-port"
 	FlagShell          = "shell"
 	FlagBasePath       = "base-path"
 	FlagBaseBranch     = "base-branch"
@@ -896,7 +946,6 @@ const (
 	KindListRadiosFmt  = "%s task   %s service"
 	KindRadioOn        = "●"
 	KindRadioOff       = "○"
-	KindListHelp       = "  ↑↓ navigate • ←→ set type • enter confirm"
 	KindListSummaryFmt = "%d services, %d tasks"
 	KindListGap        = 2
 
@@ -921,8 +970,9 @@ const (
 	// PortNameDefault is the variable an undeclared service is offered under: the
 	// one a process reads without being told to.
 	PortNameDefault    = "PORT"
-	ScriptLabelFmt     = "%s / %s"
-	ScriptItemLabelFmt = "%s / %s — %s run %s"
+	ScriptLabelSep     = " / "
+	ScriptLabelFmt     = "%s" + ScriptLabelSep + "%s"
+	ScriptItemLabelFmt = "%s   %s run %s"
 
 	// The profile editor: its keys, its rows and its help bar.
 	ProfileListStepName   = "Profiles"
@@ -930,11 +980,11 @@ const (
 	ProfileListKeyMerge   = "f"
 	ProfileListKeyRemove  = "d"
 	ProfileListKeyNew     = "n"
-	ProfileListHelp       = "  ↑↓ navigate • r rename • f merge • d remove • n new • enter select"
 	ProfileListNamingHelp = "  enter save • esc cancel"
+	HookListEditHelp      = "  tab next field • space toggle • enter save • esc cancel"
+	EnvResolveEditHelp    = "  type value • enter save • esc cancel"
 	ProfileListMergeHint  = "  f on another profile to merge it into %q • esc cancel"
 	ProfileListMarkPrefix = "→ "
-	ProfileListDoneRow    = "✓ Done"
 	// ProfileListJobsIndent aligns the wrapped job list of the row under the
 	// cursor: an unselected row is truncated, and moving onto it is how the
 	// whole list is read.
@@ -966,8 +1016,6 @@ const (
 	CmdListEditFmt    = "%s · reference ${%s} →  %s"
 	CmdListVarSep     = ", "
 	CmdListReferenced = "✓"
-	CmdListDoneRow    = "✓ Done"
-	CmdListHelp       = "  ↑↓ navigate • enter edit • esc back"
 	CmdListEditHelp   = "  reference the variable in the command • enter save • esc cancel"
 	CmdListEmptyErr   = "a job needs a command"
 	CmdListSummaryFmt = "%d of %d now reference their port"
@@ -1000,11 +1048,13 @@ const (
 	// PortListUndeclaredFmt renders a service nothing was detected for. It reads
 	// as a gap to fill rather than as port zero, and the warning is what says
 	// why filling it matters.
-	PortListUndeclaredFmt        = "%s · %s = —"
-	PortListUndeclared           = "not declared — every worktree binds the same port"
+	PortListUndeclaredFmt = "%s · %s = —"
+	PortListUndeclared    = "not declared — every worktree binds the same port"
+	// PortListBindsNone is the row answered rather than left open: this service
+	// listens on nothing, so wtm stops offering it a port and stops reporting it.
+	PortListBindsNoneFmt         = "%s   binds no port"
+	PortListBindsNone            = "binds no port — nothing to isolate"
 	PortListEditFmt              = "%s · %s = %s"
-	PortListDoneRow              = "✓ Done"
-	PortListHelp                 = "  ↑↓ navigate • enter select • esc back"
 	PortListEditHelp             = "  type a port • enter save • esc cancel"
 	PortListSummaryFmt           = "%d ports"
 	PortListSummaryUndeclaredFmt = "%d ports, %d service(s) left undeclared"
@@ -2747,6 +2797,74 @@ const (
 	// is the output panel and "p" the pull request.
 	KeyOpenAddress = "u"
 
+	// The wizard's help bar, composed in one place from these parts: every step
+	// names the same gesture the same way, and only the gestures it actually
+	// adds. The enter word follows the step's shape — a list acting on the row
+	// under the cursor says HelpSelect and confirms on its own final row, one
+	// that ends on enter says HelpConfirm.
+	HelpBarIndent = "  "
+	HelpBarSep    = " • "
+	HelpNavigate  = "↑↓ navigate"
+	HelpConfirm   = "enter confirm"
+	HelpSelect    = "enter select"
+	// WizardDoneRow is the last row of every step that confirms on one.
+	WizardDoneRow = "✓ Done"
+	HelpBack      = "esc back"
+	HelpCancel    = "esc cancel"
+	HelpToggle    = "space toggle"
+	HelpAll       = "a all"
+	HelpFilter    = "/ filter"
+	HelpRefresh   = "r refresh"
+	HelpReorder   = "shift+↑/↓ reorder"
+	HelpDelete    = "d delete"
+	HelpRename    = "r rename"
+	HelpMerge     = "f merge"
+	HelpNew       = "n new"
+	HelpSetKind   = "←→ set type"
+	HelpSetRunner = "←→ set runner"
+
+	// The runner step: which root-level service starts each of the others. The
+	// relation is declared, never inferred — RunnerListNone is what a row says
+	// when nothing starts it but the reader.
+	RunnerListStepName          = "Runners"
+	RunnerListStepTitle         = "Which service starts the others?"
+	RunnerListStepDesc          = "A root script often starts several apps at once — `turbo run dev`, `pnpm -r dev`.\nSaying so here gives it their ports, and stops wtm from starting an app twice.\nLeave a row on — when nothing but you starts it."
+	RunnerListCwdSep            = "  "
+	RunnerListNone              = "—"
+	RunnerListGap               = 3
+	RunnerListSummaryFmt        = "%d of %d attached to a runner"
+	SkipReasonNoRunnerCandidate = "no root-level service that could start the others"
+	SkipReasonNoName            = "no job publishes a name, so nothing is addressed by one"
+	HelpSwitchRoute             = "space switch route"
+	HelpBindsNoPort             = "n binds no port"
+
+	// The addressing step. The mode was a silent default, and its consequence is
+	// the one a reader has to weigh before anything is written into a .env:
+	// named addresses are served by wtm, so they answer while wtm is running the
+	// job and not otherwise.
+	AddressingStepName  = "Addressing"
+	AddressingStepTitle = "How should the .env files spell an address?"
+	AddressingStepDesc  = "This is what wtm writes into a value pointing at another job — an API url, a CORS origin.\n" +
+		"It changes nothing about the ports your jobs bind.\n\n" +
+		"  Named urls    each worktree gets its own hostname, so two of them stop sharing a cookie\n" +
+		"                jar and a CORS origin. They are served by wtm's proxy, which lives in the\n" +
+		"                run daemon: they answer while `wtm run` runs the job, and not when you\n" +
+		"                start it yourself.\n" +
+		"  Ports         answer whatever started the process, `wtm run` or your own terminal. Two\n" +
+		"                worktrees share one hostname, so their cookies and origins are the same."
+	AddressingNamesLabel = "Named urls — http://api.feat-x.myrepo.localhost"
+	AddressingPortsLabel = "Ports — http://localhost:4012"
+
+	// MonorepoRootHint warns where the trap is sprung: checking only the root
+	// scripts of a monorepo leaves the apps they start with no port and no url,
+	// which the reader would otherwise discover three steps later.
+	MonorepoRootHint = "In a monorepo, a root script often starts the app scripts below it — check those too, and the next step asks which ones it starts.\n" +
+		"Ports and urls are declared per job: a root script alone leaves them with none."
+	HelpSetResolution = "←→ action"
+	HelpEditValue     = "e edit"
+	FilterHelp        = "  type to filter • enter apply • esc back"
+	FilterSelectHelp  = "  type to filter • enter select • esc back"
+
 	KeyHelp = "?"
 	// KeyQuit leaves the dashboard. Esc does not: it only closes what is open, so
 	// a persistent dashboard is never left by accident.
@@ -2917,6 +3035,18 @@ var EnvTemplateSuffixes = []string{
 // never be inherited. The run daemon is global and outlives the command that
 // forked it, so its own environment holds whichever worktree started it; a job
 // gets these from its request or not at all.
+// WtmOwnedEnvKeys are the .env keys wtm derives from the worktree itself. Their
+// value differs per worktree by construction, so the reconciliation reports them
+// neither as drift nor as a conflict.
+var WtmOwnedEnvKeys = []string{EnvComposeProjectName}
+
+// ComposeCmdSpaced and ComposeCmdHyphened are the two spellings a job's command
+// uses to drive compose, and how wtm recognizes the stack's project directory.
+const (
+	ComposeCmdSpaced   = "docker compose"
+	ComposeCmdHyphened = "docker-compose"
+)
+
 var WorktreeScopedEnv = []string{
 	EnvWorktree,
 	EnvBranch,

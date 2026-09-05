@@ -20,6 +20,20 @@ type EnvPortLink struct {
 	ByDir bool `toml:"-" json:"-"`
 }
 
+// PortKeyWrite is one declared port materialized as a .env key: the base goes
+// into the value file and into its committed template, and the [[env_port]]
+// link makes each worktree's offset follow.
+type PortKeyWrite struct {
+	Job      string `json:"job"`
+	Port     string `json:"port"`
+	Base     int    `json:"base"`
+	File     string `json:"file"`
+	Template string `json:"template"`
+	// AddTarget says nothing provisions that file yet, so the [env] target has
+	// to be written too — without it a worktree would not have the file at all.
+	AddTarget bool `json:"add_target"`
+}
+
 // PortRef identifies one declared port: the job that carries it and its name.
 type PortRef struct {
 	Job  string
@@ -103,6 +117,9 @@ type EnvPortPlan struct {
 	// PublicPort is what an address announces here, zero when nothing serves
 	// names. Both are what the notices are derived from.
 	PublicPort int `json:"public_port,omitempty"`
+	// Owned is the worktree identity the .env carries: keys wtm derives rather
+	// than reconciles, kept apart from Entries because they follow no port.
+	Owned []EnvOwnedEntry `json:"owned,omitempty"`
 	// Applied says the rewrites were written. A plan that was only computed — a
 	// --check run, or one the user declined — carries them all the same, and
 	// counting those as written would be a false report.

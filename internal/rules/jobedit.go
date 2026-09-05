@@ -22,6 +22,10 @@ type JobPatch struct {
 	URLHost    *string
 	Ports      map[string]int
 	ClearPorts bool
+	// Runs replaces the whole list, an empty one dropping the relation: a
+	// runner's children are read as a set, never merged one at a time.
+	Runs        *[]string
+	BindsNoPort *bool
 }
 
 // Empty reports a patch that would change nothing, which is how a runner tells
@@ -29,6 +33,7 @@ type JobPatch struct {
 func (p JobPatch) Empty() bool {
 	return p.Name == nil && p.Cmd == nil && p.Kind == nil && p.Stop == nil &&
 		p.Cwd == nil && p.URLPort == nil && p.URLHost == nil &&
+		p.Runs == nil && p.BindsNoPort == nil &&
 		len(p.Ports) == 0 && !p.ClearPorts
 }
 
@@ -70,6 +75,13 @@ func ApplyJobPatch(params ApplyJobPatchParams) (domain.JobConfig, error) {
 		job.Cwd = *patch.Cwd
 	}
 
+	if patch.Runs != nil {
+		job.Runs = trimmedNames(*patch.Runs)
+	}
+	if patch.BindsNoPort != nil {
+		job.BindsNoPort = *patch.BindsNoPort
+	}
+
 	ports, err := patchedPorts(job.Ports, patch)
 	if err != nil {
 		return domain.JobConfig{}, err
@@ -83,6 +95,18 @@ func ApplyJobPatch(params ApplyJobPatchParams) (domain.JobConfig, error) {
 	job.URL = url
 
 	return job, nil
+}
+
+// trimmedNames drops the empty entries a shell splits out of `--runs ""`, which
+// is how the relation is withdrawn.
+func trimmedNames(names []string) []string {
+	var out []string
+	for _, name := range names {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func patchedPorts(current map[string]int, patch JobPatch) (map[string]int, error) {

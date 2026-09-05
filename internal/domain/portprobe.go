@@ -35,4 +35,11 @@ type PortEntry struct {
 	Job  string
 	Name string
 	Base int
+	// BindsNone is the row answered "this service listens on nothing". It is a
+	// settled answer, unlike a zero Base, which is a question left open.
+	BindsNone bool
+	// CanBindNone is whether that answer means anything here. A job declaring a
+	// port cannot also bind none — run.toml refuses the pair — so its rows take
+	// a base and nothing else.
+	CanBindNone bool
 }

@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/LucasPcq/wtm/internal/domain"
+	"github.com/LucasPcq/wtm/internal/rules"
 	"github.com/LucasPcq/wtm/internal/styles"
 )
 
@@ -85,12 +86,42 @@ func (m PortListModel) Update(msg tea.Msg) (PortListModel, tea.Cmd) {
 			m.done = true
 			return m, nil
 		}
+		if m.entries[m.cursor].BindsNone {
+			return m.declarePort(), nil
+		}
 		return m.startEdit(), nil
+	case "n":
+		if m.cursor < m.doneRow() && m.entries[m.cursor].CanBindNone {
+			return m.toggleBindsNothing(), nil
+		}
 	case "esc":
 		m.aborted = true
 	}
 
 	return m, nil
+}
+
+// toggleBindsNothing answers the row, and un-answers it: the same key both
+// ways, because a reader who just pressed it looks for it again to undo it.
+func (m PortListModel) toggleBindsNothing() PortListModel {
+	entries := make([]domain.PortEntry, len(m.entries))
+	copy(entries, m.entries)
+	entries[m.cursor].BindsNone = !entries[m.cursor].BindsNone
+	if entries[m.cursor].BindsNone {
+		entries[m.cursor].Base = 0
+	}
+	m.entries = entries
+	return m
+}
+
+// declarePort is enter on an answered row: it takes the question back and opens
+// the edit in one gesture, so the answer is never a dead end.
+func (m PortListModel) declarePort() PortListModel {
+	entries := make([]domain.PortEntry, len(m.entries))
+	copy(entries, m.entries)
+	entries[m.cursor].BindsNone = false
+	m.entries = entries
+	return m.startEdit()
 }
 
 func (m PortListModel) startEdit() PortListModel {
@@ -155,16 +186,18 @@ func (m PortListModel) saveEdit() PortListModel {
 }
 
 func (m PortListModel) View() string {
+	jobWidth, nameWidth := rules.PortEntryWidths(m.entries)
+
 	var b strings.Builder
 	for i, entry := range m.entries {
-		label := entryLabel(entry)
+		label := rules.PortEntryLabel(entry, jobWidth, nameWidth)
 		if m.editing && i == m.cursor {
-			label = fmt.Sprintf(domain.PortListEditFmt, entry.Job, entry.Name, m.input.View())
+			label = rules.PortEntryEditLabel(entry, m.input.View(), jobWidth, nameWidth)
 		}
 		m.renderRow(&b, label, i == m.cursor)
 		b.WriteString("\n")
 	}
-	m.renderRow(&b, domain.PortListDoneRow, m.cursor == m.doneRow())
+	m.renderRow(&b, domain.WizardDoneRow, m.cursor == m.doneRow())
 	if m.err != "" {
 		b.WriteString("\n\n")
 		b.WriteString(errorBanner(m.err))
@@ -172,21 +205,13 @@ func (m PortListModel) View() string {
 	return b.String()
 }
 
-// helpHint is the wizard help bar for this step.
-// entryLabel spells an undeclared service out rather than rendering it as port
-// zero: it is the one row on this step that asks for something.
-func entryLabel(entry domain.PortEntry) string {
-	if entry.Base <= 0 {
-		return fmt.Sprintf(domain.PortListUndeclaredFmt, entry.Job, entry.Name) + "   " + domain.PortListUndeclared
-	}
-	return fmt.Sprintf(domain.PortListEntryFmt, entry.Job, entry.Name, entry.Base)
-}
+func (m PortListModel) helpActions() []string { return []string{domain.HelpBindsNoPort} }
 
-func (m PortListModel) helpHint() string {
+func (m PortListModel) helpModal() string {
 	if m.editing {
 		return domain.PortListEditHelp
 	}
-	return domain.PortListHelp
+	return ""
 }
 
 func (m PortListModel) renderRow(b *strings.Builder, label string, selected bool) {

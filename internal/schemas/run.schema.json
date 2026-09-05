@@ -84,6 +84,18 @@
             "type": "boolean",
             "default": true,
             "description": "Whether `wtm run up` checks that this job's declared ports were actually bound. Set to false to stop reporting a service that binds the base port because its command never reads the injected variable — the fix is to pass --port ${PORT} to it, and this key acknowledges the warning until then. Omitted means true."
+          },
+          "binds_no_port": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether this service listens on nothing by design — a build in watch mode, a worker, or a runner whose children hold the ports. Silence reads as an oversight, so `wtm run init` keeps offering a port and the report keeps naming the job; this key answers the question once. A job declaring ports must not set it."
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The declared jobs this one starts itself — a `turbo run dev` against a filter, any single process that fans out. wtm infers nothing from the command: the relation is declared here. It gives the runner its children's urls, lets the port check look at their ports, and lets wtm refuse to start a runner alongside one of its own children."
           }
         },
         "allOf": [

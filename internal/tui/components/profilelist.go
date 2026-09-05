@@ -293,7 +293,7 @@ func (m ProfileListModel) View() string {
 		m.renderRow(&b, m.input.View(), true)
 		b.WriteString("\n")
 	}
-	m.renderRow(&b, domain.ProfileListDoneRow, m.cursor == m.doneRow())
+	m.renderRow(&b, domain.WizardDoneRow, m.cursor == m.doneRow())
 
 	if m.err != "" {
 		b.WriteString("\n\n")
@@ -305,14 +305,18 @@ func (m ProfileListModel) View() string {
 // helpHint is the wizard help bar for this step. Marking a row changes what the
 // next keypress does, so the bar has to say so — the second half of a merge is
 // not something to guess.
-func (m ProfileListModel) helpHint() string {
+func (m ProfileListModel) helpActions() []string {
+	return []string{domain.HelpRename, domain.HelpMerge, domain.HelpDelete, domain.HelpNew}
+}
+
+func (m ProfileListModel) helpModal() string {
 	if m.naming {
 		return domain.ProfileListNamingHelp
 	}
 	if m.mark != noMark {
 		return fmt.Sprintf(domain.ProfileListMergeHint, m.profiles[m.mark].Name)
 	}
-	return domain.ProfileListHelp
+	return ""
 }
 
 // profileHeadLabel is the row itself: the name and what marks it, never the

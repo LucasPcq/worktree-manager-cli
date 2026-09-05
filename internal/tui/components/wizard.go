@@ -13,7 +13,7 @@ import (
 
 // Step defines one step in a wizard.
 // Model must be a SelectListModel, TextInputModel, ConfirmModel, MultiSelectModel,
-// ReorderListModel, HookListModel, EnvResolveModel, PortListModel,
+// ReorderListModel, HookListModel, EnvResolveModel, PortListModel, RouteListModel,
 // ProfileListModel, KindListModel, or CmdListModel. Adding one means teaching every switch below about it —
 // TestWizardRendersEveryStepModel and its neighbours are what enforce that.
 type Step struct {
@@ -318,6 +318,14 @@ func (m WizardModel) updateStep(step *Step, msg tea.Msg) (advanced bool, back bo
 		updated, c := child.Update(msg)
 		step.Model = updated
 		return updated.Done(), updated.Aborted(), c
+	case RouteListModel:
+		updated, c := child.Update(msg)
+		step.Model = updated
+		return updated.Done(), updated.Aborted(), c
+	case RunnerListModel:
+		updated, c := child.Update(msg)
+		step.Model = updated
+		return updated.Done(), updated.Aborted(), c
 	case ProfileListModel:
 		updated, c := child.Update(msg)
 		step.Model = updated
@@ -526,52 +534,69 @@ func (m WizardModel) visiblePosition() int {
 	return m.current + 1
 }
 
-func (m WizardModel) renderHelpBar() string {
-	if hl, ok := m.steps[m.current].Model.(HookListModel); ok {
-		return styles.HelpBar.Render(hl.helpHint())
-	}
-	if er, ok := m.steps[m.current].Model.(EnvResolveModel); ok {
-		return styles.HelpBar.Render(er.helpHint())
-	}
-	if pl, ok := m.steps[m.current].Model.(PortListModel); ok {
-		return styles.HelpBar.Render(pl.helpHint())
-	}
-	if pr, ok := m.steps[m.current].Model.(ProfileListModel); ok {
-		return styles.HelpBar.Render(pr.helpHint())
-	}
-	if kl, ok := m.steps[m.current].Model.(KindListModel); ok {
-		return styles.HelpBar.Render(kl.helpHint())
-	}
-	if cl, ok := m.steps[m.current].Model.(CmdListModel); ok {
-		return styles.HelpBar.Render(cl.helpHint())
-	}
-	if sl, ok := m.steps[m.current].Model.(SelectListModel); ok && sl.filtering {
-		return styles.HelpBar.Render(sl.filterHelpHint())
-	}
-	if ms, ok := m.steps[m.current].Model.(MultiSelectModel); ok && ms.filtering {
-		return styles.HelpBar.Render(ms.filterHelpHint())
-	}
+// stepHelp is what a step says about its own keys. The bar itself is composed
+// in one place: a step that spelled its whole line out is how the wizard ended
+// up naming the same gesture "confirm", "select" and "continue" on three
+// consecutive screens.
+type stepHelp interface {
+	// helpActions are the row-level gestures this step adds, between navigation
+	// and confirmation, in the order they are worth learning.
+	helpActions() []string
+	// helpModal is the whole bar to show instead while the step is in a
+	// sub-mode — editing a value, naming a profile, typing a filter — where
+	// none of the navigation keys apply.
+	helpModal() string
+}
 
-	help := "  enter confirm"
-	switch m.steps[m.current].Model.(type) {
-	case SelectListModel:
-		help = "  ↑↓ navigate • enter confirm • / filter"
-		if m.steps[m.current].CanRefresh {
-			help += " • r refresh"
-		}
-	case MultiSelectModel:
-		help = "  ↑↓ navigate • enter confirm • space toggle • a all • / filter"
-	case ReorderListModel:
-		help = "  ↑↓ navigate • enter confirm • shift+↑/↓ reorder"
-	case ConfirmModel:
-		help = "  ↑↓ navigate • enter confirm"
+func (m WizardModel) renderHelpBar() string {
+	return styles.HelpBar.Render(m.helpLine())
+}
+
+func (m WizardModel) helpLine() string {
+	step, ok := m.steps[m.current].Model.(stepHelp)
+	if !ok {
+		return m.composedHelp(nil)
 	}
+	if modal := step.helpModal(); modal != "" {
+		return modal
+	}
+	return m.composedHelp(step.helpActions())
+}
+
+// rowless is a step with nothing to move between: it takes typing, not a cursor.
+type rowless interface{ helpRowless() bool }
+
+// doneRower is a step whose last row confirms it. The word for enter follows:
+// on such a step enter acts on the row under the cursor, everywhere else it
+// ends the step.
+type doneRower interface{ doneRow() int }
+
+func (m WizardModel) confirmHelp() string {
+	if _, ok := m.steps[m.current].Model.(doneRower); ok {
+		return domain.HelpSelect
+	}
+	return domain.HelpConfirm
+}
+
+// composedHelp lays every bar out the same way: navigate, then what this step
+// adds, then confirm, then the way out — whose word depends on whether there is
+// a step to go back to.
+func (m WizardModel) composedHelp(actions []string) string {
+	parts := make([]string, 0, len(actions)+3)
+	if _, rowless := m.steps[m.current].Model.(rowless); !rowless {
+		parts = append(parts, domain.HelpNavigate)
+	}
+	parts = append(parts, actions...)
+	if m.steps[m.current].CanRefresh {
+		parts = append(parts, domain.HelpRefresh)
+	}
+	parts = append(parts, m.confirmHelp())
 	if m.visiblePosition() > 1 {
-		help += " • esc back"
+		parts = append(parts, domain.HelpBack)
 	} else {
-		help += " • esc cancel"
+		parts = append(parts, domain.HelpCancel)
 	}
-	return styles.HelpBar.Render(help)
+	return domain.HelpBarIndent + strings.Join(parts, domain.HelpBarSep)
 }
 
 func (m *WizardModel) propagateSize(stepIdx int) {
@@ -611,6 +636,14 @@ func (m *WizardModel) propagateSize(stepIdx int) {
 		child.input.Width = max(10, m.width-8)
 		m.steps[stepIdx].Model = child
 	case PortListModel:
+		child.width = m.width
+		child.height = h
+		m.steps[stepIdx].Model = child
+	case RouteListModel:
+		child.width = m.width
+		child.height = h
+		m.steps[stepIdx].Model = child
+	case RunnerListModel:
 		child.width = m.width
 		child.height = h
 		m.steps[stepIdx].Model = child
@@ -709,6 +742,10 @@ func (m WizardModel) initStep(stepIdx int) tea.Cmd {
 		return child.Init()
 	case PortListModel:
 		return child.Init()
+	case RouteListModel:
+		return child.Init()
+	case RunnerListModel:
+		return child.Init()
 	case ProfileListModel:
 		return child.Init()
 	case KindListModel:
@@ -736,6 +773,10 @@ func (m WizardModel) viewStep(stepIdx int) string {
 	case EnvResolveModel:
 		return child.View()
 	case PortListModel:
+		return child.View()
+	case RouteListModel:
+		return child.View()
+	case RunnerListModel:
 		return child.View()
 	case ProfileListModel:
 		return child.View()
@@ -787,6 +828,14 @@ func (m *WizardModel) resetStep(stepIdx int) {
 		child.aborted = false
 		child.editing = false
 		m.steps[stepIdx].Model = child
+	case RouteListModel:
+		child.done = false
+		child.aborted = false
+		m.steps[stepIdx].Model = child
+	case RunnerListModel:
+		child.done = false
+		child.aborted = false
+		m.steps[stepIdx].Model = child
 	case ProfileListModel:
 		child.done = false
 		child.aborted = false
@@ -831,6 +880,10 @@ func (m WizardModel) stepDescription(step Step) string {
 	case EnvResolveModel:
 		return child.desc
 	case PortListModel:
+		return child.desc
+	case RouteListModel:
+		return child.desc
+	case RunnerListModel:
 		return child.desc
 	case ProfileListModel:
 		return child.desc

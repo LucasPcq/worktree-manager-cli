@@ -305,6 +305,17 @@ and **experimental**: the global `wtm init` does not configure it.
   on a **review step**: choosing "No, cancel" there aborts the run and writes nothing.
 - `run init --link-env` also writes the `[[env_port]]` links without asking (see port
   isolation below).
+- **`run init --write-port-keys` materializes a declared port as a `.env` key.** For every
+  job whose port no `.env` carries, it writes `KEY=<base>` into the `.env` of the job's own
+  `cwd` **and** into that file's committed template, adds the `[[env_port]]` link, and — when
+  the project does not provision that file — adds the `[env]` target to `config.toml`. This
+  is the route that isolates a job **both** under `wtm run` and when a developer starts it
+  themselves, provided the project's own config reads the key (`server.port:
+  Number(process.env.VITE_PORT)`); wtm writes the key and never touches project code. Like
+  `--patch-compose` it writes tracked files, so it is never inferred: non-interactively it
+  takes the flag, interactively it is the wizard's route step. In the wizard, each service
+  declaring a port is asked **where it reads it** — its `.env` (pre-filled) or its command —
+  and only the jobs left on the command route are offered command editing.
 - `run init` also **pre-fills the ports** of the compose files it picks up. A mapping
   already reading a variable (`"${DB_PORT:-5432}:5432"`) is declared as-is. A literal one
   (`"5432:5432"`) binds the same port in every worktree, so it is **not** declared: wtm
@@ -331,8 +342,9 @@ and **experimental**: the global `wtm init` does not configure it.
   `.env.local`, else `.env`, else a committed `.env.example`. A job is matched to a
   directory by its `cwd`, so in a pnpm monorepo each package takes its own port and never
   inherits the root's. Only `kind = "service"` jobs from package scripts are considered.
-  Nothing is written to the `.env` and no command is rewritten — wtm declares the port and
-  prints "Ports detected from .env" naming the source file. **Whether the command actually
+  Nothing is written to the `.env` without `--write-port-keys` (above) and no command is
+  ever rewritten — wtm declares the port and prints "Ports detected from .env" naming the
+  source file. **Whether the command actually
   reads the variable is not checked**: `next dev` and most node servers read `PORT` from
   the environment, but a CLI that only takes a flag (vite) needs
   `--cmd 'pnpm dev --port ${PORT}'`. Never assume a declared port means an isolated one.
@@ -496,9 +508,39 @@ and **experimental**: the global `wtm init` does not configure it.
   or network name), `WTM_ORDINAL` (`0` for the main checkout, then the smallest free
   number, stable for the worktree's life), `WTM_PORT_OFFSET` (`WTM_ORDINAL` times the
   `port_offset_block` of run.toml, 10 by default), and `COMPOSE_PROJECT_NAME`
-  (= `<repo>-<WTM_WORKTREE>`, left alone if the environment already sets it). Docker
-  isolation is automatic for everything compose names itself; a `container_name` or a
+  (= `<repo>-<WTM_WORKTREE>`, left alone if the environment already sets it).
+  `COMPOSE_PROJECT_NAME` is **also written into the `.env` of the directory each compose
+  job runs from**, at `create` and at `wtm env`, because compose interpolates that file:
+  a `docker compose up` typed by hand in a worktree therefore gets its own project, its own
+  containers and its own volumes, with no wtm process involved. It is a wtm-owned key —
+  the reconciliation never reports it as drift or as a conflict, whatever main holds.
+  Docker isolation is automatic for everything compose names itself; a `container_name` or a
   volume/network pinned by `name` escapes it — see `run init --patch-compose` above.
+- **A service can say it binds nothing, and which jobs it runs.** Two declarative
+  keys on a `[[job]]`, both editable with `run job edit`:
+  - `binds_no_port = true` (`--binds-no-port`) — this service listens on nothing by
+    design: a build in watch mode, a worker, a runner whose children hold the ports.
+    Without it wtm reads the silence as an oversight and keeps naming the job under
+    "These jobs will bind the same port in every worktree".
+  - `runs = ["web-dev", "api-dev"]` (`--runs`, repeatable, replaces the list) — the
+    declared jobs this one starts itself, typically a root `turbo run dev` behind a
+    filter. **wtm infers nothing from the command**: the relation is written, never
+    detected. It gives the runner its children's ports at start time (a variable name
+    two children declare differently is left unresolved, as with the lifecycle hooks),
+    lets the port check look at those ports, and makes `run up` **refuse** a profile
+    asking for a runner and one of its own children — the same process twice on the
+    same port. A job that runs others is not itself reported as portless.
+- **The addressing mode decides what a `.env` value pointing at another job holds.**
+  `addressing` in run.toml, `"names"` (the default when absent) or `"ports"`, asked by
+  `run init` whenever any job publishes a url. It is the one setting with a consequence
+  outside wtm: **named urls are served by the run proxy, which lives in the run daemon**,
+  so a value like `VITE_API_URL=http://api.feat-x.repo.localhost:11080` answers while
+  `wtm run` is running that job and **not** when the developer starts it themselves —
+  the routing table is a projection of what the daemon started. A project whose author
+  launches dev servers by hand wants `"ports"`. When the proxy is disabled on the machine
+  (`[proxy] port = 0`), wtm writes ports whatever the mode says, and reports it. Only the
+  values of jobs that publish a url are affected: a `DATABASE_URL` or a bare `*_PORT`
+  stays a port either way.
 - **`run up` verifies the ports.** Declaring a port injects a variable; nothing forces
   the command to read it. After the jobs start, wtm dials each declared port and reports
   the silent ones under "Ports declared but not bound". When the *base* port answers
